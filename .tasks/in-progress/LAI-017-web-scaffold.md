@@ -2,11 +2,12 @@
 id: LAI-017
 title: Vite + React scaffold in server/web, building into server/public
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-001]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T03:32:35+05:30
 ---
 
 ## Goal
