@@ -55,13 +55,23 @@ export const users = sqliteTable(
     /** Lowercased on write (§4.1) so uniqueness is case-insensitive in practice. */
     email: text('email').notNull(),
     name: text('name').notNull(),
-    orgRole: text('org_role', { enum: ORG_ROLES }).notNull(),
+    orgRole: text('org_role', { enum: ORG_ROLES }).notNull().default('member'),
     /** Derived from the id — no uploads in v1 (§4.1). */
-    avatarColor: text('avatar_color').notNull(),
+    avatarColor: text('avatar_color').notNull().default('#6b7280'),
     /** 0 = deactivated. The row is kept so history keeps its author (§4.1). */
     isActive: integer('is_active').notNull().default(1),
-    createdAt,
-    updatedAt,
+
+    // --- required by better-auth's `user` model (LAI-005) ---
+    // This table *is* better-auth's user table, remapped: one identity, one row.
+    // Credentials, sessions and verification live in their own tables below.
+    emailVerified: integer('email_verified', { mode: 'boolean' }).notNull().default(false),
+    /** better-auth writes this; v1 has no uploads, so it stays null (§4.1). */
+    image: text('image'),
+
+    // Date-typed rather than raw numbers, because better-auth hands the adapter
+    // `Date` objects. Storage is unchanged — still `integer` unix-milliseconds.
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
   },
   (t) => [
     uniqueIndex('users_email_unique').on(t.email),
@@ -488,6 +498,83 @@ export const unlistedWork = sqliteTable(
     index('unlisted_work_token_id_idx').on(t.tokenId),
   ],
 );
+
+// ------------------------------------------- better-auth: sessions, accounts,
+// verifications (SPEC §4.1, §11.3 — "its tables alongside ours")
+//
+// Hand-written rather than generated, because the generator is a separate CLI
+// package and LAI-005 admits only better-auth and its peers. The shapes are
+// taken from `@better-auth/core`'s table definitions; the field names here are
+// the *Drizzle property* names better-auth resolves against, which is why they
+// stay camelCase while the SQL columns are snake_case.
+
+export const sessions = sqliteTable(
+  'sessions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    token: text('token').notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('sessions_token_unique').on(t.token),
+    index('sessions_user_id_idx').on(t.userId),
+    index('sessions_expires_at_idx').on(t.expiresAt),
+  ],
+);
+
+export const accounts = sqliteTable(
+  'accounts',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    issuer: text('issuer').notNull(),
+    accountId: text('account_id').notNull(),
+    providerId: text('provider_id').notNull(),
+    /** Argon2id hash for the credential provider. Never leaves this table. */
+    password: text('password'),
+    accessToken: text('access_token'),
+    refreshToken: text('refresh_token'),
+    idToken: text('id_token'),
+    accessTokenExpiresAt: integer('access_token_expires_at', { mode: 'timestamp_ms' }),
+    refreshTokenExpiresAt: integer('refresh_token_expires_at', { mode: 'timestamp_ms' }),
+    scope: text('scope'),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => [
+    uniqueIndex('accounts_issuer_account_id_unique').on(t.issuer, t.accountId),
+    index('accounts_user_id_idx').on(t.userId),
+  ],
+);
+
+export const verifications = sqliteTable(
+  'verifications',
+  {
+    id: text('id').primaryKey(),
+    identifier: text('identifier').notNull(),
+    value: text('value').notNull(),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => [
+    index('verifications_identifier_idx').on(t.identifier),
+    index('verifications_expires_at_idx').on(t.expiresAt),
+  ],
+);
+
+export type Session = typeof sessions.$inferSelect;
+export type Account = typeof accounts.$inferSelect;
+export type Verification = typeof verifications.$inferSelect;
 
 export type User = typeof users.$inferSelect;
 export type Org = typeof orgs.$inferSelect;

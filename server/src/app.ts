@@ -6,12 +6,15 @@ import { FALLBACK_DOCUMENT, PUBLIC_DIR } from './paths.ts';
 import { type AppEnv } from './http/context.ts';
 import { createErrorHandler } from './http/error-handler.ts';
 import { ApiError } from './http/errors.ts';
-import { auth } from './http/middleware/auth.ts';
+import { anonymousAuth, authMiddleware } from './http/middleware/auth.ts';
 import { errorBoundary } from './http/middleware/error-boundary.ts';
 import { requestLogger } from './http/middleware/logger.ts';
 import { rateLimit } from './http/middleware/rate-limit.ts';
 import { requestId } from './http/middleware/request-id.ts';
 import { healthRoutes } from './http/routes/health.ts';
+import { meRoutes } from './http/routes/me.ts';
+import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
+import { type Db } from './db/client.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
 
 /** 1 MiB. Generous for JSON, small enough that a bad client cannot exhaust us. */
@@ -22,6 +25,12 @@ export const API_BASE = '/api/v1';
 export interface CreateAppOptions {
   version: string;
   logger?: Logger;
+  /**
+   * Auth and the database. Optional so the HTTP-level tests of LAI-002 can build
+   * an app without standing up a database — those routes do not touch either.
+   */
+  auth?: Auth;
+  db?: Db;
   /** Overridable so tests can point at a directory whose contents they control. */
   publicDir?: string;
   fallbackDocument?: string;
@@ -61,12 +70,27 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     }),
   );
   app.use('*', bodyLimit({ maxSize: BODY_LIMIT_BYTES }));
-  app.use('*', auth);
+  // SPEC §11.2 position. Real when auth is configured, pass-through otherwise;
+  // either way an anonymous request continues with `actor: null` rather than 401.
+  app.use(
+    '*',
+    options.auth !== undefined && options.db !== undefined
+      ? authMiddleware({ auth: options.auth, db: options.db })
+      : anonymousAuth,
+  );
   app.use('*', rateLimit);
 
   // Routes before the static handler: whoever matches first wins, and the SPA
   // fallback must never shadow an API path.
   app.route(`${API_BASE}/health`, healthRoutes(options.version));
+  app.route(`${API_BASE}/me`, meRoutes());
+
+  // better-auth owns everything under /api/v1/auth (§6.4). Mounted with `on`
+  // rather than `route` so every method and sub-path reaches its handler.
+  if (options.auth !== undefined) {
+    const configuredAuth = options.auth;
+    app.on(['GET', 'POST'], `${AUTH_BASE_PATH}/*`, (c) => configuredAuth.handler(c.req.raw));
+  }
 
   app.use('*', createStaticHandler(staticOptions));
 
