@@ -34,7 +34,13 @@ function main(): void {
     secureCookies: env.secureCookies,
   });
 
-  const app = createApp({ version, logger: log, auth, db });
+  const app = createApp({
+    version,
+    logger: log,
+    auth,
+    db,
+    ...(env.publicDir === undefined ? {} : { publicDir: env.publicDir }),
+  });
 
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
     log.info('server.listening', {

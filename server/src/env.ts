@@ -21,6 +21,14 @@ export interface Env {
   readonly publicUrl: string;
   /** `Secure` cookies need HTTPS; localhost is the documented exception (§6.1). */
   readonly secureCookies: boolean;
+  /**
+   * Where the built SPA is served from. Defaults to `server/public` (§11.4).
+   *
+   * Overridable so a test can point the server at a directory it controls
+   * instead of depending on whether the developer running it happens to have
+   * built the SPA — see LAI-204.
+   */
+  readonly publicDir: string | undefined;
 }
 
 const DEFAULT_PORT = 3000;
@@ -163,5 +171,9 @@ export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
     serverSecret: resolveServerSecret(source, nodeEnv),
     publicUrl,
     secureCookies: !isLocalUrl(publicUrl),
+    publicDir:
+      source.LAIKA_PUBLIC_DIR === undefined || source.LAIKA_PUBLIC_DIR === ''
+        ? undefined
+        : resolve(source.LAIKA_PUBLIC_DIR),
   };
 }

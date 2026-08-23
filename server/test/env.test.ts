@@ -143,3 +143,17 @@ describe('cookie security (SPEC §6.1)', () => {
     expect(readEnv({ ...SECRET, PUBLIC_URL: 'http://laika.example.com' }).secureCookies).toBe(true);
   });
 });
+
+describe('LAIKA_PUBLIC_DIR (LAI-204)', () => {
+  it('is undefined by default, so the server uses server/public', () => {
+    expect(readEnv({ ...SECRET }).publicDir).toBeUndefined();
+    expect(readEnv({ ...SECRET, LAIKA_PUBLIC_DIR: '' }).publicDir).toBeUndefined();
+  });
+
+  it('resolves an override to an absolute path', () => {
+    // Exists so a test can point the server at a directory it controls rather
+    // than depending on whether the SPA happens to have been built locally.
+    expect(readEnv({ ...SECRET, LAIKA_PUBLIC_DIR: '/srv/spa' }).publicDir).toBe('/srv/spa');
+    expect(isAbsolute(readEnv({ ...SECRET, LAIKA_PUBLIC_DIR: 'rel/spa' }).publicDir!)).toBe(true);
+  });
+});
