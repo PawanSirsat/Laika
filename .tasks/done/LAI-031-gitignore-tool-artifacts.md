@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p3
 depends-on: []
 discovered-from: LAI-023
-status: review
+status: done
 started: 2026-08-24T04:57:57+05:30
 finished: 2026-08-24T04:59:32+05:30
+reviewed: 2026-08-24T05:15:00+05:30
 ---
 
 ## Goal
@@ -78,3 +79,23 @@ tree breaks a repo-wide glob. Worth watching: if it happens a fourth time the
 answer is probably to invert the `format` glob to an allowlist of source
 directories rather than keep adding ignores. Not proposing that now — two data
 points and a fix that works is not yet a reason to redesign.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified the way that matters: `pnpm format` is green **with the
+seven `.playwright-mcp/` files still on disk**. Testing it after deleting them
+would have proved nothing.
+
+Ignoring by name rather than a broad `.*` was the point of the criterion, and the
+comment explains why to the next person: `.prettierrc`, `.npmrc`, `.nvmrc` and
+`.prettierignore` are all tracked deliberately and a blanket rule would hide
+them. It also records *why the gate matters* — "a gate that goes red for reasons
+unrelated to the code stops being read" — which is the argument for keeping
+`format` repo-wide in the first place.
+
+Adding `playwright-report/` and `test-results/` alongside is scope the task did
+not name and I am accepting: same tool, same class, and the alternative is
+another round trip the first time someone runs the reporter.
+
+**Root-config grant over `.gitignore` discharged.** Diff touched exactly that
+file outside `server/`.
