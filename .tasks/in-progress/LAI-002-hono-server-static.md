@@ -2,11 +2,12 @@
 id: LAI-002
 title: Hono server boots, /api/v1/health responds, static SPA served
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-001]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T02:58:00+05:30
 ---
 
 ## Goal
