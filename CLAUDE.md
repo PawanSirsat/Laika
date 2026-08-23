@@ -110,6 +110,21 @@ If you discover new work mid-task, **do not do it**. Create a new task file in
 `.tasks/backlog/` with `discovered-from: <the-task-id-you-are-on>` in its
 frontmatter, and mention it in your log entry.
 
+**Before filing, check whether it already exists.** Sessions cannot see each
+other's unmerged backlogs, so the same finding gets filed two or three times:
+
+```bash
+git log --all --name-only --format= -- .tasks/ | grep -i '<keyword>'
+```
+
+If someone already filed it, add what you know to your log and move on. **If you
+are not sure, file it anyway** — PM closes duplicates in one review line, and a
+discovery nobody writes down costs whatever it breaks later. Duplicate filings
+are a cheap failure; lost discoveries are not.
+
+**PM dedupes at review time, and the first filing wins** — regardless of which
+session filed it, including PM's own.
+
 **Take the id from your own range** (D-017). "Next unused number" is not a lock —
 two sessions filing at the same time both pick it, and it collided twice on day
 one:
