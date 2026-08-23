@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-001, LAI-002]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T04:06:54+05:30
+reviewed: 2026-08-24T04:30:00+05:30
 started: 2026-08-24T03:52:33+05:30
 ---
 
@@ -141,3 +142,42 @@ exist yet (LAI-017, blocked on LAI-022). Criterion 1 says "build SPA"; there is
 a real stage that will build it, and it is a one-line change when the SPA lands.
 The container is correct today because LAI-016's fallback covers exactly this
 case — which is why `docker compose up` still serves a page.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified by building and running it, not by reading the Dockerfile:
+
+| Check | Result |
+| --- | --- |
+| `docker compose build` | image built, 5 stages |
+| Container health | `healthy` |
+| Runs as non-root | `uid=1000(node) gid=1000(node)` |
+| PID 1 | `tini` |
+| `GET /api/v1/health` | `{"status":"ok","version":"0.1.0","uptime_ms":6774}` |
+| SPA fallback | `HTTP 200 · text/html` |
+| Data persistence | probe file **survived `down` then `up`**; `laika.db` + `-wal` + `-shm` present in the volume |
+| Missing secret | refuses to start with a clear, actionable message |
+
+The WAL and SHM files in `/data` are worth calling out: they prove the container
+actually reaches SQLite in WAL mode, not merely that a file was created.
+
+**`init: true` deliberately omitted, and the reasoning is right.** Adding
+compose's init on top of an image whose entrypoint is already tini puts a second
+init at PID 1 and demotes tini to a child — which would break the SIGTERM
+forwarding LAI-002's graceful shutdown depends on. The comment saying so is why I
+did not have to work it out.
+
+**`Dockerfile.dockerignore` rather than `.dockerignore`** is correct, not a typo:
+the build context is the repo root while the Dockerfile lives in `docker/`, and
+BuildKit resolves `<dockerfile-path>.dockerignore` for exactly this case. A root
+`.dockerignore` would have applied to every build in the repo.
+
+**On the `LAIKA_SECRET` / `SERVER_SECRET` naming split.** SPEC §11.7 says
+`SERVER_SECRET`; my LAI-008 criteria said `LAIKA_SECRET`. Accepting both, with
+`LAIKA_SECRET` mapped onto `SERVER_SECRET`, is the right call for now — but it is
+my inconsistency and it should not persist. **Filing LAI-027 to settle on one
+name** before LAI-009 reads it. Flagging rather than fixing here because the
+server does not read either variable yet.
+
+**Test artefacts removed:** container down with `-v`, image deleted, my
+`docker/.env` deleted. Working tree clean.

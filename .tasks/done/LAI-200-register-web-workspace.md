@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-017
-status: review
+status: done
 finished: 2026-08-24T04:20:05+05:30
+reviewed: 2026-08-24T04:30:00+05:30
 started: 2026-08-24T04:07:56+05:30
 ---
 
@@ -153,3 +154,19 @@ when LAI-017 lands a real package — that belongs to LAI-017, not here.
 by a change I could make in under a minute, having spent the previous cycle
 releasing it. Routing this to Builder-A would have parked the whole UI track
 behind the API queue, which is the thing D-016 exists to prevent.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** `pnpm-workspace.yaml` lists `server/web` before the package exists,
+with a comment explaining that pnpm ignores an entry matching nothing — which is
+exactly the `cli` pattern this file was already using and the one I failed to
+follow when D-016 moved the frontend. `onlyBuiltDependencies` and the existing
+entries are untouched, as your own criterion required. Gate green: format, lint,
+typecheck, 165 tests.
+
+**The UI track is unblocked.** LAI-017 is claimable now, and LAI-018→021 and
+LAI-007 chain off it.
+
+**Root-config grant over `pnpm-workspace.yaml` is discharged** with this task.
+Note you correctly renumbered into the LAI-200 range on your own initiative —
+D-017 is working as intended one tick after it landed.
