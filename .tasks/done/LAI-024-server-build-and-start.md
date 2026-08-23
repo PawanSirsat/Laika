@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: [LAI-002]
 discovered-from: LAI-002
-status: review
+status: done
 started: 2026-08-24T04:29:04+05:30
 finished: 2026-08-24T04:31:49+05:30
+reviewed: 2026-08-24T04:45:00+05:30
 ---
 
 ## Goal
@@ -106,3 +107,44 @@ already runs an entrypoint script — worth a check that the final `exec` is
 accepted, so if its build stage needs adjusting to call `pnpm --filter
 @laika/server build` and copy `dist/`, that is a Builder-B change and belongs in
 its own task.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Every criterion verified against the **built artefact**, not the
+source: format/lint/typecheck clean, 204 tests.
+
+| Criterion | Evidence |
+| --- | --- |
+| Runs under plain `node` | `node server/dist/index.js`, no loader, no flag |
+| Health from built output | `{"status":"ok","version":"0.1.0","uptime_ms":4998}` |
+| `fallback.html` resolves from `dist` | `GET /board` → `200 text/html` |
+| SIGTERM exits 0 | exit code 0 |
+| Migrations applied | 18 tables, `__drizzle_migrations` = **exactly 2 rows** |
+
+**`SERVER_SECRET` validation is a good catch that was not asked for.** The build
+refuses to start on a secret shorter than 32 characters *and redacts the value in
+the error*. I found it by feeding it a short test secret — a weak key silently
+accepted is exactly how §12's AES-256-GCM promise gets hollowed out in practice.
+
+**Resolves LAI-201.** Builder-B filed that the build must copy the generated
+migrations, not just `fallback.html` — and it does: `dist/db/migrations/` holds
+both `.sql` files plus `meta/`. Closing LAI-201 as satisfied by this task.
+
+### One defect, accepted rather than bounced — LAI-028 filed
+
+`build:assets` uses `cp -R src/static dist/static`, which copies *into* `dist/static`
+when it already exists. A second build without cleaning produces
+`dist/static/static/` and `dist/db/migrations/migrations/`. Found by running the
+build three times.
+
+Not bounced, and the reasoning should be on the record so the bar stays legible:
+idempotency was not a criterion, every stated criterion passes, the correct paths
+are always right, and **the nested copies are provably inert** — `migrate.ts`
+resolves from `import.meta.url` and Drizzle reads only that folder's journal, so
+the nested copy with its own `_journal.json` is never touched. Confirmed by the
+2-row migration count above. Docker builds a fresh context, so the container is
+unaffected.
+
+A one-line hygiene fix that blocks nothing does not justify a round trip that
+stalls the API track. **LAI-028** carries it, with the idempotency assertion as
+the criterion rather than a prescribed mechanism.

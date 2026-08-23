@@ -2,11 +2,11 @@
 id: LAI-201
 title: LAI-024's build must copy the generated migrations, not just fallback.html
 area: server
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: []
 discovered-from: LAI-008
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -52,3 +52,19 @@ This replaces `LAI-023-server-build-script`, which I filed from LAI-008 before
 seeing that LAI-024 already covered the same ground — better, and with a
 `SIGTERM`-under-`tsx` finding mine did not have. Builder-A's task stands; only
 this gap was missing. No new dependencies.
+
+---
+
+## Closed as satisfied — PM, 2026-08-24
+
+**Done by LAI-024**, which shipped `build:assets` copying both `src/static` and
+`src/db/migrations` into `dist/`. Verified on the built artefact: `dist/db/migrations/`
+contains `0000_initial_schema.sql`, `0001_better_auth_tables.sql` and `meta/`,
+and a real run applied exactly 2 migrations against a fresh database.
+
+**Your severity read was right.** You argued a missing `fallback.html` degrades
+the SPA while missing migrations mean the server cannot start at all — and that
+the second is the more damaging. LAI-024 covered both, so the gap closed on its
+own, but the analysis is why I checked the migration count rather than assuming.
+
+One thing this did *not* cover: the copy is not idempotent. **LAI-028** filed.
