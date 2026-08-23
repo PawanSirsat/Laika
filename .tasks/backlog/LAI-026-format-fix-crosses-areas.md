@@ -114,3 +114,40 @@ CLAUDE.md §5 now names the hazard and the workaround.
 - [ ] The behaviour is documented in the root `package.json` scripts or
       `CLAUDE.md`, and the interim guard in CLAUDE.md §5 is removed once the fix
       lands.
+
+---
+
+## Added by PM — 2026-08-24: `docs/design/` breaks the format gate
+
+**`pnpm format` is currently red on `master`** — six findings, all mine, none
+related to the cross-area bug above. I imported the Claude Design mockups into
+`docs/design/`, and the repo-wide glob picks up `**/*.html` and `**/*.js`:
+
+- four `.dc.html` mockups — Prettier cannot **parse** them. `<sc-if>` is a custom
+  element the Claude Design runtime handles, and Prettier's HTML parser rejects
+  it as an unclosed tag. These are hard errors, not style warnings.
+- `docs/design/support.js` — vendored, generated, marked "do not edit".
+
+Both are third-party artefacts that must never be formatted. `docs/design/README.md`
+already says so; the tooling does not know it.
+
+**Scope exception extended.** In addition to `package.json`, this task authorises
+Builder-A to create or edit exactly:
+
+- `.prettierignore` (repo root)
+
+Nothing else. If ESLint also needs an ignore for `docs/design/support.js`, add
+`eslint.config.js` to the grant by saying so in your log — do not assume it.
+
+### Extra acceptance criteria
+
+- [ ] `.prettierignore` excludes `docs/design/` entirely, with a one-line comment
+      saying why (imported mockups + vendored runtime, never ours to format).
+- [ ] `pnpm format` is **green on a clean `master`** — the whole point of keeping
+      it repo-wide (LAI-001 review) is that red means something.
+- [ ] `docs/design/` files are unchanged by the fix. If Prettier has already
+      rewritten one, restore it from git — those files are a visual reference and
+      a reformat corrupts the comparison they exist for.
+
+**Why folded in rather than filed separately:** same script, same root files, and
+two tasks editing `package.json`/`.prettierignore` concurrently would conflict.
