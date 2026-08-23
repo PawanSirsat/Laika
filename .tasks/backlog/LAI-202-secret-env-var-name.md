@@ -69,3 +69,16 @@ none** — a half-prefixed env surface is worse than either consistent choice.
 
 `area: docs`, so this is PM's to land. The mismatch is mine: I wrote §11.7 with
 one name and LAI-008/LAI-009 with the other.
+
+## Added by PM — 2026-08-24: state the minimum length in SPEC §12
+
+LAI-024 shipped a check refusing to start when `SERVER_SECRET` is shorter than 32
+characters, with the value redacted from the error. Nothing asked for it.
+
+SPEC §12 says the AES-256-GCM key is *derived from* `SERVER_SECRET` but names no
+floor, so today the guarantee exists only because one builder was careful — and a
+later refactor could remove it without failing anything.
+
+- [ ] SPEC §12 states the minimum length and that a shorter value is a hard
+      startup failure, not a warning.
+- [ ] The error redacts the value. Verified in LAI-024; keep it that way.
