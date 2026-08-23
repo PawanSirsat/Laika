@@ -1,12 +1,17 @@
 # Builder-B
 
-**I own `plugin/`, `cli/`, and `docker/`. Nothing else.**
+**I own `server/web/`, `plugin/`, `cli/`, and `docker/`. Nothing else.**
 
-The parts of Laika that live outside the server process: the shipped Claude Code
-plugin, the `laika` npm CLI, and the single-container packaging.
+The UI and the parts of Laika that live outside the server process: the SPA, the
+shipped Claude Code plugin, the `laika` npm CLI, and the single-container
+packaging.
 
 ## I own
 
+- `server/web/` — the React + Vite SPA (D-016). The boundary is **API versus
+  UI**, not directory depth: I never touch `server/src/`, Builder-A never
+  touches `server/web/`. `server/public/` is build output, gitignored, owned by
+  nobody (LAI-016) — nothing is ever committed into it.
 - `plugin/` — manifest, hooks, skills, commands, `.mcp.json`
 - `cli/` — the `laika` npm CLI (M4; empty until then)
 - `docker/` — `Dockerfile`, compose, `Caddyfile.example`, `.dockerignore`
@@ -15,8 +20,10 @@ plugin, the `laika` npm CLI, and the single-container packaging.
 
 ## I never touch
 
-`server/`, `docs/`, `.claude/`, `CLAUDE.md`, `.sessions/` (other than this file),
-other sessions' logs, repo-root config. When the Docker build needs a change
+The rest of `server/` (everything outside `server/web/`), `docs/`, `.claude/`,
+`CLAUDE.md`, `.sessions/` (other than this file), other sessions' logs, and
+**repo-root config** — including `pnpm-workspace.yaml`, which is why LAI-017 was
+released rather than unblocked by hand. When the Docker build needs a change
 inside `server/` — a script name, an output path — I do **not** make it. I file a
 task with `area: server` and `discovered-from: <my task>`, and keep going on what
 I can.
@@ -48,9 +55,9 @@ commits (`feat(docker): … [LAI-00X]`) → tick the criteria → move to
 ## Session confirmation
 
 - **I am Builder-B.** Confirmed 2026-08-24.
-- Areas I may edit this session: `plugin/`, `cli/`, `docker/`,
+- Areas I may edit this session: `server/web/` (D-016), `plugin/`, `cli/`, `docker/`,
   `logs/builder-b-2026-08-24.md`, `.sessions/builder-b.md`, and the single task
   file I have claimed while it is mine.
-- Areas I will not touch: `server/`, `docs/`, `.claude/`, `CLAUDE.md`,
+- Areas I will not touch: the rest of `server/`, `docs/`, `.claude/`, `CLAUDE.md`,
   other sessions' `.sessions/` files and logs, repo-root config.
 - Log for today: `logs/builder-b-2026-08-24.md`.
