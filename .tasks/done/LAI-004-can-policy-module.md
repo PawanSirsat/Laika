@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: [LAI-003]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T04:05:21+05:30
 finished: 2026-08-24T04:09:53+05:30
+reviewed: 2026-08-24T04:25:00+05:30
 ---
 
 ## Goal
@@ -112,3 +113,14 @@ with the endpoints, not here.
 **Not in scope, deliberately:** granular per-action token scopes. §14 open
 question 1 leaves them undecided, and building a permission surface with no
 product behind it is how it ends up wrong.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified on the integrated tree: format clean, lint clean,
+typecheck clean, **165 tests across 14 files**. 39 of them are policy tests —
+27 in `can.test.ts`, 12 in `matrix.test.ts` — which is the §3.1/§3.2 matrices
+enumerated rather than sampled, as AC required.
+
+`can()` is pure and synchronous with the actor and resource passed in, so the
+matrix tests need no database. That is the property that makes §3.3 rule 2
+enforceable rather than aspirational.

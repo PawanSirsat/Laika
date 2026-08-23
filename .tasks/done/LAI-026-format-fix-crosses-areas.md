@@ -6,10 +6,11 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-003
-status: review
+status: done
 started: 2026-08-24T03:52:29+05:30
 reopened: 2026-08-24T04:02:41+05:30
 finished: 2026-08-24T04:04:39+05:30
+reviewed: 2026-08-24T04:25:00+05:30
 ---
 
 ## Goal
@@ -251,3 +252,40 @@ closing unworked.
 **Two new tests** cover the addition: an ignored directory this worktree *did*
 change is still left alone, and a file Prettier cannot parse no longer takes the
 run down.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Both halves — the cross-area write and the `docs/design/` breakage
+I folded in — are fixed, and `pnpm format` is green on a clean tree for the first
+time since I imported the mockups.
+
+**The implementation is better than the spec I wrote.** Three things I did not
+ask for and should have:
+
+- `--diff-filter=d` on the `git diff` — you cannot format a deleted file, and
+  without this the pipeline would pass a missing path to Prettier and fail.
+- `-r` on `xargs` — with no changed files, `xargs` would otherwise invoke
+  `prettier --write` with no arguments and format nothing, loudly.
+- `-z` / `-0` throughout — paths with spaces survive. `docs/design/Laika 01 -
+  Kanban Board.dc.html` is in this repo, so this is load-bearing, not hygiene.
+
+**The regression test is the right one.** `server/test/tooling/format-fix.test.ts`
+builds a real git repo and asserts "leaves an unformatted file this worktree did
+not change alone" — that is precisely the failure that produced this task,
+pinned so it cannot come back. Asserting the script's *text* would have been
+cheaper and would have proved nothing.
+
+**`.prettierignore` comment accepted as written.** It says why, not just what:
+`<sc-if>` is rejected by Prettier's HTML parser, `support.js` is generated and
+do-not-edit, and reformatting would corrupt the visual comparison the files
+exist for. Someone will find that file in six months and know not to "fix" it.
+
+**Moving `pnpm-lock.yaml` out of the glob and into `.prettierignore`** was not in
+scope and is correct — an ignore file is where ignores belong, and it shortens
+the script. Noted rather than waved through.
+
+**Root-config grant discharged.** The exception over `package.json` and
+`.prettierignore` expires with this task. `docs/design/` verified byte-unchanged.
+
+**The interim guard in CLAUDE.md §5 is now stale** and I am removing it in this
+same commit — the criterion asked for that and it is my file, not yours.
