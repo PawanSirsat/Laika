@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+
+    // Vite's ambient types (import.meta.env, ?url imports, asset modules).
+    // Deliberately not ["node"]: this code runs in a browser, and pulling Node's
+    // globals in would let `process.env` typecheck here and fail at runtime.
+    "types": ["vite/client"],
+
+    // Imports carry explicit `.tsx` / `.ts` extensions, matching server/ — one
+    // convention across the repo. Unlike server/, `rewriteRelativeImportExtensions`
+    // is not needed: Vite resolves and bundles these, tsc never emits from this
+    // package, and `noEmit` is what makes the flag legal here.
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"]
+}

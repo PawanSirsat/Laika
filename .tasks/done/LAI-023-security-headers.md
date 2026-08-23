@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-002]
 discovered-from: LAI-002
-status: review
+status: done
 started: 2026-08-24T04:45:25+05:30
 finished: 2026-08-24T04:47:50+05:30
+reviewed: 2026-08-24T04:55:00+05:30
 ---
 
 ## Goal
@@ -102,3 +103,47 @@ itself. No new dependency either way.
 
 **6. Placed immediately after `cors` in the §11.2 chain**, as the task suggested.
 The chain's named order is unchanged.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified by reading headers off a **running server built from
+`dist/`**, not by reading the middleware:
+
+```
+content-security-policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';
+  img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none';
+  base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+referrer-policy: no-referrer
+x-content-type-options: nosniff
+x-frame-options: DENY
+x-permitted-cross-domain-policies: none
+```
+
+Identical on `/api/v1/health` and on the SPA fallback, so "API and document
+alike" holds. **HSTS correctly absent over plain HTTP** — confirmed by grepping
+for it and getting zero. That criterion is the one most often "satisfied" by
+sending the header unconditionally, which would poison a developer's browser for
+`localhost`.
+
+`script-src 'self'` with no `unsafe-inline` is the criterion that mattered.
+`style-src` keeps `unsafe-inline`, which is honest — Vite emits inline styles and
+pretending otherwise would mean a policy that has to be loosened later, quietly.
+
+**Tests: 266 pass, run three times.** One run during my review reported a single
+failure that did not reproduce across three subsequent runs; I had a server bound
+to a port during that run and my harness is the likelier culprit than your code.
+Recording it rather than dismissing it — if a test starts flaking under load,
+this is the first sighting.
+
+**LAI-103 is the right call.** AC3 says the CSP is "verified against the built
+SPA (LAI-007) rather than asserted", and LAI-007 has not landed — so the criterion
+cannot be fully met yet by anyone. Filing the recheck instead of ticking it as
+though Vite's output were already known is exactly right, and it is why I am not
+treating AC3 as unmet.
+
+**Not your defect, filed as LAI-031:** `pnpm format` was red on
+`.playwright-mcp/`, an untracked tool-scratch directory at the repo root. Nothing
+to do with this task; second time a non-source directory has broken the gate
+after `docs/design/`.
+
+**Boundaries clean:** `server/` plus your own log and task files.
