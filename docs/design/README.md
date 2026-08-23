@@ -58,6 +58,30 @@ Each colour has `s` (subtle fill) and `b` (border) variants — `--accs`, `--acc
 and so on. Avatar colours `--mk --ta --sv --jd --rb` are per-person and should be
 derived from user id at runtime (SPEC §4.1 `avatar_color`), not hardcoded.
 
+### Contrast rules (D-019)
+
+Measured against every background in both themes (LAI-018). Two rules follow, and
+`server/web/test/tokens.test.ts` enforces them.
+
+**`--tx3` is darkened from the prototype.** The mockup's `#8d94a4` / `#71717d`
+reach only 2.51–4.06 against our backgrounds, and the prototype uses `--tx3`
+**exclusively at 8.5–12px** — all of which is *normal text* by WCAG, which puts
+the bar at 4.5:1, not the 3:1 large-text allowance. So the token as drawn fails
+at every size it is actually used. Shipped values are the minimal lightness shift
+that clears 4.5:1 while keeping the prototype's hue and saturation:
+
+| | prototype | shipped | worst ratio |
+| --- | --- | --- | --- |
+| light `--tx3` | `#8d94a4` | `#61697a` | 4.55 on `--tub` |
+| dark `--tx3` | `#71717d` | `#83838f` | 4.58 on `--card` |
+
+**Semantic colours are fills, borders and icons — not body text.** `--grn`,
+`--amb`, `--pur`, `--acc` and `--red` as text on `--card` are 3.63–4.52 in light:
+large-text-only, and `--acc` sits at exactly 4.50 with no margin. Dark is
+comfortable (5.42–8.74), which makes this a light-theme trap that looks fine
+while you build it. For coloured status text, use `--tx` on the semantic *subtle*
+fill (`--grns`, `--ambs`, …) rather than the semantic colour on `--card`.
+
 **Type**: `Plus Jakarta Sans` (400–800) for UI, `JetBrains Mono` (500–700) for
 keys, hosts, timestamps and counts. Both are Google Fonts in the mockup — the
 shipped app **must self-host them**, because a self-hosted board that phones

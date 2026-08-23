@@ -797,3 +797,55 @@ being a bridge and becomes the real name.
 
 **Revisit when:** never for "required". The prefix rule is revisitable only as a
 whole — a half-prefixed surface is worse than either consistent choice.
+
+---
+
+## D-019 — `--tx3` is darkened from the prototype; semantic colours are not body text
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** the design uses `--tx3` only at 8.5–12px, so the 3:1 large-text
+allowance never applies to it — and at 2.51 it fails the bar that does.
+
+**Context.** LAI-018 measured every token pair and reported two failures rather
+than adjusting them, as its criterion required. `--tx3` reaches 2.51–4.06 against
+our backgrounds; AA needs 4.5:1 for normal text and 3:1 for large text.
+
+My first instinct — recorded in LAI-034 and wrong — was to keep the token and
+constrain it to "de-emphasised metadata at size", on the reasoning that it clears
+3:1. Counting the prototype's actual usage killed that: **165 occurrences, every
+one at 8.5–12px**, 63 of them `JetBrains Mono` timestamps and counts. WCAG's
+large-text threshold is 18.66px bold or 24px regular. Nothing in the design comes
+close, so "constrain to large text" is not a constraint — it is a ban on the
+token's only role.
+
+**Decision.**
+
+1. **Darken `--tx3`**: light `#8d94a4` → `#61697a`, dark `#71717d` → `#83838f`.
+   The minimal lightness shift that clears 4.5:1 on all three backgrounds, hue
+   and saturation preserved.
+2. **Semantic colours are fills, borders and icons, not body text.** For coloured
+   status text use `--tx` on the semantic subtle fill, not the semantic colour on
+   `--card`.
+3. Both rules live in `docs/design/README.md` beside the token table and are
+   enforced by `tokens.test.ts`.
+
+**Consequences.** This deviates from the design, and the deviation is the point:
+`docs/design/README.md` already states the mockups are a target rather than
+scripture and lists artifacts not to reproduce. A token that fails AA at every
+size it is used belongs in that category, next to `postgres 16 · connected`.
+
+The real cost is **hierarchy compression**. Light `--tx2` is 5.18 on `--tub` and
+the new `--tx3` is 4.55 — the three text tiers are now visually closer than the
+prototype drew them, and the design's information hierarchy is slightly flatter
+as a result. `--tx2` cannot move up without failing its own AA, so the ramp
+cannot simply be re-spread. If that flattening reads badly on a real screen, the
+answer is a designer revisiting the whole ramp, not nudging one token back.
+
+**Timing is why this is cheap.** M7 already carries an accessibility pass. Doing
+it now costs two hex values; doing it then costs a visual regression across every
+screen built on the old ones, and every screenshot in the docs.
+
+`--acc` at exactly 4.50 on `--card` is left alone but is worth remembering: it
+passes with zero margin, so any future nudge to either token breaks it silently.
+
+**Revisit when:** a designer reworks the text ramp as a whole.
