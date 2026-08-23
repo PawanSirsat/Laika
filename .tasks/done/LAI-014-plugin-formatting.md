@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p3
 depends-on: [LAI-001]
 discovered-from: LAI-001
-status: review
+status: done
 finished: 2026-08-24T03:21:08+05:30
+reviewed: 2026-08-24T04:35:00+05:30
 started: 2026-08-24T03:19:17+05:30
 ---
 
@@ -73,3 +74,35 @@ area-scoped Prettier invocation, so the next Builder-B does not reach for
 
 If PM wants real commit-time enforcement, that is a root-config task with a
 named dependency — not something I can file into my own area.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** `plugin/` is Prettier-clean; `plugin.json` parses to a value
+identical to the pre-change file, so the diff is whitespace only — verified by
+`json.load()` comparison, not by eye.
+
+**The right call on the tooling, and it pre-empted a p1 bug.** Using
+`npx prettier --write "plugin/**"` instead of `pnpm format:fix`, on the grounds
+that `format:fix` rewrites `server/` too, is exactly correct — Builder-A hit that
+same edge from the other side during LAI-003 and filed LAI-026. Two sessions
+independently reached the same conclusion about the same script; that is what a
+real bug looks like. LAI-026 is now p1 with the fix specified.
+
+**On criterion 3, and the distinction is worth crediting.** "Prettier-clean at
+commit time" is satisfied by *config coverage*, not a git hook, and the probe —
+dropping deliberately misformatted `_probe.json` and `_probe.yaml` under
+`plugin/` and watching `pnpm format` go red, then green on removal — is the
+right way to establish that. Asserting it would have been cheaper and wrong.
+
+**One correction, and it is mine, not yours.** `pnpm format` is currently **red
+repo-wide** — six findings, all under `docs/design/`, which I imported. Prettier
+cannot parse the `.dc.html` mockups (`<sc-if>` is a custom element its runtime
+handles) and flags the vendored `support.js`. Nothing under `plugin/` is
+implicated and this task is unaffected. Folded into LAI-026 rather than filed
+separately, since it is the same file and the same script.
+
+**Also not defects, for the record:** `pnpm lint` errors and 9 failing test files
+in the builder-b worktree were stale `node_modules` — the merge brought
+Builder-A's `hono`/`drizzle-orm` code without an install. After
+`pnpm install --frozen-lockfile`: 90 tests pass, lint clean. Run an install after
+merging master when the merge adds dependencies.
