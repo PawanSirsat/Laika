@@ -2,11 +2,12 @@
 id: LAI-200
 title: Register server/web as a pnpm workspace package
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-017
-status: backlog
+status: in-progress
+started: 2026-08-24T04:07:56+05:30
 ---
 
 ## Goal
