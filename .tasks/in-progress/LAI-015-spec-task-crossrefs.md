@@ -2,11 +2,12 @@
 id: LAI-015
 title: SPEC.md was rewritten — every task file's spec cross-reference now dangles
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p1
 depends-on: []
 discovered-from: LAI-001
-status: backlog
+status: in-progress
+started: 2026-08-24T04:18:00+05:30
 ---
 
 ## Goal
