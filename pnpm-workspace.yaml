@@ -3,3 +3,9 @@ packages:
   # cli/ has no package.json yet (Builder-B, LAI-0xx). Listed now so adding one
   # is a change inside cli/ and never an edit to this root file.
   - cli
+
+# esbuild ships a prebuilt platform binary and needs its install script to run.
+# Listing it explicitly keeps pnpm 10 from blocking it (and from warning on
+# every install) without opening the door to arbitrary postinstall scripts.
+onlyBuiltDependencies:
+  - esbuild

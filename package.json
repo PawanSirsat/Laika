@@ -16,8 +16,8 @@
     "typecheck": "pnpm -r --if-present run typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --check --ignore-path .gitignore \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,yaml,yml,css,scss,html}\"",
-    "format:fix": "prettier --write --ignore-path .gitignore \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,yaml,yml,css,scss,html}\""
+    "format": "prettier --check --ignore-path .gitignore \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,yaml,yml,css,scss,html}\" \"!pnpm-lock.yaml\"",
+    "format:fix": "prettier --write --ignore-path .gitignore \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,yaml,yml,css,scss,html}\" \"!pnpm-lock.yaml\""
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
