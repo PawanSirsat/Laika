@@ -7,7 +7,11 @@ const SECRET = { SERVER_SECRET: 'a-test-secret-long-enough-to-be-accepted' };
 
 describe('readEnv', () => {
   it('defaults to port 3000 on 0.0.0.0 in production', () => {
-    expect(readEnv({ ...SECRET })).toMatchObject({ port: 3000, host: '0.0.0.0', nodeEnv: 'production' });
+    expect(readEnv({ ...SECRET })).toMatchObject({
+      port: 3000,
+      host: '0.0.0.0',
+      nodeEnv: 'production',
+    });
   });
 
   it('reads PORT, HOST and NODE_ENV', () => {
@@ -58,9 +62,9 @@ describe('database path (SPEC §11.7, LAI-003)', () => {
   });
 
   it('lets LAIKA_DB_PATH win over DATA_DIR', () => {
-    expect(readEnv({ ...SECRET, DATA_DIR: '/mnt/vol', LAIKA_DB_PATH: '/srv/custom.db' }).dbPath).toBe(
-      '/srv/custom.db',
-    );
+    expect(
+      readEnv({ ...SECRET, DATA_DIR: '/mnt/vol', LAIKA_DB_PATH: '/srv/custom.db' }).dbPath,
+    ).toBe('/srv/custom.db');
   });
 
   it('defaults to /data/laika.db in production', () => {
@@ -123,7 +127,9 @@ describe('SERVER_SECRET (SPEC §11.7, §12 — LAI-005)', () => {
 
 describe('cookie security (SPEC §6.1)', () => {
   it('marks cookies Secure for an https PUBLIC_URL', () => {
-    expect(readEnv({ ...SECRET, PUBLIC_URL: 'https://laika.example.com' }).secureCookies).toBe(true);
+    expect(readEnv({ ...SECRET, PUBLIC_URL: 'https://laika.example.com' }).secureCookies).toBe(
+      true,
+    );
   });
 
   it('leaves them insecure on localhost, where https is not available', () => {
