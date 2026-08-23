@@ -1,0 +1,42 @@
+/*
+ * Fonts, self-hosted. @fontsource ships the woff2 files inside the package, so
+ * Vite emits them as our own assets and the page makes no request to Google —
+ * a self-hosted board that phones home on every page load contradicts
+ * SPEC §13.4 (docs/design/README.md says the same).
+ *
+ * The `-Variable` entrypoints are one file per subset across the whole weight
+ * axis: Plus Jakarta Sans 200–800 covers the design's 400–800, JetBrains Mono
+ * 100–800 covers its 500–700.
+ */
+@import '@fontsource-variable/plus-jakarta-sans';
+@import '@fontsource-variable/jetbrains-mono';
+
+/*
+ * Deliberately minimal. The design tokens from docs/design/README.md — the full
+ * light and dark palettes — arrive with LAI-018, and duplicating a subset here
+ * would mean two sources of truth for a colour on the day that lands. What
+ * follows is only enough to prove the scaffold renders.
+ */
+:root {
+  --scaffold-font-ui: 'Plus Jakarta Sans Variable', system-ui, sans-serif;
+  --scaffold-font-mono: 'JetBrains Mono Variable', ui-monospace, monospace;
+
+  font-family: var(--scaffold-font-ui);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+
+  /* Both themes ship in LAI-018; until then follow the reader's preference
+     rather than picking one and hardcoding it. */
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+code,
+kbd,
+samp {
+  font-family: var(--scaffold-font-mono);
+}
