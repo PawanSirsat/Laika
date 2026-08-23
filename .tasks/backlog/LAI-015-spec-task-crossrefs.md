@@ -70,3 +70,36 @@ Substantive conflicts, not just numbering:
 This is PM's call, not a builder's. Builders should not silently pick a side.
 
 No new dependencies.
+
+---
+
+## Update — builder-a, after the spec merge (`e78d10f`)
+
+PM merged the two specs into one 711-line document with 14 sections. That fixed
+the **missing** content — §5 *Task lifecycle*, §6.3 *Conventions*, §11 *Stack and
+runtime*, §13 *Cross-cutting* and an index list all exist again. It did **not**
+fix the cross-references, and it made the failure mode worse: numbering shifted
+by one from §9 onward, so several citations now resolve to a **real but wrong**
+section instead of failing loudly.
+
+| Task cites | Meant | Now resolves to | |
+| --- | --- | --- | --- |
+| LAI-002 §10.1, §10.2, §10.4 | One process / Hono middleware / Frontend | §10 is *Webhooks and the meeting diff* | **silently wrong** |
+| LAI-003 §4.11 "Indexes that must exist" | the index list | §4.11 is now `invites`; the list moved to **§4.13** | **silently wrong** |
+| LAI-005 §10.3 | Persistence — SQLite + Drizzle | §11.3 | **silently wrong** |
+| LAI-007 §10.4 | Frontend — React + Vite | §11.4 | **silently wrong** |
+| LAI-008 §10.7 | Deployment — one image | §11.7 | **silently wrong** |
+| LAI-006 §12.2 | Errors and logging | §13.2 | **silently wrong** |
+| LAI-004 §3.1, §3.2 | matrix + `can()` contract | §3.1/§3.2 are now *org-level* and *project-level* matrices; the `can()` contract is **§3.3** | partially wrong |
+| LAI-002/LAI-006 §6.3 | Conventions | §6.3 | correct |
+| LAI-011 §5 | Task lifecycle | §5 | correct |
+
+A citation that lands on the wrong real section is more dangerous than one that
+lands on nothing — a builder following LAI-003 to "§4.11" now reads the `invites`
+table and has no signal that they are in the wrong place.
+
+The substantive field-name conflicts listed above still need checking against the
+merged spec; this update only re-checked the numbering.
+
+Raising the priority case: this is now a **p1** blocker for LAI-002 and LAI-003,
+which are the next two tasks to be claimed.
