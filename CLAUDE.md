@@ -42,6 +42,11 @@ log.
 
 Work **only** from task files. No task file, no work.
 
+Two narrow exceptions, both PM-only: repo maintenance the owner asks for
+directly (workflow, docs, git config) and this bootstrap. Those carry `[ops]` or
+`[bootstrap]` in the commit's id slot and are recorded in `logs/pm-*.md` instead
+of a task file. Builders have no equivalent exception.
+
 **Claiming (the move is the lock).**
 1. Pick ONE file from `.tasks/backlog/` whose `area` is yours, whose
    `assignee` is `unclaimed` or you, and whose `depends-on` ids are all present
@@ -95,6 +100,45 @@ frontmatter, and mention it in your log entry.
   their own task file). Never `git add -A` from the repo root — stage explicit
   paths.
 - Never amend, rebase-edit, revert, or force-push another session's commits.
+
+### 4.1 GitHub account — personal only
+
+This repo belongs to **`PawanSirsat`** (github.com/PawanSirsat/Laika) — the
+owner's **personal** account. A second, work account (`PawanSirsat21`) exists on
+this machine and is the **global** git default. Every commit here must be
+attributed to the personal one.
+
+The repo already carries local config that overrides the global default. Do not
+change it, and do not commit with `--global` identity:
+
+```
+user.name   Pawan Sirsat
+user.email  48860105+PawanSirsat@users.noreply.github.com
+origin      https://PawanSirsat@github.com/PawanSirsat/Laika.git
+```
+
+**Check before your first push of a session** — this costs two seconds and
+prevents commits landing under the wrong account:
+
+```bash
+git config --local user.email     # must end in +PawanSirsat@users.noreply.github.com
+git log -1 --format='%an <%ae>'   # must match
+gh auth status                    # must show account PawanSirsat
+```
+
+If the email shows `PawanSirsat21`, stop. Fix it and re-author before pushing:
+
+```bash
+git config --local user.email "48860105+PawanSirsat@users.noreply.github.com"
+git commit --amend --no-edit --reset-author   # unpushed commits only
+```
+
+Auth is GitHub CLI as the credential helper, logged in as `PawanSirsat`. If a
+push asks for a password, or `gh auth status` shows the wrong account, do **not**
+paste a token or switch the global config — tell the owner. If both accounts are
+ever added to `gh`, `gh auth switch --user PawanSirsat` selects the right one.
+
+Never push to any remote other than `origin`, and never add a second remote.
 
 ## 5. Code rules
 

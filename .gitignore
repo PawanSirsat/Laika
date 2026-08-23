@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+server/public/
+
+# sqlite
+*.db
+*.db-wal
+*.db-shm
+data/
+
+# env
+.env*
+
+# test output
+coverage/
+*.lcov
+
+# tool caches
+.eslintcache
+.prettiercache
+*.tsbuildinfo
+
+# os / editor noise
+.DS_Store

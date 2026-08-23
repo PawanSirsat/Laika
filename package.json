@@ -1,0 +1,32 @@
+{
+  "name": "laika",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Self-hosted project board where humans and Claude Code agents share one source of truth.",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@10.32.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel --if-present run dev",
+    "build": "pnpm -r --if-present run build",
+    "test": "pnpm -r --if-present run test",
+    "typecheck": "pnpm -r --if-present run typecheck",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --check --ignore-path .gitignore \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,yaml,yml,css,scss,html}\"",
+    "format:fix": "prettier --write --ignore-path .gitignore \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,yaml,yml,css,scss,html}\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "eslint": "^10.9.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "tsx": "^4.23.12",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.11"
+  }
+}

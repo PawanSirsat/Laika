@@ -1,0 +1,21 @@
+{
+  "name": "@laika/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The single Node process that is Laika: API, MCP, SSE, cron, and the built SPA.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "tsx": "^4.23.12",
+    "typescript": "~6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

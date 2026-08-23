@@ -1,0 +1,12 @@
+{
+  "_comment": "LAIKA_URL and LAIKA_TOKEN are read from the environment at load time. Both values below are placeholders that expand at runtime - never replace them with a literal URL or token, and never commit a real token to this file. See plugin/README.md for how to set them.",
+  "mcpServers": {
+    "laika": {
+      "type": "http",
+      "url": "${LAIKA_URL}/mcp",
+      "headers": {
+        "Authorization": "Bearer ${LAIKA_TOKEN}"
+      }
+    }
+  }
+}

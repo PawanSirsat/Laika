@@ -2,11 +2,12 @@
 id: LAI-001
 title: Repo tooling — pnpm workspaces, TypeScript strict, ESLint, Prettier, Vitest
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T01:42:36+05:30
 ---
 
 ## Goal

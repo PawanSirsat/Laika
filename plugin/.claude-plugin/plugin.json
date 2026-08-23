@@ -1,0 +1,21 @@
+{
+  "name": "laika",
+  "version": "0.1.0",
+  "description": "Connects a Claude Code session to a self-hosted Laika board so an agent reads ready tasks, claims work, and hands it back for review under the same permissions a human has.",
+  "author": {
+    "name": "Laika",
+    "url": "https://github.com/PawanSirsat/Laika"
+  },
+  "homepage": "https://github.com/PawanSirsat/Laika",
+  "repository": "https://github.com/PawanSirsat/Laika",
+  "keywords": [
+    "project-management",
+    "task-tracking",
+    "mcp",
+    "self-hosted",
+    "agents"
+  ],
+  "commands": "./commands",
+  "hooks": "./hooks/hooks.json",
+  "mcpServers": "./.mcp.json"
+}

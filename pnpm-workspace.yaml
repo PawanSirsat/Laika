@@ -1,0 +1,5 @@
+packages:
+  - server
+  # cli/ has no package.json yet (Builder-B, LAI-0xx). Listed now so adding one
+  # is a change inside cli/ and never an edit to this root file.
+  - cli
