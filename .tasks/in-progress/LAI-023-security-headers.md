@@ -2,11 +2,12 @@
 id: LAI-023
 title: Security headers — HSTS, nosniff, CSP, frame options
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-002]
 discovered-from: LAI-002
-status: backlog
+status: in-progress
+started: 2026-08-24T04:45:25+05:30
 ---
 
 ## Goal
