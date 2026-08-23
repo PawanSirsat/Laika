@@ -51,9 +51,53 @@ read it once at startup, extract the `<style>` contents, and build the directive
 If the literal is used instead, a test must assert the hash matches the current
 file, or this becomes a latent breakage.
 
+## Correction from LAI-018 — read before starting
+
+The recommendation above is still right, but it is **not the whole change**, and
+acting on it as written could break the UI.
+
+`style-src` covers two different things: inline `<style>` **elements** and inline
+`style="…"` **attributes**. Measured in Chromium while building LAI-018, with a
+deliberately-wrong hash as the control so the policy was provably enforced:
+
+| Under `style-src 'self'` | Result |
+| --- | --- |
+| inline `<style>` element (fallback.html) | **blocked** — body fell back to Times on a transparent background |
+| inline `style=""` attributes (React `style={{…}}`) | **applied** — computed values matched the props |
+
+So Chromium enforces the element case and not the attribute case. **Do not rely
+on that.** CSP Level 3 splits these into `style-src-elem` and `style-src-attr`,
+both falling back to `style-src`, and the attribute behaviour differs between
+engines and versions. One browser's leniency is not a policy.
+
+This matters because the UI cannot avoid inline style attributes. Avatar colours
+are derived from the user id at runtime (SPEC §4.1, LAI-018), so their values do
+not exist until render — there is no stylesheet to put them in. The token
+reference page is the same shape.
+
+**Revised recommendation:** split the directive rather than tightening it whole.
+
+```
+style-src-elem 'self' 'sha256-SvAMs7ooQNphe1Tc5XfBY/P1X9abH8eLukft4pFWmDE='
+style-src-attr 'unsafe-inline'
+```
+
+That removes the dangerous half — arbitrary injected `<style>` blocks — while
+keeping the half the product structurally needs. Keep a plain `style-src` too,
+for engines that do not implement the split.
+
+If PM would rather have `style-src-attr 'self'` as well, that is a real UI change
+(every runtime colour moves to a generated stylesheet or a CSS custom property
+set from a `<style>` element) and it belongs in an `area: web` task, not this one.
+
 ## Acceptance criteria
 
-- [ ] `style-src` no longer contains `'unsafe-inline'`.
+- [ ] Inline `<style>` **elements** no longer rely on `'unsafe-inline'` — hashed,
+      or the fallback's block moved out of line.
+- [ ] Inline `style=""` **attributes** still work, verified in more than one
+      browser engine. If the chosen policy blocks them, avatar colours and the
+      token reference page break, and that is a UI change requiring its own
+      `area: web` task.
 - [ ] The fallback document still renders **styled** — asserted on a computed
       style the stylesheet sets, not on the `<style>` tag being present in the
       DOM. A dropped block leaves the tag and removes the effect.
