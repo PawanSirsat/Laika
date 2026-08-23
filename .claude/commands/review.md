@@ -8,11 +8,13 @@ For **each** file in `.tasks/review/`, oldest first:
 
 **1. Read the task.** Goal, every acceptance criterion, notes, `depends-on`.
 
-**2. Read the actual diff**, not the summary:
+**2. Read the actual diff**, not the summary. The work is on the builder's
+branch, not on `master`:
 
 ```bash
-git log --oneline --all --grep="<TASK-ID>"
-git diff <first-commit>^..<last-commit> -- <the area that task owns>
+git log --all --oneline --grep="<TASK-ID>"
+git log master..builder-a --oneline          # or builder-b
+git diff master...builder-a -- <the area that task owns>
 ```
 
 Also read the builder's log entry for that task in `logs/<session>-*.md`.
@@ -32,10 +34,15 @@ evidence. For each one, find the code that satisfies it. Where a criterion says
 
 **5. Decide.**
 
-*Accept* — every criterion is met and the boundaries hold:
+*Accept* — every criterion is met and the boundaries hold. **PM is the sole
+integrator** (CLAUDE.md §4.2): merge the builder's branch, then close the task.
 ```bash
+git merge --no-ff builder-a        # or builder-b — whichever owns the task
 git mv .tasks/review/<file> .tasks/done/
 ```
+If the merge conflicts, resolve it in PM's favour for `docs/`, `.tasks/`,
+`.claude/` and `CLAUDE.md`, and in the builder's favour inside their own area.
+A conflict outside those bounds means a boundary was crossed — send it back.
 Set `status: done` and `reviewed: <ISO-8601>` in the frontmatter. Append a short
 `## Review` section noting what you verified. Commit:
 `chore(tasks): accept <TASK-ID> [<TASK-ID>]`

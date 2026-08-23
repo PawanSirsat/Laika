@@ -7,12 +7,25 @@ changes nothing.
 
 **Gather**
 
-1. All files in `.tasks/done/`, `.tasks/review/`, `.tasks/in-progress/`, and
-   `.tasks/backlog/` — read the frontmatter of each (`id`, `title`, `area`,
-   `assignee`, `priority`, `depends-on`, `discovered-from`, `status`, timestamps).
-2. The most recent file in `logs/` for each session, plus anything since the last
-   standup entry in `logs/pm-*.md`.
-3. `git log --oneline -30` for commits not yet reflected in the task files.
+1. **Read across all branches, not the working tree.** Sessions work in separate
+   worktrees on `builder-a` / `builder-b` (CLAUDE.md §4.2), so `master`'s
+   `.tasks/` shows only the last integration — in-flight work is invisible there.
+
+   ```bash
+   git log --all --name-status --oneline -50 -- .tasks/
+   for b in master builder-a builder-b; do
+     echo "== $b =="; git ls-tree -r --name-only $b -- .tasks/in-progress .tasks/review
+   done
+   ```
+
+   Then read the frontmatter of each task file from the branch that has the
+   newest version (`git show <branch>:<path>`): `id`, `title`, `area`,
+   `assignee`, `priority`, `depends-on`, `discovered-from`, `status`, timestamps.
+2. Logs from every branch — `git log --all --name-only -- logs/` then
+   `git show <branch>:logs/<file>` — plus anything since the last standup entry
+   in `logs/pm-*.md`.
+3. `git log --all --oneline -30` and `git log master..builder-a`,
+   `git log master..builder-b` for work committed but not yet integrated.
 
 **Output exactly these five sections**
 
@@ -31,6 +44,10 @@ stuck.
 
 **Next up** — the highest-priority *ready* tasks (unclaimed, dependencies all
 done), split by area, with the specific next action for Builder-A and Builder-B.
+
+**Unintegrated** — commits on `builder-a` / `builder-b` that are not yet in
+`master` (`git log master..<branch> --oneline`). This is PM's merge queue; a
+builder branch drifting far ahead of `master` is a review backlog, not progress.
 
 **Then**: note any drift you spotted — commits with no task id, work in an area
 its author does not own, criteria ticked with no matching commit, tasks in
