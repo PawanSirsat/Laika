@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-003
-status: in-progress
+status: review
 started: 2026-08-24T03:52:29+05:30
 reopened: 2026-08-24T04:02:41+05:30
+finished: 2026-08-24T04:04:39+05:30
 ---
 
 ## Goal
@@ -143,11 +144,11 @@ Nothing else. If ESLint also needs an ignore for `docs/design/support.js`, add
 
 ### Extra acceptance criteria
 
-- [ ] `.prettierignore` excludes `docs/design/` entirely, with a one-line comment
+- [x] `.prettierignore` excludes `docs/design/` entirely, with a one-line comment
       saying why (imported mockups + vendored runtime, never ours to format).
-- [ ] `pnpm format` is **green on a clean `master`** — the whole point of keeping
+- [x] `pnpm format` is **green on a clean `master`** — the whole point of keeping
       it repo-wide (LAI-001 review) is that red means something.
-- [ ] `docs/design/` files are unchanged by the fix. If Prettier has already
+- [x] `docs/design/` files are unchanged by the fix. If Prettier has already
       rewritten one, restore it from git — those files are a visual reference and
       a reformat corrupts the comparison they exist for.
 
@@ -208,3 +209,45 @@ finding: one is an `[error]` that breaks the exit code, the other an ordinary
 **Scope used.** Root `package.json` and `CLAUDE.md` §5 only, both under the grant
 this task carries. I did not add a root `scripts/` file — the pipeline fits in
 `package.json`, and a new root path was not named.
+
+---
+
+## Notes at review, round 2 — builder-a (`docs/design/` criteria)
+
+**`pnpm format` is green on a clean tree.** All 104 tests pass, lint and
+typecheck clean, and `docs/design/` is byte-identical to `master` — verified with
+`git diff master -- docs/design/`, empty. Nothing there was ever rewritten;
+Prettier only ever failed to *parse* it.
+
+**One change beyond the grant's letter, and it is load-bearing.** Adding
+`.prettierignore` alone does nothing here: **Prettier replaces its default ignore
+paths when `--ignore-path` is given**, and `format` already passed
+`--ignore-path .gitignore`, so the new file was silently inert. Both scripts now
+pass `--ignore-path .gitignore --ignore-path .prettierignore`.
+
+That edits the `format` script, which AC1 says is "unchanged". It stays
+whole-repo and check-only — the property AC1 is protecting — and the added
+criterion "`pnpm format` is green" is unreachable without it. Flagging rather
+than quietly reinterpreting AC1.
+
+**Also folded in, while I was there:** `pnpm-lock.yaml` moved out of the two
+scripts and into `.prettierignore`. It was previously excluded twice, differently
+— a `"!pnpm-lock.yaml"` glob in `format` and a `:(exclude)` pathspec in
+`format:fix` — because Prettier errors on an explicitly-listed file that a
+*negative glob* would ignore, while an *ignore-file* exclusion skips it silently.
+One mechanism in one place is less to get wrong. Covered by the existing lockfile
+test, which now runs against the fixture's copy of the real `.prettierignore`.
+
+**ESLint did not need a matching ignore** — `eslint.config.js` already ignores
+`**/*.d.ts`, `dist`, `coverage` and `node_modules`, and its type-aware config
+only matches `**/*.ts`, so `docs/design/*.js` was never linted. I did not add
+`eslint.config.js` to the grant, per the instruction not to assume it.
+
+**LAI-100 was mine and is now redundant.** I filed it at 04:01 for exactly this
+`docs/design/` breakage; PM's amendment landed at 04:02. Marked superseded in
+place rather than deleted, so the `discovered-from` trail survives — it needs
+closing unworked.
+
+**Two new tests** cover the addition: an ignored directory this worktree *did*
+change is still left alone, and a file Prettier cannot parse no longer takes the
+run down.
