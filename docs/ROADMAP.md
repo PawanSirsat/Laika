@@ -35,9 +35,27 @@ see an empty authenticated shell. Tasks: **LAI-001 … LAI-009**.
 - First-run wizard: org → Owner → first project → first task
 - Invites: send, accept, roles; member management screen
 - SSE stream so two open tabs stay in sync
+- **Sprints**: `sprints` table, `tasks.sprint_id`, CRUD, one active per project,
+  no overlaps; Sprints screen (D-013 — story points remain excluded)
 
 **Exit:** two humans on two machines run the same board and never refresh.
 Tasks: **LAI-010, LAI-011** seeded; remainder groomed at M1 review.
+
+---
+
+## M2.5 — Timeline
+**Goal: the Gantt-style view, for the cost of a rendering pass.**
+
+- `GET /projects/:slug/timeline` — sprints with their ranges and their tasks
+- Timeline screen: one bar per sprint, tasks as contents, unscheduled tray
+- Drag a sprint edge to reschedule (`PATCH /sprints/:id`), rejected on overlap
+
+**Exit:** a manager reads the quarter off one screen and reschedules a sprint by
+dragging it.
+
+Numbered 2.5 rather than inserted as a new M3 so that M3–M7 keep their numbers —
+`FEATURES.md` and the task files cite them (D-011). Depends entirely on M2's
+sprints; **tasks never get their own dates** (D-014).
 
 ---
 
@@ -89,6 +107,8 @@ Builder-B can build it during M1).
 - `POST /webhooks/transcript`: transcript → proposed diff, stored pending
 - Human review screen: accept/reject per line, `can()`-checked on apply
 - `POST /webhooks/github`: HMAC verification, push/PR/comment handling
+- **Laika Assistant** chat panel — scope decided first (SPEC §14, q9: read-only
+  vs can-mutate, provider strategy, context scope), then specified, then built
 
 **Exit:** paste a standup transcript, review the proposal, apply it, and the
 board reflects the meeting.
@@ -110,6 +130,11 @@ under ten minutes.
 ---
 
 ## Sequencing notes
+
+**Nothing is cut** (D-015). Every feature in `FEATURES.md` has a milestone; the
+answer to "are we building X" is a date, never "no". The guard against that
+becoming a wish list is that each milestone has an exit test — work that does not
+serve the current exit test waits, however scheduled it is.
 
 - M1 is the only milestone where Builder-A and Builder-B are near-independent —
   Builder-B has LAI-008 (docker) and LAI-012 (plugin skeleton) to work while

@@ -15,6 +15,14 @@ because the original design conversation happened somewhere that will not
 survive, and a rule whose reasoning is lost gets re-litigated or quietly
 abandoned the first time it is inconvenient.
 
+Cross-references into `docs/SPEC.md` are also corrected in place when the spec
+renumbers — D-011 makes that the renumberer's obligation, and it applies to this
+file too. Those are pointer fixes, not decision changes: D-002's `§10.6` became
+`§11.6` and D-005's `§12.4` became `§13.4` on 2026-08-24, both pointing at the
+same text they always meant. Where a *field name* changed rather than a section
+number, the correction is written as a new paragraph instead — see D-011's note
+on D-004's `orgs.signup_mode`.
+
 ---
 
 ## D-001 — SQLite only for v1
@@ -65,7 +73,7 @@ for someone self-hosting on a $5 VPS.
 One writable volume at `/data`. No queue, no cache server, no worker.
 
 **Consequences.** `docker run` with one volume is the whole install, and backup
-is one directory. Cron runs in-process (SPEC §10.6), so a restart briefly stops
+is one directory. Cron runs in-process (SPEC §11.6), so a restart briefly stops
 scheduled work — jobs are idempotent, so that is survivable. Scaling is vertical
 only, and a crash takes everything down together; that is the correct trade for
 a tool whose users are a team, not a platform. Long or CPU-heavy work must not
@@ -161,7 +169,7 @@ there in the agent session, and it would make the dashboard much smarter.
 **Decision.** A heartbeat carries `{ repo, branch, timestamp }` and nothing
 else. The task link is *derived* from the branch name (`lai-42-slug`), not
 reported. No file paths, no diffs, no prompts, no transcript content, ever.
-Retention is 30 days, pruned by cron. Paired with SPEC §12.4: no telemetry of
+Retention is 30 days, pruned by cron. Paired with SPEC §13.4: no telemetry of
 any kind leaves the deployment.
 
 **Consequences.** We can answer "who is active, on which task, since when" and

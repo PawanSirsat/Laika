@@ -558,7 +558,7 @@ anything that changes per-session.
   document is *fed* by the meeting path rather than maintained by discipline.
 - Size is bounded and the bound is enforced at write time with a clear error;
   a context document that silently blows an agent's context window is worse than
-  no document. **Exact limit is an open question (§14.7).**
+  no document. **Exact limit is an open question (§14, question 7).**
 
 ---
 
@@ -768,8 +768,10 @@ agent-fed and will look empty until agents are actually running.
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id`, `GET /projects/:slug/tasks?sprint=` | — | ✅ complete *(D-014 — sprint-based)* |
 | **Laika Assistant** | 6 | *undefined until its three questions are answered* | — | ⏸ **scheduled, not specified** |
 
-**All eleven screens are in.** Nothing is cut — the set is sequenced, not
-trimmed (D-015). Nine are specified now; Timeline arrives at Phase 2.5 on the
+**All eleven designed screens are in**, plus the Assistant as a twelfth row.
+Nothing is cut — the set is sequenced, not trimmed (D-015). The eleven are
+designed and specified-or-scheduled; the Assistant is scheduled with **no design
+yet**, which is why it carries no endpoints. Nine are specified now; Timeline arrives at Phase 2.5 on the
 back of sprints, and the Assistant at Phase 6 once its scope is decided.
 
 **Laika Assistant is scheduled but deliberately unspecified.** Three questions
