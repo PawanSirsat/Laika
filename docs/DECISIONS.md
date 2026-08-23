@@ -633,3 +633,45 @@ the gate that stops a screen being built ahead of its endpoints is the only thin
 keeping "everything is in" from meaning "anything may start".
 
 **Revisit when:** a phase cannot absorb its own scope and something has to give.
+
+---
+
+## D-016 — `server/web/` belongs to Builder-B; the split is API versus UI
+**Date:** 2026-08-24 · **Status:** accepted · **Amends** the ownership table in CLAUDE.md §1
+
+**In one line:** the frontend is a separate job from the API, so it gets a
+separate owner — otherwise the UI can only ever be built after the API, by the
+same person, one thing at a time.
+
+**Context.** SPEC §11.4 puts the SPA source at `server/web/`, inside `server/`,
+which CLAUDE.md §1 gave entirely to Builder-A. That was fine while `server/` was
+only an API. It stops being fine the moment there is a designed thirteen-screen
+UI: every screen would queue behind Builder-A, who is also building the database,
+the policy module, the MCP endpoint and the webhooks.
+
+Meanwhile Builder-B — owning `plugin/`, `cli/` and `docker/` — has been blocked
+for most of Phase 1 waiting on LAI-001 and LAI-002, and logged exactly that.
+
+**Decision.** `server/web/` is **Builder-B's**. The rest of `server/` stays
+Builder-A's. The boundary is **API versus UI**, not directory depth: Builder-B
+never touches `server/src/`, Builder-A never touches `server/web/`.
+`server/public/` is build output, gitignored, and owned by nobody (LAI-016).
+
+**Consequences.** The two builders can work the same phase in parallel — API and
+UI — which is what makes the shell tasks (LAI-017…LAI-021) startable now instead
+of after Phase 1. The cost is that one directory tree has two owners, so the
+merge surface between the branches is larger than "different top-level folders",
+and a task touching both sides of the line has to be split into two tasks.
+
+It also puts real weight on D-012: with a dedicated UI builder who is never
+blocked on their own area, the temptation to start a screen before its endpoints
+exist goes up, not down. The `depends-on` gate is the only thing holding that
+line.
+
+**Rejected alternative:** moving the frontend to a top-level `web/`. Cleaner
+ownership, but it contradicts SPEC §11.4, breaks LAI-007's paths, and changes the
+Docker build context for LAI-008 — three tasks disturbed to avoid one sentence in
+an ownership table.
+
+**Revisit when:** the frontend outgrows one builder, or the merge surface between
+`server/src/` and `server/web/` starts producing conflicts.

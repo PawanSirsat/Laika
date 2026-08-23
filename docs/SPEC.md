@@ -175,6 +175,7 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `id`, `name` | |
 | `owner_user_id` | |
 | `invite_only` | integer, default **1** (D-004) |
+| `presence_enabled` | integer, default **1** — org-wide off switch for heartbeats. When 0, `POST /heartbeats` returns `202` and discards, and Presence/Capacity show a disabled state rather than an empty one. D-005 makes the product's privacy claim; this makes it enforceable by the org, not just promised by us. |
 | `ai_provider` | `anthropic` \| `openai_compatible` \| `null` |
 | `ai_base_url` | for Ollama / vLLM |
 | `ai_api_key_enc` | AES-256-GCM, key derived from `SERVER_SECRET` (§12) |
@@ -193,6 +194,7 @@ future multi-org becomes a migration rather than a rewrite.
 | `slug` | unique, lowercase |
 | `prefix` | short uppercase display key (`LAI`), unique per org |
 | `description` | |
+| `repo` | nullable — `owner/name` of the git repository this project tracks. Maps an incoming heartbeat's `repo` (§9.1) to a project; without it presence cannot be attributed. |
 | `visibility` | `public` (org members may self-join) \| `private` |
 | `context_md` | text — the shared project brief served to agents (§7.1) |
 | `archived_at` | nullable |
@@ -743,41 +745,89 @@ bulk edit. Columns are the status enum; when that is not enough, use the list.
 
 #### 11.4.2 UI screens → API coverage
 
-Every screen and the endpoints it cannot function without. **The build rule:**
-a UI task carries `depends-on` for the API task(s) that define its endpoints, so
-no screen is built against an API that does not exist yet. A screen whose
-endpoints are undefined is **blocked**, not "start it and stub the data" — a
-stubbed screen is a screen that gets shipped with the stub still in it.
+Every screen and the endpoints it cannot function without, checked against
+`docs/design/Laika Prototype.dc.html` (the canonical mockup — see
+`docs/design/README.md`).
 
-MCP tools appear where a tool *writes* the data the screen reads. Screens do not
-call MCP; agents do. The column exists so it is obvious which surfaces are
-agent-fed and will look empty until agents are actually running.
+**The build rule:** a UI task carries `depends-on` for the API task(s) that
+define its endpoints, so no screen is built against an API that does not exist
+yet. A screen whose endpoints are undefined is **blocked**, not "start it and
+stub the data" — a stubbed screen is a screen that ships with the stub still in
+it (D-012).
+
+MCP tools appear where a tool *writes* the data the screen reads. Screens never
+call MCP; agents do.
 
 | Screen | Phase | REST endpoints it needs | MCP tools feeding it | Coverage |
 | --- | --- | --- | --- | --- |
-| **First boot** | 1 | `GET /setup/status`, `POST /setup`, `GET /health` | — | ✅ complete |
-| **Login / invite** | 1–2 | `POST /auth/*`, **`GET /invites/:token`**, `POST /invites/accept`, `GET /me` | — | ✅ complete *(`GET /invites/:token` added by this pass)* |
-| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `GET/POST/PATCH/DELETE /projects/:slug/members`, `POST /projects/:slug/join`, `GET/PATCH /projects/:slug/context` | `get_project_context` reads `context_md` | ✅ complete |
-| **Board** (kanban + list) | 2 | `GET/POST /projects/:slug/tasks`, `GET/PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `POST/DELETE /tasks/:id/dependencies`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `GET /projects/:slug/members`, `GET /events` | `create_task`, `start_working`, `update_status`, `add_comment`, `finish_task` | ✅ complete |
-| **Tokens** | 3 | `GET/POST/DELETE /tokens`, **`GET /users/:id/tokens`**, **`DELETE /users/:id/tokens/:tokenId`** | — | ✅ complete *(admin routes added by this pass)* |
-| **Org** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ complete |
-| **Capacity** | 5 | `GET /capacity`, `GET /presence`, `GET /projects/:slug/tasks?status=in_progress`, **`GET /unlisted`**, **`POST /unlisted/:id/promote`**, **`DELETE /unlisted/:id`**, `GET /events` | `log_unlisted_work` writes `unlisted_work` (§4.14) | ✅ complete *(unlisted routes + table added by this pass)* |
-| **Dashboard** | 5 | **`GET /projects/:slug/metrics`**, `GET /activity`, `GET /projects/:slug/activity` | all tools, indirectly — every write lands in `activity` | ✅ complete *(metrics endpoint added by this pass)* |
-| **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, **`GET /meeting-reviews/:id`**, `POST /meeting-reviews/:id/apply`, **`POST /meeting-reviews/:id/discard`**, `POST /webhooks/transcript` | — (LLM-fed, §10.2) | ✅ complete *(detail + discard added by this pass)* |
-| **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | `create_task` (tasks land sprint-less by default) | ✅ complete *(D-013)* |
-| **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id`, `GET /projects/:slug/tasks?sprint=` | — | ✅ complete *(D-014 — sprint-based)* |
-| **Laika Assistant** | 6 | *undefined until its three questions are answered* | — | ⏸ **scheduled, not specified** |
+| **First boot** | 1 | `GET /setup/status`, `POST /setup`, `GET /health` | — | ✅ |
+| **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
+| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
+| **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity` | `add_comment`, `get_task_context` | ✅ |
+| **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | — | ✅ D-013 |
+| **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
+| **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
+| **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
+| **Capacity** | 5 | `GET /capacity`, `GET /presence`, `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /events` | `log_unlisted_work` | ✅ |
+| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /activity`, `GET /projects/:slug/activity` | all, indirectly via `activity` | ✅ |
+| **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
+| **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
+| **Calendar** | ? | *none defined* | — | ⛔ **no decision — §14, q10** |
 
-**All eleven designed screens are in**, plus the Assistant as a twelfth row.
-Nothing is cut — the set is sequenced, not trimmed (D-015). The eleven are
-designed and specified-or-scheduled; the Assistant is scheduled with **no design
-yet**, which is why it carries no endpoints. Nine are specified now; Timeline arrives at Phase 2.5 on the
-back of sprints, and the Assistant at Phase 6 once its scope is decided.
+**Thirteen surfaces, not ten.** The prototype has thirteen render branches. Two
+were never in any plan: **Task detail** (a slide-over reached from the Board, so
+it is part of the Board's work, not a separate route) and **Calendar** (a real
+nav item with no decision, no endpoints, and no entry in `FEATURES.md`). Calendar
+is blocked until §14 q10 is answered.
 
-**Laika Assistant is scheduled but deliberately unspecified.** Three questions
-must be answered before it gets endpoints, and answering them early would be
-guessing (§14, question 9). It appears in the table so nobody re-proposes it as
-new, with no endpoint column so nobody starts it.
+#### 11.4.2.1 Must-have elements per screen
+
+The minimum for a screen to be considered built. Anything beyond this is welcome;
+anything missing sends the task back.
+
+- **First boot** — owner name/email/password with confirm and strength meter; org
+  name; optional first project; system status showing **SQLite, migrations
+  applied, SMTP state** (never Postgres — see `docs/design/README.md`); presence
+  opt-in toggle; single-use guarantee visible.
+- **Login & invite** — sign-in form with instance host always visible; invite
+  accept showing inviter, org, **pre-assigned role and what it permits**, and
+  expiry; wrong-credentials error with attempts remaining; invite-expired state;
+  instance-unreachable state. No "Forgot?", no magic link (§14, q11).
+- **Projects** — project cards with name, repo, visibility badge, task counts,
+  progress bar by status, member avatars, live-agent indicator, blocked count,
+  last activity; Open board vs Join for public projects; empty state; first-run
+  state.
+- **Board** — five columns (`backlog`, `todo`, `in_progress`, `review`, `done`)
+  with counts; cards showing key, title, assignee, priority, **blocked / ready /
+  stale markers**; drag between columns issuing a real status call with snap-back
+  on rejection; filters by assignee/priority/ready; live update over SSE;
+  agent-authored badge; empty column states.
+- **Task detail** — description, dependencies with **BLOCKED BY** relations and
+  their statuses, comments distinguishing human from agent, activity trail,
+  `created_via` provenance, claim/status controls, `discovered-from` link.
+- **Sprints** — sprint list with dates, goal and status; active-sprint emphasis;
+  task assignment in and out; counts by status; the one-active and no-overlap
+  rules surfaced as errors, not silent failures.
+- **Timeline** — one bar per sprint across a time axis, today marked, past
+  dimmed; task counts per bar; unscheduled tray; drag an edge to reschedule with
+  overlap rejection. **No per-task bars** (D-014).
+- **Tokens** — create with name and scope; **value shown exactly once** with a
+  copy affordance and an explicit "you will not see this again"; list with
+  prefix, scope, last used, expiry; revoke with confirmation; admin view of
+  another user's tokens.
+- **Organisation** — org name; AI provider config showing `configured / provider
+  / key_last4` and **never the key**; invites with role at invite time; member
+  list with role controls; danger zone gated to Owner.
+- **Capacity** — who is active now with repo, branch and resolved task; agent
+  sessions distinct from humans; in-progress work across projects; last seen;
+  **unlisted work with one-click promote to a task**; disabled state when
+  `presence_enabled = 0`.
+- **Dashboard** — progress by status; activity feed with an **agent/human
+  filter**; stale warnings; throughput and cycle time; read-only for Viewer.
+- **Meeting review** — transcript on one side, proposals on the other tagged
+  **NEW / CHANGED / DEAD / DECISION**; each proposal shows its transcript quote;
+  per-line accept and reject; apply acts only on accepted items; discard the set.
 
 #### 11.4.3 Timeline view
 
@@ -929,6 +979,18 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
    3. **Context scope.** What does it see — one project, everything the actor may
       read, the whole activity log? This determines both the permission model and
       whether the context window is workable at all.
+
+10. **Is there a Calendar screen?** The prototype's sidebar has
+    `WORK → Calendar` with a real render branch, and nothing else in the plan
+    mentions it — no decision, no endpoints, not in `FEATURES.md`. If it is a
+    date-grid over sprints it is nearly free like the Timeline (D-014); if it
+    implies per-task dates it reopens D-014. **Do not build it until this is
+    answered.**
+11. **Password reset and magic-link sign-in.** The login mockup shows "Forgot?"
+    and "Email me a sign-in link". Neither exists in §6.1 or §6.4, and both need
+    working SMTP. Either specify them (endpoints, token lifetimes, SMTP as a hard
+    dependency) or cut them from the design. Currently listed as artifacts in
+    `docs/design/README.md` and **not** to be built.
 
 *(Questions about a Timeline date model and the sprints non-goal were resolved on
 2026-08-24 — see D-013 and D-014.)*
