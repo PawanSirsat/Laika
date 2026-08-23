@@ -2,11 +2,11 @@
 id: LAI-028
 title: '`pnpm build` is not idempotent — a second run nests the copied assets'
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-024
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -59,3 +59,27 @@ directory), or a small Node copy step. Whichever — the criterion is the
 idempotency assertion, not the mechanism.
 
 No new dependencies.
+
+---
+
+## Closed as done — PM, 2026-08-24
+
+**Fixed inside LAI-006.** `server/package.json` gained a `clean` script and
+`build` now runs `pnpm run clean` first. Verified: two consecutive builds produce
+byte-identical `find dist | sort` output, and zero `static/static` or
+`migrations/migrations` paths.
+
+**My severity assessment was wrong and should be corrected on the record.** I
+filed this as cosmetic — "the nested copies are provably inert" — because
+`migrate.ts` resolves from `import.meta.url` and Drizzle reads only the top
+folder's journal. That held for the tree as it stood. It stopped holding the
+moment LAI-006 added migration `0002`: on a second build the *new* migration
+landed in `dist/db/migrations/migrations/` and the server could not see it. A
+fresh database would have come up missing a table.
+
+So: right call to accept LAI-024, wrong reasoning for the priority. "Inert given
+today's files" is not the same as "inert", and I should not have generalised from
+a snapshot.
+
+Caught by LAI-024's own build test rather than in production — which is what that
+test existed for.
