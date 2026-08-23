@@ -16,6 +16,11 @@ export interface Env {
   readonly host: string;
   readonly nodeEnv: 'development' | 'test' | 'production';
   readonly dbPath: string;
+  /** Signs session cookies and derives the AES key of §12. Required. */
+  readonly serverSecret: string;
+  readonly publicUrl: string;
+  /** `Secure` cookies need HTTPS; localhost is the documented exception (§6.1). */
+  readonly secureCookies: boolean;
 }
 
 const DEFAULT_PORT = 3000;
@@ -95,13 +100,68 @@ function resolveDbPath(source: NodeJS.ProcessEnv, nodeEnv: Env['nodeEnv']): stri
   return join(DEFAULT_DATA_DIR, DB_FILENAME);
 }
 
+const DEV_SECRET = 'laika-development-secret-not-for-production-use';
+
+/**
+ * `SERVER_SECRET` (SPEC §11.7, §12).
+ *
+ * Required in production and refused if short — it signs session cookies and
+ * derives the key that encrypts the org's API keys, so a guessable value is a
+ * full compromise rather than a weak default. Outside production a fixed
+ * development value is used so `pnpm dev` and the tests start without ceremony.
+ */
+function resolveServerSecret(source: NodeJS.ProcessEnv, nodeEnv: Env['nodeEnv']): string {
+  const secret = source.SERVER_SECRET;
+
+  if (secret !== undefined && secret !== '') {
+    if (secret.length < MIN_SECRET_LENGTH) {
+      throw new EnvError(
+        'SERVER_SECRET',
+        '<redacted>',
+        `at least ${String(MIN_SECRET_LENGTH)} characters`,
+      );
+    }
+    return secret;
+  }
+
+  if (nodeEnv === 'production') {
+    throw new EnvError(
+      'SERVER_SECRET',
+      '<unset>',
+      'a value in production — refusing to start insecurely',
+    );
+  }
+
+  return DEV_SECRET;
+}
+
+const MIN_SECRET_LENGTH = 32;
+
+const DEFAULT_PUBLIC_URL = 'http://localhost:3000';
+
+function isLocalUrl(url: string): boolean {
+  try {
+    const { hostname, protocol } = new URL(url);
+    return protocol === 'https:' ? false : hostname === 'localhost' || hostname === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
 export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const nodeEnv = parseNodeEnv(source.NODE_ENV);
+  const publicUrl =
+    source.PUBLIC_URL === undefined || source.PUBLIC_URL === ''
+      ? DEFAULT_PUBLIC_URL
+      : source.PUBLIC_URL;
 
   return {
     port: parsePort(source.PORT),
     host: source.HOST === undefined || source.HOST === '' ? DEFAULT_HOST : source.HOST,
     nodeEnv,
     dbPath: resolveDbPath(source, nodeEnv),
+    serverSecret: resolveServerSecret(source, nodeEnv),
+    publicUrl,
+    secureCookies: !isLocalUrl(publicUrl),
   };
 }

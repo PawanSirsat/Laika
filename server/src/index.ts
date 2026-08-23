@@ -7,6 +7,7 @@
 
 import { serve } from '@hono/node-server';
 import { createApp } from './app.ts';
+import { createAuth } from './auth/auth.ts';
 import { openDb } from './db/client.ts';
 import { runMigrations } from './db/migrate.ts';
 import { readEnv } from './env.ts';
@@ -26,7 +27,14 @@ function main(): void {
   runMigrations(db);
   log.info('db.ready', { path: env.dbPath });
 
-  const app = createApp({ version, logger: log });
+  const auth = createAuth({
+    db,
+    secret: env.serverSecret,
+    baseUrl: env.publicUrl,
+    secureCookies: env.secureCookies,
+  });
+
+  const app = createApp({ version, logger: log, auth, db });
 
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {
     log.info('server.listening', {

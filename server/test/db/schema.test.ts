@@ -67,6 +67,7 @@ describe('connection PRAGMAs (SPEC §11.3)', () => {
 
 describe('migrations', () => {
   const EXPECTED_TABLES = [
+    'accounts',
     'activity',
     'comments',
     'heartbeats',
@@ -75,12 +76,14 @@ describe('migrations', () => {
     'orgs',
     'project_memberships',
     'projects',
+    'sessions',
     'sprints',
     'task_dependencies',
     'tasks',
     'tokens',
     'unlisted_work',
     'users',
+    'verifications',
   ];
 
   it('creates every table in SPEC §4', () => {
@@ -216,8 +219,8 @@ describe('closed vocabularies are enforced by CHECK, not only by types', () => {
           name: 'Dup',
           orgRole: 'member',
           avatarColor: '#fff',
-          createdAt: now,
-          updatedAt: now,
+          createdAt: new Date(now),
+          updatedAt: new Date(now),
         })
         .run();
 

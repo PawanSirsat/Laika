@@ -12,7 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/index.ts",
-    "db:generate": "drizzle-kit generate && prettier --write src/db/migrations"
+    "db:generate": "drizzle-kit generate"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^9.6.0",
@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
+    "better-auth": "^1.7.1",
     "better-sqlite3": "^13.0.3",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.13.3",
