@@ -2,11 +2,12 @@
 id: LAI-026
 title: '`pnpm format:fix` silently edits other sessions'' areas'
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-003
-status: backlog
+status: in-progress
+started: 2026-08-24T03:52:29+05:30
 ---
 
 ## Goal
