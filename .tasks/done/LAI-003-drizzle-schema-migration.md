@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: [LAI-001]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T03:20:36+05:30
 finished: 2026-08-24T03:36:43+05:30
+reviewed: 2026-08-24T04:05:00+05:30
 ---
 
 ## Goal
@@ -115,3 +116,34 @@ worktree boundaries is not.
 **9. Renumbering.** LAI-017/018/019, filed during LAI-002, collided with PM's UI
 shell tasks of the same ids on `master` (`cc6fbed`). Mine moved to LAI-022/023/024
 and every reference was updated.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified by execution, not by reading ticks.
+
+- All four PRAGMAs set and asserted: `journal_mode=WAL`, `foreign_keys=ON`,
+  `busy_timeout=5000`, `synchronous=NORMAL`.
+- Migration is **generated, committed** (SQL + snapshot + `_journal.json`) and
+  applied on boot through the Drizzle migrator.
+- **40 indexes** created; every §4.13 entry spot-checked resolves.
+- Append-only `activity`, dependency cycles, and concurrent per-project numbering
+  each have their own test file. 90 tests pass.
+
+### Deviation accepted — 14 tables, not 11
+
+The task said "every table in SPEC §4" and the reader would have counted eleven
+from §4.1–§4.11. Fourteen is right, and eleven would have been wrong.
+
+§4 grew after this task was written: `meeting_reviews` (§4.12), `unlisted_work`
+(§4.14) and `sprints` (§4.15) were added by the coverage pass and D-013. **§4.13
+Indexes names all three**, so AC "every index in §4.13 exists" is unsatisfiable
+against an 11-table schema — the criteria contradicted each other, and Builder-A
+resolved it toward the spec, which is exactly what D-011 says to do.
+
+Confirmed present: `activity, comments, heartbeats, invites, meeting_reviews,
+orgs, project_memberships, projects, sprints, task_dependencies, tasks, tokens,
+unlisted_work, users`.
+
+**My fault, not the builder's.** I added three tables to §4 without touching the
+task that builds §4. D-011 obliges the spec-editor to fix dependent references;
+I fixed the `§` numbers and missed the substance. Noted in the log.

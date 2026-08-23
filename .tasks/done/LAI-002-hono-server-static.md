@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: [LAI-001]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T02:58:00+05:30
 finished: 2026-08-24T03:19:46+05:30
+reviewed: 2026-08-24T04:05:00+05:30
 ---
 
 ## Goal
@@ -128,3 +129,32 @@ also 017–021). PM's are integrated and referenced elsewhere, so mine moved to
 **LAI-022** (error vocabulary), **LAI-023** (security headers) and **LAI-024**
 (build and start). The references in this file and in
 `server/src/http/error-handler.ts` were updated to match.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified by running the toolchain in the `builder-a` worktree:
+`typecheck` 0, `lint` 0, **90 tests across 11 files pass**.
+
+Spot-checked against the criteria rather than the ticks: health envelope, the
+`server/src/static/fallback.html` committed outside the gitignored build
+directory (the LAI-016 resolution, implemented as specified), SPA fallback tested
+without any build artefact, and graceful shutdown covered by its own test file.
+
+### Deviation accepted — the sixth middleware, `errorBoundary`
+
+SPEC §11.2 names five stages before the route; this adds a sixth between
+`requestId` and `logger`. **Correct, and the reasoning is right.**
+
+Hono routes only `Error` instances to `app.onError`. A thrown string, or a
+library throwing its own result type, escapes the dispatcher entirely — under
+`@hono/node-server` that becomes an unhandled rejection and the client gets a
+dropped connection instead of the `internal` envelope AC4 requires. So without
+this, AC4 is satisfied only for well-behaved throws.
+
+Two details make it right rather than merely defensible: it sits **after**
+`requestId` so the boundary still has an id to log, and **before** everything it
+protects, since a boundary inside what it guards catches nothing. Preserving the
+original value on `cause` keeps the log complete while the response leaks
+nothing. The source comment frames it as "the front half of the §11.2
+`errorHandler` stage, not a stage of its own" — that is the correct reading, and
+it is why the spec does not need amending.
