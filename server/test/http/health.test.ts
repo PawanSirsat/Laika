@@ -11,11 +11,11 @@ describe('GET /api/v1/health', () => {
     expect(res.status).toBe(200);
 
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body['status']).toBe('ok');
-    expect(body['version']).toBe(TEST_VERSION);
-    expect(typeof body['uptime_ms']).toBe('number');
-    expect(body['uptime_ms']).toBeGreaterThanOrEqual(0);
-    expect(Number.isInteger(body['uptime_ms'])).toBe(true);
+    expect(body.status).toBe('ok');
+    expect(body.version).toBe(TEST_VERSION);
+    expect(typeof body.uptime_ms).toBe('number');
+    expect(body.uptime_ms).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(body.uptime_ms)).toBe(true);
   });
 
   it('carries a request id on the response', async () => {
@@ -34,7 +34,7 @@ describe('GET /api/v1/health', () => {
     });
 
     expect(res.headers.get(REQUEST_ID_HEADER)).toBe('edge-abc-123');
-    expect(log.find('http.request')?.['request_id']).toBe('edge-abc-123');
+    expect(log.find('http.request')?.request_id).toBe('edge-abc-123');
   });
 
   it('rejects an implausible inbound request id rather than logging it', async () => {
@@ -63,6 +63,6 @@ describe('GET /api/v1/health', () => {
       actor_kind: null,
       token_id: null,
     });
-    expect(typeof record?.['duration_ms']).toBe('number');
+    expect(typeof record?.duration_ms).toBe('number');
   });
 });

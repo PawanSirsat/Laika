@@ -48,8 +48,8 @@ function parseNodeEnv(raw: string | undefined): Env['nodeEnv'] {
 
 export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   return {
-    port: parsePort(source['PORT']),
-    host: source['HOST'] === undefined || source['HOST'] === '' ? DEFAULT_HOST : source['HOST'],
-    nodeEnv: parseNodeEnv(source['NODE_ENV']),
+    port: parsePort(source.PORT),
+    host: source.HOST === undefined || source.HOST === '' ? DEFAULT_HOST : source.HOST,
+    nodeEnv: parseNodeEnv(source.NODE_ENV),
   };
 }

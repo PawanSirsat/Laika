@@ -16,7 +16,7 @@ export function readVersion(root: string = SERVER_ROOT): string {
     throw new Error(`No "version" field in ${join(root, 'package.json')}`);
   }
 
-  const { version } = raw as { version: unknown };
+  const { version } = raw;
   if (typeof version !== 'string' || version === '') {
     throw new Error(`Invalid "version" in ${join(root, 'package.json')}`);
   }

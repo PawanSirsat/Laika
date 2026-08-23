@@ -107,7 +107,7 @@ describe('graceful shutdown', () => {
     shutdown('SIGTERM');
     server.finishClose(new Error('server was not running'));
 
-    expect(log.find('shutdown.close_failed')?.['message']).toBe('server was not running');
+    expect(log.find('shutdown.close_failed')?.message).toBe('server was not running');
     expect(exit).toHaveBeenCalledWith(0);
   });
 

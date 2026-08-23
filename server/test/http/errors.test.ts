@@ -14,8 +14,8 @@ describe('error envelope (SPEC §6.3)', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
 
     const body = (await res.json()) as { error: Record<string, unknown> };
-    expect(body.error['code']).toBe('not_found');
-    expect(typeof body.error['message']).toBe('string');
+    expect(body.error.code).toBe('not_found');
+    expect(typeof body.error.message).toBe('string');
     expect('details' in body.error).toBe(true);
   });
 
@@ -30,7 +30,7 @@ describe('error envelope (SPEC §6.3)', () => {
     }
   });
 
-  it('always includes a details key so the shape never varies', async () => {
+  it('always includes a details key so the shape never varies', () => {
     const withoutDetails = new ApiError('conflict', 'Taken').toBody();
     const withDetails = new ApiError('unprocessable', 'Bad field', { field: 'title' }).toBody();
 
@@ -84,8 +84,8 @@ describe('unhandled errors', () => {
     expect(raw).not.toContain('at ');
 
     const body = JSON.parse(raw) as { error: Record<string, unknown> };
-    expect(body.error['code']).toBe('internal');
-    expect(body.error['message']).toBe('Internal server error');
+    expect(body.error.code).toBe('internal');
+    expect(body.error.message).toBe('Internal server error');
   });
 
   it('returns the request_id on a 5xx and logs the same one (SPEC §13.2)', async () => {
@@ -99,8 +99,8 @@ describe('unhandled errors', () => {
     expect(body.error.details.request_id).toBe('trace-42');
 
     const logged = log.find('http.unhandled');
-    expect(logged?.['request_id']).toBe('trace-42');
-    expect(logged?.['message']).toBe('kaboom');
+    expect(logged?.request_id).toBe('trace-42');
+    expect(logged?.message).toBe('kaboom');
   });
 
   it('survives a thrown non-Error without leaking it', async () => {

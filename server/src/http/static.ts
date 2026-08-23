@@ -110,13 +110,13 @@ export function createSpaHandler(options: StaticOptions) {
 
     const built = await readFileIfPresent(indexPath);
     if (built !== null) {
-      return c.body(new Uint8Array(built), 200, { 'Content-Type': CONTENT_TYPES['.html'] as string });
+      return c.body(new Uint8Array(built), 200, { 'Content-Type': CONTENT_TYPES['.html']! });
     }
 
     const fallback = await readFileIfPresent(options.fallbackDocument);
     if (fallback !== null) {
       return c.body(new Uint8Array(fallback), 200, {
-        'Content-Type': CONTENT_TYPES['.html'] as string,
+        'Content-Type': CONTENT_TYPES['.html']!,
         // The fallback is a placeholder; caching it would outlive the first real
         // build and leave people staring at "no SPA yet" after deploying one.
         'Cache-Control': 'no-store',

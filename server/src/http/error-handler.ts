@@ -4,7 +4,20 @@ import { type Logger } from '../log.ts';
 import { type AppEnv } from './context.ts';
 import { ApiError, type ErrorBody, type ErrorCode, ERROR_STATUS, isApiError } from './errors.ts';
 
-/** Hono's own status codes, mapped onto our vocabulary (SPEC §6.3). */
+/**
+ * Map an HTTP status raised inside Hono onto the SPEC §6.3 code vocabulary.
+ *
+ * That vocabulary is closed and coarser than HTTP: it has no entry for `413`
+ * (which `bodyLimit` raises on every route per §13.1) or `405`. So the accurate
+ * status is preserved on the response and the *nearest* code is reported
+ * alongside it — a client switching on `code` is never misled, even though code
+ * and status do not always pair up the way §6.3's table implies. Filed as
+ * LAI-017 for PM; widening the vocabulary is a spec change, not a handler
+ * decision.
+ *
+ * The fallbacks matter: collapsing every unmapped status to `internal` would
+ * turn a `405` into a reported server error.
+ */
 function codeForStatus(status: number): ErrorCode {
   switch (status) {
     case 400:
@@ -18,15 +31,12 @@ function codeForStatus(status: number): ErrorCode {
     case 409:
       return 'conflict';
     case 413:
-      // `bodyLimit` rejects with 413, which §6.3 has no code for. `unprocessable`
-      // is the closest honest fit: the request was well-formed and refused.
-      return 'unprocessable';
     case 422:
       return 'unprocessable';
     case 429:
       return 'rate_limited';
     default:
-      return 'internal';
+      return status >= 400 && status < 500 ? 'bad_request' : 'internal';
   }
 }
 

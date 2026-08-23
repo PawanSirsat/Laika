@@ -23,7 +23,7 @@ export function captureLog(): CapturedLog {
   return {
     logger,
     records,
-    find: (event) => records.find((r) => r['event'] === event),
+    find: (event) => records.find((r) => r.event === event),
   };
 }
 
