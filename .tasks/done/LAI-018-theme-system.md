@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-017]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T05:13:40+05:30
+reviewed: 2026-08-24T05:40:00+05:30
 started: 2026-08-24T05:02:50+05:30
 ---
 
@@ -157,3 +158,69 @@ and a warning not to rely on one engine's leniency.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass. `@laika/web`
 24/24.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, `pnpm build`, 24/24 in
+`@laika/web`, 278/278 in `@laika/server`. Every hex in `tokens.css` matches
+`docs/design/README.md` exactly — checked value by value, not by eye.
+
+**The contrast work is what a measured criterion is supposed to produce.** Twelve
+pairs, real ratios in a table, recomputed by the test suite rather than asserted
+once. Criterion 8 said report failures rather than silently adjust, and you found
+two and adjusted neither. **Filed as LAI-034** with my leaning (constrain usage,
+do not change the token) and the risk that makes it non-obvious — "only for
+metadata at size" is a rule nobody enforces unless something holds it.
+
+`--acc` at exactly 4.50 on `--card` is the detail I would have missed: it passes
+with zero margin, so any future nudge to either token breaks it silently.
+
+**Three judgement calls, all right, all flagged rather than buried:**
+
+- **A light frame on first paint, over an inline boot script.** The fix for the
+  flash is exactly what `script-src 'self'` forbids (LAI-023, LAI-103). Choosing
+  a visible imperfection over a relaxed CSP is the correct ordering, and saying so
+  is what let me check it rather than discover it.
+- **Avatar hues as a fixed ring of 8 indexed by FNV-1a**, not raw-hash-to-hue.
+  The reason given — arbitrary hues land on muddy yellow-greens beside this
+  palette — is a real constraint, and choosing FNV-1a *because it is stable across
+  runtimes* is the part that matters: a colour that changes when the bundler does
+  is one nobody can rely on.
+- **Type ramp normalised, not copied**, and you flagged that "from the design" is
+  doing real work in criterion 5. Correct: the README fixes families and weights
+  and never fixes a size scale, and the prototype's 8.5/9.5/10.5/12.5px are the
+  mockup tool emitting whatever each element happened to be. My criterion was
+  looser than it read.
+
+**You mutation-tested your own guards** — removing `--purs` from `.dk`,
+reintroducing `--mk`, darkening `--tx2`, and confirming each produced the failure
+it should. A test never seen to fail is a test that has not been shown to work,
+and almost nobody does this. The parser bug it caught immediately — the first
+version reading only the first `:root` block and silently missing every type,
+spacing and radius token — is exactly the class of bug that ships otherwise.
+
+### On LAI-205 — you corrected me, then corrected yourself, and you were right both times
+
+The chain is worth recording because I was wrong twice in different directions:
+
+1. **LAI-023**: I accepted `style-src 'unsafe-inline'` as "honest — Vite emits
+   inline styles."
+2. **LAI-103**: you showed the built output has no `<style>` element, so I wrote
+   that my acceptance was **unverified rather than justified** and raised LAI-205
+   to p1.
+3. **Here**: `style-src` covers inline `<style>` **elements** and `style=""`
+   **attributes**, and CSP Level 3 splits them. Avatar colours are derived per
+   user at runtime, so inline style *attributes* are structural in this design.
+
+So the allowance **was** necessary — for a reason neither of us had. My original
+call was right by accident, my correction was wrong in the other direction, and
+the measurement settled it. Using a deliberately wrong hash as a control to prove
+the policy was actually being enforced is what makes this evidence instead of an
+observation; without it, "everything still worked" is indistinguishable from a
+policy doing nothing.
+
+**LAI-205 stays p1** with your split recommendation — `style-src-elem` strict
+with a hash, `style-src-attr 'unsafe-inline'` — and the warning not to lean on one
+engine's leniency.
+
+**Unblocks LAI-019 and LAI-020.**
