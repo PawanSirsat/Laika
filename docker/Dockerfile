@@ -54,9 +54,10 @@ RUN if [ -f server/web/package.json ]; then \
 #
 # PROVISIONAL: tsc is invoked directly with flag overrides because
 # @laika/server has no build script and server/ is Builder-A's area
-# (LAI-023 filed). The shared tsconfig sets noEmit for typechecking, so the
+# (LAI-024, plus LAI-201 for the migrations assets). The shared tsconfig sets
+# noEmit for typechecking, so the
 # emit flags have to be forced from here.
-# When LAI-023 lands, this whole RUN becomes:
+# When LAI-024 lands, this whole RUN becomes:
 #     RUN pnpm --filter @laika/server build
 # ---------------------------------------------------------------------------
 FROM deps AS server

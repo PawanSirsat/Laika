@@ -48,7 +48,7 @@ docker run --rm -p 3000:3000 -v laika-data:/data -e LAIKA_SECRET="$(openssl rand
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `LAIKA_SECRET` | **yes** | — | Key material for encrypting stored API keys and SMTP settings. The container refuses to start without it, and refuses anything under 32 characters. Accepted as `SERVER_SECRET` too — SPEC §11.7 uses that name, LAI-008 used this one, and LAI-024 will settle it. |
+| `LAIKA_SECRET` | **yes** | — | Key material for encrypting stored API keys and SMTP settings. The container refuses to start without it, and refuses anything under 32 characters. Accepted as `SERVER_SECRET` too — SPEC §11.7 uses that name, LAI-008 used this one, and LAI-202 will settle it. |
 | `LAIKA_DB_PATH` | no | `/data/laika.db` | Must stay inside `/data`, or the database lands somewhere backups do not reach. |
 | `PORT` | no | `3000` | Container-internal. Map it with compose's `LAIKA_PORT`. |
 | `LAIKA_PORT` | no | `3000` | Host port compose publishes. Compose-only, not read by the server. |
@@ -122,8 +122,8 @@ ignores `.env*`, so the dot-prefixed name would be untracked and invisible.
 | Gap | Blocked on |
 | --- | --- |
 | The SPA build stage produces an empty `public/`. | LAI-017 (itself blocked on LAI-022) |
-| The server is compiled by `tsc` invoked from the Dockerfile, because `@laika/server` has no `build` script. | LAI-023 |
-| `LAIKA_SECRET` vs SPEC §11.7's `SERVER_SECRET`. Both accepted for now. | LAI-024 |
+| The server is compiled by `tsc` invoked from the Dockerfile, because `@laika/server` has no `build` script. | LAI-024 (+ LAI-201) |
+| `LAIKA_SECRET` vs SPEC §11.7's `SERVER_SECRET`. Both accepted for now. | LAI-202 |
 
 Neither gap stops the container working today: it builds, boots, migrates,
 serves health and the placeholder, and survives `down` / `up`.

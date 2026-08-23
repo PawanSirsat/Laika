@@ -12,7 +12,7 @@ set -eu
 # LAIKA_SECRET. Nothing in the server reads either one yet (server/src/env.ts
 # says so explicitly), so both names are accepted here and normalised to the
 # spec's name — that way the compose file matches the task, and LAI-005 finds
-# what SPEC §11.7 told it to look for. Reconciling the two names is LAI-024.
+# what SPEC §11.7 told it to look for. Reconciling the two names is LAI-202.
 if [ -z "${SERVER_SECRET:-}" ] && [ -n "${LAIKA_SECRET:-}" ]; then
   SERVER_SECRET="$LAIKA_SECRET"
   export SERVER_SECRET

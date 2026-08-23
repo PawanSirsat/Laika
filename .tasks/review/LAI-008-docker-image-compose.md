@@ -98,20 +98,27 @@ An example file nobody can see is worse than none.
 
 **3. The server is compiled by `tsc` invoked from the Dockerfile.**
 `@laika/server` has no `build` script and `server/` is Builder-A's, so the task's
-own instruction applies: do not make it, file it. → **LAI-023**. The Dockerfile
+own instruction applies: do not make it, file it. → **LAI-024** (Builder-A had already filed it from LAI-002). The Dockerfile
 marks the block PROVISIONAL and names the one-line replacement.
 
 ### Discovered work filed
 
-- **LAI-023** (`area: server`, p2) — add a `build` script. Its criteria call out
-  the migrations trap below, which cost me a restart loop.
-- **LAI-024** (`area: docs`, p3) — `LAIKA_SECRET` (this task) vs `SERVER_SECRET`
+- **LAI-201** (`area: server`, p2) — the migrations trap below. I first filed a
+  whole build-script task (LAI-023), then found Builder-A had already filed
+  **LAI-024** from LAI-002, better scoped and with a `SIGTERM`-under-`tsx`
+  finding mine lacked. Mine is withdrawn; LAI-201 carries only the one thing
+  LAI-024 is missing.
+- **LAI-202** (`area: docs`, p3) — `LAIKA_SECRET` (this task) vs `SERVER_SECRET`
   (SPEC §11.7). The entrypoint accepts and normalises both as a bridge; nothing
   reads either yet.
-- **LAI-025** (`area: docs`, p2) — `pnpm format` is red repo-wide on the
+- **LAI-203** (`area: docs`, p2) — `pnpm format` is red repo-wide on the
   imported `docs/design/` files, and was already red on `master` before this
-  branch. My own files pass. Flagged because a permanently-red gate is one
-  nobody reads.
+  branch. My own files pass. Adjacent to LAI-026 but not the same: that one is
+  about `format:fix` writing across areas, this one about the check never
+  passing.
+
+Ids renumbered into LAI-200–299 per D-017 after all three collided with
+Builder-A's; the integrated ids won, as PM ruled on LAI-200.
 
 ### The bug worth knowing about
 
