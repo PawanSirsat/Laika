@@ -82,3 +82,18 @@ later refactor could remove it without failing anything.
 - [ ] SPEC §12 states the minimum length and that a shorter value is a hard
       startup failure, not a warning.
 - [ ] The error redacts the value. Verified in LAI-024; keep it that way.
+
+## Added by PM — 2026-08-24: `LAIKA_PUBLIC_DIR` is undocumented
+
+LAI-204 added `LAIKA_PUBLIC_DIR` (overrides where the built SPA is served from,
+defaults to `server/public`). SPEC §11.7 does not list it.
+
+- [ ] §11.7 documents `LAIKA_PUBLIC_DIR`, including that it is primarily a test
+      and packaging affordance rather than something a deployment normally sets.
+- [ ] While there: the table is the deployment contract, so anything the server
+      reads from the environment belongs in it. Check `server/src/env.ts` against
+      §11.7 and reconcile in **both** directions.
+
+Note it uses the `LAIKA_` prefix, as does `LAIKA_DB_PATH`. That is now three
+prefixed variables against four unprefixed ones in §11.7 — evidence for settling
+the naming question above rather than letting the split widen further.
