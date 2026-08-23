@@ -2,11 +2,12 @@
 id: LAI-032
 title: Rename env vars to the LAIKA_ prefix in the server
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-102
-status: backlog
+status: in-progress
+started: 2026-08-24T05:26:25+05:30
 ---
 
 ## Goal
