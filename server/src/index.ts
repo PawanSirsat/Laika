@@ -7,6 +7,8 @@
 
 import { serve } from '@hono/node-server';
 import { createApp } from './app.ts';
+import { openDb } from './db/client.ts';
+import { runMigrations } from './db/migrate.ts';
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { createShutdownHandler } from './shutdown.ts';
@@ -16,6 +18,13 @@ function main(): void {
   const log = createLogger();
   const env = readEnv();
   const version = readVersion();
+
+  // Migrations run at boot, forward-only (SPEC §11.3). Before the port is bound:
+  // a server that accepts requests against an unmigrated database is worse than
+  // one that takes an extra moment to start.
+  const { db, sqlite } = openDb({ path: env.dbPath });
+  runMigrations(db);
+  log.info('db.ready', { path: env.dbPath });
 
   const app = createApp({ version, logger: log });
 
@@ -29,7 +38,15 @@ function main(): void {
     });
   });
 
-  const shutdown = createShutdownHandler({ server, log });
+  const shutdown = createShutdownHandler({
+    server,
+    log,
+    // Checkpoints the WAL and releases the file lock, so the next boot does not
+    // start by recovering a journal.
+    onClosed: () => {
+      sqlite.close();
+    },
+  });
 
   process.on('SIGTERM', () => {
     shutdown('SIGTERM');

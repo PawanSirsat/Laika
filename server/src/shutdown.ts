@@ -17,6 +17,8 @@ export interface ShutdownOptions {
   graceMs?: number;
   exit?: (code: number) => void;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
+  /** Released after the last request drains — the database handle, typically. */
+  onClosed?: () => void;
 }
 
 export const DEFAULT_GRACE_MS = 10_000;
@@ -51,12 +53,25 @@ export function createShutdownHandler(options: ShutdownOptions): (signal: string
 
     log.info('shutdown.start', { signal, grace_ms: graceMs });
 
+    const release = (): void => {
+      try {
+        options.onClosed?.();
+      } catch (err) {
+        // Never let cleanup turn a clean shutdown into a non-zero exit.
+        log.error('shutdown.release_failed', {
+          signal,
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
     server.close((err) => {
       if (err) {
         log.error('shutdown.close_failed', { signal, message: err.message });
       } else {
         log.info('shutdown.complete', { signal });
       }
+      release();
       exit(0);
     });
 
@@ -65,6 +80,7 @@ export function createShutdownHandler(options: ShutdownOptions): (signal: string
     const timer = setTimer(() => {
       log.warn('shutdown.forced', { signal, grace_ms: graceMs });
       server.closeAllConnections?.();
+      release();
       exit(0);
     }, graceMs);
 
