@@ -97,15 +97,15 @@ from a spec section that says "fixed".
 produce.** `bodyLimit` is mandatory per §13.1. I preserved the accurate HTTP
 status and reported the nearest code beside it (`413` → `unprocessable`), so
 code and status do not always pair the way §6.3's table implies. Forcing them to
-agree would report a `405` as a `422`. **LAI-017 filed** for PM — it is a spec
+agree would report a `405` as a `422`. **LAI-022 filed** for PM — it is a spec
 decision, not a handler's.
 
 **4. Security headers (§13.1) are deliberately not here.** Not in this task's
 criteria, not in §11.2's chain, and CSP depends on what Vite emits (LAI-007).
-Guessing a policy now means loosening it later. **LAI-018 filed.**
+Guessing a policy now means loosening it later. **LAI-023 filed.**
 
 **5. `server` still has no `build` or `start`, and LAI-008 needs both.**
-**LAI-019 filed**, carrying a finding that matters for the container: `SIGTERM`
+**LAI-024 filed**, carrying a finding that matters for the container: `SIGTERM`
 under `tsx` exits **143** and never runs the shutdown handler, because `tsx`
 forks and does not forward the signal. Under plain `node` it exits **0**. The
 container entrypoint must be `node` directly — not `tsx`, not `pnpm start` — or
@@ -121,3 +121,10 @@ specifiers, which is what lets the same files run under `tsx` now and be emitted
 as valid Node ESM by `tsc` later. This is the concrete answer to the
 `moduleResolution: bundler` risk I flagged in the LAI-001 log. Both options are
 in `server/`, not in the shared `tsconfig.base.json`.
+
+**Renumbered after review was requested.** The three tasks above were filed as
+LAI-017/018/019, which collided with `cc6fbed` on `master` (PM's UI shell tasks,
+also 017–021). PM's are integrated and referenced elsewhere, so mine moved to
+**LAI-022** (error vocabulary), **LAI-023** (security headers) and **LAI-024**
+(build and start). The references in this file and in
+`server/src/http/error-handler.ts` were updated to match.

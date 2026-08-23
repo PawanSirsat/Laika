@@ -1,5 +1,5 @@
 ---
-id: LAI-018
+id: LAI-023
 title: Security headers — HSTS, nosniff, CSP, frame options
 area: server
 assignee: unclaimed

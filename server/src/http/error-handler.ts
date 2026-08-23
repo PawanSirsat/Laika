@@ -12,7 +12,7 @@ import { ApiError, type ErrorBody, type ErrorCode, ERROR_STATUS, isApiError } fr
  * status is preserved on the response and the *nearest* code is reported
  * alongside it — a client switching on `code` is never misled, even though code
  * and status do not always pair up the way §6.3's table implies. Filed as
- * LAI-017 for PM; widening the vocabulary is a spec change, not a handler
+ * LAI-022 for PM; widening the vocabulary is a spec change, not a handler
  * decision.
  *
  * The fallbacks matter: collapsing every unmapped status to `internal` would
