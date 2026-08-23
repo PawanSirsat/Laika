@@ -2,11 +2,12 @@
 id: LAI-024
 title: Production build and start scripts for the server
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-002]
 discovered-from: LAI-002
-status: backlog
+status: in-progress
+started: 2026-08-24T04:29:04+05:30
 ---
 
 ## Goal
