@@ -456,6 +456,38 @@ agent.
 - Responses pair compact markdown with a structured payload: readable when the
   model reasons over it, parseable when it does not.
 
+### 7.3 The shared project context document
+
+`projects.context_md` (§4.3) is a first-class product feature, not a description
+field. It is the answer to every teammate maintaining a private `NOTES.md` and
+re-explaining the same architecture to their own agent, differently.
+
+**What it is.** One markdown document per project, edited by project `lead` or
+org Admin/Owner through `GET`/`PATCH /api/v1/projects/:slug/context`, and served
+to **every** agent session on that project by `get_project_context`. Write it
+once, and every teammate's agent has it.
+
+**What belongs in it**: architecture and conventions a new session must know,
+decisions already made and closed, glossary and domain terms, things deliberately
+not done and why. **What does not**: anything task-specific (that is the task
+body), anything secret (it is served to every project member's agent), and
+anything that changes per-session.
+
+**Requirements.**
+
+- `get_project_context` returns `context_md` verbatim alongside the last 10
+  decisions, open-task summary, and members with roles (§7.1).
+- Every edit writes an `activity` row, so the document has a history and a
+  reviewer can see what changed between two agent sessions.
+- Editing is `lead`+ (§3.2). Reading follows project read access — a `viewer`
+  sees it.
+- Accepted `decision` proposals from a meeting diff append to it with the date
+  (§10.2). That is the mechanism that keeps it current instead of stale: the
+  document is *fed* by the meeting path rather than maintained by discipline.
+- Size is bounded and the bound is enforced at write time with a clear error;
+  a context document that silently blows an agent's context window is worse than
+  no document. **Exact limit is an open question (§14.7).**
+
 ---
 
 ## 8. Plugin and hooks
@@ -604,6 +636,39 @@ from `server/public/`. SPA fallback to `index.html` for anything that is not
 `/api/*`, `/mcp*` or `/webhooks/*`. It talks to the same public `/api/v1` an
 agent does — no private endpoints, which keeps the API honest.
 
+#### 11.4.1 Board views
+
+Two views over the same task list, same filters, same URL state — a view is a
+rendering choice, never a different query path.
+
+**Kanban** (default). Columns by status: `backlog`, `todo`, `in_progress`,
+`review`, `done`. `cancelled` is hidden behind a filter, not a column.
+
+- Dragging a card between columns issues `POST /api/v1/tasks/:id/status` and is
+  subject to the same transition validation as any other caller (§5) — an
+  illegal drag snaps back and surfaces the error, it does not optimistically lie.
+- Cards show: display key (`LAI-42`), title, assignee, priority, a **blocked**
+  marker when any dependency is unfinished, a **ready** marker when §4.5 holds,
+  and a **stale** marker once `stale_flagged_at` is set.
+- Agent-authored recent activity is badged on the card (`actor_kind: 'agent'`).
+- Column order and the `ready` marker are both **derived** — never stored, never
+  cached client-side beyond the current response.
+
+**List.** The same tasks as a sortable, densely readable table: key, title,
+status, assignee, priority, dependency count, updated. Sortable on every column,
+multi-filter on status / assignee / priority / ready / blocked. This is the view
+for triage and for boards too large to drag.
+
+Both views:
+
+- share one filter state, reflected in the URL so a filtered board is linkable;
+- update live over SSE (§11.5) rather than polling;
+- paginate through the same cursor API (§6.3) — the kanban board loads per
+  column, and a column with more results says so rather than silently truncating.
+
+**Explicitly not in v1:** swimlanes, WIP limits, custom columns, saved views,
+bulk edit. Columns are the status enum; when that is not enough, use the list.
+
 ### 11.5 Live updates — SSE
 
 `GET /api/v1/events` (D-003). One `text/event-stream` per client, filtered
@@ -709,3 +774,9 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
 5. Task attachments / uploads — deferred; the `/data` volume anticipates them.
 6. Multiple LLM providers configured at once (one for transcripts, one for
    summaries) — deferred past v1.
+7. **Size limit for `projects.context_md`** (§7.3). It is injected into every
+   agent session on the project, so an unbounded document quietly eats the
+   context window it was meant to fill usefully. Needs a real number before M3.
+8. **Manager dashboard metrics** — which numbers actually answer "where are we"?
+   Throughput and cycle time are the obvious ones and may be the wrong ones.
+   Needs shaping before M5; see `FEATURES.md` phase 5.
