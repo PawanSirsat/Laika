@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: [LAI-002, LAI-003]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T04:10:34+05:30
 finished: 2026-08-24T04:27:24+05:30
+reviewed: 2026-08-24T04:38:00+05:30
 ---
 
 ## Goal
@@ -124,3 +125,43 @@ is asking.
 
 **Filed:** LAI-101 — `format:fix` cannot fix a file once committed, since it only
 looks at `git diff HEAD`. Papercut with a documented workaround, p3.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified on the integrated tree: format, lint and typecheck clean,
+**198 tests across 17 files**, up from 165.
+
+**Invite-only is enforced server-side, not by hiding a button** — four tests
+prove it: no invite rejected, valid invite accepted, expired rejected, and an
+invite addressed to a different email rejected. That last one is the case that
+usually ships broken, because the happy path and the expiry path both pass
+without it. D-004 is now a property of the system rather than a claim in a
+document.
+
+**Session hygiene tested rather than assumed:** `HttpOnly`, `SameSite=Lax`, not
+`Secure` on localhost; the password appears nowhere in any response; a garbage
+cookie resolves to *anonymous* rather than erroring — which is the right shape,
+since a malformed cookie is an unauthenticated request, not a server fault.
+
+### The telemetry tests are the best thing in this submission
+
+`server/test/auth/telemetry.test.ts` asserts that better-auth's telemetry
+switches are all disabled, and that the test covers *the exact variables
+better-auth reads*.
+
+Nothing in LAI-005's criteria asked for this. SPEC §13.4 says "No telemetry. Not
+opt-out — absent", and `VISION.md` §6.4 makes data sovereignty a product
+commitment — but both were written about **our** code, and neither I nor the task
+considered that a dependency might phone home on its own. A self-hosted board
+that silently reports to a vendor breaks the central promise, and it would have
+shipped, because nobody was looking at the dependency's defaults.
+
+Pinning it to the specific variables the library reads is what makes the test
+durable: a version bump that adds a new switch fails the test rather than quietly
+re-enabling the behaviour.
+
+**This is the standard for the remaining dependency work** — better-auth is not
+the only package with opinions about analytics.
+
+**LAI-101 filed in the correct range** (D-017), one tick after the decision
+landed.
