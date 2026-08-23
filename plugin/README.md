@@ -91,6 +91,29 @@ a truncated paste, not enough to be worth stealing.
 Declaring the MCP server now is intentional: it fails to connect until a board
 exists, which is the correct behaviour and costs nothing.
 
+## Working on this plugin
+
+Two checks, both run from the repo root, both required before moving a task to
+review (CLAUDE.md §5):
+
+```bash
+pnpm format                          # Prettier — covers every .json/.yaml here
+claude plugin validate plugin        # manifest, commands, skills
+```
+
+The repo-wide `format` glob already reaches into `plugin/`, dot-directories
+included — a misformatted `.claude-plugin/plugin.json` or `hooks/*.yaml` fails
+the check for the whole repo. There is **no pre-commit hook**: running it is on
+you. `pnpm format:fix` rewrites the entire repo, so from this directory prefer
+
+```bash
+npx prettier --write "plugin/**/*.{json,yaml,yml,js,ts,css,html}"
+```
+
+which stays inside Builder-B's area.
+
+Prettier's config is the shared `/.prettierrc`. Do not add a second one here.
+
 ## Ownership
 
 `plugin/` belongs to **Builder-B**. Changes here need a task file in

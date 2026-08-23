@@ -8,13 +8,7 @@
   },
   "homepage": "https://github.com/PawanSirsat/Laika",
   "repository": "https://github.com/PawanSirsat/Laika",
-  "keywords": [
-    "project-management",
-    "task-tracking",
-    "mcp",
-    "self-hosted",
-    "agents"
-  ],
+  "keywords": ["project-management", "task-tracking", "mcp", "self-hosted", "agents"],
   "commands": "./commands",
   "hooks": "./hooks/hooks.json",
   "mcpServers": "./.mcp.json"

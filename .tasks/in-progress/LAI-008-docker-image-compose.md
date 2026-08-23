@@ -2,11 +2,12 @@
 id: LAI-008
 title: Dockerfile, compose, and Caddyfile example — one image, /data volume
 area: docker
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-001, LAI-002]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T03:52:33+05:30
 ---
 
 ## Goal
