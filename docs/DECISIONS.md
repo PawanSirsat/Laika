@@ -730,3 +730,122 @@ reserved.
 
 **Revisit when:** a session exhausts its range, or the session count outgrows
 static allocation.
+
+---
+
+## D-018 — `LAIKA_SECRET` is required, and Laika-specific env vars carry the prefix
+**Date:** 2026-08-24 · **Status:** accepted · **Supersedes** the `SERVER_SECRET` row and default in SPEC §11.7
+
+**In one line:** a secret an operator never sees is a secret they never back up —
+and a generic name like `SERVER_SECRET` is one collision away from meaning
+something else.
+
+**Context.** SPEC §11.7 said `SERVER_SECRET` defaults to "auto-generated to
+`$DATA_DIR/secret` on first boot". Two implementations then did the opposite,
+independently and without seeing each other: `server/src/env.ts` (LAI-005) throws
+unless it is set, and `docker/entrypoint.sh` (LAI-008, a different builder) exits
+unless it is set. Both also imposed a 32-character minimum the spec never
+mentioned.
+
+Two builders diverging from a document in the same direction is evidence about
+the document, not about the builders.
+
+Separately, the env surface had drifted both ways: `LAIKA_DB_PATH` and
+`LAIKA_PUBLIC_DIR` were read by the server and absent from §11.7, while
+`DISABLE_INVITE_ONLY` was documented and read by nothing. And the naming was
+half-prefixed — three `LAIKA_` variables against four bare ones.
+
+**Decision, three parts.**
+
+1. **`LAIKA_SECRET` is required. No default, no auto-generation.** Minimum 32
+   characters, enforced as a startup failure with the value redacted from the
+   error. Stated in §11.7 and §12 rather than living in two implementations that
+   happen to agree.
+2. **Laika-specific variables carry the `LAIKA_` prefix**; `PORT`, `HOST` and
+   `NODE_ENV` do not. So `SERVER_SECRET` → `LAIKA_SECRET`, `DATA_DIR` →
+   `LAIKA_DATA_DIR`, `PUBLIC_URL` → `LAIKA_PUBLIC_URL`, `DISABLE_INVITE_ONLY` →
+   `LAIKA_DISABLE_INVITE_ONLY`.
+3. **§11.7 is the deployment contract**: everything the server reads is in it, and
+   everything in it is read.
+
+**Why required beats auto-generated.** Auto-generation makes `docker compose up`
+work with no configuration, which is exactly what D-002 ("setup is the product")
+argues for — and it is still the wrong call here, because the failure is
+asymmetric. A required secret fails once, immediately, with a message naming the
+fix. An auto-generated secret succeeds until `$LAIKA_DATA_DIR` is lost or
+restored to a new host, at which point every session is invalid and every
+`*_enc` column is permanently undecryptable, **with no error saying that is what
+happened**. The operator's own backup is the thing that betrays them. One loud
+failure at install time is cheaper than a silent one at restore time.
+
+`docker/env.example` and a compose `${LAIKA_SECRET:?…}` message keep the setup
+cost to one line, so D-002 is not really in tension — it costs a copy, not a
+decision.
+
+**Why prefix.** `DATA_DIR` and `SERVER_SECRET` are generic enough to already mean
+something else in a shared compose file, a systemd unit, or a CI runner. The
+prefix is collision safety, not tidiness. Doing it before v1 costs a rename;
+doing it after costs operators a breaking change, so the only cheap moment is
+now.
+
+**Consequences.** Three variables get renamed across `server/src/env.ts`,
+`docker/entrypoint.sh`, `docker-compose.yml`, `env.example` and the docker README
+— filed as LAI-032 and LAI-033. Until those land, the spec and the code disagree
+in the *opposite* direction from before, which is worse than one-sided drift, so
+both are p1. The `LAIKA_SECRET` bridge Builder-B shipped in the entrypoint stops
+being a bridge and becomes the real name.
+
+**Revisit when:** never for "required". The prefix rule is revisitable only as a
+whole — a half-prefixed surface is worse than either consistent choice.
+
+---
+
+## D-019 — `--tx3` is darkened from the prototype; semantic colours are not body text
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** the design uses `--tx3` only at 8.5–12px, so the 3:1 large-text
+allowance never applies to it — and at 2.51 it fails the bar that does.
+
+**Context.** LAI-018 measured every token pair and reported two failures rather
+than adjusting them, as its criterion required. `--tx3` reaches 2.51–4.06 against
+our backgrounds; AA needs 4.5:1 for normal text and 3:1 for large text.
+
+My first instinct — recorded in LAI-034 and wrong — was to keep the token and
+constrain it to "de-emphasised metadata at size", on the reasoning that it clears
+3:1. Counting the prototype's actual usage killed that: **165 occurrences, every
+one at 8.5–12px**, 63 of them `JetBrains Mono` timestamps and counts. WCAG's
+large-text threshold is 18.66px bold or 24px regular. Nothing in the design comes
+close, so "constrain to large text" is not a constraint — it is a ban on the
+token's only role.
+
+**Decision.**
+
+1. **Darken `--tx3`**: light `#8d94a4` → `#61697a`, dark `#71717d` → `#83838f`.
+   The minimal lightness shift that clears 4.5:1 on all three backgrounds, hue
+   and saturation preserved.
+2. **Semantic colours are fills, borders and icons, not body text.** For coloured
+   status text use `--tx` on the semantic subtle fill, not the semantic colour on
+   `--card`.
+3. Both rules live in `docs/design/README.md` beside the token table and are
+   enforced by `tokens.test.ts`.
+
+**Consequences.** This deviates from the design, and the deviation is the point:
+`docs/design/README.md` already states the mockups are a target rather than
+scripture and lists artifacts not to reproduce. A token that fails AA at every
+size it is used belongs in that category, next to `postgres 16 · connected`.
+
+The real cost is **hierarchy compression**. Light `--tx2` is 5.18 on `--tub` and
+the new `--tx3` is 4.55 — the three text tiers are now visually closer than the
+prototype drew them, and the design's information hierarchy is slightly flatter
+as a result. `--tx2` cannot move up without failing its own AA, so the ramp
+cannot simply be re-spread. If that flattening reads badly on a real screen, the
+answer is a designer revisiting the whole ramp, not nudging one token back.
+
+**Timing is why this is cheap.** M7 already carries an accessibility pass. Doing
+it now costs two hex values; doing it then costs a visual regression across every
+screen built on the old ones, and every screenshot in the docs.
+
+`--acc` at exactly 4.50 on `--card` is left alone but is worth remembering: it
+passes with zero margin, so any future nudge to either token breaks it silently.
+
+**Revisit when:** a designer reworks the text ramp as a whole.

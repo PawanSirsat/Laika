@@ -1,0 +1,178 @@
+/*
+ * Styling for the token reference page. Every value below comes from a token —
+ * a reference page that hardcodes a colour is the first place drift appears.
+ */
+
+.tr {
+  padding: var(--space-5);
+  background: var(--page);
+  color: var(--tx);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  min-height: 100vh;
+}
+
+.tr-themes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: var(--space-5);
+}
+
+/* Each panel paints its own surface, so the dark one is dark inside a light
+   page — which is what makes the comparison possible. */
+.tr-panel {
+  background: var(--page);
+  color: var(--tx);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.tr-panel-head {
+  border-bottom: 1px solid var(--bd);
+  padding-bottom: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.tr-panel-title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-heavy);
+  margin: 0;
+}
+
+.tr-panel-sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  margin: var(--space-1) 0 0;
+}
+
+.tr-group {
+  margin-bottom: var(--space-5);
+}
+
+.tr-group-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  margin: 0 0 var(--space-1);
+}
+
+.tr-group-note {
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  margin: 0 0 var(--space-3);
+}
+
+.tr-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.tr-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tr-swatch-chip {
+  width: 4rem;
+  height: 2.5rem;
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+}
+
+.tr-elevated {
+  background: var(--card);
+  border-color: var(--bd);
+}
+
+.tr-swatch-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+.tr-textrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+.tr-avatars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.tr-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-sm);
+}
+
+.tr-shared {
+  margin-top: var(--space-6);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow);
+}
+
+.tr-type p {
+  margin: 0 0 var(--space-2);
+}
+
+.tr-type code,
+.tr-scale code,
+.tr-radius code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+.tr-scale-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.tr-scale-bar {
+  height: 0.75rem;
+  background: var(--acc);
+  border-radius: var(--radius-sm);
+}
+
+.tr-radii {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.tr-radius {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: center;
+}
+
+.tr-radius-box {
+  width: 3rem;
+  height: 3rem;
+  background: var(--accs);
+  border: 1px solid var(--accb);
+}
