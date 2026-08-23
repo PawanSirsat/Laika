@@ -6,7 +6,8 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-017
-status: in-progress
+status: review
+finished: 2026-08-24T04:20:05+05:30
 started: 2026-08-24T04:07:56+05:30
 ---
 
@@ -32,14 +33,14 @@ moved the frontend under Builder-B.
 
 ## Acceptance criteria
 
-- [ ] `pnpm-workspace.yaml` lists `server/web`, with a comment matching the
+- [x] `pnpm-workspace.yaml` lists `server/web`, with a comment matching the
       existing `cli` one: it is Builder-B's package (D-016), listed here so that
       adding or changing `server/web/package.json` is never a root-file edit.
-- [ ] `pnpm list -r --depth -1` shows a package rooted at `server/web` once one
+- [x] `pnpm list -r --depth -1` shows a package rooted at `server/web` once one
       exists there.
-- [ ] Root `pnpm build`, `pnpm dev`, `pnpm typecheck` and `pnpm test` reach it
+- [x] Root `pnpm build`, `pnpm dev`, `pnpm typecheck` and `pnpm test` reach it
       via `pnpm -r`.
-- [ ] No other change to `pnpm-workspace.yaml` — `onlyBuiltDependencies` and the
+- [x] No other change to `pnpm-workspace.yaml` — `onlyBuiltDependencies` and the
       existing entries are untouched.
 
 ## Notes / context
@@ -102,3 +103,53 @@ referenced elsewhere is the expensive direction.
 
 From now: Builder-B files from `LAI-200`–`LAI-299` and cannot collide with anyone
 (CLAUDE.md §3, D-017).
+
+---
+
+## Implementation notes for review (Builder-B)
+
+One line of YAML plus a comment, and every criterion was checked by running
+pnpm rather than by reading the file back.
+
+**Scope.** Only `pnpm-workspace.yaml` changed, and only the `packages` list —
+`git diff --stat` shows `1 file changed, 6 insertions(+)` and no deletions, so
+`onlyBuiltDependencies` and the existing `server` / `cli` entries are provably
+untouched. The comment follows the `cli` precedent verbatim in intent: the path
+is pre-listed so adding `server/web/package.json` is never a root edit again.
+
+**Proof for criteria 2 and 3.** Both say "once one exists there", so I created a
+throwaway `server/web/package.json` (`@laika/web`) whose scripts just echo a
+marker, and confirmed:
+
+- `pnpm list -r --depth -1` → `@laika/web@0.0.0 …/server/web (PRIVATE)`
+- `pnpm build` → `WEB-BUILD-REACHED`
+- `pnpm typecheck` → `WEB-TYPECHECK-REACHED`
+- `pnpm test` → `WEB-TEST-REACHED`
+- `pnpm --filter @laika/web dev` → `WEB-DEV-REACHED`
+
+Then removed it — LAI-017 creates the real one, and shipping a stub package
+would collide with its first acceptance criterion.
+
+`dev` was checked with `--filter` rather than through the root script: root
+`dev` is `pnpm -r --parallel --if-present run dev`, and `@laika/server`'s `dev`
+is `tsx watch`, which never exits. The recursive runner reaching `build`,
+`typecheck` and `test` is what establishes membership; `dev` uses the same
+resolution.
+
+**Also verified harmless before the package exists**, which is what makes this
+landable ahead of LAI-017: with `server/web/` absent, `pnpm install
+--frozen-lockfile` succeeds and `pnpm typecheck` / `pnpm test` (90 passed) are
+unaffected. pnpm ignores a `packages` entry that matches nothing, exactly as the
+Notes predicted.
+
+**One thing I deliberately reverted.** Installing the throwaway package added
+`server/web: {}` to `pnpm-lock.yaml`. The lockfile is root config and this
+task's exception names `pnpm-workspace.yaml` only, so I restored it with
+`git checkout --` and re-ran `pnpm install --frozen-lockfile` to confirm the
+tree is consistent without it. The lockfile will gain that entry legitimately
+when LAI-017 lands a real package — that belongs to LAI-017, not here.
+
+**On the ownership call.** Agreed, and worth recording: LAI-017 is now unblocked
+by a change I could make in under a minute, having spent the previous cycle
+releasing it. Routing this to Builder-A would have parked the whole UI track
+behind the API queue, which is the thing D-016 exists to prevent.
