@@ -2,11 +2,11 @@
 id: LAI-202
 title: Settle the server secret's name — SERVER_SECRET or LAIKA_SECRET
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p3
 depends-on: []
 discovered-from: LAI-008
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -97,3 +97,26 @@ defaults to `server/public`). SPEC §11.7 does not list it.
 Note it uses the `LAIKA_` prefix, as does `LAIKA_DB_PATH`. That is now three
 prefixed variables against four unprefixed ones in §11.7 — evidence for settling
 the naming question above rather than letting the split widen further.
+
+---
+
+## Closed — PM, 2026-08-24
+
+**Settled by D-018, in the same edit as LAI-102.** The two could not be separated:
+§11.7's table cannot be written without knowing what the variables are called.
+
+**Answer: `LAIKA_SECRET`, and the rule generalises.** Anything Laika-specific
+carries the prefix; `PORT`, `HOST` and `NODE_ENV` do not, because they are
+universal conventions. So `DATA_DIR` → `LAIKA_DATA_DIR`, `PUBLIC_URL` →
+`LAIKA_PUBLIC_URL`, `DISABLE_INVITE_ONLY` → `LAIKA_DISABLE_INVITE_ONLY`.
+
+Your task insisted on "all five variables or none", and that constraint is what
+produced a rule rather than a one-off. The rationale that decided it is collision
+safety, not tidiness: `DATA_DIR` and `SERVER_SECRET` are generic enough to
+already mean something else in a shared compose file or systemd unit.
+
+`LAIKA_PUBLIC_DIR`'s missing documentation, also folded in here, is now in §11.7 —
+along with a statement that the table **is** the deployment contract, since it had
+drifted in both directions.
+
+Implementation: **LAI-032** (server) and **LAI-033** (docker), both p1.

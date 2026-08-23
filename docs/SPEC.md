@@ -178,7 +178,7 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `presence_enabled` | integer, default **1** — org-wide off switch for heartbeats. When 0, `POST /heartbeats` returns `202` and discards, and Presence/Capacity show a disabled state rather than an empty one. D-005 makes the product's privacy claim; this makes it enforceable by the org, not just promised by us. |
 | `ai_provider` | `anthropic` \| `openai_compatible` \| `null` |
 | `ai_base_url` | for Ollama / vLLM |
-| `ai_api_key_enc` | AES-256-GCM, key derived from `SERVER_SECRET` (§12) |
+| `ai_api_key_enc` | AES-256-GCM, key derived from `LAIKA_SECRET` (§12) |
 | `smtp_json_enc` | nullable, same encryption |
 | `github_webhook_secret_enc` | nullable, same encryption |
 
@@ -878,14 +878,36 @@ Jobs are idempotent and write to `activity` only when they change something.
 
 ### 11.7 Environment and ops
 
+**Naming rule (D-018):** anything Laika-specific carries the `LAIKA_` prefix.
+`PORT`, `HOST` and `NODE_ENV` do not — they are universal conventions and
+prefixing them would surprise. The prefix is collision safety: `DATA_DIR` and
+`SERVER_SECRET` are generic enough to already mean something else in a shared
+compose file or systemd unit.
+
 | var | default | notes |
 | --- | --- | --- |
-| `PORT` | `3000` | |
-| `DATA_DIR` | `/data` | db, `backups/`, `secret` |
-| `SERVER_SECRET` | auto-generated to `$DATA_DIR/secret` on first boot | encryption key material (§12) |
-| `PUBLIC_URL` | **required** | invite links and webhook URLs |
-| `DISABLE_INVITE_ONLY` | unset | escape hatch; the org setting is authoritative |
-| `NODE_ENV` | `production` | |
+| `PORT` | `3000` | universal convention, unprefixed |
+| `HOST` | `0.0.0.0` | universal convention, unprefixed |
+| `NODE_ENV` | `production` | universal convention, unprefixed |
+| `LAIKA_SECRET` | **required — no default** | encryption key material (§12). **Minimum 32 characters**; a shorter value is a startup failure, not a warning, and the value is redacted from the error |
+| `LAIKA_DATA_DIR` | `/data` | db, `backups/` |
+| `LAIKA_DB_PATH` | `$LAIKA_DATA_DIR/laika.db` | |
+| `LAIKA_PUBLIC_URL` | `http://localhost:$PORT` in development; **required in production** | invite links and webhook URLs — a localhost default that escapes into production sends people invite links they cannot open |
+| `LAIKA_PUBLIC_DIR` | `server/public` | where the built SPA is served from. Primarily a test and packaging affordance; deployments do not normally set it |
+| `LAIKA_DISABLE_INVITE_ONLY` | unset | escape hatch; the org setting is authoritative |
+
+**This table is the deployment contract.** Anything the server reads from the
+environment belongs in it, and anything in it must be read. It drifted in both
+directions before D-018 — `LAIKA_DB_PATH` and `LAIKA_PUBLIC_DIR` were read and
+undocumented, while `DISABLE_INVITE_ONLY` was documented and unread — and that is
+how an operator ends up setting a variable that does nothing.
+
+**`LAIKA_SECRET` is required, never auto-generated (D-018).** Auto-generating it
+hides the one decision an operator must actually make: a secret they never see is
+a secret they never back up, and losing `$LAIKA_DATA_DIR` then destroys every
+session and makes every `*_enc` column permanently undecryptable — silently, with
+no error that says so. Refusing to start puts that choice in front of them once,
+loudly, at the only moment it is cheap.
 
 One Docker image, multi-stage (build SPA → build server → slim runtime), non-root
 runtime user, one writable volume at **`/data`**. Back that up and you have backed
@@ -905,7 +927,9 @@ Org-configured, Admin+, one provider at a time:
   meeting diff (§10.2) is unavailable.
 
 Secrets are encrypted at rest with AES-256-GCM under a key derived from
-`SERVER_SECRET`. Ciphertext lives in `orgs.*_enc`; plaintext is never logged,
+`LAIKA_SECRET`, which is **required, has no default, and must be at least 32
+characters** — a shorter value is a hard startup failure and the value is
+redacted from the error message (§11.7, D-018). Ciphertext lives in `orgs.*_enc`; plaintext is never logged,
 never returned by the API (the UI sees `{ configured: true, provider, key_last4 }`),
 and never written to `activity`.
 

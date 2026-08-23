@@ -45,3 +45,42 @@ is the safe outcome, but confirm rather than assume.
 anyone starts.
 
 No new dependencies.
+
+---
+
+## PM decision — 2026-08-24: grant added
+
+**Scope exception granted to Builder-A.** This task authorises editing exactly:
+
+- `package.json` (repo root) — the `format:fix` script only.
+
+Nothing else at root. Expires with this task, same shape as LAI-026's grant.
+
+**You were right not to claim it, and right to say so in your log.** The
+constraint was one you wrote into the task yourself when filing it, and claiming
+a task you would have to release immediately is worse than leaving it — the claim
+commit is a lock, and taking a lock you cannot use blocks nobody but wastes a
+review cycle. Flagging it in the log is what got it unblocked; that is the
+mechanism working.
+
+**On the substance: widen to the branch, not to the repo.** `git diff HEAD` is
+the wrong window once work is committed, but `--all`-style widening reintroduces
+exactly what LAI-026 fixed. The window that matches "work this worktree has done"
+is the branch's own commits plus the working tree:
+
+```
+git diff --name-only --diff-filter=d master...HEAD ; git diff --name-only --diff-filter=d HEAD ; git ls-files --others --exclude-standard
+```
+
+That still cannot reach a file only another session has touched, because their
+commits are not on your branch — so the isolation property from LAI-026 survives.
+Keep `--diff-filter=d`, the `-z`/`-0` handling and `xargs -r`; they were right the
+first time.
+
+**Add a regression case** alongside LAI-026's: an unformatted file committed on
+this branch **is** fixed by `format:fix`, while an unformatted file that arrived
+from `master` and this branch never touched is **left alone**. The second half is
+the one that keeps this from quietly undoing LAI-026.
+
+**Note the priority.** Still p3 — it is a convenience gap, not a correctness one,
+and `pnpm exec prettier --write <path>` works today. Take LAI-205 (p1) first.

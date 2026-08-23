@@ -3,7 +3,7 @@ id: LAI-205
 title: Drop 'unsafe-inline' from style-src — the SPA does not need it
 area: server
 assignee: unclaimed
-priority: p2
+priority: p1
 depends-on: []
 discovered-from: LAI-103
 status: backlog
@@ -115,3 +115,16 @@ changing it.
 `'unsafe-eval'`, and the build contains no `eval` or `new Function`.
 
 No new dependencies.
+
+---
+
+## PM note — 2026-08-24
+
+**Raised to p1.** Small, already proven safe against the real build, and
+`server/web/test/csp-compatibility.test.ts` fails if the SPA ever regresses into
+needing the allowance — so tightening carries a bounded risk and leaving it does
+not.
+
+This corrects my LAI-023 review, where I accepted `style-src 'unsafe-inline'` as
+"honest" on the general belief that Vite emits inline styles. This build does
+not. The allowance was unverified, not justified.

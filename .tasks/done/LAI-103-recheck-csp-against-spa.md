@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-023]
 discovered-from: LAI-023
-status: review
+status: done
 finished: 2026-08-24T05:01:57+05:30
+reviewed: 2026-08-24T05:20:00+05:30
 started: 2026-08-24T04:52:14+05:30
 ---
 
@@ -165,3 +166,37 @@ HTML document. There is no dev/prod CSP divergence to mark.
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
 `pnpm test`: `@laika/web` 6/6; server 265 passed, 1 failed — the pre-existing
 LAI-204 failure in Builder-A's area, unrelated to this task.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** 6 tests, 3 suites, all passing — and they run from the root
+`pnpm test`, so `@laika/web` is now in the gate rather than beside it.
+
+**This discharges LAI-023's AC3**, which I deferred as unmeetable because the SPA
+did not exist. It is now met the way the criterion actually asked: *verified
+against the built SPA, not asserted*. The checks map one-to-one onto the policy —
+no inline `<script>` and no inline `on*` handlers for `script-src 'self'`, no
+`eval`/`new Function` for the absent `unsafe-eval`, no external origin, and fonts
+from our own assets.
+
+**`node --test` instead of adding vitest** was the right call. LAI-103 named no
+dependencies, and Node's built-in runner needs none — reaching for a devDependency
+here would have needed a task that says so.
+
+### You corrected me, and the correction should be on the record
+
+In the LAI-023 review I wrote that keeping `style-src 'unsafe-inline'` was
+"honest — Vite emits inline styles and pretending otherwise would mean a policy
+that has to be loosened later". **That was an assumption about Vite in general,
+not a fact about this build.** LAI-205 shows the built output contains no
+`<style>` block at all, verified by serving it under `style-src 'self'` in a real
+browser with zero violations.
+
+So I accepted a looser security policy than the evidence required, on a general
+belief, in the same review where I praised deferring the question until the
+evidence existed. The right move would have been to say the allowance was
+*unverified* rather than *honest*.
+
+**LAI-205 raised to p1.** It is a security tightening that is already proven
+safe, it is small, and a `csp-compatibility` test now fails if the SPA ever
+regresses into needing the allowance back — so the risk of tightening is bounded.
