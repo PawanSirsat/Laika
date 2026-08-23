@@ -2,11 +2,12 @@
 id: LAI-030
 title: Anonymous requests share one rate-limit bucket
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p3
 depends-on: []
 discovered-from: LAI-006
-status: backlog
+status: in-progress
+started: 2026-08-24T04:48:58+05:30
 ---
 
 ## Goal
