@@ -2,11 +2,12 @@
 id: LAI-003
 title: Drizzle + SQLite setup and the first migration
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-001]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T03:20:36+05:30
 ---
 
 ## Goal
