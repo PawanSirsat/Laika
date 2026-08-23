@@ -14,7 +14,10 @@ scheduled.
 **Goal: the thing boots, a human can log in, and it runs in Docker.**
 
 - pnpm workspaces, TypeScript strict, ESLint + Prettier, Vitest wired
-- Hono server responds on `/api/v1/health` and serves a built SPA shell
+- Frontend shell — Vite scaffold, design tokens and both themes, sidebar and
+  routing, empty/loading/error states, form primitives (LAI-017…LAI-021).
+  **API-independent — runs in parallel with the server work** (D-016)
+- SPA wired to the API: sign-in, `/me`, protected routes (LAI-007)
 - Drizzle + SQLite (WAL) with the first migration and a real schema
 - better-auth: sign-up (invite-only), sign-in, session, `GET /api/v1/me`
 - `can()` policy module with the §3.1 matrix and its unit tests

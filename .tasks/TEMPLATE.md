@@ -1,7 +1,7 @@
 ---
 id: LAI-000
 title:
-area: server | plugin | cli | docker | docs
+area: server | web | plugin | cli | docker | docs
 assignee: unclaimed | builder-a | builder-b
 priority: p1 | p2 | p3
 depends-on: []

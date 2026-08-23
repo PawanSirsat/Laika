@@ -1,44 +1,47 @@
 ---
 id: LAI-007
-title: React + Vite SPA shell with auth screens, built into server/public
-area: server
+title: Wire the SPA shell to the real API — auth, /me, protected routes
+area: web
 assignee: unclaimed
 priority: p2
-depends-on: [LAI-002, LAI-005]
+depends-on: [LAI-005, LAI-019, LAI-021]
 discovered-from:
 status: backlog
 ---
 
 ## Goal
 
-The front door: a React + Vite app that builds to static assets the Node process
-serves, with sign-in, sign-out, and an authenticated empty shell. It must talk to
-the same public `/api/v1` an agent would — no private endpoints.
+Connect the shell that LAI-017…LAI-021 built to the server that LAI-002…LAI-005
+built. After this, a human signs in and lands in a real authenticated app.
+
+**Rescoped 2026-08-24.** This task originally covered the whole SPA — scaffold,
+theme, routing, states, forms *and* wiring. Those are now LAI-017 through LAI-021
+and are API-independent, so they start immediately (D-016). What is left here is
+only the part that genuinely needs the API.
 
 ## Acceptance criteria
 
-- [ ] `server/web/` holds a React 19 + TypeScript + Vite app; `pnpm build`
-      outputs to `server/public/` (gitignored) and the running server serves it.
-- [ ] Vite dev server proxies `/api`, `/mcp` and `/webhooks` to the Node process
-      so `pnpm dev` runs both with hot reload.
-- [ ] Routing with an authenticated layout and a public auth route; unauthenticated
-      access to a protected route redirects to sign-in.
-- [ ] Sign-in and sign-out work against better-auth; the shell shows the current
-      user from `GET /api/v1/me`.
-- [ ] A typed API client wrapping `fetch`: credentials included, SPEC §6.3 error
-      envelope parsed into a typed error, 401 triggers a redirect to sign-in.
-- [ ] Empty authenticated shell: nav, current user, and an explicit empty state —
-      no fake data, no placeholder lorem.
-- [ ] Loading and error states exist for the `/me` fetch; a failed API call never
-      renders a blank white page.
-- [ ] `pnpm typecheck` and `pnpm lint` cover the web app too.
+- [ ] A typed API client wrapping `fetch`: credentials included, the SPEC §6.3
+      error envelope parsed into a typed error, `request_id` surfaced on 5xx.
+- [ ] Sign-in and sign-out wired to better-auth through LAI-021's login form.
+- [ ] `GET /api/v1/me` populates the shell's user chrome — name, avatar colour
+      derived from id, org role badge.
+- [ ] Protected routes redirect unauthenticated users to sign-in and return them
+      to where they were going after a successful sign-in.
+- [ ] A `401` anywhere clears client auth state and redirects to sign-in once —
+      not a redirect loop, not a silent failure.
+- [ ] `403` renders LAI-020's permission-denied state, **never** an empty list.
+- [ ] Loading and error states from LAI-020 are used for the `/me` fetch. A failed
+      call never renders a blank page.
+- [ ] Tests: sign-in → `/me` → sign-out → protected route redirects.
 
 ## Notes / context
 
-Milestone: **M1**. SPEC §11.4 and §11.4.1.
+Milestone: **M1**. SPEC §6.1, §6.3, §11.4. **Builder-B owns `server/web/`** (D-016).
 
-Board UI, task detail and drag-and-drop are **M2**, not this task. This is the
-shell they will mount into — resist building columns now.
+**This task is gated on the API** (CLAUDE.md §5.1) — unlike the shell tasks it
+depends on. Board, task and project screens are **not** here; they are Phase 2
+and each depends on its own API task per SPEC §11.4.2.
 
-Dependencies this task may add: `react`, `react-dom`, `@vitejs/plugin-react`,
-`vite`, a router. Component libraries and state managers need their own task.
+No new dependencies. If a data-fetching library seems necessary, file a task
+saying which and why.
