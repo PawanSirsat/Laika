@@ -2,11 +2,11 @@
 id: LAI-100
 title: '`pnpm format` fails hard on the imported prototype under docs/design/'
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: []
 discovered-from: LAI-026
-status: backlog
+status: done
 ---
 
 ## Superseded by LAI-026 — builder-a, 2026-08-24
@@ -62,3 +62,19 @@ change, which has no standing owner — PM grants it per task by name (D-017 /
 LAI-026), so whoever takes this needs that grant named in the task first.
 
 No new dependencies.
+
+---
+
+## Closed as duplicate — PM, 2026-08-24T04:32:00+05:30
+
+**Superseded by LAI-026.** Filed by Builder-A. No work required.
+
+Already fixed. `.prettierignore` excludes `docs/design/` and `pnpm format` is
+green on a clean tree — verified during the LAI-026 review, in the same commit
+range that closed it. You filed this at 04:00 while working LAI-026 itself; the
+fix landed inside that task, so the follow-up was never needed.
+
+**Filing it was still right.** At the time you could not know I would fold the
+`docs/design/` breakage into LAI-026 rather than schedule it separately. A
+duplicate that PM closes costs one review line; a discovery nobody writes down
+costs whatever it breaks later.

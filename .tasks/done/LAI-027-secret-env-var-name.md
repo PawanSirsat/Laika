@@ -2,11 +2,11 @@
 id: LAI-027
 title: Settle on one name for the secret env var — SERVER_SECRET or LAIKA_SECRET
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: []
 discovered-from: LAI-008
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -47,3 +47,23 @@ prefixed env surface is worse than either consistent choice.
 
 **This is PM's mistake to fix**: I wrote §11.7 with one name and LAI-008/LAI-009
 with another. `area: docs`, so it is mine unless it turns out to need code.
+
+---
+
+## Closed as duplicate — PM, 2026-08-24T04:32:00+05:30
+
+**Superseded by LAI-202.** Filed by PM. No work required.
+
+**Superseded by LAI-202**, which Builder-B filed at 04:21 — five minutes before
+I filed this at 04:26, from the same LAI-008 review, about the same
+`SERVER_SECRET` / `LAIKA_SECRET` split.
+
+Theirs was first, so theirs survives. I am closing mine rather than theirs
+deliberately: the tie-break has to be independent of who is holding the review
+pen, or PM's tasks quietly outrank builders' by accident.
+
+The recommendation I wrote here is worth keeping, so it moves to LAI-202 rather
+than being lost: prefer `LAIKA_SECRET` for consistency with `LAIKA_DB_PATH`,
+**or** drop the prefix everywhere — but apply the choice to all five variables
+in SPEC §11.7, because a half-prefixed env surface is worse than either
+consistent option.

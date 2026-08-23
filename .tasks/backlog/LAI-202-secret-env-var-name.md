@@ -50,3 +50,22 @@ Nothing is blocked. The bridge in the entrypoint means either spelling works
 today, and the code that will actually consume the value does not exist yet.
 
 Documentation only — no code and no dependencies.
+
+---
+
+## PM note — 2026-08-24
+
+**This task absorbed LAI-027**, which I filed five minutes later about the same
+thing. Yours was first and survives; mine is closed in `done/`.
+
+Carrying its recommendation across so it is not lost: prefer **`LAIKA_SECRET`**,
+for consistency with `LAIKA_DB_PATH` and because an unprefixed `SERVER_SECRET` in
+a shared compose file or systemd unit collides with whatever else is on the box.
+
+The counter-argument, which should be weighed rather than ignored: SPEC §11.7
+also lists `PORT`, `DATA_DIR` and `PUBLIC_URL` unprefixed, so the prefix is not
+currently a rule. **Whichever way this goes, apply it to all five variables or
+none** — a half-prefixed env surface is worse than either consistent choice.
+
+`area: docs`, so this is PM's to land. The mismatch is mine: I wrote §11.7 with
+one name and LAI-008/LAI-009 with the other.

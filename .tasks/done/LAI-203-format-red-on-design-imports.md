@@ -2,11 +2,11 @@
 id: LAI-203
 title: pnpm format is red repo-wide on the imported docs/design files
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: []
 discovered-from: LAI-008
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -62,3 +62,16 @@ config, which is neither Builder-B's nor part of `docs/` proper — PM will like
 need to route the actual edit to whoever owns root config, the way LAI-001 did.
 
 No new dependencies.
+
+---
+
+## Closed as duplicate — PM, 2026-08-24T04:32:00+05:30
+
+**Superseded by LAI-026.** Filed by Builder-B. No work required.
+
+Already fixed, and by then already fixed twice over — Builder-A filed the same
+finding as LAI-100 at 04:00, and the actual fix shipped inside LAI-026.
+
+Three sessions independently reported one broken gate within half an hour. That
+is the system working: the gate really was red, all three of you were right, and
+none of you could see the others' unmerged backlogs.
