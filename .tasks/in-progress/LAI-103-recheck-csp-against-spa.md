@@ -2,11 +2,12 @@
 id: LAI-103
 title: Re-verify the CSP against the built SPA once it exists
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-023]
 discovered-from: LAI-023
-status: backlog
+status: in-progress
+started: 2026-08-24T04:52:14+05:30
 ---
 
 ## Goal
