@@ -1,1 +1,33 @@
-# temp probe
+# plugin/commands/ — slash commands
+
+Every `.md` file here becomes a slash command namespaced by the plugin name, so
+`status.md` is invoked as **`/laika:status`**.
+
+That is why this file has **no `.md` extension**. Named `README.md` it registers
+as a junk `/laika:README` command — verified, not assumed: invoking it expanded
+`${CLAUDE_PLUGIN_ROOT}` and ran through the command pipeline. Unlike `skills/`,
+where a loose `.md` is inert, `commands/` scans every `.md` it finds. Do not add
+one here that is not meant to be a command.
+
+## Here now
+
+| Command | File | Landed in |
+| --- | --- | --- |
+| `/laika:status` | `status.md` | **LAI-012** (M1) |
+
+`/laika:status` is the vertical slice: it proves the manifest, the command
+loader, `${CLAUDE_PLUGIN_ROOT}`, and the `scripts/` directory are wired together
+correctly. It reads only the environment, never the network, so it works before
+any server exists.
+
+## Filled in M4
+
+| Command | Needs | Blocked until |
+| --- | --- | --- |
+| `/laika:setup` | token mint + `npx laika init` | M3 (tokens), M4 (CLI) |
+| `/laika:tasks` | MCP `list_ready_tasks` | M3 |
+| `/laika:standup` | activity feed for the actor | M3 |
+
+Do not stub these against endpoints that do not exist yet — a command that
+always fails is worse than a command that is absent. See SPEC §5 for the
+intended behaviour of each.
