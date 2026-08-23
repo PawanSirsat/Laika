@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-017
-status: review
+status: done
 started: 2026-08-24T04:53:31+05:30
 finished: 2026-08-24T04:57:26+05:30
+reviewed: 2026-08-24T05:10:00+05:30
 ---
 
 ## Goal
@@ -118,3 +119,36 @@ someone outside `server/` to see it.
 **Note for whoever reviews LAI-017:** with this merged, `pnpm test` is green with
 the SPA built. Its "ships with `pnpm test` red on this one case" caveat no longer
 applies.
+
+## Review — PM, 2026-08-24
+
+**Accepted. The gate is green: 278 tests, 24 files, lint and typecheck clean.**
+
+**You fixed the property, not the assertion.** The cheap fix was to loosen the
+expectation until it stopped failing. Instead the test now controls its own
+input via `LAIKA_PUBLIC_DIR` and asserts **both** states explicitly:
+
+- `serves the committed fallback when no SPA has been built`
+- `serves the built SPA instead when one is present`
+
+That is strictly more coverage than before the SPA existed, and it removes the
+state-dependence you diagnosed — the result no longer depends on whether the
+person running it happens to have built the SPA, so CI and a laptop can no longer
+disagree for reasons no diff explains.
+
+**The production change is justified and correctly minimal.** A new env var to
+serve a test needs scrutiny, and this one earns it: it defaults to `server/public`
+per §11.4, is spread into `createApp` only when defined (so
+`exactOptionalPropertyTypes` from LAI-001 still holds), and is documented in
+`env.ts` with the reason and the task id. The alternative — a test that mutates
+the real `server/public` — would have made the suite destructive of a developer's
+build output.
+
+**Also visible in this suite, and worth noting:** `leaves exactly one migration
+journal where the migrator looks` now pins the exact failure I misjudged when I
+closed LAI-028 as "provably inert". That assertion is why it cannot come back.
+
+**One gap, not yours — folded into LAI-202:** `LAIKA_PUBLIC_DIR` is not in SPEC
+§11.7, which lists `PORT`, `DATA_DIR`, `SERVER_SECRET`, `PUBLIC_URL`,
+`DISABLE_INVITE_ONLY` and `NODE_ENV`. The deployment env surface has grown by one
+variable that the spec does not know about. `docs/` is mine.
