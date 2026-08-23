@@ -2,11 +2,12 @@
 id: LAI-004
 title: can() policy module and its permission-matrix tests
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-003]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T04:05:21+05:30
 ---
 
 ## Goal
