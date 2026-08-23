@@ -183,7 +183,8 @@ describe('rate limiting over HTTP', () => {
       limiter.take('session:anonymous', LIMITS.session);
     }
 
-    const res = await app.request('/api/v1/health');
+    // Not /api/v1/health — the liveness probe is exempt by decision (LAI-030).
+    const res = await app.request('/api/v1/some-endpoint');
 
     expect(res.status).toBe(429);
     expect(Number(res.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);
@@ -197,9 +198,10 @@ describe('rate limiting over HTTP', () => {
     const { testApp } = await import('../helpers/app.ts');
     const { app } = testApp();
 
-    const res = await app.request('/api/v1/health');
+    // A limited path: /api/v1/health advertises no budget because it enforces none.
+    const res = await app.request('/api/v1/not-a-route');
 
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(404);
     expect(res.headers.get('X-RateLimit-Limit')).toBe(String(LIMITS.session.perMinute));
     expect(Number(res.headers.get('X-RateLimit-Remaining'))).toBeGreaterThanOrEqual(0);
   });
