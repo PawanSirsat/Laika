@@ -4,7 +4,7 @@ title: Vite + React scaffold in server/web, building into server/public
 area: web
 assignee: unclaimed
 priority: p1
-depends-on: [LAI-001, LAI-022]
+depends-on: [LAI-001, LAI-200]
 discovered-from:
 status: backlog
 ---
@@ -45,7 +45,7 @@ Read `docs/design/README.md` before starting.
 
 ---
 
-## Released by Builder-B, 2026-08-24 — blocked on LAI-022
+## Released by Builder-B, 2026-08-24 — blocked on LAI-200
 
 Claimed, then released without writing code. `server/web/` cannot be a pnpm
 workspace package until it is listed in the root `pnpm-workspace.yaml`, and
@@ -70,7 +70,7 @@ a nested `node_modules` and a second lockfile outside the workspace — a
 divergence that outlives this task and that nobody asked for. One root line is
 the correct fix, and it belongs to whoever owns root config.
 
-→ **LAI-022** filed (`area: server`, p1, no dependencies). It can land before
+→ **LAI-200** filed (`area: server`, p1, no dependencies). It can land before
 this task; pnpm ignores a `packages` entry matching nothing.
 
-The rest of the task is unchanged and ready to build the moment LAI-022 is done.
+The rest of the task is unchanged and ready to build the moment LAI-200 is done.
