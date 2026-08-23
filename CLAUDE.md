@@ -210,6 +210,11 @@ If you think you need one, say so — that is a PM decision.
   name the package, it does not get added. Write a task instead.
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
+- **A UI task carries `depends-on` for the API task(s) that define its
+  endpoints.** No screen is built before the endpoints it calls exist. If a
+  screen needs data no endpoint returns, it stays in `.tasks/backlog/` — you do
+  not stub the data and you do not add the endpoint from the UI task. See
+  SPEC §11.4.2 for the screen → endpoint map.
 
 ## 6. Boundaries that are never crossed
 

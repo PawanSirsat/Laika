@@ -458,3 +458,50 @@ paragraph is the correction rather than an edit to D-004.
 
 **Revisit when:** never for the principle. The mechanics could improve — a link
 checker in CI would catch dangling `§` references before a builder does.
+
+---
+
+## D-012 — A screen is specified by its endpoints, or it is blocked
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** no UI is built against an API that does not exist yet, and a
+screen with no backing endpoint is a blocked task rather than a stubbed one.
+
+**Context.** Eleven screens were designed before the API surface was complete. A
+coverage pass (SPEC §11.4.2) found nine fully covered once six missing endpoints
+were added, and two — Timeline and Sprints — with no possible backing at all.
+
+The tempting move with those two is to build the screen against mock data and
+"wire it up later". That is how a stub ships: the screen looks finished, it
+demos, nobody can tell from the outside that the numbers are invented, and the
+task closes. The API then gets shaped backwards to fit a UI that was designed
+without it.
+
+**Decision.**
+
+1. **A UI task carries `depends-on` for the API task(s) defining its endpoints.**
+   Enforced by the ordinary claim protocol: dependencies must be in
+   `.tasks/done/` before the task is claimable, so the ordering is mechanical
+   rather than remembered.
+2. **A screen whose endpoints are undefined stays in `.tasks/backlog/`.** It is
+   not started, not stubbed, not mocked.
+3. **A UI task never adds an endpoint.** Discovering a missing one means filing a
+   task for the API (`discovered-from`), not widening the current one.
+4. **The screen → endpoint map lives in SPEC §11.4.2** and is updated whenever a
+   screen or an endpoint is added. A screen absent from that table is not
+   scheduled.
+
+**Consequences.** Front-end work is gated behind back-end work, so the UI cannot
+run ahead — the cost is real, and on a two-builder team it means Builder-B waits
+on Builder-A more than the reverse. Accepted, because the alternative is a
+convincing-looking product built on invented data, which is worse than a slower
+honest one. It also forces API gaps to surface at design time: this pass found
+six missing endpoints and one missing table (`unlisted_work`, §4.14) that nobody
+would have noticed until a screen needed them.
+
+The two blocked screens are blocked on **decisions**, not endpoints (SPEC §14,
+questions 9 and 10) — planned dates for Timeline, and reversing the sprints
+non-goal for Sprints. Neither is a gap PM can close by writing an endpoint.
+
+**Revisit when:** never for the principle. If UI-ahead-of-API becomes necessary
+for a design review, that is a throwaway prototype outside `.tasks/`, not a task.

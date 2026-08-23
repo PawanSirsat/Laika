@@ -301,7 +301,25 @@ prompts, or transcript content (D-005). Cron deletes rows older than 30 days.
 `task_dependencies(depends_on_task_id)`, `comments(task_id, created_at)`,
 `activity(project_id, created_at)`, `activity(task_id, created_at)`,
 `heartbeats(user_id, created_at)`, `tokens(token_hash)` unique,
-`project_memberships(project_id, user_id)` unique, `projects(slug)` unique.
+`project_memberships(project_id, user_id)` unique, `projects(slug)` unique,
+`unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`.
+
+### 4.14 `unlisted_work`
+
+Appended after §4.13 rather than inserted before it, so the Indexes section keeps
+its number (D-011 — LAI-003 cites `§4.13`).
+
+`id`, `user_id`, `token_id`, `repo`, `note`, `promoted_task_id` (nullable),
+`dismissed_at` (nullable), `created_at`.
+
+Written **only** by the `log_unlisted_work` MCP tool (§7.1): an agent noticing
+work that belongs to no project records it here instead of inventing a task.
+Read by the capacity view (§9.3) and promoted to a real task by
+`POST /api/v1/unlisted/:id/promote`, which is an ordinary `can()`-checked task
+creation with `created_via: 'mcp'` provenance preserved on the resulting task.
+
+Same privacy rule as heartbeats (D-005): `note` is agent-authored prose, `repo`
+is a name. No file contents, no diffs, no prompt text.
 
 ---
 
@@ -383,6 +401,7 @@ GET    /api/v1/me
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
 GET    /api/v1/users                         PATCH /api/v1/users/:id (role, deactivate — admin+)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
+GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
@@ -397,11 +416,18 @@ GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
+GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 POST   /api/v1/heartbeats                    202, token auth only
 GET    /api/v1/presence                      GET /api/v1/capacity
+GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
+POST   /api/v1/unlisted/:id/promote          body { project_slug, title, priority? } → creates a task
+DELETE /api/v1/unlisted/:id                  dismiss
+GET    /api/v1/projects/:slug/metrics        ?window=  — throughput, cycle time, stuck, WIP by user
 GET    /api/v1/events                        SSE, ?project= optional
 GET    /api/v1/projects/:slug/meeting-reviews
+GET    /api/v1/meeting-reviews/:id           one review with its full proposal set and quotes
 POST   /api/v1/meeting-reviews/:id/apply     body { accepted_proposal_ids[] }
+POST   /api/v1/meeting-reviews/:id/discard   reject the whole set without applying anything
 POST   /webhooks/github                      POST /webhooks/transcript
 GET    /api/v1/health
 ```
@@ -669,6 +695,50 @@ Both views:
 **Explicitly not in v1:** swimlanes, WIP limits, custom columns, saved views,
 bulk edit. Columns are the status enum; when that is not enough, use the list.
 
+#### 11.4.2 UI screens → API coverage
+
+Every screen and the endpoints it cannot function without. **The build rule:**
+a UI task carries `depends-on` for the API task(s) that define its endpoints, so
+no screen is built against an API that does not exist yet. A screen whose
+endpoints are undefined is **blocked**, not "start it and stub the data" — a
+stubbed screen is a screen that gets shipped with the stub still in it.
+
+MCP tools appear where a tool *writes* the data the screen reads. Screens do not
+call MCP; agents do. The column exists so it is obvious which surfaces are
+agent-fed and will look empty until agents are actually running.
+
+| Screen | Phase | REST endpoints it needs | MCP tools feeding it | Coverage |
+| --- | --- | --- | --- | --- |
+| **First boot** | 1 | `GET /setup/status`, `POST /setup`, `GET /health` | — | ✅ complete |
+| **Login / invite** | 1–2 | `POST /auth/*`, **`GET /invites/:token`**, `POST /invites/accept`, `GET /me` | — | ✅ complete *(`GET /invites/:token` added by this pass)* |
+| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `GET/POST/PATCH/DELETE /projects/:slug/members`, `POST /projects/:slug/join`, `GET/PATCH /projects/:slug/context` | `get_project_context` reads `context_md` | ✅ complete |
+| **Board** (kanban + list) | 2 | `GET/POST /projects/:slug/tasks`, `GET/PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `POST/DELETE /tasks/:id/dependencies`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `GET /projects/:slug/members`, `GET /events` | `create_task`, `start_working`, `update_status`, `add_comment`, `finish_task` | ✅ complete |
+| **Tokens** | 3 | `GET/POST/DELETE /tokens`, **`GET /users/:id/tokens`**, **`DELETE /users/:id/tokens/:tokenId`** | — | ✅ complete *(admin routes added by this pass)* |
+| **Org** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ complete |
+| **Capacity** | 5 | `GET /capacity`, `GET /presence`, `GET /projects/:slug/tasks?status=in_progress`, **`GET /unlisted`**, **`POST /unlisted/:id/promote`**, **`DELETE /unlisted/:id`**, `GET /events` | `log_unlisted_work` writes `unlisted_work` (§4.14) | ✅ complete *(unlisted routes + table added by this pass)* |
+| **Dashboard** | 5 | **`GET /projects/:slug/metrics`**, `GET /activity`, `GET /projects/:slug/activity` | all tools, indirectly — every write lands in `activity` | ✅ complete *(metrics endpoint added by this pass)* |
+| **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, **`GET /meeting-reviews/:id`**, `POST /meeting-reviews/:id/apply`, **`POST /meeting-reviews/:id/discard`**, `POST /webhooks/transcript` | — (LLM-fed, §10.2) | ✅ complete *(detail + discard added by this pass)* |
+| **Timeline** | — | **none defined** | — | ⛔ **blocked — no date model** |
+| **Sprints** | — | **none defined** | — | ⛔ **blocked — contradicts §1.1** |
+
+**Timeline.** A time axis needs per-task scheduling data. `tasks` has
+`created_at`, `started_at`, `completed_at`, `updated_at` — all *observed* history,
+none of it *planned* dates. There is no `due_date`, no planned start, and no
+date-ranged task query. Building a timeline on observed timestamps produces a
+chart of what already happened, which is a report, not a plan. Adding planned
+dates is a data-model change **and** brushes against the "Gantt charts" non-goal
+in §1.1 — so it needs a decision, not an endpoint. See §14, question 9.
+
+**Sprints.** §1.1 lists "sprints or story points" as an explicit v1 non-goal.
+There is no `sprints` table, no iteration concept, and no endpoints — not an
+oversight, a decision. A Sprints screen cannot be specified without reversing
+that, which is a `DECISIONS.md` entry, not a spec gap. See §14, question 10.
+
+**Not on this list.** A *Laika Assistant* chat panel is `[idea]` in
+`FEATURES.md`, not a planned screen. It has no endpoints, no decision on whether
+it may mutate the board, and no provider strategy. It is out of scope until it
+has all three.
+
 ### 11.5 Live updates — SSE
 
 `GET /api/v1/events` (D-003). One `text/event-stream` per client, filtered
@@ -779,4 +849,14 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
    context window it was meant to fill usefully. Needs a real number before M3.
 8. **Manager dashboard metrics** — which numbers actually answer "where are we"?
    Throughput and cycle time are the obvious ones and may be the wrong ones.
-   Needs shaping before M5; see `FEATURES.md` phase 5.
+   `GET /projects/:slug/metrics` (§6.4) reserves the surface; the payload is not
+   yet defined. Needs shaping before M5.
+9. **Does a task need planned dates?** A Timeline screen (§11.4.2) requires a
+   planned start and/or due date, which `tasks` does not have and §1.1 arguably
+   forbids ("Gantt charts"). Either add `due_date` / `planned_start` and a
+   date-ranged query and narrow the non-goal, or drop the screen. **Blocks the
+   Timeline screen entirely.**
+10. **Are sprints still a non-goal?** §1.1 says yes. A Sprints screen was
+    designed anyway. Reversing this needs a `DECISIONS.md` entry, a `sprints`
+    table, iteration assignment on `tasks`, and endpoints — a milestone of work,
+    not a screen. **Blocks the Sprints screen entirely.**
