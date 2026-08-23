@@ -127,8 +127,8 @@ Builder-A's; the integrated ids won, as PM ruled on LAI-200.
 container built fine, booted, then died with `Can't find meta/_journal.json` and
 restart-looped. `migrate.ts` resolves them from `import.meta.url`, so they must
 sit beside the compiled module — the Dockerfile now copies them to
-`dist/db/migrations`. Anyone writing the real build script (LAI-023) will hit
-exactly this; it is the first acceptance criterion there for that reason.
+`dist/db/migrations`. Anyone writing the real build script (LAI-024) will hit
+exactly this; LAI-201 exists to add it as a criterion there.
 
 Second, smaller: compose's `init: true` put Docker's init at PID 1 and demoted
 tini to a child, which logged that subreaping was disabled on every boot. One
