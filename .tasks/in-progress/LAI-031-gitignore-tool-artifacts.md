@@ -2,11 +2,12 @@
 id: LAI-031
 title: Stray tool artifacts make `pnpm format` red in a clean checkout
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p3
 depends-on: []
 discovered-from: LAI-023
-status: backlog
+status: in-progress
+started: 2026-08-24T04:57:57+05:30
 ---
 
 ## Goal
