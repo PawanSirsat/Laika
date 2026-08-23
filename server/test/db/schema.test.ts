@@ -71,6 +71,7 @@ describe('migrations', () => {
     'activity',
     'comments',
     'heartbeats',
+    'idempotency_keys',
     'invites',
     'meeting_reviews',
     'orgs',
@@ -86,7 +87,9 @@ describe('migrations', () => {
     'verifications',
   ];
 
-  it('creates every table in SPEC §4', () => {
+  // `idempotency_keys` is transport bookkeeping rather than a §4 table (LAI-006);
+  // it is listed here because this asserts the whole schema, not just §4.
+  it('creates every table in SPEC §4, plus the transport tables', () => {
     const rows = t.db.all<{ name: string }>(
       sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '__drizzle%' ORDER BY name`,
     );

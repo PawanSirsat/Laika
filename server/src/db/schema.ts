@@ -15,7 +15,15 @@
  */
 
 import { sql } from 'drizzle-orm';
-import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  check,
+  index,
+  integer,
+  primaryKey,
+  sqliteTable,
+  text,
+  uniqueIndex,
+} from 'drizzle-orm/sqlite-core';
 import {
   ACTIVITY_TYPES,
   ACTOR_KINDS,
@@ -575,6 +583,39 @@ export const verifications = sqliteTable(
 export type Session = typeof sessions.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
 export type Verification = typeof verifications.$inferSelect;
+
+// ------------------------------------------------- idempotency keys (§6.3)
+
+/**
+ * `Idempotency-Key` replay storage (LAI-006).
+ *
+ * Not in SPEC §4 because it is transport bookkeeping rather than product data —
+ * no endpoint reads it, nothing references it, and a cron sweep empties it. It
+ * lives in SQLite rather than memory (D-002) so a retry that arrives after a
+ * restart still replays instead of writing twice.
+ *
+ * The primary key is `(actor_id, key)`: keys are scoped per actor, so one
+ * caller's key can never collide with or replay another's.
+ */
+export const idempotencyKeys = sqliteTable(
+  'idempotency_keys',
+  {
+    actorId: text('actor_id').notNull(),
+    key: text('key').notNull(),
+    /** sha256 of method + path + body, so a reused key with a new body is caught. */
+    requestHash: text('request_hash').notNull(),
+    responseStatus: integer('response_status').notNull(),
+    responseBody: text('response_body').notNull(),
+    createdAt,
+    expiresAt: integer('expires_at').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.actorId, t.key] }),
+    index('idempotency_keys_expires_at_idx').on(t.expiresAt),
+  ],
+);
+
+export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
 export type Org = typeof orgs.$inferSelect;
