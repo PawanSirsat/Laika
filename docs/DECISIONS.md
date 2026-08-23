@@ -15,6 +15,14 @@ because the original design conversation happened somewhere that will not
 survive, and a rule whose reasoning is lost gets re-litigated or quietly
 abandoned the first time it is inconvenient.
 
+Cross-references into `docs/SPEC.md` are also corrected in place when the spec
+renumbers — D-011 makes that the renumberer's obligation, and it applies to this
+file too. Those are pointer fixes, not decision changes: D-002's `§10.6` became
+`§11.6` and D-005's `§12.4` became `§13.4` on 2026-08-24, both pointing at the
+same text they always meant. Where a *field name* changed rather than a section
+number, the correction is written as a new paragraph instead — see D-011's note
+on D-004's `orgs.signup_mode`.
+
 ---
 
 ## D-001 — SQLite only for v1
@@ -65,7 +73,7 @@ for someone self-hosting on a $5 VPS.
 One writable volume at `/data`. No queue, no cache server, no worker.
 
 **Consequences.** `docker run` with one volume is the whole install, and backup
-is one directory. Cron runs in-process (SPEC §10.6), so a restart briefly stops
+is one directory. Cron runs in-process (SPEC §11.6), so a restart briefly stops
 scheduled work — jobs are idempotent, so that is survivable. Scaling is vertical
 only, and a crash takes everything down together; that is the correct trade for
 a tool whose users are a team, not a platform. Long or CPU-heavy work must not
@@ -161,7 +169,7 @@ there in the agent session, and it would make the dashboard much smarter.
 **Decision.** A heartbeat carries `{ repo, branch, timestamp }` and nothing
 else. The task link is *derived* from the branch name (`lai-42-slug`), not
 reported. No file paths, no diffs, no prompts, no transcript content, ever.
-Retention is 30 days, pruned by cron. Paired with SPEC §12.4: no telemetry of
+Retention is 30 days, pruned by cron. Paired with SPEC §13.4: no telemetry of
 any kind leaves the deployment.
 
 **Consequences.** We can answer "who is active, on which task, since when" and
@@ -458,3 +466,170 @@ paragraph is the correction rather than an edit to D-004.
 
 **Revisit when:** never for the principle. The mechanics could improve — a link
 checker in CI would catch dangling `§` references before a builder does.
+
+---
+
+## D-012 — A screen is specified by its endpoints, or it is blocked
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** no UI is built against an API that does not exist yet, and a
+screen with no backing endpoint is a blocked task rather than a stubbed one.
+
+**Context.** Eleven screens were designed before the API surface was complete. A
+coverage pass (SPEC §11.4.2) found nine fully covered once six missing endpoints
+were added, and two — Timeline and Sprints — with no possible backing at all.
+
+The tempting move with those two is to build the screen against mock data and
+"wire it up later". That is how a stub ships: the screen looks finished, it
+demos, nobody can tell from the outside that the numbers are invented, and the
+task closes. The API then gets shaped backwards to fit a UI that was designed
+without it.
+
+**Decision.**
+
+1. **A UI task carries `depends-on` for the API task(s) defining its endpoints.**
+   Enforced by the ordinary claim protocol: dependencies must be in
+   `.tasks/done/` before the task is claimable, so the ordering is mechanical
+   rather than remembered.
+2. **A screen whose endpoints are undefined stays in `.tasks/backlog/`.** It is
+   not started, not stubbed, not mocked.
+3. **A UI task never adds an endpoint.** Discovering a missing one means filing a
+   task for the API (`discovered-from`), not widening the current one.
+4. **The screen → endpoint map lives in SPEC §11.4.2** and is updated whenever a
+   screen or an endpoint is added. A screen absent from that table is not
+   scheduled.
+
+**Consequences.** Front-end work is gated behind back-end work, so the UI cannot
+run ahead — the cost is real, and on a two-builder team it means Builder-B waits
+on Builder-A more than the reverse. Accepted, because the alternative is a
+convincing-looking product built on invented data, which is worse than a slower
+honest one. It also forces API gaps to surface at design time: this pass found
+six missing endpoints and one missing table (`unlisted_work`, §4.14) that nobody
+would have noticed until a screen needed them.
+
+The two blocked screens are blocked on **decisions**, not endpoints (SPEC §14,
+questions 9 and 10) — planned dates for Timeline, and reversing the sprints
+non-goal for Sprints. Neither is a gap PM can close by writing an endpoint.
+
+**Revisit when:** never for the principle. If UI-ahead-of-API becomes necessary
+for a design review, that is a throwaway prototype outside `.tasks/`, not a task.
+
+---
+
+## D-013 — Sprints ship in v1, Phase 2
+**Date:** 2026-08-24 · **Status:** accepted · **Reverses** the "sprints" entry in SPEC §1.1
+
+**In one line:** sprints are how the target team already plans, and a board they
+cannot plan in is a board they keep a second tool beside.
+
+**Context.** §1.1 listed "sprints or story points" as a v1 non-goal, on the
+reasoning that agent-era work is continuous-flow and iteration ceremony is
+overhead. That reasoning describes how *agents* work. It does not describe how
+the humans in a 3–30 person org work, and Laika's whole thesis (D-010) is that
+both share one board. A board that models the agent's reality and not the
+manager's is half a product — the manager keeps a spreadsheet, and the spreadsheet
+becomes the real plan.
+
+**Decision.** Sprints are in, at **Phase 2**, alongside the board they organise:
+a `sprints` table (§4.15), `tasks.sprint_id`, CRUD endpoints, and a Sprints
+screen. Constraints that keep it small: at most one `active` sprint per project,
+no overlapping date ranges within a project, completing a sprint never touches
+its tasks' statuses, and deleting one never deletes tasks.
+
+**What did not come with it.** **Story points remain a non-goal.** A sprint here
+carries dates and a goal, not a velocity model — no estimates, no burndown, no
+capacity-in-points. The `/capacity` view (§9.3) answers "who is free" from
+heartbeats and in-progress counts, which is a measurement rather than an
+estimate, and is the better answer. Reversing the points half of the original
+non-goal would need its own entry.
+
+**Consequences.** Phase 2 grows: a table, six endpoints, a screen, and a
+`?sprint=` filter on the task list. `tasks.sprint_id` is nullable and null is the
+normal state, so nothing in the existing model has to change and no migration
+backfills anything. The non-overlap constraint is what makes the Phase 2.5
+timeline nearly free (D-014) — it is worth defending even when someone asks for
+overlapping sprints.
+
+The honest cost: this is the first time a stated non-goal has been reversed. The
+non-goal list is a promise about scope, and reversing one cheaply is how a
+focused product becomes Jira. It was reversed here because the original reasoning
+was wrong about the audience, not because sprints are convenient.
+
+**Revisit when:** a team runs Laika for a full quarter without creating a sprint.
+
+---
+
+## D-014 — The timeline is sprint-based; tasks never get dates
+**Date:** 2026-08-24 · **Status:** accepted · **Reverses** the "Gantt charts" entry in SPEC §1.1
+
+**In one line:** draw the Gantt from sprint boundaries, and it costs a view;
+draw it from task dates, and it costs a scheduling engine.
+
+**Context.** A Timeline screen was designed, and the obvious implementation gives
+each task a planned start and a due date. That is also the expensive one: task
+dates imply dependency-aware layout, a critical path, what happens when a
+dependency slips, and a scheduling model that has to be maintained forever. It is
+why "Gantt charts" was a non-goal.
+
+Sprints (D-013) make the cheap version available. Sprints already have
+`starts_on` and `ends_on`, and §4.15 forbids them from overlapping within a
+project — so the time axis is a single clean track with one bar per sprint and no
+layout problem to solve.
+
+**Decision.** The timeline (§11.4.3) is a **sprint** chart, at **Phase 2.5**,
+immediately after sprints. Sprints are bars; tasks are contents. **Tasks have no
+bars and no dates** — `due_date` and `planned_start` stay non-goals in §1.1
+specifically to protect this boundary. `GET /projects/:slug/timeline` returns
+sprints with their ranges and tasks; dragging a sprint edge is a `PATCH` on the
+sprint, rejected if it would overlap a neighbour.
+
+**Consequences.** The user gets the Gantt-style view they wanted for roughly the
+cost of a rendering pass over data that already exists. Precision is bounded by
+sprint granularity: you can say "this work is in the sprint ending the 14th", not
+"this task is due Tuesday". For a 3–30 person team that is the right resolution —
+day-level task deadlines on a board that also tracks agent sessions is a
+precision nobody meets.
+
+**The failure mode to watch for** is incremental: someone adds `due_date` "just
+for the timeline", and the sprint chart quietly becomes a task Gantt with a
+layout engine. Any proposal to put dates on tasks reopens this decision
+explicitly — it is not a small additive change.
+
+**Revisit when:** teams consistently need sub-sprint scheduling precision.
+
+---
+
+## D-015 — Nothing is cut; the backlog is sequenced, not trimmed
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** every feature in `FEATURES.md` is scheduled to a phase — the
+answer to "are we building X" is a date, never "no".
+
+**Context.** Faced with two screens that did not fit v1, the reflex was to drop
+them. The owner's call was the opposite: build everything, in order. That is a
+different discipline, not a weaker one — it holds only if "later" is a real
+position with a phase attached, rather than a polite refusal.
+
+**Decision.** All eleven designed screens are in the plan (§11.4.2), each tagged
+with its phase. Everything in `FEATURES.md` carries a phase. `[idea]` now means
+**"scheduled, scope not yet decided"**, not "may never happen" — and an `[idea]`
+must name the questions blocking it, so the difference between *undecided* and
+*unexamined* stays visible.
+
+**Laika Assistant is Phase 6**, alongside meeting intelligence, with three
+questions due before it can be written as tasks: read-only versus can-mutate,
+provider strategy, and context scope (SPEC §14, question 9). It appears in the
+screen table with no endpoint column — scheduled, and visibly unspecified.
+
+**Consequences.** Nothing gets quietly forgotten, and the roadmap becomes the
+single answer to "what about X". The risk is the mirror image of cutting: a
+backlog where everything is promised is one where nothing is prioritised, and
+`FEATURES.md` grows into a wish list that no phase can absorb. The guard is that
+a phase has an exit test — work that does not serve the current exit test waits,
+however scheduled it is.
+
+This also means **D-012 does more work than before**: with every screen scheduled,
+the gate that stops a screen being built ahead of its endpoints is the only thing
+keeping "everything is in" from meaning "anything may start".
+
+**Revisit when:** a phase cannot absorb its own scope and something has to give.

@@ -38,8 +38,15 @@ The design commitments that follow from that:
 
 Multi-org / multi-tenant hosting, Postgres, WebSockets, custom fields, file
 uploads, a plugin system of our own, mobile apps, SSO/SAML/SCIM, zero-downtime
-deploys, sprints or story points, time tracking, Gantt charts, and email as a
-*primary* interface (transactional invite mail only).
+deploys, **story points**, time tracking, **per-task planned or due dates**, and
+email as a *primary* interface (transactional invite mail only).
+
+**Changed 2026-08-24 (D-013, D-014).** "Sprints" and "Gantt charts" were on this
+list and are not any more: sprints ship in Phase 2 (§4.15) and a **sprint-based**
+timeline in Phase 2.5 (§11.4.3). Note what did **not** move — *story points* and
+*per-task planned/due dates* remain non-goals. The timeline draws its axis from
+sprint boundaries, never from dates on individual tasks. That distinction is the
+whole reason the feature is cheap; see D-014 before adding a date column.
 
 ---
 
@@ -102,6 +109,8 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | --- | :---: | :---: | :---: |
 | Manage project members | ✓ | — | — |
 | Edit project settings and `context_md` | ✓ | — | — |
+| Create / edit / delete sprints | ✓ | — | — |
+| Assign tasks into or out of a sprint | ✓ | ✓ | — |
 | Create / edit / move any task | ✓ | ✓ | — |
 | Claim a task (`start_working`) | ✓ | ✓ | — |
 | Assign a task to someone else | ✓ | ✓ | — |
@@ -207,6 +216,7 @@ project role `viewer`.
 | `status` | `backlog` \| `todo` \| `in_progress` \| `review` \| `done` \| `cancelled` |
 | `priority` | `p1` \| `p2` \| `p3`, default `p2` |
 | `assignee_id` | nullable FK `users` |
+| `sprint_id` | nullable FK `sprints` (§4.15) — unassigned means backlog, not "no sprint yet" |
 | `created_by` | FK `users` |
 | `created_via` | `web` \| `mcp` \| `api` \| `webhook` \| `meeting` |
 | `discovered_from` | nullable self-FK |
@@ -301,7 +311,56 @@ prompts, or transcript content (D-005). Cron deletes rows older than 30 days.
 `task_dependencies(depends_on_task_id)`, `comments(task_id, created_at)`,
 `activity(project_id, created_at)`, `activity(task_id, created_at)`,
 `heartbeats(user_id, created_at)`, `tokens(token_hash)` unique,
-`project_memberships(project_id, user_id)` unique, `projects(slug)` unique.
+`project_memberships(project_id, user_id)` unique, `projects(slug)` unique,
+`unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`,
+`sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`.
+
+### 4.14 `unlisted_work`
+
+Appended after §4.13 rather than inserted before it, so the Indexes section keeps
+its number (D-011 — LAI-003 cites `§4.13`).
+
+`id`, `user_id`, `token_id`, `repo`, `note`, `promoted_task_id` (nullable),
+`dismissed_at` (nullable), `created_at`.
+
+Written **only** by the `log_unlisted_work` MCP tool (§7.1): an agent noticing
+work that belongs to no project records it here instead of inventing a task.
+Read by the capacity view (§9.3) and promoted to a real task by
+`POST /api/v1/unlisted/:id/promote`, which is an ordinary `can()`-checked task
+creation with `created_via: 'mcp'` provenance preserved on the resulting task.
+
+Same privacy rule as heartbeats (D-005): `note` is agent-authored prose, `repo`
+is a name. No file contents, no diffs, no prompt text.
+
+### 4.15 `sprints`
+
+Appended after §4.14 so §4.13 Indexes keeps its number (D-011).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `project_id` | FK `projects` |
+| `name` | e.g. "Sprint 4" — unique per project |
+| `goal` | nullable, one line: what this sprint is for |
+| `starts_on`, `ends_on` | integer unix-ms, date-only semantics in the project's timezone |
+| `status` | `planned` \| `active` \| `completed` |
+| `created_at`, `updated_at` | |
+
+**Rules.**
+
+- `ends_on` must be after `starts_on`; both are required.
+- **At most one `active` sprint per project**, enforced at write time.
+  Transitioning a second sprint to `active` is `409 conflict`.
+- Sprints of the same project **may not overlap** in date range. This is what
+  makes §11.4.3's timeline a clean single-track axis rather than a layout problem.
+- A task's `sprint_id` is nullable. Null means *not in a sprint* — the ordinary
+  state for backlog work, and never an error.
+- Deleting a sprint sets `sprint_id = NULL` on its tasks; it never deletes tasks.
+- Completing a sprint does **not** change its tasks' statuses. Unfinished work
+  stays unfinished and is moved deliberately, not swept.
+
+**Story points are still a non-goal** (§1.1). A sprint carries dates and a goal,
+not a velocity model.
 
 ---
 
@@ -383,12 +442,18 @@ GET    /api/v1/me
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
 GET    /api/v1/users                         PATCH /api/v1/users/:id (role, deactivate — admin+)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
+GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
-GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&updated_since=&cursor=
+GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&updated_since=&cursor=
+GET    /api/v1/projects/:slug/sprints        POST /api/v1/projects/:slug/sprints   (lead+)
+GET    /api/v1/sprints/:id                   PATCH /api/v1/sprints/:id   DELETE /api/v1/sprints/:id  (lead+)
+POST   /api/v1/sprints/:id/tasks             body { task_ids[] }  — assign into the sprint
+DELETE /api/v1/sprints/:id/tasks/:taskId     remove from the sprint (task itself is untouched)
+GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date ranges and their tasks
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
@@ -397,11 +462,18 @@ GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+)
 GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
+GET    /api/v1/users/:id/tokens              DELETE /api/v1/users/:id/tokens/:tokenId  (admin+)
 POST   /api/v1/heartbeats                    202, token auth only
 GET    /api/v1/presence                      GET /api/v1/capacity
+GET    /api/v1/unlisted                      ?user=&since=  — work logged outside any project
+POST   /api/v1/unlisted/:id/promote          body { project_slug, title, priority? } → creates a task
+DELETE /api/v1/unlisted/:id                  dismiss
+GET    /api/v1/projects/:slug/metrics        ?window=  — throughput, cycle time, stuck, WIP by user
 GET    /api/v1/events                        SSE, ?project= optional
 GET    /api/v1/projects/:slug/meeting-reviews
+GET    /api/v1/meeting-reviews/:id           one review with its full proposal set and quotes
 POST   /api/v1/meeting-reviews/:id/apply     body { accepted_proposal_ids[] }
+POST   /api/v1/meeting-reviews/:id/discard   reject the whole set without applying anything
 POST   /webhooks/github                      POST /webhooks/transcript
 GET    /api/v1/health
 ```
@@ -486,7 +558,7 @@ anything that changes per-session.
   document is *fed* by the meeting path rather than maintained by discipline.
 - Size is bounded and the bound is enforced at write time with a clear error;
   a context document that silently blows an agent's context window is worse than
-  no document. **Exact limit is an open question (§14.7).**
+  no document. **Exact limit is an open question (§14, question 7).**
 
 ---
 
@@ -669,6 +741,70 @@ Both views:
 **Explicitly not in v1:** swimlanes, WIP limits, custom columns, saved views,
 bulk edit. Columns are the status enum; when that is not enough, use the list.
 
+#### 11.4.2 UI screens → API coverage
+
+Every screen and the endpoints it cannot function without. **The build rule:**
+a UI task carries `depends-on` for the API task(s) that define its endpoints, so
+no screen is built against an API that does not exist yet. A screen whose
+endpoints are undefined is **blocked**, not "start it and stub the data" — a
+stubbed screen is a screen that gets shipped with the stub still in it.
+
+MCP tools appear where a tool *writes* the data the screen reads. Screens do not
+call MCP; agents do. The column exists so it is obvious which surfaces are
+agent-fed and will look empty until agents are actually running.
+
+| Screen | Phase | REST endpoints it needs | MCP tools feeding it | Coverage |
+| --- | --- | --- | --- | --- |
+| **First boot** | 1 | `GET /setup/status`, `POST /setup`, `GET /health` | — | ✅ complete |
+| **Login / invite** | 1–2 | `POST /auth/*`, **`GET /invites/:token`**, `POST /invites/accept`, `GET /me` | — | ✅ complete *(`GET /invites/:token` added by this pass)* |
+| **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `GET/POST/PATCH/DELETE /projects/:slug/members`, `POST /projects/:slug/join`, `GET/PATCH /projects/:slug/context` | `get_project_context` reads `context_md` | ✅ complete |
+| **Board** (kanban + list) | 2 | `GET/POST /projects/:slug/tasks`, `GET/PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `POST/DELETE /tasks/:id/dependencies`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `GET /projects/:slug/members`, `GET /events` | `create_task`, `start_working`, `update_status`, `add_comment`, `finish_task` | ✅ complete |
+| **Tokens** | 3 | `GET/POST/DELETE /tokens`, **`GET /users/:id/tokens`**, **`DELETE /users/:id/tokens/:tokenId`** | — | ✅ complete *(admin routes added by this pass)* |
+| **Org** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ complete |
+| **Capacity** | 5 | `GET /capacity`, `GET /presence`, `GET /projects/:slug/tasks?status=in_progress`, **`GET /unlisted`**, **`POST /unlisted/:id/promote`**, **`DELETE /unlisted/:id`**, `GET /events` | `log_unlisted_work` writes `unlisted_work` (§4.14) | ✅ complete *(unlisted routes + table added by this pass)* |
+| **Dashboard** | 5 | **`GET /projects/:slug/metrics`**, `GET /activity`, `GET /projects/:slug/activity` | all tools, indirectly — every write lands in `activity` | ✅ complete *(metrics endpoint added by this pass)* |
+| **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, **`GET /meeting-reviews/:id`**, `POST /meeting-reviews/:id/apply`, **`POST /meeting-reviews/:id/discard`**, `POST /webhooks/transcript` | — (LLM-fed, §10.2) | ✅ complete *(detail + discard added by this pass)* |
+| **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | `create_task` (tasks land sprint-less by default) | ✅ complete *(D-013)* |
+| **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id`, `GET /projects/:slug/tasks?sprint=` | — | ✅ complete *(D-014 — sprint-based)* |
+| **Laika Assistant** | 6 | *undefined until its three questions are answered* | — | ⏸ **scheduled, not specified** |
+
+**All eleven designed screens are in**, plus the Assistant as a twelfth row.
+Nothing is cut — the set is sequenced, not trimmed (D-015). The eleven are
+designed and specified-or-scheduled; the Assistant is scheduled with **no design
+yet**, which is why it carries no endpoints. Nine are specified now; Timeline arrives at Phase 2.5 on the
+back of sprints, and the Assistant at Phase 6 once its scope is decided.
+
+**Laika Assistant is scheduled but deliberately unspecified.** Three questions
+must be answered before it gets endpoints, and answering them early would be
+guessing (§14, question 9). It appears in the table so nobody re-proposes it as
+new, with no endpoint column so nobody starts it.
+
+#### 11.4.3 Timeline view
+
+A Gantt-style view of the project's schedule, drawn **entirely from sprint
+boundaries** (§4.15). Phase 2.5, immediately after sprints land.
+
+- The horizontal axis is time; each **sprint** is one bar, spanning `starts_on`
+  to `ends_on`. Because sprints of a project may not overlap (§4.15), the axis is
+  a single clean track — no lane-packing, no layout solver.
+- Each bar shows the sprint's name, goal, and task counts by status, so progress
+  is legible without expanding it.
+- Expanding a sprint lists its tasks. **Tasks have no bars of their own** — they
+  have no dates. A task inherits its sprint's span visually and nothing more.
+- Tasks with `sprint_id IS NULL` appear in an unscheduled tray beside the axis
+  and can be dragged into a sprint, which is
+  `POST /api/v1/sprints/:id/tasks` — the same endpoint the Sprints screen uses.
+- Dragging a sprint edge is `PATCH /api/v1/sprints/:id` on `starts_on` / `ends_on`,
+  and is rejected if it would overlap a neighbour.
+- Today's date is marked. Sprints entirely in the past are dimmed, not hidden.
+
+**The constraint that keeps this cheap:** the timeline is a *sprint* chart, not a
+*task* chart. The moment a task gets its own start and end date, this becomes a
+dependency-aware Gantt with a layout engine, a critical path, and a scheduling
+model — weeks of work and a permanent maintenance burden. Per-task planned and
+due dates remain a §1.1 non-goal specifically to protect that boundary
+(**D-014** — read it before adding a date column).
+
 ### 11.5 Live updates — SSE
 
 `GET /api/v1/events` (D-003). One `text/event-stream` per client, filtered
@@ -779,4 +915,20 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
    context window it was meant to fill usefully. Needs a real number before M3.
 8. **Manager dashboard metrics** — which numbers actually answer "where are we"?
    Throughput and cycle time are the obvious ones and may be the wrong ones.
-   Needs shaping before M5; see `FEATURES.md` phase 5.
+   `GET /projects/:slug/metrics` (§6.4) reserves the surface; the payload is not
+   yet defined. Needs shaping before M5.
+9. **Laika Assistant — three questions, all due before Phase 6** (D-015). Until
+   all three are answered the screen has no endpoints and cannot be scheduled
+   into a task:
+   1. **Read-only, or may it mutate the board?** If it mutates, D-007 binds it —
+      it must propose and a human must accept, exactly like a meeting diff. A
+      chat panel that writes directly is not compatible with this product.
+   2. **Provider strategy.** The org's configured provider (§12), or its own? If
+      the org has `ai_provider = null`, does the Assistant disappear, degrade, or
+      block setup?
+   3. **Context scope.** What does it see — one project, everything the actor may
+      read, the whole activity log? This determines both the permission model and
+      whether the context window is workable at all.
+
+*(Questions about a Timeline date model and the sprints non-goal were resolved on
+2026-08-24 — see D-013 and D-014.)*
