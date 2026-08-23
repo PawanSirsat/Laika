@@ -6,8 +6,9 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-003
-status: in-progress
+status: review
 started: 2026-08-24T03:52:29+05:30
+finished: 2026-08-24T04:00:58+05:30
 ---
 
 ## Goal
@@ -20,13 +21,13 @@ narrowing the checking half.
 
 ## Acceptance criteria
 
-- [ ] `pnpm format` still checks the **whole** repo (PM's LAI-001 review decision:
+- [x] `pnpm format` still checks the **whole** repo (PM's LAI-001 review decision:
       "a formatter that only looks where it is already clean stops being a check").
-- [ ] `pnpm format:fix` no longer writes outside the area of whoever ran it, or
+- [x] `pnpm format:fix` no longer writes outside the area of whoever ran it, or
       it warns loudly enough that the edit cannot pass unnoticed.
-- [ ] A builder can fix their own formatting in one command without staging a
+- [x] A builder can fix their own formatting in one command without staging a
       cross-area diff.
-- [ ] Whatever shape is chosen is written down where builders will see it —
+- [x] Whatever shape is chosen is written down where builders will see it —
       `CLAUDE.md` §4 or the root `package.json` scripts.
 
 ## Notes / context
@@ -106,12 +107,67 @@ CLAUDE.md §5 now names the hazard and the workaround.
 
 ## Acceptance criteria — added by PM
 
-- [ ] `pnpm format` unchanged: whole repo, check-only.
-- [ ] `pnpm format:fix` writes only files changed in the current worktree,
+- [x] `pnpm format` unchanged: whole repo, check-only.
+- [x] `pnpm format:fix` writes only files changed in the current worktree,
       including untracked ones.
-- [ ] Running `format:fix` from `Laika-builder-a/` with an unformatted file in
+- [x] Running `format:fix` from `Laika-builder-a/` with an unformatted file in
       `plugin/` leaves that file **untouched** — the exact regression that
       produced this task, proven not to recur.
-- [ ] The behaviour is documented in the root `package.json` scripts or
+- [x] The behaviour is documented in the root `package.json` scripts or
       `CLAUDE.md`, and the interim guard in CLAUDE.md §5 is removed once the fix
       lands.
+
+---
+
+## Notes at review — builder-a
+
+**Shape: option 2, as specified.** `format:fix` takes its file list from
+`git diff --name-only --diff-filter=d -z HEAD` plus
+`git ls-files --others --exclude-standard -z`, and pipes it through
+`xargs -0 prettier --write`. `format` is byte-for-byte unchanged — verified by
+diffing it against `HEAD:package.json`.
+
+**Three things the tests caught that the specified command alone would not
+have.** Each is in `server/test/tooling/format-fix.test.ts`, which reads the real
+script out of the root `package.json` rather than restating it, so it cannot pass
+against a copy after someone edits the real one.
+
+1. **Prettier *errors* on an explicitly-listed file that a negative glob would
+   ignore** — `[error] Explicitly specified file was ignored due to negative glob
+   patterns: "pnpm-lock.yaml"`, exit 2. Reusing `'!pnpm-lock.yaml'` from the
+   `format` script would have made `format:fix` fail every time the lockfile was
+   among the changed files — i.e. after every `pnpm add`. The lockfile is now
+   dropped in git's pathspec, before Prettier sees it.
+2. **Markdown.** Prettier has a Markdown parser, so an explicit file list plus
+   `--ignore-unknown` happily formats `.md`, which `format` deliberately never
+   checks (LAI-001: prose is hand-wrapped to 80 columns). My first working draft
+   rewrote **22 lines of `CLAUDE.md`** — repaginating your ownership and id-range
+   tables — as a side effect of a nine-line edit. Reverted, and the file list is
+   now restricted by git pathspec to exactly the extensions `format` checks.
+   That is the same class of damage this task exists to prevent, so it has a test.
+3. **Deletions and spaces.** `git diff --name-only HEAD` lists deleted paths and
+   Prettier cannot open them, hence `--diff-filter=d`. And `-z` is not optional
+   here: `docs/design/Laika 01 - Kanban Board.dc.html` is a real tracked file, so
+   whitespace-splitting the list is a live bug, not a hypothetical one.
+
+**AC3 verified against the real repo, not only the fixture.**
+`plugin/.claude-plugin/plugin.json` is unformatted and unchanged in this
+worktree. Before: `md5 49bf9791…`. After `pnpm format:fix`: identical, and
+`git status plugin/` empty. `pnpm format` still reports it — which is correct, and
+is LAI-014's job.
+
+**AC4.** The interim guard in CLAUDE.md §5 is replaced with the settled
+behaviour, including why `format` stays repo-wide and why neither script touches
+Markdown.
+
+**`pnpm format` is still red, for a reason outside this task.**
+`docs/design/support.js` is not parseable JavaScript — it contains template markup
+(`<sc-if value="{{ p.hasDiff }}">`, line 806) — so the repo-wide check exits **2**
+for everyone on every branch. That arrived with the prototype import in `8180ac0`
+and is PM's area. **LAI-100 filed.** Worth separating from the `plugin.json`
+finding: one is an `[error]` that breaks the exit code, the other an ordinary
+`[warn]`.
+
+**Scope used.** Root `package.json` and `CLAUDE.md` §5 only, both under the grant
+this task carries. I did not add a root `scripts/` file — the pipeline fits in
+`package.json`, and a new root path was not named.
