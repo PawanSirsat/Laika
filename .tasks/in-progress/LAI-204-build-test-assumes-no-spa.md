@@ -2,11 +2,12 @@
 id: LAI-204
 title: build.test.ts fails once the SPA is actually built
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-017
-status: backlog
+status: in-progress
+started: 2026-08-24T04:53:31+05:30
 ---
 
 ## Goal
