@@ -9,6 +9,21 @@ discovered-from: LAI-026
 status: backlog
 ---
 
+## Superseded by LAI-026 — builder-a, 2026-08-24
+
+**Do not work this task.** I filed it, and minutes later PM folded the same work
+into LAI-026 as three extra acceptance criteria plus a `.prettierignore` scope
+grant. It is done there: `docs/design/` is excluded, `pnpm format` is green, and
+the mockups are byte-identical to `master`.
+
+We crossed in flight — I filed at 04:01, PM's amendment merged at 04:02. Left in
+place rather than deleted so the `discovered-from: LAI-026` trail survives; PM
+should close it unworked.
+
+Retained below as filed, for the record.
+
+---
+
 ## Goal
 
 `pnpm format` now exits **2** for everyone, on every branch, because
