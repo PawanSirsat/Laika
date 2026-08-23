@@ -730,3 +730,70 @@ reserved.
 
 **Revisit when:** a session exhausts its range, or the session count outgrows
 static allocation.
+
+---
+
+## D-018 — `LAIKA_SECRET` is required, and Laika-specific env vars carry the prefix
+**Date:** 2026-08-24 · **Status:** accepted · **Supersedes** the `SERVER_SECRET` row and default in SPEC §11.7
+
+**In one line:** a secret an operator never sees is a secret they never back up —
+and a generic name like `SERVER_SECRET` is one collision away from meaning
+something else.
+
+**Context.** SPEC §11.7 said `SERVER_SECRET` defaults to "auto-generated to
+`$DATA_DIR/secret` on first boot". Two implementations then did the opposite,
+independently and without seeing each other: `server/src/env.ts` (LAI-005) throws
+unless it is set, and `docker/entrypoint.sh` (LAI-008, a different builder) exits
+unless it is set. Both also imposed a 32-character minimum the spec never
+mentioned.
+
+Two builders diverging from a document in the same direction is evidence about
+the document, not about the builders.
+
+Separately, the env surface had drifted both ways: `LAIKA_DB_PATH` and
+`LAIKA_PUBLIC_DIR` were read by the server and absent from §11.7, while
+`DISABLE_INVITE_ONLY` was documented and read by nothing. And the naming was
+half-prefixed — three `LAIKA_` variables against four bare ones.
+
+**Decision, three parts.**
+
+1. **`LAIKA_SECRET` is required. No default, no auto-generation.** Minimum 32
+   characters, enforced as a startup failure with the value redacted from the
+   error. Stated in §11.7 and §12 rather than living in two implementations that
+   happen to agree.
+2. **Laika-specific variables carry the `LAIKA_` prefix**; `PORT`, `HOST` and
+   `NODE_ENV` do not. So `SERVER_SECRET` → `LAIKA_SECRET`, `DATA_DIR` →
+   `LAIKA_DATA_DIR`, `PUBLIC_URL` → `LAIKA_PUBLIC_URL`, `DISABLE_INVITE_ONLY` →
+   `LAIKA_DISABLE_INVITE_ONLY`.
+3. **§11.7 is the deployment contract**: everything the server reads is in it, and
+   everything in it is read.
+
+**Why required beats auto-generated.** Auto-generation makes `docker compose up`
+work with no configuration, which is exactly what D-002 ("setup is the product")
+argues for — and it is still the wrong call here, because the failure is
+asymmetric. A required secret fails once, immediately, with a message naming the
+fix. An auto-generated secret succeeds until `$LAIKA_DATA_DIR` is lost or
+restored to a new host, at which point every session is invalid and every
+`*_enc` column is permanently undecryptable, **with no error saying that is what
+happened**. The operator's own backup is the thing that betrays them. One loud
+failure at install time is cheaper than a silent one at restore time.
+
+`docker/env.example` and a compose `${LAIKA_SECRET:?…}` message keep the setup
+cost to one line, so D-002 is not really in tension — it costs a copy, not a
+decision.
+
+**Why prefix.** `DATA_DIR` and `SERVER_SECRET` are generic enough to already mean
+something else in a shared compose file, a systemd unit, or a CI runner. The
+prefix is collision safety, not tidiness. Doing it before v1 costs a rename;
+doing it after costs operators a breaking change, so the only cheap moment is
+now.
+
+**Consequences.** Three variables get renamed across `server/src/env.ts`,
+`docker/entrypoint.sh`, `docker-compose.yml`, `env.example` and the docker README
+— filed as LAI-032 and LAI-033. Until those land, the spec and the code disagree
+in the *opposite* direction from before, which is worse than one-sided drift, so
+both are p1. The `LAIKA_SECRET` bridge Builder-B shipped in the entrypoint stops
+being a bridge and becomes the real name.
+
+**Revisit when:** never for "required". The prefix rule is revisitable only as a
+whole — a half-prefixed surface is worse than either consistent choice.
