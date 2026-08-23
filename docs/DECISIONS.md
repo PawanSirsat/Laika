@@ -120,3 +120,59 @@ wanting richer session data needs a new decision entry and an explicit,
 per-user, opt-in mechanism — not an extension of this endpoint.
 
 **Revisit when:** never, without an explicit opt-in design.
+
+---
+
+## D-006 — Two-level role model: org role plus project role
+**Date:** 2026-08-24 · **Status:** accepted · **Supersedes** the flat four-role
+model in the original SPEC §3
+
+**Context.** The first spec gave each user one role, held per project. That
+collapses two genuinely different questions into one: "may this person create
+projects and invite people" is an organisation question, while "may this person
+edit tasks on *this* board" is a project question. With one role you either
+over-grant (a task-editing Member can also invite strangers) or you bolt on
+special cases until the matrix is unreadable.
+
+**Decision.** `users.org_role` (`owner` | `admin` | `member` | `viewer`) gates
+global actions. `project_memberships.role` (`lead` | `member` | `viewer`) gates
+work inside a board. Org `owner`/`admin` hold implicit `lead` everywhere and
+bypass the membership check. A user whose org role is `viewer` may hold only the
+project role `viewer` — no escalation by being added to a project.
+
+**Consequences.** Two matrices to maintain (SPEC §3.1, §3.2) and two lookups in
+`can()`, which stays pure because the caller resolves both before calling. In
+exchange, `lead` finally has somewhere to live — per-project ownership of members
+and the context doc — without inventing a fifth org role. The no-escalation rule
+is the part most likely to be forgotten; it is enforced in code and must have its
+own test.
+
+**Revisit when:** a deployment needs per-project roles that org admins should
+*not* override.
+
+---
+
+## D-007 — Agents never self-certify work as done
+**Date:** 2026-08-24 · **Status:** accepted
+
+**Context.** The obvious MCP surface is symmetric: if an agent can move a task to
+`in_progress`, it can move it to `done`. An agent that finishes its own work,
+marks it done, and picks up the next task is also an agent whose mistakes close
+silently and are found weeks later.
+
+**Decision.** `finish_task` moves a task to **`review`** and posts the agent's
+summary as a comment. It cannot set `done`. Closing is a human or PM action,
+through the UI or `update_status`. The same asymmetry exists in this repo's own
+workflow: builders move task files to `.tasks/review/`, only PM moves them to
+`.tasks/done/`.
+
+**Consequences.** Every piece of agent work passes a human gate, so the review
+queue becomes the bottleneck — that is the intended cost, and the capacity view
+(SPEC §9.3) surfaces it rather than hiding it. Agents cannot run unattended
+end-to-end, which is the point. Pairs with §10.2, where LLM-proposed board
+changes also require explicit human acceptance: **an LLM may propose, a human
+disposes.**
+
+**Revisit when:** never for `done`. A future auto-close for a narrow, provably
+verifiable class of task (say, a green CI run on a task whose only criterion is a
+passing test) would be a new entry, not an extension of this one.

@@ -1,240 +1,711 @@
-# Laika — SPEC v1 (implementation-grade)
+# Laika — v1 Specification
 
-This document is the source of truth. Builders implement exactly this; deviations
-require a PM-approved task that updates this file first.
+Status: **authoritative for M1–M7** · Owner: PM session · Last updated: 2026-08-24
 
-Product: self-hosted board where humans and Claude Code agents share one source of
-truth. Single Node process (Hono), SQLite (WAL) via Drizzle, better-auth, React+Vite
-SPA served statically, MCP at /mcp, SSE for live updates, one Docker image, all data
-in /data.
-
----
-
-## 1. Data model (Drizzle / SQLite)
-
-Conventions: ids are `text` ULIDs. Timestamps are `integer` unix ms named
-`created_at` / `updated_at`. Soft-delete only where noted. All FKs indexed.
-
-### users
-| field | type | notes |
-|---|---|---|
-| id | text pk | ulid |
-| email | text unique | lowercase |
-| name | text | |
-| password_hash | text | managed by better-auth |
-| org_role | text | 'owner' \| 'admin' \| 'member' \| 'viewer' |
-| avatar_color | text | derived from id, no uploads v1 |
-| is_active | integer | 0 = deactivated (kept for history) |
-
-### org (exactly one row — single-org deployment)
-| field | type | notes |
-|---|---|---|
-| id | text pk | |
-| name | text | |
-| ai_provider | text | 'anthropic' \| 'openai_compatible' \| null |
-| ai_base_url | text | for ollama/vllm |
-| ai_api_key_enc | text | AES-256-GCM, key derived from SERVER_SECRET |
-| smtp_json_enc | text | nullable |
-| invite_only | integer | default 1 |
-
-### projects
-| field | type |
-|---|---|
-| id, name, slug (unique), description | |
-| visibility | 'public' (org members may self-join as member) \| 'private' |
-| context_md | text — the shared project context doc served to agents |
-| archived_at | nullable |
-
-### project_memberships
-| field | notes |
-|---|---|
-| project_id + user_id | unique pair |
-| role | 'lead' \| 'member' \| 'viewer' |
-Constraint (enforced in code): a user with org_role 'viewer' may only hold
-project role 'viewer'. No escalation via project assignment.
-
-### tasks
-| field | notes |
-|---|---|
-| id | ulid |
-| number | integer, per-project sequence → display key "LAI-42" (prefix = upper slug) |
-| project_id, title, description_md | |
-| status | 'backlog' \| 'todo' \| 'in_progress' \| 'review' \| 'done' \| 'cancelled' |
-| assignee_id | nullable FK users |
-| priority | 'p1' \| 'p2' \| 'p3' (default p2) |
-| discovered_from | nullable FK tasks |
-| stale_flagged_at | nullable, set by cron |
-| created_by, created_via | created_via: 'web' \| 'mcp' \| 'api' \| 'webhook' \| 'meeting' |
-
-### task_dependencies
-task_id, depends_on_task_id (unique pair). Cycle check in code on insert.
-
-### comments
-id, task_id, author_id, body_md, created_via (same enum), created_at.
-
-### activity  (append-only; NO update/delete endpoints exist)
-| field | notes |
-|---|---|
-| id | ulid |
-| project_id, task_id (nullable), actor_id | |
-| actor_kind | 'user' \| 'agent' (agent = token-authenticated request) |
-| type | 'task.created' \| 'task.status_changed' \| 'task.assigned' \| 'comment.added' \| 'member.added' \| 'heartbeat.session' \| 'webhook.commit' \| 'meeting.applied' \| ... |
-| payload_json | diff/details |
-This table feeds: audit log, activity feed, presence, dashboard, SSE events.
-
-### tokens
-| field | notes |
-|---|---|
-| id, user_id, name | |
-| token_hash | sha256 of full token; token shown once, format `lai_<40 base62>` |
-| scope | 'full' \| 'read_only' |
-| project_ids_json | null = all the user's projects |
-| last_used_at, expires_at (nullable), revoked_at (nullable) | |
-
-### heartbeats
-| field | notes |
-|---|---|
-| id, user_id | |
-| repo, branch | text — METADATA ONLY, never content |
-| matched_task_id | nullable, resolved from branch pattern `[a-z]+-(\d+)` vs project prefix |
-| created_at | |
-Retention: cron deletes rows older than 30 days.
-
-### invites
-id, email (nullable for link invites), org_role, project_id (nullable),
-project_role (nullable), token_hash, created_by, expires_at, accepted_by.
-
-### sessions — managed by better-auth.
+This document is the source of truth. Builders implement exactly this; a
+deviation requires a PM-approved task that updates this file **first**. If the
+code and this document disagree, that is a bug in one of them — raise it in your
+log and PM resolves it in `DECISIONS.md`. Do not silently diverge.
 
 ---
 
-## 2. Permission matrix
+## 1. Product
 
-Org roles gate global actions; project roles gate project actions. `can()` resolves:
-org owner/admin bypass project membership checks (they hold implicit 'lead' on all
-projects). A project 'lead' has all member rights plus the ✓L items.
+Laika is a **self-hosted project board where humans and Claude Code agents work
+from one source of truth.**
+
+Today a team running coding agents keeps state in three incompatible places: a
+SaaS tracker humans look at, the agent's own scratch notes, and whatever the
+human remembers from the last session. Laika collapses those into one board that
+both sides read and write through first-class interfaces — a web UI for people,
+an MCP endpoint for agents — over identical data and identical permissions.
+
+The design commitments that follow from that:
+
+- **One deployment, one team.** Single organisation per install (§4.2). Not
+  multi-tenant SaaS.
+- **Agents are users, not integrations.** An agent acts as a real user via that
+  user's personal access token. It cannot see or do anything the human whose
+  token it holds cannot see or do.
+- **Everything is an event.** The `activity` table is append-only and is the
+  single feed behind audit, presence, the dashboard, and SSE.
+- **Agents do not self-certify.** `finish_task` stops at `review`. A human or PM
+  closes work.
+- **Your data stays yours.** Self-hosted, one SQLite file on a volume you own,
+  **no telemetry of any kind** (§13.4).
+
+### 1.1 Non-goals for v1 — do not build
+
+Multi-org / multi-tenant hosting, Postgres, WebSockets, custom fields, file
+uploads, a plugin system of our own, mobile apps, SSO/SAML/SCIM, zero-downtime
+deploys, sprints or story points, time tracking, Gantt charts, and email as a
+*primary* interface (transactional invite mail only).
+
+---
+
+## 2. Glossary
+
+| Term | Meaning |
+| --- | --- |
+| **Org** | The single organisation this deployment serves. Owns projects, users, settings. |
+| **Project** | A board. Has a slug (`laika`), a display prefix (`LAI`), members, a context doc, and tasks numbered `LAI-1`, `LAI-2`, … |
+| **Task** | The unit of work. What agents claim and humans triage. |
+| **Actor** | Whoever a request is attributed to — always a user, whether they arrived via session cookie or token. |
+| **Actor kind** | `user` (cookie) or `agent` (token). Same person, different hands. |
+| **Token** | A personal access token: hashed, scoped, revocable, belongs to exactly one user. |
+| **Heartbeat** | A metadata-only ping: this user is in this repo on this branch, now. |
+| **Ready** | A task nobody is doing whose dependencies are all `done` — the thing an agent should pick up next. Derived, never stored. |
+| **Context doc** | `projects.context_md` — the shared project brief served to agents by `get_project_context`. |
+
+---
+
+## 3. Roles and permissions
+
+Two levels, deliberately. **Org role** gates global actions; **project role**
+gates work inside a project.
+
+- **Org roles** — `owner`, `admin`, `member`, `viewer`.
+- **Project roles** — `lead`, `member`, `viewer`, held in `project_memberships`.
+
+Org `owner` and `admin` hold **implicit `lead`** on every project and bypass the
+membership check. A user whose org role is `viewer` may hold **only** the project
+role `viewer` — no escalation via project assignment, enforced in code.
+
+- **Owner** — the person who installed Laika. Exactly one, transferable.
+- **Admin** — creates projects, invites, sets roles, manages webhooks and org
+  settings. Cannot delete the org or transfer ownership.
+- **Member** — the working role. Creates and edits tasks, comments, claims work,
+  mints their own tokens. **This is what agent sessions run as.**
+- **Viewer** — read-only. Tokens are forced to `read_only` scope.
+
+### 3.1 Org-level permission matrix
 
 | Action | Owner | Admin | Member | Viewer |
-|---|---|---|---|---|
-| Delete org / transfer ownership | ✓ | ✗ | ✗ | ✗ |
-| Org settings (AI, SMTP) | ✓ | ✓ | ✗ | ✗ |
-| Create/archive project | ✓ | ✓ | ✗ | ✗ |
-| Invite users / change org roles | ✓ | ✓ | ✗ | ✗ |
-| Join public project (as member) | ✓ | ✓ | ✓ | ✗ (viewer only) |
-| Generate own tokens | ✓ | ✓ | ✓ | ✓ (read_only scope forced) |
+| --- | :---: | :---: | :---: | :---: |
+| Delete org data / transfer ownership | ✓ | — | — | — |
+| Org settings (AI provider, SMTP, signup mode) | ✓ | ✓ | — | — |
+| Create / archive project | ✓ | ✓ | — | — |
+| Invite users / change org roles | ✓ | ✓ (not to Owner) | — | — |
+| Deactivate user | ✓ | ✓ | — | — |
+| View member list | ✓ | ✓ | ✓ | ✓ |
+| Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
+| Generate own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
+| List / revoke **anyone's** token | ✓ | ✓ | — | — |
+| Export audit log | ✓ | ✓ | — | — |
+| Configure webhooks | ✓ | ✓ | — | — |
 
-| Project action (requires membership unless org admin+) | Lead | Member | Viewer |
-|---|---|---|---|
-| Manage project members / edit context_md | ✓ | ✗ | ✗ |
-| Create/edit/move any task, comment | ✓ | ✓ | ✗ |
-| Delete a comment | own + any (L) | own | ✗ |
-| Cancel/delete task | ✓ | own-created | ✗ |
-| Read tasks, activity, capacity for this project | ✓ | ✓ | ✓ |
+### 3.2 Project-level permission matrix
 
-Implementation: single module `server/src/policy/can.ts` exporting
-`can(actor, action, resource): boolean` + `assertCan(...)` (throws 403).
-Every route and every MCP tool calls assertCan. Unit tests enumerate this matrix.
+Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 
----
+| Action | Lead | Member | Viewer |
+| --- | :---: | :---: | :---: |
+| Manage project members | ✓ | — | — |
+| Edit project settings and `context_md` | ✓ | — | — |
+| Create / edit / move any task | ✓ | ✓ | — |
+| Claim a task (`start_working`) | ✓ | ✓ | — |
+| Assign a task to someone else | ✓ | ✓ | — |
+| Add comment | ✓ | ✓ | — |
+| Edit / delete comment | own + any | own | — |
+| Cancel / delete task | ✓ | own-created | — |
+| Add / remove dependencies | ✓ | ✓ | — |
+| Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
+| Apply a meeting-diff proposal | ✓ | ✓ | — |
 
-## 3. REST API (/api/v1)
+### 3.3 The `can()` module is the only authority
 
-Auth: session cookie (web) OR `Authorization: Bearer lai_...` (tokens).
-All list endpoints: `?limit=` (default 50, max 200), `?cursor=`, `?updated_since=` (ms).
-Errors: `{ error: { code, message } }`; 401/403/404/409/422/429.
-Rate limit: 120 req/min per token, 600 per session; 429 with Retry-After.
+One implementation, `server/src/policy/can.ts`:
 
-Endpoints (method path — notes):
-- POST /auth/* — better-auth mounted routes
-- GET  /setup/status ; POST /setup — first-boot wizard, disabled after org exists
-- GET/PATCH /org — settings (admin+); ai_api_key write-only
-- GET/POST /invites ; POST /invites/accept
-- GET /users ; PATCH /users/:id (role changes admin+; deactivate)
-- GET/POST /projects ; GET/PATCH /projects/:slug ; POST /projects/:slug/join
-- GET/POST/PATCH/DELETE /projects/:slug/members
-- GET/PATCH /projects/:slug/context — the context doc
-- GET/POST /projects/:slug/tasks ; GET/PATCH /tasks/:id
-  - PATCH accepts partial {title, description_md, status, assignee_id, priority}
-  - status change writes activity 'task.status_changed' with {from, to}
-- POST /tasks/:id/comments ; GET /tasks/:id/comments
-- POST/DELETE /tasks/:id/dependencies
-- GET /projects/:slug/activity ; GET /activity (org-wide, viewer+)
-- GET/POST/DELETE /tokens (own only; POST returns full token once)
-- POST /heartbeats — body {repo, branch}; auth token only; 202
-- GET /capacity — per-user: active_sessions, in_progress_tasks[], last_seen, unlisted[]
-- GET /events — SSE stream; query ?project= optional; emits activity rows
-- POST /webhooks/github — HMAC (X-Hub-Signature-256) against org webhook secret
-- POST /webhooks/transcript — body {project_slug, transcript, source}; 202, creates meeting_review
-- GET/POST /projects/:slug/meeting-reviews ; POST /meeting-reviews/:id/apply
-  - apply body: {accepted_proposal_ids[]} — only accepted items mutate tasks
+```ts
+can(actor: Actor, action: Action, resource: Resource): boolean
+assertCan(actor, action, resource): void   // throws the §6.3 `forbidden` error
+```
 
-OpenAPI generated from zod route schemas; served at /api/openapi.json.
+Rules that are not negotiable:
 
----
-
-## 4. MCP server (/mcp, streamable HTTP)
-
-Auth: Bearer token. Every tool = thin wrapper over the same service layer + assertCan.
-All responses include display keys ("LAI-42") not raw ids where user-facing.
-
-| tool | input | returns |
-|---|---|---|
-| list_projects | {} | projects the user can read |
-| list_ready_tasks | {project?} | tasks status in ('todo','backlog') with all dependencies done, assigned to me or unassigned, sorted p1→p3 |
-| get_task_context | {task} | task + description + comments + dependencies + linked activity |
-| get_project_context | {project} | context_md + last 10 decisions + open task summary |
-| create_task | {project, title, description?, priority?, discovered_from?} | created task; created_via='mcp' |
-| start_working | {task} | sets assignee=me, status='in_progress'; 409 if someone else's in_progress |
-| update_status | {task, status} | validated transition |
-| add_comment | {task, body} | comment |
-| finish_task | {task, summary} | status='review' (NOT done — humans/PM close), summary posted as comment |
-| log_unlisted_work | {repo, note} | records idea/work outside any project for triage |
-
-Guardrail: tools never bulk-mutate; one task per call. `finish_task` deliberately
-stops at 'review' — agents don't self-certify done.
+1. **Every** route and **every** MCP tool calls `assertCan` before reading or
+   writing — REST, MCP, webhook-triggered, cron-triggered, admin. No exceptions,
+   no "internal" path.
+2. `can()` is pure and synchronous. Everything it needs (actor, org role,
+   resolved project role, resource ownership) is loaded by the caller and passed
+   in.
+3. **Deny by default.** Unknown action, missing membership, deactivated user, or
+   an unmatched case returns `false`.
+4. Token scope is applied **after** the role decision and can only ever *narrow*
+   it (§6.2). A token never grants more than its user has.
+5. It is unit-tested against §3.1 and §3.2 cell by cell. That test file is the
+   executable version of these tables.
 
 ---
 
-## 5. Plugin & hooks payloads
+## 4. Data model
 
-Hook heartbeat (SessionStart, Stop, and every 5 min while active via PostToolUse
-throttle): `curl -s -X POST $LAIKA_URL/api/v1/heartbeats -H "Authorization: Bearer
-$LAIKA_TOKEN" -d '{"repo":"<git remote basename>","branch":"<git branch>"}'`
-Fail silent (|| true) — a down board must never break a coding session.
+SQLite via Drizzle. Ids are ULIDs stored as `text` (sortable, no coordination).
+Timestamps are `integer` unix-milliseconds UTC, named `created_at` / `updated_at`.
+Soft-delete only where noted. All foreign keys are indexed.
 
-Plugin env: LAIKA_URL, LAIKA_TOKEN (written by /laika:setup into user settings).
-Commands: /laika:setup, /laika:status (calls capacity for self), /laika:tasks
-(list_ready_tasks), /laika:standup (my activity last 24h formatted).
-Skill: teaches claim-before-code, finish→review, discovered_from, log_unlisted_work.
+### 4.1 `users`
+
+| field | type | notes |
+| --- | --- | --- |
+| `id` | text pk | ULID |
+| `email` | text unique | lowercased on write |
+| `name` | text | |
+| `org_role` | text | `owner` \| `admin` \| `member` \| `viewer` |
+| `avatar_color` | text | derived from id — **no uploads in v1** |
+| `is_active` | integer | 0 = deactivated, row kept for history |
+| `created_at`, `updated_at` | integer | |
+
+Credentials, sessions and verification records belong to **better-auth's own
+tables** (§11.3). Do not hand-write password or session columns.
+
+### 4.2 `orgs` — exactly one row
+
+| field | notes |
+| --- | --- |
+| `id`, `name` | |
+| `owner_user_id` | |
+| `invite_only` | integer, default **1** (D-004) |
+| `ai_provider` | `anthropic` \| `openai_compatible` \| `null` |
+| `ai_base_url` | for Ollama / vLLM |
+| `ai_api_key_enc` | AES-256-GCM, key derived from `SERVER_SECRET` (§12) |
+| `smtp_json_enc` | nullable, same encryption |
+| `github_webhook_secret_enc` | nullable, same encryption |
+
+**Single-org deployment**: one row, created by the first-run wizard. Other tables
+still carry `org_id` where it matters, so the constraint is data-level and a
+future multi-org becomes a migration rather than a rewrite.
+
+### 4.3 `projects`
+
+| field | notes |
+| --- | --- |
+| `id`, `org_id`, `name` | |
+| `slug` | unique, lowercase |
+| `prefix` | short uppercase display key (`LAI`), unique per org |
+| `description` | |
+| `visibility` | `public` (org members may self-join) \| `private` |
+| `context_md` | text — the shared project brief served to agents (§7.1) |
+| `archived_at` | nullable |
+
+### 4.4 `project_memberships`
+
+`id`, `project_id`, `user_id`, `role` (`lead` \| `member` \| `viewer`),
+`created_at`. Unique on (`project_id`, `user_id`). This is what `can()` reads.
+
+**Constraint (enforced in code):** a user with `org_role = 'viewer'` may hold only
+project role `viewer`.
+
+### 4.5 `tasks`
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `project_id` | |
+| `number` | integer, per-project sequence → display key `LAI-42` |
+| `title`, `description_md` | |
+| `status` | `backlog` \| `todo` \| `in_progress` \| `review` \| `done` \| `cancelled` |
+| `priority` | `p1` \| `p2` \| `p3`, default `p2` |
+| `assignee_id` | nullable FK `users` |
+| `created_by` | FK `users` |
+| `created_via` | `web` \| `mcp` \| `api` \| `webhook` \| `meeting` |
+| `discovered_from` | nullable self-FK |
+| `branch` | nullable, last branch seen working on it |
+| `external_ref` | nullable, e.g. a GitHub PR |
+| `stale_flagged_at` | nullable, set by cron (§11.6) |
+| `started_at`, `completed_at` | nullable |
+
+**`ready` is derived, not stored.** A task is ready when
+`status IN ('backlog','todo') AND assignee_id IS NULL AND every dependency is
+'done'`. This is what `list_ready_tasks` returns (§7.1) and what the board's
+"Ready" column shows. Deriving it means it can never go stale.
+
+**`backlog` vs `todo`:** `backlog` is unrefined; `todo` is groomed and ready to
+be picked up. Both count as ready when unassigned and unblocked — the distinction
+is for humans triaging, not for the readiness computation.
+
+### 4.6 `task_dependencies`
+
+`task_id`, `depends_on_task_id`, `created_at`. Unique pair. Self-reference and
+cycles are rejected at write time.
+
+`discovered_from` is a **different** relationship — provenance, not blocking — and
+is a column on `tasks`, so a discovered task can be worked before its parent
+finishes.
+
+### 4.7 `comments`
+
+`id`, `task_id`, `author_id`, `body_md`, `created_via` (same enum as tasks),
+`edited_at`, `deleted_at` (soft), `created_at`, `updated_at`.
+
+### 4.8 `activity` — append-only
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `org_id`, `project_id`, `task_id` (nullable) | |
+| `actor_id` | |
+| `actor_kind` | `user` (cookie) \| `agent` (token-authenticated) |
+| `actor_token_id` | nullable — *which* token, for audit |
+| `type` | closed vocabulary, below |
+| `payload_json` | the before/after diff or details |
+| `created_at` | |
+
+**No updates, no deletes, ever** — no endpoint exists, the Drizzle helper module
+exposes no mutation path, and a test asserts attempts fail. This one table feeds
+**audit**, **presence**, the **dashboard**, and the **SSE stream** (§11.5).
+
+Types: `task.created`, `task.updated`, `task.status_changed`, `task.assigned`,
+`task.dependency_added`, `comment.added`, `project.created`, `member.added`,
+`member.role_changed`, `token.created`, `token.revoked`, `heartbeat.session`,
+`webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`.
+
+### 4.9 `tokens`
+
+| field | notes |
+| --- | --- |
+| `id`, `user_id`, `name` | |
+| `prefix` | first 8 chars, shown in the UI so a token is identifiable |
+| `token_hash` | SHA-256 of the full secret |
+| `scope` | `full` \| `read_only` (forced `read_only` for org viewers) |
+| `project_ids_json` | null = all the user's projects |
+| `last_used_at`, `expires_at`, `revoked_at` | nullable |
+
+Token format `lai_<40 base62>`. **The secret is never stored and is shown exactly
+once, at creation.**
+
+### 4.10 `heartbeats`
+
+`id`, `user_id`, `token_id`, `repo`, `branch`, `matched_task_id` (nullable,
+resolved server-side from the branch — §9.2), `created_at`.
+
+**Metadata only**: repo name, branch name, timestamp. Never file paths, diffs,
+prompts, or transcript content (D-005). Cron deletes rows older than 30 days.
+
+### 4.11 `invites`
+
+`id`, `org_id`, `email` (nullable for link invites), `org_role`, `project_id`
+(nullable), `project_role` (nullable), `token_hash`, `created_by`, `expires_at`,
+`accepted_by`, `accepted_at`, `created_at`.
+
+### 4.12 `meeting_reviews`
+
+`id`, `project_id`, `source`, `transcript_hash`, `proposals_json` (§10.2),
+`status` (`pending` \| `applied` \| `expired`), `reviewed_by`, `reviewed_at`,
+`created_at`, `expires_at`. Proposals expire unreviewed after 7 days.
+
+### 4.13 Indexes that must exist
+
+`tasks(project_id, status)`, `tasks(assignee_id, status)`,
+`tasks(project_id, updated_at)`, `tasks(project_id, number)` unique,
+`task_dependencies(depends_on_task_id)`, `comments(task_id, created_at)`,
+`activity(project_id, created_at)`, `activity(task_id, created_at)`,
+`heartbeats(user_id, created_at)`, `tokens(token_hash)` unique,
+`project_memberships(project_id, user_id)` unique, `projects(slug)` unique.
 
 ---
 
-## 6. Meeting diff contract
+## 5. Task lifecycle
 
-LLM call (org provider) receives: transcript + open tasks (key, title, status,
-assignee) + last context_md. Must return strict JSON:
-`{ proposals: [{kind:'new'|'change'|'dead'|'decision', task?, title?, description?,
-changes?, reason, quote}] }`
-Each proposal renders in the review screen with its transcript quote; nothing
-applies without explicit human acceptance. Accepted 'decision' items append to
-context_md with date.
+```
+        create              claim / start_working          finish_task
+backlog ──▶ todo ──────────────────────────▶ in_progress ──────────────▶ review
+           (ready when unassigned                                          │
+            and deps all done)                                            │ human/PM approves
+                                                                          ▼
+                                                                        done
+```
+
+- **Claiming is a compare-and-swap.** `start_working` sets `assignee_id` and
+  `status = 'in_progress'` **only if the task is still unassigned**. A second
+  claimant gets `409 conflict` with the current assignee in the body. This is the
+  API-level twin of the file-move lock the build sessions use by hand.
+- Moving to `review` requires the assignee, a project `lead`, or org Admin/Owner.
+- **`done` is never set by `finish_task`.** Agents do not self-certify.
+- A task may be reassigned while `in_progress` — that is `task.assigned`, not a
+  status change.
+- Every transition writes exactly one `activity` row and emits one SSE event.
 
 ---
 
-## 7. Env & ops
+## 6. REST API
+
+Base path **`/api/v1`**. JSON in, JSON out, UTF-8. Any non-`GET` requires
+`Content-Type: application/json`.
+
+### 6.1 Authentication
+
+Two credentials, one resolved `Actor`:
+
+1. **Session cookie** — better-auth, for the SPA. CSRF-protected,
+   `SameSite=Lax`, `Secure` when not on localhost. → `actor_kind: user`.
+2. **Personal access token** — `Authorization: Bearer lai_<secret>`. Looked up
+   by SHA-256 hash, constant-time compared, rejected if revoked or expired.
+   `last_used_at` updated at most once a minute. → `actor_kind: agent`.
+
+There is no third path. Webhooks authenticate by signature and act as a system
+actor with a fixed, minimal capability set (§10).
+
+### 6.2 Authorisation
+
+Handler resolves `Actor` → loads the resource → `assertCan(...)` → 403 if false.
+Token scope narrows afterwards: `read_only` permits every `GET` the user's role
+allows and nothing else; `project_ids_json`, when set, restricts the token to
+those projects. A Viewer's token can never write, whatever its scope says.
+
+### 6.3 Conventions
+
+- **Pagination**: `?limit=` (default 50, max 200) and `?cursor=` (opaque,
+  encodes `(sort_key, id)`). Response `{ "data": [...], "next_cursor": ... | null }`.
+  No offset paging.
+- **`updated_since=<unix-ms>`** on every list endpoint: rows changed at or after
+  it, **including tombstones** `{ "id": "...", "deleted": true }` for
+  soft-deletes. This is how an agent or a reconnecting SPA catches up cheaply.
+- **Errors**: `{ "error": { "code", "message", "details" } }` with codes
+  `bad_request`, `unauthorized`, `forbidden`, `not_found`, `conflict`,
+  `unprocessable`, `rate_limited`, `internal` → 400/401/403/404/409/422/429/500.
+- **Idempotency**: `POST` accepts `Idempotency-Key`; replays within 24h return
+  the original response. Same key with a different body is `conflict`.
+- **Rate limits**: in-process token bucket — 120 req/min per token, 600/min per
+  session, 30/min for heartbeats. `429` with `Retry-After`.
+- **Validation**: zod at the boundary; unknown body fields are rejected
+  (`unprocessable`), not silently dropped. Inferred types are the handler's
+  argument types.
+- **OpenAPI** generated from the zod route schemas, served at
+  `/api/openapi.json`.
+
+### 6.4 Endpoints
+
+```
+POST   /api/v1/auth/*                        better-auth mounted routes
+GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled once an org exists)
+GET    /api/v1/me
+GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
+GET    /api/v1/users                         PATCH /api/v1/users/:id (role, deactivate — admin+)
+GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
+GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
+GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
+POST   /api/v1/projects/:slug/join           (public projects)
+GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
+GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
+GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&updated_since=&cursor=
+POST   /api/v1/projects/:slug/tasks
+GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
+POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
+POST   /api/v1/tasks/:id/dependencies        DELETE /api/v1/tasks/:id/dependencies/:depId
+GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
+PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
+GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+)
+GET    /api/v1/tokens                        POST /api/v1/tokens     DELETE /api/v1/tokens/:id
+POST   /api/v1/heartbeats                    202, token auth only
+GET    /api/v1/presence                      GET /api/v1/capacity
+GET    /api/v1/events                        SSE, ?project= optional
+GET    /api/v1/projects/:slug/meeting-reviews
+POST   /api/v1/meeting-reviews/:id/apply     body { accepted_proposal_ids[] }
+POST   /webhooks/github                      POST /webhooks/transcript
+GET    /api/v1/health
+```
+
+`PATCH /tasks/:id` accepts a partial
+`{ title, description_md, status, assignee_id, priority }`; a status change
+writes `task.status_changed` with `{ from, to }`.
+
+---
+
+## 7. MCP endpoint
+
+Served by the same process at **`/mcp`** (Streamable HTTP transport). Auth is a
+personal access token as `Bearer`, identical to §6.1.
+
+**Every tool acts as the token's user.** No service account, no elevated mode, no
+bypass. Each tool is a thin wrapper over the same service layer the REST routes
+use: same `assertCan`, same `activity` row (with `actor_kind: agent`, which is how
+the UI badges it), same SSE event. If an agent can do something in Laika, it is
+because its human could.
+
+Responses use **display keys** (`LAI-42`), not raw ULIDs, wherever a human will
+read them.
+
+### 7.1 Tools
+
+| Tool | Input | Returns |
+| --- | --- | --- |
+| `list_projects` | `{}` | projects the user can read |
+| `list_ready_tasks` | `{ project?, limit? }` | ready tasks (§4.5), assigned to me or unassigned, sorted p1→p3 then age |
+| `get_task_context` | `{ task }` | task, description, dependencies + their statuses, comments, recent activity, branch, `discovered_from` chain |
+| `get_project_context` | `{ project }` | `context_md`, last 10 decisions, open-task summary, members + roles |
+| `create_task` | `{ project, title, description?, priority?, depends_on?, discovered_from? }` | created task, `created_via: 'mcp'` |
+| `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
+| `update_status` | `{ task, status, note? }` | task; validated transition |
+| `add_comment` | `{ task, body }` | comment |
+| `finish_task` | `{ task, summary, checklist? }` | task → **`review`**, summary posted as a comment |
+| `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
+
+`get_task_context` and `get_project_context` are deliberately **fat** — one call
+returns everything needed to start, because round-trips are expensive for an
+agent.
+
+### 7.2 Tool contract
+
+- **Guardrail: tools never bulk-mutate.** One task per call.
+- `finish_task` stops at `review` by design — agents do not close their own work.
+- Inputs are zod schemas exported as JSON Schema; unknown fields are rejected.
+- Errors are MCP tool errors carrying the §6.3 `code`, so an agent can branch on
+  `conflict` versus `forbidden` rather than parse prose.
+- Read tools never mutate — including `last_used_at`, which is throttled.
+- Responses pair compact markdown with a structured payload: readable when the
+  model reasons over it, parseable when it does not.
+
+---
+
+## 8. Plugin and hooks
+
+The shipped Claude Code plugin (`plugin/`, Builder-B) is thin on purpose: it
+carries no business logic, only wiring.
+
+**Environment**: `LAIKA_URL`, `LAIKA_TOKEN`, written by `/laika:setup` into user
+settings. Never committed; committed files carry obvious placeholders.
+
+**Heartbeat hook** — on `SessionStart`, on `Stop`, and at most every 5 minutes
+while active (throttled `PostToolUse`):
+
+```bash
+curl -s -X POST "$LAIKA_URL/api/v1/heartbeats" \
+  -H "Authorization: Bearer $LAIKA_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"repo\":\"<git remote basename>\",\"branch\":\"<git branch>\"}" || true
+```
+
+**`|| true` is mandatory.** A board that is down, slow, or unreachable must never
+break a coding session. Every hook fails silent.
+
+**Commands**: `/laika:setup`, `/laika:status` (own capacity), `/laika:tasks`
+(`list_ready_tasks`), `/laika:standup` (own activity, last 24h).
+
+**Skill**: teaches claim-before-code, `finish_task` → `review`,
+`discovered_from`, and `log_unlisted_work`.
+
+The plugin must **load cleanly when unconfigured** — degrade with a clear
+message, never fail to load.
+
+---
+
+## 9. Presence and capacity
+
+### 9.1 Heartbeats
+
+`POST /api/v1/heartbeats`, body `{ repo, branch }`, token auth only, responds
+`202`. Sent by the plugin (§8) and optionally by a human's editor integration.
+
+**Metadata only** (D-005). This is the one place where a tempting feature would
+cost the trust the product is built on.
+
+### 9.2 Branch names carry task ids
+
+Convention **`lai-<number>-<slug>`** — `lai-42-add-task-crud`. The server matches
+`[a-z]+-(\d+)` case-insensitively against project prefixes, resolves the task, and
+stores `matched_task_id` on the heartbeat and `branch` on the task.
+
+**Resolution is server-side**, always: the plugin cannot know a deployment's
+project prefixes. Anything unparseable is kept as a plain branch string — it
+degrades, it never errors.
+
+### 9.3 Derived views
+
+- **Presence** (`GET /api/v1/presence`) — users with a heartbeat in the last 5
+  minutes, with repo, branch, and resolved task. "Who is working right now."
+- **Capacity** (`GET /api/v1/capacity`) — per user: `active_sessions`,
+  `in_progress_tasks[]`, `last_seen`, oldest in-progress age, tasks in review
+  awaiting them, and `unlisted[]` from `log_unlisted_work`. Answers "who takes
+  the next thing" and "what is stuck with nobody on it".
+
+Both are computed from `heartbeats` + `tasks` at request time. No separate
+presence store to fall out of sync.
+
+---
+
+## 10. Webhooks and the meeting diff
+
+Mounted at `/webhooks/*`, outside `/api/v1`, no user session.
+
+### 10.1 `POST /webhooks/github`
+
+HMAC-SHA256 verified against the org's webhook secret (`X-Hub-Signature-256`),
+constant-time compared, **before the body is parsed**. Unverified requests get
+`401` and are logged as `webhook.received` with `verified: false`.
+
+Handled: `push` (branch → task, `webhook.commit` activity), `pull_request`
+(opened → link PR and move `in_progress`; merged → move to `review`),
+`issue_comment` (mirror to task comments). Everything else is acknowledged and
+ignored. Delivery ids are deduplicated for 24h.
+
+### 10.2 `POST /webhooks/transcript`
+
+Body `{ project_slug, transcript, source }` → `202`, creating a
+`meeting_reviews` row.
+
+The org's LLM provider (§12) receives: the transcript, the project's open tasks
+(key, title, status, assignee), and the current `context_md`. It must return
+**strict JSON**:
+
+```json
+{ "proposals": [
+  { "kind": "new" | "change" | "dead" | "decision",
+    "task": "LAI-42", "title": "...", "description": "...",
+    "changes": { "status": "done" }, "reason": "...", "quote": "..." }
+]}
+```
+
+Every proposal renders in the review screen **with its transcript quote**, so a
+human can see what the model was reacting to.
+
+**Nothing applies without explicit human acceptance.** `POST
+/meeting-reviews/:id/apply` takes `{ accepted_proposal_ids[] }`; only accepted
+items mutate anything, each `assertCan`-checked as if the reviewing human made
+the change by hand, landing as normal activity with `created_via: 'meeting'`.
+Accepted `decision` proposals append to `context_md` with the date.
+
+This is the one place an LLM writes to the board, and it is gated by a human.
+That gate is a product requirement, not a v1 shortcut.
+
+---
+
+## 11. Stack and runtime
+
+### 11.1 One process
+
+A single Node process (Node 22 LTS) serving the API, MCP, webhooks, SSE, cron and
+the static SPA. No queue, no worker, no Redis, no sidecar (D-002).
+
+### 11.2 HTTP — Hono
+
+Hono on `@hono/node-server`. Fixed middleware order:
+`requestId → logger → cors → bodyLimit → auth → rateLimit → route → errorHandler`.
+Routes are grouped modules; handlers stay thin, logic lives in service modules
+that take an `Actor` — which is what lets MCP tools reuse them exactly.
+
+### 11.3 Persistence — SQLite + Drizzle
+
+`better-sqlite3` in **WAL** mode, `foreign_keys=ON`, `busy_timeout=5000`,
+`synchronous=NORMAL`. Database at `$DATA_DIR/laika.db`.
+
+**All access through Drizzle** — schema, queries, migrations. Migrations are
+generated files, committed, applied on boot, forward-only. Multi-table writes run
+in a transaction. No raw SQL in handlers; the only exception is the `PRAGMA`s
+above, at startup.
+
+Auth is **better-auth** with the Drizzle adapter — email+password and invite
+acceptance for v1, its tables alongside ours in the same database.
+
+### 11.4 Frontend — React + Vite
+
+React 19 + TypeScript + Vite, built to static assets served by the same process
+from `server/public/`. SPA fallback to `index.html` for anything that is not
+`/api/*`, `/mcp*` or `/webhooks/*`. It talks to the same public `/api/v1` an
+agent does — no private endpoints, which keeps the API honest.
+
+### 11.5 Live updates — SSE
+
+`GET /api/v1/events` (D-003). One `text/event-stream` per client, filtered
+server-side to the projects that actor may see, emitting `activity` rows. Each
+event carries a monotonic id; on reconnect the client sends `Last-Event-ID` and,
+if the gap is too large, falls back to `?updated_since=` (§6.3). Comment frame
+every 25s to survive proxies.
+
+### 11.6 Scheduled work — in-process cron
+
+One interval-driven scheduler in the same process:
+
+- nightly SQLite snapshot to `$DATA_DIR/backups/`, keep 14
+- heartbeat retention — delete older than 30 days
+- **stale-task flagging** — `in_progress` with no heartbeat or commit for 3 days
+  sets `stale_flagged_at`
+- invite expiry, meeting-review expiry (7 days)
+- weekly vacuum
+
+Jobs are idempotent and write to `activity` only when they change something.
+
+### 11.7 Environment and ops
 
 | var | default | notes |
-|---|---|---|
-| PORT | 3000 | |
-| DATA_DIR | /data | db at $DATA_DIR/laika.db, backups/, secret |
-| SERVER_SECRET | auto-generated to $DATA_DIR/secret on first boot | |
-| PUBLIC_URL | required for invites/webhooks | |
-| DISABLE_INVITE_ONLY | unset | |
+| --- | --- | --- |
+| `PORT` | `3000` | |
+| `DATA_DIR` | `/data` | db, `backups/`, `secret` |
+| `SERVER_SECRET` | auto-generated to `$DATA_DIR/secret` on first boot | encryption key material (§12) |
+| `PUBLIC_URL` | **required** | invite links and webhook URLs |
+| `DISABLE_INVITE_ONLY` | unset | escape hatch; the org setting is authoritative |
+| `NODE_ENV` | `production` | |
 
-Cron (in-process): nightly snapshot (keep 14), heartbeat retention, stale-task
-flagging (in_progress + no heartbeat/commit 3 days), invite expiry.
-No telemetry. No external calls except org-configured AI endpoint + configured SMTP.
+One Docker image, multi-stage (build SPA → build server → slim runtime), non-root
+runtime user, one writable volume at **`/data`**. Back that up and you have backed
+up Laika. TLS is somebody else's job — `docker/Caddyfile.example` ships as a
+reference.
 
-## 8. Non-goals v1 (do not build)
-Multi-org, Postgres, websockets, custom fields, file uploads, plugin system,
-mobile app, SSO, zero-downtime deploys.
+---
+
+## 12. LLM provider
+
+Org-configured, Admin+, one provider at a time:
+
+- **`anthropic`** — API key.
+- **`openai_compatible`** — base URL + optional key, covering Ollama and vLLM for
+  fully local deployments.
+- **`null`** — the default. Laika is fully functional without an LLM; only the
+  meeting diff (§10.2) is unavailable.
+
+Secrets are encrypted at rest with AES-256-GCM under a key derived from
+`SERVER_SECRET`. Ciphertext lives in `orgs.*_enc`; plaintext is never logged,
+never returned by the API (the UI sees `{ configured: true, provider, key_last4 }`),
+and never written to `activity`.
+
+---
+
+## 13. Cross-cutting
+
+### 13.1 Security
+
+Argon2id passwords (better-auth default); tokens hashed SHA-256 and shown once;
+constant-time comparison for tokens and HMACs; CSRF on cookie-auth mutations;
+`bodyLimit` on every route; zod validation at every boundary; security headers
+(HSTS, `X-Content-Type-Options`, CSP with no inline script); no secrets in logs
+or error responses.
+
+### 13.2 Errors and logging
+
+Structured JSON to stdout: `request_id`, `actor_id`, `actor_kind`, `token_id`,
+method, path, status, duration. `request_id` is returned on 5xx so a user can
+quote it. Unhandled errors return `internal` with no detail; detail goes to the
+log.
+
+### 13.3 Testing
+
+Vitest. Unit tests for `can()` against §3.1 and §3.2; service tests against a
+real in-memory SQLite with migrations applied; HTTP tests through Hono's test
+client; and **parity tests** asserting an MCP tool and its REST twin produce
+identical `activity` rows.
+
+### 13.4 Privacy
+
+**No telemetry. No analytics. No phone-home. No usage beacons.** Not opt-out —
+absent. The only outbound calls Laika ever makes are to the org's configured LLM
+provider (§12), configured SMTP, and a webhook source it was configured to talk
+to. Any task proposing otherwise is rejected at review.
+
+---
+
+## 14. Open questions
+
+Tracked here until decided; each becomes a `DECISIONS.md` entry.
+
+1. Granular token scopes (`tasks:write`, `presence:write`, …) versus today's
+   `full` / `read_only` + project restriction. Deferred until someone needs a
+   token narrower than a role.
+2. Per-project task templates — M2 or later?
+3. Do we need a `blocked` status distinct from "has unfinished dependencies"?
+   (Currently derived, not stored.)
+4. Should `member` be able to assign work to *other* people, or is that
+   `lead`-only on larger teams? (Currently allowed — optimising for small
+   trusting teams.)
+5. Task attachments / uploads — deferred; the `/data` volume anticipates them.
+6. Multiple LLM providers configured at once (one for transcripts, one for
+   summaries) — deferred past v1.
