@@ -1,0 +1,505 @@
+/**
+ * The v1 schema, SPEC §4, in spec order so it can be diffed against the document
+ * top to bottom.
+ *
+ * Conventions (§4 preamble):
+ *  - ids are ULIDs in `text` — sortable by creation, no coordination needed;
+ *  - timestamps are `integer` unix-milliseconds UTC, stored as plain numbers
+ *    rather than Drizzle's `timestamp_ms` mode, because `?updated_since=<unix-ms>`
+ *    (§6.3) compares them as numbers and a Date round-trip buys nothing here;
+ *  - every foreign key is indexed;
+ *  - every closed vocabulary gets both a TypeScript union and a SQL `CHECK`.
+ *
+ * better-auth owns credentials, sessions and verification (§4.1, §11.3). Nothing
+ * in this file touches them — that is LAI-005.
+ */
+
+import { sql } from 'drizzle-orm';
+import { check, index, integer, sqliteTable, text, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import {
+  ACTIVITY_TYPES,
+  ACTOR_KINDS,
+  AI_PROVIDERS,
+  CREATED_VIA,
+  MEETING_REVIEW_STATUSES,
+  ORG_ROLES,
+  PROJECT_ROLES,
+  PROJECT_VISIBILITIES,
+  SPRINT_STATUSES,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+  TOKEN_SCOPES,
+} from './enums.ts';
+
+/** `CHECK (col IN ('a','b'))` — the database half of a closed vocabulary. */
+function oneOf(column: string, values: readonly string[]) {
+  const list = values.map((v) => `'${v}'`).join(', ');
+  return sql.raw(`${column} IN (${list})`);
+}
+
+/** `CHECK (col IN (...) OR col IS NULL)` for a nullable enum column. */
+function oneOfOrNull(column: string, values: readonly string[]) {
+  const list = values.map((v) => `'${v}'`).join(', ');
+  return sql.raw(`${column} IS NULL OR ${column} IN (${list})`);
+}
+
+const createdAt = integer('created_at').notNull();
+const updatedAt = integer('updated_at').notNull();
+
+// ---------------------------------------------------------------- §4.1 users
+
+export const users = sqliteTable(
+  'users',
+  {
+    id: text('id').primaryKey(),
+    /** Lowercased on write (§4.1) so uniqueness is case-insensitive in practice. */
+    email: text('email').notNull(),
+    name: text('name').notNull(),
+    orgRole: text('org_role', { enum: ORG_ROLES }).notNull(),
+    /** Derived from the id — no uploads in v1 (§4.1). */
+    avatarColor: text('avatar_color').notNull(),
+    /** 0 = deactivated. The row is kept so history keeps its author (§4.1). */
+    isActive: integer('is_active').notNull().default(1),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    uniqueIndex('users_email_unique').on(t.email),
+    check('users_org_role_check', oneOf('org_role', ORG_ROLES)),
+    check('users_is_active_check', sql.raw('is_active IN (0, 1)')),
+  ],
+);
+
+// ----------------------------------------------------------------- §4.2 orgs
+
+export const orgs = sqliteTable(
+  'orgs',
+  {
+    id: text('id').primaryKey(),
+    name: text('name').notNull(),
+    /**
+     * No FK to `users`: the first-run wizard creates the org and the Owner in one
+     * transaction (LAI-009), and a hard reference here would force an ordering
+     * that SQLite cannot satisfy without deferred constraints.
+     */
+    ownerUserId: text('owner_user_id').notNull(),
+    /** Default 1 — invite-only is the default posture (D-004). */
+    inviteOnly: integer('invite_only').notNull().default(1),
+    aiProvider: text('ai_provider', { enum: AI_PROVIDERS }),
+    aiBaseUrl: text('ai_base_url'),
+    /** AES-256-GCM ciphertext under a key derived from `SERVER_SECRET` (§12). */
+    aiApiKeyEnc: text('ai_api_key_enc'),
+    smtpJsonEnc: text('smtp_json_enc'),
+    githubWebhookSecretEnc: text('github_webhook_secret_enc'),
+    createdAt,
+    updatedAt,
+  },
+  () => [
+    check('orgs_ai_provider_check', oneOfOrNull('ai_provider', AI_PROVIDERS)),
+    check('orgs_invite_only_check', sql.raw('invite_only IN (0, 1)')),
+  ],
+);
+
+// ------------------------------------------------------------- §4.3 projects
+
+export const projects = sqliteTable(
+  'projects',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** Unique, lowercase — the URL segment (§6.4 uses `/projects/:slug`). */
+    slug: text('slug').notNull(),
+    /** Short uppercase display key, `LAI` — unique per org (§4.3). */
+    prefix: text('prefix').notNull(),
+    description: text('description'),
+    visibility: text('visibility', { enum: PROJECT_VISIBILITIES }).notNull().default('private'),
+    /** The shared brief served to agents by `get_project_context` (§7.1). */
+    contextMd: text('context_md').notNull().default(''),
+    archivedAt: integer('archived_at'),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    uniqueIndex('projects_slug_unique').on(t.slug),
+    uniqueIndex('projects_org_prefix_unique').on(t.orgId, t.prefix),
+    index('projects_org_id_idx').on(t.orgId),
+    check('projects_visibility_check', oneOf('visibility', PROJECT_VISIBILITIES)),
+  ],
+);
+
+// -------------------------------------------------- §4.4 project_memberships
+
+export const projectMemberships = sqliteTable(
+  'project_memberships',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    role: text('role', { enum: PROJECT_ROLES }).notNull(),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('project_memberships_project_user_unique').on(t.projectId, t.userId),
+    index('project_memberships_user_id_idx').on(t.userId),
+    check('project_memberships_role_check', oneOf('role', PROJECT_ROLES)),
+  ],
+);
+
+// -------------------------------------------------------------- §4.15 sprints
+
+/**
+ * Declared before `tasks` because `tasks.sprint_id` references it.
+ *
+ * "At most one active sprint per project" and "sprints may not overlap" are
+ * write-time rules (§4.15) rather than constraints — SQLite cannot express
+ * either. They belong to the sprints task, not here.
+ */
+export const sprints = sqliteTable(
+  'sprints',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    goal: text('goal'),
+    startsOn: integer('starts_on').notNull(),
+    endsOn: integer('ends_on').notNull(),
+    status: text('status', { enum: SPRINT_STATUSES }).notNull().default('planned'),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    uniqueIndex('sprints_project_name_unique').on(t.projectId, t.name),
+    index('sprints_project_starts_on_idx').on(t.projectId, t.startsOn),
+    index('sprints_project_status_idx').on(t.projectId, t.status),
+    check('sprints_status_check', oneOf('status', SPRINT_STATUSES)),
+    check('sprints_dates_check', sql.raw('ends_on > starts_on')),
+  ],
+);
+
+// ---------------------------------------------------------------- §4.5 tasks
+
+export const tasks = sqliteTable(
+  'tasks',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    /** Per-project sequence → the display key `LAI-42`. Allocated in `numbering.ts`. */
+    number: integer('number').notNull(),
+    title: text('title').notNull(),
+    descriptionMd: text('description_md'),
+    status: text('status', { enum: TASK_STATUSES }).notNull().default('backlog'),
+    priority: text('priority', { enum: TASK_PRIORITIES }).notNull().default('p2'),
+    assigneeId: text('assignee_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Null means *not in a sprint* — the ordinary state, never an error (§4.15). */
+    sprintId: text('sprint_id').references(() => sprints.id, { onDelete: 'set null' }),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    createdVia: text('created_via', { enum: CREATED_VIA }).notNull(),
+    /**
+     * Provenance, not blocking (§4.6). A discovered task can be worked while its
+     * parent is still open — this is deliberately *not* a dependency.
+     */
+    discoveredFrom: text('discovered_from'),
+    branch: text('branch'),
+    externalRef: text('external_ref'),
+    staleFlaggedAt: integer('stale_flagged_at'),
+    startedAt: integer('started_at'),
+    completedAt: integer('completed_at'),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    // §4.13, verbatim.
+    uniqueIndex('tasks_project_number_unique').on(t.projectId, t.number),
+    index('tasks_project_status_idx').on(t.projectId, t.status),
+    index('tasks_assignee_status_idx').on(t.assigneeId, t.status),
+    index('tasks_project_updated_at_idx').on(t.projectId, t.updatedAt),
+    index('tasks_sprint_id_idx').on(t.sprintId),
+    index('tasks_created_by_idx').on(t.createdBy),
+    index('tasks_discovered_from_idx').on(t.discoveredFrom),
+    check('tasks_status_check', oneOf('status', TASK_STATUSES)),
+    check('tasks_priority_check', oneOf('priority', TASK_PRIORITIES)),
+    check('tasks_created_via_check', oneOf('created_via', CREATED_VIA)),
+    check('tasks_number_check', sql.raw('number > 0')),
+    check(
+      'tasks_discovered_from_check',
+      sql.raw('discovered_from IS NULL OR discovered_from <> id'),
+    ),
+  ],
+);
+
+// --------------------------------------------------- §4.6 task_dependencies
+
+/**
+ * The pair is the primary key, which gives §4.6's "unique pair" for free.
+ *
+ * Self-reference is refused by a `CHECK`; cycles cannot be expressed as one and
+ * are rejected at write time in `dependencies.ts`.
+ */
+export const taskDependencies = sqliteTable(
+  'task_dependencies',
+  {
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    dependsOnTaskId: text('depends_on_task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('task_dependencies_pair_unique').on(t.taskId, t.dependsOnTaskId),
+    index('task_dependencies_depends_on_idx').on(t.dependsOnTaskId),
+    check('task_dependencies_no_self_check', sql.raw('task_id <> depends_on_task_id')),
+  ],
+);
+
+// ------------------------------------------------------------- §4.7 comments
+
+export const comments = sqliteTable(
+  'comments',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    authorId: text('author_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    bodyMd: text('body_md').notNull(),
+    createdVia: text('created_via', { enum: CREATED_VIA }).notNull(),
+    editedAt: integer('edited_at'),
+    /** Soft delete (§4.7) — `updated_since` returns these as tombstones (§6.3). */
+    deletedAt: integer('deleted_at'),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    index('comments_task_created_at_idx').on(t.taskId, t.createdAt),
+    index('comments_author_id_idx').on(t.authorId),
+    check('comments_created_via_check', oneOf('created_via', CREATED_VIA)),
+  ],
+);
+
+// ------------------------------------------------------------- §4.8 activity
+
+/**
+ * Append-only. There is no update or delete path in `activity.ts`, and the
+ * migration installs triggers that abort either statement outright — see
+ * `migrations/` and `test/db/activity.test.ts`.
+ *
+ * **Deviation from §4.8, flagged for review (LAI-020).** The section marks only
+ * `task_id` nullable, but four of the activity types it defines are not
+ * project-scoped (`token.created`, `token.revoked`, `unlisted.logged`,
+ * `member.added` at org level) and some are not user-authored (`webhook.commit`,
+ * and the cron jobs of §11.6). Keeping `project_id` and `actor_id` NOT NULL would
+ * make rows the same section requires impossible to write, so both are nullable
+ * here. `org_id` stays NOT NULL — every event belongs to the one org.
+ */
+export const activity = sqliteTable(
+  'activity',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** Null for org-scoped events. Nulled rather than deleted if a project goes. */
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    /** Null for system actors — webhooks (§6.1) and cron (§11.6). */
+    actorId: text('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    actorKind: text('actor_kind', { enum: ACTOR_KINDS }).notNull(),
+    /** *Which* token, for audit (§4.8). */
+    actorTokenId: text('actor_token_id'),
+    type: text('type', { enum: ACTIVITY_TYPES }).notNull(),
+    payloadJson: text('payload_json').notNull().default('{}'),
+    createdAt,
+  },
+  (t) => [
+    index('activity_project_created_at_idx').on(t.projectId, t.createdAt),
+    index('activity_task_created_at_idx').on(t.taskId, t.createdAt),
+    index('activity_org_created_at_idx').on(t.orgId, t.createdAt),
+    index('activity_actor_id_idx').on(t.actorId),
+    check('activity_actor_kind_check', oneOf('actor_kind', ACTOR_KINDS)),
+    check('activity_type_check', oneOf('type', ACTIVITY_TYPES)),
+  ],
+);
+
+// --------------------------------------------------------------- §4.9 tokens
+
+export const tokens = sqliteTable(
+  'tokens',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    /** First 8 characters, so a token is identifiable in the UI (§4.9). */
+    prefix: text('prefix').notNull(),
+    /** SHA-256 of the secret. The secret itself is never stored (§4.9). */
+    tokenHash: text('token_hash').notNull(),
+    scope: text('scope', { enum: TOKEN_SCOPES }).notNull(),
+    /** Null = all the user's projects (§4.9). */
+    projectIdsJson: text('project_ids_json'),
+    lastUsedAt: integer('last_used_at'),
+    expiresAt: integer('expires_at'),
+    revokedAt: integer('revoked_at'),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('tokens_token_hash_unique').on(t.tokenHash),
+    index('tokens_user_id_idx').on(t.userId),
+    check('tokens_scope_check', oneOf('scope', TOKEN_SCOPES)),
+  ],
+);
+
+// ----------------------------------------------------------- §4.10 heartbeats
+
+/**
+ * Metadata only — repo name, branch name, timestamp. Never file paths, diffs,
+ * prompts or transcript content (D-005). There is deliberately no column that
+ * could hold any of those.
+ */
+export const heartbeats = sqliteTable(
+  'heartbeats',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenId: text('token_id').references(() => tokens.id, { onDelete: 'set null' }),
+    repo: text('repo').notNull(),
+    branch: text('branch').notNull(),
+    /** Resolved server-side from the branch name (§9.2). */
+    matchedTaskId: text('matched_task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    createdAt,
+  },
+  (t) => [
+    index('heartbeats_user_created_at_idx').on(t.userId, t.createdAt),
+    index('heartbeats_matched_task_id_idx').on(t.matchedTaskId),
+    index('heartbeats_token_id_idx').on(t.tokenId),
+  ],
+);
+
+// -------------------------------------------------------------- §4.11 invites
+
+export const invites = sqliteTable(
+  'invites',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id')
+      .notNull()
+      .references(() => orgs.id, { onDelete: 'cascade' }),
+    /** Null for link invites (§4.11). */
+    email: text('email'),
+    orgRole: text('org_role', { enum: ORG_ROLES }).notNull(),
+    projectId: text('project_id').references(() => projects.id, { onDelete: 'cascade' }),
+    projectRole: text('project_role', { enum: PROJECT_ROLES }),
+    tokenHash: text('token_hash').notNull(),
+    createdBy: text('created_by')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    expiresAt: integer('expires_at').notNull(),
+    acceptedBy: text('accepted_by').references(() => users.id, { onDelete: 'set null' }),
+    acceptedAt: integer('accepted_at'),
+    createdAt,
+  },
+  (t) => [
+    uniqueIndex('invites_token_hash_unique').on(t.tokenHash),
+    index('invites_org_id_idx').on(t.orgId),
+    index('invites_email_idx').on(t.email),
+    index('invites_project_id_idx').on(t.projectId),
+    index('invites_created_by_idx').on(t.createdBy),
+    index('invites_accepted_by_idx').on(t.acceptedBy),
+    check('invites_org_role_check', oneOf('org_role', ORG_ROLES)),
+    check('invites_project_role_check', oneOfOrNull('project_role', PROJECT_ROLES)),
+  ],
+);
+
+// ------------------------------------------------------ §4.12 meeting_reviews
+
+export const meetingReviews = sqliteTable(
+  'meeting_reviews',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    source: text('source').notNull(),
+    /**
+     * A hash, not the transcript. Laika stores what it needs to deduplicate and
+     * nothing more — the transcript itself is not persisted (§10.2, D-005).
+     */
+    transcriptHash: text('transcript_hash').notNull(),
+    proposalsJson: text('proposals_json').notNull(),
+    status: text('status', { enum: MEETING_REVIEW_STATUSES }).notNull().default('pending'),
+    reviewedBy: text('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+    reviewedAt: integer('reviewed_at'),
+    /** Unreviewed proposals expire after 7 days (§4.12, §11.6). */
+    expiresAt: integer('expires_at').notNull(),
+    createdAt,
+  },
+  (t) => [
+    index('meeting_reviews_project_status_idx').on(t.projectId, t.status),
+    index('meeting_reviews_reviewed_by_idx').on(t.reviewedBy),
+    check('meeting_reviews_status_check', oneOf('status', MEETING_REVIEW_STATUSES)),
+  ],
+);
+
+// -------------------------------------------------------- §4.14 unlisted_work
+
+/**
+ * Written only by the `log_unlisted_work` MCP tool (§7.1): an agent noticing work
+ * that belongs to no project records it here instead of inventing a task.
+ *
+ * Same privacy rule as heartbeats (D-005) — `note` is agent-authored prose and
+ * `repo` is a name. No file contents, no diffs, no prompt text.
+ */
+export const unlistedWork = sqliteTable(
+  'unlisted_work',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenId: text('token_id').references(() => tokens.id, { onDelete: 'set null' }),
+    repo: text('repo').notNull(),
+    note: text('note').notNull(),
+    promotedTaskId: text('promoted_task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    dismissedAt: integer('dismissed_at'),
+    createdAt,
+  },
+  (t) => [
+    index('unlisted_work_user_created_at_idx').on(t.userId, t.createdAt),
+    index('unlisted_work_promoted_task_id_idx').on(t.promotedTaskId),
+    index('unlisted_work_token_id_idx').on(t.tokenId),
+  ],
+);
+
+export type User = typeof users.$inferSelect;
+export type Org = typeof orgs.$inferSelect;
+export type Project = typeof projects.$inferSelect;
+export type ProjectMembership = typeof projectMemberships.$inferSelect;
+export type Sprint = typeof sprints.$inferSelect;
+export type Task = typeof tasks.$inferSelect;
+export type TaskDependency = typeof taskDependencies.$inferSelect;
+export type Comment = typeof comments.$inferSelect;
+export type Activity = typeof activity.$inferSelect;
+export type Token = typeof tokens.$inferSelect;
+export type Heartbeat = typeof heartbeats.$inferSelect;
+export type Invite = typeof invites.$inferSelect;
+export type MeetingReview = typeof meetingReviews.$inferSelect;
+export type UnlistedWork = typeof unlistedWork.$inferSelect;
