@@ -13,6 +13,7 @@ import { rateLimitMiddleware } from './http/middleware/rate-limit.ts';
 import { idempotencyMiddleware } from './http/middleware/idempotency.ts';
 import { RateLimiter } from './http/rate-limit.ts';
 import { requestId } from './http/middleware/request-id.ts';
+import { securityHeaders } from './http/middleware/security-headers.ts';
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes } from './http/routes/me.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
@@ -73,6 +74,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       credentials: true,
     }),
   );
+  // Immediately after cors: response headers, so they apply to everything the
+  // chain produces, including errors and the SPA document (SPEC §13.1).
+  app.use('*', securityHeaders);
   app.use('*', bodyLimit({ maxSize: BODY_LIMIT_BYTES }));
   // SPEC §11.2 position. Real when auth is configured, pass-through otherwise;
   // either way an anonymous request continues with `actor: null` rather than 401.

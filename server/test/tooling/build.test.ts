@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -65,6 +65,59 @@ describe('build output', () => {
     const strays = readdirSync(DIST, { recursive: true }) as string[];
     expect(strays.filter((f) => f.endsWith('.test.js'))).toEqual([]);
   });
+});
+
+describe('the build is idempotent (LAI-028)', () => {
+  /**
+   * `cp -R src/x dist/x` copies *into* `dist/x` when it already exists, so
+   * without a clean the second build produced `dist/static/static/` and
+   * `dist/db/migrations/migrations/` — each with its own `meta/_journal.json`.
+   * Inert, because the resolved paths were still correct, but it meant `dist/`
+   * depended on how many times you had built it.
+   */
+  function tree(): string[] {
+    return (readdirSync(DIST, { recursive: true }) as string[]).sort();
+  }
+
+  it('produces an identical tree on a second run with no clean between', () => {
+    const first = tree();
+
+    execFileSync('pnpm', ['run', 'build'], { cwd: SERVER_ROOT, stdio: 'pipe' });
+    const second = tree();
+
+    execFileSync('pnpm', ['run', 'build'], { cwd: SERVER_ROOT, stdio: 'pipe' });
+    const third = tree();
+
+    expect(second).toEqual(first);
+    expect(third).toEqual(first);
+  }, 120_000);
+
+  it('never nests the copied asset directories', () => {
+    expect(existsSync(join(DIST, 'static', 'static'))).toBe(false);
+    expect(existsSync(join(DIST, 'db', 'migrations', 'migrations'))).toBe(false);
+  });
+
+  it('leaves exactly one migration journal where the migrator looks', () => {
+    // A nested copy carried a second journal. Drizzle reads only the folder it
+    // resolves, so the duplicate was never applied — but a second journal in the
+    // tree is the kind of thing that is true right up until it is not.
+    const journals = (readdirSync(join(DIST, 'db'), { recursive: true }) as string[]).filter((f) =>
+      f.endsWith('_journal.json'),
+    );
+
+    expect(journals).toHaveLength(1);
+  });
+
+  it('drops output that a later build no longer produces', () => {
+    // The other half of `clean`: stale files from a previous build must not
+    // survive into the next one.
+    const stray = join(DIST, 'stale-from-a-previous-build.js');
+    writeFileSync(stray, '// left over\n', 'utf8');
+
+    execFileSync('pnpm', ['run', 'build'], { cwd: SERVER_ROOT, stdio: 'pipe' });
+
+    expect(existsSync(stray)).toBe(false);
+  }, 120_000);
 });
 
 describe('the built server, run the way the container runs it', () => {
