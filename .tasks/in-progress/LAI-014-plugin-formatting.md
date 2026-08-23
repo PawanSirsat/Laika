@@ -2,11 +2,12 @@
 id: LAI-014
 title: Bring plugin/ under the repo formatter
 area: plugin
-assignee: unclaimed
+assignee: builder-b
 priority: p3
 depends-on: [LAI-001]
 discovered-from: LAI-001
-status: backlog
+status: in-progress
+started: 2026-08-24T03:19:17+05:30
 ---
 
 ## Goal
