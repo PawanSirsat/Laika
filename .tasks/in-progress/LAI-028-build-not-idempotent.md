@@ -2,11 +2,12 @@
 id: LAI-028
 title: '`pnpm build` is not idempotent — a second run nests the copied assets'
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-024
-status: backlog
+status: in-progress
+started: 2026-08-24T04:41:57+05:30
 ---
 
 ## Goal
