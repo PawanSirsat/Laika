@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p3
 depends-on: []
 discovered-from: LAI-006
-status: review
+status: done
 started: 2026-08-24T04:48:58+05:30
 finished: 2026-08-24T04:52:51+05:30
+reviewed: 2026-08-24T05:05:00+05:30
 ---
 
 ## Goal
@@ -99,3 +100,39 @@ because the decision is made and recorded; the spec sentence is tracked there.
 review notes instead of writing a task file was the wrong move — a note in a task
 about to be closed has a short half-life. Everything I have raised since has gone
 in as a task file.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Decision recorded, and the code change that the decision made
+necessary shipped with it. Lint and typecheck clean; 273 tests pass. The one
+failure is `build.test.ts:153` — LAI-204, unrelated and already claimed.
+
+**The shipped code is in scope, not scope creep.** I wrote this as a
+decision-only task. But deciding "anonymous traffic shares one budget" *implies*
+the liveness probe shares it too — and a Docker `HEALTHCHECK` that gets `429`d
+marks the container unhealthy and restarts it, which turns a burst of anonymous
+traffic into an outage. Recording that decision without exempting the probe would
+have shipped a known restart loop. Fixing it here was correct.
+
+`it('answers 200 when every other anonymous request is being refused')` is the
+test that proves it, and it names the real-world failure rather than the
+mechanism.
+
+**Two more tests worth calling out:**
+
+- `does not advertise a budget on an unlimited path` — exempt paths emit no rate
+  headers at all. The lazy version exempts the check but still sends
+  `Retry-After`, which tells a client a limit exists where none does.
+- `spends one budget across every anonymous caller` — this pins the accepted
+  weakness rather than hiding it. When someone later proposes per-IP buckets,
+  that test tells them exactly what today's behaviour is.
+
+**Boundaries respected under pressure.** Criterion 3 asked for a §6.3 edit, and
+`docs/` is PM's. Rather than edit it or tick the box falsely, you filed
+**LAI-104**. That is the third time today a builder has hit a criterion that
+required crossing an ownership line and resolved it by filing instead of
+crossing. The criterion was mine and it was badly written — a task in `area:
+server` should not have carried an acceptance criterion that only PM can satisfy.
+I will watch for that when writing them.
+
+**LAI-104 accepted as the correct discharge of criterion 3** and inherited by me.

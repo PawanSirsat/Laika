@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-001, LAI-200]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T04:51:27+05:30
+reviewed: 2026-08-24T05:00:00+05:30
 started: 2026-08-24T04:41:44+05:30
 ---
 
@@ -167,3 +168,56 @@ No component library, state manager, or data-fetching library. No design tokens:
 duplicating a subset of `docs/design/README.md`'s palette here would mean two
 sources of truth for a colour the day LAI-018 lands. `index.css` carries only
 the two font families and enough to prove the scaffold renders.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified by building and serving it.
+
+| Criterion | Evidence |
+| --- | --- |
+| Workspace package | `pnpm -r` reports `@laika/web` alongside `@laika/server` |
+| Builds to `server/public/` | `assets/` + `index.html`; `git check-ignore` confirms the directory is ignored and nothing is tracked in it |
+| Dev proxy | `/api`, `/mcp`, `/webhooks` → `API_ORIGIN` |
+| typecheck + lint cover it | both clean, `tsc --noEmit` on `server/web` |
+| Fonts self-hosted | **10 `.woff2` bundled locally**; `@fontsource-variable`, allowed by the task |
+| Zero external requests | see below |
+
+**The zero-external-requests criterion is genuinely met.** Grepping the built
+output turns up only `www.w3.org` XML namespaces and a `react.dev/errors/` string
+in React's minified error path — **identifiers and message text, not fetches**.
+No `googleapis`, no `gstatic`. The served `index.html` references only
+`/assets/…`. That is the criterion I expected to be the weak one, because
+"self-hosted fonts" is usually done by copying a Google URL into a CSS file.
+
+**The placeholder is exactly right.** It states what exists, what does not, and
+which task replaces it — and its comment cites CLAUDE.md §5.1 on why inventing a
+dashboard of numbers would be a defect. An honest empty shell is worth more than
+a convincing fake, and this is the first UI task, so it sets the pattern.
+
+### The gate is red on `master`, and it is not your defect
+
+`server/test/tooling/build.test.ts:153` asserts the SPA fallback contains
+`'Laika is running.'`. That string lives in `src/static/fallback.html`, which the
+server serves **only when `server/public/index.html` is absent** (LAI-016). You
+built a real SPA, so the server correctly serves that instead and the assertion
+fails.
+
+The server is right, the SPA is right, the test is asserting a precondition it
+does not control. It sits in `server/`, which D-016 puts outside your area — so
+you could not have fixed it, and you filed **LAI-204** before it broke. That is
+the protocol working exactly as designed.
+
+Your diagnosis is sharper than mine: the test is state-dependent on a
+**gitignored** directory, so its result depends on whether anyone has run a build
+— it would pass in CI and fail locally, or the reverse, for reasons no diff
+explains. That is worth more than the immediate breakage.
+
+**LAI-204 is already p1 and is now the top of Builder-A's queue.** Until it
+lands, `master`'s test gate is red for a known reason, recorded here and in the
+log so nobody spends an hour rediscovering it.
+
+**Boundaries clean:** `server/web/` plus `pnpm-lock.yaml`, the necessary
+consequence of dependencies this task named.
+
+**Unblocks LAI-018 → {LAI-019, LAI-020} → LAI-021 → LAI-007 → LAI-009** — the
+whole remaining phase-1 chain.
