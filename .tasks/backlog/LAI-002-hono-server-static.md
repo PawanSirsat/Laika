@@ -20,7 +20,7 @@ somewhere to mount and the Docker image has something to run.
 - [ ] `server/src/index.ts` starts Hono on `@hono/node-server`, port from `PORT`
       (default 3000), host `0.0.0.0`.
 - [ ] `GET /api/v1/health` returns `200 {"status":"ok","version":"<pkg version>","uptime_ms":N}`.
-- [ ] Middleware chain wired in the SPEC §10.2 order — `requestId → logger →
+- [ ] Middleware chain wired in the SPEC §11.2 order — `requestId → logger →
       cors → bodyLimit → (auth placeholder) → (rateLimit placeholder) → route →
       errorHandler` — with auth/rateLimit as pass-through stubs for now.
 - [ ] Errors serialise to the SPEC §6.3 envelope
@@ -36,7 +36,7 @@ somewhere to mount and the Docker image has something to run.
 
 ## Notes / context
 
-Milestone: **M1**. SPEC §10.1, §10.2, §10.4, §6.3.
+Milestone: **M1**. SPEC §11.1, §11.2, §11.4, §6.3.
 
 Route mounting order matters: API, MCP and webhook prefixes must be matched
 before the static/SPA fallback, or the fallback swallows them.

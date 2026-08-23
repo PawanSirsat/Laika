@@ -19,8 +19,9 @@ it writing activity.
 
 - [ ] `GET /api/v1/projects` returns only projects the actor may see (Owner/Admin
       all; Member/Viewer their memberships), paginated per LAI-006.
-- [ ] `POST /api/v1/projects` (Admin+) with a unique uppercase `key` per org;
-      duplicate key returns `conflict`.
+- [ ] `POST /api/v1/projects` (Admin+) with a unique lowercase `slug` (the URL
+      identity) and a unique uppercase `prefix` (the display key, `LAI` → `LAI-42`),
+      both unique per org; a duplicate of either returns `conflict`.
 - [ ] `GET /api/v1/projects/:id` and `PATCH /api/v1/projects/:id` (Admin+),
       including archive via `archived_at`.
 - [ ] `GET /api/v1/projects/:id/members`, `POST .../members`,
@@ -30,11 +31,15 @@ it writing activity.
       `activity` row with the correct verb.
 - [ ] `?updated_since=` supported on both list endpoints, tombstones included.
 - [ ] Tests cover each role against each endpoint (both allowed and denied), plus
-      the duplicate-key and last-owner cases.
+      duplicate `slug`, duplicate `prefix`, and the last-owner cases.
 
 ## Notes / context
 
 Milestone: **M2**. SPEC §4.3, §4.4, §6.4.
+
+**Resolved by LAI-015:** the spec has `projects.slug` (lowercase, URL identity)
+**and** `projects.prefix` (uppercase display key). There is no `key` column.
+Routes are keyed by `:slug`.
 
 Project UI is a separate task, groomed after this lands.
 

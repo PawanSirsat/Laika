@@ -38,10 +38,10 @@ endpoint built afterwards behaves identically and nobody reinvents cursors.
 
 ## Notes / context
 
-Milestone: **M1**. SPEC §6.3, §12.2.
+Milestone: **M1**. SPEC §6.3, §13.2.
 
 `updated_since` is not a nicety — it is how agents and reconnecting SSE clients
-catch up (SPEC §10.5). Build it now or every list endpoint gets retrofitted.
+catch up (SPEC §11.5). Build it now or every list endpoint gets retrofitted.
 
 Dependencies this task may add: `zod`. Rate limiting and idempotency storage are
 in-process/SQLite — no Redis (DECISIONS D-002).

@@ -39,7 +39,7 @@ running server from `docker compose up`.
 
 ## Notes / context
 
-Milestone: **M1**. SPEC §10.7, DECISIONS D-002. **Builder-B owns this.**
+Milestone: **M1**. SPEC §11.7, DECISIONS D-002. **Builder-B owns this.**
 
 You depend on LAI-001/LAI-002 for a buildable server, but you can write the
 Dockerfile and iterate against the placeholder health route as soon as LAI-002

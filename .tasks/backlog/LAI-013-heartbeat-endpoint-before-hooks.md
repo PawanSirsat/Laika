@@ -16,7 +16,7 @@ on session start and on a timer, branch detection") but puts the endpoint they
 POST to, `POST /api/v1/heartbeats`, in **M5**. As written, M4 ships hooks that
 have nothing to talk to for a whole milestone.
 
-It is survivable — SPEC §5 requires the hook to fail silent (`|| true`), so a
+It is survivable — SPEC §8 requires the hook to fail silent (`|| true`), so a
 missing endpoint degrades to a no-op rather than breaking a coding session — but
 it means M4 cannot be verified end to end, and whoever builds the hooks has no
 way to test them. PM should decide which way to resolve it rather than leaving
@@ -40,8 +40,8 @@ the next Builder-B session to guess.
 Found while writing `plugin/hooks/README.md` under LAI-012, which had to state
 which milestone fills the directory and could not answer the question honestly.
 
-Relevant: `docs/ROADMAP.md` M4 and M5, SPEC §5 (hook payload, fail-silent rule),
-SPEC §1 `heartbeats` table, SPEC §3 (`POST /heartbeats`, 202, token auth only).
+Relevant: `docs/ROADMAP.md` M4 and M5, SPEC §8 (hook payload, fail-silent rule),
+SPEC §4.10 `heartbeats` table, SPEC §9.1 (`POST /heartbeats`, 202, token auth only).
 
 Nothing is blocked by this today — LAI-012 ships the skeleton with an empty
 `hooks/hooks.json` and no heartbeat code, exactly as its notes instruct.

@@ -26,7 +26,7 @@ than migrating it three times.
       `activity`, `tokens`, `heartbeats`, `invites`.
 - [ ] Ids are ULID `text`; timestamps are `integer` unix-ms; FKs declared with
       the right cascade behaviour.
-- [ ] Every index in SPEC §4.11 exists in the migration.
+- [ ] Every index in SPEC §4.13 exists in the migration.
 - [ ] `drizzle-kit` configured; the first migration is **generated and
       committed**, and applied automatically on server boot (forward-only).
 - [ ] Per-project task numbering produces `LAI-1`, `LAI-2`, … without gaps under

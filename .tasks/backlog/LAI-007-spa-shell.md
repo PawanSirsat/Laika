@@ -35,7 +35,7 @@ the same public `/api/v1` an agent would — no private endpoints.
 
 ## Notes / context
 
-Milestone: **M1**. SPEC §10.4.
+Milestone: **M1**. SPEC §11.4 and §11.4.1.
 
 Board UI, task detail and drag-and-drop are **M2**, not this task. This is the
 shell they will mount into — resist building columns now.

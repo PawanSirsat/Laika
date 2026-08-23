@@ -406,3 +406,55 @@ not to matter. The capacity view is the early signal: it is the feature that
 cannot exist unless everything is in one place.
 
 **Revisit when:** never. Reversing this is starting a different project.
+
+---
+
+## D-011 — The spec is authoritative; task files cite it, never restate it
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** when a task file and the spec disagree, the spec wins — and the
+reason they disagreed is that the task file had copied the spec instead of
+pointing at it.
+
+**Context.** `docs/SPEC.md` was rewritten while twelve task files were already
+written against it. The rewrite renumbered every section after §7 and renamed
+several fields. The damage was not that references broke loudly — it is that they
+broke **silently**: LAI-002 told a builder to implement "the SPEC §10.2
+middleware order", and §10.2 still existed, but it was now part of *Webhooks and
+the meeting diff*. A builder following the reference would have read a real
+section and implemented the wrong thing.
+
+Worse, four disagreements were substantive rather than positional, because task
+files had restated spec content instead of citing it: project identity (`key` vs
+`slug`+`prefix`), signup mode (`signup_mode` enum vs `invite_only` flag), the
+role model (flat vs two-level), and the `ready` computation (which silently
+omitted the new `todo` status).
+
+**Decision.**
+
+1. **`docs/SPEC.md` is authoritative for M1–M7.** Where a task file and the spec
+   disagree, the spec wins and the task file is corrected — never the reverse,
+   and never by a builder mid-task.
+2. **Task files cite the spec; they do not restate it.** A task may quote a
+   constraint for emphasis, but the citation is the contract. Restating a field
+   name or an enum creates a second source of truth that will drift.
+3. **Renumbering the spec is a breaking change** and obliges whoever does it to
+   fix every `§` reference in `.tasks/**` in the same task.
+4. **Prefer stable anchors to numbers.** Cite `§4.5` *and* name the thing —
+   "SPEC §4.5 (`tasks`)" survives a renumber with a recoverable error; a bare
+   `§4.5` does not.
+
+**Consequences.** Task files get slightly less self-contained: a builder must
+open the spec rather than working from the task alone. That is the intended
+trade — the alternative is what happened here, where the task was self-contained
+and wrong. It also makes spec edits more expensive, which is correct: a document
+twelve tasks depend on should not be cheap to renumber.
+
+The four naming conflicts were resolved spec-wins and the task files rewritten;
+LAI-015 carries the table. Note that **D-004's text still says
+`orgs.signup_mode`** — that entry is append-only and its decision (invite-only by
+default) is unchanged; only the field name moved, to `orgs.invite_only`. This
+paragraph is the correction rather than an edit to D-004.
+
+**Revisit when:** never for the principle. The mechanics could improve — a link
+checker in CI would catch dangling `§` references before a builder does.

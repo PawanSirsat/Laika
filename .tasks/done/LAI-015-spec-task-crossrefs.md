@@ -6,8 +6,10 @@ assignee: pm
 priority: p1
 depends-on: []
 discovered-from: LAI-001
-status: in-progress
+status: done
 started: 2026-08-24T04:18:00+05:30
+finished: 2026-08-24T04:31:00+05:30
+reviewed: 2026-08-24T04:31:00+05:30
 ---
 
 ## Goal
@@ -23,13 +25,13 @@ Until this is reconciled, builders are guessing which document is authoritative.
 
 ## Acceptance criteria
 
-- [ ] Decide and state, in `docs/SPEC.md` itself, which document is authoritative
+- [x] Decide and state, in `docs/SPEC.md` itself, which document is authoritative
       for M1–M7.
-- [ ] Every `SPEC §x.y` reference in `.tasks/**` resolves to a real heading in the
+- [x] Every `SPEC §x.y` reference in `.tasks/**` resolves to a real heading in the
       current `docs/SPEC.md`, or is removed.
-- [ ] The naming conflicts below are resolved in one direction, in both the spec
+- [x] The naming conflicts below are resolved in one direction, in both the spec
       and the task files that depend on them.
-- [ ] `docs/DECISIONS.md` records the rewrite and the resolution, so the next
+- [x] `docs/DECISIONS.md` records the rewrite and the resolution, so the next
       person does not re-litigate it.
 
 ## Notes / context
@@ -104,3 +106,46 @@ merged spec; this update only re-checked the numbering.
 
 Raising the priority case: this is now a **p1** blocker for LAI-002 and LAI-003,
 which are the next two tasks to be claimed.
+
+---
+
+## Resolution — PM, 2026-08-24
+
+**Much of this task's premise was already fixed before it was claimed.** It was
+written against the short-lived replacement spec, where §5 Task lifecycle, §6.3
+API conventions, §4.11 Indexes and the `can()` contract had genuinely vanished.
+The spec merge restored all four. What actually remained was renumbering plus
+four naming conflicts.
+
+**Authority (AC1).** `docs/SPEC.md` already states it in its header — *"This
+document is the source of truth. Builders implement exactly this; a deviation
+requires a PM-approved task that updates this file first."* No change needed.
+
+**Renumbering (AC2).** The merge inserted §8 *Plugin and hooks*, shifting
+everything after it by one: §8→§9, §9→§10, §10→§11, §11→§12, §12→§13, §13→§14.
+Within §4, `meeting_reviews` was inserted, moving Indexes §4.11→§4.13.
+Corrected in LAI-002, LAI-003, LAI-005, LAI-006, LAI-007, LAI-008 and LAI-013
+(the last written against the replacement spec, so it needed a different map:
+§5→§8, §1→§4.10, §3→§9.1). Verified mechanically — every `§x.y` in `.tasks/**`
+now resolves to a real heading, except the historical citations in this file,
+which describe the problem and are meant to be stale.
+
+**Naming conflicts (AC3), resolved spec-wins in all four cases:**
+
+| Conflict | Resolution |
+| --- | --- |
+| Project identity | `projects.slug` (lowercase, URL) **and** `projects.prefix` (uppercase display key). There is no `key` column. LAI-010 rewritten; routes are `:slug`. |
+| Signup mode | `orgs.invite_only`, an integer flag defaulting to `1` — not a `signup_mode` enum. LAI-005 and LAI-009 corrected. |
+| Roles | Two-level per D-006: `users.org_role` plus `project_memberships.role`. LAI-004 gained the implicit-`lead` rule and the no-escalation constraint as separate criteria. |
+| Task lifecycle | Statuses are `backlog\|todo\|in_progress\|review\|done\|cancelled`. `ready` is `status IN ('backlog','todo')` + unassigned + deps done — LAI-011 previously ignored `todo`. |
+
+**Also corrected:** LAI-004 described token scopes as `tasks:write`-style
+granular strings. The spec settled on `full` / `read_only` plus an optional
+project restriction; granular scopes are deferred (SPEC §14, question 1).
+
+**AC4** — recorded as D-011.
+
+**Process note.** PM authored *and* closed this task, which is a weaker loop than
+a builder's work getting an independent review. Accepted here because the task is
+entirely in PM's area and the substantive claim — that every reference resolves —
+was verified mechanically rather than by reading. Worth avoiding as a habit.

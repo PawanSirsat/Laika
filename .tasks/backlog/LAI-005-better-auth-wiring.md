@@ -22,7 +22,7 @@ default and is enforced server-side, not by hiding a button.
 - [ ] Email + password auth with Argon2id hashing (better-auth default), session
       cookies `HttpOnly`, `SameSite=Lax`, `Secure` when not on localhost.
 - [ ] CSRF protection on cookie-authenticated mutations.
-- [ ] Signup respects `orgs.signup_mode`: with `invite_only` (default), signup
+- [ ] Signup respects `orgs.invite_only` (integer, default `1`): when set, signup
       without a valid, unexpired invite token is rejected — verified by test.
 - [ ] The auth middleware stub from LAI-002 becomes real: resolves the session to
       an `Actor` (user + org role + project memberships) and attaches it to the
@@ -35,7 +35,7 @@ default and is enforced server-side, not by hiding a button.
 
 ## Notes / context
 
-Milestone: **M1**. SPEC §6.1, §10.3, DECISIONS D-004.
+Milestone: **M1**. SPEC §6.1, §11.3, DECISIONS D-004.
 
 Bearer-token auth is **not** in this task — that is M3 (tokens). Build the actor
 resolution so a second credential source can be added without restructuring:

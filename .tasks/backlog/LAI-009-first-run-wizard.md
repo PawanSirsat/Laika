@@ -23,7 +23,8 @@ empty board. This is the milestone's demo.
       optional first project, in one transaction.
 - [ ] Setup is **single-use**: once an org exists the endpoint returns `conflict`
       — proven by a test that calls it twice, including concurrently.
-- [ ] Signup mode defaults to `invite_only` (DECISIONS D-004).
+- [ ] `orgs.invite_only` defaults to `1` (DECISIONS D-004). The field is a flag,
+      not the `signup_mode` enum that earlier task text described.
 - [ ] Setup UI in the SPA: org name, Owner email/password, optional project name
       and key, with validation and a clear error path.
 - [ ] After setup the user is signed in and lands in the authenticated shell.
