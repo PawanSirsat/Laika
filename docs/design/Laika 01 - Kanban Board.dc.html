@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"><style>
+:root{--page:#eef0f6;--tub:#e7e9f1;--card:#ffffff;--bd:rgba(15,23,42,.09);--bd2:rgba(15,23,42,.2);--tx:#171a21;--tx2:#5a6070;--tx3:#8d94a4;--acc:#2f6bff;--accs:rgba(47,107,255,.09);--accb:rgba(47,107,255,.34);--pur:#8b5cf6;--purs:rgba(139,92,246,.11);--purb:rgba(139,92,246,.36);--grn:#11996a;--grns:rgba(17,153,106,.1);--grnb:rgba(17,153,106,.3);--amb:#b6740b;--ambs:rgba(182,116,11,.1);--ambb:rgba(182,116,11,.3);--red:#d93a45;--reds:rgba(217,58,69,.08);--redb:rgba(217,58,69,.32);--shadow:0 1px 2px rgba(15,23,42,.07)}
+.dk{--page:#0c0c0f;--tub:#141418;--card:#1b1b20;--bd:rgba(255,255,255,.08);--bd2:rgba(255,255,255,.2);--tx:#f3f3f5;--tx2:#a4a4ae;--tx3:#71717d;--acc:#5b8cff;--accs:rgba(91,140,255,.14);--accb:rgba(91,140,255,.4);--pur:#a78bfa;--purs:rgba(167,139,250,.14);--purb:rgba(167,139,250,.4);--grn:#2fd08a;--grns:rgba(47,208,138,.13);--grnb:rgba(47,208,138,.32);--amb:#f0ac47;--ambs:rgba(240,172,71,.13);--ambb:rgba(240,172,71,.34);--red:#f4636d;--reds:rgba(244,99,109,.12);--redb:rgba(244,99,109,.36);--shadow:0 1px 2px rgba(0,0,0,.3)}
+body{margin:0;background:#e9e8e4;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+a{color:#2f6bff}a:hover{color:#1d4fd0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes flash{0%{box-shadow:0 0 0 3px var(--accb)}100%{box-shadow:0 0 0 3px rgba(0,0,0,0)}}
+@keyframes tick{from{transform:translateY(8px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 18px}
+.dv-tid{font-size:10px;font-weight:600;line-height:1;font-family:ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font-size:13px;font-weight:600;line-height:1.2;font-family:system-ui,sans-serif;color:#1a1a1a}
+.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font-size:10.5px;font-weight:600;line-height:1;font-family:ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font-size:11px;font-weight:400;line-height:1.3;font-family:system-ui,sans-serif;color:rgba(0,0,0,.55);max-width:780px;text-wrap:pretty}
+.dv-card{background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden}
+.dv-opt:target .dv-oid{background:#2f6bff;color:#fff}
+.dv-note{max-width:960px;margin:0 0 20px;font-size:13px;font-weight:400;line-height:1.6;font-family:system-ui,sans-serif;color:rgba(0,0,0,.62);text-wrap:pretty}
+.dv-next{margin:22px 0 0;font-size:12px;line-height:1.5;font-family:system-ui,sans-serif;color:rgba(0,0,0,.5)}
+</style></helmet>
+
+<section class="dv-turn" id="t1">
+<div class="dv-thd"><a class="dv-tid" href="#t1">1</a><span class="dv-tname">Laika · screen 1 — Kanban board</span></div>
+<p class="dv-note">Same family as the reference board: light page, tinted lane tubs, white cards, Plus Jakarta Sans + JetBrains Mono for keys and counters. Three things are new and specific to Laika — a priority dot leading each card footer, a bot badge clipped to the assignee avatar when an agent did the last write, and a live layer that actually moves: the event stream in the rail advances on its own, and whichever card just changed carries a fading ring plus a "just now" stamp. <a class="dv-oid" href="#1a">1a</a> is live — toggle theme, filter to agent work, filter by person, watch a card update. <a class="dv-oid" href="#1b">1b</a> is the card anatomy, <a class="dv-oid" href="#1c">1c</a> the dark pair and the empty lane.</p>
+<div class="dv-opts">
+
+<div class="dv-opt" id="1a"><div class="dv-olabel"><a class="dv-oid" href="#1a">1a</a>Board — five lanes, presence strip, live event stream. Click a person to filter, "Agent work" to isolate agent writes</div>
+<div class="dv-card" style="width:1680px"><div class="{{ themeClass }}" style="width:1680px;background:var(--page);color:var(--tx);font-family:'Plus Jakarta Sans',system-ui,sans-serif;position:relative;overflow:hidden">
+
+<div style="padding:13px 18px 0;background:var(--card);border-bottom:1px solid var(--bd)">
+<div style="display:flex;align-items:center;gap:11px">
+<div style="width:29px;height:29px;flex:none;border-radius:9px;background:var(--tx);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="var(--card)" stroke-width="2"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path></svg></div>
+<div style="display:flex;flex-direction:column;gap:3px">
+<div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px;font-weight:800;line-height:1;letter-spacing:-.02em">Laika</span><span style="font-size:9px;font-weight:700;line-height:1;letter-spacing:.07em;color:var(--tx3);border:1px solid var(--bd);border-radius:4px;padding:3px 5px">SELF-HOSTED</span></div>
+<div style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">laika-core · v0.4 release</div>
+</div>
+<div style="width:1px;height:22px;background:var(--bd);margin:0 3px"></div>
+<div style="font-size:14px;font-weight:700;line-height:1;letter-spacing:-.012em">Board</div>
+<div style="display:flex;align-items:center;gap:5px;padding:4px 8px 4px 6px;border-radius:20px;background:var(--grns);border:1px solid var(--grnb)"><span style="width:5px;height:5px;border-radius:50%;background:var(--grn);animation:pulse 2s ease-in-out infinite"></span><span style="font-size:9px;font-weight:700;line-height:1;letter-spacing:.06em;color:var(--grn)">LIVE · SSE</span></div>
+<div style="flex:1"></div>
+<div style="display:flex;align-items:center;gap:7px;height:31px;width:186px;padding:0 11px;border:1px solid var(--bd);border-radius:9px;background:var(--page);color:var(--tx3)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span style="font-size:11.5px;font-weight:500;line-height:1">Search tasks…</span><span style="margin-left:auto;font-size:9px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;border:1px solid var(--bd);border-radius:4px;padding:2px 4px">/</span></div>
+<div style="display:flex;align-items:center;gap:6px;height:31px;padding:0 12px;border-radius:9px;background:var(--acc);color:#fff;font-size:12px;font-weight:700;line-height:1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"></path></svg>New task</div>
+<div onClick="{{ toggleTheme }}" style="width:31px;height:31px;display:flex;align-items:center;justify-content:center;border:1px solid var(--bd);border-radius:9px;color:var(--tx2);cursor:pointer" style-hover="border-color:var(--bd2);color:var(--tx)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19"></path></svg></div>
+<div style="display:flex;align-items:center;gap:7px;height:31px;padding:2px 11px 2px 3px;border:1px solid var(--bd);border-radius:20px"><span style="width:25px;height:25px;border-radius:50%;background:{{ meAv }};display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:{{ meFg }}">{{ meIni }}</span><span style="font-size:11.5px;font-weight:700;line-height:1">Mira K.</span><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--pur);background:var(--purs);border:1px solid var(--purb);border-radius:4px;padding:3px 5px">ADMIN</span></div>
+</div>
+<div style="display:flex;align-items:center;gap:2px;margin-top:10px">
+<div style="display:flex;align-items:center;gap:7px;height:33px;padding:0 12px;color:var(--acc);border-bottom:2px solid var(--acc);font-size:13px;font-weight:700;line-height:1"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M15 4v16"></path></svg>Board</div>
+<div style="display:flex;align-items:center;gap:7px;height:33px;padding:0 12px;color:var(--tx2);font-size:13px;font-weight:600;line-height:1"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"></path></svg>List</div>
+<div style="display:flex;align-items:center;gap:7px;height:33px;padding:0 12px;color:var(--tx2);font-size:13px;font-weight:600;line-height:1"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"></path></svg>Capacity</div>
+<div style="display:flex;align-items:center;gap:7px;height:33px;padding:0 12px;color:var(--tx2);font-size:13px;font-weight:600;line-height:1"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h13"></path></svg>Activity</div>
+<div style="flex:1"></div>
+<div onClick="{{ toggleAgentOnly }}" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid {{ agentBd }};background:{{ agentBg }};border-radius:8px;font-size:11.5px;font-weight:700;line-height:1;color:{{ agentFg }};cursor:pointer" style-hover="border-color:var(--bd2)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9 14h.01M15 14h.01"></path></svg>Agent work {{ agentCount }}</div>
+<div onClick="{{ cyclePrio }}" style="display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid {{ prioBd }};background:{{ prioBg }};border-radius:8px;font-size:11.5px;font-weight:700;line-height:1;color:{{ prioFg }};cursor:pointer" style-hover="border-color:var(--bd2)">{{ prioLabel }}</div>
+<div style="display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--bd);border-radius:8px;font-size:11.5px;font-weight:600;line-height:1;color:var(--tx2)">Group: none</div>
+</div>
+</div>
+
+<sc-if value="{{ showPresence }}" hint-placeholder-val="{{ true }}">
+<div style="padding:9px 18px;background:var(--page);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px">
+<span style="flex:none;font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">WORKING NOW</span>
+<div style="flex:1;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+<sc-for list="{{ presence }}" as="p" hint-placeholder-count="5">
+<div onClick="{{ p.filter }}" title="{{ p.tip }}" style="display:flex;align-items:center;gap:8px;height:34px;padding:2px 11px 2px 3px;border-radius:20px;background:{{ p.chipBg }};border:1px solid {{ p.chipBd }};cursor:pointer" style-hover="border-color:var(--bd2)">
+<span style="position:relative;width:27px;height:27px;flex:none">
+<span style="display:flex;width:27px;height:27px;border-radius:50%;background:{{ p.avBg }};align-items:center;justify-content:center;font-size:10px;font-weight:800;line-height:1;color:{{ p.avFg }}">{{ p.ini }}</span>
+<sc-if value="{{ p.agentLive }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:5px;background:var(--pur);border:2px solid var(--page);display:flex;align-items:center;justify-content:center"><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4"></path></svg></span></sc-if>
+</span>
+<span style="display:flex;flex-direction:column;gap:3px;min-width:0">
+<span style="display:flex;align-items:center;gap:5px"><span style="font-size:11.5px;font-weight:700;line-height:1;color:{{ p.nameFg }}">{{ p.name }}</span><span style="width:5px;height:5px;border-radius:50%;background:{{ p.dot }}"></span></span>
+<span style="font-size:9px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3);white-space:nowrap">{{ p.where }}</span>
+</span>
+</div>
+</sc-for>
+</div>
+<sc-if value="{{ hasFilter }}" hint-placeholder-val="{{ false }}"><div onClick="{{ clearFilter }}" style="flex:none;display:flex;align-items:center;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--accb);background:var(--accs);font-size:11px;font-weight:700;line-height:1;color:var(--acc);cursor:pointer">{{ filterLabel }} ✕</div></sc-if>
+<span style="flex:none;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ presenceNote }}</span>
+</div>
+</sc-if>
+
+<div style="display:flex;gap:12px;padding:14px 18px 18px;align-items:flex-start">
+<div style="flex:1;min-width:0;display:grid;grid-template-columns:repeat(5,1fr);gap:11px">
+<sc-for list="{{ columns }}" as="col" hint-placeholder-count="5">
+<div style="min-width:0;background:var(--tub);border-radius:12px;padding:11px 9px 11px;display:flex;flex-direction:column;gap:9px">
+<div style="display:flex;align-items:center;gap:6px;padding:0 3px">
+<span style="width:7px;height:7px;flex:none;border-radius:50%;background:{{ col.dot }}"></span>
+<span style="font-size:10.5px;font-weight:800;line-height:1;letter-spacing:.08em;color:{{ col.tc }};white-space:nowrap">{{ col.name }}</span>
+<span style="font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ col.cntFg }};background:{{ col.cntBg }};border:1px solid {{ col.cntBd }};border-radius:5px;padding:3px 5px">{{ col.n }}</span>
+<span style="margin-left:auto;flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ col.wipFg }}">{{ col.wip }}</span>
+</div>
+
+<sc-for list="{{ col.cards }}" as="c" hint-placeholder-count="3">
+<div onClick="{{ c.select }}" style="background:var(--card);border:1px solid {{ c.bd }};border-radius:10px;box-shadow:{{ c.glow }};animation:{{ c.anim }};opacity:{{ c.op }};padding:10px 10px 9px;display:flex;flex-direction:column;gap:8px;cursor:pointer" style-hover="border-color:var(--bd2)">
+<div style="font-size:12.5px;font-weight:600;line-height:1.35;letter-spacing:-.005em;color:{{ c.titleFg }};text-wrap:pretty">{{ c.title }}</div>
+<sc-if value="{{ c.hasLabels }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+<sc-for list="{{ c.labels }}" as="l" hint-placeholder-count="1"><span style="font-size:8.5px;font-weight:700;line-height:1;color:{{ l.fg }};background:{{ l.bg }};border:1px solid {{ l.bd }};border-radius:4px;padding:3px 5px">{{ l.t }}</span></sc-for>
+</div>
+</sc-if>
+<sc-if value="{{ c.blocked }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;align-items:center;gap:5px;padding:5px 6px;border-radius:6px;background:var(--reds);border-left:2px solid var(--red)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.6"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg><span style="font-size:9px;font-weight:700;line-height:1.25;color:var(--red);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.blockedBy }}</span></div>
+</sc-if>
+<div style="display:flex;align-items:center;gap:7px">
+<span title="{{ c.prioTip }}" style="flex:none;width:9px;height:9px;border-radius:50%;background:{{ c.prioBg }};border:1.5px solid {{ c.prioBd }}"></span>
+<span style="flex:none;font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2);letter-spacing:.02em">{{ c.key }}</span>
+<sc-if value="{{ c.hasMeta }}" hint-placeholder-val="{{ false }}">
+<span style="flex:none;display:flex;align-items:center;gap:6px;color:var(--tx3)">
+<sc-if value="{{ c.hasComments }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-5.5A8 8 0 1 1 21 12Z"></path></svg><span style="font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">{{ c.comments }}</span></span></sc-if>
+<sc-if value="{{ c.hasDeps }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 14 5 18a3.5 3.5 0 0 0 5 5l3-3M15 10l4-4a3.5 3.5 0 0 0-5-5l-3 3M9.5 14.5l5-5"></path></svg><span style="font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">{{ c.deps }}</span></span></sc-if>
+</span>
+</sc-if>
+<span style="flex:1"></span>
+<sc-if value="{{ c.justNow }}" hint-placeholder-val="{{ false }}"><span style="flex:none;font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.04em;color:var(--acc);white-space:nowrap">just now</span></sc-if>
+<span style="position:relative;flex:none;width:26px;height:26px">
+<span style="display:flex;width:26px;height:26px;border-radius:50%;background:{{ c.avBg }};border:{{ c.avBd }};align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:{{ c.avFg }}">{{ c.ini }}</span>
+<sc-if value="{{ c.byAgent }}" hint-placeholder-val="{{ false }}"><span title="{{ c.agentTip }}" style="position:absolute;right:-4px;bottom:-4px;width:15px;height:15px;border-radius:5px;background:var(--pur);border:2px solid var(--card);display:flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9.5 14h.01M14.5 14h.01"></path></svg></span></sc-if>
+</span>
+</div>
+</div>
+</sc-for>
+
+<sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+<div style="border:1px dashed var(--bd2);border-radius:10px;padding:20px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--tx3)"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 12h8"></path></svg><div style="font-size:10.5px;font-weight:600;line-height:1.4;color:var(--tx3);max-width:140px;text-wrap:pretty">{{ col.emptyText }}</div></div>
+</sc-if>
+<div style="display:flex;align-items:center;gap:6px;padding:3px 3px 0;font-size:10.5px;font-weight:600;line-height:1;color:var(--tx3)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>Add task</div>
+</div>
+</sc-for>
+</div>
+
+<sc-if value="{{ rail }}" hint-placeholder-val="{{ true }}">
+<div style="width:266px;flex:none;display:flex;flex-direction:column;gap:12px">
+<div style="border:1px solid var(--bd);border-radius:11px;background:var(--card);overflow:hidden;box-shadow:var(--shadow)">
+<div style="display:flex;align-items:center;gap:6px;padding:9px 11px;border-bottom:1px solid var(--bd)"><span style="width:5px;height:5px;border-radius:50%;background:var(--grn);animation:pulse 1.8s ease-in-out infinite"></span><span style="font-size:10.5px;font-weight:800;line-height:1">Live stream</span><span style="margin-left:auto;font-size:8.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">/events</span></div>
+<div style="padding:5px 11px 8px;display:flex;flex-direction:column">
+<sc-for list="{{ stream }}" as="e" hint-placeholder-count="5">
+<div style="display:flex;gap:7px;padding:6px 0;border-bottom:1px solid var(--bd);animation:{{ e.anim }}">
+<span style="flex:none;font-size:8.5px;font-weight:600;line-height:1.5;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ e.t }}</span>
+<span style="position:relative;flex:none;width:18px;height:18px">
+<span style="display:flex;width:18px;height:18px;border-radius:50%;background:{{ e.avBg }};align-items:center;justify-content:center;font-size:7.5px;font-weight:800;line-height:1;color:{{ e.avFg }}">{{ e.ini }}</span>
+<sc-if value="{{ e.byAgent }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-3px;bottom:-3px;width:11px;height:11px;border-radius:4px;background:var(--pur);border:1.5px solid var(--card)"></span></sc-if>
+</span>
+<span style="flex:1;min-width:0;font-size:10px;font-weight:500;line-height:1.35;color:var(--tx2);text-wrap:pretty">{{ e.m }}</span>
+</div>
+</sc-for>
+</div></div>
+
+<div style="border:1px solid var(--purb);border-radius:11px;background:var(--card);overflow:hidden;box-shadow:var(--shadow)">
+<div style="display:flex;align-items:center;gap:6px;padding:9px 11px;background:var(--purs);border-bottom:1px solid var(--purb)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--pur)" stroke-width="2.2"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9 14h.01M15 14h.01"></path></svg><span style="font-size:10.5px;font-weight:800;line-height:1;color:var(--pur)">Agent sessions</span><span style="margin-left:auto;font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--pur)">{{ sessionCount }}</span></div>
+<sc-for list="{{ sessions }}" as="s" hint-placeholder-count="3">
+<div style="padding:8px 11px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:5px">
+<div style="display:flex;align-items:center;gap:7px">
+<span style="width:20px;height:20px;flex:none;border-radius:50%;background:{{ s.avBg }};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;line-height:1;color:{{ s.avFg }}">{{ s.ini }}</span>
+<span style="flex:1;min-width:0;font-size:10.5px;font-weight:700;line-height:1.2">{{ s.who }}</span>
+<span style="flex:none;font-size:8.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.stFg }};background:{{ s.stBg }};border-radius:4px;padding:3px 5px">{{ s.st }}</span>
+</div>
+<div style="font-size:9.5px;font-weight:600;line-height:1.3;font-family:'JetBrains Mono',monospace;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.task }}</div>
+<div style="display:flex;align-items:center;gap:6px"><div style="flex:1;height:3px;border-radius:2px;background:var(--tub);overflow:hidden"><div style="height:100%;width:{{ s.pct }};background:var(--pur)"></div></div><span style="font-size:8.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ s.meta }}</span></div>
+</div>
+</sc-for>
+</div>
+
+<div style="border:1px solid var(--ambb);border-radius:11px;background:var(--card);overflow:hidden;box-shadow:var(--shadow)">
+<div style="display:flex;align-items:center;gap:6px;padding:9px 11px;background:var(--ambs);border-bottom:1px solid var(--ambb)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--amb)" stroke-width="2.2"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4l3 2"></path></svg><span style="font-size:10.5px;font-weight:800;line-height:1;color:var(--amb)">Stale · no movement</span></div>
+<sc-for list="{{ stale }}" as="s" hint-placeholder-count="2">
+<div style="padding:8px 11px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px">
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><span style="font-size:10.5px;font-weight:600;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.t }}</span><span style="display:flex;align-items:center;gap:6px"><span style="font-size:9px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ s.key }}</span><span style="font-size:9px;font-weight:700;line-height:1;color:var(--amb)">{{ s.age }}</span></span></span>
+<span style="width:20px;height:20px;flex:none;border-radius:50%;background:{{ s.avBg }};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;line-height:1;color:{{ s.avFg }}">{{ s.ini }}</span>
+</div>
+</sc-for>
+<div style="padding:8px 11px;font-size:9.5px;font-weight:500;line-height:1.4;color:var(--tx2)">Threshold: 5 days without a status change or comment.</div>
+</div>
+</div>
+</sc-if>
+</div>
+
+</div></div></div>
+
+<div class="dv-opt" id="1b"><div class="dv-olabel"><a class="dv-oid" href="#1b">1b</a>Card anatomy — priority dots, the bot badge, blocked-by, and the live flash</div>
+<div class="dv-card" style="width:410px"><div style="background:var(--tub);padding:14px;display:flex;flex-direction:column;gap:13px;color:var(--tx);font-family:'Plus Jakarta Sans',sans-serif">
+
+<div>
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--acc);margin-bottom:7px">HUMAN-AUTHORED · P1 · BLOCKED</div>
+<div style="background:var(--card);border:1px solid var(--bd);border-radius:10px;box-shadow:var(--shadow);padding:10px 10px 9px;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:12.5px;font-weight:600;line-height:1.35">SSE reconnect with last-event-id</div>
+<div style="display:flex;align-items:center;gap:5px;padding:5px 6px;border-radius:6px;background:var(--reds);border-left:2px solid var(--red)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.6"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg><span style="font-size:9px;font-weight:700;line-height:1.25;color:var(--red)">blocked by LK-140 event store</span></div>
+<div style="display:flex;align-items:center;gap:7px">
+<span style="width:9px;height:9px;border-radius:50%;background:#d93a45;border:1.5px solid #d93a45"></span>
+<span style="font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">LK-152</span>
+<span style="display:flex;align-items:center;gap:3px;color:var(--tx3)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-5.5A8 8 0 1 1 21 12Z"></path></svg><span style="font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">4</span></span>
+<span style="display:flex;align-items:center;gap:3px;color:var(--tx3)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 14 5 18a3.5 3.5 0 0 0 5 5l3-3M15 10l4-4a3.5 3.5 0 0 0-5-5l-3 3M9.5 14.5l5-5"></path></svg><span style="font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">1</span></span>
+<span style="flex:1"></span>
+<span style="width:26px;height:26px;border-radius:50%;background:#0f7d63;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:#fff">TA</span>
+</div>
+</div>
+<div style="margin-top:6px;font-size:10.5px;font-weight:500;line-height:1.45;color:var(--tx2);text-wrap:pretty">Title first, then the exception (blocked-by), then the footer: priority dot, key, comment and dependency counts, assignee. No avatar badge means a human made the last write.</div>
+</div>
+
+<div>
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--pur);margin-bottom:7px">AGENT-AUTHORED · P2 · JUST CHANGED</div>
+<div style="background:var(--card);border:1px solid var(--accb);box-shadow:0 0 0 3px var(--accs);border-radius:10px;padding:10px 10px 9px;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:12.5px;font-weight:600;line-height:1.35">Capacity view: unlisted work detection</div>
+<div style="display:flex;align-items:center;gap:4px"><span style="font-size:8.5px;font-weight:700;line-height:1;color:var(--pur);background:var(--purs);border:1px solid var(--purb);border-radius:4px;padding:3px 5px">agent</span><span style="font-size:8.5px;font-weight:700;line-height:1;color:var(--tx2);background:var(--tub);border:1px solid var(--bd);border-radius:4px;padding:3px 5px">presence</span></div>
+<div style="display:flex;align-items:center;gap:7px">
+<span style="width:9px;height:9px;border-radius:50%;background:#b6740b;border:1.5px solid #b6740b"></span>
+<span style="font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">LK-147</span>
+<span style="display:flex;align-items:center;gap:3px;color:var(--tx3)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-5.5A8 8 0 1 1 21 12Z"></path></svg><span style="font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">2</span></span>
+<span style="flex:1"></span>
+<span style="font-size:8.5px;font-weight:800;line-height:1;color:var(--acc)">just now</span>
+<span style="position:relative;width:26px;height:26px">
+<span style="display:flex;width:26px;height:26px;border-radius:50%;background:#8b5cf6;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:#fff">SV</span>
+<span style="position:absolute;right:-4px;bottom:-4px;width:15px;height:15px;border-radius:5px;background:var(--pur);border:2px solid var(--card);display:flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9.5 14h.01M14.5 14h.01"></path></svg></span>
+</span>
+</div>
+</div>
+<div style="margin-top:6px;font-size:10.5px;font-weight:500;line-height:1.45;color:var(--tx2);text-wrap:pretty">The bot badge sits on the avatar's corner, not beside it — the work still belongs to Sana, her agent just did the writing. The accent ring and "just now" fade out after the SSE event settles.</div>
+</div>
+
+<div>
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3);margin-bottom:7px">PRIORITY DOTS · UNASSIGNED · DONE</div>
+<div style="display:flex;gap:9px;align-items:flex-start">
+<div style="flex:1;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:12.5px;font-weight:600;line-height:1.35">Webhook retry with backoff</div>
+<div style="display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:50%;background:transparent;border:1.5px solid var(--tx3)"></span><span style="font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">LK-166</span><span style="flex:1"></span><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--bd2);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;line-height:1;color:var(--tx3)">+</span></div>
+</div>
+<div style="flex:1;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px;opacity:.66">
+<div style="font-size:12.5px;font-weight:600;line-height:1.35;color:var(--tx2)">Dark theme tokens</div>
+<div style="display:flex;align-items:center;gap:7px"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--grn)" stroke-width="2.8"><circle cx="12" cy="12" r="9"></circle><path d="m8 12.5 2.5 2.5L16 9.5"></path></svg><span style="font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">LK-136</span><span style="flex:1"></span><span style="width:26px;height:26px;border-radius:50%;background:#c2410c;display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:#fff">JD</span></div>
+</div>
+</div>
+<div style="margin-top:6px;font-size:10.5px;font-weight:500;line-height:1.45;color:var(--tx2);text-wrap:pretty">P1 solid red, P2 solid amber, P3 hollow — one glyph, three states, no text. Unassigned shows the dashed slot; Done swaps the dot for a check and recedes to 66%.</div>
+</div>
+
+</div></div></div>
+
+<div class="dv-opt" id="1c"><div class="dv-olabel"><a class="dv-oid" href="#1c">1c</a>Dark pair + empty lane — the toggle in <a class="dv-oid" href="#1a">1a</a> switches the whole board</div>
+<div class="dv-card" style="width:410px"><div class="dk" style="background:var(--page);padding:14px;color:var(--tx);font-family:'Plus Jakarta Sans',sans-serif;display:flex;gap:10px;align-items:flex-start">
+<div style="flex:1;background:var(--tub);border-radius:12px;padding:11px 9px;display:flex;flex-direction:column;gap:9px">
+<div style="display:flex;align-items:center;gap:6px;padding:0 3px"><span style="width:7px;height:7px;border-radius:50%;background:var(--acc)"></span><span style="font-size:10.5px;font-weight:800;line-height:1;letter-spacing:.08em">IN PROGRESS</span><span style="font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--acc);background:var(--accs);border:1px solid var(--accb);border-radius:5px;padding:3px 5px">3</span><span style="margin-left:auto;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">WIP 3/4</span></div>
+<div style="background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 10px 9px;display:flex;flex-direction:column;gap:8px">
+<div style="font-size:12.5px;font-weight:600;line-height:1.35">Multi-agent conflict guard on task claim</div>
+<div style="display:flex;align-items:center;gap:4px"><span style="font-size:8.5px;font-weight:700;line-height:1;color:var(--pur);background:var(--purs);border:1px solid var(--purb);border-radius:4px;padding:3px 5px">agent</span><span style="font-size:8.5px;font-weight:700;line-height:1;color:var(--tx2);background:var(--tub);border:1px solid var(--bd);border-radius:4px;padding:3px 5px">core</span></div>
+<div style="display:flex;align-items:center;gap:7px"><span style="width:9px;height:9px;border-radius:50%;background:#f4636d;border:1.5px solid #f4636d"></span><span style="font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">LK-142</span><span style="display:flex;align-items:center;gap:3px;color:var(--tx3)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 12a8 8 0 0 1-8 8H8l-5 3 1.5-5.5A8 8 0 1 1 21 12Z"></path></svg><span style="font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">5</span></span><span style="flex:1"></span><span style="position:relative;width:26px;height:26px"><span style="display:flex;width:26px;height:26px;border-radius:50%;background:#3d6fd6;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:#fff">MK</span><span style="position:absolute;right:-4px;bottom:-4px;width:15px;height:15px;border-radius:5px;background:var(--pur);border:2px solid var(--card);display:flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4"></path></svg></span></span></div>
+</div>
+</div>
+<div style="flex:1;background:var(--tub);border-radius:12px;padding:11px 9px;display:flex;flex-direction:column;gap:9px">
+<div style="display:flex;align-items:center;gap:6px;padding:0 3px"><span style="width:7px;height:7px;border-radius:50%;background:var(--amb)"></span><span style="font-size:10.5px;font-weight:800;line-height:1;letter-spacing:.08em">REVIEW</span><span style="font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2);background:var(--card);border:1px solid var(--bd);border-radius:5px;padding:3px 5px">0</span></div>
+<div style="border:1px dashed var(--bd2);border-radius:10px;padding:22px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--tx3)"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg><div style="font-size:10.5px;font-weight:600;line-height:1.4;color:var(--tx3);max-width:130px;text-wrap:pretty">Nothing waiting on review</div><div style="font-size:9px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3);border:1px solid var(--bd);border-radius:5px;padding:4px 6px">Sana reviews next</div></div>
+</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Screen 2 next: the task detail slide-over (description, comments, dependencies, activity). Or tell me what to change here first — "bot badge is too loud", "drop the stale rail", "collapse Done by default".</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1760,&quot;height&quot;:1080},&quot;startTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;showRail&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;showPresence&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;wipLimit&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:4,&quot;min&quot;:1,&quot;max&quot;:10,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;botBadges&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Agents&quot;}}">
+const PEOPLE = [
+  { id: 'MK', name: 'Mira K.', full: 'Mira Kellner', role: 'Admin', bg: '#2f6bff', dbg: '#3d6fd6' },
+  { id: 'TA', name: 'Tomás A.', full: 'Tomás Adeyemi', role: 'Member', bg: '#0f7d63', dbg: '#18916f' },
+  { id: 'SV', name: 'Sana V.', full: 'Sana Verma', role: 'Member', bg: '#8b5cf6', dbg: '#8f6ee0' },
+  { id: 'JD', name: 'Joran D.', full: 'Joran Dahl', role: 'Member', bg: '#c2410c', dbg: '#cf5a24' },
+  { id: 'RB', name: 'Rue B.', full: 'Rue Baptiste', role: 'Viewer', bg: '#475569', dbg: '#5b6a7f' }
+];
+const COLS = [
+  { id: 'backlog', name: 'BACKLOG', dot: 'var(--tx3)' },
+  { id: 'todo', name: 'TO DO', dot: 'var(--pur)' },
+  { id: 'progress', name: 'IN PROGRESS', dot: 'var(--acc)' },
+  { id: 'review', name: 'REVIEW', dot: 'var(--amb)' },
+  { id: 'done', name: 'DONE', dot: 'var(--grn)' }
+];
+const TASKS = [
+  ['LK-158', 'backlog', 'Presence: idle detection after 10 min', 'SV', 3, false, ['presence'], 2, 0, null],
+  ['LK-161', 'backlog', 'Agent session cost caps per org', 'MK', 2, false, ['billing'], 0, 1, null],
+  ['LK-166', 'backlog', 'Webhook retry with backoff', null, 3, true, [], 0, 0, null],
+  ['LK-152', 'todo', 'SSE reconnect with last-event-id', 'TA', 1, false, ['core'], 4, 1, 'blocked by LK-140 event store'],
+  ['LK-155', 'todo', 'Token scopes: read-only project tokens', 'SV', 2, false, ['auth'], 1, 0, null],
+  ['LK-157', 'todo', 'Board: priority dots + bot badges', 'JD', 2, true, ['ui'], 3, 0, null],
+  ['LK-142', 'progress', 'Multi-agent conflict guard on task claim', 'MK', 1, true, ['agent', 'core'], 5, 2, null],
+  ['LK-147', 'progress', 'Capacity view: unlisted work detection', 'SV', 2, true, ['presence'], 2, 0, null],
+  ['LK-149', 'progress', 'Meeting review: proposal diffing', 'TA', 2, false, ['ai'], 6, 1, null],
+  ['LK-139', 'review', 'Invite accept: pre-assigned role', 'JD', 2, false, ['auth'], 2, 0, null],
+  ['LK-144', 'review', 'Audit log: agent vs human filter', 'MK', 3, true, ['audit'], 1, 0, null],
+  ['LK-131', 'done', 'Self-host: one-command docker compose', 'TA', 1, false, ['infra'], 8, 0, null],
+  ['LK-136', 'done', 'Dark theme tokens', 'JD', 3, false, ['ui'], 2, 0, null]
+];
+const LABEL_COLORS = {
+  agent: ['var(--pur)', 'var(--purs)', 'var(--purb)'],
+  core: ['var(--tx2)', 'var(--tub)', 'var(--bd)'],
+  presence: ['var(--acc)', 'var(--accs)', 'var(--accb)'],
+  ai: ['var(--pur)', 'var(--purs)', 'var(--purb)'],
+  auth: ['var(--grn)', 'var(--grns)', 'var(--grnb)'],
+  ui: ['var(--amb)', 'var(--ambs)', 'var(--ambb)'],
+  audit: ['var(--tx2)', 'var(--tub)', 'var(--bd)'],
+  infra: ['var(--tx2)', 'var(--tub)', 'var(--bd)'],
+  billing: ['var(--tx2)', 'var(--tub)', 'var(--bd)']
+};
+
+class Component extends DCLogic {
+  state = { theme: null, filter: null, agentOnly: false, prio: 0, sel: null, flash: 'LK-147', tick: 0, events: [] };
+  theme() { return this.state.theme || this.props.startTheme || 'light'; }
+
+  presenceRows = [
+    { id: 'MK', where: 'laika-core · LK-142', live: true, dot: 'var(--grn)' },
+    { id: 'SV', where: 'laika-web · LK-147', live: true, dot: 'var(--grn)' },
+    { id: 'TA', where: 'laika-core · LK-149', live: false, dot: 'var(--grn)' },
+    { id: 'JD', where: 'idle 12m · LK-139', live: false, dot: 'var(--amb)' },
+    { id: 'RB', where: 'last seen 2h', live: false, dot: 'var(--tx3)' }
+  ];
+
+  sessionRows = [
+    { id: 'MK', task: 'LK-142 · claim-lock refactor', st: 'RUNNING', pct: '62%', meta: '4m elapsed · 18 tool calls' },
+    { id: 'SV', task: 'LK-147 · presence diffing', st: 'RUNNING', pct: '35%', meta: '2m elapsed · 9 tool calls' },
+    { id: 'TA', task: 'LK-166 · retry policy draft', st: 'QUEUED', pct: '0%', meta: 'waiting for a slot' }
+  ];
+
+  staleRows = [
+    { key: 'LK-140', t: 'Event store: durable cursor', age: '9d idle', id: 'TA' },
+    { key: 'LK-129', t: 'Org SMTP: verify sender', age: '6d idle', id: 'MK' }
+  ];
+
+  seedEvents = [
+    ['SV', true, 'agent moved LK-147 to In progress'],
+    ['MK', true, 'agent pushed 3 commits on LK-142'],
+    ['TA', false, 'commented on LK-152 — "needs last-event-id"'],
+    ['JD', false, 'moved LK-139 to Review'],
+    ['MK', false, 'set LK-161 to P2'],
+    ['SV', true, 'agent opened PR #218 for LK-147'],
+    ['TA', false, 'linked LK-152 → LK-140 as blocker'],
+    ['JD', true, 'agent updated LK-157 description']
+  ];
+
+  componentDidMount() {
+    this.timer = setInterval(() => this.setState(s => ({ tick: s.tick + 1, flash: TASKS[(s.tick + 6) % TASKS.length][0] })), 4200);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+
+  person(id) { return PEOPLE.find(p => p.id === id) || null; }
+  av(id) {
+    const p = this.person(id);
+    const dark = this.theme() === 'dark';
+    if (!p) return { bg: 'transparent', bd: '1.5px dashed var(--bd2)', fg: 'var(--tx3)', ini: '+' };
+    return { bg: dark ? p.dbg : p.bg, bd: 'none', fg: '#fff', ini: p.id };
+  }
+  clock(offset) {
+    const d = new Date(Date.now() - offset * 37000);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0');
+  }
+
+  renderVals() {
+    const f = this.state.filter;
+    const prioFilter = this.state.prio;
+    const visible = TASKS.filter(t =>
+      (!f || t[3] === f) &&
+      (!this.state.agentOnly || t[5]) &&
+      (!prioFilter || t[4] === prioFilter)
+    );
+    const agentCount = TASKS.filter(t => t[5]).length;
+    const k = this.state.tick % this.seedEvents.length;
+    const rotated = this.seedEvents.slice(k).concat(this.seedEvents.slice(0, k)).slice(0, 6);
+
+    const columns = COLS.map((col, ci) => {
+      const list = visible.filter(t => t[1] === col.id);
+      const wipOver = col.id === 'progress' && list.length > (this.props.wipLimit ?? 4);
+      return {
+        name: col.name, dot: col.dot,
+        tc: col.id === 'done' ? 'var(--tx2)' : 'var(--tx)',
+        n: list.length,
+        cntFg: col.id === 'progress' ? 'var(--acc)' : col.id === 'done' ? 'var(--grn)' : 'var(--tx2)',
+        cntBg: col.id === 'progress' ? 'var(--accs)' : col.id === 'done' ? 'var(--grns)' : 'var(--card)',
+        cntBd: col.id === 'progress' ? 'var(--accb)' : col.id === 'done' ? 'var(--grnb)' : 'var(--bd)',
+        wip: col.id === 'progress' ? 'WIP ' + list.length + '/' + (this.props.wipLimit ?? 4) : col.id === 'review' ? 'Sana reviews' : '',
+        wipFg: wipOver ? 'var(--amb)' : 'var(--tx3)',
+        empty: list.length === 0,
+        emptyText: f || this.state.agentOnly || prioFilter ? 'Nothing here for this filter' : col.id === 'review' ? 'Nothing waiting on review' : 'Nothing in this lane',
+        cards: list.map(t => {
+          const a = this.av(t[3]);
+          const p = this.person(t[3]);
+          const isDone = t[1] === 'done';
+          const flashing = t[0] === this.state.flash;
+          const prio = t[4];
+          const prioColor = prio === 1 ? 'var(--red)' : prio === 2 ? 'var(--amb)' : 'transparent';
+          return {
+            key: t[0], title: t[2], byAgent: t[5] && (this.props.botBadges ?? true),
+            titleFg: isDone ? 'var(--tx2)' : 'var(--tx)',
+            bd: flashing ? 'var(--accb)' : this.state.sel === t[0] ? 'var(--bd2)' : 'var(--bd)',
+            glow: flashing ? '0 0 0 3px var(--accs)' : 'var(--shadow)',
+            anim: flashing ? 'flash 3.6s ease-out' : 'none',
+            op: isDone ? 0.66 : 1,
+            prioBg: prio === 3 ? 'transparent' : prioColor,
+            prioBd: prio === 3 ? 'var(--tx3)' : prioColor,
+            prioTip: 'P' + prio,
+            hasLabels: t[6].length > 0,
+            labels: t[6].map(l => {
+              const c = LABEL_COLORS[l] || LABEL_COLORS.core;
+              return { t: l, fg: c[0], bg: c[1], bd: c[2] };
+            }),
+            comments: t[7], hasComments: t[7] > 0,
+            deps: t[8], hasDeps: t[8] > 0,
+            hasMeta: t[7] > 0 || t[8] > 0,
+            blocked: !!t[9], blockedBy: t[9] || '',
+            justNow: flashing,
+            ini: a.ini, avBg: a.bg, avBd: a.bd, avFg: a.fg,
+            agentTip: p ? p.full + "'s agent made the last change" : 'agent-authored',
+            select: () => this.setState({ sel: t[0] })
+          };
+        })
+      };
+    });
+
+    const prioLabels = ['Priority: all', 'P1 only', 'P2 only', 'P3 only'];
+
+    return {
+      themeClass: this.theme() === 'dark' ? 'dk' : '',
+      meAv: this.av('MK').bg, meIni: this.av('MK').ini, meFg: this.av('MK').fg,
+      rail: this.props.showRail ?? true,
+      showPresence: this.props.showPresence ?? true,
+      toggleTheme: () => this.setState({ theme: this.theme() === 'dark' ? 'light' : 'dark' }),
+      toggleAgentOnly: () => this.setState(s => ({ agentOnly: !s.agentOnly })),
+      agentCount: agentCount,
+      agentBg: this.state.agentOnly ? 'var(--purs)' : 'transparent',
+      agentBd: this.state.agentOnly ? 'var(--purb)' : 'var(--bd)',
+      agentFg: this.state.agentOnly ? 'var(--pur)' : 'var(--tx2)',
+      cyclePrio: () => this.setState(s => ({ prio: (s.prio + 1) % 4 })),
+      prioLabel: prioLabels[this.state.prio],
+      prioBg: this.state.prio ? 'var(--accs)' : 'transparent',
+      prioBd: this.state.prio ? 'var(--accb)' : 'var(--bd)',
+      prioFg: this.state.prio ? 'var(--acc)' : 'var(--tx2)',
+      hasFilter: !!f,
+      filterLabel: f ? this.person(f).name : '',
+      clearFilter: () => this.setState({ filter: null }),
+      presenceNote: this.presenceRows.filter(r => r.live).length + ' agent sessions live · 4 people active',
+      presence: this.presenceRows.map(r => {
+        const a = this.av(r.id);
+        const p = this.person(r.id);
+        const on = f === r.id;
+        return {
+          name: p.name, ini: a.ini, avBg: a.bg, avFg: a.fg, where: r.where,
+          agentLive: r.live, dot: r.dot,
+          chipBg: on ? 'var(--accs)' : 'var(--card)',
+          chipBd: on ? 'var(--accb)' : 'var(--bd)',
+          nameFg: on ? 'var(--acc)' : 'var(--tx)',
+          tip: p.full + ' · ' + p.role + ' — click to filter the board',
+          filter: () => this.setState(s => ({ filter: s.filter === r.id ? null : r.id }))
+        };
+      }),
+      columns: columns,
+      stream: rotated.map((e, i) => {
+        const a = this.av(e[0]);
+        return { t: this.clock(i), ini: a.ini, avBg: a.bg, avFg: a.fg, byAgent: e[1], m: e[2],
+          anim: i === 0 ? 'tick .4s ease' : 'none' };
+      }),
+      sessionCount: this.sessionRows.filter(s => s.st === 'RUNNING').length + ' live',
+      sessions: this.sessionRows.map(s => {
+        const a = this.av(s.id);
+        const p = this.person(s.id);
+        return { who: p.full + "'s agent", ini: a.ini, avBg: a.bg, avFg: a.fg, task: s.task, pct: s.pct, meta: s.meta,
+          st: s.st, stFg: s.st === 'RUNNING' ? 'var(--pur)' : 'var(--tx3)', stBg: s.st === 'RUNNING' ? 'var(--purs)' : 'var(--tub)' };
+      }),
+      stale: this.staleRows.map(s => {
+        const a = this.av(s.id);
+        return { key: s.key, t: s.t, age: s.age, ini: a.ini, avBg: a.bg, avFg: a.fg };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

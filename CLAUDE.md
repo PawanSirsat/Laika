@@ -19,8 +19,14 @@ If you do not know which session you are, stop and ask. Do not guess.
 | Session | Owns (may edit) | Must never edit |
 | --- | --- | --- |
 | **PM** | `docs/`, `.tasks/`, `logs/pm-*.md`, `.sessions/pm.md`, `.claude/`, `CLAUDE.md` | any application code |
-| **Builder-A** | `server/` | `plugin/`, `cli/`, `docker/`, `docs/`, other sessions' logs |
-| **Builder-B** | `plugin/`, `cli/`, `docker/` | `server/`, `docs/`, other sessions' logs |
+| **Builder-A** | `server/` **except `server/web/`** | `server/web/`, `plugin/`, `cli/`, `docker/`, `docs/`, other sessions' logs |
+| **Builder-B** | `server/web/`, `plugin/`, `cli/`, `docker/` | the rest of `server/`, `docs/`, other sessions' logs |
+
+**`server/web/` is the frontend and belongs to Builder-B** (D-016). Everything
+else under `server/` — API, database, policy, MCP — is Builder-A's. The split is
+API versus UI, not directory depth: Builder-B never touches `server/src/`, and
+Builder-A never touches `server/web/`. `server/public/` is build output and
+belongs to nobody; it is gitignored (LAI-016).
 
 Every session may edit its own log file and move its own task files, and nothing
 else outside the table.
@@ -210,11 +216,40 @@ If you think you need one, say so — that is a PM decision.
   name the package, it does not get added. Write a task instead.
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
+### 5.1 UI rules
+
 - **A UI task carries `depends-on` for the API task(s) that define its
   endpoints.** No screen is built before the endpoints it calls exist. If a
   screen needs data no endpoint returns, it stays in `.tasks/backlog/` — you do
   not stub the data and you do not add the endpoint from the UI task. See
-  SPEC §11.4.2 for the screen → endpoint map.
+  SPEC §11.4.2 for the screen → endpoint map and §11.4.2.1 for what each screen
+  must contain.
+- **Exception — API-independent UI may start immediately.** The app shell,
+  sidebar, theme system, routing, form layout, and empty/loading/error states
+  depend on no endpoint and are not gated. These are marked in their task files;
+  everything else waits.
+- **Functional React wired to the real API. Never hardcode mockup data.** Mira
+  Kellner, `laika.kvelld.internal`, "13/34 done" are fixtures in the mockup. Every
+  number, name and count in the shipped UI comes from an API response. A
+  hardcoded value is a defect even when it looks right.
+- **Match `docs/design/` for style, never for markup.** Colours, spacing, type,
+  dark **and** light, and the `WORK` / `REVIEW` / `SETTINGS` sidebar. Take the
+  design tokens verbatim from `docs/design/README.md`. Do not copy the
+  prototype's inline-styled HTML — it is a mockup rendered by a foreign runtime.
+- **Do not ship a `SYSTEM` sidebar group.** It exists in the prototype so every
+  screen is reachable in one file. Login, first boot and the project picker are
+  pre-auth or org-level routes, not nav destinations.
+- **`LAI-` is the task key prefix.** Any `LK-`, `SKY-` or `TBT-` in a design file
+  is stale — rename on sight. `Laika Prototype.dc.html` is already correct; the
+  other design files are not.
+- **Do not reproduce the prototype's artifacts.** No overlapping labels, no
+  floating pills colliding with content, no `postgres` in the first-boot status
+  (Laika is SQLite — D-001), no "Forgot?" or magic-link sign-in (neither is
+  specified — SPEC §14, q11). The full list is in `docs/design/README.md`.
+- **Self-host the fonts.** The mockup pulls Plus Jakarta Sans and JetBrains Mono
+  from Google Fonts. A self-hosted board that calls Google on every page load
+  contradicts SPEC §13.4.
+- **Both themes, every time.** A component that only works in light is not done.
 
 ## 6. Boundaries that are never crossed
 
