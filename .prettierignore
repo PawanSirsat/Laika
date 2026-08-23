@@ -1,0 +1,9 @@
+# Imported Claude Design mockups and their vendored runtime. Third-party
+# artefacts, never ours to format: the `.dc.html` files use custom elements
+# (`<sc-if>`) that Prettier's HTML parser rejects outright, and `support.js` is
+# generated and marked do-not-edit. They exist as a visual reference, so a
+# reformat would corrupt the comparison they are here for. (LAI-026)
+docs/design/
+
+# pnpm owns this; Prettier rewriting it fights the package manager.
+pnpm-lock.yaml

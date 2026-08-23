@@ -64,6 +64,7 @@ beforeEach(() => {
   git('config', 'user.name', 'Test');
   write('.gitignore', 'node_modules/\ndist/\n');
   write('.prettierrc', readFileSync(join(REPO_ROOT, '.prettierrc'), 'utf8'));
+  write('.prettierignore', readFileSync(join(REPO_ROOT, '.prettierignore'), 'utf8'));
   // Committed, already unformatted, and owned by "another session".
   write('plugin/plugin.json', UNFORMATTED_JSON);
   write('server/src/keep.ts', UNFORMATTED_TS);
@@ -187,5 +188,27 @@ describe('format:fix respects the repo formatting policy (LAI-001)', () => {
     expect(read('server/src/a.ts')).toBe('export const a = { b: 1, c: 2 };\n');
     expect(read('server/web/b.css')).toBe('a {\n  color: red;\n}\n');
     expect(read('server/c.yaml')).toBe('a: 1\n');
+  });
+});
+
+describe('third-party artefacts are never formatted (LAI-026, PM addition)', () => {
+  it('leaves an ignored directory alone even when this worktree changed it', () => {
+    // `docs/design/` holds imported mockups and a vendored runtime. They are a
+    // visual reference — reformatting corrupts the comparison they exist for.
+    const mockup = '<sc-if value="{{ p.hasDiff }}">\n<div>   unformatted   </div>\n';
+    write('docs/design/mockup.dc.html', mockup);
+    write('docs/design/support.js', 'var x   =   1\n');
+
+    runFormatFix();
+
+    expect(read('docs/design/mockup.dc.html')).toBe(mockup);
+    expect(read('docs/design/support.js')).toBe('var x   =   1\n');
+  });
+
+  it('does not fail the run on a file Prettier cannot parse', () => {
+    // Before the ignore entry this exited 2 and took the whole check down.
+    write('docs/design/broken.dc.html', '<sc-if value="{{ x }}">\n');
+
+    expect(() => runFormatFix()).not.toThrow();
   });
 });
