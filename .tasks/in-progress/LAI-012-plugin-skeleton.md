@@ -2,11 +2,12 @@
 id: LAI-012
 title: Claude Code plugin skeleton with manifest and .mcp.json
 area: plugin
-assignee: unclaimed
+assignee: builder-b
 priority: p3
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T01:42:42+05:30
 ---
 
 ## Goal
