@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics><meta name="design_doc_mode" content="canvas"><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"><style>
+:root{--page:#eef0f6;--tub:#e7e9f1;--card:#ffffff;--bd:rgba(15,23,42,.09);--bd2:rgba(15,23,42,.2);--tx:#171a21;--tx2:#5a6070;--tx3:#8d94a4;--acc:#2f6bff;--accs:rgba(47,107,255,.09);--accb:rgba(47,107,255,.34);--pur:#8b5cf6;--purs:rgba(139,92,246,.11);--purb:rgba(139,92,246,.36);--grn:#11996a;--grns:rgba(17,153,106,.1);--grnb:rgba(17,153,106,.3);--amb:#b6740b;--ambs:rgba(182,116,11,.1);--ambb:rgba(182,116,11,.3);--red:#d93a45;--reds:rgba(217,58,69,.08);--redb:rgba(217,58,69,.32);--shadow:0 1px 2px rgba(15,23,42,.07);--mk:#2f6bff;--ta:#0f7d63;--sv:#8b5cf6;--jd:#c2410c;--rb:#475569}
+.dk{--page:#0c0c0f;--tub:#141418;--card:#1b1b20;--bd:rgba(255,255,255,.08);--bd2:rgba(255,255,255,.2);--tx:#f3f3f5;--tx2:#a4a4ae;--tx3:#71717d;--acc:#5b8cff;--accs:rgba(91,140,255,.14);--accb:rgba(91,140,255,.4);--pur:#a78bfa;--purs:rgba(167,139,250,.14);--purb:rgba(167,139,250,.4);--grn:#2fd08a;--grns:rgba(47,208,138,.13);--grnb:rgba(47,208,138,.32);--amb:#f0ac47;--ambs:rgba(240,172,71,.13);--ambb:rgba(240,172,71,.34);--red:#f4636d;--reds:rgba(244,99,109,.12);--redb:rgba(244,99,109,.36);--shadow:0 1px 2px rgba(0,0,0,.3);--mk:#3d6fd6;--ta:#18916f;--sv:#8f6ee0;--jd:#cf5a24;--rb:#5b6a7f}
+body{margin:0;background:#e9e8e4;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
+a{color:#2f6bff}a:hover{color:#1d4fd0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+.dv-turn{padding:40px 44px 32px;border-bottom:1px solid rgba(0,0,0,.08);scroll-margin-top:16px}
+.dv-thd{display:flex;align-items:baseline;gap:10px;margin:0 0 18px}
+.dv-tid{font-size:10px;font-weight:600;line-height:1;font-family:ui-monospace,Menlo,monospace;padding:3px 7px;background:#1a1a1a;color:#fff;border-radius:4px;text-decoration:none}
+.dv-tname{font-size:13px;font-weight:600;line-height:1.2;font-family:system-ui,sans-serif;color:#1a1a1a}
+.dv-opts{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start}
+.dv-opt{flex:none;display:flex;flex-direction:column;gap:9px;scroll-margin-top:16px}
+.dv-oid{font-size:10.5px;font-weight:600;line-height:1;font-family:ui-monospace,Menlo,monospace;padding:3px 7px;background:rgba(0,0,0,.08);color:#1a1a1a;border-radius:5px;text-decoration:none}
+.dv-olabel{display:flex;align-items:baseline;gap:8px;font-size:11px;font-weight:400;line-height:1.3;font-family:system-ui,sans-serif;color:rgba(0,0,0,.55);max-width:820px;text-wrap:pretty}
+.dv-card{background:#fff;border:1px solid rgba(0,0,0,.08);border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,.07);overflow:hidden}
+.dv-opt:target .dv-oid{background:#2f6bff;color:#fff}
+.dv-note{max-width:960px;margin:0 0 20px;font-size:13px;font-weight:400;line-height:1.6;font-family:system-ui,sans-serif;color:rgba(0,0,0,.62);text-wrap:pretty}
+.dv-next{margin:22px 0 0;font-size:12px;line-height:1.5;font-family:system-ui,sans-serif;color:rgba(0,0,0,.5)}
+.dv-bar{display:flex;align-items:center;gap:10px;margin:0 0 18px}
+.dv-btn{display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid rgba(0,0,0,.14);border-radius:8px;background:#fff;font-size:12px;font-weight:600;line-height:1;font-family:system-ui,sans-serif;color:#1a1a1a;cursor:pointer}
+</style></helmet>
+
+<section class="dv-turn" id="t2">
+<div class="dv-thd"><a class="dv-tid" href="#t2">2</a><span class="dv-tname">Laika · screens 2–4 — task detail, capacity, manager dashboard</span></div>
+<p class="dv-note">Same tokens, type and geometry as screen 1. <strong>2a</strong> is the task slide-over over a dimmed board; <strong>3a</strong> the capacity view; <strong>4a</strong> the Viewer dashboard. The button below switches every frame on this page between light and dark. Interactions that matter are live: comment tabs and dependency expansion in 2a, "make it a task" in 3a, feed filters in 4a.</p>
+<div class="dv-bar"><div onClick="{{ toggleTheme }}" class="dv-btn">{{ themeLabel }}</div><span style="font-size:11px;font-weight:400;line-height:1.3;font-family:system-ui,sans-serif;color:rgba(0,0,0,.5)">Frames are 1440 wide · role shown per screen</span></div>
+<div class="dv-opts">
+
+<div class="dv-opt" id="2a"><div class="dv-olabel"><a class="dv-oid" href="#2a">2a</a>Screen 2 — task detail slide-over. LK-142: description, dependencies, comments (human + agent), activity, created-via</div>
+<div class="dv-card" style="width:1440px"><div class="{{ themeClass }}" style="width:1440px;background:var(--page);color:var(--tx);font-family:'Plus Jakarta Sans',system-ui,sans-serif;position:relative;overflow:hidden;min-height:880px">
+
+<div style="position:absolute;inset:0;padding:14px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:11px;opacity:.5">
+<sc-for list="{{ ghost }}" as="g" hint-placeholder-count="4">
+<div style="background:var(--tub);border-radius:12px;padding:10px 9px;display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;align-items:center;gap:6px;padding:0 3px"><span style="width:7px;height:7px;border-radius:50%;background:{{ g.dot }}"></span><span style="font-size:10px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--tx2)">{{ g.name }}</span></div>
+<sc-for list="{{ g.cards }}" as="c" hint-placeholder-count="2">
+<div style="background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px"><div style="font-size:12px;font-weight:600;line-height:1.35;color:var(--tx2)">{{ c.t }}</div><div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--tx3)"></span><span style="font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ c.k }}</span></div></div>
+</sc-for>
+</div>
+</sc-for>
+</div>
+<div style="position:absolute;inset:0;background:rgba(15,23,42,.45)"></div>
+
+<div style="position:absolute;top:0;right:0;bottom:0;width:840px;background:var(--card);border-left:1px solid var(--bd);display:flex;flex-direction:column;box-shadow:-24px 0 60px rgba(15,23,42,.18)">
+
+<div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--bd)">
+<span style="flex:none;font-size:12px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">LK-142</span>
+<span style="flex:none;display:flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:6px;background:var(--accs);border:1px solid var(--accb)"><span style="width:6px;height:6px;border-radius:50%;background:var(--acc)"></span><span style="font-size:10px;font-weight:800;line-height:1;letter-spacing:.05em;color:var(--acc)">IN PROGRESS</span></span>
+<span style="flex:none;display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--red);border:1.5px solid var(--red)"></span><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">P1</span></span>
+<div style="flex:1"></div>
+<div style="display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--bd);border-radius:8px;font-size:11.5px;font-weight:600;line-height:1;color:var(--tx2)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 12h16M12 4v16"></path></svg>Move</div>
+<div style="display:flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--bd);border-radius:8px;font-size:11.5px;font-weight:600;line-height:1;color:var(--tx2)">Watch</div>
+<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border:1px solid var(--bd);border-radius:8px;color:var(--tx2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="5" r="1.4"></circle><circle cx="12" cy="12" r="1.4"></circle><circle cx="12" cy="19" r="1.4"></circle></svg></div>
+<div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--tx2)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6 6 18M6 6l12 12"></path></svg></div>
+</div>
+
+<div style="flex:1;display:flex;min-height:0">
+<div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--bd)">
+<div style="padding:15px 18px 0">
+<div style="font-size:20px;font-weight:800;line-height:1.25;letter-spacing:-.022em;text-wrap:pretty">Multi-agent conflict guard on task claim</div>
+<div style="display:flex;align-items:center;gap:7px;margin-top:9px;flex-wrap:wrap">
+<span style="display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;line-height:1;color:var(--pur);background:var(--purs);border:1px solid var(--purb);border-radius:5px;padding:4px 6px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4"></path></svg>created via agent · mira-cli</span>
+<span style="font-size:10px;font-weight:700;line-height:1;color:var(--tx2);background:var(--tub);border:1px solid var(--bd);border-radius:5px;padding:4px 6px">agent</span>
+<span style="font-size:10px;font-weight:700;line-height:1;color:var(--tx2);background:var(--tub);border:1px solid var(--bd);border-radius:5px;padding:4px 6px">core</span>
+<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">opened 6d ago · updated 4m ago</span>
+</div>
+</div>
+
+<div style="padding:14px 18px 0;display:flex;flex-direction:column;gap:9px">
+<div style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">DESCRIPTION</div>
+<div style="font-size:13px;font-weight:400;line-height:1.6;color:var(--tx);text-wrap:pretty">Two agents claiming the same task both win the write. Reproduced with Mira's and Tomás's agents on LK-149: last write wins and the earlier assignee is silently dropped.</div>
+<div style="font-size:13px;font-weight:400;line-height:1.6;color:var(--tx);text-wrap:pretty">Add a claim lock on <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;background:var(--tub);border:1px solid var(--bd);border-radius:4px;padding:2px 5px">task.assignee_id</span> scoped to the agent session, with a 409 on conflict and a clear message the CLI can print.</div>
+<div style="border-left:2px solid var(--bd2);padding:2px 0 2px 11px;display:flex;flex-direction:column;gap:5px">
+<div style="font-size:12px;font-weight:600;line-height:1.5;color:var(--tx2)">Acceptance</div>
+<div style="font-size:12px;font-weight:400;line-height:1.6;color:var(--tx2);text-wrap:pretty">Second claim returns 409 · CLI prints "held by Tomás's agent since 14:02" · audit row written for both attempts.</div>
+</div>
+</div>
+
+<div style="padding:16px 18px 0;display:flex;flex-direction:column;gap:9px">
+<div style="display:flex;align-items:center;gap:8px"><span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">DEPENDENCIES</span><span style="font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">2</span><span style="flex:1;height:1px;background:var(--bd)"></span><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--acc)">+ Link task</span></div>
+<sc-for list="{{ deps }}" as="d" hint-placeholder-count="2">
+<div style="display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid var(--bd);border-radius:9px;background:var(--page)">
+<span style="flex:none;font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.05em;color:{{ d.relFg }};background:{{ d.relBg }};border:1px solid {{ d.relBd }};border-radius:4px;padding:4px 6px">{{ d.rel }}</span>
+<span style="flex:none;font-size:10.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">{{ d.key }}</span>
+<span style="flex:1;min-width:0;font-size:12px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ d.t }}</span>
+<span style="flex:none;font-size:9.5px;font-weight:700;line-height:1;color:{{ d.stFg }};background:{{ d.stBg }};border-radius:4px;padding:4px 6px">{{ d.st }}</span>
+<span style="flex:none;width:22px;height:22px;border-radius:50%;background:{{ d.avBg }};display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:800;line-height:1;color:#fff">{{ d.ini }}</span>
+</div>
+</sc-for>
+<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border:1px dashed var(--bd2);border-radius:9px">
+<svg style="flex:none;color:var(--pur)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 3v6M12 21v-6M3 12h6M21 12h-6"></path><circle cx="12" cy="12" r="2"></circle></svg>
+<span style="flex:1;min-width:0;font-size:11.5px;font-weight:600;line-height:1.35;color:var(--tx2);text-wrap:pretty">Discovered from <span style="color:var(--acc);font-weight:700">LK-149 · Meeting review: proposal diffing</span> — Tomás's agent split this out while working there.</span>
+</div>
+</div>
+
+<div style="padding:16px 18px 18px;display:flex;flex-direction:column;gap:10px">
+<div style="display:flex;align-items:center;gap:3px;border-bottom:1px solid var(--bd)">
+<sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+<div onClick="{{ t.pick }}" style="display:flex;align-items:center;gap:6px;height:32px;padding:0 11px;border-bottom:{{ t.bd }};color:{{ t.fg }};font-size:12.5px;font-weight:{{ t.wt }};line-height:1;cursor:pointer">{{ t.label }}<span style="font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ t.n }}</span></div>
+</sc-for>
+</div>
+
+<sc-if value="{{ showComments }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;flex-direction:column;gap:12px">
+<sc-for list="{{ comments }}" as="c" hint-placeholder-count="4">
+<div style="display:flex;gap:10px">
+<span style="position:relative;flex:none;width:28px;height:28px">
+<span style="display:flex;width:28px;height:28px;border-radius:50%;background:{{ c.avBg }};align-items:center;justify-content:center;font-size:10px;font-weight:800;line-height:1;color:#fff">{{ c.ini }}</span>
+<sc-if value="{{ c.byAgent }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-4px;bottom:-4px;width:15px;height:15px;border-radius:5px;background:var(--pur);border:2px solid var(--card);display:flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4"></path></svg></span></sc-if>
+</span>
+<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:5px">
+<div style="display:flex;align-items:baseline;gap:7px"><span style="font-size:12px;font-weight:700;line-height:1">{{ c.who }}</span><sc-if value="{{ c.byAgent }}" hint-placeholder-val="{{ false }}"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.05em;color:var(--pur);background:var(--purs);border:1px solid var(--purb);border-radius:4px;padding:3px 5px">AGENT</span></sc-if><span style="font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ c.when }}</span></div>
+<div style="font-size:12.5px;font-weight:400;line-height:1.55;color:var(--tx2);text-wrap:pretty">{{ c.body }}</div>
+<sc-if value="{{ c.hasCode }}" hint-placeholder-val="{{ false }}">
+<div style="border:1px solid var(--bd);border-radius:8px;background:var(--page);padding:8px 10px;font-size:11px;font-weight:500;line-height:1.6;font-family:'JetBrains Mono',monospace;color:var(--tx2);white-space:pre-wrap">{{ c.code }}</div>
+</sc-if>
+</div>
+</div>
+</sc-for>
+<div style="display:flex;gap:10px;align-items:flex-start;padding-top:2px">
+<span style="flex:none;width:28px;height:28px;border-radius:50%;background:var(--mk);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;line-height:1;color:#fff">MK</span>
+<div style="flex:1;border:1px solid var(--bd);border-radius:9px;background:var(--page);padding:10px 11px;display:flex;flex-direction:column;gap:9px">
+<div style="font-size:12px;font-weight:400;line-height:1;color:var(--tx3)">Leave a comment… ⌘↵ to send</div>
+<div style="display:flex;align-items:center;gap:7px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx3)">B</span><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx3);font-style:italic">i</span><span style="font-size:10.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">&lt;/&gt;</span><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx3)">@</span><span style="flex:1"></span><span style="display:flex;align-items:center;height:26px;padding:0 11px;border-radius:7px;background:var(--acc);color:#fff;font-size:11.5px;font-weight:700;line-height:1">Comment</span></div>
+</div>
+</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showChanges }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column;gap:9px">
+<div style="display:flex;align-items:center;gap:9px;padding:10px 11px;border:1px solid var(--bd);border-radius:9px;background:var(--page)">
+<svg style="flex:none;color:var(--grn)" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M6 9v6a6 6 0 0 0 6 6h3"></path></svg>
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><span style="font-size:12px;font-weight:700;line-height:1.3">PR #221 · Claim lock on task assignment</span><span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">lk-142-claim-lock → main · 2 approvals needed</span></span>
+<span style="flex:none;font-size:9px;font-weight:800;line-height:1;letter-spacing:.05em;color:var(--amb);background:var(--ambs);border:1px solid var(--ambb);border-radius:4px;padding:4px 6px">OPEN · CI GREEN</span>
+</div>
+<sc-for list="{{ changes }}" as="c" hint-placeholder-count="4">
+<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--bd)">
+<span style="flex:none;width:60px;font-size:10px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--acc)">{{ c.sha }}</span>
+<span style="position:relative;flex:none;width:22px;height:22px">
+<span style="display:flex;width:22px;height:22px;border-radius:50%;background:{{ c.avBg }};align-items:center;justify-content:center;font-size:8.5px;font-weight:800;line-height:1;color:#fff">{{ c.ini }}</span>
+<sc-if value="{{ c.byAgent }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border-radius:4px;background:var(--pur);border:1.5px solid var(--card)"></span></sc-if>
+</span>
+<span style="flex:1;min-width:0;font-size:12px;font-weight:500;line-height:1.4;color:var(--tx);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.m }}</span>
+<span style="flex:none;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ c.files }}</span>
+<span style="flex:none;font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--grn)">{{ c.add }}</span>
+<span style="flex:none;font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--red)">{{ c.del }}</span>
+<span style="flex:none;width:56px;text-align:right;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ c.when }}</span>
+</div>
+</sc-for>
+<div style="font-size:10px;font-weight:500;line-height:1.4;color:var(--tx3);text-wrap:pretty">Commits are linked by the branch name and the task key in the message. Agent commits carry the badge.</div>
+</div>
+</sc-if>
+
+<sc-if value="{{ showActivity }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;flex-direction:column">
+<sc-for list="{{ activity }}" as="a" hint-placeholder-count="6">
+<div style="display:flex;align-items:center;gap:10px;padding:9px 2px;border-bottom:1px solid var(--bd)">
+<span style="flex:none;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3);width:82px">{{ a.when }}</span>
+<span style="position:relative;flex:none;width:22px;height:22px">
+<span style="display:flex;width:22px;height:22px;border-radius:50%;background:{{ a.avBg }};align-items:center;justify-content:center;font-size:8.5px;font-weight:800;line-height:1;color:#fff">{{ a.ini }}</span>
+<sc-if value="{{ a.byAgent }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border-radius:4px;background:var(--pur);border:1.5px solid var(--card)"></span></sc-if>
+</span>
+<span style="flex:1;min-width:0;font-size:12px;font-weight:500;line-height:1.4;color:var(--tx2);text-wrap:pretty">{{ a.m }}</span>
+<span style="flex:none;font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.05em;color:{{ a.kFg }};background:{{ a.kBg }};border-radius:4px;padding:4px 6px">{{ a.k }}</span>
+</div>
+</sc-for>
+</div>
+</sc-if>
+</div>
+</div>
+
+<div style="width:264px;flex:none;background:var(--page);display:flex;flex-direction:column">
+<sc-for list="{{ meta }}" as="m" hint-placeholder-count="6">
+<div style="padding:11px 14px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:7px">
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">{{ m.label }}</div>
+<div style="display:flex;align-items:center;gap:7px">
+<sc-if value="{{ m.hasAvatar }}" hint-placeholder-val="{{ false }}">
+<span style="position:relative;flex:none;width:24px;height:24px">
+<span style="display:flex;width:24px;height:24px;border-radius:50%;background:{{ m.avBg }};align-items:center;justify-content:center;font-size:9px;font-weight:800;line-height:1;color:#fff">{{ m.ini }}</span>
+<sc-if value="{{ m.byAgent }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-4px;bottom:-4px;width:13px;height:13px;border-radius:4px;background:var(--pur);border:2px solid var(--page)"></span></sc-if>
+</span>
+</sc-if>
+<span style="flex:1;min-width:0;font-size:12px;font-weight:600;line-height:1.35;color:{{ m.fg }};text-wrap:pretty">{{ m.value }}</span>
+<sc-if value="{{ m.chevron }}" hint-placeholder-val="{{ false }}"><svg style="flex:none;color:var(--tx3)" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="m6 9 6 6 6-6"></path></svg></sc-if>
+</div>
+<sc-if value="{{ m.hasSub }}" hint-placeholder-val="{{ false }}"><div style="font-size:10px;font-weight:600;line-height:1.35;font-family:'JetBrains Mono',monospace;color:var(--tx3);text-wrap:pretty">{{ m.sub }}</div></sc-if>
+</div>
+</sc-for>
+<div style="padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+<div style="display:flex;align-items:center;justify-content:center;gap:6px;height:30px;border-radius:8px;background:var(--pur);color:#fff;font-size:11.5px;font-weight:700;line-height:1"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 3 14 9-14 9V3Z"></path></svg>Hand to my agent</div>
+<div style="display:flex;align-items:center;justify-content:center;height:30px;border:1px solid var(--bd2);border-radius:8px;font-size:11.5px;font-weight:700;line-height:1;color:var(--tx2)">Move to Review</div>
+<div style="font-size:9.5px;font-weight:500;line-height:1.4;color:var(--tx3);text-wrap:pretty">Members can move and comment. Viewers see this panel read-only.</div>
+</div>
+</div>
+</div>
+</div>
+
+</div></div></div>
+
+<div class="dv-opt" id="3a"><div class="dv-olabel"><a class="dv-oid" href="#3a">3a</a>Screen 3 — capacity. Presence, agent sessions, in-progress across projects, last seen, and unlisted work you can promote in one click</div>
+<div class="dv-card" style="width:1440px"><div class="{{ themeClass }}" style="width:1440px;background:var(--page);color:var(--tx);font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden">
+
+<div style="padding:13px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
+<div style="width:27px;height:27px;flex:none;border-radius:8px;background:var(--tx);display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--card)" stroke-width="2"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path></svg></div>
+<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Capacity</span>
+<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">across 3 projects · updated live</span>
+<div style="flex:1"></div>
+<div style="display:flex;align-items:center;gap:9px">
+<div style="display:flex;align-items:baseline;gap:5px;padding:0 12px;border-right:1px solid var(--bd)"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--tx3)">ACTIVE NOW</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">3</span></div>
+<div style="display:flex;align-items:baseline;gap:5px;padding:0 12px;border-right:1px solid var(--bd)"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--pur)">AGENT SESSIONS</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--pur)">2</span></div>
+<div style="display:flex;align-items:baseline;gap:5px;padding:0 12px"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--amb)">UNLISTED WORK</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--amb)">{{ unlistedCount }}</span></div>
+</div>
+</div>
+
+<div style="padding:14px 18px 18px;display:flex;flex-direction:column;gap:11px">
+<sc-for list="{{ capacity }}" as="p" hint-placeholder-count="5">
+<div style="background:var(--card);border:1px solid {{ p.bd }};border-radius:12px;box-shadow:var(--shadow);overflow:hidden">
+<div style="display:flex;align-items:stretch">
+<div style="width:236px;flex:none;box-sizing:border-box;padding:13px 14px;border-right:1px solid var(--bd);display:flex;align-items:center;gap:10px">
+<span style="position:relative;flex:none;width:34px;height:34px">
+<span style="display:flex;width:34px;height:34px;border-radius:50%;background:{{ p.avBg }};align-items:center;justify-content:center;font-size:12px;font-weight:800;line-height:1;color:#fff">{{ p.ini }}</span>
+<sc-if value="{{ p.agentLive }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-3px;bottom:-3px;width:16px;height:16px;border-radius:5px;background:var(--pur);border:2px solid var(--card);display:flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4"></path></svg></span></sc-if>
+</span>
+<div style="min-width:0;display:flex;flex-direction:column;gap:4px">
+<div style="font-size:13px;font-weight:700;line-height:1.2">{{ p.full }}</div>
+<div style="display:flex;align-items:center;gap:6px"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:{{ p.roleFg }};background:{{ p.roleBg }};border:1px solid {{ p.roleBd }};border-radius:4px;padding:3px 5px">{{ p.role }}</span><span style="display:flex;align-items:center;gap:4px"><span style="width:5px;height:5px;border-radius:50%;background:{{ p.dot }}"></span><span style="font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ p.seen }}</span></span></div>
+</div>
+</div>
+
+<div style="width:290px;flex:none;box-sizing:border-box;padding:13px 14px;border-right:1px solid var(--bd);display:flex;flex-direction:column;gap:6px">
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">WORKING ON</div>
+<sc-if value="{{ p.working }}" hint-placeholder-val="{{ true }}">
+<div style="display:flex;align-items:center;gap:7px"><span style="font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">{{ p.nowKey }}</span><span style="flex:1;min-width:0;font-size:11.5px;font-weight:600;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.nowTask }}</span></div>
+<div style="font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ p.nowRepo }}</div>
+</sc-if>
+<sc-if value="{{ p.idle }}" hint-placeholder-val="{{ false }}">
+<div style="font-size:11.5px;font-weight:600;line-height:1.35;color:var(--tx3)">{{ p.idleText }}</div>
+</sc-if>
+</div>
+
+<div style="width:196px;flex:none;box-sizing:border-box;padding:13px 14px;border-right:1px solid var(--bd);display:flex;flex-direction:column;gap:7px">
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">AGENT SESSION</div>
+<sc-if value="{{ p.agentLive }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;align-items:center;gap:6px"><span style="width:6px;height:6px;border-radius:50%;background:var(--pur);animation:pulse 1.8s ease-in-out infinite"></span><span style="font-size:11px;font-weight:700;line-height:1;color:var(--pur)">running</span><span style="font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ p.agentFor }}</span></div>
+<div style="height:3px;border-radius:2px;background:var(--tub);overflow:hidden"><div style="height:100%;width:{{ p.agentPct }};background:var(--pur)"></div></div>
+<div style="font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ p.agentMeta }}</div>
+</sc-if>
+<sc-if value="{{ p.noAgent }}" hint-placeholder-val="{{ true }}">
+<div style="font-size:11px;font-weight:600;line-height:1.35;color:var(--tx3)">{{ p.agentNone }}</div>
+</sc-if>
+</div>
+
+<div style="flex:1;min-width:0;box-sizing:border-box;padding:13px 14px;display:flex;flex-direction:column;gap:7px">
+<div style="display:flex;align-items:center;gap:8px"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">IN PROGRESS</span><span style="font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ p.wipCount }}</span></div>
+<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">
+<sc-for list="{{ p.wip }}" as="w" hint-placeholder-count="2">
+<span style="display:flex;align-items:center;gap:5px;padding:5px 7px;border:1px solid var(--bd);border-radius:6px;background:var(--page)"><span style="width:7px;height:7px;border-radius:50%;background:{{ w.prio }}"></span><span style="font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">{{ w.key }}</span><span style="font-size:10.5px;font-weight:600;line-height:1;color:var(--tx2)">{{ w.t }}</span><span style="font-size:9px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ w.proj }}</span></span>
+</sc-for>
+<sc-if value="{{ p.noWip }}" hint-placeholder-val="{{ false }}"><span style="font-size:11px;font-weight:600;line-height:1;color:var(--tx3)">Nothing assigned in progress</span></sc-if>
+</div>
+</div>
+</div>
+
+<sc-if value="{{ p.hasUnlisted }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--ambs);border-top:1px solid var(--ambb)">
+<svg style="flex:none;color:var(--amb)" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M12 9v4M12 17h.01"></path><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg>
+<span style="flex:none;font-size:9px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--amb)">UNLISTED WORK</span>
+<span style="flex:1;min-width:0;font-size:11.5px;font-weight:600;line-height:1.35;color:var(--tx);text-wrap:pretty">{{ p.unlisted }}</span>
+<span style="flex:none;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">{{ p.unlistedMeta }}</span>
+<div onClick="{{ p.promote }}" style="flex:none;display:flex;align-items:center;gap:6px;height:27px;padding:0 11px;border-radius:7px;background:{{ p.promoteBg }};border:1px solid {{ p.promoteBd }};font-size:11px;font-weight:700;line-height:1;color:{{ p.promoteFg }};cursor:pointer" style-hover="border-color:var(--bd2)">{{ p.promoteLabel }}</div>
+</div>
+</sc-if>
+</div>
+</sc-for>
+</div>
+</div></div></div>
+
+<div class="dv-opt" id="4a"><div class="dv-olabel"><a class="dv-oid" href="#4a">4a</a>Screen 4 — manager dashboard, Viewer role. Read-only: progress, activity feed with an agent/human filter, stale warnings</div>
+<div class="dv-card" style="width:1440px"><div class="{{ themeClass }}" style="width:1440px;background:var(--page);color:var(--tx);font-family:'Plus Jakarta Sans',system-ui,sans-serif;overflow:hidden">
+
+<div style="padding:13px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
+<div style="width:27px;height:27px;flex:none;border-radius:8px;background:var(--tx);display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--card)" stroke-width="2"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path></svg></div>
+<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">laika-core · v0.4</span>
+<span style="display:flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:6px;background:var(--tub);border:1px solid var(--bd)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--tx2)" stroke-width="2.2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg><span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx2)">READ-ONLY · VIEWER</span></span>
+<div style="flex:1"></div>
+<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">week 32 · Mon 24 – Fri 28 Aug</span>
+<div style="display:flex;align-items:center;gap:7px;height:30px;padding:2px 11px 2px 3px;border:1px solid var(--bd);border-radius:20px"><span style="width:24px;height:24px;border-radius:50%;background:var(--rb);display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;line-height:1;color:#fff">RB</span><span style="font-size:11.5px;font-weight:700;line-height:1">Rue B.</span><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3);background:var(--tub);border:1px solid var(--bd);border-radius:4px;padding:3px 5px">VIEWER</span></div>
+</div>
+
+<div style="padding:14px 18px 0;display:flex;gap:11px">
+<div style="flex:1;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);padding:12px 14px">
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--tx3);margin-bottom:9px">RELEASE PROGRESS</div>
+<div style="display:flex;align-items:flex-end;gap:7px"><span style="font-size:27px;font-weight:800;line-height:1;letter-spacing:-.025em">38%</span><span style="font-size:10.5px;font-weight:600;line-height:1.4;color:var(--tx3);padding-bottom:3px">13 of 34 tasks</span></div>
+<div style="margin-top:9px;height:6px;border-radius:4px;background:var(--tub);overflow:hidden;display:flex"><span style="width:38%;background:var(--grn)"></span><span style="width:9%;background:var(--amb)"></span><span style="width:26%;background:var(--acc)"></span></div>
+<div style="margin-top:8px;display:flex;align-items:center;gap:11px"><span style="display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:600;line-height:1;color:var(--tx2)"><span style="width:7px;height:7px;border-radius:2px;background:var(--grn)"></span>done 13</span><span style="display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:600;line-height:1;color:var(--tx2)"><span style="width:7px;height:7px;border-radius:2px;background:var(--amb)"></span>review 3</span><span style="display:flex;align-items:center;gap:5px;font-size:9.5px;font-weight:600;line-height:1;color:var(--tx2)"><span style="width:7px;height:7px;border-radius:2px;background:var(--acc)"></span>in progress 9</span></div>
+</div>
+<div style="flex:1;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);padding:12px 14px">
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--tx3);margin-bottom:9px">THROUGHPUT · LAST 6 WEEKS</div>
+<div style="display:flex;align-items:flex-end;gap:6px;height:56px">
+<sc-for list="{{ bars }}" as="b" hint-placeholder-count="6">
+<div style="flex:1;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px"><div style="width:100%;border-radius:3px 3px 0 0;background:{{ b.bg }};height:{{ b.h }}"></div><span style="flex:none;font-size:8.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ b.fg }}">{{ b.v }}</span></div>
+</sc-for>
+</div>
+<div style="margin-top:7px;font-size:9.5px;font-weight:500;line-height:1.4;color:var(--tx2)">Agent-assisted tasks close 1.6× faster on average.</div>
+</div>
+<div style="flex:1;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);padding:12px 14px">
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--tx3);margin-bottom:9px">WHO IS CARRYING WHAT</div>
+<div style="display:flex;flex-direction:column;gap:7px">
+<sc-for list="{{ load }}" as="l" hint-placeholder-count="4">
+<div style="display:flex;align-items:center;gap:8px"><span style="width:20px;height:20px;flex:none;border-radius:50%;background:{{ l.avBg }};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;line-height:1;color:#fff">{{ l.ini }}</span><span style="width:52px;flex:none;font-size:10.5px;font-weight:600;line-height:1;color:var(--tx2)">{{ l.name }}</span><span style="flex:1;display:flex;gap:2px;height:8px">{{ l.bars }}</span><span style="flex:none;font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ l.n }}</span></div>
+</sc-for>
+</div>
+</div>
+<div style="flex:1;border:1px solid var(--redb);border-radius:11px;background:var(--card);box-shadow:var(--shadow);padding:12px 14px">
+<div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--red);margin-bottom:9px">NEEDS A DECISION</div>
+<div style="display:flex;align-items:flex-end;gap:7px"><span style="font-size:27px;font-weight:800;line-height:1;letter-spacing:-.025em;color:var(--red)">2</span><span style="font-size:10.5px;font-weight:600;line-height:1.4;color:var(--tx3);padding-bottom:3px">blocked · oldest 9d</span></div>
+<div style="margin-top:9px;display:flex;flex-direction:column;gap:6px">
+<div style="font-size:11px;font-weight:600;line-height:1.3">LK-140 event store cursor <span style="color:var(--tx3);font-weight:600">· Tomás</span></div>
+<div style="font-size:11px;font-weight:600;line-height:1.3">LK-129 SMTP sender verify <span style="color:var(--tx3);font-weight:600">· Mira</span></div>
+</div>
+</div>
+</div>
+
+<div style="padding:12px 18px 18px;display:flex;gap:11px;align-items:flex-start">
+<div style="flex:1;min-width:0;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
+<div style="display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--bd)">
+<span style="font-size:11.5px;font-weight:800;line-height:1">Activity</span>
+<div style="flex:1"></div>
+<sc-for list="{{ feedTabs }}" as="t" hint-placeholder-count="3">
+<div onClick="{{ t.pick }}" style="display:flex;align-items:center;gap:5px;height:25px;padding:0 9px;border-radius:7px;background:{{ t.bg }};border:1px solid {{ t.bd }};font-size:10.5px;font-weight:700;line-height:1;color:{{ t.fg }};cursor:pointer">{{ t.label }}<span style="font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">{{ t.n }}</span></div>
+</sc-for>
+</div>
+<div style="padding:2px 13px 10px">
+<sc-for list="{{ feed }}" as="f" hint-placeholder-count="7">
+<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd)">
+<span style="flex:none;width:74px;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ f.when }}</span>
+<span style="position:relative;flex:none;width:24px;height:24px">
+<span style="display:flex;width:24px;height:24px;border-radius:50%;background:{{ f.avBg }};align-items:center;justify-content:center;font-size:9px;font-weight:800;line-height:1;color:#fff">{{ f.ini }}</span>
+<sc-if value="{{ f.byAgent }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-4px;bottom:-4px;width:13px;height:13px;border-radius:4px;background:var(--pur);border:2px solid var(--card);display:flex;align-items:center;justify-content:center"><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4"></path></svg></span></sc-if>
+</span>
+<span style="flex:1;min-width:0;font-size:12px;font-weight:500;line-height:1.4;color:var(--tx2);text-wrap:pretty">{{ f.m }}</span>
+<span style="flex:none;font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ f.key }}</span>
+</div>
+</sc-for>
+<sc-if value="{{ feedEmpty }}" hint-placeholder-val="{{ false }}">
+<div style="padding:26px 12px;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--tx3)"><path d="M4 6h16M4 12h10M4 18h13"></path></svg><div style="font-size:11.5px;font-weight:600;line-height:1.4;color:var(--tx3);max-width:220px;text-wrap:pretty">No {{ feedKind }} activity in this window. Widen the range or switch the filter.</div></div>
+</sc-if>
+</div>
+</div>
+
+<div style="width:320px;flex:none;display:flex;flex-direction:column;gap:11px">
+<div style="border:1px solid var(--ambb);border-radius:11px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
+<div style="display:flex;align-items:center;gap:6px;padding:9px 12px;background:var(--ambs);border-bottom:1px solid var(--ambb)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--amb)" stroke-width="2.2"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4l3 2"></path></svg><span style="font-size:10.5px;font-weight:800;line-height:1;color:var(--amb)">Stale · 5+ days quiet</span><span style="margin-left:auto;font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--amb)">3</span></div>
+<sc-for list="{{ stale }}" as="s" hint-placeholder-count="3">
+<div style="padding:9px 12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:9px">
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px"><span style="font-size:11.5px;font-weight:600;line-height:1.3;text-wrap:pretty">{{ s.t }}</span><span style="display:flex;align-items:center;gap:7px"><span style="font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ s.key }}</span><span style="font-size:9.5px;font-weight:700;line-height:1;color:var(--amb)">{{ s.age }}</span><span style="font-size:9.5px;font-weight:600;line-height:1;color:var(--tx3)">{{ s.lane }}</span></span></span>
+<span style="flex:none;width:22px;height:22px;border-radius:50%;background:{{ s.avBg }};display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:800;line-height:1;color:#fff">{{ s.ini }}</span>
+</div>
+</sc-for>
+</div>
+
+<div style="border:1px solid var(--purb);border-radius:11px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
+<div style="display:flex;align-items:center;gap:6px;padding:9px 12px;background:var(--purs);border-bottom:1px solid var(--purb)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--pur)" stroke-width="2.2"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9 14h.01M15 14h.01"></path></svg><span style="font-size:10.5px;font-weight:800;line-height:1;color:var(--pur)">Agent log · today</span></div>
+<div style="padding:10px 12px;display:flex;flex-direction:column;gap:9px">
+<div style="display:flex;align-items:baseline;gap:8px"><span style="font-size:20px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--pur)">14</span><span style="font-size:10.5px;font-weight:600;line-height:1.35;color:var(--tx2)">sessions · 6 tasks touched · 2 PRs opened</span></div>
+<div style="display:flex;flex-direction:column;gap:6px">
+<sc-for list="{{ agentLog }}" as="a" hint-placeholder-count="3">
+<div style="display:flex;align-items:center;gap:8px"><span style="width:20px;height:20px;flex:none;border-radius:50%;background:{{ a.avBg }};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;line-height:1;color:#fff">{{ a.ini }}</span><span style="flex:1;min-width:0;font-size:10.5px;font-weight:600;line-height:1.3;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.m }}</span><span style="flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ a.n }}</span></div>
+</sc-for>
+</div>
+<div style="font-size:9.5px;font-weight:500;line-height:1.4;color:var(--tx3);text-wrap:pretty">Viewers can read the agent log but cannot start or stop a session.</div>
+</div>
+</div>
+</div>
+</div>
+</div></div></div>
+
+</div>
+<p class="dv-next">Screens 5–7 (login, invite accept, setup wizard, project home) and 8–10 (meeting review, tokens, org settings) are in the next two files.</p>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1500,&quot;height&quot;:1000},&quot;startTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Screens&quot;},&quot;staleDays&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:5,&quot;min&quot;:2,&quot;max&quot;:30,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Dashboard&quot;},&quot;showAgentLog&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Dashboard&quot;}}">
+const P = {
+  MK: { full: 'Mira Kellner', short: 'Mira K.', role: 'ADMIN', c: 'var(--mk)' },
+  TA: { full: 'Tomás Adeyemi', short: 'Tomás A.', role: 'MEMBER', c: 'var(--ta)' },
+  SV: { full: 'Sana Verma', short: 'Sana V.', role: 'MEMBER', c: 'var(--sv)' },
+  JD: { full: 'Joran Dahl', short: 'Joran D.', role: 'MEMBER', c: 'var(--jd)' },
+  RB: { full: 'Rue Baptiste', short: 'Rue B.', role: 'VIEWER', c: 'var(--rb)' }
+};
+
+class Component extends DCLogic {
+  state = { theme: 'light', tab: 'comments', feed: 'all', promoted: {} };
+
+  ghostCols = [
+    { name: 'BACKLOG', dot: 'var(--tx3)', cards: [{ t: 'Presence: idle detection after 10 min', k: 'LK-158' }, { t: 'Agent session cost caps per org', k: 'LK-161' }] },
+    { name: 'TO DO', dot: 'var(--pur)', cards: [{ t: 'SSE reconnect with last-event-id', k: 'LK-152' }, { t: 'Token scopes: read-only tokens', k: 'LK-155' }] },
+    { name: 'IN PROGRESS', dot: 'var(--acc)', cards: [{ t: 'Capacity view: unlisted work detection', k: 'LK-147' }, { t: 'Meeting review: proposal diffing', k: 'LK-149' }] },
+    { name: 'REVIEW', dot: 'var(--amb)', cards: [{ t: 'Invite accept: pre-assigned role', k: 'LK-139' }] }
+  ];
+
+  depRows = [
+    { rel: 'BLOCKED BY', key: 'LK-140', t: 'Event store: durable cursor', st: 'In progress', who: 'TA', danger: true },
+    { rel: 'BLOCKS', key: 'LK-152', t: 'SSE reconnect with last-event-id', st: 'To do', who: 'TA', danger: false }
+  ];
+
+  commentRows = [
+    { who: 'Mira Kellner', ini: 'MK', agent: false, when: '6d ago', body: 'Hit this twice today. Both agents thought they owned LK-149 and the second write silently replaced the first assignee.' },
+    { who: "Mira Kellner's agent", ini: 'MK', agent: true, when: '5d ago', body: 'Traced it: the claim goes through the same PATCH as a manual assignment, so there is no lock. Suggested shape below.', code: 'POST /tasks/LK-142/claim\n  → 200 { holder: "agent:mira-cli", until: "14:32Z" }\n  → 409 { holder: "agent:tomas-cli", since: "14:02Z" }' },
+    { who: 'Tomás Adeyemi', ini: 'TA', agent: false, when: '2d ago', body: 'A 409 is right, but the CLI needs the holder name in the body or people will just retry in a loop.' },
+    { who: "Sana Verma's agent", ini: 'SV', agent: true, when: '4m ago', body: 'Added the holder to the 409 payload and a test for the double-claim path. Pushed to lk-142-claim-lock.' }
+  ];
+
+  activityRows = [
+    { when: '4m ago', ini: 'SV', agent: true, m: "Sana's agent pushed 2 commits to lk-142-claim-lock", k: 'COMMIT', kind: 'commit' },
+    { when: '11m ago', ini: 'MK', agent: false, m: 'Mira set priority P2 → P1', k: 'FIELD', kind: 'field' },
+    { when: '2d ago', ini: 'TA', agent: false, m: 'Tomás linked LK-142 blocks LK-152', k: 'LINK', kind: 'link' },
+    { when: '5d ago', ini: 'MK', agent: true, m: "Mira's agent moved To do → In progress", k: 'STATUS', kind: 'status' },
+    { when: '5d ago', ini: 'MK', agent: true, m: "Mira's agent added a description and acceptance criteria", k: 'EDIT', kind: 'edit' },
+    { when: '6d ago', ini: 'MK', agent: true, m: "Created via agent from LK-149 — discovered while diffing proposals", k: 'CREATE', kind: 'create' }
+  ];
+
+  changeRows = [
+    { sha: 'a3f91c2', ini: 'SV', agent: true, m: 'Add holder name to 409 conflict payload', files: '3 files', add: '+64', del: '−12', when: '4m ago' },
+    { sha: '7d20b8e', ini: 'SV', agent: true, m: 'Test: second claim returns 409 with holder', files: '1 file', add: '+38', del: '−0', when: '9m ago' },
+    { sha: 'c14e0aa', ini: 'MK', agent: true, m: 'Extract claim lock from PATCH handler', files: '5 files', add: '+121', del: '−87', when: '2h ago' },
+    { sha: '9b7fd31', ini: 'MK', agent: false, m: 'Reproduce double-claim in an integration test', files: '2 files', add: '+52', del: '−4', when: '1d ago' }
+  ];
+
+  metaRows = [
+    { label: 'ASSIGNEE', value: 'Mira Kellner', ini: 'MK', avatar: true, agent: true, sub: "agent has the claim lock until 14:32", chevron: true },
+    { label: 'STATUS', value: 'In progress', chevron: true, sub: 'claimed 4m ago' },
+    { label: 'PRIORITY', value: 'P1 · blocks the release', chevron: true, fg: 'var(--red)' },
+    { label: 'PROJECT', value: 'laika-core', sub: 'branch lk-142-claim-lock' },
+    { label: 'CREATED VIA', value: 'Agent · mira-cli v0.4.2', sub: 'token “mira-laptop” · scope write:tasks' },
+    { label: 'WATCHERS', value: 'Mira, Tomás, Rue', sub: '3 people · Rue is a Viewer' }
+  ];
+
+  capacityRows = [
+    { id: 'MK', dot: 'var(--grn)', seen: 'active now', agentLive: true, agentFor: '4m', agentPct: '62%', agentMeta: '18 tool calls · 2 commits',
+      nowKey: 'LK-142', nowTask: 'Multi-agent conflict guard', nowRepo: 'laika-core · lk-142-claim-lock',
+      wip: [['LK-142', 'conflict guard', 'core', 'var(--red)'], ['LK-161', 'cost caps', 'core', 'var(--amb)']], unlisted: null },
+    { id: 'SV', dot: 'var(--grn)', seen: 'active now', agentLive: true, agentFor: '2m', agentPct: '35%', agentMeta: '9 tool calls · PR #218',
+      nowKey: 'LK-147', nowTask: 'Unlisted work detection', nowRepo: 'laika-web · presence-diff',
+      wip: [['LK-147', 'unlisted work', 'web', 'var(--amb)'], ['LK-155', 'token scopes', 'core', 'var(--amb)']], unlisted: null },
+    { id: 'TA', dot: 'var(--grn)', seen: 'active 6m ago', agentLive: false, agentNone: 'No session · agent queued for LK-166',
+      nowKey: 'LK-149', nowTask: 'Meeting review: proposal diffing', nowRepo: 'laika-core · proposal-diff',
+      wip: [['LK-149', 'proposal diffing', 'core', 'var(--amb)']],
+      unlisted: 'Committing to laika-infra · branch ci-cache-rework for 3 days with no task open',
+      unlistedMeta: '11 commits · 3d' },
+    { id: 'JD', dot: 'var(--amb)', seen: 'idle 12m', agentLive: false, agentNone: 'No session today',
+      nowKey: 'LK-139', nowTask: 'Invite accept: pre-assigned role', nowRepo: 'laika-web · invite-role',
+      wip: [['LK-139', 'invite accept', 'web', 'var(--amb)']],
+      unlisted: 'Reviewing PR #214 in laika-docs — not linked to any task',
+      unlistedMeta: '2 reviews · today' },
+    { id: 'RB', dot: 'var(--tx3)', seen: 'last seen 2h ago', agentLive: false, agentNone: 'Viewers cannot run agents',
+      idle: 'Reading the dashboard · no assigned work', wip: [], unlisted: null }
+  ];
+
+  feedRows = [
+    { when: '4m ago', ini: 'SV', agent: true, m: "Sana's agent pushed 2 commits and opened PR #218", key: 'LK-147' },
+    { when: '11m ago', ini: 'MK', agent: false, m: 'Mira raised priority to P1', key: 'LK-142' },
+    { when: '26m ago', ini: 'MK', agent: true, m: "Mira's agent claimed the task and started a session", key: 'LK-142' },
+    { when: '1h ago', ini: 'JD', agent: false, m: 'Joran moved the task to Review', key: 'LK-139' },
+    { when: '2h ago', ini: 'TA', agent: false, m: 'Tomás commented — "needs last-event-id"', key: 'LK-152' },
+    { when: '3h ago', ini: 'TA', agent: true, m: "Tomás's agent created a task from the sprint meeting", key: 'LK-166' },
+    { when: '5h ago', ini: 'JD', agent: true, m: "Joran's agent updated the description", key: 'LK-157' }
+  ];
+
+  staleRows = [
+    { key: 'LK-140', t: 'Event store: durable cursor', age: '9d quiet', lane: 'In progress', ini: 'TA' },
+    { key: 'LK-129', t: 'Org SMTP: verify sender domain', age: '6d quiet', lane: 'To do', ini: 'MK' },
+    { key: 'LK-118', t: 'Docs: self-host upgrade path', age: '5d quiet', lane: 'Backlog', ini: 'JD' }
+  ];
+
+  agentLogRows = [
+    { ini: 'MK', m: "Mira's agent · claim-lock refactor", n: '6' },
+    { ini: 'SV', m: "Sana's agent · presence diffing", n: '5' },
+    { ini: 'TA', m: "Tomás's agent · meeting proposals", n: '3' }
+  ];
+
+  av(id) { return { bg: P[id] ? P[id].c : 'var(--tx3)', ini: id }; }
+
+  renderVals() {
+    const dark = this.state.theme === 'dark';
+    const feedKind = this.state.feed;
+    const feed = this.feedRows.filter(f => feedKind === 'all' || (feedKind === 'agent' ? f.agent : !f.agent));
+    const bar = (flex, bg, key) => React.createElement('span', { key: key, style: { flex: flex, background: bg, borderRadius: 2 } });
+    const loadRows = [['MK', 3, 1, 0], ['TA', 2, 0, 1], ['SV', 2, 1, 0], ['JD', 1, 1, 0]];
+
+    return {
+      themeClass: dark ? 'dk' : '',
+      themeLabel: dark ? '☀ Switch to light' : '☾ Switch to dark',
+      toggleTheme: () => this.setState(s => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })),
+
+      ghost: this.ghostCols,
+      deps: this.depRows.map(d => ({
+        rel: d.rel, key: d.key, t: d.t, st: d.st,
+        relFg: d.danger ? 'var(--red)' : 'var(--tx2)',
+        relBg: d.danger ? 'var(--reds)' : 'var(--tub)',
+        relBd: d.danger ? 'var(--redb)' : 'var(--bd)',
+        stFg: d.st === 'In progress' ? 'var(--acc)' : 'var(--tx2)',
+        stBg: d.st === 'In progress' ? 'var(--accs)' : 'var(--tub)',
+        avBg: this.av(d.who).bg, ini: d.who
+      })),
+      tabs: [
+        { id: 'comments', label: 'Comments', n: '4' },
+        { id: 'activity', label: 'Activity', n: '6' },
+        { id: 'files', label: 'Changes', n: String(this.changeRows.length) }
+      ].map(t => ({
+        label: t.label, n: t.n,
+        bd: this.state.tab === t.id ? '2px solid var(--acc)' : '2px solid transparent',
+        fg: this.state.tab === t.id ? 'var(--acc)' : 'var(--tx2)',
+        wt: this.state.tab === t.id ? 700 : 600,
+        pick: () => this.setState({ tab: t.id })
+      })),
+      showComments: this.state.tab === 'comments',
+      showActivity: this.state.tab === 'activity',
+      showChanges: this.state.tab === 'files',
+      changes: this.changeRows.map(c => ({
+        sha: c.sha, ini: c.ini, byAgent: c.agent, m: c.m, files: c.files,
+        add: c.add, del: c.del, when: c.when, avBg: this.av(c.ini).bg
+      })),
+      comments: this.commentRows.map(c => ({
+        who: c.who, ini: c.ini, byAgent: c.agent, when: c.when, body: c.body,
+        avBg: this.av(c.ini).bg, hasCode: !!c.code, code: c.code || ''
+      })),
+      activity: this.activityRows.map(a => ({
+        when: a.when, ini: a.ini, byAgent: a.agent, m: a.m, k: a.k,
+        avBg: this.av(a.ini).bg,
+        kFg: a.kind === 'create' ? 'var(--pur)' : a.kind === 'status' ? 'var(--acc)' : 'var(--tx3)',
+        kBg: a.kind === 'create' ? 'var(--purs)' : a.kind === 'status' ? 'var(--accs)' : 'var(--tub)'
+      })),
+      meta: this.metaRows.map(m => ({
+        label: m.label, value: m.value, sub: m.sub || '', hasSub: !!m.sub,
+        hasAvatar: !!m.avatar, byAgent: !!m.agent, ini: m.ini || '',
+        avBg: m.ini ? this.av(m.ini).bg : 'transparent',
+        fg: m.fg || 'var(--tx)', chevron: !!m.chevron
+      })),
+
+      unlistedCount: this.capacityRows.filter(r => r.unlisted && !this.state.promoted[r.id]).length,
+      capacity: this.capacityRows.map(r => {
+        const p = P[r.id];
+        const done = !!this.state.promoted[r.id];
+        return {
+          full: p.full, ini: r.id, avBg: this.av(r.id).bg, role: p.role,
+          roleFg: p.role === 'VIEWER' ? 'var(--tx3)' : p.role === 'ADMIN' ? 'var(--pur)' : 'var(--tx2)',
+          roleBg: p.role === 'ADMIN' ? 'var(--purs)' : 'var(--tub)',
+          roleBd: p.role === 'ADMIN' ? 'var(--purb)' : 'var(--bd)',
+          dot: r.dot, seen: r.seen,
+          bd: r.unlisted && !done ? 'var(--ambb)' : 'var(--bd)',
+          agentLive: r.agentLive, noAgent: !r.agentLive,
+          agentFor: r.agentFor || '', agentPct: r.agentPct || '0%', agentMeta: r.agentMeta || '',
+          agentNone: r.agentNone || '',
+          working: !r.idle, idle: !!r.idle, idleText: r.idle || '',
+          nowKey: r.nowKey || '', nowTask: r.nowTask || '', nowRepo: r.nowRepo || '',
+          wipCount: r.wip.length, noWip: r.wip.length === 0,
+          wip: r.wip.map(w => ({ key: w[0], t: w[1], proj: w[2], prio: w[3] })),
+          hasUnlisted: !!r.unlisted,
+          unlisted: done ? 'Promoted to LK-167 — now tracked on the board' : (r.unlisted || ''),
+          unlistedMeta: done ? 'added just now' : (r.unlistedMeta || ''),
+          promoteLabel: done ? '✓ Task created' : 'Make it a task',
+          promoteBg: done ? 'var(--grns)' : 'var(--amb)',
+          promoteBd: done ? 'var(--grnb)' : 'var(--amb)',
+          promoteFg: done ? 'var(--grn)' : '#fff',
+          promote: () => this.setState(s => ({ promoted: Object.assign({}, s.promoted, { [r.id]: true }) }))
+        };
+      }),
+
+      bars: [['6', 20], ['9', 30], ['7', 23], ['11', 36], ['13', 43], ['8', 26]].map((b, i) => ({
+        v: b[0], h: b[1] + 'px',
+        bg: i === 5 ? 'var(--acc)' : 'var(--grn)',
+        fg: i === 5 ? 'var(--acc)' : 'var(--tx3)'
+      })),
+      load: loadRows.map(l => ({
+        name: P[l[0]].short.replace(' ' + P[l[0]].short.split(' ')[1], ''), ini: l[0], avBg: this.av(l[0]).bg,
+        n: l[1] + l[2] + l[3],
+        bars: React.createElement('span', { style: { flex: 1, display: 'flex', gap: 2 } }, [
+          l[1] ? bar(l[1], 'var(--acc)', 'a') : null,
+          l[2] ? bar(l[2], 'var(--amb)', 'r') : null,
+          l[3] ? bar(l[3], 'var(--red)', 'b') : null,
+          bar(Math.max(1, 6 - l[1] - l[2] - l[3]), 'var(--tub)', 'e')
+        ].filter(Boolean))
+      })),
+      feedTabs: [
+        { id: 'all', label: 'All', n: this.feedRows.length },
+        { id: 'human', label: 'People', n: this.feedRows.filter(f => !f.agent).length },
+        { id: 'agent', label: 'Agents', n: this.feedRows.filter(f => f.agent).length }
+      ].map(t => ({
+        label: t.label, n: t.n,
+        bg: feedKind === t.id ? (t.id === 'agent' ? 'var(--purs)' : 'var(--accs)') : 'transparent',
+        bd: feedKind === t.id ? (t.id === 'agent' ? 'var(--purb)' : 'var(--accb)') : 'var(--bd)',
+        fg: feedKind === t.id ? (t.id === 'agent' ? 'var(--pur)' : 'var(--acc)') : 'var(--tx2)',
+        pick: () => this.setState({ feed: t.id })
+      })),
+      feed: feed.map(f => ({ when: f.when, ini: f.ini, byAgent: f.agent, m: f.m, key: f.key, avBg: this.av(f.ini).bg })),
+      feedEmpty: feed.length === 0,
+      feedKind: feedKind === 'agent' ? 'agent' : feedKind === 'human' ? 'human' : '',
+      stale: this.staleRows.map(s => ({ key: s.key, t: s.t, age: s.age, lane: s.lane, ini: s.ini, avBg: this.av(s.ini).bg })),
+      agentLog: this.agentLogRows.map(a => ({ ini: a.ini, m: a.m, n: a.n, avBg: this.av(a.ini).bg }))
+    };
+  }
+}
+</script>
+</body>
+</html>
