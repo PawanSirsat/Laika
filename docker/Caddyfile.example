@@ -1,0 +1,55 @@
+# Laika behind Caddy — TLS termination and reverse proxy.
+#
+# Copy to /etc/caddy/Caddyfile (or wherever your Caddy reads from), replace the
+# hostname, and reload. Caddy obtains and renews a certificate automatically, so
+# there is nothing to configure for TLS itself.
+#
+# Laika does not terminate TLS (D-002: one process, one job). This file is a
+# reference, not something the container reads.
+
+laika.example.com {
+	# ---------------------------------------------------------------------
+	# Server-Sent Events (/api/v1/events) — the one setting that matters.
+	#
+	# SSE is a response that never ends. Any proxy that buffers responses will
+	# hold events until its buffer fills or the request completes, and since the
+	# request never completes, the board simply stops updating — with no error
+	# anywhere. Caddy does not buffer by default, so the correct configuration
+	# is to leave `flush_interval` alone and NOT introduce buffering here.
+	#
+	# `flush_interval -1` makes that explicit and survives someone later adding
+	# a global buffering directive.
+	#
+	# Laika uses SSE rather than WebSockets deliberately (D-003), so this is the
+	# only live-update path there is.
+	# ---------------------------------------------------------------------
+	reverse_proxy laika:3000 {
+		flush_interval -1
+
+		# Laika logs the client IP from these; without them every request
+		# appears to come from the proxy.
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Compression is safe for the SPA and JSON. Caddy does not compress
+	# text/event-stream, so this does not interfere with SSE.
+	encode zstd gzip
+
+	log {
+		output file /var/log/caddy/laika.log
+		format json
+	}
+}
+
+# ---------------------------------------------------------------------------
+# If Caddy runs in the same compose project, `laika:3000` resolves over the
+# compose network — add Caddy as a service and drop the `ports:` mapping from
+# the laika service so the container is not also reachable directly.
+#
+# If Caddy runs on the host instead, use `reverse_proxy 127.0.0.1:3000` and keep
+# the port mapping bound to localhost:
+#     ports:
+#       - '127.0.0.1:3000:3000'
+# Publishing on 0.0.0.0 while a TLS proxy sits in front means the plaintext port
+# is reachable from the network too.
+# ---------------------------------------------------------------------------

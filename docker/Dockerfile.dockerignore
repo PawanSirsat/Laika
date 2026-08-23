@@ -1,0 +1,44 @@
+# Build context is the repo root (see docker/README.md). BuildKit reads
+# `<dockerfile>.dockerignore` in preference to a context-root `.dockerignore`,
+# which is what keeps this file inside docker/ — Builder-B's area — instead of
+# adding one more file to repo root.
+
+# Never in an image.
+**/node_modules
+.git
+.gitignore
+
+# Process, not product.
+.tasks
+.sessions
+.claude
+logs
+docs
+CLAUDE.md
+*.md
+!server/src/**/*.md
+
+# Local data must never be baked in — the database belongs in the /data volume.
+**/*.db
+**/*.db-wal
+**/*.db-shm
+data
+**/.env
+**/.env.*
+
+# Build output and caches: rebuilt inside the image, and copying a host build
+# would ship a macOS-linked better-sqlite3 into a Linux container.
+server/public
+**/dist
+**/coverage
+**/*.tsbuildinfo
+.eslintcache
+.prettiercache
+
+# Not needed to build or run the server.
+docker
+# ...except the entrypoint, which the runtime stage copies in.
+!docker/entrypoint.sh
+plugin
+cli
+**/.DS_Store
