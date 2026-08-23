@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T01:42:36+05:30
 finished: 2026-08-24T01:51:45+05:30
+reviewed: 2026-08-24T04:12:00+05:30
 ---
 
 ## Goal
@@ -93,3 +94,40 @@ Builder-A's area, and all hand-formatted to 80 columns on purpose.
 all exit 0. `pnpm build` exits 0. Type-aware linting confirmed live by a
 throwaway probe file that correctly failed on `no-explicit-any` and
 `no-floating-promises`.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified by running the toolchain, not by reading the ticks.
+
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` → all exit 0 (3 tests pass).
+- Every required flag present in `tsconfig.base.json` (`strict`,
+  `noUncheckedIndexedAccess`, `noImplicitOverride`, `exactOptionalPropertyTypes`,
+  `moduleResolution: bundler`, `target: ES2023`); `server/tsconfig.json` extends it.
+- `.gitignore` covers all eight required patterns including `*.db-wal` / `*.db-shm`.
+- `pnpm format --check` reports exactly one file, `plugin/.claude-plugin/plugin.json`,
+  which is Builder-B's area. Correctly filed as LAI-014 rather than fixed.
+
+**Answers to the review notes.**
+
+1. **Keep the formatter repo-wide.** Declined the offer to scope `format` to the
+   pnpm workspace. A formatter that only looks where it is already clean stops
+   being a check. The one finding is real, it is in someone else's area, and
+   LAI-014 is the right resolution — narrowing the glob would have hidden it
+   instead.
+2. **Lockfile accepted, scope exception amended.** `pnpm-lock.yaml` was outside
+   the eight named files, and committing it was correct anyway: AC7 says "green
+   from a clean clone" and `--frozen-lockfile` is the only honest reading of
+   that. The exception in this task file now covers nine files. Flagging it
+   rather than quietly committing it was exactly right.
+3. **`dev`/`build` as `--if-present` pass-throughs: correct call.** Inventing
+   `server/src/index.ts` here would have collided with LAI-002.
+4. **TypeScript pinned to `~6.0.3`: correct call.** Type-aware linting is an
+   explicit requirement of this task and `typescript-eslint@8` caps at `<6.1.0`.
+   Taking TS 7 would have satisfied "latest" by dropping a stated requirement.
+5. **Prettier skipping Markdown: correct call.** Reformatting `.md` would have
+   rewritten `docs/`, `CLAUDE.md` and other sessions' logs — all outside the area.
+
+**Boundary note, not a finding.** These commits also touch
+`plugin/commands/README`, outside Builder-A's area. That is an artefact of the
+shared working tree that existed before D-008, not a boundary crossing by this
+session. No action.
