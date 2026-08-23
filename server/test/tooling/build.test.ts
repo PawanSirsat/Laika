@@ -120,45 +120,107 @@ describe('the build is idempotent (LAI-028)', () => {
   }, 120_000);
 });
 
+/**
+ * Run the built server against a public directory this test owns.
+ *
+ * `LAIKA_PUBLIC_DIR` exists so these cases do not depend on whether the person
+ * running them happens to have built the SPA (LAI-204). Before that, the fallback
+ * assertion passed on a clean clone and failed after `pnpm build` — the same
+ * source, two answers, decided by an untracked directory.
+ */
+async function withBuiltServer<T>(
+  port: number,
+  publicDir: string,
+  fn: (baseUrl: string) => Promise<T>,
+): Promise<{ result: T; exitCode: number | null }> {
+  const dbDir = mkdtempSync(join(tmpdir(), 'laika-built-run-'));
+
+  const child = spawn('node', [join(DIST, 'index.js')], {
+    cwd: SERVER_ROOT,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      NODE_ENV: 'development',
+      PUBLIC_URL: `http://127.0.0.1:${String(port)}`,
+      LAIKA_DB_PATH: join(dbDir, 'laika.db'),
+      LAIKA_PUBLIC_DIR: publicDir,
+    },
+    stdio: 'pipe',
+  });
+
+  const exited = new Promise<number | null>((resolve) => {
+    child.on('exit', (code) => {
+      resolve(code);
+    });
+  });
+
+  let result: T;
+  try {
+    await waitForHealth(port);
+    result = await fn(`http://127.0.0.1:${String(port)}`);
+  } finally {
+    child.kill('SIGTERM');
+  }
+
+  const exitCode = await exited;
+  rmSync(dbDir, { recursive: true, force: true });
+
+  return { result, exitCode };
+}
+
 describe('the built server, run the way the container runs it', () => {
-  it('boots, migrates, serves, and exits 0 on SIGTERM', async () => {
-    const child = spawn('node', [join(DIST, 'index.js')], {
-      cwd: SERVER_ROOT,
-      env: {
-        ...process.env,
-        PORT: String(PORT),
-        NODE_ENV: 'development',
-        PUBLIC_URL: `http://127.0.0.1:${String(PORT)}`,
-        LAIKA_DB_PATH: join(dataDir, 'laika.db'),
-      },
-      stdio: 'pipe',
+  it('boots, migrates, serves health, and exits 0 on SIGTERM', async () => {
+    const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
+
+    const { result, exitCode } = await withBuiltServer(PORT, emptyPublic, async (baseUrl) => {
+      const health = await fetch(`${baseUrl}/api/v1/health`);
+      return { status: health.status, body: (await health.json()) as { status: string } };
     });
 
-    const exited = new Promise<number | null>((resolve) => {
-      child.on('exit', (code) => {
-        resolve(code);
-      });
+    expect(result.status).toBe(200);
+    expect(result.body.status).toBe('ok');
+    expect(exitCode).toBe(0);
+
+    rmSync(emptyPublic, { recursive: true, force: true });
+  }, 60_000);
+
+  it('serves the committed fallback when no SPA has been built', async () => {
+    // An empty directory *is* the "no build yet" condition, stated rather than
+    // assumed — and it proves dist/static/fallback.html shipped, which is the
+    // asset `tsc` does not copy.
+    const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
+
+    const { result } = await withBuiltServer(PORT + 1, emptyPublic, async (baseUrl) => {
+      const spa = await fetch(`${baseUrl}/board/LAI-1`);
+      return { status: spa.status, text: await spa.text() };
     });
 
-    try {
-      await waitForHealth(PORT);
+    expect(result.status).toBe(200);
+    expect(result.text).toContain('Laika is running.');
 
-      const health = await fetch(`http://127.0.0.1:${String(PORT)}/api/v1/health`);
-      expect(health.status).toBe(200);
-      expect(((await health.json()) as { status: string }).status).toBe('ok');
+    rmSync(emptyPublic, { recursive: true, force: true });
+  }, 60_000);
 
-      // The fallback document, served out of dist/static — the asset tsc did not copy.
-      const spa = await fetch(`http://127.0.0.1:${String(PORT)}/board/LAI-1`);
-      expect(spa.status).toBe(200);
-      expect(await spa.text()).toContain('Laika is running.');
+  it('serves the built SPA instead when one is present', async () => {
+    // The other behaviour, as its own case. Collapsing the two into one
+    // assertion is what made this test state-dependent in the first place.
+    const builtPublic = mkdtempSync(join(tmpdir(), 'laika-public-built-'));
+    writeFileSync(
+      join(builtPublic, 'index.html'),
+      '<!doctype html><title>Laika</title><div id="root"></div>',
+      'utf8',
+    );
 
-      // Migrations ran from dist/db/migrations.
-      expect(existsSync(join(dataDir, 'laika.db'))).toBe(true);
-    } finally {
-      child.kill('SIGTERM');
-    }
+    const { result } = await withBuiltServer(PORT + 2, builtPublic, async (baseUrl) => {
+      const spa = await fetch(`${baseUrl}/board/LAI-1`);
+      return { status: spa.status, text: await spa.text() };
+    });
 
-    expect(await exited).toBe(0);
+    expect(result.status).toBe(200);
+    expect(result.text).toContain('id="root"');
+    expect(result.text).not.toContain('Laika is running.');
+
+    rmSync(builtPublic, { recursive: true, force: true });
   }, 60_000);
 });
 
