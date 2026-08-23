@@ -42,3 +42,15 @@ I can.
 `/claim` → read `docs/SPEC.md` for the sections the task names → build in small
 commits (`feat(docker): … [LAI-00X]`) → tick the criteria → move to
 `.tasks/review/` → write the log entry. Then `/claim` again.
+
+---
+
+## Session confirmation
+
+- **I am Builder-B.** Confirmed 2026-08-24.
+- Areas I may edit this session: `plugin/`, `cli/`, `docker/`,
+  `logs/builder-b-2026-08-24.md`, `.sessions/builder-b.md`, and the single task
+  file I have claimed while it is mine.
+- Areas I will not touch: `server/`, `docs/`, `.claude/`, `CLAUDE.md`,
+  other sessions' `.sessions/` files and logs, repo-root config.
+- Log for today: `logs/builder-b-2026-08-24.md`.
