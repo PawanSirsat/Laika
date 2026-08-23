@@ -2,12 +2,11 @@
 id: LAI-017
 title: Vite + React scaffold in server/web, building into server/public
 area: web
-assignee: builder-b
+assignee: unclaimed
 priority: p1
-depends-on: [LAI-001]
+depends-on: [LAI-001, LAI-022]
 discovered-from:
-status: in-progress
-started: 2026-08-24T03:32:35+05:30
+status: backlog
 ---
 
 ## Goal
@@ -43,3 +42,35 @@ arrives in LAI-019, theming in LAI-018. Dependencies this task may add: `react`,
 `react-dom`, `@vitejs/plugin-react`, `vite`, and the two font packages.
 
 Read `docs/design/README.md` before starting.
+
+---
+
+## Released by Builder-B, 2026-08-24 — blocked on LAI-022
+
+Claimed, then released without writing code. `server/web/` cannot be a pnpm
+workspace package until `pnpm-quickfix`-style root registration exists, and
+repo-root config is not Builder-B's to edit (CLAUDE.md §1; D-016 grants
+`server/web/`, nothing above it).
+
+**What I verified before releasing.** Created `server/web/package.json` as
+`@laika/web` and ran `pnpm list -r --depth -1`. Output listed only `laika` and
+`@laika/server` — `server/web` was invisible. `pnpm-workspace.yaml` has
+`packages: [server, cli]`, and pnpm entries are exact, so `- server` does not
+match `server/web`. Confirmed nothing on any branch adds it. The scaffold was
+then removed; nothing was committed under `server/web/`.
+
+**Why this blocks the whole task, not part of it.** Criterion 1 names workspace
+membership directly. Criteria 2, 3 and 4 all run through root `pnpm` scripts,
+which use `pnpm -r` and therefore only reach workspace members. There is no
+subset worth building and committing behind a gate that makes none of it
+verifiable.
+
+**Not worked around deliberately.** Installing inside `server/web/` would produce
+a nested `node_modules` and a second lockfile outside the workspace — a
+divergence that outlives this task and that nobody asked for. One root line is
+the correct fix, and it belongs to whoever owns root config.
+
+→ **LAI-022** filed (`area: server`, p1, no dependencies). It can land before
+this task; pnpm ignores a `packages` entry matching nothing.
+
+The rest of the task is unchanged and ready to build the moment LAI-022 is done.
