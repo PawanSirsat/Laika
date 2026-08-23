@@ -1,5 +1,5 @@
 ---
-id: LAI-024
+id: LAI-202
 title: Settle the server secret's name — SERVER_SECRET or LAIKA_SECRET
 area: docs
 assignee: unclaimed

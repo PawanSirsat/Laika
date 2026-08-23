@@ -1,5 +1,5 @@
 ---
-id: LAI-025
+id: LAI-203
 title: pnpm format is red repo-wide on the imported docs/design files
 area: docs
 assignee: unclaimed
@@ -49,6 +49,13 @@ exactly what LAI-014 was filed to prevent for `plugin/`.
 Discovered while running the pre-review gate for LAI-008. Verified pre-existing:
 `docs/design/support.js` fails the check on `master` independently of any
 builder branch, so this is not a regression from `docker/` or `plugin/`.
+
+**Adjacent but not the same as LAI-026** (`pnpm format:fix` silently edits other
+sessions' areas). That one is about the `--write` half crossing ownership
+boundaries; this one is about the `--check` half being red for everyone
+regardless of what they touched. They reinforce each other: LAI-026 concludes
+"the check itself is fine and PM was right to keep it repo-wide", which is only
+true if the check can actually pass. Fixing either alone leaves the gate broken.
 
 `.prettierignore` and the root `package.json` `format` script are both repo-root
 config, which is neither Builder-B's nor part of `docs/` proper — PM will likely
