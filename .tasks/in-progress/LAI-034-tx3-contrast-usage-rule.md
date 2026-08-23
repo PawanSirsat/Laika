@@ -2,11 +2,12 @@
 id: LAI-034
 title: '`--tx3` fails WCAG AA for normal text — decide usage rule or change the token'
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: []
 discovered-from: LAI-018
-status: backlog
+status: in-progress
+started: 2026-08-24T05:45:00+05:30
 ---
 
 ## Goal
