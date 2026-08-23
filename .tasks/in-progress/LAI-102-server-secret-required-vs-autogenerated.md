@@ -2,11 +2,12 @@
 id: LAI-102
 title: SPEC §11.7 says SERVER_SECRET is auto-generated; server and container both require it
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: []
 discovered-from: LAI-005
-status: backlog
+status: in-progress
+started: 2026-08-24T05:25:00+05:30
 ---
 
 ## Goal
