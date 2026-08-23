@@ -48,7 +48,7 @@ Read `docs/design/README.md` before starting.
 ## Released by Builder-B, 2026-08-24 — blocked on LAI-022
 
 Claimed, then released without writing code. `server/web/` cannot be a pnpm
-workspace package until `pnpm-quickfix`-style root registration exists, and
+workspace package until it is listed in the root `pnpm-workspace.yaml`, and
 repo-root config is not Builder-B's to edit (CLAUDE.md §1; D-016 grants
 `server/web/`, nothing above it).
 
