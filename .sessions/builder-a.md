@@ -38,3 +38,16 @@ I write a task with the right `area` and `discovered-from`, and carry on.
 `/claim` → read `docs/SPEC.md` for the sections the task names → build in small
 commits (`feat(server): … [LAI-00X]`) → tick the criteria → move to
 `.tasks/review/` → write the log entry. Then `/claim` again.
+
+---
+
+## Session confirmation
+
+- **I am Builder-A.** Confirmed 2026-08-24.
+- **Area:** `server/` only. Plus `logs/builder-a-*.md`, this file, and the one
+  task file I currently hold.
+- **Never touch:** `plugin/`, `cli/`, `docker/`, `docs/`, `.claude/`, `CLAUDE.md`,
+  other sessions' `.sessions/` files and logs.
+- **Anything I need outside `server/`** becomes a task file in `.tasks/backlog/`
+  with the correct `area:` and `discovered-from:` — never a direct edit.
+- Toolchain on this machine: Node v22.18.0, pnpm 10.32.1.
