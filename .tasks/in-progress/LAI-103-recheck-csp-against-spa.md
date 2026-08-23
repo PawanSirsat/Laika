@@ -6,7 +6,8 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-023]
 discovered-from: LAI-023
-status: in-progress
+status: review
+finished: 2026-08-24T05:01:57+05:30
 started: 2026-08-24T04:52:14+05:30
 ---
 
@@ -22,17 +23,17 @@ A CSP that breaks the app is discovered by a blank screen, usually after deploy.
 
 ## Acceptance criteria
 
-- [ ] The built SPA loads with **no CSP violations** in the browser console —
+- [x] The built SPA loads with **no CSP violations** in the browser console —
       checked against a real `pnpm build` output, not asserted.
-- [ ] `script-src` still carries no `'unsafe-inline'` and no `'unsafe-eval'`.
+- [x] `script-src` still carries no `'unsafe-inline'` and no `'unsafe-eval'`.
       If Vite's output needs either, say precisely which chunk and why, and use
       hashes or a nonce instead.
-- [ ] `style-src`'s `'unsafe-inline'` allowance is either justified against the
+- [x] `style-src`'s `'unsafe-inline'` allowance is either justified against the
       real output or removed — it exists today only for the fallback page's
       `<style>` block.
-- [ ] `connect-src 'self'` still covers the SSE stream (§11.5) and every fetch
+- [x] `connect-src 'self'` still covers the SSE stream (§11.5) and every fetch
       the SPA makes.
-- [ ] A test or a documented manual check that will catch a future regression,
+- [x] A test or a documented manual check that will catch a future regression,
       rather than a one-off inspection.
 
 ## Notes / context
@@ -52,3 +53,115 @@ note whether `pnpm dev` needs a relaxed policy — if it does, that is a
 development-only branch and should be visibly marked as such.
 
 No new dependencies.
+
+---
+
+## Implementation notes for review (Builder-B)
+
+Checked against a real `pnpm build`, served by the real server, loaded in a real
+browser. Nothing here is asserted from reading the bundle.
+
+### AC1 — no CSP violations against the built SPA
+
+Built the SPA, served `server/public/` through `node dist/index.js` in
+`NODE_ENV=production` (which does send the policy — confirmed on both the
+document and a JS asset), and loaded it under Playwright.
+
+**Console: 0 errors, 0 warnings.** The page rendered — heading and both
+paragraphs present in the accessibility snapshot — so the module script executed
+under `script-src 'self'` rather than being blocked into a blank page.
+
+### AC2 — `script-src` needs neither `'unsafe-inline'` nor `'unsafe-eval'`
+
+The built `index.html` contains **0** inline `<script>` blocks, **0** inline
+`on*` handlers and **0** inline `<style>` blocks; the emitted JavaScript
+contains **0** occurrences of `eval(` or `new Function(`. Nothing to hash and no
+nonce needed.
+
+### AC3 — `style-src 'unsafe-inline'` is not needed by the SPA
+
+Served the same build with the directive tightened to `style-src 'self'`. The
+page rendered fully, console clean apart from a `404 /favicon.ico` (a missing
+file, not a CSP violation — see below).
+
+So the allowance is now carried entirely by `fallback.html`'s single `<style>`
+block, and that does not need it either. Computed the hash and **verified it**:
+
+```
+style-src 'self' 'sha256-SvAMs7ooQNphe1Tc5XfBY/P1X9abH8eLukft4pFWmDE='
+```
+
+Served the fallback under exactly that policy — 0 console errors, and
+`getComputedStyle(document.body)` returned the stylesheet's own values
+(`background rgb(251, 251, 250)`, the custom font stack, `margin 0`) rather than
+browser defaults, which is what distinguishes "applied" from "tag present but
+dropped".
+
+The policy file is Builder-A's, so this task says what to change rather than
+changing it → **LAI-205** filed, carrying the verified hash and a recommendation
+to compute it at boot from `FALLBACK_DOCUMENT` instead of pasting a literal that
+silently stops matching when the file is edited.
+
+### AC4 — `connect-src 'self'` covers what the SPA does
+
+Exercised from the page, with a negative control so the result is not vacuous:
+
+| Call | Result |
+| --- | --- |
+| `fetch('/api/v1/health')` | **200** — allowed |
+| `new EventSource('/api/v1/events')` | **404** from the server, *not* a CSP block — the browser was permitted to connect; the endpoint does not exist yet |
+| `fetch('https://example.com/')` | **blocked**, with an explicit `connect-src 'self'` violation in the console |
+
+The third line is the one that matters: it proves the directive is actually
+enforcing. Same-origin SSE is permitted; the endpoint arrives with §11.5.
+
+### AC5 — regression guard
+
+`server/web/test/csp-compatibility.test.ts`, wired into `pnpm test` via the
+package's `test` script. Six cases across the three directives that constrain
+this package.
+
+Two things worth noting about how it is built:
+
+- **Zero new dependencies.** Node 22.18 runs TypeScript natively, so it uses
+  `node:test` and Vite's programmatic `build()` — both already present. The task
+  said no new dependencies.
+- **It builds its own output into a temp directory** rather than reading
+  `server/public/`. Reading gitignored build output is exactly the failure I
+  filed as LAI-204 an hour earlier — green in CI, red for anyone who has run
+  `pnpm build`. This one cannot drift that way.
+
+**Confirmed it can fail.** Injected an inline `<script>`, an `on*` handler, an
+inline `<style>` and a `https://fonts.gstatic.com` font URL: 4 of 6 cases went
+red, naming each problem. Restored: 6/6 green. A guard that cannot fail is
+decoration.
+
+### The dev-server question the task raised
+
+`pnpm dev` needs **no** relaxed policy, and none should be added.
+
+Vite does inject an inline React Refresh script in development — confirmed, one
+inline `<script>` block in the dev document. But that document is served by
+**Vite**, which sends no CSP header at all (verified). Only proxied `/api`
+responses carry the policy, and a header on a JSON response does not govern the
+HTML document. There is no dev/prod CSP divergence to mark.
+
+### Also fixed / noted
+
+- Documented the contract in a new `server/web/README.md` — the directives that
+  constrain this package, why the test builds its own output, and the dev-server
+  finding — so the next person does not re-derive it.
+- **`/favicon.ico` 404s.** Surfaced by the strict-CSP run; not a CSP issue and
+  not in this task's criteria. It belongs with the app shell (LAI-019) rather
+  than a task of its own, and is noted in my log.
+- The server now refuses to boot in production without `SERVER_SECRET`
+  (LAI-027 resolved to the SPEC §11.7 name). That makes the alias bridge in
+  `docker/entrypoint.sh` load-bearing rather than speculative — it exports
+  `SERVER_SECRET` when only `LAIKA_SECRET` is set, so the compose file from
+  LAI-008 still boots. No change needed; recording that it was checked.
+
+### Gate
+
+`pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
+`pnpm test`: `@laika/web` 6/6; server 265 passed, 1 failed — the pre-existing
+LAI-204 failure in Builder-A's area, unrelated to this task.
