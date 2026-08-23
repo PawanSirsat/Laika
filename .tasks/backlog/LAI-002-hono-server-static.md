@@ -28,8 +28,12 @@ somewhere to mount and the Docker image has something to run.
       `internal` with no leaked detail and log the `request_id`.
 - [ ] Static files served from `server/public/`, with SPA fallback to
       `index.html` for any path that is not `/api/*`, `/mcp*`, or `/webhooks/*`.
-- [ ] A placeholder `server/public/index.html` exists so the fallback is testable
-      before the real SPA lands.
+- [ ] A **committed** fallback document at `server/src/static/fallback.html` is
+      served when `server/public/index.html` is absent (PM decision, LAI-016).
+      Build output stays fully gitignored — nothing is ever committed into
+      `server/public/`.
+- [ ] The SPA fallback is proven by a test that runs on a **clean clone with no
+      SPA build**, depending on no untracked file.
 - [ ] Graceful shutdown on `SIGTERM`/`SIGINT` (stop accepting, drain, exit 0).
 - [ ] HTTP tests through Hono's test client cover health, a 404 JSON error, and
       the SPA fallback.
@@ -37,6 +41,13 @@ somewhere to mount and the Docker image has something to run.
 ## Notes / context
 
 Milestone: **M1**. SPEC §11.1, §11.2, §11.4, §6.3.
+
+**Resolved by PM (was LAI-016):** `server/public/` is build output and stays
+entirely gitignored. Do **not** add a `.gitignore` negation for
+`server/public/index.html` — a committed file inside the build output directory
+shows as permanently modified once a real build overwrites it. Serve
+`server/public/index.html` when it exists, else the committed
+`server/src/static/fallback.html`.
 
 Route mounting order matters: API, MCP and webhook prefixes must be matched
 before the static/SPA fallback, or the fallback swallows them.
