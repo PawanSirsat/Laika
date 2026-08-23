@@ -2,7 +2,15 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
-    "types": ["node"]
+    "types": ["node"],
+
+    // Imports carry explicit `.ts` extensions. That is what lets the same source
+    // run under tsx today and be emitted by tsc later — `rewriteRelativeImportExtensions`
+    // turns them into `.js` on emit, so the output is valid Node ESM without a
+    // bundler step. Extensionless imports would have worked under `moduleResolution:
+    // bundler` but produce output Node cannot resolve.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts", "drizzle.config.ts"]
 }

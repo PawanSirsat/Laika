@@ -675,3 +675,58 @@ an ownership table.
 
 **Revisit when:** the frontend outgrows one builder, or the merge surface between
 `server/src/` and `server/web/` starts producing conflicts.
+
+---
+
+## D-017 — Each session issues task ids from its own range
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** "next unused number" is a read-then-write race, so give each
+session its own numbers and the race disappears.
+
+**Context.** Task ids collided **twice on day one**. Builder-A filed
+LAI-017/018/019 from LAI-002 while PM was writing LAI-017–021 for the UI shell;
+Builder-A had to renumber to LAI-022/023/024 after the fact. Both sessions
+followed the rule exactly — the rule was wrong. "Take the next unused number"
+requires reading the current maximum and then writing, and nothing holds between
+those two steps. It is the same class of bug as the task claim itself, which is
+why the claim is a `git mv` and not a status field.
+
+Worktree isolation (D-008) made it *more* likely, not less: sessions no longer
+see each other's uncommitted files at all, so the read half of read-then-write
+got staler.
+
+**Decision.** Static ranges, allocated per session:
+
+| Session | Range |
+| --- | --- |
+| PM | `LAI-001` – `LAI-099` |
+| Builder-A | `LAI-100` – `LAI-199` |
+| Builder-B | `LAI-200` – `LAI-299` |
+
+Take the lowest unused number **in your own range**, checked across all branches.
+Ids issued before this decision (`LAI-001`–`LAI-026`) keep their numbers
+regardless of who created them, and **nothing is renumbered** — ids are
+referenced by `depends-on`, `discovered-from` and commit messages, and cleaning
+up after a renumber is what LAI-015 cost.
+
+**Rejected: PM as sole issuer.** Tidier, keeps ids chronological, and PM sees
+every task as it is created. It also breaks the thing that makes
+`discovered-from` work: a builder who finds something mid-task must file it
+*immediately and without coordinating*, or they will carry it in their head and
+file it later, or not at all. Routing every discovery through PM puts a
+synchronous round-trip inside the one workflow specifically designed not to have
+one — and PM is already the review bottleneck. Trading a rare id collision for a
+guaranteed queue is a bad trade.
+
+**Consequences.** Ids no longer sort chronologically across sessions —
+`LAI-100` may predate `LAI-030`. Creation order lives in git and in the task's
+own `started`/`created` fields, which is where it belongs; the id becomes a name
+rather than a sequence, which it always really was. Ranges can in principle
+exhaust: 99 ids per session against a project that has issued 26 in a day is not
+an urgent risk, and the answer when it comes is another range, not a renumber.
+A fourth session needs a range assigned before it starts — `LAI-300`+ is
+reserved.
+
+**Revisit when:** a session exhausts its range, or the session count outgrows
+static allocation.

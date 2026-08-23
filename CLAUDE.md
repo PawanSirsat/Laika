@@ -110,6 +110,27 @@ If you discover new work mid-task, **do not do it**. Create a new task file in
 `.tasks/backlog/` with `discovered-from: <the-task-id-you-are-on>` in its
 frontmatter, and mention it in your log entry.
 
+**Take the id from your own range** (D-017). "Next unused number" is not a lock —
+two sessions filing at the same time both pick it, and it collided twice on day
+one:
+
+| Session | Range |
+| --- | --- |
+| PM | `LAI-001` – `LAI-099` |
+| Builder-A | `LAI-100` – `LAI-199` |
+| Builder-B | `LAI-200` – `LAI-299` |
+
+Use the lowest unused number **in your own range**, checked across every branch:
+
+```bash
+git log --all --name-only --format= -- .tasks/ | grep -o 'LAI-[0-9]*' | sort -u
+```
+
+Ids issued before 2026-08-24 (`LAI-001`–`LAI-026`) keep their numbers whoever
+created them. **Never renumber an existing task** — ids are referenced by
+`depends-on`, `discovered-from` and commit messages, and renumbering is what
+LAI-015 had to clean up.
+
 ## 4. Git
 
 - Small commits. One logical change each.
@@ -216,6 +237,15 @@ If you think you need one, say so — that is a PM decision.
   name the package, it does not get added. Write a task instead.
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
+- **Do not run bare `pnpm format:fix` until LAI-026 lands.** It runs Prettier
+  over the whole repo with `--write`, so from any worktree it rewrites files in
+  *every* area — it has already silently reformatted Builder-B's
+  `plugin/.claude-plugin/plugin.json` from Builder-A's worktree. Until the script
+  is fixed, format your own files explicitly:
+  ```bash
+  pnpm exec prettier --write <your files>
+  ```
+  `pnpm format` (check-only, repo-wide) stays as it is and should still be run.
 ### 5.1 UI rules
 
 - **A UI task carries `depends-on` for the API task(s) that define its
