@@ -176,3 +176,51 @@ disposes.**
 **Revisit when:** never for `done`. A future auto-close for a narrow, provably
 verifiable class of task (say, a green CI run on a task whose only criterion is a
 passing test) would be a new entry, not an extension of this one.
+
+---
+
+## D-008 — One git worktree per session, one branch per session
+**Date:** 2026-08-24 · **Status:** accepted
+
+**Context.** The bootstrap workflow assumed three sessions could share one
+checkout of `master`, with the `git mv` of a task file acting as the claim lock.
+That assumption failed within the hour. A shared working tree has one index and
+one set of unstaged changes, so `git add -A` in any session stages **every**
+session's in-flight work; it happened twice on day one, once to PM, sweeping both
+builders' uncommitted work into a commit describing neither. Worse, the lock was
+never a lock: two sessions can `git mv` the same file in the same tree and only
+discover it at commit time, or not at all — Builder-A's LAI-001 claim commit
+carried Builder-B's LAI-012 move along with it.
+
+The obvious fix — a worktree per session, all on `master` — is impossible: git
+refuses to check out one branch in two worktrees, and for good reason. Committing
+in one would move the ref out from under the other.
+
+**Decision.** One worktree **and one branch** per session: PM in `Laika/` on
+`master`, Builder-A in `Laika-builder-a/` on `builder-a`, Builder-B in
+`Laika-builder-b/` on `builder-b`. All three are worktrees of a single
+repository, so they share one object database and one set of refs. Builders merge
+`master` in to stay current and never merge out; **PM is the sole integrator**,
+merging a builder branch with `--no-ff` when accepting the task.
+
+The claim check moves from "look in the working tree" to "look across all refs":
+
+```bash
+git log --all --oneline -- '.tasks/in-progress/LAI-00X*' '.tasks/review/LAI-00X*'
+```
+
+**Consequences.** Isolation is real — an `add -A` accident is now confined to the
+session that made it. The claim check is *better* than before, not worse: because
+the worktrees share one `.git`, a claim commit is visible to every session the
+instant it exists, with nothing to fetch and no window where one session's claim
+is invisible to another. In exchange, `master` no longer shows in-flight work, so
+PM's `/standup` must read `--all` rather than the working tree, and integration
+becomes an explicit step PM owns — which it effectively already was, since only
+PM moves tasks to `done`. A simultaneous-claim race is still possible in the
+seconds between two commits; the tie-break is the earlier commit timestamp, and
+the loser releases (CLAUDE.md §2). Separate branches also mean a builder can be
+several commits behind `master`; merging before each claim is now protocol, not
+courtesy.
+
+**Revisit when:** the session count grows past three, or integration latency
+starts blocking builders more than the isolation is worth.

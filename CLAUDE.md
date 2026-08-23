@@ -50,16 +50,32 @@ of a task file. Builders have no equivalent exception.
 **Claiming (the move is the lock).**
 1. Pick ONE file from `.tasks/backlog/` whose `area` is yours, whose
    `assignee` is `unclaimed` or you, and whose `depends-on` ids are all present
-   in `.tasks/done/`.
-2. `git pull --rebase` first.
-3. `git mv .tasks/backlog/LAI-00X-*.md .tasks/in-progress/`
-4. Edit its frontmatter: `assignee: <your-session>`, `status: in-progress`,
+   in `.tasks/done/` **on `master`**.
+2. Take the latest integrated state first: `git merge master`.
+3. **Check every branch, not just your own** — sessions work on separate
+   branches, so a rival claim will not be in your working tree:
+   ```bash
+   git log --all --oneline -- '.tasks/in-progress/LAI-00X*' \
+                              '.tasks/review/LAI-00X*' '.tasks/done/LAI-00X*'
+   ```
+   Any output means someone has already claimed, finished, or closed it. **Pick a
+   different task.** This check is instant and exact — all worktrees share one
+   object database (§4.2), so there is nothing to fetch and no excuse to skip it.
+4. `git mv .tasks/backlog/LAI-00X-*.md .tasks/in-progress/`
+5. Edit its frontmatter: `assignee: <your-session>`, `status: in-progress`,
    `started: <ISO-8601 timestamp>`.
-5. Commit that move **before writing any code**:
+6. Commit that move **before writing any code**:
    `chore(tasks): claim LAI-00X [LAI-00X]`
-6. If the move fails, or the file is already gone, or the rebase shows someone
-   else moved it — **another session claimed it. Pick a different task.** Never
-   force it, never move a file back out of someone else's hands.
+   The commit is the claim. It is visible to every other session the instant it
+   exists — no push, no merge required.
+7. If the move fails, the file is gone, or step 3 turns up a rival claim —
+   **another session has it. Pick a different task.** Never force it, never move
+   a file back out of someone else's hands.
+
+**Simultaneous claims.** If two sessions claim the same task within seconds of
+each other, the **earlier commit timestamp wins**. The later session moves its
+copy back to `.tasks/backlog/`, resets `assignee: unclaimed`, commits, and says so
+in its log. Do not negotiate, do not both continue.
 
 **One task in progress per session.** Finish or release before claiming another.
 
@@ -139,6 +155,47 @@ paste a token or switch the global config — tell the owner. If both accounts a
 ever added to `gh`, `gh auth switch --user PawanSirsat` selects the right one.
 
 Never push to any remote other than `origin`, and never add a second remote.
+
+### 4.2 Worktrees — one checkout per session
+
+Each session has its **own working directory on its own branch**. This is not
+optional and it is not cosmetic: when three sessions shared one checkout, a single
+`git add -A` in any of them swept up every other session's uncommitted work, and
+the file-move claim lock was not a lock at all.
+
+| Session | Directory | Branch |
+| --- | --- | --- |
+| PM | `Laika/` | `master` |
+| Builder-A | `Laika-builder-a/` | `builder-a` |
+| Builder-B | `Laika-builder-b/` | `builder-b` |
+
+All three are worktrees of **one repository** — one `.git`, one object database,
+one set of refs. That is what makes the cross-branch claim check in §2 instant and
+authoritative: a commit in any worktree is visible to all of them immediately,
+with nothing to fetch.
+
+**Work only in your own directory.** If your shell is in someone else's worktree,
+stop and change directory. `git worktree list` tells you where you are.
+
+**Stay current.** Before claiming a task, and any time `master` moves:
+
+```bash
+git merge master          # from your own worktree, on your own branch
+```
+
+Prefer `merge` over `rebase` here — your branch is shared state that PM reads
+during review, and rebasing it rewrites commits another session may already have
+looked at.
+
+**Integration is PM's job.** Builders never merge into `master` and never check
+out `master`. PM merges a builder branch when accepting the task:
+
+```bash
+git merge --no-ff builder-a
+```
+
+**Never** create a worktree, delete one, or check out another session's branch.
+If you think you need one, say so — that is a PM decision.
 
 ## 5. Code rules
 
