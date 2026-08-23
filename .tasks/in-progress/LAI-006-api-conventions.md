@@ -2,11 +2,12 @@
 id: LAI-006
 title: API conventions — pagination, updated_since, errors, idempotency, rate limits
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-002, LAI-004]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T04:32:33+05:30
 ---
 
 ## Goal
