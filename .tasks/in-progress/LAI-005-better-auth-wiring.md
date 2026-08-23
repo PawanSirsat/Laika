@@ -2,11 +2,12 @@
 id: LAI-005
 title: better-auth wiring — sessions, invite-only signup, GET /api/v1/me
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-002, LAI-003]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T04:10:34+05:30
 ---
 
 ## Goal

@@ -237,15 +237,18 @@ If you think you need one, say so — that is a PM decision.
   name the package, it does not get added. Write a task instead.
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
-- **Do not run bare `pnpm format:fix` until LAI-026 lands.** It runs Prettier
-  over the whole repo with `--write`, so from any worktree it rewrites files in
-  *every* area — it has already silently reformatted Builder-B's
-  `plugin/.claude-plugin/plugin.json` from Builder-A's worktree. Until the script
-  is fixed, format your own files explicitly:
-  ```bash
-  pnpm exec prettier --write <your files>
-  ```
-  `pnpm format` (check-only, repo-wide) stays as it is and should still be run.
+- **`pnpm format` checks the whole repo; `pnpm format:fix` writes only what your
+  worktree changed** (LAI-026). The fixer builds its file list from
+  `git diff HEAD` plus untracked files, so in a worktree it is inherently
+  ownership-respecting: it cannot rewrite a file you did not touch, and it needs
+  no ownership map to keep up with D-016. Run both before moving a task to review.
+
+  `pnpm format` staying repo-wide is deliberate — a check that only looks where
+  it is already clean is not a check. It can therefore report a file in someone
+  else's area; that is a task for them, not something to fix from your worktree.
+
+  Neither script touches Markdown. Prose here is hand-wrapped to 80 columns and
+  Prettier repaginates tables.
 ### 5.1 UI rules
 
 - **A UI task carries `depends-on` for the API task(s) that define its
