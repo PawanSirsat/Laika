@@ -9,7 +9,9 @@ import { ApiError } from './http/errors.ts';
 import { anonymousAuth, authMiddleware } from './http/middleware/auth.ts';
 import { errorBoundary } from './http/middleware/error-boundary.ts';
 import { requestLogger } from './http/middleware/logger.ts';
-import { rateLimit } from './http/middleware/rate-limit.ts';
+import { rateLimitMiddleware } from './http/middleware/rate-limit.ts';
+import { idempotencyMiddleware } from './http/middleware/idempotency.ts';
+import { RateLimiter } from './http/rate-limit.ts';
 import { requestId } from './http/middleware/request-id.ts';
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes } from './http/routes/me.ts';
@@ -31,6 +33,8 @@ export interface CreateAppOptions {
    */
   auth?: Auth;
   db?: Db;
+  /** Injectable so tests can drive the clock and assert exhaustion. */
+  rateLimiter?: RateLimiter;
   /** Overridable so tests can point at a directory whose contents they control. */
   publicDir?: string;
   fallbackDocument?: string;
@@ -78,7 +82,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       ? authMiddleware({ auth: options.auth, db: options.db })
       : anonymousAuth,
   );
-  app.use('*', rateLimit);
+  app.use('*', rateLimitMiddleware(options.rateLimiter ?? new RateLimiter()));
+
+  // After rateLimit: a replayed response should still cost a token, or a retry
+  // loop on a stored 201 becomes a free unlimited request.
+  if (options.db !== undefined) {
+    app.use('*', idempotencyMiddleware(options.db));
+  }
 
   // Routes before the static handler: whoever matches first wins, and the SPA
   // fallback must never shadow an API path.
