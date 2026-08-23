@@ -91,7 +91,11 @@ temptation is to fix it while you are there. Don't.
 Write a new task file in `.tasks/backlog/` from `.tasks/TEMPLATE.md`:
 
 ```yaml
-id: LAI-0NN                 # next unused number — check all four .tasks/ dirs
+id: LAI-0NN                 # lowest unused number IN YOUR OWN RANGE (D-017):
+                            # PM 001-099 · Builder-A 100-199 · Builder-B 200-299
+                            # check across branches, not just your tree:
+                            #   git log --all --name-only --format= -- .tasks/ \
+                            #     | grep -o 'LAI-[0-9]*' | sort -u
 area: server                # where the work actually belongs, not where you found it
 assignee: unclaimed
 discovered-from: LAI-00X    # the task you are on right now
@@ -131,3 +135,4 @@ again.
 | "Force-push will fix this rebase" | It will destroy someone's commit. Stop and ask. |
 | "My tree is clean, so the task is free" | Your tree can't see their branch. Run the `--all` check. |
 | "I'll merge my branch into master myself" | PM integrates. Your branch waits in review. |
+| "I'll take the next free id" | Take the next free id **in your range**. Free-for-all collided twice. |
