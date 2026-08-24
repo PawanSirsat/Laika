@@ -105,7 +105,7 @@ export const orgs = sqliteTable(
     inviteOnly: integer('invite_only').notNull().default(1),
     aiProvider: text('ai_provider', { enum: AI_PROVIDERS }),
     aiBaseUrl: text('ai_base_url'),
-    /** AES-256-GCM ciphertext under a key derived from `SERVER_SECRET` (§12). */
+    /** AES-256-GCM ciphertext under a key derived from `LAIKA_SECRET` (§12). */
     aiApiKeyEnc: text('ai_api_key_enc'),
     smtpJsonEnc: text('smtp_json_enc'),
     githubWebhookSecretEnc: text('github_webhook_secret_enc'),

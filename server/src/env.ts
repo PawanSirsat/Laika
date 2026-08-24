@@ -2,10 +2,16 @@
  * Environment parsing, done once at boot so a bad value fails immediately with a
  * readable message instead of surfacing as a confusing runtime error later.
  *
- * SPEC §11.7 lists more variables than this (`SERVER_SECRET`, `PUBLIC_URL`,
- * `DISABLE_INVITE_ONLY`). They are deliberately absent: nothing reads them yet,
- * and a variable parsed here but unused is a variable whose validation nobody has
- * tested. They arrive with the tasks that need them (LAI-005 and later).
+ * SPEC §11.7 is the deployment contract (D-018): everything the server reads is
+ * in that table, and everything in that table is read. The one exception today is
+ * `LAIKA_DISABLE_INVITE_ONLY`, which is documented and read by nothing — see
+ * LAI-105.
+ *
+ * **Naming (D-018):** Laika-specific variables carry the `LAIKA_` prefix; `PORT`,
+ * `HOST` and `NODE_ENV` do not, because they are universal conventions and
+ * prefixing them would surprise. The prefix is collision safety — `DATA_DIR` and
+ * `SERVER_SECRET` are generic enough to already mean something else in a shared
+ * compose file or systemd unit.
  */
 
 import { accessSync, constants } from 'node:fs';
@@ -81,7 +87,7 @@ function isWritableDir(path: string): boolean {
  * Precedence, most specific first:
  *  1. `LAIKA_DB_PATH` — an explicit path wins outright. This is what
  *     `docker-compose.yml` sets (LAI-008).
- *  2. `DATA_DIR` — §11.7's variable; the database sits alongside `backups/` and
+ *  2. `LAIKA_DATA_DIR` — §11.7's variable; the database sits alongside `backups/` and
  *     `secret` in the same volume.
  *  3. `/data/laika.db` — the documented default.
  *  4. `./data/laika.db` — **only outside production**, and only when `/data` is
@@ -96,7 +102,7 @@ function resolveDbPath(source: NodeJS.ProcessEnv, nodeEnv: Env['nodeEnv']): stri
     return isAbsolute(explicit) ? explicit : resolve(explicit);
   }
 
-  const dataDir = source.DATA_DIR;
+  const dataDir = source.LAIKA_DATA_DIR;
   if (dataDir !== undefined && dataDir !== '') {
     return join(resolve(dataDir), DB_FILENAME);
   }
@@ -108,44 +114,76 @@ function resolveDbPath(source: NodeJS.ProcessEnv, nodeEnv: Env['nodeEnv']): stri
   return join(DEFAULT_DATA_DIR, DB_FILENAME);
 }
 
-const DEV_SECRET = 'laika-development-secret-not-for-production-use';
-
 /**
- * `SERVER_SECRET` (SPEC §11.7, §12).
+ * `LAIKA_SECRET` (SPEC §11.7, §12, D-018).
  *
- * Required in production and refused if short — it signs session cookies and
- * derives the key that encrypts the org's API keys, so a guessable value is a
- * full compromise rather than a weak default. Outside production a fixed
- * development value is used so `pnpm dev` and the tests start without ceremony.
+ * **Required in every environment. No default, no auto-generation, no
+ * development fallback.** It signs session cookies and derives the key that
+ * encrypts the org's API keys.
+ *
+ * D-018 chose "required" over "auto-generate" because the failure is asymmetric.
+ * A required secret fails once, at install, with a message naming the fix. An
+ * auto-generated one succeeds until `$LAIKA_DATA_DIR` is lost or restored onto a
+ * new host — at which point every session is invalid and every `*_enc` column is
+ * permanently undecryptable, **with nothing saying that is what happened**. The
+ * operator's own backup is what betrays them. One loud failure now is cheaper
+ * than a silent one at restore time.
+ *
+ * The value is redacted from the error: a startup message naming a secret ends up
+ * in logs, terminals and screenshots.
  */
-function resolveServerSecret(source: NodeJS.ProcessEnv, nodeEnv: Env['nodeEnv']): string {
-  const secret = source.SERVER_SECRET;
+function resolveServerSecret(source: NodeJS.ProcessEnv): string {
+  const secret = source.LAIKA_SECRET;
 
-  if (secret !== undefined && secret !== '') {
-    if (secret.length < MIN_SECRET_LENGTH) {
-      throw new EnvError(
-        'SERVER_SECRET',
-        '<redacted>',
-        `at least ${String(MIN_SECRET_LENGTH)} characters`,
-      );
-    }
-    return secret;
-  }
-
-  if (nodeEnv === 'production') {
+  if (secret === undefined || secret === '') {
     throw new EnvError(
-      'SERVER_SECRET',
+      'LAIKA_SECRET',
       '<unset>',
-      'a value in production — refusing to start insecurely',
+      `a value of at least ${String(MIN_SECRET_LENGTH)} characters — refusing to start without one`,
     );
   }
 
-  return DEV_SECRET;
+  if (secret.length < MIN_SECRET_LENGTH) {
+    throw new EnvError(
+      'LAIKA_SECRET',
+      '<redacted>',
+      `at least ${String(MIN_SECRET_LENGTH)} characters`,
+    );
+  }
+
+  return secret;
 }
 
 const MIN_SECRET_LENGTH = 32;
 
-const DEFAULT_PUBLIC_URL = 'http://localhost:3000';
+/**
+ * `LAIKA_PUBLIC_URL` (SPEC §11.7).
+ *
+ * Required in production, defaulting to `http://localhost:$PORT` elsewhere. The
+ * default is deliberately not available in production: it goes into invite links
+ * and webhook URLs, so one escaping into a deployment sends people links to their
+ * own laptop — which fails in a way that looks like a mail problem rather than a
+ * configuration one.
+ */
+function resolvePublicUrl(
+  source: NodeJS.ProcessEnv,
+  nodeEnv: Env['nodeEnv'],
+  port: number,
+): string {
+  const url = source.LAIKA_PUBLIC_URL;
+
+  if (url !== undefined && url !== '') return url;
+
+  if (nodeEnv === 'production') {
+    throw new EnvError(
+      'LAIKA_PUBLIC_URL',
+      '<unset>',
+      'a value in production — invite links and webhook URLs are built from it',
+    );
+  }
+
+  return `http://localhost:${String(port)}`;
+}
 
 function isLocalUrl(url: string): boolean {
   try {
@@ -158,17 +196,15 @@ function isLocalUrl(url: string): boolean {
 
 export function readEnv(source: NodeJS.ProcessEnv = process.env): Env {
   const nodeEnv = parseNodeEnv(source.NODE_ENV);
-  const publicUrl =
-    source.PUBLIC_URL === undefined || source.PUBLIC_URL === ''
-      ? DEFAULT_PUBLIC_URL
-      : source.PUBLIC_URL;
+  const port = parsePort(source.PORT);
+  const publicUrl = resolvePublicUrl(source, nodeEnv, port);
 
   return {
-    port: parsePort(source.PORT),
+    port,
     host: source.HOST === undefined || source.HOST === '' ? DEFAULT_HOST : source.HOST,
     nodeEnv,
     dbPath: resolveDbPath(source, nodeEnv),
-    serverSecret: resolveServerSecret(source, nodeEnv),
+    serverSecret: resolveServerSecret(source),
     publicUrl,
     secureCookies: !isLocalUrl(publicUrl),
     publicDir:
