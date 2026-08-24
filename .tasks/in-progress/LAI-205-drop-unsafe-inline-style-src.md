@@ -2,11 +2,12 @@
 id: LAI-205
 title: Drop 'unsafe-inline' from style-src — the SPA does not need it
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-103
-status: backlog
+status: in-progress
+started: 2026-08-24T06:06:29+05:30
 ---
 
 ## Goal
