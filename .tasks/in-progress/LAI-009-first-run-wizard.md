@@ -2,11 +2,12 @@
 id: LAI-009
 title: First-run setup — create org, Owner account, first project
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-005, LAI-007, LAI-044]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T07:46:28+05:30
 ---
 
 ## Goal
