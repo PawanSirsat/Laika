@@ -46,7 +46,20 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
   const [movingId, setMovingId] = useState<string | undefined>(undefined);
   const [moveError, setMoveError] = useState<string | undefined>(undefined);
 
-  const { status: filterStatus, priority, assignee, ready } = filter;
+  /**
+   * Depend on the filter's **content**, not its identity or a hand-listed
+   * subset.
+   *
+   * The object is rebuilt every render, so depending on it directly would
+   * refetch forever. The previous fix for that was to destructure four named
+   * fields and depend on those — which meant `sprint`, added to `TaskFilter`
+   * later, was accepted by the type, put in the URL, and then **silently
+   * dropped here**: no request, no error, the board simply never scoped.
+   *
+   * A serialised key re-runs on any change to any field, including ones added
+   * after this line was written.
+   */
+  const filterKey = JSON.stringify(filter, Object.keys(filter).sort());
 
   useEffect(() => {
     if (slug === undefined) return;
@@ -54,17 +67,7 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
     const controller = new AbortController();
     setState((s) => ({ ...s, status: 'loading' }));
 
-    listTasks(
-      slug,
-      {
-        ...(filterStatus === undefined ? {} : { status: filterStatus }),
-        ...(priority === undefined ? {} : { priority }),
-        ...(assignee === undefined ? {} : { assignee }),
-        ...(ready === undefined ? {} : { ready }),
-        limit: 200,
-      },
-      controller.signal,
-    )
+    listTasks(slug, { ...filter, limit: 200 }, controller.signal)
       .then((page) => {
         setState({ status: 'ready', tasks: page.data, error: null });
       })
@@ -76,7 +79,9 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
     return () => {
       controller.abort();
     };
-  }, [slug, filterStatus, priority, assignee, ready, attempt]);
+    // `filterKey` stands in for `filter`: it is that object's content, and
+    // depending on the object itself would re-run on every render.
+  }, [slug, filterKey, attempt]);
 
   const move = useCallback(async (taskId: string, to: BoardColumn): Promise<void> => {
     setMoveError(undefined);
