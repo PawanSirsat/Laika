@@ -345,9 +345,6 @@ export function AppShell() {
             </div>
           ) : path === '/projects' ? (
             <>
-              <header className="screen-head">
-                <h1 className="screen-title">Projects</h1>
-              </header>
               <ProjectsScreen
                 onOpen={(slug) => {
                   navigate(`/board?project=${encodeURIComponent(slug)}`);
@@ -359,9 +356,6 @@ export function AppShell() {
             </>
           ) : path === '/members' ? (
             <>
-              <header className="screen-head">
-                <h1 className="screen-title">Members</h1>
-              </header>
               <MembersScreen
                 slug={params.get('project') ?? undefined}
                 me={session.status === 'authenticated' ? session.user : undefined}
@@ -369,9 +363,6 @@ export function AppShell() {
             </>
           ) : path === '/board' ? (
             <>
-              <header className="screen-head">
-                <h1 className="screen-title">Board</h1>
-              </header>
               <BoardScreen
                 params={params}
                 onParamsChange={setParams}

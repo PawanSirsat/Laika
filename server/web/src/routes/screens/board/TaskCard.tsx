@@ -1,3 +1,4 @@
+import { demoTags } from '../../../demo/tags.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { blockedState } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
@@ -44,6 +45,10 @@ export function TaskCard({
   const blocked = blockedState(task, byId);
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
   const colour = assignee === undefined ? undefined : avatarColor(assignee.user_id, theme);
+  // Real: `created_via` ships on every task and `mcp` is the agent path.
+  const byAgent = task.created_via === 'mcp';
+  // Sample: there is no tags table. See `demo/tags.ts`.
+  const tags = demoTags(task.id);
 
   return (
     <article
@@ -57,9 +62,44 @@ export function TaskCard({
       }}
       onDragEnd={onDragEnd}
     >
-      <div className="card-head">
-        {/* A button, not a click handler on the card: the card is draggable, and
-            a drag that also fires a click would open the panel every time. */}
+      {/*
+        Title first, then the exception, then the footer — the order the
+        prototype's card-anatomy plate calls out: "Title first, then the
+        exception (blocked-by), then the footer: priority dot, key, counts,
+        assignee."
+      */}
+      <p className="card-title">{task.title}</p>
+
+      {tags.length > 0 && (
+        <div className="card-tags">
+          {tags.map((tag) => (
+            <span key={tag.label} className={`card-tag card-tag-${tag.tone}`}>
+              {tag.label}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {blocked === true && (
+        <p className="card-blocked">
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+            <rect x="4" y="11" width="16" height="9" rx="2" />
+            <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+          </svg>
+          blocked by a dependency
+        </p>
+      )}
+
+      <div className="card-foot">
+        {/* One glyph, three states, no text: P1 solid red, P2 solid amber,
+            P3 hollow. The word stays in the title attribute for screen readers. */}
+        <span
+          className={`card-dot card-dot-${task.priority}`}
+          title={`Priority ${task.priority}`}
+          aria-hidden="true"
+        />
+        <span className="visually-hidden">Priority {task.priority}</span>
+
         <button
           type="button"
           className="card-key card-open"
@@ -70,56 +110,62 @@ export function TaskCard({
           {task.key}
           <span className="visually-hidden"> — open details</span>
         </button>
-        <span className={`card-priority card-priority-${task.priority}`}>{task.priority}</span>
-      </div>
 
-      <p className="card-title">{task.title}</p>
+        {task.ready && (
+          <span className="marker marker-ready" title="Unassigned, unblocked, ready to pick up">
+            ready
+          </span>
+        )}
+        {blocked === undefined && (
+          <span
+            className="marker marker-unknown"
+            title="A dependency is outside the tasks loaded here, so this cannot be judged"
+          >
+            deps ?
+          </span>
+        )}
+        {task.dependencies.length > 0 && (
+          <span className="card-deps" title="Dependencies">
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+              <path d="M9 15 15 9M10 6l1-1a4 4 0 1 1 6 6l-1 1M14 18l-1 1a4 4 0 1 1-6-6l1-1" />
+            </svg>
+            {task.dependencies.length}
+          </span>
+        )}
 
-      <div className="card-foot">
-        <div className="card-markers">
-          {/* Server-derived (§4.5). Never recomputed here. */}
-          {task.ready && (
-            <span className="marker marker-ready" title="Unassigned, unblocked, ready to pick up">
-              ready
-            </span>
-          )}
-          {blocked === true && (
-            <span className="marker marker-blocked" title="A dependency is not finished">
-              blocked
-            </span>
-          )}
-          {blocked === undefined && (
-            <span
-              className="marker marker-unknown"
-              title="A dependency is outside the tasks loaded here, so this cannot be judged"
-            >
-              deps ?
-            </span>
-          )}
-          {task.dependencies.length > 0 && (
-            <span className="marker marker-deps" title="Dependencies">
-              {task.dependencies.length}&nbsp;dep{task.dependencies.length === 1 ? '' : 's'}
-            </span>
-          )}
-        </div>
+        <span className="card-spacer" />
 
         {assignee === undefined ? (
-          <span className="card-unassigned">unassigned</span>
+          <span className="card-unassigned" title="Unassigned" aria-label="Unassigned">
+            +
+          </span>
         ) : (
-          <span
-            className="card-avatar"
-            style={
-              colour === undefined
-                ? undefined
-                : {
-                    background: colour.background,
-                    color: colour.foreground,
-                    borderColor: colour.border,
-                  }
-            }
-            title={assignee.name}
-          >
-            {initials(assignee.name)}
+          <span className="card-who">
+            <span
+              className="card-avatar"
+              style={
+                colour === undefined
+                  ? undefined
+                  : {
+                      background: colour.background,
+                      color: colour.foreground,
+                      borderColor: colour.border,
+                    }
+              }
+              title={assignee.name}
+            >
+              {initials(assignee.name)}
+            </span>
+            {/* The badge sits on the avatar's corner, not beside it — the work
+                belongs to the person; their agent only did the writing. */}
+            {byAgent && (
+              <span className="card-bot" title={`Written by ${assignee.name}'s agent`}>
+                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+                  <rect x="4" y="8" width="16" height="12" rx="3" />
+                  <path d="M12 4v4M9 14h.01M15 14h.01" strokeLinecap="round" />
+                </svg>
+              </span>
+            )}
           </span>
         )}
       </div>

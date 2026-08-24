@@ -68,6 +68,12 @@ const WEB_ENTRY_POINTS = new Set(['main.tsx']);
  */
 const WEB_NO_MIRROR_PATTERNS: readonly { readonly pattern: RegExp; readonly reason: string }[] = [
   {
+    pattern: /^demo\/[a-z0-9-]+\.ts$/,
+    reason:
+      'static fixtures, not logic (D-032) — guarded by web/test/demo/not-in-bundle.test.ts, which ' +
+      'asserts every module has a PROD guard and that none reaches the built bundle',
+  },
+  {
     pattern: /^routes\/screens\/(?:sprints|timeline|dashboard)\/use-[a-z0-9-]+\.ts$/,
     reason: "Builder-A's screen data hooks (D-028) — React hooks, no renderer in this package",
   },

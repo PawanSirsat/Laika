@@ -1,0 +1,25 @@
+/* Marks demo data. Deliberately plain — it is a caveat, not a feature. */
+
+.demo-notice {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) 1.125rem;
+  background: var(--ambs);
+  border-bottom: 1px solid var(--ambb);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+}
+
+.demo-notice-tag {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  color: var(--amb);
+  border: 1px solid var(--ambb);
+  border-radius: var(--radius-sm);
+  padding: 0.125rem 0.3125rem;
+}
