@@ -164,7 +164,10 @@ void describe('the things the criteria forbid (AC7)', () => {
     for (const phrase of ['postgres', 'Postgres', 'PostgreSQL']) {
       assert.ok(!status.includes(phrase), 'the mockup artifact must not be reproduced');
     }
-    assert.ok(status.includes('SQLite'), 'the panel must name the database it actually uses');
+    // Case-insensitive: the criterion is that the panel names the engine it
+    // actually uses, not how it is capitalised. LAI-075 sets the status lines in
+    // mono lowercase to match design 6a, where the engine reads `postgres 16`.
+    assert.match(status, /sqlite/i, 'the panel must name the database it actually uses');
   });
 
   void test('migration and SMTP state are props, not fixtures', () => {
