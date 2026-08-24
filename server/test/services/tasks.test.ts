@@ -1,0 +1,404 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { type OrgRole } from '../../src/db/enums.ts';
+import { newId } from '../../src/db/ids.ts';
+import { eq } from 'drizzle-orm';
+import { activity, orgs, tasks, users } from '../../src/db/schema.ts';
+import { ApiError } from '../../src/errors.ts';
+import { addMember, createProject } from '../../src/services/projects.ts';
+import {
+  addTaskDependency,
+  changeStatus,
+  claimTask,
+  createTask,
+  getTask,
+  listTasks,
+  removeTaskDependency,
+  updateTask,
+} from '../../src/services/tasks.ts';
+import { freshDb, type TestDb } from '../helpers/db.ts';
+
+let t: TestDb;
+let adminId: string;
+
+function makeUser(orgRole: OrgRole): string {
+  const id = newId();
+  const now = Date.now();
+  t.db
+    .insert(users)
+    .values({
+      id,
+      email: `${id}@example.test`,
+      name: 'Person',
+      orgRole,
+      avatarColor: '#123456',
+      createdAt: new Date(now),
+      updatedAt: new Date(now),
+    })
+    .run();
+  return id;
+}
+
+function actor(userId: string): ResolvedActor {
+  const loaded = loadActor(t.db, userId);
+  if (loaded === null) throw new Error('no such user');
+  return loaded;
+}
+
+const LIST = { limit: 50, cursor: null, updatedSince: null };
+
+function newTask(title = 'Do the thing', extra: Record<string, unknown> = {}) {
+  return createTask(t.sqlite, t.db, actor(adminId), 'laika', { title, ...extra });
+}
+
+beforeEach(() => {
+  t = freshDb();
+  const now = Date.now();
+  adminId = makeUser('admin');
+  t.db
+    .insert(orgs)
+    .values({ id: newId(), name: 'Laika', ownerUserId: adminId, createdAt: now, updatedAt: now })
+    .run();
+  createProject(t.sqlite, t.db, actor(adminId), { name: 'Laika', slug: 'laika', prefix: 'LAI' });
+});
+afterEach(() => {
+  t.close();
+});
+
+describe('createTask and the display key (AC1, AC9)', () => {
+  it('numbers per project and builds the LAI-n key', () => {
+    expect(newTask('first').key).toBe('LAI-1');
+    expect(newTask('second').key).toBe('LAI-2');
+  });
+
+  it('defaults to backlog and p2', () => {
+    const task = newTask();
+    expect(task.status).toBe('backlog');
+    expect(task.priority).toBe('p2');
+  });
+
+  it('writes exactly one task.created row', () => {
+    newTask();
+    const types = t.db
+      .select()
+      .from(activity)
+      .all()
+      .map((r) => r.type);
+    expect(types.filter((x) => x === 'task.created')).toHaveLength(1);
+  });
+
+  it('refuses a viewer', () => {
+    const viewerId = makeUser('viewer');
+    expect(() => createTask(t.sqlite, t.db, actor(viewerId), 'laika', { title: 'nope' })).toThrow(
+      ApiError,
+    );
+  });
+});
+
+describe('readiness is derived (AC7)', () => {
+  it('is true for an unassigned backlog or todo task with no dependencies', () => {
+    expect(newTask('a').ready).toBe(true);
+    expect(newTask('b', { status: 'todo' }).ready).toBe(true);
+  });
+
+  it('is false once assigned, and false while a dependency is unfinished', () => {
+    expect(newTask('c', { assignee_id: adminId }).ready).toBe(false);
+
+    const blocker = newTask('blocker');
+    const blocked = newTask('blocked');
+    addTaskDependency(t.sqlite, t.db, actor(adminId), blocked.id, blocker.id);
+
+    expect(getTask(t.db, actor(adminId), blocked.id).ready).toBe(false);
+
+    changeStatus(t.db, actor(adminId), blocker.id, 'in_progress');
+    changeStatus(t.db, actor(adminId), blocker.id, 'review');
+    changeStatus(t.db, actor(adminId), blocker.id, 'done');
+
+    expect(getTask(t.db, actor(adminId), blocked.id).ready).toBe(true);
+  });
+
+  it('filters by ready in both directions', () => {
+    newTask('open');
+    newTask('taken', { assignee_id: adminId });
+
+    const ready = listTasks(t.db, actor(adminId), 'laika', { ...LIST, ready: true });
+    const notReady = listTasks(t.db, actor(adminId), 'laika', { ...LIST, ready: false });
+
+    expect(ready.map((x) => x.title)).toEqual(['open']);
+    expect(notReady.map((x) => x.title)).toEqual(['taken']);
+  });
+});
+
+describe('discovered_from is provenance, not a blocker (AC6)', () => {
+  it('lets a discovered task be worked while its parent is open', () => {
+    const parent = newTask('parent');
+    const child = newTask('discovered while doing parent', { discovered_from: parent.id });
+
+    expect(child.discovered_from).toBe(parent.id);
+    // The parent is still `backlog`, and the child is ready anyway.
+    expect(getTask(t.db, actor(adminId), parent.id).status).toBe('backlog');
+    expect(child.ready).toBe(true);
+    expect(child.dependencies).toEqual([]);
+  });
+});
+
+describe('claim is a compare-and-swap (AC3)', () => {
+  it('assigns and moves to in_progress', () => {
+    const task = newTask();
+    const claimed = claimTask(t.sqlite, t.db, actor(adminId), task.id);
+
+    expect(claimed.assignee_id).toBe(adminId);
+    expect(claimed.status).toBe('in_progress');
+  });
+
+  it('tells a second claimant who holds it', () => {
+    const task = newTask();
+    const otherId = makeUser('admin');
+    claimTask(t.sqlite, t.db, actor(adminId), task.id);
+
+    try {
+      claimTask(t.sqlite, t.db, actor(otherId), task.id);
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as ApiError).code).toBe('conflict');
+      // "conflict" alone does not tell an agent what to do next.
+      expect((err as ApiError).details).toMatchObject({
+        assignee_id: adminId,
+        status: 'in_progress',
+      });
+    }
+  });
+
+  it('lets exactly one of many simultaneous claimants win', () => {
+    const task = newTask();
+    const claimants = Array.from({ length: 6 }, () => makeUser('admin'));
+
+    const outcomes = claimants.map((id) => {
+      try {
+        claimTask(t.sqlite, t.db, actor(id), task.id);
+        return 'won';
+      } catch (err) {
+        return err instanceof ApiError && err.code === 'conflict' ? 'conflict' : 'unexpected';
+      }
+    });
+
+    expect(outcomes.filter((o) => o === 'won')).toHaveLength(1);
+    expect(outcomes.filter((o) => o === 'conflict')).toHaveLength(5);
+  });
+});
+
+describe('status transitions (AC4)', () => {
+  it('follows the §5 path and records each move once', () => {
+    const task = newTask();
+
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress');
+    changeStatus(t.db, actor(adminId), task.id, 'review');
+    const done = changeStatus(t.db, actor(adminId), task.id, 'done');
+
+    expect(done.status).toBe('done');
+
+    const changes = t.db
+      .select()
+      .from(activity)
+      .all()
+      .filter((r) => r.type === 'task.status_changed');
+    expect(changes).toHaveLength(4);
+  });
+
+  it('refuses an illegal jump', () => {
+    const task = newTask();
+    expect(() => changeStatus(t.db, actor(adminId), task.id, 'done')).toThrow(ApiError);
+  });
+
+  it('refuses a no-op transition', () => {
+    const task = newTask();
+    expect(() => changeStatus(t.db, actor(adminId), task.id, 'backlog')).toThrow(ApiError);
+  });
+
+  it('stamps completed_at only on done', () => {
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress');
+    changeStatus(t.db, actor(adminId), task.id, 'review');
+    changeStatus(t.db, actor(adminId), task.id, 'done');
+
+    const row = t.db.select().from(tasks).where(eq(tasks.id, task.id)).get();
+    expect(row?.completedAt).not.toBeNull();
+  });
+});
+
+describe('sending to review needs the assignee, a lead, or an admin (§5)', () => {
+  /** An org member who belongs to the project — no implicit lead. */
+  function projectMember(role: 'member' | 'lead' = 'member'): string {
+    const id = makeUser('member');
+    addMember(t.db, actor(adminId), 'laika', id, role);
+    return id;
+  }
+
+  it('allows the assignee', () => {
+    const memberId = projectMember();
+    const task = newTask('theirs');
+
+    updateTask(t.db, actor(adminId), task.id, { assignee_id: memberId });
+    changeStatus(t.db, actor(memberId), task.id, 'in_progress');
+
+    expect(changeStatus(t.db, actor(memberId), task.id, 'review').status).toBe('review');
+  });
+
+  it('allows a project lead who is not the assignee', () => {
+    // The task text said "assignee, Admin or Owner" and omitted lead; §5 includes
+    // it, and the spec wins (D-011).
+    const assigneeId = projectMember();
+    const leadId = projectMember('lead');
+    const task = newTask('theirs');
+
+    updateTask(t.db, actor(adminId), task.id, { assignee_id: assigneeId });
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress');
+
+    expect(changeStatus(t.db, actor(leadId), task.id, 'review').status).toBe('review');
+  });
+
+  it('refuses a plain member who is not the assignee', () => {
+    const assigneeId = projectMember();
+    const bystanderId = projectMember();
+    const task = newTask('theirs');
+
+    updateTask(t.db, actor(adminId), task.id, { assignee_id: assigneeId });
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress');
+
+    expect(() => changeStatus(t.db, actor(bystanderId), task.id, 'review')).toThrow(
+      /Only the assignee/,
+    );
+  });
+});
+
+describe('dependencies (AC5)', () => {
+  it('adds and removes, each with its own verb', () => {
+    const a = newTask('a');
+    const b = newTask('b');
+
+    addTaskDependency(t.sqlite, t.db, actor(adminId), a.id, b.id);
+    expect(getTask(t.db, actor(adminId), a.id).dependencies).toEqual([b.id]);
+
+    removeTaskDependency(t.db, actor(adminId), a.id, b.id);
+    expect(getTask(t.db, actor(adminId), a.id).dependencies).toEqual([]);
+
+    const types = t.db
+      .select()
+      .from(activity)
+      .all()
+      .map((r) => r.type);
+    expect(types).toContain('task.dependency_added');
+    expect(types).toContain('task.dependency_removed');
+  });
+
+  it('rejects a self-link and a cycle as unprocessable', () => {
+    const a = newTask('a');
+    const b = newTask('b');
+
+    expect(() => addTaskDependency(t.sqlite, t.db, actor(adminId), a.id, a.id)).toThrow(ApiError);
+
+    addTaskDependency(t.sqlite, t.db, actor(adminId), a.id, b.id);
+    try {
+      addTaskDependency(t.sqlite, t.db, actor(adminId), b.id, a.id);
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as ApiError).code).toBe('unprocessable');
+      expect((err as ApiError).details).toMatchObject({ reason: 'cycle' });
+    }
+  });
+
+  it('rejects a duplicate as conflict', () => {
+    const a = newTask('a');
+    const b = newTask('b');
+    addTaskDependency(t.sqlite, t.db, actor(adminId), a.id, b.id);
+
+    try {
+      addTaskDependency(t.sqlite, t.db, actor(adminId), a.id, b.id);
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as ApiError).code).toBe('conflict');
+    }
+  });
+
+  it('404s a dependency on a task that does not exist', () => {
+    const a = newTask('a');
+    expect(() => addTaskDependency(t.sqlite, t.db, actor(adminId), a.id, newId())).toThrow(
+      /No task with id/,
+    );
+  });
+
+  it('404s removing a link that was never there', () => {
+    const a = newTask('a');
+    const b = newTask('b');
+    expect(() => removeTaskDependency(t.db, actor(adminId), a.id, b.id)).toThrow(/does not exist/);
+  });
+});
+
+describe('updateTask (AC2)', () => {
+  it('edits fields and writes task.updated', () => {
+    const task = newTask();
+    const updated = updateTask(t.db, actor(adminId), task.id, { title: 'Renamed', priority: 'p1' });
+
+    expect(updated.title).toBe('Renamed');
+    expect(updated.priority).toBe('p1');
+    expect(
+      t.db
+        .select()
+        .from(activity)
+        .all()
+        .map((r) => r.type),
+    ).toContain('task.updated');
+  });
+
+  it('records a reassignment as task.assigned, not a status change (§5)', () => {
+    const memberId = makeUser('member');
+    const task = newTask();
+
+    updateTask(t.db, actor(adminId), task.id, { assignee_id: memberId });
+
+    const types = t.db
+      .select()
+      .from(activity)
+      .all()
+      .map((r) => r.type);
+    expect(types).toContain('task.assigned');
+    expect(types).not.toContain('task.status_changed');
+  });
+
+  it('unassigns with an explicit null', () => {
+    const task = newTask('x', { assignee_id: adminId });
+    const updated = updateTask(t.db, actor(adminId), task.id, { assignee_id: null });
+
+    expect(updated.assignee_id).toBeNull();
+  });
+
+  it('writes no activity when nothing changed', () => {
+    const task = newTask();
+    const before = t.db.select().from(activity).all().length;
+
+    updateTask(t.db, actor(adminId), task.id, {});
+
+    expect(t.db.select().from(activity).all()).toHaveLength(before);
+  });
+});
+
+describe('listing and filters (AC1)', () => {
+  it('filters by status, priority and assignee', () => {
+    newTask('a', { priority: 'p1' });
+    newTask('b', { status: 'todo' });
+    newTask('c', { assignee_id: adminId });
+
+    expect(listTasks(t.db, actor(adminId), 'laika', { ...LIST, priority: 'p1' })).toHaveLength(1);
+    expect(listTasks(t.db, actor(adminId), 'laika', { ...LIST, status: 'todo' })).toHaveLength(1);
+    expect(listTasks(t.db, actor(adminId), 'laika', { ...LIST, assignee: adminId })).toHaveLength(
+      1,
+    );
+    expect(listTasks(t.db, actor(adminId), 'laika', { ...LIST, assignee: 'none' })).toHaveLength(2);
+  });
+
+  it('refuses a non-member', () => {
+    const outsider = makeUser('member');
+    expect(() => listTasks(t.db, actor(outsider), 'laika', LIST)).toThrow(ApiError);
+  });
+});
