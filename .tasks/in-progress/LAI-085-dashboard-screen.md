@@ -6,7 +6,8 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-083]
 discovered-from:
-status: backlog
+started: 2026-08-24T19:57:52Z
+status: in-progress
 ---
 
 ## Goal
