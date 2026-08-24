@@ -2,11 +2,12 @@
 id: LAI-105
 title: '`LAIKA_DISABLE_INVITE_ONLY` is documented in §11.7 and read by nothing'
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-032]
 discovered-from: LAI-032
-status: backlog
+status: in-progress
+started: 2026-08-24T08:26:26+05:30
 ---
 
 ## Goal
