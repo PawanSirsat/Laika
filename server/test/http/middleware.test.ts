@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
+import { redactPath } from '../../src/http/middleware/logger.ts';
 import { testApp } from '../helpers/app.ts';
 
 /** Mounts an echo route on a real app so the whole chain runs in front of it. */
@@ -112,5 +113,33 @@ describe('status-to-code mapping for errors raised inside Hono', () => {
       expect(res.status, status).toBe(Number(status));
       expect(body.error.code, status).toBe(code);
     }
+  });
+});
+
+describe('redactPath — credentials in URLs (LAI-071)', () => {
+  it('replaces the invite token with its parameter name', () => {
+    // §6.4 puts the token in the path, and only its SHA-256 is stored (§4.11).
+    // Writing the plaintext into the access log would undo that, in a file that
+    // outlives the request and is routinely shipped somewhere else.
+    expect(redactPath('/api/v1/invites/xJ8_qA-token')).toBe('/api/v1/invites/:token');
+  });
+
+  it('leaves the paths that carry no secret readable', () => {
+    // A redaction that swallowed these would cost real diagnostic information
+    // and protect nothing.
+    for (const path of [
+      '/api/v1/invites',
+      '/api/v1/invites/',
+      '/api/v1/invites/accept',
+      '/api/v1/users',
+      '/api/v1/projects/laika/tasks',
+      '/',
+    ]) {
+      expect(redactPath(path)).toBe(path);
+    }
+  });
+
+  it('does not redact a deeper path that merely starts with the prefix', () => {
+    expect(redactPath('/api/v1/invites/abc/extra')).toBe('/api/v1/invites/abc/extra');
   });
 });

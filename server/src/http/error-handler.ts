@@ -1,3 +1,4 @@
+import { APIError } from 'better-auth/api';
 import { type Context, type ErrorHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { type Logger } from '../log.ts';
@@ -65,6 +66,13 @@ function respond(c: Context<AppEnv>, body: ErrorBody, status: number): Response 
  *  - an unhandled error never leaks its message, stack or cause to the client;
  *  - the `request_id` that *does* go to the client on a 5xx is the same one in
  *    the log line, so a user quoting it is quoting something findable (§13.2).
+ *
+ * Two frameworks raise exceptions inside this process and each gets a branch.
+ * Hono's `HTTPException` is one; better-auth's `APIError` is the other, and it
+ * reaches here whenever a route calls `auth.api.*` directly — `POST /setup` and
+ * `POST /invites/accept` both do. Without that branch a refused invite or a
+ * duplicate email is reported as `internal`, which tells the caller their own
+ * mistake is a server fault and buries a 403 in the 5xx rate (LAI-071).
  */
 export function createErrorHandler(log: Logger): ErrorHandler<AppEnv> {
   return (err, c) => {
@@ -79,6 +87,28 @@ export function createErrorHandler(log: Logger): ErrorHandler<AppEnv> {
         message: err.message,
       });
       return respond(c, err.toBody(), err.status);
+    }
+
+    if (err instanceof APIError) {
+      const code = codeForStatus(err.statusCode);
+      const message = err.message === '' ? DEFAULT_MESSAGE[code] : err.message;
+      log.warn('http.error', {
+        request_id: requestId,
+        code,
+        status: err.statusCode,
+        message,
+      });
+
+      // better-auth's own code travels in `details`, never in `code`: §6.3's
+      // vocabulary is closed, and a client still wants to tell `invite_invalid`
+      // from `invite_required` without reading prose.
+      const details = authErrorCode(err);
+
+      return respond(
+        c,
+        new ApiError(code, message, details === null ? null : { auth_code: details }).toBody(),
+        err.statusCode,
+      );
     }
 
     if (err instanceof HTTPException) {
@@ -115,4 +145,10 @@ export function createErrorHandler(log: Logger): ErrorHandler<AppEnv> {
 
     return respond(c, body, ERROR_STATUS.internal);
   };
+}
+
+/** better-auth attaches its own machine-readable code to the response body. */
+function authErrorCode(err: APIError): string | null {
+  const code = (err.body as { code?: unknown } | undefined)?.code;
+  return typeof code === 'string' ? code : null;
 }
