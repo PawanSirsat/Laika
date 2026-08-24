@@ -1,7 +1,15 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as activityModule from '../../src/db/activity.ts';
-import { appendActivity, listActivity, readPayload } from '../../src/db/activity.ts';
+import {
+  appendActivity,
+  listActivity,
+  readActivityAfter,
+  readPayload,
+} from '../../src/db/activity.ts';
+import { MIGRATIONS_FOLDER } from '../../src/db/migrate.ts';
 import { newId } from '../../src/db/ids.ts';
 import { expectSqliteError, freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
@@ -308,5 +316,63 @@ describe('org.created (LAI-044, for LAI-009)', () => {
 
     expect(row.type).toBe('org.created');
     expect(listActivity(t.db, { orgId: s.orgId })).toHaveLength(1);
+  });
+});
+
+describe('rebuilding the table does not renumber the SSE cursor (LAI-110)', () => {
+  it('preserves rowid across the INSERT…SELECT a CHECK change requires', () => {
+    // Every change to `activity`'s vocabulary rebuilds the table, and `rowid` is
+    // what the SSE stream (§11.5) and the activity feed use as their monotonic
+    // cursor. Migration 0008 says in a comment that the rebuild leaves the values
+    // alone; this is that claim, asserted rather than believed.
+    //
+    // It holds because the INSERT…SELECT has no ORDER BY and no WHERE, so SQLite
+    // scans in rowid order, and `activity` has no deletions to leave gaps.
+    //
+    // The timestamps ascend with insert order, and the assertion pairs each seq
+    // with the row it belongs to. An `ORDER BY created_at DESC` slipped into a
+    // future rebuild therefore hands seq 1 to the *newest* row and this fails.
+    //
+    // Getting this test able to fail took two attempts: with equal timestamps the
+    // clause is a no-op, and with descending ones a `DESC` sort reproduces the
+    // scan order exactly. A rowid assertion that does not pin *which* row holds
+    // each id proves nothing at all.
+    for (let i = 0; i < 5; i++) {
+      appendActivity(t.db, {
+        orgId: s.orgId,
+        projectId: s.projectId,
+        actorId: s.userId,
+        actorKind: 'user',
+        type: 'comment.added',
+        payload: { n: i },
+        now: 10_000 + i * 1000,
+      });
+    }
+
+    const before = readActivityAfter(t.db, 0, 100).map(
+      (row) => `${String(row.seq)}@${String(row.createdAt)}`,
+    );
+    expect(before).toEqual(['1@10000', '2@11000', '3@12000', '4@13000', '5@14000']);
+
+    const migration = readFileSync(
+      join(MIGRATIONS_FOLDER, '0008_comment_activity_verbs.sql'),
+      'utf8',
+    );
+
+    for (const statement of migration.split('--> statement-breakpoint')) {
+      const trimmed = statement.trim();
+      if (trimmed === '') continue;
+      // The triggers already exist on this database; re-creating them is the one
+      // part of the file that legitimately fails on a replay.
+      try {
+        t.sqlite.exec(trimmed);
+      } catch (err) {
+        expect(String(err)).toMatch(/already exists/);
+      }
+    }
+
+    expect(
+      readActivityAfter(t.db, 0, 100).map((row) => `${String(row.seq)}@${String(row.createdAt)}`),
+    ).toEqual(before);
   });
 });

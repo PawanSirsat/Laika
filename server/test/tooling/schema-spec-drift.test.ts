@@ -218,7 +218,15 @@ const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([
 const ACTIVITY_TYPE_EXEMPTIONS = new Map<string, string>([
   [
     'task.dependency_removed',
-    'in the enum since LAI-011 and missing from §4.8’s list; §4.8 says the constraint wins and the list is the bug — LAI-114 fixes the doc',
+    'in the enum since LAI-011, missing from §4.8’s list — LAI-117 fixes the doc',
+  ],
+  [
+    'comment.edited',
+    'added by LAI-110 with migration 0008; §4.8’s list is PM’s file — LAI-117 fixes the doc',
+  ],
+  [
+    'comment.deleted',
+    'added by LAI-110 with migration 0008; §4.8’s list is PM’s file — LAI-117 fixes the doc',
   ],
 ]);
 

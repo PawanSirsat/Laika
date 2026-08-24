@@ -50,8 +50,9 @@ export type ActorKind = (typeof ACTOR_KINDS)[number];
  * `activity` table's CHECK constraint.
  *
  * `project.updated`, `project.archived` and `member.removed` were added by
- * LAI-010; `task.dependency_removed` by LAI-011. Each task needs a verb for
- * every mutation it performs (§4.8: this table is the audit trail).
+ * LAI-010; `task.dependency_removed` by LAI-011; `comment.edited` and
+ * `comment.deleted` by LAI-110. Each task needs a verb for every mutation it
+ * performs (§4.8: this table is the audit trail).
  */
 export const ACTIVITY_TYPES = [
   'org.created',
@@ -62,6 +63,8 @@ export const ACTIVITY_TYPES = [
   'task.dependency_added',
   'task.dependency_removed',
   'comment.added',
+  'comment.edited',
+  'comment.deleted',
   'project.created',
   'project.updated',
   'project.archived',
