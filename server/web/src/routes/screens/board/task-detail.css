@@ -1,0 +1,320 @@
+/* The task detail slide-over (LAI-056). Tokens only. */
+
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--bd2);
+  z-index: 20;
+}
+
+.panel {
+  position: fixed;
+  inset: 0 0 0 auto;
+  width: min(34rem, 100vw);
+  z-index: 21;
+  background: var(--page);
+  border-left: 1px solid var(--bd);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+}
+
+.panel:focus {
+  outline: none;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--bd);
+  background: var(--card);
+}
+
+.panel-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--tx2);
+}
+
+.panel-title {
+  font-size: var(--text-md);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  margin: var(--space-1) 0 0;
+  line-height: 1.35;
+}
+
+.panel-close {
+  font: inherit;
+  font-size: var(--text-lg);
+  line-height: 1;
+  color: var(--tx2);
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-2);
+  cursor: pointer;
+  flex: none;
+}
+
+.panel-close:focus-visible,
+.panel-control select:focus-visible,
+.panel-textarea:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.panel-section {
+  margin-bottom: var(--space-5);
+}
+
+.panel-section-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tx2);
+  margin: 0 0 var(--space-2);
+}
+
+.panel-count {
+  font-weight: var(--weight-normal);
+  color: var(--tx3);
+}
+
+.panel-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panel-control select {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+}
+
+.panel-priority {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+.panel-priority-p1 {
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+}
+.panel-priority-p2 {
+  color: var(--amb);
+  background: var(--ambs);
+  border: 1px solid var(--ambb);
+}
+.panel-priority-p3 {
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+}
+
+/* Purple is the design's agent colour, same as the to-do lane. */
+.marker-agent {
+  color: var(--pur);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+}
+
+.panel-assignee {
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  margin-left: auto;
+}
+
+.panel-alert {
+  font-size: var(--text-sm);
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0 0;
+}
+
+.panel-muted {
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  margin: 0;
+}
+
+.panel-description {
+  font-size: var(--text-sm);
+  color: var(--tx);
+  margin: 0;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.panel-facts {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+
+.panel-facts > div {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-1) 0;
+}
+
+.panel-facts dt {
+  color: var(--tx2);
+  min-width: 9rem;
+}
+
+.panel-facts dd {
+  margin: 0;
+  color: var(--tx);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.panel-deps,
+.panel-comments,
+.panel-activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.panel-dep {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--bd);
+  font-size: var(--text-sm);
+}
+
+.panel-dep:last-child {
+  border-bottom: none;
+}
+
+/* A finished blocker recedes; an open one does not. */
+.panel-dep-done .panel-dep-title {
+  color: var(--tx3);
+  text-decoration: line-through;
+}
+
+.panel-dep-title {
+  color: var(--tx2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel-comment {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.panel-comment-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-1);
+}
+
+.panel-comment-author {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.panel-edited {
+  font-size: var(--text-xs);
+}
+
+.panel-time {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.panel-comment-body {
+  font-size: var(--text-sm);
+  color: var(--tx);
+  margin: 0;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.panel-composer {
+  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+}
+
+.panel-textarea {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.panel-event {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--bd);
+  font-size: var(--text-sm);
+}
+
+.panel-event:last-child {
+  border-bottom: none;
+}
+
+.panel-event-who {
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.panel-event-what {
+  color: var(--tx2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    transition: none;
+  }
+}

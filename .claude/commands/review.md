@@ -48,7 +48,14 @@ Check, in this order:
   side by side rather than from memory.
 - **Signed out.** Open the pre-auth routes in a **fresh context**. A session you
   are already holding hides exactly the class of bug LAI-062 was.
-- **Both themes**, every time. A component that only works in light is not done.
+- **Both themes**, every time, **driven through the real control** — click the
+  Light/Dark radios, never `documentElement.classList.toggle('dk')`. Flipping the
+  class changes CSS variables without re-rendering React, so anything that
+  computes a colour **in JavaScript** keeps the old palette and the screenshot
+  looks correct. That is precisely the bug LAI-059 found: `useTheme` held state
+  per component, and dark mode rendered light-theme avatars — pale chips with
+  dark text — on every screen with a person on it. A class-toggle check would
+  have passed. A component that only works in light is not done.
 - **No fixture data.** Grep the diff for `Mira`, `Kellner`, `Sana`, `Verma`,
   `kvelld.internal`, `13/34`, `laika-core`, `v0.4`. Any hardcoded number, name or
   count is a defect even when it looks right.

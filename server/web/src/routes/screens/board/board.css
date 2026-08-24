@@ -387,3 +387,30 @@
     grid-template-columns: repeat(5, minmax(12rem, 1fr));
   }
 }
+
+/* Opens the detail panel. A button so it is focusable and keyboard-activatable;
+   the card itself is draggable, and a drag that also fired a click would open
+   the panel on every move. */
+.card-open {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--tx2);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--bd2);
+  text-underline-offset: 2px;
+}
+
+.card-open:hover {
+  color: var(--acc);
+}
+
+.card-open:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}

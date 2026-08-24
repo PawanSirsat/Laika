@@ -4,6 +4,7 @@ import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './board/ListView.tsx';
+import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { useBoard } from '../../api/use-board.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
@@ -38,6 +39,7 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
+  const [openTaskId, setOpenTaskId] = useState<string | undefined>(undefined);
 
   const view: BoardViewMode = params.get('view') === 'list' ? 'list' : 'kanban';
   const priority = (params.get('priority') ?? undefined) as TaskPriority | undefined;
@@ -83,7 +85,7 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
 
     listMembers(slug, controller.signal)
       .then((page) => {
-        setMembers(new Map(page.data.map((m) => [m.user_id, m])));
+        setMembers(new Map(page.members.map((m) => [m.user_id, m])));
       })
       .catch(() => {
         setMembers(new Map());
@@ -95,6 +97,10 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
   }, [slug]);
 
   const board = useBoard(slug, filter);
+
+  // Read from the board's own list so the panel re-renders after a move —
+  // holding a copy would show a stale status the moment the drag succeeded.
+  const openTask = openTaskId === undefined ? undefined : board.byId.get(openTaskId);
 
   const setParam = (key: string, value: string | undefined): void => {
     const next = new URLSearchParams(params);
@@ -228,6 +234,7 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
           byId={board.byId}
           members={members}
           filtered={filtered}
+          onOpen={setOpenTaskId}
         />
       ) : (
         <KanbanView
@@ -240,6 +247,26 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
             void board.move(id, to);
           }}
           filtered={filtered}
+          onOpen={setOpenTaskId}
+        />
+      )}
+
+      {/* Reuses `board.move` — the same call the drag uses, so a rejected
+          transition behaves identically in both places (LAI-056). */}
+      {openTask !== undefined && (
+        <TaskDetailPanel
+          slug={slug}
+          task={openTask}
+          byId={board.byId}
+          members={members}
+          moving={board.movingId === openTask.id}
+          moveError={board.moveError}
+          onMove={(id, to) => {
+            void board.move(id, to);
+          }}
+          onClose={() => {
+            setOpenTaskId(undefined);
+          }}
         />
       )}
     </div>

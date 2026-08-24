@@ -11,6 +11,7 @@ export interface TaskCardProps {
   readonly moving: boolean;
   readonly onDragStart: (taskId: string) => void;
   readonly onDragEnd: () => void;
+  readonly onOpen: (taskId: string) => void;
 }
 
 function initials(name: string): string {
@@ -38,6 +39,7 @@ export function TaskCard({
   moving,
   onDragStart,
   onDragEnd,
+  onOpen,
 }: TaskCardProps) {
   const blocked = blockedState(task, byId);
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -56,7 +58,18 @@ export function TaskCard({
       onDragEnd={onDragEnd}
     >
       <div className="card-head">
-        <span className="card-key">{task.key}</span>
+        {/* A button, not a click handler on the card: the card is draggable, and
+            a drag that also fires a click would open the panel every time. */}
+        <button
+          type="button"
+          className="card-key card-open"
+          onClick={() => {
+            onOpen(task.id);
+          }}
+        >
+          {task.key}
+          <span className="visually-hidden"> — open details</span>
+        </button>
         <span className={`card-priority card-priority-${task.priority}`}>{task.priority}</span>
       </div>
 

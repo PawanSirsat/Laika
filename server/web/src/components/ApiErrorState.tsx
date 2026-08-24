@@ -11,6 +11,16 @@ export interface ApiErrorStateProps {
   readonly scope?: 'organisation' | 'project';
   /** Omit when retrying cannot help. Ignored for `forbidden`. */
   readonly onRetry?: (() => void) | undefined;
+  /**
+   * What the caller was doing, for the headline: "Could not {verb} {resource}".
+   *
+   * Defaults to `load` because most callers are rendering a failed read. Pass
+   * the real verb for a failed **write** — a role change refused with 409 that
+   * says "Could not load this project's members" is untrue on its face, since
+   * the members are on screen directly beneath it, and it hides the one thing
+   * the reader needs to know: their change did not happen.
+   */
+  readonly verb?: string;
 }
 
 /**
@@ -37,6 +47,7 @@ export function ApiErrorState({
   requiredRole = 'member',
   scope = 'project',
   onRetry,
+  verb = 'load',
 }: ApiErrorStateProps) {
   if (error instanceof ApiError && error.code === 'forbidden') {
     // Deliberately no retry: permission is not a transient condition, and a
@@ -57,7 +68,7 @@ export function ApiErrorState({
   if (error instanceof ApiError) {
     return (
       <ErrorState
-        headline={`Could not load ${resource}`}
+        headline={`Could not ${verb} ${resource}`}
         body={error.message}
         {...(error.requestId === undefined ? {} : { requestId: error.requestId })}
         // Only where retrying could plausibly work — a 422 will fail again.
@@ -68,7 +79,7 @@ export function ApiErrorState({
 
   return (
     <ErrorState
-      headline={`Could not load ${resource}`}
+      headline={`Could not ${verb} ${resource}`}
       body="Something went wrong that we did not anticipate."
       {...(onRetry === undefined ? {} : { onRetry })}
     />

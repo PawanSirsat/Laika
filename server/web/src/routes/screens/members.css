@@ -1,0 +1,233 @@
+/* Project members (LAI-059). Tokens only. */
+
+.members {
+  padding: var(--space-4) var(--space-5) var(--space-6);
+  max-width: 46rem;
+}
+
+.members-head {
+  margin-bottom: var(--space-4);
+}
+
+.members-sub {
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  margin: 0;
+}
+
+.members-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.member {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--bd);
+}
+
+.member:last-child {
+  border-bottom: none;
+}
+
+.member-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  flex: none;
+}
+
+.member-who {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.member-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.member-you {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--acc);
+  background: var(--accs);
+  border: 1px solid var(--accb);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+.member-email {
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.member-role select {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--tx);
+  background: var(--page);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-2);
+}
+
+.member-role select:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+/* Shown to a caller who may not change roles — text, not a disabled control. */
+.member-role-static {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+.members-note {
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  margin: var(--space-4) 0 0;
+  max-width: 52ch;
+  line-height: 1.5;
+}
+
+.project-card-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Inline remove confirmation (LAI-059). Two clicks rather than a modal: one
+   yes/no question does not justify a focus trap, and removal cannot be undone
+   from this screen until adding exists (LAI-060). */
+.member-confirm {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.member-confirm-ask {
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  white-space: nowrap;
+}
+
+/* Add-member picker (LAI-059, unblocked by LAI-060). */
+.members-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.member-add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.member-add-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.member-add-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.member-add-filter {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--tx);
+  background: var(--page);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+}
+
+.member-add-filter:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.member-add-note,
+.member-add-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--tx2);
+}
+
+.member-add-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 15rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-add-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.member-add-option:hover {
+  background: var(--tub);
+}
+
+/* The radio keeps its native focus ring, which is why it is not hidden. */
+.member-add-option:focus-within {
+  background: var(--accs);
+}
+
+.member-add-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
