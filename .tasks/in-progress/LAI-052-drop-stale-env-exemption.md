@@ -2,11 +2,12 @@
 id: LAI-052
 title: 'master is red — remove the stale DOCUMENTED_BUT_UNREAD entry'
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-109
-status: backlog
+status: in-progress
+started: 2026-08-24T08:47:19+05:30
 ---
 
 ## Goal
