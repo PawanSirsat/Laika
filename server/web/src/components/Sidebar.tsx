@@ -81,7 +81,7 @@ export function Sidebar({
         )}
       </div>
 
-      {NAV_GROUPS.map((group) => (
+      {NAV_GROUPS.filter((group) => routesInGroup(group).length > 0).map((group) => (
         <div key={group} className="sidebar-group">
           <h2 className="sidebar-group-title" id={`nav-${group}`}>
             {group}

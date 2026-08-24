@@ -15,7 +15,13 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
-import { isShipped, navRoutes, ROUTES } from '../../src/routes/route-table.ts';
+import {
+  isShipped,
+  NAV_GROUPS,
+  navRoutes,
+  ROUTES,
+  routesInGroup,
+} from '../../src/routes/route-table.ts';
 import { code } from '../helpers/code.ts';
 
 /** Paths `AppShell` actually renders a component for. */
@@ -87,6 +93,23 @@ void describe('the sidebar offers nothing that does not exist', () => {
       navRoutes().map((r) => r.label),
       ['Board', 'Sprints', 'Timeline', 'Projects', 'Dashboard'],
     );
+  });
+
+  void test('a group with nothing in it is not rendered', async () => {
+    // Hiding routes emptied `SETTINGS` — the sidebar drew the heading with
+    // nothing under it, which is a smaller version of the same lie: a section
+    // that promises contents it does not have.
+    const sidebar = code(
+      await readFile(new URL('../../src/components/Sidebar.tsx', import.meta.url), 'utf8'),
+    );
+    assert.match(
+      sidebar,
+      /NAV_GROUPS\.filter\([\s\S]*?routesInGroup\(group\)\.length > 0/,
+      'the sidebar must skip groups with no shipped routes',
+    );
+
+    const empty = NAV_GROUPS.filter((g) => routesInGroup(g).length === 0);
+    assert.deepEqual(empty, ['SETTINGS'], 'SETTINGS is empty today — if that changes, say so here');
   });
 
   void test('the screens Builder-A owns are registered and routed', () => {
