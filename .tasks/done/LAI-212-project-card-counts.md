@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p2
 depends-on: [LAI-053]
 discovered-from: LAI-076
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -35,3 +35,13 @@ is additive rather than a rework.
 **Do not fetch each project's tasks to count them.** That was ruled out in
 LAI-076 and the reason has not changed: it is a defect at any real number of
 projects.
+
+## Withdrawn as a duplicate — builder-b, 2026-08-25
+
+**LAI-046 is the same work**, also `discovered-from: LAI-076`, filed by PM with
+more detail than this one — it records that LAI-053 has landed, and it specifies
+that the blocked count is **tasks, not edges**, which this file did not.
+
+I filed this one from the LAI-076 review notes without checking whether PM had
+already filed it. CLAUDE.md §3: check before filing, first filing wins. Building
+LAI-046.

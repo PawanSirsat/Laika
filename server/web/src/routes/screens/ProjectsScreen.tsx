@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
+import { ProjectStats } from './ProjectStats.tsx';
+import { useTheme } from '../../theme/use-theme.ts';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { Button } from '../../components/forms/Button.tsx';
@@ -29,6 +31,7 @@ export interface ProjectsScreenProps {
  * second thing to keep in sync.
  */
 export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
+  const { theme } = useTheme();
   const list = useProjects();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -252,13 +255,9 @@ export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
                     <p className="project-card-desc">{project.description}</p>
                   )}
 
-                  {/*
-                    The design puts a progress bar, task counts, a blocked count
-                    and last-activity here. `GET /projects` returns none of them
-                    (LAI-053), and counting them per card is one request per
-                    project — a defect at any real number of projects. Absent
-                    rather than fabricated; the layout degrades to this.
-                  */}
+                  {/* Served with the list by LAI-053 — one request for the
+                      page, not one per card. */}
+                  <ProjectStats project={project} theme={theme} />
 
                   <footer className="project-card-foot">
                     <code className="project-key">{project.prefix}-1</code>

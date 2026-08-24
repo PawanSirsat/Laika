@@ -34,6 +34,31 @@ export interface Project {
   readonly archived_at: number | null;
   readonly created_at: number;
   readonly updated_at: number;
+  /** Per-status task counts for the whole page, from LAI-053. */
+  readonly task_counts: Readonly<Record<TaskStatusKey, number>>;
+  /**
+   * Tasks that cannot start, **not** dependency edges — one task blocked by
+   * three things is one blocked task. Server-computed; never re-derived here.
+   */
+  readonly blocked_count: number;
+  readonly member_count: number;
+  /**
+   * Enough to draw a face and a name, and deliberately no more: the API sends
+   * no email for a member here, and none should be asked for.
+   */
+  readonly members: readonly ProjectMember[];
+  /**
+   * Newest activity row, not `updated_at` — a project with a week of task
+   * activity and no settings edit is not untouched.
+   */
+  readonly last_activity_at: number | null;
+}
+
+export type TaskStatusKey = 'backlog' | 'todo' | 'in_progress' | 'review' | 'done' | 'cancelled';
+
+export interface ProjectMember {
+  readonly user_id: string;
+  readonly name: string;
 }
 
 export interface Tombstone {
