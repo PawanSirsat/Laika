@@ -3,7 +3,7 @@ id: LAI-106
 title: Wire FirstBootScreen to POST /api/v1/setup
 area: web
 assignee: unclaimed
-priority: p2
+priority: p1
 depends-on: [LAI-009]
 discovered-from: LAI-009
 status: backlog
@@ -62,3 +62,29 @@ add an org setting — do not let it be silently ignored, which is the failure m
 ("Laika Core" → `LC`). Ask for it only if the UI wants to let people override it.
 
 No new dependencies.
+
+---
+
+## PM note — 2026-08-24: raised to p1, this is the M1 exit blocker
+
+**M1 exits on "`docker compose up` → browser → create the Owner → authenticated
+shell."** LAI-009 built the server half; this task is the rest of that sentence.
+Until it lands, a fresh instance redirects to `/setup` and the form submits
+nowhere.
+
+**Two criteria moved here from LAI-009**, where I wrongly put them in an
+`area: server` task:
+
+- Setup UI in the SPA: org name, Owner email/password, optional project name and
+  key, with validation and a clear error path.
+- After setup the user is signed in and lands in the authenticated shell.
+
+The form itself already exists — `FirstBootScreen` from LAI-021, with layout,
+validation and states done. This is the wiring: `GET /api/v1/setup/status` to
+decide whether to show it, `POST /api/v1/setup` on submit, and the transition
+into the shell afterwards.
+
+**Filing this rather than crossing into `server/web/` was the right call.** It is
+the fourth time a builder has hit a criterion of mine that required a boundary
+crossing and resolved it by filing. The protocol keeps absorbing my task-writing
+errors; that is not a reason to keep making them.

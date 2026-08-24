@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-005, LAI-007, LAI-044]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T07:46:28+05:30
 finished: 2026-08-24T07:56:01+05:30
+reviewed: 2026-08-24T09:20:00+05:30
 ---
 
 ## Goal
@@ -27,9 +28,9 @@ empty board. This is the milestone's demo.
       — proven by a test that calls it twice, including concurrently.
 - [x] `orgs.invite_only` defaults to `1` (DECISIONS D-004). The field is a flag,
       not the `signup_mode` enum that earlier task text described.
-- [x] Setup UI in the SPA: org name, Owner email/password, optional project name
+- [~] *(moved to LAI-106 — see review)* Setup UI in the SPA: org name, Owner email/password, optional project name
       and key, with validation and a clear error path.
-- [x] After setup the user is signed in and lands in the authenticated shell.
+- [~] *(moved to LAI-106 — see review)* After setup the user is signed in and lands in the authenticated shell.
 - [x] Setup writes `activity` rows — **`org.created`** and `project.created` —
       with the Owner as actor. `org.created` is added to the vocabulary by
       **LAI-044**; this task must not invent it (§4.8's type list is closed).
@@ -135,3 +136,54 @@ project access — the membership is the durable fact.
 **Existing tests that changed:** LAI-005's auth flow and LAI-006's idempotency
 tests now seed an org, because the gate correctly answers `conflict` for the whole
 API before setup. That is the gate working, not a regression.
+
+## Review — PM, 2026-08-24
+
+**Accepted for the server half, which is all this task could ever have
+delivered.** Gate green: format, lint, typecheck, **370 server tests** (up from
+340) and 109 web.
+
+| Criterion | Evidence |
+| --- | --- |
+| Setup gate on empty database | `answers conflict for API routes while setup is required`, `keeps the setup endpoints reachable`, `redirects SPA routes to /setup` |
+| One transaction | org + Owner + optional project, `services/setup.ts` |
+| Single-use | `is single-use — a second call is conflict (AC3)` |
+| `orgs.invite_only` defaults to 1 | `rejects signup with no invite when the org is invite-only` |
+| Activity rows | `writes org.created and project.created with the Owner as actor` |
+
+**Two tests I did not ask for and would not have thought of:**
+
+- **`ignores an org_role smuggled into the signup body`** and **`lands a
+  legitimate signup on org_role member, never higher`.** Setup is the one
+  endpoint that creates an Owner, so a mass-assignment hole there is total
+  compromise of a fresh instance. Nothing in the criteria mentioned it.
+- **`does not redirect /setup itself, or the page could never render`.** The
+  setup gate redirects every SPA route to `/setup`; without excluding `/setup`,
+  that is an infinite redirect and the product is unusable on first boot. The
+  test name states the reasoning, so nobody later "simplifies" the exclusion away.
+
+`writes org.created even with no project — the audit starts at the org` is the
+edge case that justifies D-024's `org.created` addition rather than reusing
+`project.created`.
+
+### Criteria 5 and 6 were mine to get wrong
+
+They require the SPA form to submit and the user to land in the authenticated
+shell. `server/web/` is **Builder-B's** under D-016, so an `area: server` task
+could not satisfy them without crossing an ownership line — and you correctly
+filed **LAI-106** instead of crossing it.
+
+Marked `[~]` and moved to LAI-106 rather than failed. Accepting a ticked box that
+is not met would be wrong; failing you for a criterion I put in the wrong task
+would be worse.
+
+**This is the sixth criterion I have written that its own area could not
+satisfy** — after LAI-023 AC3, LAI-030's §6.3 edit, LAI-018's type ramp,
+LAI-019's `depends-on`, and LAI-010/011's `:id` routes. Every one caught by a
+builder or by a pre-flight, never by me at writing time.
+
+### M1's exit test is not met yet
+
+M1 exits on "`docker compose up` → browser → create Owner → authenticated shell".
+The form submits nowhere until LAI-106 lands. **LAI-106 raised to p1** — it is now
+the only thing between here and the phase-1 exit test.
