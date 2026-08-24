@@ -461,6 +461,37 @@ Two credentials, one resolved `Actor`:
 There is no third path. Webhooks authenticate by signature and act as a system
 actor with a fixed, minimal capability set (§10).
 
+#### Origin, and what a mismatch returns
+
+**`/api/v1/auth/*` is origin-checked; nothing else is.** The REST endpoints and
+the SSE stream (§11.5) rely on the `SameSite=Lax` cookie instead. A reverse proxy
+that rewrites `Origin` therefore breaks sign-in and **nothing else** — worth
+knowing, because a board that signs in and then silently stopped receiving events
+would be far harder to diagnose.
+
+Trusted origins are **`LAIKA_PUBLIC_URL` plus its loopback spellings** —
+`localhost`, `127.0.0.1` and `::1` name the same machine, and a page served from
+one of them **is served by this instance**: nobody else can bind that port on
+that host. Treating them as different origins stops no attacker. It does lock an
+operator out of their own instance, which is exactly what happened (LAI-090).
+
+It deliberately does **not** widen to LAN addresses or hostnames, and adds
+nothing at all when `LAIKA_PUBLIC_URL` is a real domain.
+
+**A mismatch returns `403 forbidden` and names the configured URL.** It must
+never present as a credential failure — the three outcomes below are distinct and
+a client must be able to tell them apart:
+
+| Situation | Status |
+| --- | --- |
+| right credentials, untrusted origin | `403` — *"This instance is configured for …"* |
+| wrong credentials, trusted origin | `401` — *"Invalid email or password"* |
+| right credentials, trusted origin | `200` |
+
+**`LAIKA_PUBLIC_URL` must be the URL people actually type.** It is already
+required (D-018); this is the constraint on its *value*. If it does not match,
+sign-in fails with a message about the origin — not about the password.
+
 ### 6.2 Authorisation
 
 Handler resolves `Actor` → loads the resource → `assertCan(...)` → 403 if false.

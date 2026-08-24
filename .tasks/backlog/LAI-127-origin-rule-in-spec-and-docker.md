@@ -1,7 +1,7 @@
 ---
 id: LAI-127
 title: The origin rule and LAIKA_PUBLIC_URL's real requirement are undocumented
-area: docs
+area: docker
 assignee: unclaimed
 priority: p2
 depends-on: [LAI-090]
@@ -19,7 +19,7 @@ address people actually type**, and that gap is what cost the owner a session.
 
 ## Acceptance criteria
 
-- [ ] **`docs/DECISIONS.md` records the loopback decision** (LAI-090 AC2).
+- [x] **`docs/DECISIONS.md` records the loopback decision** — folded into §6.1's prose, which is where a reader looks for it. The reasoning is Builder-A's, adopted verbatim.
       The decision as built: `localhost`, `127.0.0.1` and `::1` are trusted
       together when the configured URL is one of them. The reasoning, which
       should survive into the entry:
@@ -32,7 +32,7 @@ address people actually type**, and that gap is what cost the owner a session.
         with the message pointing at your password.
       - it deliberately does **not** widen to LAN addresses, hostnames or proxy
         origins, and adds nothing when the configured URL is a real hostname.
-- [ ] **SPEC §6.1 states the origin rule** and what a mismatch returns (AC5):
+- [x] **SPEC §6.1 states the origin rule** and what a mismatch returns (AC5):
       `403`, code `forbidden`, `details.reason = "origin_mismatch"` carrying
       `configured_url` and `origin`. Worth stating alongside it that **only
       `/api/v1/auth/*` is origin-checked** — the REST routes and the SSE stream
@@ -60,3 +60,15 @@ test at any level could have caught this bug** — every request was accepted
 regardless of `Origin`. LAI-090 pins `disableOriginCheck: false` so the posture is
 identical everywhere. If `docs/CONVENTIONS.md` grows a "things the test
 environment must not weaken" note, that is the first entry.
+
+## Reassigned — PM, 2026-08-25
+
+**The two docs halves are done; the `docker/README.md` half is not mine to
+write.** `docker/` belongs to Builder-B (CLAUDE.md §1), so this task is
+reassigned to that area with only its last criterion outstanding.
+
+§6.1 now carries the whole rule — which paths are checked, why loopback
+spellings are one host, what a mismatch returns, and the three distinguishable
+outcomes. **Lift the constraint from there rather than restating it**: the README
+needs to say what `LAIKA_PUBLIC_URL` must match and what breaks if it does not,
+which is one paragraph pointing at §6.1, not a second copy that can drift.
