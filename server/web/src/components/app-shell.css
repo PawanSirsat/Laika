@@ -33,47 +33,80 @@
 
 /* ------------------------------------------------------------- sidebar */
 
+/*
+ * Measured against `Laika Prototype.dc.html` (LAI-090). The rail sits on
+ * `--card`, not `--tub` — it was the most visible error in the build, on every
+ * screen at once. Sections carry their own padding and dividers rather than the
+ * rail padding everything uniformly, which is what gives the prototype its
+ * brand / nav / footer banding.
+ */
 .sidebar {
-  width: 13.5rem;
+  width: 13.25rem;
   flex: none;
-  background: var(--tub);
+  background: var(--card);
   border-right: 1px solid var(--bd);
-  padding: var(--space-4) var(--space-3);
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
+  /*
+   * Holds the viewport rather than growing with the page. The prototype draws a
+   * full-height rail, and without this the footer sits at the bottom of the
+   * *document* — on a full board that put Sign out and the theme control below
+   * the fold, reachable only by scrolling the board. `.sidebar-nav` scrolls
+   * internally when the nav itself is taller than the rail.
+   */
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.sidebar-head {
+  padding: 0.875rem 0.8125rem;
+  border-bottom: 1px solid var(--bd);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
 }
 
 .sidebar-brand {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  padding: 0 var(--space-2);
+  gap: 0.5625rem;
+  min-width: 0;
 }
 
-.sidebar-mark {
-  width: 1.25rem;
-  height: 1.25rem;
-  border-radius: var(--radius-pill);
-  background: var(--acc);
-  flex: none;
+/* 28px here, 30px on the auth card — the prototype uses both. */
+.sidebar-brand .brand-tile {
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .sidebar-wordmark {
   font-weight: var(--weight-heavy);
-  font-size: var(--text-md);
+  font-size: 0.875rem;
+  line-height: 1;
+  letter-spacing: -0.02em;
 }
 
+/* The prototype sets these in the UI font, not mono, at a wider track. */
 .sidebar-group-title {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.06em;
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.1em;
   /* --tx3 is below AA for body text (LAI-018) but clears the 3:1 bar for large
-     and non-text; these are 11px all-caps labels, not prose. */
+     and non-text; these are all-caps labels, not prose. */
   color: var(--tx3);
-  margin: 0 0 var(--space-2);
-  padding: 0 var(--space-2);
+  margin: 0;
+  padding: 0.75rem 0.5rem 0.3125rem;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 0.625rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .sidebar-list {
@@ -82,16 +115,37 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .sidebar-link {
-  display: block;
-  padding: var(--space-2) var(--space-2);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 1.9375rem;
+  padding: 0 0.5625rem;
   border-radius: var(--radius-md);
   color: var(--tx2);
   text-decoration: none;
+  font-size: var(--text-sm);
   font-weight: var(--weight-medium);
+}
+
+/*
+ * The prototype's active affordance: a short bar at the leading edge. Always in
+ * the layout and transparent when inactive, so selecting an item does not shift
+ * the label sideways.
+ */
+.sidebar-link-bar {
+  width: 4px;
+  height: 0.875rem;
+  flex: none;
+  border-radius: 2px;
+  background: transparent;
+}
+
+.sidebar-link-active .sidebar-link-bar {
+  background: var(--acc);
 }
 
 .sidebar-link:hover {
@@ -104,12 +158,12 @@
   outline-offset: -2px;
 }
 
-/* Active is carried by colour *and* a weight change *and* a fill — colour alone
-   fails for anyone who cannot distinguish it. */
+/* Active is carried by colour *and* a weight change *and* a fill *and* the bar —
+   colour alone fails for anyone who cannot distinguish it. */
 .sidebar-link-active {
   background: var(--accs);
   color: var(--acc);
-  font-weight: var(--weight-bold);
+  font-weight: var(--weight-heavy);
 }
 
 /* ---------------------------------------------------------------- body */
@@ -298,11 +352,14 @@
   font-weight: var(--weight-semibold);
 }
 
+/* The prototype prints the role in purple, which is also the colour it uses for
+   agent/role emphasis elsewhere. A token, not a new value (D-020). */
 .shell-user-role {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--tx2);
-  text-transform: lowercase;
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--pur);
 }
 
 /* ------------------------------------------------- sidebar identity (LAI-064) */
@@ -313,16 +370,22 @@
   gap: var(--space-1);
 }
 
+/*
+ * `laika-core · v0.1.0` under the wordmark. The prototype sets this in the UI
+ * font at 9px/600, not mono — mono is reserved for keys and identifiers
+ * elsewhere, and this line is neither.
+ */
 .sidebar-context {
   display: flex;
   align-items: center;
   gap: var(--space-1);
   margin: 0;
-  padding: 0 var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
+  padding: 0;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-semibold);
   color: var(--tx3);
   min-width: 0;
+  overflow: hidden;
 }
 
 .sidebar-project {
@@ -338,11 +401,16 @@
 
 /* ------------------------------------------------------ nav counts (LAI-064) */
 
-.sidebar-link {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+/* The label takes the free space so the badge sits hard right and the text
+   stays hard left. `justify-content: space-between` used to do this, before the
+   leading accent bar became a third child — with three children it pushed the
+   label into the middle-right instead. */
+.sidebar-link-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-count {
@@ -371,8 +439,8 @@
   margin-top: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding-top: var(--space-4);
+  gap: 0.5625rem;
+  padding: 0.6875rem 0.75rem;
   border-top: 1px solid var(--bd);
 }
 
@@ -388,8 +456,32 @@
   grid-column: 1 / -1;
 }
 
+/*
+ * The prototype draws one 29px bordered control here. It shows a two-way
+ * toggle because a mockup has no OS to follow — we keep all three options
+ * (LAI-064 AC4) and match the shape, not the affordance count.
+ */
 .sidebar-footer .theme-toggle {
   flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 1.8125rem;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.sidebar-footer .theme-toggle-option {
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+}
+
+.sidebar-footer .shell-user-name {
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+}
+
+.sidebar-footer .shell-user-avatar {
+  width: 1.625rem;
+  height: 1.625rem;
 }
 
 /* Collapsed where the nav toggle it exists for is itself hidden. */

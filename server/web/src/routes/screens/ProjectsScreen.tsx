@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
+import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { Button } from '../../components/forms/Button.tsx';
@@ -85,6 +86,14 @@ export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
 
   return (
     <div className="projects">
+      <ScreenHeader
+        title="Projects"
+        context={
+          list.status === 'ready'
+            ? `${String(list.projects.length)} project${list.projects.length === 1 ? '' : 's'}`
+            : undefined
+        }
+      />
       <header className="projects-head">
         <p className="projects-sub">
           Projects you can see. Opening one loads its board; the choice lives in the URL.

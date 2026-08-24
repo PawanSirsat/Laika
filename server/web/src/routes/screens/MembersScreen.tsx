@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { AddMemberForm } from './AddMemberForm.tsx';
+import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
@@ -100,10 +101,10 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
 
   return (
     <div className="members">
+      <ScreenHeader title="Members" context={project === undefined ? slug : project.name} />
       <header className="members-head">
         <p className="members-sub">
-          {project === undefined ? slug : project.name} — project roles. Org roles are separate and
-          live in Organisation.
+          Project roles. Org roles are separate and live in Organisation.
         </p>
       </header>
 

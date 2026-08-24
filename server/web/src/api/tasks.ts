@@ -86,6 +86,60 @@ export function listTasks(
   );
 }
 
+export interface CreateTaskInput {
+  readonly title: string;
+  readonly priority?: TaskPriority | undefined;
+  readonly status?: TaskStatus | undefined;
+}
+
+/**
+ * Create a task (SPEC §6.4, LAI-011 — first reachable from the UI in LAI-065).
+ *
+ * `created_via` is sent explicitly as `web`. The server defaults it, but §9
+ * attributes activity by it and a task made in the browser that claims to have
+ * come from an agent is a lie in the audit trail. Saying so costs one field.
+ *
+ * The body is strict — an unrecognised key is `unprocessable`, not ignored — so
+ * only fields the form actually collects are sent.
+ */
+export function createTask(slug: string, input: CreateTaskInput): Promise<Task> {
+  return request<Task>(`/projects/${encodeURIComponent(slug)}/tasks`, {
+    method: 'POST',
+    body: {
+      title: input.title,
+      created_via: 'web',
+      ...(input.priority === undefined ? {} : { priority: input.priority }),
+      ...(input.status === undefined ? {} : { status: input.status }),
+    },
+  });
+}
+
+/**
+ * May this actor create a task in this project?
+ *
+ * `task.write` is `member`-or-`lead` (`policy/can.ts`), and the project role is
+ * derived the way `effectiveProjectRole` derives it: org `owner`/`admin` hold
+ * implicit lead everywhere, an org `viewer` is capped at `viewer` however their
+ * membership row reads (D-006), and everyone else takes their membership.
+ *
+ * A display decision, not enforcement — the server decides, and if the two ever
+ * disagree the server is right and this is the bug. It exists so a Viewer is not
+ * shown a button that answers 403, which teaches people the app is broken rather
+ * than that they lack permission.
+ */
+export function canCreateTask(
+  orgRole: string,
+  projectId: string,
+  memberships: readonly { readonly project_id: string; readonly role: string }[],
+): boolean {
+  if (orgRole === 'owner' || orgRole === 'admin') return true;
+  if (orgRole === 'viewer') return false;
+
+  const membership = memberships.find((m) => m.project_id === projectId);
+  if (membership === undefined) return false;
+  return membership.role === 'lead' || membership.role === 'member';
+}
+
 /**
  * Move a task between columns.
  *

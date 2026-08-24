@@ -1,4 +1,5 @@
 import { NetworkError, toApiError } from './errors.ts';
+import { isSetupRequired } from './session-state.ts';
 
 /**
  * The typed `fetch` wrapper every call goes through (LAI-007 AC1).
@@ -33,6 +34,22 @@ let onUnauthorized: (() => void) | undefined;
 
 export function setUnauthorizedHandler(handler: (() => void) | undefined): void {
   onUnauthorized = handler;
+}
+
+/**
+ * The same shape for the setup gate (LAI-087).
+ *
+ * `setup-gate.ts` answers `409` on **every** endpoint but setup when the
+ * instance has no organisation, so any call can be the one that discovers it —
+ * not just `/me`. A tab open since before the instance was reset never re-probes
+ * `/me`, so without this the news only ever arrives at whichever screen happened
+ * to fetch, which then renders its own local error and the shell carries on
+ * believing there is a session.
+ */
+let onSetupRequired: (() => void) | undefined;
+
+export function setSetupRequiredHandler(handler: (() => void) | undefined): void {
+  onSetupRequired = handler;
 }
 
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -81,6 +98,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 
   // Fire before throwing so the session clears even if the caller swallows it.
   if (error.code === 'unauthorized') onUnauthorized?.();
+  if (isSetupRequired(error)) onSetupRequired?.();
 
   throw error;
 }

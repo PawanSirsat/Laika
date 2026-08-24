@@ -1,3 +1,4 @@
+import { demoWipLimit } from '../../../demo/wip.ts';
 import { useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { TaskCard } from './TaskCard.tsx';
@@ -39,11 +40,12 @@ export function KanbanView({
     <div className="kanban">
       {BOARD_COLUMNS.map((column) => {
         const tasks = columns[column];
+        const wip = demoWipLimit(column);
 
         return (
           <section
             key={column}
-            className={over === column ? 'lane lane-over' : 'lane'}
+            className={[over === column ? 'lane lane-over' : 'lane', 'lane-' + column].join(' ')}
             aria-labelledby={`lane-${column}`}
             onDragOver={(event) => {
               // Without preventDefault the drop never fires — the browser's
@@ -65,10 +67,18 @@ export function KanbanView({
             }}
           >
             <header className="lane-head">
+              {/* The prototype leads each column with a dot in the lane's own
+                  colour — the same colour the card's status pill uses. */}
+              <span className={`lane-dot lane-dot-${column}`} aria-hidden="true" />
               <h3 className="lane-title" id={`lane-${column}`}>
                 {COLUMN_LABELS[column]}
               </h3>
-              <span className="lane-count">{tasks.length}</span>
+              <span className={`lane-count lane-count-${column}`}>{tasks.length}</span>
+              {wip !== undefined && (
+                <span className={tasks.length > wip ? 'lane-wip lane-wip-over' : 'lane-wip'}>
+                  WIP {tasks.length}/{wip}
+                </span>
+              )}
             </header>
 
             <div className="lane-body">
