@@ -2,11 +2,14 @@
 id: LAI-109
 title: Remove LAIKA_DISABLE_INVITE_ONLY from SPEC §11.7 and record the decision
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: [LAI-105]
 discovered-from: LAI-105
-status: backlog
+status: done
+started: 2026-08-24T10:20:00+05:30
+finished: 2026-08-24T10:25:00+05:30
+reviewed: 2026-08-24T10:25:00+05:30
 ---
 
 ## Goal
@@ -17,10 +20,10 @@ was dropped deliberately rather than forgotten. Both are PM's area.
 
 ## Acceptance criteria
 
-- [ ] `LAIKA_DISABLE_INVITE_ONLY` is gone from SPEC §11.7's table.
-- [ ] `docs/DECISIONS.md` records the removal and the reasoning below, so nobody
+- [x] `LAIKA_DISABLE_INVITE_ONLY` is gone from SPEC §11.7's table.
+- [x] `docs/DECISIONS.md` records the removal and the reasoning below, so nobody
       re-adds it as an obvious convenience.
-- [ ] The `DOCUMENTED_BUT_UNREAD` entry in
+- [x] The `DOCUMENTED_BUT_UNREAD` entry in
       `server/test/tooling/env-contract.test.ts` is removed — the test's staleness
       guard will fail until it is, and that failure is the reminder. It is a
       one-line deletion in `server/`, so either file it as a follow-up or fold it
@@ -59,3 +62,26 @@ Found in LAI-032, decided in LAI-105.
 fails `pnpm test` from now on rather than waiting for someone to notice.
 
 No new dependencies.
+
+---
+
+## Resolution — PM, 2026-08-24
+
+**Done.** The §11.7 row is gone and **D-025** records why.
+
+**Dropped rather than implemented**, and the reasoning is worth more than the
+row: an org setting is auditable — who disabled invite-only and when is in the
+activity trail — while an environment variable is set by whoever can edit the
+compose file, leaves no record inside Laika, and survives a restart with nobody
+able to say when it changed. It would also create a state where the org settings
+screen reports invite-only as **on** while signup is open, which is a support
+conversation nobody wins.
+
+**The real lockout case is not ignored** — it moves to M7's operational docs as a
+deliberate, logged recovery procedure rather than a permanent override live in
+every deployment.
+
+**This existed because it was in the first draft of §11.7 and never questioned.**
+It took LAI-105's drift check to surface it, which is the argument for that check
+in one sentence: it does not only catch new drift, it finds things that were
+never true.

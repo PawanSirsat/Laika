@@ -2,11 +2,14 @@
 id: LAI-107
 title: SPEC §4.8's type list is missing three verbs the server now writes
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: [LAI-010]
 discovered-from: LAI-010
-status: backlog
+status: done
+started: 2026-08-24T10:20:00+05:30
+finished: 2026-08-24T10:25:00+05:30
+reviewed: 2026-08-24T10:25:00+05:30
 ---
 
 ## Goal
@@ -26,10 +29,10 @@ audit vocabulary.
 
 ## Acceptance criteria
 
-- [ ] §4.8's `Types:` list includes `project.updated`, `project.archived` and
+- [x] §4.8's `Types:` list includes `project.updated`, `project.archived` and
       `member.removed`, in the same order as `server/src/db/enums.ts`.
-- [ ] The comment in `enums.ts` pointing at this task is removed.
-- [ ] A note that archiving has its own verb, with the reason — an audit reader
+- [x] The comment in `enums.ts` pointing at this task is removed.
+- [x] A note that archiving has its own verb, with the reason — an audit reader
       should not have to diff a payload to discover a project left every active
       view.
 
@@ -47,3 +50,28 @@ row left to mark. The activity row is the only way a catching-up client learns a
 member was removed. Worth stating in §4.8 rather than leaving it to be rediscovered.
 
 No new dependencies.
+
+---
+
+## Resolution — PM, 2026-08-24
+
+**Done.** SPEC §4.8 now lists `project.updated`, `project.archived` and
+`member.removed`.
+
+**Your call to give `project.archived` its own verb was right**, and §4.8 now says
+why: archiving removes a project from everyone's board and a settings edit does
+not. Answering "when did this project disappear?" should not mean inspecting the
+payload of a generic update.
+
+**You extended the vocabulary during LAI-010 and filed the docs half rather than
+editing `docs/`.** That is the correct handling — the same shape as LAI-030 →
+LAI-104 — and it is the fourth time a builder has hit one of my criteria that
+could not be met without crossing an area boundary. AC6 required an activity row
+per mutation, three verbs did not exist, and §4.8 is closed. There was no path
+that did not involve extending it.
+
+**I accepted LAI-010 without noticing the vocabulary had grown.** The verbs were
+in the diff and I checked the layering, the routes and the permission matrix
+instead. §4.8 now states that `enums.ts` and the CHECK constraint are the
+enforcement and the list is the description — so if this drifts again, the
+constraint wins and the list is the bug.

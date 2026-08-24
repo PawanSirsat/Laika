@@ -1120,3 +1120,42 @@ nothing has been built on them.
 **The habit worth keeping:** re-read a section against the rest of the document
 before its milestone starts, looking for operations that reference things the
 data model cannot provide. That is the shape all seven of these took.
+
+---
+
+## D-025 — `LAIKA_DISABLE_INVITE_ONLY` is dropped, not implemented
+**Date:** 2026-08-24 · **Status:** accepted · **Removes** a row from SPEC §11.7
+
+**In one line:** an environment variable that overrides a security setting is a
+way to turn off invite-only without leaving a trace in the org's own record.
+
+**Context.** §11.7 listed `DISABLE_INVITE_ONLY` from the first draft as an
+"escape hatch", with the note that the org setting is authoritative. Nothing ever
+read it — LAI-105's drift check found it documented and unimplemented, which is
+what forced the question of whether it should exist at all.
+
+**Decision.** Removed from §11.7. `orgs.invite_only` (§4.2, D-004) is the only
+control, changed through `PATCH /api/v1/org` by an Owner, which writes an
+`activity` row like every other org change.
+
+**Why not implement it.** The two are not equivalent, and the difference is the
+whole point:
+
+- An org setting is **auditable** — who turned invite-only off, and when, is in
+  the activity trail (§4.8). An environment variable is set by whoever can edit
+  the compose file, leaves no record inside Laika, and survives a restart with
+  nobody able to say when it changed.
+- It creates a state where the **UI and the behaviour disagree**: the org settings
+  screen reports invite-only as on, and signup is open anyway. A support
+  conversation that starts "the settings page is lying to me" is one nobody wins.
+- The escape hatch it was meant to provide — an Owner locked out of their own
+  instance — is better served by a documented recovery procedure than by a
+  permanent override that is live in every deployment.
+
+**Consequences.** An Owner who genuinely locks themselves out has no env-level
+override. That is a real cost and the right one: recovery for that case belongs in
+M7's operational docs, where it can be a deliberate, logged procedure rather than
+a variable anyone with deploy access can set quietly.
+
+**Revisit when:** a real lockout happens and the documented recovery turns out to
+be insufficient.

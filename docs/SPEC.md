@@ -286,9 +286,18 @@ exposes no mutation path, and a test asserts attempts fail. This one table feeds
 
 Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `task.assigned`, `task.dependency_added`, `comment.added`, `project.created`,
-`member.added`, `member.role_changed`, `token.created`, `token.revoked`,
-`heartbeat.session`, `webhook.commit`, `webhook.received`, `meeting.applied`,
-`unlisted.logged`.
+`project.updated`, `project.archived`, `member.added`, `member.role_changed`,
+`member.removed`, `token.created`, `token.revoked`, `heartbeat.session`,
+`webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`.
+
+**`project.archived` is its own verb, not a flag on `project.updated`.** Archiving
+removes a project from everyone's board; a settings edit does not. Reading an
+audit trail to answer "when did this project disappear?" should not require
+inspecting the payload of a generic update.
+
+**`enums.ts` and the `activity` CHECK constraint are the enforcement**; this list
+is the description. If they disagree, the constraint wins and this list is the
+bug — adding a verb is a schema change and therefore a task.
 
 `org.created` is written once, by first-run setup (§6.4 `POST /setup`), with the
 Owner as actor. An audit trail that begins at the first *project* has a hole
@@ -973,7 +982,6 @@ compose file or systemd unit.
 | `LAIKA_DB_PATH` | `$LAIKA_DATA_DIR/laika.db` | |
 | `LAIKA_PUBLIC_URL` | `http://localhost:$PORT` in development; **required in production** | invite links and webhook URLs — a localhost default that escapes into production sends people invite links they cannot open |
 | `LAIKA_PUBLIC_DIR` | `server/public` | where the built SPA is served from. Primarily a test and packaging affordance; deployments do not normally set it |
-| `LAIKA_DISABLE_INVITE_ONLY` | unset | escape hatch; the org setting is authoritative |
 
 **This table is the deployment contract.** Anything the server reads from the
 environment belongs in it, and anything in it must be read. It drifted in both
