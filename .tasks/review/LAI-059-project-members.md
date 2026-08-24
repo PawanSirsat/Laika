@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-010, LAI-058, LAI-060]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-08-24T21:21:35+05:30
+finished: 2026-08-24T23:12:00+05:30
 ---
 
 ## Goal
@@ -101,10 +102,10 @@ Restored afterwards. Both themes checked by computed style, not by eye.
 **LAI-060 landed**, so `GET /api/v1/users` exists and the picker this task was
 scoped around is buildable. Add to the criteria:
 
-- [ ] Add a member via `POST /api/v1/projects/:slug/members`, choosing the person
+- [x] Add a member via `POST /api/v1/projects/:slug/members`, choosing the person
       from `GET /api/v1/users` — a real picker showing name and avatar, never a
       raw id field.
-- [ ] Agent/bot users are not offered as members unless that is deliberate; check
+- [x] Agent/bot users are not offered as members unless that is deliberate; check
       what LAI-060 returns and follow it.
 
 ### Reopened by builder-b, 2026-08-24T22:00+05:30
@@ -113,3 +114,48 @@ This widening arrived on `master` while the task was already in `.tasks/review/`
 with the original scope built and verified. Rather than leave it in review with
 two criteria it does not meet, it goes back to `in-progress`. Everything above
 stays built; only the add flow and the note about it are outstanding.
+
+## Round two — the add flow, and a theme bug it exposed
+
+**Add is built.** A picker, not an id field: radios showing avatar, name and
+email, filterable, with a role `<select>` (the server requires `role` — 422
+without it, so nothing is defaulted quietly). People already on the project are
+never offered, and deactivated people never appear because the endpoint excludes
+them and this client never asks for them.
+
+`listAllUsers` **follows the cursor**. A picker that showed only page one would
+look complete with people missing from it. There is a runaway cap; when it trips
+the form says so rather than presenting a truncated directory as the whole org.
+
+Agent accounts: LAI-060 established there is nothing non-human to filter, and
+left a test that fails if a service-account concept ever lands. Recorded in the
+component rather than silently assumed.
+
+**A real dark-mode bug, found by this task and older than it.** `useTheme` held
+`useState` **per component**, so each caller had its own copy. Toggling the theme
+updated the toggle's copy and put `.dk` on the document — so everything coloured
+by CSS variables changed and the app looked correct — while every colour computed
+in JavaScript from `theme` kept the old palette. In dark mode that is
+light-theme avatars: pale chips with dark text, on the members list, the picker,
+the task cards and the user chrome. Fixed by making the theme one shared store
+(`useSyncExternalStore`); no call site changed. Guarded by two tests, both
+confirmed able to fail.
+
+This is why the "both themes" check is now done by toggling through the real
+control: my earlier method added `.dk` to the document directly, which flips the
+CSS variables but never re-renders React, and would have shown this as passing.
+
+**Verified live**, against the built app on :3370, with people seeded into the
+throwaway dev database and removed afterwards:
+
+| Checked | Result |
+| --- | --- |
+| Picker excludes existing members | Ada absent while a member |
+| Picker excludes deactivated people | Katherine never offered |
+| Filter narrows by name and email | `grace` → one row |
+| Add with a chosen role | added as `viewer`, list re-rendered from the response |
+| Reopening after an add | the person just added is gone from the picker |
+| Organisation exhausted | "Everyone in the organisation is already on this project." |
+| Add refused mid-flight (409) | form stays open, choice still selected, real reason shown |
+| Non-manager | no Add button, no selects, list still visible; server independently 403s |
+| Both themes | avatars, form, filter and text all flip, and flip back |

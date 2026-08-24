@@ -42,6 +42,22 @@ export function changeMemberRole(
   );
 }
 
+/**
+ * Add someone to the project.
+ *
+ * `role` is **required** by the server (422 without it), so the picker asks for
+ * one rather than defaulting quietly — a person silently added as `lead` because
+ * the client picked a default is a permissions bug wearing a convenience hat.
+ *
+ * Returns the full list like the other mutations, and 201 rather than 200.
+ */
+export function addMember(slug: string, userId: string, role: ProjectRole): Promise<MemberList> {
+  return request<MemberList>(`/projects/${encodeURIComponent(slug)}/members`, {
+    method: 'POST',
+    body: { user_id: userId, role },
+  });
+}
+
 export function removeMember(slug: string, userId: string): Promise<MemberList> {
   return request<MemberList>(
     `/projects/${encodeURIComponent(slug)}/members/${encodeURIComponent(userId)}`,

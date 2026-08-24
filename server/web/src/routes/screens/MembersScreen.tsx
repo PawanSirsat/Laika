@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AddMemberForm } from './AddMemberForm.tsx';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
@@ -53,6 +54,7 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
    * yes/no question.
    */
   const [confirming, setConfirming] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   useEffect(() => {
     if (slug === undefined) return;
@@ -113,6 +115,28 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
           verb="update"
         />
       )}
+
+      {mayManage &&
+        (adding ? (
+          <AddMemberForm
+            existingIds={members.members.map((m) => m.user_id)}
+            busy={members.pendingId !== undefined}
+            onAdd={members.add}
+            onCancel={() => {
+              setAdding(false);
+            }}
+          />
+        ) : (
+          <div className="members-actions">
+            <Button
+              onClick={() => {
+                setAdding(true);
+              }}
+            >
+              Add member
+            </Button>
+          </div>
+        ))}
 
       {members.status === 'loading' ? (
         <LoadingState shape="row" count={3} label="Loading members" />
@@ -229,8 +253,8 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
       )}
 
       <p className="members-note">
-        Adding people is not built yet — it needs a way to pick someone from the organisation, which
-        no endpoint offers (LAI-060).
+        Only people already in the organisation can be added here. There is no way to invite someone
+        new yet (LAI-071).
       </p>
     </div>
   );

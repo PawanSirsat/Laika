@@ -139,3 +139,95 @@
   color: var(--tx2);
   white-space: nowrap;
 }
+
+/* Add-member picker (LAI-059, unblocked by LAI-060). */
+.members-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.member-add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-5);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.member-add-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.member-add-title {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--tx);
+}
+
+.member-add-filter {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  color: var(--tx);
+  background: var(--page);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+}
+
+.member-add-filter:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.member-add-note,
+.member-add-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--tx2);
+}
+
+.member-add-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 15rem;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-add-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.member-add-option:hover {
+  background: var(--tub);
+}
+
+/* The radio keeps its native focus ring, which is why it is not hidden. */
+.member-add-option:focus-within {
+  background: var(--accs);
+}
+
+.member-add-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
