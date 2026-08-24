@@ -2,11 +2,12 @@
 id: LAI-059
 title: Project members — list, change role, remove
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-010, LAI-058]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T21:21:35+05:30
 started:
 finished:
 ---
