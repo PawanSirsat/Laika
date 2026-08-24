@@ -8,6 +8,9 @@ import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
 import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
 import { LoginScreen } from '../routes/screens/LoginScreen.tsx';
 import { BoardScreen } from '../routes/screens/BoardScreen.tsx';
+import { SprintsScreen } from '../routes/screens/sprints/SprintsScreen.tsx';
+import { TimelineScreen } from '../routes/screens/timeline/TimelineScreen.tsx';
+import { DashboardScreen } from '../routes/screens/dashboard/DashboardScreen.tsx';
 import { NotFound } from '../routes/screens/NotFound.tsx';
 import { MembersScreen } from '../routes/screens/MembersScreen.tsx';
 import { ProjectsScreen } from '../routes/screens/ProjectsScreen.tsx';
@@ -355,6 +358,12 @@ export function AppShell() {
             </>
           ) : route === undefined ? (
             <NotFound path={path} onNavigate={navigate} />
+          ) : path === '/sprints' ? (
+            <SprintsScreen />
+          ) : path === '/timeline' ? (
+            <TimelineScreen />
+          ) : path === '/dashboard' ? (
+            <DashboardScreen />
           ) : path === '/design/tokens' ? (
             <TokenReference />
           ) : path === '/design/states' ? (

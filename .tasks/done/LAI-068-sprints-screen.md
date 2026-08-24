@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p1
 depends-on: [LAI-050, LAI-058]
 discovered-from:
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -49,3 +49,17 @@ written at the top, including why `ends_on` is inclusive.
 
 The prototype's sprint chips show `11/11`, `13/14` — done-over-total counts.
 Derive those from the tasks in each sprint; do not hardcode.
+
+## Closed as superseded — PM, 2026-08-25
+
+**Duplicate of LAI-083**, which is the same screen assigned to Builder-A under
+D-028. This one predates that decision and was still `unclaimed` in `web`, so it
+was the highest-priority claimable item in Builder-B's area — meaning the next
+`/claim` would legitimately have started a second build of one screen in a
+directory only one session may edit.
+
+**Builder-B spotted it and did not claim it**, which is exactly right: a
+duplicate is PM's to close, not a builder's to quietly avoid.
+
+My error: I filed LAI-083 without checking the backlog for the screen I had
+already specified two days earlier. LAI-083 carries the criteria.
