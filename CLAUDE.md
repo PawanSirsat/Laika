@@ -28,6 +28,13 @@ API versus UI, not directory depth: Builder-B never touches `server/src/`, and
 Builder-A never touches `server/web/`. `server/public/` is build output and
 belongs to nobody; it is gitignored (LAI-016).
 
+**Temporary, D-028 — both builders are on the UI.** `server/web/` splits by
+screen: `routes/screens/sprints/`, `timeline/` and `dashboard/` are **Builder-A's**;
+everything else under `server/web/` — the shell, sidebar, `route-table.ts`,
+theme, shared components, the board and the auth screens — stays **Builder-B's**.
+Builder-A adds files inside its own screen folders and edits no shared file.
+Reverts when the UI has caught up with the API.
+
 One file is shared. The **`WEB_*` maps** in
 `server/test/tooling/structure.test.ts` are **Builder-B's** (D-026); the rest of
 that file is Builder-A's. Ownership there follows what a section *describes*, not
