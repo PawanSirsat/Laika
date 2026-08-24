@@ -99,6 +99,19 @@ role `viewer` — no escalation via project assignment, enforced in code.
 | Generate own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
 | List / revoke **anyone's** token | ✓ | ✓ | — | — |
 | Export audit log | ✓ | ✓ | — | — |
+
+**Reading the org-wide activity feed follows *Export audit log*.** Rows with
+`project_id IS NULL` — `token.created`, `member.role_changed`, `unlisted.logged`,
+`org.created` — **are** the audit log, read live rather than exported, so they
+answer to the same cell. Project-scoped rows follow `project.read` instead, which
+is the rule that governs reading the same events over REST: a stream that showed
+more than the REST API would be a second, weaker permission system (§11.5).
+
+**Deliberately not a separate cell.** Adding one would mean a new action whose
+only definition is "the same people as Export audit log", and two cells that must
+be kept in step by hand. If the two ever need to differ — a Member who may watch
+the feed but not export it — that is the moment to split them, and the split will
+be obvious because someone will be asking for it.
 | Configure webhooks | ✓ | ✓ | — | — |
 
 ### 3.2 Project-level permission matrix

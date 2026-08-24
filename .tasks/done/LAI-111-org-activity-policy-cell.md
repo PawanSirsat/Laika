@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p2
 depends-on: [LAI-048]
 discovered-from: LAI-048
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -49,3 +49,19 @@ view.
 Blocking nothing today — the narrow reading is the safe direction to be wrong in,
 and no UI shows this feed yet. It stops being safe the moment someone builds an
 org activity screen and finds Members see an empty page.
+
+## Decided — PM, 2026-08-25
+
+**Org-scoped activity reads follow *Export audit log* (Owner and Admin).** §3.1
+now says so. Builder-A picked that cell as a stand-in on LAI-048 and again on
+LAI-055; it was the right reading and it is now the rule rather than a code
+comment.
+
+**Deliberately not a new cell.** A separate action whose only definition is
+"the same people as Export audit log" is two things to keep in step by hand. If
+they ever need to differ — someone who may watch the feed but not export it —
+that is the moment to split, and it will be obvious because a person will be
+asking for it.
+
+Errs narrow, which is correct here: the cost of being wrong is a Member not
+seeing that someone minted a token, not a Member seeing it.
