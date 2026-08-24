@@ -10,7 +10,9 @@ Read in this order if you are new:
    full; 4–7 are outline, expanded just in time.
 4. **`ROADMAP.md`** — milestones M1–M7 with an exit criterion each. Phases in
    `FEATURES.md` map 1:1 to these milestones.
-5. **`DECISIONS.md`** — append-only log, D-001 onward. Every entry carries the
+5. **`CONVENTIONS.md`** — where code goes, what it is called, which layer may
+   import which. Binding for all sessions; read before adding a file.
+6. **`DECISIONS.md`** — append-only log, D-001 onward. Every entry carries the
    reasoning, not just the rule.
 
 Builders do not edit these files. Propose changes by writing a task file with

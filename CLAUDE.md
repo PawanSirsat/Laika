@@ -247,6 +247,10 @@ If you think you need one, say so — that is a PM decision.
 
 ## 5. Code rules
 
+**Structure, naming and layering live in `docs/CONVENTIONS.md`** — where files go,
+what they are called, and which layer may import which. Read it before adding a
+file. The rules below are the ones that are true of every line of code.
+
 - **TypeScript strict everywhere.** `strict: true`, no implicit `any`, no
   `@ts-ignore` without a comment naming the task id that will remove it.
 - **All database access goes through Drizzle.** No raw SQL strings in route

@@ -4,7 +4,7 @@ title: Projects CRUD and membership management
 area: server
 assignee: unclaimed
 priority: p2
-depends-on: [LAI-004, LAI-006, LAI-009]
+depends-on: [LAI-004, LAI-006, LAI-009, LAI-037]
 discovered-from:
 status: backlog
 ---
@@ -44,3 +44,19 @@ Routes are keyed by `:slug`.
 Project UI is a separate task, groomed after this lands.
 
 No new dependencies.
+
+---
+
+## PM note — 2026-08-24: build through the service layer
+
+**Now depends on LAI-037.** `docs/CONVENTIONS.md` §2 is binding for this task:
+the route handler is transport only, and every read and write goes through a
+function in `server/src/services/` that takes an `Actor`.
+
+This is not style. SPEC §7 makes every MCP tool "a thin wrapper over the same
+service layer the REST routes use". Logic that lands in a handler here has to be
+extracted again in M3, and the parity tests in §13.3 would be the only thing
+holding the two paths together instead of the structure. `no-restricted-imports`
+will fail `pnpm lint` if a route imports `db/` directly.
+
+LAI-037 ships one worked example (`/api/v1/me`) to copy the shape from.
