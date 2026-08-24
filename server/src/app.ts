@@ -23,10 +23,12 @@ import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
+import { eventRoutes } from './http/routes/events.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
 import { type Db } from './db/client.ts';
+import { ActivityFeed } from './services/activity-feed.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
 
@@ -67,6 +69,12 @@ export interface CreateAppOptions {
   sqlite?: Database.Database;
   /** Injectable so tests can drive the clock and assert exhaustion. */
   rateLimiter?: RateLimiter;
+  /**
+   * The SSE fan-out (LAI-048). Passed in from `index.ts` because the shutdown
+   * handler needs the same instance to close open streams; built here when a
+   * test does not care.
+   */
+  activityFeed?: ActivityFeed;
   /** Overridable so tests can point at a directory whose contents they control. */
   publicDir?: string;
   fallbackDocument?: string;
@@ -140,6 +148,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // fallback must never shadow an API path.
   app.route(`${API_BASE}/health`, healthRoutes(options.version));
   app.route(`${API_BASE}/me`, meRoutes());
+
+  if (db !== undefined) {
+    app.route(
+      `${API_BASE}/events`,
+      eventRoutes({ db, feed: options.activityFeed ?? new ActivityFeed({ db }) }),
+    );
+  }
 
   if (db !== undefined && options.auth !== undefined && options.sqlite !== undefined) {
     app.route(`${API_BASE}/setup`, setupRoutes({ db, sqlite: options.sqlite, auth: options.auth }));

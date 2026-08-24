@@ -1,5 +1,5 @@
 import { type Hono } from 'hono';
-import { createApp } from '../../src/app.ts';
+import { createApp, type CreateAppOptions } from '../../src/app.ts';
 import { createAuth, type Auth } from '../../src/auth/auth.ts';
 import { hashInviteToken } from '../../src/auth/invites.ts';
 import { type Db } from '../../src/db/client.ts';
@@ -21,8 +21,13 @@ export interface AuthHarness {
   close(): void;
 }
 
-/** A real app with a real database and real better-auth — no doubles. */
-export function authHarness(): AuthHarness {
+/**
+ * A real app with a real database and real better-auth — no doubles.
+ *
+ * `overrides` reaches `createApp` untouched, for the pieces a test needs to hold
+ * still: the rate limiter's clock, or the SSE feed's polling (LAI-048).
+ */
+export function authHarness(overrides: Partial<CreateAppOptions> = {}): AuthHarness {
   const t = freshDb();
   const log = captureLog();
 
@@ -39,6 +44,7 @@ export function authHarness(): AuthHarness {
     auth,
     db: t.db,
     sqlite: t.sqlite,
+    ...overrides,
   });
 
   return {

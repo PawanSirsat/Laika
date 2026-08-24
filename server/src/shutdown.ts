@@ -17,6 +17,12 @@ export interface ShutdownOptions {
   graceMs?: number;
   exit?: (code: number) => void;
   setTimer?: (fn: () => void, ms: number) => { unref?: () => void };
+  /**
+   * Run before the listener is closed. Where anything holding a connection open
+   * on purpose gets told to let go — the SSE streams of §11.5, which are
+   * in-flight requests that never finish by themselves.
+   */
+  onStopping?: () => void;
   /** Released after the last request drains — the database handle, typically. */
   onClosed?: () => void;
 }
@@ -52,6 +58,19 @@ export function createShutdownHandler(options: ShutdownOptions): (signal: string
     started = true;
 
     log.info('shutdown.start', { signal, grace_ms: graceMs });
+
+    // Before `close()`, not after: a stream that is still open is an in-flight
+    // request, so the server would wait out the whole grace period and then cut
+    // it mid-frame. Ending them first turns those connections idle, and
+    // `closeIdleConnections()` below reaps them immediately.
+    try {
+      options.onStopping?.();
+    } catch (err) {
+      log.error('shutdown.stopping_failed', {
+        signal,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
 
     const release = (): void => {
       try {

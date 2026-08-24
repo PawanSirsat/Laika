@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, lt, type SQL } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, gte, lt, sql, type SQL } from 'drizzle-orm';
 import { type Db } from './client.ts';
 import { type ActivityType, type ActorKind } from './enums.ts';
 import { newId } from './ids.ts';
@@ -95,4 +95,82 @@ export function readPayload(row: Activity): unknown {
   } catch {
     return null;
   }
+}
+
+// ------------------------------------------------------------ the SSE cursor
+
+/**
+ * One row, plus the sequence number the SSE stream uses as its event id (§11.5).
+ */
+export interface ActivityEvent extends Activity {
+  /** SQLite's `rowid`. See below for why this and not `id`. */
+  seq: number;
+}
+
+/**
+ * ## Why `rowid` is the stream cursor and `id` is not
+ *
+ * §11.5 wants a **monotonic** event id so `Last-Event-ID` can mean "everything
+ * after this". A ULID is monotonic across milliseconds but not within one: the
+ * `ulid` package draws fresh randomness per call, so two rows written in the same
+ * millisecond sort in an order nobody chose. Once a second event sorts *below* an
+ * event the client already acknowledged, a resume silently skips it — and it only
+ * happens under the load where losing an event matters most.
+ *
+ * `rowid` is an integer SQLite assigns in insert order. It is strictly increasing
+ * here and cannot be reused, because reuse requires deleting the highest row and
+ * `activity` refuses every DELETE (§4.8, enforced by trigger). It survives
+ * restarts, since it lives in the file.
+ *
+ * The cost is that the cursor is not portable: `rowid` is SQLite's, and a Postgres
+ * port (D-002) would need a real sequence column. That is a migration when it
+ * happens, not a reason to ship an id that is wrong today.
+ */
+const SEQ = sql<number>`rowid`;
+
+/** The highest sequence written so far, or 0 for an empty table. */
+export function latestActivitySeq(db: Db): number {
+  const row = db
+    .select({ seq: sql<number | null>`max(rowid)` })
+    .from(activity)
+    .get();
+
+  return row?.seq ?? 0;
+}
+
+/** How many rows a client at `afterSeq` has missed. Drives the gap decision. */
+export function countActivityAfter(db: Db, afterSeq: number): number {
+  const row = db
+    .select({ count: sql<number>`count(*)` })
+    .from(activity)
+    .where(sql`rowid > ${afterSeq}`)
+    .get();
+
+  return row?.count ?? 0;
+}
+
+/** Rows after `afterSeq` in insert order — the replay and the live tail alike. */
+export function readActivityAfter(db: Db, afterSeq: number, limit: number): ActivityEvent[] {
+  return db
+    .select({ ...getTableColumns(activity), seq: SEQ })
+    .from(activity)
+    .where(sql`rowid > ${afterSeq}`)
+    .orderBy(sql`rowid`)
+    .limit(limit)
+    .all();
+}
+
+/**
+ * The row at a sequence, or `undefined`.
+ *
+ * Used to turn a `Last-Event-ID` the server cannot replay into the `created_at`
+ * the client should pass to `?updated_since=` instead (§6.3) — without it the
+ * fallback tells the client to catch up but not from when.
+ */
+export function activityAtSeq(db: Db, seq: number): ActivityEvent | undefined {
+  return db
+    .select({ ...getTableColumns(activity), seq: SEQ })
+    .from(activity)
+    .where(sql`rowid = ${seq}`)
+    .get();
 }
