@@ -216,3 +216,65 @@ describe('rate limiting over HTTP', () => {
     expect(classify('/api/v1/tasks', 'u1')).toEqual({ key: 'session:u1', policy: LIMITS.session });
   });
 });
+
+describe('payload_too_large and method_not_allowed over HTTP (D-021)', () => {
+  it('answers an oversized body with 413 payload_too_large', async () => {
+    const { Hono } = await import('hono');
+    const { testApp } = await import('../helpers/app.ts');
+
+    const { app } = testApp();
+    const echo = new Hono();
+    echo.post('/', (c) => c.json({ ok: true }));
+    app.route('/api/v1/echo', echo);
+
+    // §13.1 puts bodyLimit on every route, so this is every endpoint's
+    // documented behaviour, not a corner case.
+    const res = await app.request('/api/v1/echo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'http://localhost:3000' },
+      body: 'x'.repeat(1024 * 1024 + 1),
+    });
+
+    expect(res.status).toBe(413);
+
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe('payload_too_large');
+    // Not bad_request — the remedy is "send less", which is its own answer.
+    expect(body.error.code).not.toBe('bad_request');
+  });
+
+  it('answers a wrong method on a real path with 405 and an Allow header', async () => {
+    const { testApp } = await import('../helpers/app.ts');
+    const { app } = testApp();
+
+    const res = await app.request('/api/v1/health', { method: 'DELETE' });
+
+    expect(res.status).toBe(405);
+    expect(res.headers.get('Allow')).toContain('GET');
+
+    const body = (await res.json()) as { error: { code: string; details: { allowed: string[] } } };
+    expect(body.error.code).toBe('method_not_allowed');
+    expect(body.error.details.allowed).toContain('GET');
+  });
+
+  it('still answers an unknown path with 404, not 405', async () => {
+    const { testApp } = await import('../helpers/app.ts');
+    const { app } = testApp();
+
+    // The distinction Hono does not make on its own.
+    const res = await app.request('/api/v1/no-such-endpoint', { method: 'DELETE' });
+
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('not_found');
+  });
+
+  it('does not turn a wrong method on a SPA route into a 405', async () => {
+    const { testApp } = await import('../helpers/app.ts');
+    const { app } = testApp();
+
+    // Only reserved prefixes are API surface; everything else is the SPA.
+    const res = await app.request('/board/LAI-1', { method: 'DELETE' });
+
+    expect(res.status).toBe(200);
+  });
+});
