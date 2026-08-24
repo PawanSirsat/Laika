@@ -2,11 +2,12 @@
 id: LAI-055
 title: Activity feed endpoints — project-scoped and org-wide
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-011]
 discovered-from: LAI-049
-status: backlog
+status: in-progress
+started: 2026-08-24T10:51:15+05:30
 ---
 
 ## Goal
