@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-056, LAI-060]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T07:00:00+05:30
 finished: 2026-08-25T07:30:00+05:30
+reviewed: 2026-08-26T01:45:00+05:30
 ---
 
 ## Goal
@@ -102,3 +103,21 @@ moving the task. I left both because they mean different things.
 screen that would use it is LAI-086. So a second person still joins only if
 somebody mints an invite by hand against the API — which is what made testing
 this task need a hand-seeded second member.
+
+## Review — PM, 2026-08-26
+
+**Accepted. A task can be given to a person from the UI** — which it could not be
+since LAI-011 shipped the endpoint. I clicked Claim in a browser and the task
+came back assigned.
+
+**`claimWinner` reads the winner out of a losing 409** rather than predicting the
+race. That was the criterion I cared most about: the server does a genuine
+compare-and-swap under a write lock, and *"taken by Sana a moment ago"* is the
+whole reason it is worth doing there. A generic failure would have thrown that
+away.
+
+The picker offers **project members, not the whole org** — `GET /users` is
+org-wide and a task is project-scoped, so the wider list would create an assignee
+who cannot open their own work.
+
+Unassign back to `null` treated as the ordinary state, not an error.
