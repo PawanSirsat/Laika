@@ -7,8 +7,9 @@ priority: p2
 depends-on: [LAI-047]
 discovered-from:
 finished: 2026-08-24T21:14:07Z
+reviewed: 2026-08-25T22:15:00+05:30
 started: 2026-08-24T21:08:07Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -88,3 +89,28 @@ Four probes, all four fail when broken. 884 tests, of which the single failure i
 **LAI-098's expected red** — `schema-spec-drift.test.ts` waiting on PM's §4.8
 edit, which is that task's design and not a regression here. Lint, format and
 typecheck clean.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Soft-deleted comments excluded — a count including them would
+disagree with the thread the reader then opens. Derived at read time rather than
+stored, which is right: a counter is a second source of truth that drifts from
+the rows.
+
+**The page cost is guarded three ways and I broke it to check.** Replacing the
+batched call with a per-row one fails:
+
+```
+× costs the same for twenty tasks as for four
+× counts a whole page in one query, not one per card (AC3)
+× does not make the page cost grow with the page
+```
+
+And the test asserts every card really has a comment, so it cannot pass on an
+empty set.
+
+**A note on my own reviewing.** Three of my probes on this task were duds —
+patterns that matched nothing, so a green suite meant nothing. I only trusted the
+result once I printed `MUTATION APPLIED` and saw the mutated call. **A mutation
+that does not apply is indistinguishable from a guard that works**, which is the
+same failure this repo keeps finding in its tests, pointed at my own tools.
