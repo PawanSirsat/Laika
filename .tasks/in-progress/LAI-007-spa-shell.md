@@ -2,11 +2,12 @@
 id: LAI-007
 title: Wire the SPA shell to the real API — auth, /me, protected routes
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-005, LAI-019, LAI-021]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T07:01:32+05:30
 ---
 
 ## Goal
