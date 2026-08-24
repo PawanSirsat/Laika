@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { sql as sqlRaw } from 'drizzle-orm';
 import {
   type AuthHarness,
   authHarness,
@@ -12,8 +13,14 @@ import {
 
 let h: AuthHarness;
 
+let seeded: { orgId: string; ownerId: string };
+
 beforeEach(() => {
   h = authHarness();
+  // An org exists in every state these tests are about. Without one the setup
+  // gate (LAI-009) answers `conflict` for the whole API, which is correct and
+  // not what is under test here.
+  seeded = seedOrg(h.db, false);
 });
 afterEach(() => {
   h.close();
@@ -111,8 +118,14 @@ describe('session cookie attributes (SPEC §6.1)', () => {
 });
 
 describe('invite-only signup (SPEC §4.2, D-004, AC4)', () => {
+  /** Flip the seeded org's flag; recreating it would collide on the owner email. */
+  function reseed(inviteOnly: boolean) {
+    h.db.run(sqlRaw`UPDATE orgs SET invite_only = ${inviteOnly ? 1 : 0}`);
+    return seeded;
+  }
+
   it('rejects signup with no invite when the org is invite-only', async () => {
-    seedOrg(h.db, true);
+    reseed(true);
 
     const res = await signUp(h.app, { email: 'stranger@example.test', password: PASSWORD });
 
@@ -121,7 +134,7 @@ describe('invite-only signup (SPEC §4.2, D-004, AC4)', () => {
   });
 
   it('accepts signup with a valid invite', async () => {
-    const { orgId, ownerId } = seedOrg(h.db, true);
+    const { orgId, ownerId } = reseed(true);
     const token = seedInvite(h.db, { orgId, createdBy: ownerId });
 
     const res = await signUp(h.app, {
@@ -134,7 +147,7 @@ describe('invite-only signup (SPEC §4.2, D-004, AC4)', () => {
   });
 
   it('rejects an expired invite', async () => {
-    const { orgId, ownerId } = seedOrg(h.db, true);
+    const { orgId, ownerId } = reseed(true);
     const token = seedInvite(h.db, { orgId, createdBy: ownerId, expiresAt: Date.now() - 1000 });
 
     const res = await signUp(h.app, {
@@ -147,7 +160,7 @@ describe('invite-only signup (SPEC §4.2, D-004, AC4)', () => {
   });
 
   it('rejects an invite addressed to a different email', async () => {
-    const { orgId, ownerId } = seedOrg(h.db, true);
+    const { orgId, ownerId } = reseed(true);
     const token = seedInvite(h.db, { orgId, createdBy: ownerId, email: 'intended@example.test' });
 
     const res = await signUp(h.app, {
@@ -160,7 +173,7 @@ describe('invite-only signup (SPEC §4.2, D-004, AC4)', () => {
   });
 
   it('accepts a link invite (no email) from anyone holding the token', async () => {
-    const { orgId, ownerId } = seedOrg(h.db, true);
+    const { orgId, ownerId } = reseed(true);
     const token = seedInvite(h.db, { orgId, createdBy: ownerId, email: null });
 
     const res = await signUp(h.app, {
@@ -173,7 +186,7 @@ describe('invite-only signup (SPEC §4.2, D-004, AC4)', () => {
   });
 
   it('rejects a made-up invite token', async () => {
-    seedOrg(h.db, true);
+    reseed(true);
 
     const res = await signUp(h.app, {
       email: 'forger@example.test',
@@ -185,7 +198,7 @@ describe('invite-only signup (SPEC §4.2, D-004, AC4)', () => {
   });
 
   it('allows open signup when the org has invite_only = 0', async () => {
-    seedOrg(h.db, false);
+    reseed(false);
 
     const res = await signUp(h.app, { email: 'open@example.test', password: PASSWORD });
 

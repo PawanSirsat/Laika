@@ -39,6 +39,7 @@ function main(): void {
     logger: log,
     auth,
     db,
+    sqlite,
     ...(env.publicDir === undefined ? {} : { publicDir: env.publicDir }),
   });
 
