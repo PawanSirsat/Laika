@@ -2,11 +2,12 @@
 id: LAI-096
 title: What else does NODE_ENV=test weaken?
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-090]
 discovered-from: LAI-090
-status: backlog
+started: 2026-08-24T20:28:14Z
+status: in-progress
 ---
 
 ## Goal
