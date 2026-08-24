@@ -489,3 +489,197 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ======================================================== sign in — design 5a */
+
+.auth-signin {
+  --tick: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 13 5 5L20 7'/%3E%3C/svg%3E");
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.auth-eyebrow {
+  width: 100%;
+  max-width: 26rem;
+  margin: 0;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  color: var(--tx3);
+}
+
+/*
+ * 14px radius and 26px/26px/22px padding are `5a`'s, and neither is a token —
+ * the card is a one-off shape in the design rather than a member of the radius
+ * scale. Written as rem so it still tracks the root font size.
+ */
+.auth-signin .auth-card {
+  border-radius: 0.875rem;
+  padding: 1.625rem 1.625rem 1.375rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.0625rem;
+}
+
+/* The tile mark: `--tx` ground, glyph stroked in `--card`, so it inverts with
+   the theme exactly as the rest of the card does. */
+.brand-tile {
+  width: 1.875rem;
+  height: 1.875rem;
+  flex: none;
+  border-radius: 0.5625rem;
+  background: var(--tx);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-tile svg {
+  stroke: var(--card);
+}
+
+.auth-signin .sidebar-wordmark {
+  font-size: 1.0625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+
+.auth-signin .auth-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+  margin-bottom: 0;
+}
+
+.auth-signin .auth-title {
+  font-size: 1.1875rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1.25;
+  letter-spacing: -0.022em;
+}
+
+.auth-signin .auth-host {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+/* Green, because it reports a real property of the connection, not decoration. */
+.auth-lock {
+  flex: none;
+  stroke: var(--grn);
+}
+
+/* Fields to 5a: 38px, 9px radius, page ground inside a card ground. */
+.auth-signin .field-label {
+  font-size: 0.65625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+.auth-signin .input {
+  height: 2.375rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--bd2);
+  border-radius: 0.5625rem;
+  background: var(--page);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+}
+
+/* The password reads in mono so a typed character is unambiguous once shown. */
+.auth-signin .input[type='text'],
+.auth-signin .input[type='password'] {
+  font-family: var(--font-mono);
+}
+
+.auth-signin .input-affix-button {
+  font-size: 0.65625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--tx3);
+}
+
+/*
+ * `5a` draws a 15px box with a 4px radius and a stroked tick — a custom control,
+ * not the platform one. `accent-color` on a native box cannot produce it.
+ *
+ * The tick is a **mask**, not a background image: a data-URI image would have to
+ * hardcode its stroke colour, which is `--tx2` and therefore different in each
+ * theme. Masking paints it with `background-color`, so it follows the token.
+ *
+ * Scoped to this card. Restyling every checkbox in the app is a decision for
+ * whoever owns the form language, not a side effect of a login task.
+ */
+.auth-signin .checkbox-input {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0.9375rem;
+  height: 0.9375rem;
+  margin-top: 0;
+  border: 1.5px solid var(--bd2);
+  border-radius: var(--radius-sm);
+  background: var(--page);
+  display: grid;
+  place-content: center;
+  cursor: pointer;
+}
+
+.auth-signin .checkbox-input::after {
+  content: '';
+  width: 0.5625rem;
+  height: 0.5625rem;
+  background-color: var(--tx2);
+  transform: scale(0);
+  transition: transform 90ms ease;
+  -webkit-mask: var(--tick) center / contain no-repeat;
+  mask: var(--tick) center / contain no-repeat;
+}
+
+.auth-signin .checkbox-input:checked::after {
+  transform: scale(1);
+}
+
+.auth-signin .checkbox-input:checked {
+  border-color: var(--tx2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-signin .checkbox-input::after {
+    transition: none;
+  }
+}
+
+.auth-signin .checkbox-label {
+  font-size: 0.71875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+.auth-signin .button-primary {
+  height: 2.5rem;
+  border-radius: 0.625rem;
+  font-size: 0.84375rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+}
+
+.auth-signin .auth-note {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  color: var(--tx3);
+  text-wrap: pretty;
+}
