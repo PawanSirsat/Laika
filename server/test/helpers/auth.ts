@@ -21,21 +21,33 @@ export interface AuthHarness {
   close(): void;
 }
 
+export interface AuthHarnessOptions extends Partial<CreateAppOptions> {
+  /**
+   * better-auth's clock. The sign-up hooks read it twice — once to validate the
+   * invite, once to spend it — so a stepping clock is how a test reaches the
+   * window between them without a real race (LAI-071).
+   */
+  now?: () => number;
+}
+
 /**
  * A real app with a real database and real better-auth — no doubles.
  *
  * `overrides` reaches `createApp` untouched, for the pieces a test needs to hold
  * still: the rate limiter's clock, or the SSE feed's polling (LAI-048).
  */
-export function authHarness(overrides: Partial<CreateAppOptions> = {}): AuthHarness {
+export function authHarness(overrides: AuthHarnessOptions = {}): AuthHarness {
+  const { now, ...appOverrides } = overrides;
   const t = freshDb();
   const log = captureLog();
 
   const auth = createAuth({
     db: t.db,
+    sqlite: t.sqlite,
     secret: TEST_SECRET,
     baseUrl: TEST_ORIGIN,
     secureCookies: false,
+    ...(now === undefined ? {} : { now }),
   });
 
   const app = createApp({
@@ -44,7 +56,8 @@ export function authHarness(overrides: Partial<CreateAppOptions> = {}): AuthHarn
     auth,
     db: t.db,
     sqlite: t.sqlite,
-    ...overrides,
+    publicUrl: TEST_ORIGIN,
+    ...appOverrides,
   });
 
   return {

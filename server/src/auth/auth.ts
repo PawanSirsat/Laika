@@ -1,17 +1,31 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
+import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import * as schema from '../db/schema.ts';
+import { consumeInvite, removeOrphanedInvitee } from '../services/invites.ts';
 import { avatarColorFor } from './avatar.ts';
 import { findUsableInvite, inviteMatchesEmail, isInviteOnly } from './invites.ts';
 import { scrubTelemetryEnv } from './telemetry.ts';
 
 export const AUTH_BASE_PATH = '/api/v1/auth';
 
+/** The `inviteToken` better-auth drops before validation but the hooks can read. */
+function inviteTokenFrom(body: unknown): string {
+  const value = (body as { inviteToken?: unknown } | null | undefined)?.inviteToken;
+  return typeof value === 'string' ? value : '';
+}
+
 export interface CreateAuthOptions {
   db: Db;
+  /**
+   * The same connection, for the `BEGIN IMMEDIATE` that makes spending an invite
+   * single-use (see `consumeInvite`). Drizzle's `transaction()` cannot choose the
+   * mode, so the raw handle is the only way to take the write lock up front.
+   */
+  sqlite: Database.Database;
   /** Secret for signing session cookies. Required — there is no dev default. */
   secret: string;
   /** Public origin, used for cookie and redirect correctness. */
@@ -130,6 +144,52 @@ export function createAuth(options: CreateAuthOptions) {
           throw new APIError('FORBIDDEN', {
             code: 'invite_invalid',
             message: 'That invite is invalid, expired, or already used.',
+          });
+        }
+
+        return Promise.resolve();
+      }),
+
+      /**
+       * Spend the invite and apply the role it was issued for (LAI-071).
+       *
+       * This is wired here rather than in `POST /api/v1/invites/accept` because
+       * `/sign-up/email` is a **public** endpoint that already accepts an
+       * `inviteToken`. An accept route that did the spending on its own would
+       * leave anyone who posted straight to better-auth signed up on the default
+       * `member` role with their token still unspent — a single-use invite that
+       * is not single-use, which is the entire risk. Both paths run this hook, so
+       * there is no second way in that skips it.
+       *
+       * The user exists by the time this runs; better-auth creates it before the
+       * `after` stage. A token that cannot be spent therefore has to take the
+       * account with it, or a lost race leaves an orphan holding the email
+       * address and the invite could never be retried.
+       *
+       * A token supplied to an instance that is **not** invite-only is still
+       * spent, not ignored: the `before` gate skips validation there, and
+       * silently discarding a field the caller believed in is how somebody ends
+       * up on the wrong role wondering why.
+       */
+      after: createAuthMiddleware((ctx) => {
+        if (ctx.path !== '/sign-up/email') return Promise.resolve();
+
+        const token = inviteTokenFrom(ctx.body);
+        if (token === '') return Promise.resolve();
+
+        const userId = ctx.context.newSession?.user.id;
+        // No session means no account was created — nothing to promote, and
+        // nothing to clean up.
+        if (userId === undefined) return Promise.resolve();
+
+        try {
+          consumeInvite(options.sqlite, options.db, { token, userId, now: now() });
+        } catch (err) {
+          removeOrphanedInvitee(options.db, userId);
+
+          throw new APIError('FORBIDDEN', {
+            code: 'invite_invalid',
+            message: err instanceof Error ? err.message : 'That invite could not be used.',
           });
         }
 

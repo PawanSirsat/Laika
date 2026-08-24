@@ -1,0 +1,409 @@
+/*
+ * Sprints (LAI-083). Tokens only — no literal colours.
+ *
+ * Both themes come for free because every colour here is a custom property
+ * defined on `:root` and `.dk` in `theme/tokens.css`. A hex value in this file
+ * would work in one theme and be invisible or unreadable in the other, which is
+ * the failure the token contract exists to prevent.
+ */
+
+.sprints {
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+
+.sprints-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.sprints-title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ buttons */
+
+.sprint-button {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.sprint-button:hover:not(:disabled) {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+
+.sprint-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.sprint-button-primary {
+  color: var(--acc);
+  background: var(--accs);
+  border-color: var(--accb);
+}
+
+.sprint-button-danger {
+  color: var(--red);
+  background: var(--reds);
+  border-color: var(--redb);
+}
+
+.sprint-button:focus-visible,
+.sprint-input:focus-visible,
+.sprint-task-remove:focus-visible,
+.sprint-alert-close:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------- list */
+
+.sprint-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+}
+
+.sprint-card {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--space-4);
+}
+
+/* The active sprint is the one being worked; the accent rail is the only
+   difference, so a colour-blind reader still has the `active` chip. */
+.sprint-card-active {
+  border-left: 3px solid var(--acc);
+}
+
+.sprint-card-completed {
+  opacity: 0.85;
+}
+
+.sprint-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+}
+
+.sprint-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sprint-name {
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  margin: 0;
+}
+
+.sprint-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+}
+
+.sprint-status-active {
+  color: var(--acc);
+  background: var(--accs);
+  border-color: var(--accb);
+}
+
+.sprint-status-completed {
+  color: var(--grn);
+  background: var(--grns);
+  border-color: var(--grnb);
+}
+
+.sprint-range {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  margin: 0;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.sprint-days {
+  color: var(--tx3);
+}
+
+.sprint-goal {
+  color: var(--tx2);
+  font-size: var(--text-sm);
+  margin: var(--space-3) 0 0;
+}
+
+/* ----------------------------------------------------------------- progress */
+
+.sprint-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.sprint-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  overflow: hidden;
+}
+
+.sprint-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--grn);
+}
+
+.sprint-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  margin: 0;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------------ actions */
+
+.sprint-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+/* -------------------------------------------------------------------- tasks */
+
+.sprint-tasks {
+  list-style: none;
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--bd);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.sprint-task,
+.sprint-assign-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--tx);
+}
+
+.sprint-task-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  white-space: nowrap;
+}
+
+.sprint-task-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sprint-task-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+.sprint-task-done {
+  color: var(--grn);
+}
+
+.sprint-task-in_progress {
+  color: var(--acc);
+}
+
+.sprint-task-review {
+  color: var(--amb);
+}
+
+.sprint-task-cancelled {
+  color: var(--tx3);
+  text-decoration: line-through;
+}
+
+.sprint-task-remove {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sprint-task-empty,
+.sprint-assign-empty {
+  color: var(--tx3);
+  font-size: var(--text-sm);
+}
+
+/* --------------------------------------------------------------------- form */
+
+.sprint-form,
+.sprint-assign,
+.sprint-confirm {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  display: grid;
+  gap: var(--space-3);
+}
+
+.sprint-form-title,
+.sprint-assign-title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  margin: 0;
+}
+
+.sprint-field {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.sprint-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+}
+
+.sprint-optional {
+  font-weight: var(--weight-normal);
+  color: var(--tx3);
+}
+
+.sprint-input {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--tx);
+  background: var(--page);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.sprint-textarea {
+  resize: vertical;
+}
+
+.sprint-dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.sprint-hint,
+.sprint-note,
+.sprint-confirm-note {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  margin: 0;
+}
+
+.sprint-error {
+  font-size: var(--text-xs);
+  color: var(--red);
+}
+
+.sprint-form-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* ------------------------------------------------------------------- alerts */
+
+.sprint-alert {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+  color: var(--red);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  font-size: var(--text-sm);
+  margin-bottom: var(--space-4);
+}
+
+.sprint-alert-close {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.sprint-confirm {
+  border-color: var(--redb);
+}
+
+.sprint-confirm-body {
+  color: var(--tx);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.sprint-assign-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.sprint-assign-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+  max-height: 320px;
+  overflow-y: auto;
+}
