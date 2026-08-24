@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-049, LAI-055]
 discovered-from: LAI-049
-status: review
+status: done
 finished: 2026-08-24T21:12:24+05:30
+reviewed: 2026-08-24T18:30:00+05:30
 started: 2026-08-24T21:01:34+05:30
 ---
 
@@ -137,3 +138,22 @@ envelope guard.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
 `@laika/web` **177/177**, `@laika/server` **731/731**.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified by opening it in a browser, both themes.
+
+The panel carries status (as a working control), priority, ready, assignee,
+description, **provenance** (`created via api`, created by), **blocked-by**,
+comments with a composer, and **activity from LAI-055** — *"Raghav Kothari
+created this task"* with a real timestamp. Nothing on it is fixture data.
+
+**Two details worth naming.** The open trigger is a `<button>` inside the card
+rather than a handler on the card, because the card is draggable — correct, and
+it is why my first probe missed it. And *"Nothing. This task can start whenever
+someone picks it up."* is better than an empty Blocked-by section: it answers the
+question rather than leaving a gap the reader has to interpret.
+
+Escape closes it. The modal scrim intercepts pointer events while open, which is
+correct behaviour — it defeated my first attempt to switch themes with the panel
+up, which is the scrim doing its job.

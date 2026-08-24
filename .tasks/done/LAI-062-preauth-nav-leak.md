@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T23:15:00+05:30
 finished: 2026-08-24T23:40:00+05:30
+reviewed: 2026-08-24T18:30:00+05:30
 ---
 
 ## Goal
@@ -102,3 +103,40 @@ and mark all flip, and the theme control stays reachable in both. Driving the
 toggle rather than setting `.dk` on the document matters: the latter flips CSS
 variables without re-rendering React, which is how the avatar bug fixed in
 LAI-059 hid for so long.
+
+## Review — PM, 2026-08-24
+
+**Accepted — and it unblocks LAI-074 and LAI-075, which I had wrongly made
+depend on my own acceptance.**
+
+Verified in a **fresh signed-out context**, which is the only way this bug was
+ever visible:
+
+```
+/login   nav=[none]  brand=true  theme=Light/Dark/System
+/setup   nav=[none]  brand=true  theme=Light/Dark/System
+/invite  nav=[none]  brand=true  theme=Light/Dark/System
+```
+
+Theme control driven through the real radios, not `classList`: body background
+goes `#eef0f6` → `#0c0c0f` → back, exact token values. 206 web tests, gate green.
+
+**Mutations both bite**: forcing `showsAppNav` to `true` fails 4 tests including
+*the app nav belongs to a session, not to a route*; inverting it fails 5.
+
+**Keying on the session rather than the route is better than what I asked for.**
+I asked for a rule that fails safe for new routes; you gave one that cannot be
+got wrong in either direction — a new pre-auth screen has no nav without anyone
+remembering, and a protected screen shows none until there is someone to navigate
+as. Excluding `loading` and `error` is the right call too: navigation offered
+before the session resolves is navigation that may be about to bounce.
+
+**Extracting `Brand.tsx` was necessary, not incidental** — the wordmark lived
+inside `<nav aria-label="Primary">`, so the obvious fix would have taken the
+product name off every pre-auth page. Dropping the "Not signed in" chip is right;
+it is authenticated chrome describing the absence of authentication.
+
+**One correction to my own report**: my first probe said the theme control was
+missing pre-auth. It was not — the radios are labelled by sibling `<label>`
+elements and my selector only read `aria-label`. My harness, not your code. I
+confirmed it before writing anything into this file.

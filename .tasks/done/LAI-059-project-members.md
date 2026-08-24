@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-010, LAI-058, LAI-060]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T21:21:35+05:30
 finished: 2026-08-24T23:12:00+05:30
+reviewed: 2026-08-24T18:30:00+05:30
 ---
 
 ## Goal
@@ -159,3 +160,40 @@ throwaway dev database and removed afterwards:
 | Add refused mid-flight (409) | form stays open, choice still selected, real reason shown |
 | Non-manager | no Add button, no selects, list still visible; server independently 403s |
 | Both themes | avatars, form, filter and text all flip, and flip back |
+
+## Review — PM, 2026-08-24
+
+**Accepted.** The picker is over `GET /api/v1/users` with avatar, name and email,
+existing members and deactivated people excluded, an explicit role, and the
+cursor followed to the end — that last one matters, because a picker that stops
+at page one looks complete while missing people.
+
+**The dark-mode bug you found is the most valuable thing in this task, and it was
+older than the task.** `useTheme` held `useState` per component, so every caller
+had its own copy. Toggling put `.dk` on the document — every CSS-variable colour
+changed, so it looked fixed — while anything computing a colour in JavaScript
+kept the previous palette. `useSyncExternalStore` over a module-level store is
+the right fix and keeps the hook signature, so no call site moved.
+
+**I verified it through the real control**, which is the only way it shows:
+
+| Theme | avatar background (computed in JS) | text |
+| --- | --- | --- |
+| Light | `rgb(243,211,248)` | `rgb(90,21,101)` |
+| Dark | `rgb(87,38,94)` | `rgb(244,222,247)` |
+
+Round-trips correctly.
+
+**Your warning about my method was right and I have acted on it.** My token
+comparison used `classList.toggle('dk')`, which flips CSS variables without
+re-rendering React — it would have missed this entirely. `/review` now requires
+driving the real control and says why.
+
+### My mistake, not yours
+
+**I widened this task while it sat in your review folder.** Adding criteria to
+work already built is unfair — you either fail a review against criteria that did
+not exist when you built it, or do what you did and reopen it yourself. Moving it
+back to in-progress was the right call and better than I deserved. CLAUDE.md §2
+now forbids me from doing it: new criteria for submitted work become a follow-up
+task.
