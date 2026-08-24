@@ -2,11 +2,12 @@
 id: LAI-020
 title: Empty, loading, error and permission-denied states
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-018]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T05:42:16+05:30
 ---
 
 ## Goal
