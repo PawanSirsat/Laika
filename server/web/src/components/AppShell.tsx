@@ -6,6 +6,7 @@ import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
 import { LoginScreen } from '../routes/screens/LoginScreen.tsx';
 import { BoardScreen } from '../routes/screens/BoardScreen.tsx';
 import { NotFound } from '../routes/screens/NotFound.tsx';
+import { ProjectsScreen } from '../routes/screens/ProjectsScreen.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
 import { TokenReference } from '../theme/TokenReference.tsx';
@@ -267,6 +268,17 @@ export function AppShell() {
             <div className="shell-gate">
               <LoadingState shape="card" count={1} label="Redirecting to sign in" />
             </div>
+          ) : path === '/projects' ? (
+            <>
+              <header className="screen-head">
+                <h1 className="screen-title">Projects</h1>
+              </header>
+              <ProjectsScreen
+                onOpen={(slug) => {
+                  navigate(`/board?project=${encodeURIComponent(slug)}`);
+                }}
+              />
+            </>
           ) : path === '/board' ? (
             <>
               <header className="screen-head">
