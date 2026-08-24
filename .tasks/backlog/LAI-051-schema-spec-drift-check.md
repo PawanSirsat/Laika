@@ -34,6 +34,26 @@ nowhere to put it.
 - [ ] An exemption list with reasons, kept honest the way LAI-038 and LAI-105 keep
       theirs.
 
+## Added by PM — 2026-08-24: cover §4.8's type vocabulary too
+
+Same drift class, same reader, so it belongs in the same check rather than a
+second one:
+
+- [ ] Fails when `ACTIVITY_TYPES` in `server/src/db/enums.ts` and SPEC §4.8's
+      type list disagree, **in both directions**.
+- [ ] Same for `ACTOR_KINDS` and §4.8's `actor_kind` row.
+
+**Four verbs have gone missing from §4.8 so far** — LAI-044's `org.created`,
+LAI-010's `project.updated`/`project.archived`/`member.removed`, and
+`task.dependency_removed` (LAI-110). Each was found by a builder discovering
+mid-task that a mutation had no verb, because tasks get written against a section
+listing *nouns* without checking the verbs each mutation needs. The list and the
+enum drifting apart is the mechanical half of that; this catches it.
+
+The CHECK constraint is the enforcement and §4.8 is the description (§4.8 says so
+now), so when they disagree the constraint wins and the doc is the bug — the check
+should say which side it thinks is wrong.
+
 ## Notes / context
 
 §4 is a Markdown table per section and `schema.ts` is TypeScript, so this is

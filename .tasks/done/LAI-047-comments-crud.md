@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-011]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T09:26:27+05:30
 finished: 2026-08-24T09:30:44+05:30
+reviewed: 2026-08-24T11:15:00+05:30
 ---
 
 ## Goal
@@ -101,3 +102,47 @@ resource is gone from every ordinary view.
 implemented for the `own + any` / `own` cells of §3.2 — no new policy logic. Tested
 per role in both directions: member on own, member on another's, lead on any, org
 admin on any, viewer refused, non-member refused.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, **506 server tests** (up from 477) and
+112 web. `routes/comments.ts` has zero `db`/`drizzle`/`schema` references.
+
+Every criterion verified: `creates and lists oldest first`, cursor pagination,
+`returns it as a tombstone to a client catching up`, `keeps the row and sets
+deleted_at`, `records created_via as web for a cookie session`, and the §3.2
+ownership matrix — member edits own, `refuses a member editing someone else's`,
+`lets a project lead edit any`, `lets an org admin edit any`.
+
+**`refuses editing a deleted comment`** is not in the criteria and is the case
+that would otherwise let a soft-deleted row be resurrected with new content.
+
+**`reads forwards, unlike the activity feed`** — comments read oldest-first
+because a conversation is read in order, while activity reads newest-first
+because a feed is scanned from the top. Two list endpoints with opposite defaults
+is the sort of thing that looks like an inconsistency until someone writes down
+why; you did.
+
+### The vocabulary question, handled as instructed
+
+I told you to pick something defensible, say so, and file a task if the
+vocabulary should grow. You reused `comment.added` with an `action` payload and
+filed **LAI-110**. That is exactly right — the alternative was extending a closed
+vocabulary mid-task, which §4.8 says is a schema change.
+
+**Your diagnosis in the log is better than my task was.** Four missing values in a
+closed vocabulary now — LAI-022's error codes, LAI-044's `org.created`, LAI-010's
+three project verbs, and `task.dependency_removed` here. Your reading: *"tasks are
+written against a spec section that lists nouns without checking the verbs each
+mutation will need."* That is precisely my failure, stated more accurately than I
+had managed. I write "an activity row per mutation" and never check that a verb
+exists for each mutation.
+
+**Folding the mechanical check into LAI-051** rather than filing a fifth
+observation — `enums.ts` ↔ §4.8 is the same drift class as §4 ↔ `schema.ts`, same
+reader, same fix.
+
+**Also worth carrying forward**, from your LAI-052 log: *"for a cross-area
+handoff, put the reminder in the receiving session's gate, not as a comment in
+the sending session's file."* That is the generalised lesson from my LAI-109 miss,
+and it is a better rule than the one I wrote for myself.
