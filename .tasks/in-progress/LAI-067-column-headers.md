@@ -2,11 +2,12 @@
 id: LAI-067
 title: Column headers — status dots and WIP limits
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-049]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T08:40:00+05:30
 ---
 
 ## Goal
