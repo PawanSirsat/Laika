@@ -176,3 +176,27 @@ void describe('accessibility affordances', () => {
     assert.ok(css.includes('prefers-reduced-motion'));
   });
 });
+
+void describe('ApiErrorState routes failures to the right state (LAI-007 AC6)', () => {
+  void test('forbidden renders PermissionDenied, and nothing else does', async () => {
+    const src = code(
+      await readFile(new URL('../src/components/ApiErrorState.tsx', import.meta.url), 'utf8'),
+    );
+    assert.ok(
+      /code === 'forbidden'[\s\S]{0,200}PermissionDenied/.test(src),
+      'a 403 must render permission-denied, never an empty list or a generic error',
+    );
+    assert.ok(src.includes('NetworkError'), 'an unreachable instance is not a server error');
+  });
+
+  void test('a forbidden result offers no retry', async () => {
+    const src = code(
+      await readFile(new URL('../src/components/ApiErrorState.tsx', import.meta.url), 'utf8'),
+    );
+    const forbiddenBranch = src.slice(
+      src.indexOf("code === 'forbidden'"),
+      src.indexOf('NetworkError'),
+    );
+    assert.ok(!forbiddenBranch.includes('onRetry'), 'retrying cannot grant permission');
+  });
+});

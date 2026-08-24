@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Sidebar } from './Sidebar.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
@@ -8,7 +8,14 @@ import { NotFound } from '../routes/screens/NotFound.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
 import { TokenReference } from '../theme/TokenReference.tsx';
+import { ApiErrorState } from './ApiErrorState.tsx';
+import { LoadingState } from './LoadingState.tsx';
+import { UserChrome } from './UserChrome.tsx';
+import { isPublic } from '../routes/route-table.ts';
 import { useRoute } from '../routes/use-route.ts';
+import { useSession } from '../api/use-session.ts';
+import { useTheme } from '../theme/use-theme.ts';
+import { SignInError } from '../api/auth.ts';
 import './app-shell.css';
 
 /**
@@ -24,7 +31,64 @@ import './app-shell.css';
  */
 export function AppShell() {
   const { path, route, navigate } = useRoute();
+  const { session, signIn, signOut, retry } = useSession();
+  const { theme } = useTheme();
   const [navOpen, setNavOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+  const [signInError, setSignInError] = useState<string | undefined>(undefined);
+
+  /**
+   * Where to return after signing in (LAI-007 AC4). Captured when the guard
+   * redirects, so a deep link survives the detour instead of dumping the user
+   * on the board.
+   */
+  const [returnTo, setReturnTo] = useState<string | undefined>(undefined);
+
+  const routeIsPublic = isPublic(route) || route === undefined;
+
+  // The guard. One effect, one condition: an unauthenticated user on a
+  // protected route goes to sign-in exactly once — `path !== '/login'` is what
+  // stops it competing with itself on the way there.
+  useEffect(() => {
+    if (session.status !== 'anonymous') return;
+    if (routeIsPublic || path === '/login') return;
+    setReturnTo(path);
+    navigate('/login');
+  }, [session.status, routeIsPublic, path, navigate]);
+
+  // Signed in and sitting on the sign-in screen: go where they were headed.
+  useEffect(() => {
+    if (session.status !== 'authenticated' || path !== '/login') return;
+    const destination = returnTo ?? '/board';
+    setReturnTo(undefined);
+    navigate(destination);
+  }, [session.status, path, returnTo, navigate]);
+
+  const handleSignIn = useCallback(
+    async (values: { email: string; password: string; keepSignedIn: boolean }) => {
+      setSignInError(undefined);
+      try {
+        await signIn({
+          email: values.email,
+          password: values.password,
+          rememberMe: values.keepSignedIn,
+        });
+      } catch (cause) {
+        setSignInError(
+          cause instanceof SignInError ? cause.message : 'Could not reach the instance.',
+        );
+      }
+    },
+    [signIn],
+  );
+
+  const handleSignOut = useCallback(() => {
+    setSigningOut(true);
+    void signOut().finally(() => {
+      setSigningOut(false);
+      navigate('/login');
+    });
+  }, [signOut, navigate]);
 
   // The instance the browser is actually pointed at. Read from the location
   // rather than hardcoded: the prototype's `laika.kvelld.internal` is a fixture,
@@ -90,23 +154,59 @@ export function AppShell() {
 
           <div className="shell-head-right">
             <ThemeToggle />
-            {/* Layout only (LAI-019 Notes). LAI-007 fills this from GET /me. */}
-            <div className="shell-user" data-state="unauthenticated">
-              <span className="shell-user-avatar" aria-hidden="true" />
-              <span className="shell-user-text">Not signed in</span>
-            </div>
+            {session.status === 'authenticated' ? (
+              <UserChrome
+                user={session.user}
+                theme={theme}
+                onSignOut={handleSignOut}
+                signingOut={signingOut}
+              />
+            ) : (
+              <div className="shell-user" data-state="unauthenticated">
+                <span className="shell-user-avatar" aria-hidden="true" />
+                <span className="shell-user-text">Not signed in</span>
+              </div>
+            )}
           </div>
         </header>
 
         <main id="main" className="shell-main" tabIndex={-1}>
-          {route === undefined ? (
+          {/*
+            Protected routes wait for the session rather than rendering and
+            hoping. AC7: a failed /me shows LAI-020's error state with its
+            request_id and a retry, never a blank page.
+          */}
+          {!routeIsPublic && session.status === 'loading' ? (
+            <div className="shell-gate">
+              <LoadingState shape="card" count={2} label="Loading your account" />
+            </div>
+          ) : !routeIsPublic && session.status === 'error' ? (
+            <div className="shell-gate">
+              {/* Mapped rather than hardcoded, so a 403 here renders
+                  permission-denied and not a generic failure (AC6). */}
+              <ApiErrorState error={session.error} resource="your account" onRetry={retry} />
+            </div>
+          ) : !routeIsPublic && session.status === 'anonymous' ? (
+            // The guard above is already navigating to /login; rendering the
+            // screen's skeleton for that frame avoids a flash of the board.
+            <div className="shell-gate">
+              <LoadingState shape="card" count={1} label="Redirecting to sign in" />
+            </div>
+          ) : route === undefined ? (
             <NotFound path={path} onNavigate={navigate} />
           ) : path === '/design/tokens' ? (
             <TokenReference />
           ) : path === '/design/states' ? (
             <StateGallery />
           ) : path === '/login' ? (
-            <LoginScreen host={instanceHost} />
+            <LoginScreen
+              host={instanceHost}
+              onSubmit={(values) => {
+                void handleSignIn(values);
+              }}
+              submitting={session.status === 'loading'}
+              serverError={signInError}
+            />
           ) : path === '/invite' ? (
             // Layout preview until LAI-007 reads the invite token and supplies
             // the real inviter, org, email, role and expiry. The values below
