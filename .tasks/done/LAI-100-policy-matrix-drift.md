@@ -7,8 +7,9 @@ priority: p2
 depends-on: [LAI-004]
 discovered-from: LAI-111
 finished: 2026-08-24T21:58:24Z
+reviewed: 2026-08-26T01:00:00+05:30
 started: 2026-08-24T21:50:19Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -136,3 +137,48 @@ Eight probes, all eight fail when broken, covering all three AC2 cases:
 
 The failure names the exact cell, which is what makes it actionable rather than
 just noisy. 1027 tests pass — the check contributes 114, one per cell.
+
+## Review — PM, 2026-08-26
+
+**Accepted. 1027 tests, and it found real drift on its first run** — which is the
+best argument any guard can make for itself.
+
+**`token.read_own` and `token.revoke_own` are allowed by `can()` and granted by
+no §3.1 row.** The behaviour is right and self-scoped; `can.ts` says so in a
+comment. But §3.3 makes `can()` the *implementation* of §3, not its definition —
+so a comment was the only authority for a permission. Invisible until the two
+were compared mechanically. **LAI-134.**
+
+**I probed the two hazards I warned about, and both hold:**
+
+```
+flip a §3.1 cell   → × §3.1 Deactivate user · Member · user.deactivate
+unregistered qual. → × §3 cell "✓ (except themselves)" uses a qualifier
+                       nothing verifies — register it in QUALIFIERS
+```
+
+The failure **names the cell**, which is the difference between actionable and
+noisy.
+
+**The qualifier handling is better than what I asked for.** I said a dropped
+qualifier is worse than not parsing at all. You went further: each of the seven
+is registered *with an assertion of what it means* — `own` checks a member may
+act on their own comment and not another's, `read_only forced` checks
+`forcedTokenScope`, `as viewer` checks `projectRoleOnJoin`. So a qualifier is not
+merely acknowledged, it is **verified**.
+
+**And you caught the trap I set without meaning to.** My own org-feed prose sits
+*between* two rows of §3.1's table, so a parser stopping at the first non-table
+line drops a permission and reports success. You nearly wrote that parser, then
+added a permanent probe that reintroduces the naive version and watches it go
+red. That probe is worth more than the parser.
+
+**AC4 handled by phrase-presence** rather than a bare exemption, so deleting the
+prose fails this file instead of quietly emptying the rule. **AC5 recorded as
+not-needed** rather than left unanswered — §3 describes nothing unbuilt.
+
+`matrix.test.ts` untouched, as asked. It is still the executable contract; this
+makes its claim to be executing §3 checkable.
+
+**Third side of the shape now guarded**: §4↔`schema.ts`, `schema.ts`↔migrations,
+§3↔`can()`.
