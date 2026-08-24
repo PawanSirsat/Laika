@@ -2,11 +2,12 @@
 id: LAI-044
 title: Add the system actor kind and the activity actor constraint
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-025
-status: backlog
+status: in-progress
+started: 2026-08-24T07:26:28+05:30
 ---
 
 ## Goal
