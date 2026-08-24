@@ -2,11 +2,12 @@
 id: LAI-050
 title: Sprints — table wiring, CRUD, and task assignment
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-011]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T09:56:11+05:30
 ---
 
 ## Goal
