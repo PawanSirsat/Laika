@@ -136,6 +136,10 @@ const NO_MIRROR_REQUIRED = new Map<string, string>([
     'http/middleware/security-headers.ts',
     'the Hono binding; the policy it serves is asserted in http/security-headers.test.ts',
   ],
+  [
+    'http/middleware/setup-gate.ts',
+    'asserted through the app in http/routes/setup.test.ts — what matters is which paths survive the gate',
+  ],
 
   [
     'http/routes/me.ts',

@@ -15,6 +15,7 @@ import { readFile, stat } from 'node:fs/promises';
 import { join, normalize, resolve, sep } from 'node:path';
 import { type Context } from 'hono';
 import { type AppEnv } from './context.ts';
+import { SETUP_PATH } from './middleware/setup-gate.ts';
 
 /**
  * Prefixes the SPA fallback must never swallow (SPEC §11.4). A request to an
@@ -98,6 +99,13 @@ export interface StaticOptions {
   publicDir: string;
   /** Committed document served when the build output has no `index.html`. */
   fallbackDocument: string;
+  /**
+   * Answers "is this instance still waiting to be set up?" (LAI-009).
+   *
+   * A function rather than a boolean because the answer changes the moment setup
+   * succeeds, and the app is built once at startup.
+   */
+  setupRequired?: (() => boolean) | undefined;
 }
 
 /**
@@ -106,6 +114,14 @@ export interface StaticOptions {
  */
 export function createSpaHandler(options: StaticOptions) {
   return async (c: Context<AppEnv>): Promise<Response> => {
+    // Before an org exists every route leads to setup (LAI-009 AC1). Redirecting
+    // here rather than in a middleware is deliberate: this runs only for paths
+    // that would serve the SPA *document*, so hashed assets keep loading and the
+    // setup screen can actually render.
+    if (options.setupRequired?.() === true && c.req.path !== SETUP_PATH) {
+      return c.redirect(SETUP_PATH, 302);
+    }
+
     const indexPath = join(options.publicDir, 'index.html');
 
     const built = await readFileIfPresent(indexPath);

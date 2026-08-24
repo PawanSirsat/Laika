@@ -12,6 +12,7 @@ import {
   authHarness,
   cookieFrom,
   jsonHeaders,
+  seedOrg,
   signIn,
   signUp,
 } from '../helpers/auth.ts';
@@ -97,6 +98,9 @@ describe('Idempotency-Key over HTTP', () => {
 
   beforeEach(async () => {
     h = authHarness();
+    // Post-setup state: without an org the setup gate answers `conflict` for the
+    // whole API, which is correct and not what these tests are about (LAI-009).
+    seedOrg(h.db, false);
     calls = 0;
 
     // A route that records how many times it actually ran, so a replay is
