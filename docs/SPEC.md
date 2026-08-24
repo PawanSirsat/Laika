@@ -284,10 +284,15 @@ distinction is the whole value of an audit table.
 exposes no mutation path, and a test asserts attempts fail. This one table feeds
 **audit**, **presence**, the **dashboard**, and the **SSE stream** (§11.5).
 
-Types: `task.created`, `task.updated`, `task.status_changed`, `task.assigned`,
-`task.dependency_added`, `comment.added`, `project.created`, `member.added`,
-`member.role_changed`, `token.created`, `token.revoked`, `heartbeat.session`,
-`webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`.
+Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
+`task.assigned`, `task.dependency_added`, `comment.added`, `project.created`,
+`member.added`, `member.role_changed`, `token.created`, `token.revoked`,
+`heartbeat.session`, `webhook.commit`, `webhook.received`, `meeting.applied`,
+`unlisted.logged`.
+
+`org.created` is written once, by first-run setup (§6.4 `POST /setup`), with the
+Owner as actor. An audit trail that begins at the first *project* has a hole
+where the instance itself was created.
 
 ### 4.9 `tokens`
 
