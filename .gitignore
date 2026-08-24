@@ -37,3 +37,8 @@ test-results/
 
 # os / editor noise
 .DS_Store
+
+# Local, per-machine Claude Code settings. Ignored here rather than relying on
+# a developer global gitignore — otherwise `pnpm format` checks a file git ignores
+# and the gate goes red on one machine and green on another.
+.claude/settings.local.json
