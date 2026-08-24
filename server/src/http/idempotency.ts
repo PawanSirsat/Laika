@@ -22,7 +22,7 @@ import { createHash } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { idempotencyKeys } from '../db/schema.ts';
-import { ApiError } from './errors.ts';
+import { ApiError } from '../errors.ts';
 
 /** §6.3: "replays within 24h return the original response". */
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;

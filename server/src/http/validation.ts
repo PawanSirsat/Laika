@@ -12,7 +12,7 @@
  */
 
 import { z } from 'zod';
-import { ApiError } from './errors.ts';
+import { ApiError } from '../errors.ts';
 
 export interface FieldIssue {
   path: string;
