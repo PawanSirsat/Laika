@@ -15,6 +15,7 @@ import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
 import { projects, taskDependencies, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { commentCounts } from './comments.ts';
 import { requireProjectBySlug } from './projects.ts';
 import { assertTransition, isReady } from './task-lifecycle.ts';
 
@@ -43,6 +44,12 @@ export interface TaskView {
   created_via: string;
   discovered_from: string | null;
   ready: boolean;
+  /**
+   * Live comments on this task — **derived at read time, never stored**
+   * (LAI-072). Excludes soft-deleted ones, so it cannot disagree with the thread
+   * the reader opens.
+   */
+  comment_count: number;
   /**
    * Ids this task is **blocked by** — the forward edge of §4.6.
    *
@@ -80,6 +87,8 @@ interface ViewContext {
   readonly edges: DependencyEdges;
   /** Status of every task named by an edge, for the §4.5 readiness rule. */
   readonly statuses: ReadonlyMap<string, TaskStatus>;
+  /** Live comment count per task (LAI-072). */
+  readonly comments: ReadonlyMap<string, number>;
 }
 
 function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
@@ -104,7 +113,14 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
           .map((r) => [r.id, r.status] as const),
   );
 
-  return { edges, statuses };
+  return {
+    edges,
+    statuses,
+    comments: commentCounts(
+      db,
+      rows.map((row) => row.id),
+    ),
+  };
 }
 
 function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
@@ -138,6 +154,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     }),
     dependencies: deps,
     blocks: context.edges.blocks.get(row.id) ?? [],
+    comment_count: context.comments.get(row.id) ?? 0,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
