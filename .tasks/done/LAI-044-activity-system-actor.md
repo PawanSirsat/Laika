@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-025
-status: review
+status: done
 started: 2026-08-24T07:26:28+05:30
 finished: 2026-08-24T07:29:13+05:30
+reviewed: 2026-08-24T08:50:00+05:30
 ---
 
 ## Goal
@@ -128,3 +129,46 @@ deviation is the rule now.
 distinct from user and agent. The task says to file it if I touch that area — I
 have not, and `server/web/` is Builder-B's under D-016, so it belongs with
 whoever builds the activity feed.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: lint clean, **331 server tests** (up from 322) and 109
+web. **Unblocks LAI-009 — the last task before M2.**
+
+**I tested the constraint against a real migrated database**, not through the
+suite, because the constraint is the whole point of D-022:
+
+| Case | Result |
+| --- | --- |
+| `system` + NULL actor | accepted |
+| `user` + actor | accepted |
+| `system` + actor | **rejected** |
+| `user` + NULL actor | **rejected** |
+
+Both valid shapes, both invalid shapes. The biconditional holds in both
+directions.
+
+### The constraint expression is exactly right
+
+```sql
+CHECK((actor_id IS NULL) = (actor_kind = 'system'))
+```
+
+That is a literal *if and only if*, not two separate CHECKs that happen to
+overlap — so it cannot be half-satisfied, and there is no gap between them for a
+row to fall through. It is also self-documenting: the SQL says the rule, so
+nobody has to reconstruct the intent from two constraints and a comment.
+
+`org.created` is in both `ACTOR_KINDS`' sibling list and the `activity_type_check`
+constraint, so an invented type is rejected at the database rather than trusted
+from TypeScript.
+
+**The migration rebuilds the table** — SQLite cannot add a CHECK in place, so the
+new-table/copy/drop/rename dance is correct and unavoidable, and the generated
+migration does it properly.
+
+**Timing was the point.** Nothing writes `system` events yet (webhooks M6, cron
+M5) and nothing writes `org.created` yet (LAI-009). Landing the vocabulary and
+the constraint before the first writer means no data audit — adding this CHECK to
+a populated `activity` table later would have meant proving every existing row
+already satisfied it.
