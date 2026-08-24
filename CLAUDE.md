@@ -105,6 +105,16 @@ and commit. Then write your log entry.
 own work done. If PM sends a task back, it returns to `.tasks/in-progress/` with
 review notes appended to the file — read them, fix, and move it to review again.
 
+**PM does not add criteria to work already submitted.** Once a task is in
+`.tasks/review/`, its acceptance criteria are frozen. If PM wants more, it is a
+**new task** — never an edit to the one in flight. This happened on LAI-059: PM
+widened the backlog copy on `master` while the builder's copy sat in review, so
+the builder either failed a review against criteria that did not exist when they
+built it, or had to reopen their own finished task. Neither is theirs to absorb.
+
+The same holds for a task in `.tasks/in-progress/`: PM may append **review
+notes**, and nothing else (§6).
+
 **How a send-back travels between branches.** A task in review lives on the
 builder's branch; `master` has no copy, because PM merges only on accept. So PM
 writes the send-back **on `master`**, at `.tasks/in-progress/`, with the notes
