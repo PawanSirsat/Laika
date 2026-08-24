@@ -47,3 +47,33 @@ in `FirstBootScreen` was removed.
 Deliberately p3: it is a nicety on a screen each instance sees exactly once.
 
 No new dependencies.
+
+---
+
+## PM decision — 2026-08-24: the payload
+
+`GET /api/v1/setup/status` returning only `{ setup_required }` was underspecified
+— §6.4 named the route and never said what it returns. Now defined there:
+
+```
+{ setup_required, system: { database, migrations_applied, smtp_configured } }
+```
+
+- **`database`** — the engine and mode, e.g. `"SQLite · WAL"`. Read from the
+  live connection's PRAGMAs (LAI-003 already asserts them), never a constant. A
+  hardcoded string is exactly the `postgres 16 · connected` artifact one step
+  removed.
+- **`migrations_applied`** — the count actually applied, from the migrator's own
+  journal, not a number in a file.
+- **`smtp_configured`** — boolean only. **Never the host, port or credentials**:
+  this endpoint is reachable *before* anyone has authenticated, so it must say
+  whether SMTP works and nothing about how it is configured.
+
+That last point is the one to get right. A pre-auth endpoint that leaks
+infrastructure detail is a reconnaissance gift, and the panel only needs a
+green/amber dot.
+
+**Your judgement was correct** — LAI-106 AC5 says hardcoded numbers on a status
+panel are worse than no panel, and you left it unrendered rather than inventing
+them. A panel that says "migrations 41/41" when nobody counted is a lie that
+looks like diligence.

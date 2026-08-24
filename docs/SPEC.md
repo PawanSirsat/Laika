@@ -502,6 +502,7 @@ those projects. A Viewer's token can never write, whatever its scope says.
 ```
 POST   /api/v1/auth/*                        better-auth mounted routes
 GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled once an org exists)
+       └ { setup_required, system: { database, migrations_applied, smtp_configured } }
 GET    /api/v1/me
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
 GET    /api/v1/users                         PATCH /api/v1/users/:id (role, deactivate — admin+)
