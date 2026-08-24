@@ -219,6 +219,16 @@ project role `viewer`.
 | `priority` | `p1` \| `p2` \| `p3`, default `p2` |
 | `assignee_id` | nullable FK `users` |
 | `sprint_id` | nullable FK `sprints` (§4.15) — unassigned means backlog, not "no sprint yet" |
+
+**`dependencies` means *blocked by*, and `blocks` is the reverse.** Both are on
+`TaskView`; they are never merged, because a task blocking three others and one
+blocked by three are the same shape with opposite meanings. **Readiness depends
+only on `dependencies`** — never on what a task blocks (§4.5).
+
+The name `dependencies` predates `blocks` and no longer says which direction it
+is. Renaming it to `blocked_by` is a breaking wire change and is filed as
+**LAI-099**, to land **before M3** — that is when tokens ship and agents outside
+this repo start reading the API, which is the last moment the rename is cheap.
 | `created_by` | FK `users` |
 | `created_via` | `web` \| `mcp` \| `api` \| `webhook` \| `meeting` |
 | `discovered_from` | nullable self-FK |
