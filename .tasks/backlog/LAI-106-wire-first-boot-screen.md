@@ -88,3 +88,32 @@ into the shell afterwards.
 the fourth time a builder has hit a criterion of mine that required a boundary
 crossing and resolved it by filing. The protocol keeps absorbing my task-writing
 errors; that is not a reason to keep making them.
+
+## PM verification — 2026-08-24: this is pure wiring
+
+Ran the whole server half against a fresh container volume so you know exactly
+what is already done:
+
+```
+GET  /api/v1/setup/status   → {"setup_required":true}
+POST /api/v1/setup          → {org_id, owner_id, project_id}  + Set-Cookie
+GET  /api/v1/me  (cookie)   → owner, org_role:"owner",
+                               memberships:[{project_id, role:"lead"}]
+POST /api/v1/setup  (again) → conflict, "This Laika has already been set up"
+GET  /board  before setup   → 302 → /setup
+GET  /board  after  setup   → 200
+```
+
+**`POST /api/v1/setup` already sets the session cookie.** So "the user is signed
+in and lands in the authenticated shell" needs no sign-in step — submit, then
+navigate. That is the single most useful thing to know before starting.
+
+**Field names are snake_case** (`org_name`, `owner_name`, `owner_email`,
+`owner_password`, `project_name`, `project_prefix`) and **the schema is strict** —
+an unrecognised key is `unprocessable`, not ignored. I lost two attempts to
+exactly that; `project_slug` is not accepted, the slug is derived.
+
+`project_name` and `project_prefix` are optional: setup succeeds with neither and
+returns `project_id: null`.
+
+**The gate lifts on its own** once an org exists — no client-side state to clear.
