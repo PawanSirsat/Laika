@@ -6,9 +6,9 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-011]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-08-24T09:33:17+05:30
-finished: 2026-08-24T09:55:17+05:30
+finished: 2026-08-24T10:50:38+05:30
 reviewed: 2026-08-24T12:20:00+05:30
 ---
 
@@ -28,7 +28,7 @@ The live half of the board (D-003). One `text/event-stream` per client, emitting
 - [x] When the gap is too large to replay, the stream says so rather than
       silently skipping — the client then falls back to `?updated_since=`
       (§6.3, §11.5). Define "too large" and state the number in the code.
-- [ ] A comment frame every **25 seconds** so proxies do not close an idle
+- [x] A comment frame every **25 seconds** so proxies do not close an idle
       stream.
 - [x] Disconnect is clean: no leaked timer, no listener left on the emitter after
       the client goes away. Assert it — a stream that leaks per connection is a
@@ -164,7 +164,7 @@ I re-ran your mutation exercise on the guards I care most about, and they hold:
 
 ### The one that does not hold
 
-- [ ] **Assert the shipped keepalive interval is 25 seconds.** I changed
+- [x] **Assert the shipped keepalive interval is 25 seconds.** I changed
       `KEEPALIVE_MS` from `25_000` to `250_000` and **all 560 tests passed**.
 
 `KEEPALIVE_MS` is not referenced by a single test. Every AC5 test injects
@@ -201,3 +201,63 @@ The move happened on `master`; your branch still has its copy in
 `.tasks/review/`. On your next `git merge master`, **`git rm
 .tasks/review/LAI-048-sse-stream.md`** and keep this one. CLAUDE.md §2 now spells
 this out — you are the first send-back, so the convention did not exist yet.
+
+---
+
+## Reply to review — builder-a, second pass
+
+**You were right, and the criticism was exactly right.** `KEEPALIVE_MS` was
+referenced by nothing. Every AC5 test injected `keepaliveMs`, so what they proved
+was "a comment frame is sent on the interval we asked for" — a tautology about the
+test's own argument. I had a seam and used it to make the test convenient instead
+of to make it true.
+
+**Fixed with one test, at the seam you named.** `eventRoutes` constructed with
+`keepaliveMs` **omitted** — omitted, not passed as `undefined`, since under
+`exactOptionalPropertyTypes` only omission reaches the `?? KEEPALIVE_MS`
+default — and the interval it asks for asserted against the literal:
+
+```ts
+expect(timers.intervals).toEqual([25_000]);
+```
+
+The literal and not `KEEPALIVE_MS`, because comparing the constant to itself is
+the same mistake in a different place. That is written in the test's comment so
+the next person does not tidy it into a constant.
+
+**Your mutation, re-run:**
+
+| Mutation | Before | Now |
+| --- | --- | --- |
+| `KEEPALIVE_MS` 25_000 → 250_000 | 560 pass | **1 fails** — the new test |
+| `?? KEEPALIVE_MS` → `?? 60_000` | 560 pass | **1 fails** — the default unwired |
+
+**And the manual gap you pointed at is closed too.** You noted my socket run had
+no keepalive line. It does now — one stream, held open, frames timestamped from
+connect:
+
+```
+   0.01s  event: ready
+   0.01s  data: {"seq":2,"project_id":null}
+   0.01s  retry: 3000
+  25.02s  : keepalive
+```
+
+One frame at 25.02s, observed over a real socket against `node dist/index.js`. I
+watched for a second at ~50s and did not capture it before tearing the run down,
+so I am claiming one, not two — the repeat is `setInterval` semantics and the unit
+test covers the firing.
+
+**633 tests** (1 new); format, lint, typecheck clean.
+
+**On the two you explicitly left alone:** understood, and I agree with the
+distinction — `MAX_REPLAY` and `RECONNECT_MS` are asserted against themselves, but
+their criteria ask only that the number be stated in the code with reasoning,
+which it is. AC5 named 25 in bold and that is a different promise. Noting it here
+so a later reader does not "fix" those two by copying this pattern into places
+where it buys nothing.
+
+**LAI-057** noted and not touched — the wiring guard is yours to schedule, and
+severing `closeAll()` inside `onStopping` passing 560 tests is a fair hit. The
+shape of it is the same as this one: both halves tested, the line between them
+not.
