@@ -38,17 +38,23 @@ void describe('sidebar groups (AC1)', () => {
   });
 
   void test('each group holds the right items, in order', () => {
+    // Changed by LAI-082, which is a product decision and not a loosened test:
+    // seven of these eight entries led to empty placeholders, so the sidebar now
+    // shows only routes with a screen behind them. `Capacity`, `Meeting review`,
+    // `Tokens` and `Organisation` are still routed and still reachable by URL —
+    // they are simply not offered. `nav-truth.test.ts` enforces the rule; this
+    // pins the resulting order.
     assert.deepEqual(
       routesInGroup('WORK').map((r) => r.label),
-      ['Board', 'Timeline', 'Sprints', 'Capacity'],
+      ['Board', 'Sprints', 'Timeline', 'Projects'],
     );
     assert.deepEqual(
       routesInGroup('REVIEW').map((r) => r.label),
-      ['Dashboard', 'Meeting review'],
+      ['Dashboard'],
     );
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
-      ['Tokens', 'Organisation'],
+      [],
     );
   });
 });
@@ -61,7 +67,10 @@ void describe('the absences the criteria are actually about', () => {
     // `/setup`, not `/first-boot`: the server redirects un-set-up browsers to
     // SETUP_PATH (`server/src/http/middleware/setup-gate.ts`), and a route table
     // that disagrees with that constant sends them to a 404 (LAI-106).
-    for (const path of ['/login', '/setup', '/projects']) {
+    // `/projects` was here until LAI-082. It works, and it was reachable only
+    // by typing the URL — which is the same defect as a dead link seen from the
+    // other side. It is now a WORK entry on purpose.
+    for (const path of ['/login', '/setup']) {
       const route = ROUTES.find((r) => r.path === path);
       assert.ok(route, `${path} should still be routed`);
       assert.equal(route.group, null, `${path} must not be a nav item`);

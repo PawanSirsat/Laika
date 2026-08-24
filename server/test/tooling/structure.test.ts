@@ -53,6 +53,30 @@ const WEB_ENTRY_POINTS = new Set(['main.tsx']);
  *
  * Same rule as the server list above: this shrinks, it is not a hiding place.
  */
+/**
+ * Exemptions by shape rather than by name (D-028).
+ *
+ * Builder-A owns `routes/screens/{sprints,timeline,dashboard}/` and nothing
+ * else under `server/web/`, so a data hook for those screens has nowhere to
+ * live: `api/` is Builder-B's. Their hooks therefore sit beside their screen,
+ * and cannot be listed here one by one because the files do not exist yet and
+ * the honesty check below would reject the entries.
+ *
+ * Deliberately narrow. It matches `use-*.ts` in those three folders and nothing
+ * else, so any **other** module they add still needs a test or its own entry —
+ * the exemption is for the one case that has no home, not for the area.
+ */
+const WEB_NO_MIRROR_PATTERNS: readonly { readonly pattern: RegExp; readonly reason: string }[] = [
+  {
+    pattern: /^routes\/screens\/(?:sprints|timeline|dashboard)\/use-[a-z0-9-]+\.ts$/,
+    reason: "Builder-A's screen data hooks (D-028) — React hooks, no renderer in this package",
+  },
+];
+
+function webPatternExempt(rel: string): boolean {
+  return WEB_NO_MIRROR_PATTERNS.some((e) => e.pattern.test(rel));
+}
+
 const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/client.ts', 'covered by test/api.test.ts, which stubs fetch for it and errors.ts together'],
   ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
@@ -413,6 +437,7 @@ describe('CONVENTIONS §4 — web test/ mirrors web src/', () => {
     const offenders = webSrcModules
       .map((f) => relative(WEB_SRC, f))
       .filter((rel) => !WEB_NO_MIRROR_REQUIRED.has(rel))
+      .filter((rel) => !webPatternExempt(rel))
       .filter((rel) => !srcFileExists(join(WEB_TEST, rel.replace(/\.ts$/, '.test.ts'))))
       .map(
         (rel) =>
@@ -430,6 +455,36 @@ describe('CONVENTIONS §4 — web test/ mirrors web src/', () => {
       .map((rel) => `${rel} — exempted but no such file; remove the entry`);
 
     expect(stale).toEqual([]);
+  });
+
+  it('keeps the pattern exemptions narrow', () => {
+    // A pattern exemption is a hole in the mirror rule that no one has to
+    // maintain, so it has to be provably small. These are the things it must
+    // NOT swallow: hooks elsewhere, and non-hook modules inside the folders it
+    // does cover.
+    const mustNotMatch = [
+      'api/use-board.ts',
+      'theme/use-theme.ts',
+      'routes/screens/sprints/sprint-derive.ts',
+      'routes/screens/timeline/helpers.ts',
+      'routes/screens/dashboard/format.ts',
+      'routes/screens/board/use-anything.ts',
+    ];
+    expect(mustNotMatch.filter(webPatternExempt)).toEqual([]);
+
+    const mustMatch = [
+      'routes/screens/sprints/use-sprints.ts',
+      'routes/screens/timeline/use-timeline.ts',
+      'routes/screens/dashboard/use-dashboard.ts',
+    ];
+    expect(mustMatch.filter((rel) => !webPatternExempt(rel))).toEqual(
+      mustMatch.filter(() => false),
+    );
+  });
+
+  it('gives every pattern exemption a reason', () => {
+    const empty = WEB_NO_MIRROR_PATTERNS.filter((e) => e.reason.trim().length < 10);
+    expect(empty).toEqual([]);
   });
 
   it('gives every web exemption a reason', () => {
