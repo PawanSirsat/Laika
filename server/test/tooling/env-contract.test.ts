@@ -40,13 +40,12 @@ const COMPOSE_ONLY_ALLOWED = new Map<string, string>([]);
  * *temporary* record of a row awaiting removal, not a permanent excuse — an
  * operator who sets a documented variable and gets silence has been misled by
  * the deployment contract itself.
+ *
+ * Empty, and it should stay that way. Its one entry —
+ * `LAIKA_DISABLE_INVITE_ONLY` — came off when LAI-109 removed the §11.7 row,
+ * which is exactly what the staleness guard below is for.
  */
-const DOCUMENTED_BUT_UNREAD = new Map<string, string>([
-  [
-    'LAIKA_DISABLE_INVITE_ONLY',
-    'LAI-105 decided to remove it rather than implement it; the §11.7 row is PM’s edit (LAI-109). Delete this entry with the row.',
-  ],
-]);
+const DOCUMENTED_BUT_UNREAD = new Map<string, string>([]);
 
 /** A value plausible enough for each variable's own validation to accept. */
 function sampleFor(name: string): string {
