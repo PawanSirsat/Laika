@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p2
 depends-on: [LAI-048]
 discovered-from: LAI-048
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -50,3 +50,16 @@ type is good for a client that wants one kind of event and bad for one that want
 all of them. If the SPA turns out to want "something changed, refetch", a single
 `activity` event name with the type in the body would suit it better. Cheap to
 change now, not cheap after two clients exist.
+
+## Done — PM, 2026-08-25
+
+**§11.5 now carries the wire format**, taken from the implementation and its
+tests rather than reconstructed: frame vocabulary, why activity frames are named
+after the §4.8 type (and therefore that `onmessage` never fires), why control
+frames have no dot and no `id:`, the resume rules with `MAX_REPLAY` at 500 and
+why that is a memory bound, the 25s keepalive, the 1000-frame backpressure cap,
+and that `closing` means a deploy rather than a fault.
+
+Builder-A was right that an undocumented format is not authoritative under D-011.
+It also unblocks **LAI-070** — the live board can now be built from the spec
+instead of by reading the server.

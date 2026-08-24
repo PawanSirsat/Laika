@@ -949,10 +949,61 @@ due dates remain a §1.1 non-goal specifically to protect that boundary
 ### 11.5 Live updates — SSE
 
 `GET /api/v1/events` (D-003). One `text/event-stream` per client, filtered
-server-side to the projects that actor may see, emitting `activity` rows. Each
-event carries a monotonic id; on reconnect the client sends `Last-Event-ID` and,
-if the gap is too large, falls back to `?updated_since=` (§6.3). Comment frame
-every 25s to survive proxies.
+server-side to the projects that actor may see, emitting `activity` rows.
+`?project=<slug>` narrows it further.
+
+#### The wire format
+
+Written down because it was invented in the implementation and existed only
+there — D-011 makes the spec authoritative, and an undocumented format is not.
+`server/test/http/routes/events.test.ts` asserts every clause below.
+
+**Activity frames are named after the §4.8 type** — `event: task.created`. A
+client uses `addEventListener` per type, so **`onmessage` never fires**. That
+trade is deliberate: it lets a client subscribe to one kind of change rather than
+switching inside a single handler, and it is the single thing most likely to cost
+an afternoon if unstated.
+
+**Control frames use a name with no dot** — `ready`, `gap`, `closing`. Every name
+in §4.8's closed vocabulary contains one, so the two can never collide and a
+client can tell them apart without a list.
+
+**Only activity frames carry `id:`.** A control frame is not a position in the
+log and must never move the client's resume point.
+
+| Frame | When | Body |
+| --- | --- | --- |
+| `ready` | first, always | `{ seq, project_id }` — where the stream is starting |
+| `<§4.8 type>` | an activity row the actor may see | the row, §6.3-cased, with `actor_kind` |
+| `gap` | the client asked to resume from too far back | `{ reason, missed, limit, updated_since }` |
+| `closing` | graceful shutdown (LAI-002) | `{ reason: 'server_shutdown' }` |
+
+**Resuming.** No `Last-Event-ID` starts at the head and replays nothing — a page
+that has just loaded its state over REST does not want it replayed at it. With
+one, the server replays what was missed, up to **500 rows** (`MAX_REPLAY`). Past
+that it sends `gap` with the exact `?updated_since=` value to catch up with
+(§6.3) and then goes live. **The limit is a memory bound as much as a policy
+one**: every replayed row is buffered until the client reads it, so an unbounded
+replay is an unbounded allocation triggered by a header the client controls.
+
+An id from *ahead* of the log — a restored backup, or a client that kept an id
+across a database replacement — returns `gap` with `reason: unknown_last_event_id`
+rather than pretending the client is up to date.
+
+**Keepalive** is a comment frame every **25 seconds**, so a proxy does not call
+an idle stream dead. The server sends `retry: 3000` once, on the first frame,
+rather than trusting every client's default.
+
+**Backpressure.** At **1000** unwritten frames the connection is dropped; the
+client reconnects with its last id and misses nothing. A paused tab is
+disconnected rather than buffered indefinitely.
+
+**`closing` means a deploy, not a fault.** A client should reconnect rather than
+show an error.
+
+**An open stream re-reads its actor.** Streams outlive role changes, so a
+demotion or deactivation takes effect on the next batch — without this it is the
+one place in the API where a permission change would not apply.
 
 ### 11.6 Scheduled work — in-process cron
 
