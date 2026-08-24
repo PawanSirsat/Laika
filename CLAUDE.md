@@ -34,6 +34,12 @@ else outside the table.
 **PM writes no application code, ever.** If PM identifies code that needs
 writing, PM writes a task file instead.
 
+**PM never changes a design token, a colour, or any value in `docs/design/`**
+(D-020). That directory is the owner's imported visual reference. PM may measure
+it, report a failure, and recommend a fix — PM may not decide one. A measured
+problem becomes a task for the owner, exactly as a builder files rather than
+crossing into another area.
+
 **Scope exceptions are granted only by a task file.** A task may widen your area
 if it names the exact files, one by one (LAI-001 does this for repo-root config).
 A task that says "and whatever else is needed" grants nothing.

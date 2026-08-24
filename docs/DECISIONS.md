@@ -801,7 +801,7 @@ whole — a half-prefixed surface is worse than either consistent choice.
 ---
 
 ## D-019 — `--tx3` is darkened from the prototype; semantic colours are not body text
-**Date:** 2026-08-24 · **Status:** accepted
+**Date:** 2026-08-24 · **Status:** ~~accepted~~ **REVERTED — superseded by D-020**
 
 **In one line:** the design uses `--tx3` only at 8.5–12px, so the 3:1 large-text
 allowance never applies to it — and at 2.51 it fails the bar that does.
@@ -849,3 +849,57 @@ screen built on the old ones, and every screenshot in the docs.
 passes with zero margin, so any future nudge to either token breaks it silently.
 
 **Revisit when:** a designer reworks the text ramp as a whole.
+
+---
+
+## D-020 — PM does not change design tokens; D-019 reverted
+**Date:** 2026-08-24 · **Status:** accepted · **Supersedes D-019**
+
+**In one line:** the measurements were right and the decision was not mine to
+make.
+
+**Context.** D-019 darkened `--tx3` in both themes, rewrote the contrast rules in
+`docs/design/README.md`, and filed LAI-035 to apply it. I wrote all of it,
+approved all of it, and told the owner afterwards.
+
+The reasoning still holds and is preserved below. What does not hold is the
+authority: `docs/design/` is the owner's imported visual reference, described as
+*"the permanent visual reference"* when it was brought in. A change to it is a
+decision for its owner.
+
+The inconsistency is the part worth recording. All session I have held builders
+to exactly this line — LAI-023's AC3 needed an unbuilt SPA and was deferred
+rather than faked; LAI-030's criterion needed a `docs/` edit and was filed rather
+than crossed; LAI-200 needed root config and waited for a grant. Three times a
+builder hit a boundary and filed instead of crossing. Then I crossed one, in the
+area I am least qualified to judge, and self-approved it.
+
+**Decision.**
+
+1. **D-019 is reverted.** `docs/design/README.md` is restored to the prototype's
+   `--tx3`: light `#8d94a4`, dark `#71717d`. The contrast-rules section is
+   removed. LAI-035 is closed unapplied — nothing reached code.
+2. **PM never changes a design token, a colour, or any value in
+   `docs/design/`.** A measured failure becomes a task for the owner. PM may
+   measure, report, and recommend; PM may not decide.
+3. The measurements survive as **LAI-041**, for the owner.
+
+**The findings, preserved because they cost real work to obtain.** `--tx3`
+measures 2.51 / 2.51 / 3.04 (light) and 4.06 / 3.81 / 3.56 (dark) against
+`--page` / `--tub` / `--card`. The prototype uses it **165 times, every one at
+8.5–12px**. WCAG AA needs 4.5:1 for normal text; the 3:1 large-text allowance
+starts at 18.66px bold or 24px regular, so it does not reach any of those 165
+usages. Separately, semantic colours as text on `--card` are 3.63–4.52 in light
+against 5.42–8.74 in dark, with `--acc` at exactly 4.50.
+
+None of that is in dispute. Who decides what to do about it was.
+
+**Consequences.** The design stays exactly as imported, which is the property the
+owner asked for when importing it. If the contrast issue is real — and the
+numbers say it is — it now reaches code through a decision the owner made, and
+correspondingly it may not reach code at all. That is the trade, and it is the
+right one: a PM who edits the design because the measurements are convincing is
+a PM who will edit the spec next.
+
+**Revisit when:** never. The measurement half of this work was useful and should
+continue; the deciding half was not mine.

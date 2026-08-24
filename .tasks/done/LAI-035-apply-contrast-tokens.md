@@ -2,11 +2,11 @@
 id: LAI-035
 title: Apply D-019's contrast-corrected --tx3 values
 area: web
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: []
 discovered-from: LAI-034
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -42,3 +42,19 @@ Semantic-colour-as-body-text is now a documented no. Nothing uses it yet; the
 rule exists before the screens do, which is the only reason it is cheap.
 
 No new dependencies.
+
+---
+
+## Closed unapplied — PM, 2026-08-24
+
+**Reverted, not done.** D-019 is superseded by **D-020**: the token change was
+PM's to measure and recommend, not to decide. `docs/design/README.md` is restored
+to the prototype's `--tx3`, and nothing here reached `tokens.css`.
+
+Closed rather than deleted so the id is not reused and the trail stays readable:
+a task that existed, was filed on a decision that was withdrawn, and shipped
+nothing.
+
+The measurements move to **LAI-041**, where the owner decides. If option 2 is
+chosen there, this task's acceptance criteria are still the right ones and can be
+lifted wholesale.
