@@ -3,11 +3,17 @@ import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import { FALLBACK_DOCUMENT } from '../../src/paths.ts';
 import {
-  CONTENT_SECURITY_POLICY,
+  buildContentSecurityPolicy,
+  extractStyleHashes,
   HSTS_VALUE,
   isHttps,
-} from '../../src/http/middleware/security-headers.ts';
+} from '../../src/http/security-headers.ts';
 import { testApp } from '../helpers/app.ts';
+
+/** The policy the app actually serves, derived from the real fallback document. */
+const CONTENT_SECURITY_POLICY = buildContentSecurityPolicy(
+  extractStyleHashes(readFileSync(FALLBACK_DOCUMENT, 'utf8')),
+);
 
 /** Every response must carry these, whatever produced it (SPEC §13.1). */
 const ALWAYS = {
@@ -83,24 +89,68 @@ describe('Content-Security-Policy (SPEC §13.1)', () => {
     expect(CONTENT_SECURITY_POLICY).toContain("default-src 'self'");
   });
 
-  /**
-   * AC3 asks for the policy to be verified against the built SPA. That build does
-   * not exist yet (LAI-007, and now Builder-B's under D-016), so this verifies it
-   * against the document this server *does* serve today — which is the same
-   * question, asked of the only artefact available.
-   */
-  it('is satisfied by the document actually served', () => {
+  it('the built SPA needs no inline anything', () => {
+    // Verified against the real Vite output by LAI-103; asserted here against the
+    // document this server serves when no build is present.
     const html = readFileSync(FALLBACK_DOCUMENT, 'utf8');
 
-    // No inline script and no script at all: nothing for `script-src 'self'` to
-    // block, and nothing that would need a hash or a nonce.
     expect(html).not.toMatch(/<script/i);
     expect(html).not.toMatch(/\son[a-z]+\s*=/i);
+  });
+});
 
-    // It does carry inline styles, which is why `style-src` allows them and
-    // `script-src` does not. If this stops being true the allowance can go.
-    expect(html).toMatch(/<style/i);
-    expect(CONTENT_SECURITY_POLICY).toMatch(/style-src[^;]*unsafe-inline/);
+describe('style-src is split, not loosened (LAI-205)', () => {
+  it('allows no inline <style> element except the hashed one', () => {
+    // The dangerous half: an injected <style> can exfiltrate through attribute
+    // selectors and background: url(...), and can redress the UI.
+    expect(CONTENT_SECURITY_POLICY).toMatch(/style-src-elem 'self' 'sha256-[A-Za-z0-9+/=]+'/);
+    expect(CONTENT_SECURITY_POLICY).not.toMatch(/style-src-elem[^;]*unsafe-inline/);
+  });
+
+  it('keeps inline style attributes working', () => {
+    // Avatar colours are derived from the user id at runtime (SPEC §4.1), so the
+    // values do not exist until render and no stylesheet can hold them.
+    expect(CONTENT_SECURITY_POLICY).toMatch(/style-src-attr 'unsafe-inline'/);
+  });
+
+  it('leaves engines without the CSP3 split no worse than before', () => {
+    // Firefox < 128 and Safari < 15.4 read the plain directive.
+    const plain = /(?:^|; )style-src ([^;]*)/.exec(CONTENT_SECURITY_POLICY)?.[1];
+
+    expect(plain).toBeDefined();
+    expect(plain).toContain("'unsafe-inline'");
+  });
+
+  it('keeps the hash OUT of the plain directive, which would disable the fallback', () => {
+    // CSP2+ ignores 'unsafe-inline' in any source list that also contains a hash.
+    // Putting the hash here would silently block inline style attributes on
+    // exactly the old engines this line exists to serve.
+    const plain = /(?:^|; )style-src ([^;]*)/.exec(CONTENT_SECURITY_POLICY)?.[1];
+
+    expect(plain).not.toContain('sha256-');
+  });
+
+  it('hashes the fallback document as it is on disk, so it cannot drift', () => {
+    const hashes = extractStyleHashes(readFileSync(FALLBACK_DOCUMENT, 'utf8'));
+
+    expect(hashes).toHaveLength(1);
+    expect(CONTENT_SECURITY_POLICY).toContain(hashes[0]);
+  });
+
+  it('rehashes when the document changes', () => {
+    // The failure a hardcoded literal produces: edit the file, the hash stops
+    // matching, and the fallback page renders unstyled with nothing saying why.
+    const before = extractStyleHashes('<style>body{color:red}</style>');
+    const after = extractStyleHashes('<style>body{color:blue}</style>');
+
+    expect(before).not.toEqual(after);
+    expect(buildContentSecurityPolicy(before)).not.toBe(buildContentSecurityPolicy(after));
+  });
+
+  it('handles a document with several style blocks, and one with none', () => {
+    expect(extractStyleHashes('<style>a{}</style><style>b{}</style>')).toHaveLength(2);
+    expect(extractStyleHashes('<p>no styles here</p>')).toEqual([]);
+    expect(buildContentSecurityPolicy([])).toContain("style-src-elem 'self'");
   });
 });
 

@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
@@ -13,12 +14,32 @@ import { rateLimitMiddleware } from './http/middleware/rate-limit.ts';
 import { idempotencyMiddleware } from './http/middleware/idempotency.ts';
 import { RateLimiter } from './http/rate-limit.ts';
 import { requestId } from './http/middleware/request-id.ts';
-import { securityHeaders } from './http/middleware/security-headers.ts';
+import { createSecurityHeaders } from './http/middleware/security-headers.ts';
+import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-headers.ts';
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes } from './http/routes/me.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
 import { type Db } from './db/client.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
+
+/**
+ * Hash the fallback document's inline `<style>` block at startup so the policy
+ * cannot drift from the file (LAI-205).
+ *
+ * A missing document is not fatal here — the SPA handler already fails loudly
+ * for that — so the policy is built with no hash rather than refusing to boot
+ * over a header.
+ */
+function contentSecurityPolicyFor(fallbackDocument: string): string {
+  let html = '';
+  try {
+    html = readFileSync(fallbackDocument, 'utf8');
+  } catch {
+    html = '';
+  }
+
+  return buildContentSecurityPolicy(extractStyleHashes(html));
+}
 
 /** 1 MiB. Generous for JSON, small enough that a bad client cannot exhaust us. */
 const BODY_LIMIT_BYTES = 1024 * 1024;
@@ -76,7 +97,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   );
   // Immediately after cors: response headers, so they apply to everything the
   // chain produces, including errors and the SPA document (SPEC §13.1).
-  app.use('*', securityHeaders);
+  app.use('*', createSecurityHeaders(contentSecurityPolicyFor(staticOptions.fallbackDocument)));
   app.use('*', bodyLimit({ maxSize: BODY_LIMIT_BYTES }));
   // SPEC §11.2 position. Real when auth is configured, pass-through otherwise;
   // either way an anonymous request continues with `actor: null` rather than 401.
