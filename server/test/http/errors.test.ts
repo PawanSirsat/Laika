@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
-import { ApiError, ERROR_STATUS, type ErrorCode } from '../../src/http/errors.ts';
+import { ApiError, ERROR_STATUS, type ErrorCode } from '../../src/errors.ts';
 import { REQUEST_ID_HEADER } from '../../src/http/middleware/request-id.ts';
 import { testApp } from '../helpers/app.ts';
 

@@ -20,7 +20,7 @@
  *     for a rules engine.
  */
 
-import { ApiError } from '../http/errors.ts';
+import { ApiError } from '../errors.ts';
 import { type OrgRole, type ProjectRole, type TokenScope } from '../db/enums.ts';
 import { type Action, isReadAction, type OrgAction, type ProjectAction } from './actions.ts';
 import { ORG_ACTIONS, PROJECT_ACTIONS } from './actions.ts';

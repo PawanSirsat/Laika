@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError } from '../../src/http/errors.ts';
+import { ApiError } from '../../src/errors.ts';
 import {
   buildPage,
   DEFAULT_LIMIT,

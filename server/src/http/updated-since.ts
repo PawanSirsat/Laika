@@ -11,7 +11,7 @@
  * — `{ "id": "...", "deleted": true }` — rather than simply being absent.
  */
 
-import { ApiError } from './errors.ts';
+import { ApiError } from '../errors.ts';
 
 export interface Tombstone {
   id: string;

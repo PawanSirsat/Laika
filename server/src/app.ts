@@ -5,7 +5,7 @@ import { createLogger, type Logger } from './log.ts';
 import { FALLBACK_DOCUMENT, PUBLIC_DIR } from './paths.ts';
 import { type AppEnv } from './http/context.ts';
 import { createErrorHandler } from './http/error-handler.ts';
-import { ApiError } from './http/errors.ts';
+import { ApiError } from './errors.ts';
 import { anonymousAuth, authMiddleware } from './http/middleware/auth.ts';
 import { errorBoundary } from './http/middleware/error-boundary.ts';
 import { requestLogger } from './http/middleware/logger.ts';

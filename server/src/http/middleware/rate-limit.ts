@@ -1,7 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import { LIMITS, type LimitPolicy, type RateLimiter } from '../rate-limit.ts';
 import { type AppEnv } from '../context.ts';
-import { ApiError } from '../errors.ts';
+import { ApiError } from '../../errors.ts';
 import { isReservedPath } from '../static.ts';
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ApiError } from '../../src/http/errors.ts';
+import { ApiError } from '../../src/errors.ts';
 import { type OrgRole, type ProjectRole } from '../../src/db/enums.ts';
 import { ALL_ACTIONS, isReadAction } from '../../src/policy/actions.ts';
 import {

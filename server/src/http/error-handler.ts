@@ -2,7 +2,7 @@ import { type Context, type ErrorHandler } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { type Logger } from '../log.ts';
 import { type AppEnv } from './context.ts';
-import { ApiError, type ErrorBody, type ErrorCode, ERROR_STATUS, isApiError } from './errors.ts';
+import { ApiError, type ErrorBody, type ErrorCode, ERROR_STATUS, isApiError } from '../errors.ts';
 
 /**
  * Map an HTTP status raised inside Hono onto the SPEC §6.3 code vocabulary.
