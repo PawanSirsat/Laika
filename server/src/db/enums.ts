@@ -34,12 +34,20 @@ export type TaskPriority = (typeof TASK_PRIORITIES)[number];
 export const CREATED_VIA = ['web', 'mcp', 'api', 'webhook', 'meeting'] as const;
 export type CreatedVia = (typeof CREATED_VIA)[number];
 
-/** §4.8: `user` = session cookie, `agent` = token-authenticated. */
-export const ACTOR_KINDS = ['user', 'agent'] as const;
+/**
+ * §4.8 and D-022. `user` = session cookie, `agent` = token-authenticated,
+ * `system` = no human at all — cron (§11.6) or an inbound webhook (§10).
+ *
+ * `system` exists so that a null `actor_id` means "no person did this" rather
+ * than "somebody forgot to set it". The `activity` check constraint ties the two
+ * together in both directions; see the table definition.
+ */
+export const ACTOR_KINDS = ['user', 'agent', 'system'] as const;
 export type ActorKind = (typeof ACTOR_KINDS)[number];
 
 /** §4.8, verbatim. Adding a type here is a schema change, deliberately. */
 export const ACTIVITY_TYPES = [
+  'org.created',
   'task.created',
   'task.updated',
   'task.status_changed',

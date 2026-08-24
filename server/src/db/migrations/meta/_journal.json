@@ -22,6 +22,13 @@
       "when": 1787526321626,
       "tag": "0002_idempotency_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1787536618819,
+      "tag": "0003_system_actor_kind",
+      "breakpoints": true
     }
   ]
 }
