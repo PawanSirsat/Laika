@@ -3,7 +3,7 @@ id: LAI-207
 title: An org setting for presence tracking, and restore the first-boot toggle
 area: server
 assignee: unclaimed
-priority: p3
+priority: p2
 depends-on: []
 discovered-from: LAI-106
 status: backlog
@@ -50,3 +50,37 @@ org-level presence toggle among "what the design assumes that the spec does not
 yet define").
 
 No new dependencies.
+
+---
+
+## PM correction — 2026-08-24: the column is already specified
+
+**`orgs.presence_enabled` is in SPEC §4.2** — integer, default `1`, described as
+the org-wide off switch for heartbeats. Your note says §4.2 has no column for it;
+it does. **It is the schema that is missing it**, not the spec.
+
+I added that row to §4.2 during the design-coverage pass, *after* LAI-003 had
+already built the `orgs` table, and never reconciled the two. So this is not a
+design decision — it is implementing what the document already says, plus a
+migration.
+
+That makes the task smaller and removes the part you would otherwise have had to
+decide:
+
+- [ ] `orgs.presence_enabled` added to `schema.ts` with a migration, integer,
+      default `1`, matching §4.2 exactly.
+- [ ] `POST /api/v1/setup` accepts an optional `presence_enabled` and stores it.
+      The schema is strict (§6.3), which is why sending it currently `422`s —
+      that behaviour is correct and the fix is to accept the key, not to loosen
+      the schema.
+- [ ] `GET/PATCH /api/v1/org` exposes it (§6.4), Owner-only to change per §3.1.
+- [ ] The first-boot toggle is restored, with the design's copy.
+
+**Do not implement the enforcement here** — §4.2 says that when it is `0`,
+`POST /heartbeats` accepts and discards and Presence/Capacity show a disabled
+state. The heartbeat endpoint is M4 (D-023) and the views are M5. This task
+stores the answer; those tasks honour it. Say so in your log so the next reader
+does not think it was forgotten.
+
+**Removing the toggle rather than faking a destination was right.** A control
+that silently discards the user's answer is worse than one that is not there.
