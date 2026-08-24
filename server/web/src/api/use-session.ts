@@ -1,25 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { setUnauthorizedHandler } from './client.ts';
-import { ApiError } from './errors.ts';
-import { getMe, type MeProfile } from './me.ts';
+import { setSetupRequiredHandler, setUnauthorizedHandler } from './client.ts';
+import { getMe } from './me.ts';
+import { sessionFromFailure, SESSION_TIMEOUT_MS, type SessionState } from './session-state.ts';
 import { signIn as apiSignIn, signOut as apiSignOut, type Credentials } from './auth.ts';
 
-/**
- * Who is signed in, as the whole app sees it.
- *
- * Four states, not a boolean plus a nullable user: "still checking" and "not
- * signed in" are different, and collapsing them is what makes an app flash its
- * sign-in screen at an already-authenticated user on every reload.
- */
-export type SessionState =
-  | { readonly status: 'loading' }
-  | { readonly status: 'authenticated'; readonly user: MeProfile }
-  | { readonly status: 'anonymous' }
-  /**
-   * The whole error, not a flattened message: `ApiErrorState` branches on the
-   * code, and a `403` must not be rendered as a generic failure (AC6).
-   */
-  | { readonly status: 'error'; readonly error: unknown };
+export type { SessionState };
 
 export interface UseSession {
   readonly session: SessionState;
@@ -49,11 +34,7 @@ export function useSession(): UseSession {
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
 
-      if (cause instanceof ApiError && cause.code === 'unauthorized') {
-        setSession({ status: 'anonymous' });
-        return;
-      }
-      setSession({ status: 'error', error: cause });
+      setSession(sessionFromFailure(cause));
     } finally {
       probing.current = false;
     }
@@ -68,6 +49,33 @@ export function useSession(): UseSession {
   }, [load, attempt]);
 
   /**
+   * The ceiling.
+   *
+   * `load` resolves for every *answer*, including bad ones — but a request that
+   * never settles leaves the app on a skeleton indefinitely, which is what the
+   * owner saw. Abort the probe and render a failure instead: an error someone
+   * can act on beats a spinner that will never stop.
+   */
+  useEffect(() => {
+    if (session.status !== 'loading') return;
+
+    const timer = setTimeout(() => {
+      setSession((current) =>
+        current.status === 'loading'
+          ? {
+              status: 'error',
+              error: new Error('The instance did not answer. It may be restarting or unreachable.'),
+            }
+          : current,
+      );
+    }, SESSION_TIMEOUT_MS);
+
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [session.status, attempt]);
+
+  /**
    * A `401` from any *other* call means the session ended underneath us — it
    * expired, or it was revoked. Drop to anonymous **once**; the shell's route
    * guard does the redirecting, so this never competes with it.
@@ -79,6 +87,26 @@ export function useSession(): UseSession {
     });
     return () => {
       setUnauthorizedHandler(undefined);
+    };
+  }, []);
+
+  /**
+   * The setup gate, from **any** call (LAI-087).
+   *
+   * A tab open since before the instance was reset never re-probes `/me`, so the
+   * 409 only ever reaches whichever screen happened to fetch — which renders its
+   * own local error while the shell carries on believing there is a session.
+   * Hoisting it here means one answer for every screen: the shell redirects to
+   * first boot, which is the thing that actually fixes the instance.
+   */
+  useEffect(() => {
+    setSetupRequiredHandler(() => {
+      setSession((current) =>
+        current.status === 'setup-required' ? current : { status: 'setup-required' },
+      );
+    });
+    return () => {
+      setSetupRequiredHandler(undefined);
     };
   }, []);
 

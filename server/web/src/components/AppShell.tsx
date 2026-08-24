@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Brand } from './Brand.tsx';
+import { EmptyState } from './EmptyState.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { showsAppNav } from './shell-chrome.ts';
 import { useShellContext } from '../api/use-shell-context.ts';
@@ -69,9 +70,14 @@ export function AppShell() {
   // screen. The server redirects browsers here too (setup-gate.ts SETUP_PATH),
   // so this only covers in-app navigation.
   useEffect(() => {
-    if (setupRequired !== true || path === '/setup') return;
+    // `setupRequired` comes from `/setup/status` at mount. `session` carries the
+    // same news from a **live** call, which is the case that was broken: a tab
+    // open since before the instance was reset has a stale `false` here, and
+    // only the 409 on `/me` knows better (LAI-087).
+    const needsSetup = setupRequired === true || session.status === 'setup-required';
+    if (!needsSetup || path === '/setup') return;
     navigate('/setup');
-  }, [setupRequired, path, navigate]);
+  }, [setupRequired, session.status, path, navigate]);
 
   // The guard. One effect, one condition: an unauthenticated user on a
   // protected route goes to sign-in exactly once — `path !== '/login'` is what
@@ -321,6 +327,15 @@ export function AppShell() {
               {/* Mapped rather than hardcoded, so a 403 here renders
                   permission-denied and not a generic failure (AC6). */}
               <ApiErrorState error={session.error} resource="your account" onRetry={retry} />
+            </div>
+          ) : !routeIsPublic && session.status === 'setup-required' ? (
+            // The redirect above is already running; this is the frame before
+            // it lands, and it must not be a skeleton.
+            <div className="shell-gate">
+              <EmptyState
+                headline="This instance has not been set up yet"
+                body="Taking you to first boot."
+              />
             </div>
           ) : !routeIsPublic && session.status === 'anonymous' ? (
             // The guard above is already navigating to /login; rendering the
