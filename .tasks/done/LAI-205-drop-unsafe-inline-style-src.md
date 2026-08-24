@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-103
-status: review
+status: done
 started: 2026-08-24T06:06:29+05:30
 finished: 2026-08-24T06:14:18+05:30
+reviewed: 2026-08-24T07:15:00+05:30
 ---
 
 ## Goal
@@ -205,3 +206,52 @@ have tightened `style-src` whole — the LAI-023 comment I wrote said "tighten t
 hashes or `'self'`" — and the avatar colours would have broken on any engine
 enforcing the attribute case, which is a failure that would have looked like a UI
 bug rather than a CSP one.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, **295 server tests** (up from 288) and 41
+web. Verified by reading headers off a running server on **both** paths:
+
+```
+script-src       'self'
+style-src        'self' 'unsafe-inline'          ← fallback for pre-CSP3 engines
+style-src-elem   'self' 'sha256-SvAMs7ooQNphe…'  ← strict
+style-src-attr   'unsafe-inline'                 ← runtime avatar colours
+```
+
+Identical on the fallback document (1 inline `<style>`) and the built SPA (0).
+
+### The test I would not have thought to write
+
+`keeps the hash OUT of the plain directive, which would disable the fallback`.
+
+Adding a hash to `style-src` makes a supporting browser **ignore
+`'unsafe-inline'` in that same directive** — so the obvious implementation, hash
+and `unsafe-inline` together in `style-src`, would silently break styling on
+every engine without the CSP3 split. Exactly the browsers the fallback exists
+for. That is a real trap, it fails quietly, and it is tested.
+
+`leaves engines without the CSP3 split no worse than before` pins the other half
+— I was going to raise that as a caveat and found it already asserted.
+
+**The hash is derived, not frozen.** `hashes the fallback document as it is on
+disk` and `rehashes when the document changes` mean editing `fallback.html`
+cannot silently produce a page the CSP blocks. A hardcoded hash would have passed
+review today and broken the first time someone touched that file.
+
+**`http/security-headers.ts` + `http/middleware/security-headers.ts`** adopts the
+paired-module pattern from CONVENTIONS §2.3 — pure logic testable directly, Hono
+binding tested through the app. The document landed hours ago.
+
+### This closes a chain where I was wrong twice
+
+LAI-023: I accepted `style-src 'unsafe-inline'` as "honest, Vite emits inline
+styles" — a belief about Vite, not a fact about this build. LAI-103: I corrected
+myself too far, calling the allowance unverified when it was necessary for
+**style attributes**. LAI-018: you found `style-src` governs elements and
+attributes separately.
+
+The result is tighter than either of my positions: elements restricted to self
+plus one known hash, attributes allowed only where React genuinely needs them.
+The measurement settled it every time, and the wrong-hash control you used to
+prove enforcement is why it was measurement rather than observation.
