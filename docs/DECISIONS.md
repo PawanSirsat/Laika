@@ -1323,3 +1323,63 @@ bad because it is *silent*, not because it is coupled.
 
 Same shape as LAI-054 and LAI-061: the defect is never the dependency, it is the
 absence of anything that fails when it breaks.
+
+## D-031 — Builder-B owns the whole UI; D-028's split is retired
+
+**2026-08-25. Owner direction.** Builder-B is bringing the entire UI into line
+with the design prototype and takes all of `server/web/`. Builder-A has stopped
+and agrees, and asked that it be written down rather than settled by agreement
+between the two of them — correctly: **the next session reads the decision log,
+not a conversation it never saw.**
+
+**Retires D-028** (split by screen), **D-029** (`api/sprints.ts` follows the
+developer) and **D-030**'s specific application to it. `api/sprints.ts` returns
+to Builder-B with the rest.
+
+Builder-A returns to `server/**`. D-016 is back in force: `server/web/` is
+Builder-B's, everything else under `server/` is Builder-A's.
+
+**D-030's general rule survives its example**: a cross-ownership dependency is
+allowed, an unguarded one is not. It applies wherever the situation recurs.
+
+**What D-028 was for, and whether it worked.** It existed because one session
+owned all the UI while the other ran four milestones ahead building APIs nothing
+consumed. It worked: Sprints, Timeline and Dashboard all exist because of it, and
+each was built by the person who wrote its API. It ends because the owner wants
+one hand on the whole interface for the design pass, which needs consistency more
+than it needs parallelism.
+
+## D-032 — demo data is allowed, and must be incapable of reaching production
+
+**2026-08-25.** To render the prototype's screens, Builder-B needs data no
+endpoint returns. CLAUDE.md §5.1 says *"Never hardcode mockup data. A hardcoded
+value is a defect even when it looks right."* That rule is why the board is
+honest, and it is also why it looks thinner than the mockup.
+
+**Decision: a `src/demo/` layer is allowed, under conditions that are structural
+rather than advisory.**
+
+1. **It must not reach a production build.** Not "should not" — the built bundle
+   in `server/public/` must be greppable for demo strings and come back empty,
+   asserted by a test that runs after `pnpm build`.
+2. **One file per missing endpoint, each naming the endpoint that retires it.**
+   Builder-B's proposal, and the part that makes this temporary rather than
+   permanent — a demo file with no named successor is a fixture with a nicer name.
+3. **Every demo-fed screen says so on the screen**, not in a comment.
+4. **Nothing in `src/demo/` may be imported by a screen that has a real
+   endpoint.** Demo data next to real data is how the two get confused.
+
+**Why not simply refuse.** The owner cannot evaluate a design they cannot see,
+and *"this screen is empty because the backend does not exist"* is invisible to
+anyone looking at a screen. The gap table (`docs/design/GAPS.md`) helps, but a
+document is not a substitute for looking at the thing.
+
+**Why the conditions are not negotiable.** The failure this guards against is a
+self-hoster installing Laika and seeing sprints that are not theirs. That is not
+a cosmetic bug — it is the product lying about someone's work, and it would be
+discovered by a stranger rather than by us. A notice on the screen is not enough
+on its own, because notices survive exactly as long as someone remembers to keep
+them.
+
+**§5.1 is amended, not overturned**: hardcoded data remains a defect in shipped
+code. `src/demo/` is a named exception that cannot ship.

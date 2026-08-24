@@ -1,0 +1,371 @@
+/*
+ * Timeline (LAI-084). Tokens only.
+ *
+ * The track is one flex row whose children's `flex-grow` are day counts, so the
+ * drawing is proportional at any width with no pixel maths. The only absolute
+ * position on the screen is the today marker, which is a percentage of the same
+ * axis — so it cannot drift away from the bars it points at.
+ */
+
+.timeline {
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+
+.timeline-head {
+  margin-bottom: var(--space-4);
+}
+
+.timeline-title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  margin: 0;
+}
+
+.timeline-sub {
+  font-size: var(--text-sm);
+  color: var(--tx3);
+  margin: var(--space-1) 0 0;
+  max-width: 60ch;
+}
+
+/* -------------------------------------------------------------------- chart */
+
+.timeline-chart {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.timeline-months {
+  display: flex;
+  border-bottom: 1px solid var(--bd);
+  margin-bottom: var(--space-2);
+}
+
+.timeline-month {
+  flex-basis: 0;
+  min-width: 0;
+  border-left: 1px solid var(--bd);
+  padding: 0 var(--space-2) var(--space-1);
+  overflow: hidden;
+}
+
+.timeline-month:first-child {
+  border-left: none;
+  padding-left: 0;
+}
+
+.timeline-month-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.timeline-track-wrap {
+  position: relative;
+}
+
+.timeline-track {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  min-height: 56px;
+}
+
+.timeline-gap {
+  flex-basis: 0;
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  background: var(--tub);
+}
+
+.timeline-bar {
+  position: relative;
+  flex-basis: 0;
+  /* Below this a bar is a sliver with no readable label; it still holds its
+     proportional share of whatever is left. */
+  min-width: 44px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  text-align: left;
+  font: inherit;
+  padding: var(--space-2);
+  cursor: pointer;
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  background: var(--tub);
+  color: var(--tx);
+}
+
+.timeline-bar:hover {
+  border-color: var(--acc);
+}
+
+.timeline-bar:focus-visible,
+.timeline-legend-button:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.timeline-bar-active {
+  background: var(--accs);
+  border-color: var(--accb);
+}
+
+.timeline-bar-completed {
+  background: var(--grns);
+  border-color: var(--grnb);
+}
+
+/* §11.4.3: "Sprints entirely in the past are dimmed, not hidden." */
+.timeline-bar-past {
+  opacity: 0.6;
+}
+
+.timeline-bar-now {
+  border-color: var(--acc);
+}
+
+.timeline-bar-open {
+  border-width: 2px;
+  border-color: var(--acc);
+}
+
+.timeline-bar-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-bar-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  white-space: nowrap;
+}
+
+.timeline-bar-fill {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--grn);
+  border-bottom-left-radius: var(--radius-md);
+}
+
+/* -------------------------------------------------------------------- today */
+
+.timeline-today {
+  position: absolute;
+  top: -6px;
+  bottom: -6px;
+  width: 0;
+  border-left: 2px dashed var(--red);
+  pointer-events: none;
+  /* The rule crosses whichever bar contains today — that is what a today line
+     is for — so it is drawn slightly transparent and the sprint's name stays
+     readable underneath it. `docs/design/README.md` lists colliding labels as an
+     artifact not to reproduce; the label itself sits clear of the track above. */
+  opacity: 0.75;
+}
+
+.timeline-today-label {
+  position: absolute;
+  top: -10px;
+  left: 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--red);
+  background: var(--card);
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.timeline-note {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  margin: var(--space-3) 0 0;
+}
+
+/* ------------------------------------------------------------------- legend */
+
+.timeline-legend,
+.timeline-tasks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.timeline-legend {
+  display: grid;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+
+.timeline-legend-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.timeline-legend-button:hover {
+  border-color: var(--bd2);
+}
+
+.timeline-chip {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  white-space: nowrap;
+}
+
+.timeline-chip-active {
+  color: var(--acc);
+  background: var(--accs);
+  border-color: var(--accb);
+}
+
+.timeline-chip-completed {
+  color: var(--grn);
+  background: var(--grns);
+  border-color: var(--grnb);
+}
+
+.timeline-legend-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-legend-dates,
+.timeline-legend-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------- tasks & tray */
+
+.timeline-tasks {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) 0 var(--space-5);
+}
+
+.timeline-task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--tx);
+}
+
+.timeline-task-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  white-space: nowrap;
+}
+
+.timeline-task-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-task-status {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+.timeline-task-done {
+  color: var(--grn);
+}
+
+.timeline-task-in_progress {
+  color: var(--acc);
+}
+
+.timeline-task-review {
+  color: var(--amb);
+}
+
+.timeline-task-cancelled {
+  color: var(--tx3);
+  text-decoration: line-through;
+}
+
+.timeline-task-empty {
+  font-size: var(--text-sm);
+  color: var(--tx3);
+  padding-left: var(--space-5);
+  margin: 0;
+}
+
+.timeline-tray {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--space-4);
+}
+
+.timeline-tray-title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.timeline-tray-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+}

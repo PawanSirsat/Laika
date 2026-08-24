@@ -28,7 +28,11 @@ API versus UI, not directory depth: Builder-B never touches `server/src/`, and
 Builder-A never touches `server/web/`. `server/public/` is build output and
 belongs to nobody; it is gitignored (LAI-016).
 
-**Temporary, D-028 — both builders are on the UI.** `server/web/` splits by
+**D-031 retires the D-028 split: Builder-B owns all of `server/web/` again**,
+including `api/sprints.ts`, and Builder-A is back to `server/**`. The paragraph
+below is kept as the record of what D-028 did and is no longer in force.
+
+~~**Temporary, D-028 — both builders are on the UI.**~~ `server/web/` splits by
 screen: `routes/screens/sprints/`, `timeline/` and `dashboard/` **and
 `api/sprints.ts`** are **Builder-A's**;
 everything else under `server/web/` — the shell, sidebar, `route-table.ts`,
@@ -323,6 +327,11 @@ file. The rules below are the ones that are true of every line of code.
   sidebar, theme system, routing, form layout, and empty/loading/error states
   depend on no endpoint and are not gated. These are marked in their task files;
   everything else waits.
+- **Demo data lives in `src/demo/` and cannot ship (D-032).** To render a screen
+  whose endpoint does not exist yet, a demo module is allowed — one file per
+  missing endpoint, each naming the endpoint that retires it, each fed screen
+  saying so on the screen, and **a test asserting no demo string survives into
+  the built bundle**. A demo module beside a real endpoint is a defect.
 - **Functional React wired to the real API. Never hardcode mockup data.** Mira
   Kellner, `laika.kvelld.internal`, "13/34 done" are fixtures in the mockup. Every
   number, name and count in the shipped UI comes from an API response. A
