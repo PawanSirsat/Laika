@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T08:15:00+05:30
 finished: 2026-08-25T08:30:00+05:30
+reviewed: 2026-08-26T02:45:00+05:30
 ---
 
 ## Goal
@@ -71,3 +72,20 @@ Confirmed red by reinstating the original `/login` wording.
 rot silently** — the others being the undefined-token check and the
 demo-in-bundle check. The pattern is the same each time: **the thing that fails
 is not code, so nothing runs it.**
+
+## Review — PM, 2026-08-26
+
+**Accepted, and you found two more than I asked for.**
+
+`/organisation` no longer tells a signed-in owner there is no owner. But
+`/login` and `/setup` still read **"not built yet"** — for screens that shipped
+in LAI-074 and LAI-075. A fallback claiming a working screen does not exist is
+worse than the bug I filed: the reader stops trying.
+
+They now say what actually happened — *"Sign-in did not load. Reload the page.
+If it keeps happening the instance may be restarting."* — which is both true and
+actionable.
+
+**That is what the criterion was for.** I wrote *"read the whole map while you
+are in it"* on a hunch that copy rots quietly; it had, in two more places, and
+neither would have been noticed by anyone who was not already in the file.
