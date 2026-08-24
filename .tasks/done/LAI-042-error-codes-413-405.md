@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-022
-status: review
+status: done
 started: 2026-08-24T06:46:26+05:30
 finished: 2026-08-24T06:52:29+05:30
+reviewed: 2026-08-24T08:05:00+05:30
 ---
 
 ## Goal
@@ -101,3 +102,40 @@ code. That is the behaviour change the decision asked for, not a regression.
 **5. `Allow` header included** on every 405, and the permitted methods repeated in
 `details.allowed` so a JSON client does not have to read headers to know what to
 call instead.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: lint clean, **317 server tests** (up from 303) and 90
+web. Ten codes, ten statuses, `payload_too_large` → 413 and
+`method_not_allowed` → 405 both present and both asserted through the app.
+
+### The layering rule earned its keep here
+
+`errors.ts` moved from `server/src/http/` to `server/src/`, and that was not
+tidying — it was forced. Services throw `ApiError` (CONVENTIONS §2) and services
+may never import `http/`, so the error vocabulary could not stay in the transport
+layer once anything below it needed to raise one.
+
+**A rule added yesterday caught a design flaw today.** The vocabulary was in the
+wrong place from the start; nothing surfaced it until an import was actually
+illegal. That is the difference between a documented convention and an enforced
+one.
+
+### Tests I did not ask for and would have missed
+
+- **`answers a wrong method on a real path with 405 and an Allow header`.**
+  RFC 9110 *requires* `Allow` on a 405, and a 405 without it is a spec violation
+  that no client complains about. Not in my criteria.
+- **`still answers an unknown path with 404, not 405`** — the distinction I
+  flagged as a risk in the task notes, resolved properly rather than forced.
+- **`does not turn a wrong method on a SPA route into a 405`** — the SPA fallback
+  matches everything, so the naive implementation 405s on every unmatched path
+  and breaks the whole frontend. This is the bug that would have shipped.
+- **`reports the methods a path actually has routes for`** and **`handles a
+  path-scoped middleware without inventing methods`** — `Allow` is derived from
+  the router rather than hardcoded, and middleware registered with `use('*')`
+  does not count as a method. Both are the kind of detail that makes `Allow`
+  wrong in a way nobody notices for a year.
+
+**Boundaries clean.** The move of `errors.ts` is within `server/`, and CONVENTIONS
+§1 has been updated by PM to list it alongside the other cross-layer modules.

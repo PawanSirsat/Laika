@@ -20,6 +20,8 @@ server/src/
   index.ts          process bootstrap only — no business logic
   app.ts            wiring only — middleware order, route mounting
   env.ts  log.ts  paths.ts  version.ts     process concerns, flat
+  errors.ts         the §6.3 error vocabulary — flat because BOTH services/ and
+                    http/ raise it, and services/ may not import http/
   db/               schema, client, migrations, low-level data helpers
   policy/           can(), actions — pure, no I/O
   services/         business logic. Takes an Actor. Returns data.
