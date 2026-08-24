@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Sidebar } from './Sidebar.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
+import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
+import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
+import { LoginScreen } from '../routes/screens/LoginScreen.tsx';
 import { NotFound } from '../routes/screens/NotFound.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
@@ -22,6 +25,11 @@ import './app-shell.css';
 export function AppShell() {
   const { path, route, navigate } = useRoute();
   const [navOpen, setNavOpen] = useState(false);
+
+  // The instance the browser is actually pointed at. Read from the location
+  // rather than hardcoded: the prototype's `laika.kvelld.internal` is a fixture,
+  // and this is correct for every deployment without configuration.
+  const instanceHost = window.location.host;
 
   // Escape closes the off-canvas nav. Anything that traps focus on a narrow
   // screen needs a way out that is not a mouse.
@@ -97,6 +105,28 @@ export function AppShell() {
             <TokenReference />
           ) : path === '/design/states' ? (
             <StateGallery />
+          ) : path === '/login' ? (
+            <LoginScreen host={instanceHost} />
+          ) : path === '/invite' ? (
+            // Layout preview until LAI-007 reads the invite token and supplies
+            // the real inviter, org, email, role and expiry. The values below
+            // are generic English rather than a fabricated person or company —
+            // no Mira Kellner, no Kvelld Dynamics (CLAUDE.md §5.1).
+            <InviteScreen
+              host={instanceHost}
+              inviterName="An administrator"
+              orgName="this organisation"
+              email="the address your invite was sent to"
+              role="member"
+              expiresIn="7 days"
+            />
+          ) : path === '/first-boot' ? (
+            <FirstBootScreen
+              host={instanceHost}
+              migrationsApplied={0}
+              migrationsTotal={0}
+              smtpConfigured={false}
+            />
           ) : (
             <Screen route={route} />
           )}

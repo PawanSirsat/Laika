@@ -57,6 +57,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'Sign-in is not built yet',
     body: 'The sign-in form, invite acceptance and the instance host indicator arrive with authentication.',
   },
+  '/invite': {
+    headline: 'No invite in this link',
+    body: 'An invite link carries a token. Ask whoever invited you to send the full link.',
+  },
   '/first-boot': {
     headline: 'First-run setup is not built yet',
     body: 'Creating the organisation, the Owner account and the first project happens here, once.',

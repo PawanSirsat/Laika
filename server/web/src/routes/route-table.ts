@@ -57,6 +57,7 @@ export const ROUTES: readonly Route[] = [
   // Routed, but not nav destinations.
   { path: '/projects', label: 'Projects', group: null, phase: 'Phase 2' },
   { path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
+  { path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
   { path: '/first-boot', label: 'First boot', group: null, phase: 'Phase 1' },
 
   // The LAI-018 and LAI-020 reference pages. Kept reachable — both tasks
