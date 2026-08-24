@@ -1159,3 +1159,34 @@ a variable anyone with deploy access can set quietly.
 
 **Revisit when:** a real lockout happens and the documented recovery turns out to
 be insufficient.
+
+## D-026 — the `WEB_*` structures in `structure.test.ts` belong to Builder-B
+
+**2026-08-24. Context**: LAI-058 added one entry to `WEB_NO_MIRROR_REQUIRED` in
+`server/test/tooling/structure.test.ts`. The §1 ownership table puts all of
+`server/` except `server/web/` in Builder-A's area, and LAI-058 did not name that
+file, so on the letter of the rule it was a crossing.
+
+**Decision**: the `WEB_*` maps and lists in `server/test/tooling/structure.test.ts`
+are **Builder-B's** by standing exception. The rest of the file stays Builder-A's.
+
+**Why**: the rule had already stopped being applied. LAI-049 and LAI-106 made the
+identical change and PM accepted both. A rule enforced on the fourth occurrence
+but not the first three is not a rule, it is a trap — and the alternative was a
+builder blocked on a one-line addition to a map that only their own area
+populates.
+
+The deeper reason is that the file is misfiled by the table, not by the builder.
+It is one file serving two areas: the web half describes `server/web/`, which is
+Builder-B's by D-016. Ownership follows what a section *describes*, not which
+directory the file happens to sit in — the same principle D-016 settled for
+`server/web/` itself.
+
+**Rejected**: splitting the file into `structure.web.test.ts` and
+`structure.server.test.ts`. Cleaner on paper, but the shared walker and the
+mirroring rule would have to be duplicated or extracted into a third module, and
+a test that enforces layout is more useful when it reads as one description of
+the whole repo.
+
+**Consequence**: PM stops treating a `WEB_*` edit as a crossing. Any other change
+to that file from Builder-B is still one.

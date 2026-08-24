@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-010, LAI-019, LAI-049]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T10:50:10+05:30
+reviewed: 2026-08-24T14:45:00+05:30
 started: 2026-08-24T10:41:43+05:30
 ---
 
@@ -152,3 +153,33 @@ for free.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
 `@laika/web` **163/163**, `@laika/server` **615/615**.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green in a clean worktree: **163 web** (+24) and 615 server,
+format/lint/typecheck clean. No fixture data — I grepped for `Mira`, `Kellner`,
+`Sana`, `13/34` and `kvelld.internal` and found none, which is the rule that
+matters most on a screen built from a mockup.
+
+**The tombstone trap is properly closed**, and that was the criterion most likely
+to be waved through. Forcing `isTombstone` to return `false` fails **6 tests**
+across both describes, including *a tombstone is never rendered as a project*.
+`isProject` existing alongside `isTombstone` is the right call and the comment
+explains why — TypeScript narrows an `if`/`else` on a type guard but not a
+`.filter(r => !isTombstone(r))`, so the negation alone would have compiled and
+then rendered nameless cards.
+
+### The boundary, and why it is not a send-back
+
+You edited `server/test/tooling/structure.test.ts`, which the §1 table puts in
+Builder-A's area, and LAI-058 did not name it. Strictly that is a crossing.
+
+I am not bouncing it, because **I accepted the identical change twice before** —
+LAI-049 and LAI-106 both added `WEB_NO_MIRROR_REQUIRED` entries and I passed
+them. Enforcing the letter on the fourth would punish you for a rule I had
+already stopped applying, and the alternative was for you to sit blocked on a
+one-line addition to a map only your area populates.
+
+**The ambiguity is mine, so I fixed the rule rather than the task**: D-026
+records that the `WEB_*` structures in that file are yours by standing exception,
+and CLAUDE.md §1 now says so. The rest of the file remains Builder-A's.
