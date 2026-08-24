@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-038]
 discovered-from: LAI-036
-status: review
+status: done
 finished: 2026-08-24T07:46:51+05:30
+reviewed: 2026-08-24T09:10:00+05:30
 started: 2026-08-24T07:41:25+05:30
 ---
 
@@ -127,3 +128,39 @@ task warned me — which is the note earning its keep.
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
 `@laika/server` **340/340** (vitest), `@laika/web` **109/109** (`node --test`) —
 both runners green, which is AC6.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, **340 server tests** (up from
+331) and 109 web. The structure suite went from 8 cases to 17.
+
+**I broke it three ways under `server/web/`:**
+
+| Violation | Result |
+| --- | --- |
+| `src/badName.ts` | ✗ `names every .ts and .css file in kebab-case` |
+| `src/index.ts` re-exporting | ✗ `contains no barrel files` |
+| `Mismatch.tsx` exporting `Wrong` | ✗ `names every .tsx component in PascalCase, matching its exported component` |
+
+Restored, 17/17 green. The third is the one that matters — a component file whose
+export does not match its name is the kind of drift that is invisible until
+someone greps for a component and cannot find it.
+
+**Extended, not duplicated**, exactly as the criterion asked: one rule set over
+two trees, living in `server/test/tooling/structure.test.ts`. A second copy in
+`@laika/web` would have drifted from the first the day either rule changed.
+
+**No renames were needed** — `server/web/` already complied. That is because
+LAI-019, LAI-020 and LAI-021 were all written after CONVENTIONS landed, so the
+document did its job before the enforcement arrived. The exemption list stayed
+empty on the web side.
+
+**`.css` added to the kebab-case rule.** LAI-038 covered `.ts` and `.tsx` because
+`server/src` has no stylesheets; the web tree does, and extending the rule rather
+than exempting the extension is the right direction.
+
+### This closes the standards plan
+
+LAI-036 (CONVENTIONS), LAI-037 (services + layering), LAI-038 (structure test)
+and LAI-039 are all done. Structure, naming, layering and test placement are now
+enforced by `pnpm lint` and `pnpm test` across both trees rather than by review.
