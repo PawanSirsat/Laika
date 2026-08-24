@@ -2,11 +2,12 @@
 id: LAI-098
 title: '§4.8 and `enums.ts` disagree on three verbs, and neither session can fix it alone'
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-051]
 discovered-from:
-status: backlog
+started: 2026-08-24T21:03:59Z
+status: in-progress
 ---
 
 ## Goal
