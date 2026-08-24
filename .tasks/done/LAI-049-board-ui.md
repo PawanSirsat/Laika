@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-011, LAI-007]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T09:33:02+05:30
+reviewed: 2026-08-24T11:25:00+05:30
 started: 2026-08-24T09:21:28+05:30
 ---
 
@@ -156,3 +157,46 @@ which is what the no-lie behaviour depends on.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
 `@laika/web` **135/135**, `@laika/server` **477/477**.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, 506 server. Web tests pass —
+**135 when all of them are actually run**, which is a finding of its own, below.
+
+**No polling, and the seam is documented in both places it matters** —
+`use-board.ts`: *"SSE (LAI-048) has not landed; `reload()` is the single seam"*,
+and `BoardScreen.tsx`: *"deliberately not a timer"*. That was the instruction
+most likely to be quietly ignored, because a `setInterval` works and nobody
+notices it until someone has to remove it.
+
+**Four tests that show the derivation was thought through:**
+
+- **`ready=false is sent, not dropped`** — the falsy-filter bug. `?ready=false`
+  and "no ready filter" are different queries and a truthiness check conflates
+  them.
+- **`an unresolvable dependency is undefined, not false`** — blocked is
+  tri-state when a dependency is outside the loaded page. Returning `false`
+  would be a confident wrong answer; `undefined` is an honest one.
+- **`a known blocker wins over an unknown one`** — the resolution rule that makes
+  the tri-state usable rather than merely correct.
+- **`cancelled is dropped, not given a column`** — §11.4.1 says a filter, not a
+  column, and it would have been easier to add a sixth column.
+
+`escapes the slug`, `is stable — the same input gives the same order`, and
+`rejects when the server refuses the transition` cover the snap-back criterion
+and the ordering determinism.
+
+### 23 web tests have never run — not your defect, but found here
+
+`@laika/web`'s script is `node --test test/*.test.ts`, which matches six files.
+There are nine: everything under `test/api/` has been skipped since LAI-106
+created that directory. All 135 pass when run, so nothing is hidden — but the
+gate would not have said so.
+
+**I accepted LAI-106 and LAI-047 on a count that excluded them**, reading "112
+passed" as coverage rather than as a number that had stopped moving. **LAI-054
+filed at p1.**
+
+`structure.test.ts` does not catch it by design — its comment says "the runner is
+irrelevant to what it asserts". It validates where test files live, not whether
+anything runs them. Two different properties; one was covered.
