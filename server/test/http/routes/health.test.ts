@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { REQUEST_ID_HEADER } from '../../src/http/middleware/request-id.ts';
-import { TEST_VERSION, testApp } from '../helpers/app.ts';
+import { REQUEST_ID_HEADER } from '../../../src/http/middleware/request-id.ts';
+import { TEST_VERSION, testApp } from '../../helpers/app.ts';
 
 describe('GET /api/v1/health', () => {
   it('returns 200 with status, version and uptime', async () => {
