@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-010, LAI-037]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T09:06:23+05:30
 finished: 2026-08-24T09:14:36+05:30
+reviewed: 2026-08-24T11:05:00+05:30
 ---
 
 ## Goal
@@ -159,3 +160,48 @@ the only path, and reassignment records `task.assigned` rather than a status
 change — §5 says so explicitly.
 
 **Comments are not in this task**, per the notes — they are the follow-up.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, **477 server tests** (up from
+417 — sixty new) and 112 web. `routes/tasks.ts` has **zero** `db`/`drizzle`/
+`schema` references; the work is in `services/tasks.ts`.
+
+**The concurrency tests are real, and the worker comment says why:** *"one worker
+= one independent SQLite connection to the same file… better-sqlite3 is
+synchronous, so nothing in a single process can produce the interleaving these
+are meant to catch."* That is the difference between testing a compare-and-swap
+and testing that you wrote one. `lets exactly one of many simultaneous claimants
+win` and `produces a dense, duplicate-free sequence under concurrent writers`
+both run against genuine cross-connection contention.
+
+**`leaves no gap when a transaction rolls back`** is the numbering case nobody
+asks for. A sequence with holes is not wrong exactly, but `LAI-7` never existing
+is the kind of thing people file bugs about for years.
+
+**Every criterion checked, and the subtle ones are right:**
+
+| Criterion | Evidence |
+| --- | --- |
+| `ready` includes `todo` | `is true for an unassigned backlog or todo task with no dependencies` |
+| `ready` is derived | `is false once assigned, and false while a dependency is unfinished`; `filters by ready in both directions` |
+| Claim CAS returns the holder | `tells a second claimant who holds it` |
+| `discovered_from` does not block | `lets a discovered task be worked while its parent is open` |
+| Cycles and self-links | `rejects a self-link and a cycle as unprocessable` |
+| Transitions per §5 | `follows the §5 path and records each move once`, `refuses an illegal jump` |
+| Review requires assignee/lead/admin | `refuses a plain member who is not the assignee` |
+
+**`records a reassignment as task.assigned, not a status change (§5)`** is
+precisely what §5 says and easy to get wrong — reassigning while `in_progress` is
+not a transition. **`writes no activity when nothing changed`** keeps a no-op
+PATCH out of the audit trail, which matters for a table three other features read.
+
+**`ready` including `todo` was a pre-flight correction of mine** — the criteria
+originally said `backlog` only, and I fixed it before this was claimed. Worth
+noting that the correction landed rather than being quietly re-broken.
+
+### Unblocks
+
+**LAI-047** (comments), **LAI-049** (board UI), **LAI-050** (sprints), and
+**LAI-108 → LAI-053** (projects enrichment). Builder-B was structurally idle
+behind this task; they are not any more.
