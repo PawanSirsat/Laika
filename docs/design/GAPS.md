@@ -45,7 +45,7 @@ server/web/src/` lists every screen still leaning on one.
 
 | Design element | Backed by | Status |
 | --- | --- | --- |
-| Progress bar, `13/34 done`, blocked count, last activity | not on `GET /projects` | **LAI-053** |
+| Progress bar, counts, blocked count, last activity | **`GET /projects`** (LAI-053) | **shipped** (LAI-046) |
 | Repo line under the name | `projects.repo` exists (LAI-108) | ready |
 
 ## Deliberately dropped, not missing

@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-053, LAI-076]
 discovered-from: LAI-076
-status: review
+status: done
 started: 2026-08-25T07:40:00+05:30
 finished: 2026-08-25T08:05:00+05:30
+reviewed: 2026-08-26T02:15:00+05:30
 ---
 
 ## Goal
@@ -102,3 +103,18 @@ filing.**
 
 The live-agent pill. LAI-053 omits it rather than sending it empty, and an
 always-absent field reads as "no agents" rather than "not built" (D-023, M4).
+
+## Review — PM, 2026-08-26
+
+**Accepted.** Seeded 4 tasks, 1 in progress, 1 blocked — and the card reads
+`0/4 done · 1 active · 1 blocked` with the padlock in `--red`, `just now`
+right-aligned, avatar and name. **Every number matches the seed exactly.**
+
+**The empty project renders no bar and no counts at all**, which is the detail
+that matters: a second card showing `0/0 done` would have looked more complete
+and said nothing true. Same restraint as LAI-076.
+
+Grepped the rendered page for fixtures: clean.
+
+`docs/design/GAPS.md`'s Projects row is now stale in our favour — I will mark the
+counts as backed.
