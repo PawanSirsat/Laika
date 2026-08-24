@@ -2,11 +2,12 @@
 id: LAI-043
 title: Nothing catches env-contract drift between the server and the container
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-033
-status: backlog
+status: in-progress
+started: 2026-08-24T07:06:25+05:30
 ---
 
 ## Goal
