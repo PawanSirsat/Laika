@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-004, LAI-006, LAI-009, LAI-037]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T08:06:21+05:30
 finished: 2026-08-24T08:14:34+05:30
+reviewed: 2026-08-24T10:10:00+05:30
 ---
 
 ## Goal
@@ -147,3 +148,33 @@ endpoint would have been odd. Small addition, flagged.
 had it. No criterion here mentioned it, and adding an unrequested column to a CRUD
 task is how scope grows quietly. → **LAI-108**, which also asks the question the
 spec leaves open: may two projects track the same repo?
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, **417 server tests** (up from
+370) and 112 web. **M2's first task.**
+
+**The layering held.** `http/routes/projects.ts` has **zero** references to `db`,
+`drizzle` or `schema`; the work lives in `services/projects.ts`. That is LAI-037's
+`no-restricted-imports` doing its job on the first real CRUD task rather than on a
+worked example — which is the moment it actually mattered.
+
+**Routes are keyed by `:slug`**, and `reads and patches by slug, not id` tests
+exactly the thing my pre-flight correction fixed. The criteria as originally
+written said `:id`; catching that before you claimed it is the only reason this
+did not cost a cycle.
+
+**Permission coverage is per-role and cites the spec**, which is what makes it
+reviewable: `refuses Member and Viewer (§3.1)`, `shows org owners and admins
+everything, without a membership` (the implicit `lead` of D-006), `shows a Member
+only the projects they belong to`, `shows a non-member nothing`, `refuses a plain
+Member editing settings (§3.2 lead-only)`.
+
+**`refuses a project role above viewer for an org viewer (§4.4)`** is the one I
+most wanted to see. D-006 says an org viewer may hold only the project role
+`viewer` — no escalation by project assignment — and I wrote at the time that it
+was "the part most likely to be forgotten". It is tested.
+
+`refuses removing the last lead with conflict`, `returns an archived project as a
+tombstone`, `lowercases the slug and uppercases the prefix`, and duplicate
+slug/prefix conflicts all present.

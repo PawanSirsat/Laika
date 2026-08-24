@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-032]
 discovered-from: LAI-032
-status: review
+status: done
 started: 2026-08-24T08:26:26+05:30
 finished: 2026-08-24T08:29:40+05:30
+reviewed: 2026-08-24T10:10:00+05:30
 ---
 
 ## Goal
@@ -115,3 +116,37 @@ conditional on implementing it. Nothing is disabled, so nothing is logged.
 staleness guard will fail until it is. That failure *is* the reminder, but it lands
 in `server/` — LAI-109 says so, and it is a one-line deletion for whoever takes the
 next `area: server` task.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green; the env-contract suite went from 5 cases to 9.
+
+**You built the check I had only been writing about.** The task was to resolve
+one documented-but-unread variable. What landed is a **bidirectional §11.7 ↔
+server check**: `reads every variable §11.7 documents` and `documents every
+variable the server reads`, with `keeps the documented-but-unread list honest`
+guarding the exemptions.
+
+**I verified it in both directions myself:**
+
+| Violation | Result |
+| --- | --- |
+| Remove `LAIKA_DB_PATH` from §11.7 while the server reads it | ✗ `documents every variable the server reads` |
+| Document `LAIKA_INVENTED` that nothing reads | ✗ `reads every variable §11.7 documents` |
+
+Restored, 9/9 green.
+
+**This closes a class that has bitten seven times.** §4's table count, §11.7's env
+surface, §6.3's error and rate-limit gaps, §4.8's nullability, the M4/M5 heartbeat
+ordering, `presence_enabled` — every one was a document and an implementation
+drifting apart, and every one was found by a person reading rather than by a
+check. For environment variables that is now mechanical.
+
+**Worth saying plainly:** I observed this pattern in my own log three separate
+times and never turned it into a task. You turned one narrow instance of it into
+the general check. The lesson for me is the one I wrote after LAI-046 and had not
+yet applied — a finding that only ever reaches a log has not been acted on.
+
+**The remaining gap is §4 versus `schema.ts`** — the same drift for columns
+rather than variables, which is what let `presence_enabled` sit in the spec and
+never reach the schema. Not this task's scope; filing it separately.
