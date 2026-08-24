@@ -23,6 +23,42 @@ Also read the builder's log entry for that task in `logs/<session>-*.md`.
 evidence. For each one, find the code that satisfies it. Where a criterion says
 "tested", find the test and confirm it asserts the thing.
 
+**3b. For a `web` task, render it. Do not review UI from the diff alone.**
+
+A screenshot is the only thing that catches what the diff cannot: the sidebar
+leaking onto a signed-out page, copy from another screen, a layout that breaks in
+one theme. Both of the defects found in the 2026-08-24 audit were invisible in
+the code and obvious in a browser.
+
+```bash
+pnpm build
+LAIKA_DB_PATH=<scratch>/ui.db LAIKA_SECRET=<32+ chars> \
+LAIKA_PUBLIC_URL=http://localhost:3999 PORT=3999 node server/dist/index.js &
+```
+
+Then drive it with a real browser — first boot, sign in, the screens the task
+touched — and capture **both themes**. `playwright-core` in the scratchpad
+against the system Chromium works; do not add a browser dependency to the repo.
+
+Check, in this order:
+
+- **Against the design.** `docs/design/Laika Prototype.dc.html` is canonical;
+  `Laika 05-07 - Auth, Setup, Projects.dc.html` is the only detailed source for
+  login, first boot and project home. Render the design file too and compare
+  side by side rather than from memory.
+- **Signed out.** Open the pre-auth routes in a **fresh context**. A session you
+  are already holding hides exactly the class of bug LAI-062 was.
+- **Both themes**, every time. A component that only works in light is not done.
+- **No fixture data.** Grep the diff for `Mira`, `Kellner`, `Sana`, `Verma`,
+  `kvelld.internal`, `13/34`, `laika-core`, `v0.4`. Any hardcoded number, name or
+  count is a defect even when it looks right.
+- **Tokens, if the diff touched styling.** Read the computed custom properties
+  off the running page and compare to the table in `docs/design/README.md`. Do
+  not eyeball colour.
+
+Attach what you found to the review notes. If a mismatch is real but outside the
+task, **file it — do not widen the task**.
+
 **4. Check the boundaries.**
 - Did the diff touch only files that session owns? (Root-level files only if the
   task explicitly named them, file by file.)

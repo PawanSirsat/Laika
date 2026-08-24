@@ -20,12 +20,21 @@ complete, and the only file using the correct `LAI-` task prefix.
 | `Laika - All Screens.dc.html` | 10 (no Timeline, Sprints, Calendar) | `LK-` ⚠️ | superseded |
 | `Laika 01 - Kanban Board.dc.html` | 1 | `LK-` ⚠️ | superseded |
 | `Laika 02-04 - Task, Capacity, Dashboard.dc.html` | 3 | `LK-` ⚠️ | superseded |
+| **`Laika 05-07 - Auth, Setup, Projects.dc.html`** | 3 | `LK-` ⚠️ | **superseded, but the only detailed source for login / first boot / project home** |
 | `Laika 08-10 - Meeting, Tokens, Org.dc.html` | 3 | `LK-` ⚠️ | superseded |
 | `support.js` | — | — | Claude Design's own runtime, **not ours** |
 
 The superseded files are kept because they carry per-screen detail the prototype
 compresses. **Where they disagree, the prototype wins.** Anything showing `LK-`
 is stale by definition — the key prefix is `LAI-`.
+
+**`Laika 05-07` was missed by the original import on 2026-08-24 and added later
+the same day.** That was an oversight, not a decision — the first import listed
+four superseded files when the project has five. It matters more than the other
+superseded files because the prototype compresses login, first boot and project
+home into single nav entries, so **this file is the only place their layout is
+specified**: the first-boot dark rail, the invite-accept role card, and the
+project-home card anatomy all exist nowhere else.
 
 `support.js` is the generated `dc-runtime` that makes `.dc.html` render in the
 Claude Design viewer. It is third-party tooling, marked "do not edit", and has
@@ -90,6 +99,8 @@ The prototype contains mistakes and placeholders. Reproducing them is a bug.
 | **"Forgot?"** | Login | No password-reset endpoint exists (SPEC §6.4). Omit until decided. |
 | `LK-` task keys | all superseded files | The prefix is `LAI-`. |
 | Overlapping labels / floating pills | scattered | Layout artifacts of the mockup tool. Lay out properly; do not pixel-match a collision. |
+| **`v0.4.2` version badge** | First boot, sidebar | No endpoint returns a product version. Show it only if one does — otherwise omit rather than invent (LAI-064). |
+| **`migrations 41/41 applied`** | First boot, status rail | Laika has single-digit migrations. Render the real count or omit the line (LAI-206). |
 | Hardcoded people and counts | everywhere | Mira Kellner, Sana Verma, `laika.kvelld.internal`, "13/34 done" are fixtures. **Never hardcode mockup data** — every number comes from the API. |
 
 ## What the design assumes that the spec does not yet define
