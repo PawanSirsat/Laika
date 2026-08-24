@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-037]
 discovered-from: LAI-036
-status: review
+status: done
 started: 2026-08-24T06:26:26+05:30
 finished: 2026-08-24T06:30:16+05:30
+reviewed: 2026-08-24T07:25:00+05:30
 ---
 
 ## Goal
@@ -106,3 +107,43 @@ otherwise re-derive it.
 **6. `server/web/` untouched** (D-016) — LAI-039 extends this file rather than
 duplicating it. The `.tsx` rules are live and proven, so the first component to
 arrive from that task is checked rather than setting a precedent.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: lint clean, **303 server tests** (up from 295) and 41
+web.
+
+**I broke it three ways rather than trusting the log**, on the same reasoning as
+LAI-037 — a structural test that does not fail is worse than none, because it
+reads as enforcement:
+
+| Violation | Result |
+| --- | --- |
+| `src/badName.ts` | ✗ `names every .ts file in kebab-case` |
+| `src/policy/index.ts` re-exporting | ✗ `contains no barrel files` |
+| `src/policy/orphan.ts` with no test | ✗ `has a mirrored test for every src module` |
+
+Each also tripped the mirror rule, which is correct cascading rather than noise.
+Tree restored, 8/8 green.
+
+### The exemption list polices itself, and I did not ask for that
+
+`keeps the exemption list honest — every entry names a file that exists` and
+`gives every exemption a reason`. My task said entries should come off the list
+as tasks touch those files, which is a hope, not a mechanism. These make it
+mechanical: a deleted file cannot linger as a stale entry, and — the part that
+actually matters — **a new file cannot quietly inherit an exemption that was
+never about it**. That is precisely how an exemption list rots into a permanent
+bypass, and it is now impossible.
+
+**Moving `test/http/health.test.ts` → `test/http/routes/health.test.ts`** is the
+right kind of fix: the source is `http/routes/health.ts`, so the mirror rule was
+correct and the test was in the wrong place. Fixing the tree rather than adding
+an exemption is what keeps the list short.
+
+**`places every test file in a directory that exists under src/, or in helpers/
+or tooling/`** is the inverse rule I did not specify — it catches a test for a
+module that no longer exists, which is how dead tests survive a deletion.
+
+**Unblocks LAI-039**, which extends this to `server/web/` rather than duplicating
+it.
