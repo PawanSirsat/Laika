@@ -29,7 +29,8 @@ Builder-A never touches `server/web/`. `server/public/` is build output and
 belongs to nobody; it is gitignored (LAI-016).
 
 **Temporary, D-028 — both builders are on the UI.** `server/web/` splits by
-screen: `routes/screens/sprints/`, `timeline/` and `dashboard/` are **Builder-A's**;
+screen: `routes/screens/sprints/`, `timeline/` and `dashboard/` **and
+`api/sprints.ts`** are **Builder-A's**;
 everything else under `server/web/` — the shell, sidebar, `route-table.ts`,
 theme, shared components, the board and the auth screens — stays **Builder-B's**.
 Builder-A adds files inside its own screen folders and edits no shared file.

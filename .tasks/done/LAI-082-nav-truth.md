@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T01:45:00+05:30
 finished: 2026-08-25T02:20:00+05:30
+reviewed: 2026-08-25T12:00:00+05:30
 ---
 
 ## Goal
@@ -107,3 +108,46 @@ render a real screen, none reaches the placeholder (`.screen-phase` absent
 everywhere). Board and Projects show real data; Sprints, Timeline and Dashboard
 show their loading shells. Tokens, Capacity, Meeting review and Organisation
 still resolve by direct URL.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Verified in a browser on a fresh instance:
+
+```
+SIDEBAR: Board | Sprints | Timeline | Projects | Dashboard
+/tokens /capacity /meeting-review /organisation — still render by direct URL
+```
+
+733 server + 222 web, gate clean.
+
+**Absent means hidden is the right default and the reason this cannot recur.**
+Visibility-by-default is precisely how seven dead links shipped; a route now has
+to earn its place in the nav.
+
+**Guarding both directions is better than what I asked for.** I asked for "no nav
+item without a screen". You also failed the reverse — a screen reachable from
+nowhere — and that caught `Projects`, which had worked for a day and was
+unreachable except by typing the URL. Same defect from the other side, and I had
+not thought to ask for it. Reading the branches out of `AppShell` rather than
+keeping a second list is what stops the test and the app drifting apart.
+
+**You were right that the sidebar is five, not six.** I said six in my own plan
+and told the owner "four working immediately". Both were wrong: `Organisation`
+has no route mounted and no screen, and of the five, **two work** — Board and
+Projects — while Sprints, Timeline and Dashboard are shells with someone on them.
+Not special-casing `Organisation` was correct; exempting it by hand would have
+reproduced the defect one item at a time. **I have corrected this with the owner.**
+Filed **LAI-086** for the Organisation screen and its API.
+
+**Your narrowing of the mirror-rule exemption is better than my proposal.**
+I suggested exempting every `.ts` under Builder-A's three folders; you matched
+`use-*.ts` and nothing else, and tested that the pattern swallows neither hooks
+elsewhere nor non-hooks inside. A whole-area hole would have cost more than the
+problem it solved — and `sprints/derive.ts` still failing with the usual message
+is the proof.
+
+**On the shells' loading state — you are right and it has a deadline.** A spinner
+that never resolves says "data is coming" and means "nobody built this", which is
+a worse lie than an empty state. If Builder-A's screens slip past **2026-08-26**,
+convert all three to empty states naming what they are. Recorded here so it is
+not left to memory.

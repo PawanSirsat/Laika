@@ -1269,3 +1269,26 @@ this is.
 **Reverts when the UI has caught up.** This is a rebalance, not a new steady
 state — when every shipped screen exists, `server/web/` returns to Builder-B and
 Builder-A returns to the API.
+
+## D-029 — `api/sprints.ts` follows the sprints screen to Builder-A
+
+**2026-08-25.** D-028 gave Builder-A the sprints screen but left `api/` with
+Builder-B. `api/sprints.ts` today has `listSprints` and `countSprints`; the screen
+needs create, update, activate and delete.
+
+That left two bad options: sprint API calls living in **two homes** — half in
+`api/sprints.ts`, half in the screen folder — or Builder-A waiting on Builder-B
+for every endpoint, which re-serialises the two sessions D-028 exists to
+parallelise.
+
+**Decision: `api/sprints.ts` is Builder-A's** for the duration of D-028.
+Builder-B consumes `countSprints` for the nav count and does not edit the file.
+One owner per file, one home per resource.
+
+The general rule this expresses: **when a split by screen leaves a shared module
+that only one side actively develops, the module follows the developer, not the
+directory.** Builder-A flagged it before hitting it rather than picking whichever
+option was locally convenient, which is why it is a decision and not a merge
+conflict.
+
+Reverts with D-028.
