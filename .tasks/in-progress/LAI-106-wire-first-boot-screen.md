@@ -2,11 +2,12 @@
 id: LAI-106
 title: Wire FirstBootScreen to POST /api/v1/setup
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-009]
 discovered-from: LAI-009
-status: backlog
+status: in-progress
+started: 2026-08-24T08:01:32+05:30
 ---
 
 ## Goal
