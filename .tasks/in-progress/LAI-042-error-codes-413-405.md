@@ -2,11 +2,12 @@
 id: LAI-042
 title: Add payload_too_large and method_not_allowed to the error vocabulary
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-022
-status: backlog
+status: in-progress
+started: 2026-08-24T06:46:26+05:30
 ---
 
 ## Goal
