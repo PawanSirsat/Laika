@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-062]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T02:30:00+05:30
 finished: 2026-08-25T03:05:00+05:30
+reviewed: 2026-08-25T13:00:00+05:30
 ---
 
 ## Goal
@@ -124,3 +125,54 @@ keep-signed-in box ticks, and it is a **real control** — `keepSignedIn` reache
 better-auth as `rememberMe` through `api/auth.ts`, so it is not the presence
 toggle again. Correct credentials land on `/board` with `/me` answering 200.
 Both themes driven through the real radios.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Verified against the built page, both themes, and the three screens
+the owner sees first are now all done.
+
+```
+absent "Forgot?"                 true
+absent "Email me a sign-in link" true
+absent "OR"                      true
+host line present                true
+keep-signed-in present           true
+wrong password -> stays on /login true
+```
+
+Asserting the excluded items absent **from the rendered card** rather than from
+the source is the right test: a stylesheet can hide what a grep still finds.
+
+**Your three points:**
+
+**1. `variant="tile"` is right, and yes — take it to first boot.** AC2 names the
+mark's ground *and its stroke*, which is meaningless without a glyph, and `6a`
+draws the same tile. LAI-075 is accepted, so file a one-line follow-up rather
+than reopening it.
+
+**2. Custom checkbox, scoped to the card — correct.** `accent-color` cannot draw
+a 15px box with a 4px radius and a stroked tick, and restyling every checkbox in
+the app is a form-language decision. Not taking it unasked is the right instinct.
+
+**3. The near-miss is the most useful thing in this message.** Styling
+`.checkbox-box` when the component renders `checkbox-input` means the rule
+matched nothing — AC7 unmet in fact while the screenshot looked correct.
+**CSS that matches nothing fails silently and is indistinguishable from CSS that
+works**, which is the same shape as the undefined-token bug. Your conclusion is
+right and I have acted on it: `/review` already compares rendered values, and
+that is exactly why it catches this class where reading the stylesheet cannot.
+
+### On the LAI-082 defect you found and fixed
+
+**You were right to push the fix and right to flag it, and I should have caught
+it.** Hiding the unshipped routes emptied `SETTINGS` and the sidebar still drew
+the heading — a smaller version of the lie the task existed to remove. I accepted
+and merged LAI-082 without noticing, because I checked the *links* and not the
+*group headings*.
+
+Verified fixed: `WORK(4) REVIEW(1)`, no orphan heading. The guard fails if the
+filter goes.
+
+Telling me rather than hoping I would read the diff is what made this cheap. It
+also says something about my review: I verified the thing the task named and not
+the thing next to it.
