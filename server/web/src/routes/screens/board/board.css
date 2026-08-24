@@ -414,3 +414,73 @@
   outline: 2px solid var(--acc);
   outline-offset: 2px;
 }
+
+/* --------------------------------------------- header additions (LAI-065) */
+
+.board-context {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.board-project {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-heavy);
+  line-height: 1.2;
+  color: var(--tx);
+}
+
+.board-slug {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.board-search {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1 1 16rem;
+  min-width: 0;
+  max-width: 24rem;
+}
+
+.board-search .input {
+  height: 2.25rem;
+}
+
+.board-search-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--tx3);
+}
+
+/* The create form sits under the header rather than over the board: it is
+   short, and a modal for two fields buys a focus trap and nothing else. */
+.new-task {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  margin-bottom: var(--space-4);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+
+.new-task-title {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.new-task-title .input {
+  width: 100%;
+}
+
+.new-task .state {
+  flex: 1 1 100%;
+}

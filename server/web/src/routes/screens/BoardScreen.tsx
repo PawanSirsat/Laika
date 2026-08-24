@@ -1,25 +1,34 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
+import { Button } from '../../components/forms/Button.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './board/ListView.tsx';
+import { NewTaskForm } from './board/NewTaskForm.tsx';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { useBoard } from '../../api/use-board.ts';
+import type { BoardColumn } from '../../api/board-derive.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
   listMembers,
   listProjects,
+  canCreateTask,
   PRIORITIES,
   type Member,
+  type Task,
   type TaskFilter,
   type TaskPriority,
 } from '../../api/tasks.ts';
+import { getProject, type Project } from '../../api/projects.ts';
+import type { MeProfile } from '../../api/me.ts';
 import './board/board.css';
 
 export type BoardViewMode = 'kanban' | 'list';
 
 export interface BoardScreenProps {
+  /** The signed-in user, for deciding whether creating is offered at all. */
+  readonly me?: MeProfile | undefined;
   /** Filter and view state, owned by the URL so a filtered board is linkable. */
   readonly params: URLSearchParams;
   readonly onParamsChange: (next: URLSearchParams) => void;
@@ -34,12 +43,16 @@ export interface BoardScreenProps {
  * that someone has to find and remove later, and a visible button is honest
  * about the board being a snapshot.
  */
-export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
+export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const { theme } = useTheme();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
   const [openTaskId, setOpenTaskId] = useState<string | undefined>(undefined);
+  const [project, setProject] = useState<Project | undefined>(undefined);
+  const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const view: BoardViewMode = params.get('view') === 'list' ? 'list' : 'kanban';
   const priority = (params.get('priority') ?? undefined) as TaskPriority | undefined;
@@ -77,6 +90,55 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
     };
   }, [slug]);
 
+  // Which project this is, from the API — the header names it rather than
+  // showing the slug from the URL, which is an address and not a title.
+  useEffect(() => {
+    if (slug === undefined) return;
+    const controller = new AbortController();
+
+    getProject(slug, controller.signal)
+      .then(setProject)
+      .catch(() => {
+        // The board still works without a title. `projectError` is reserved for
+        // "no project at all", which is a different screen.
+        setProject(undefined);
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [slug]);
+
+  /**
+   * `/` focuses search — but never while someone is typing.
+   *
+   * Without the guard this steals the key from every text field on the screen,
+   * including the new-task title, and a shortcut that eats your input is worse
+   * than no shortcut.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
+          return;
+        }
+      }
+
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    };
+
+    addEventListener('keydown', onKey);
+    return () => {
+      removeEventListener('keydown', onKey);
+    };
+  }, []);
+
   // Assignee names for the cards. A failure here is not a board failure — the
   // cards fall back to showing the raw id rather than the whole screen erroring.
   useEffect(() => {
@@ -97,6 +159,57 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
   }, [slug]);
 
   const board = useBoard(slug, filter);
+
+  const mayCreate =
+    me !== undefined &&
+    project !== undefined &&
+    canCreateTask(me.org_role, project.id, me.memberships);
+
+  /**
+   * Search is **client-side, over the tasks already loaded**.
+   *
+   * `GET /projects/:slug/tasks` has no text parameter — it filters by status,
+   * priority, assignee, sprint and ready, and nothing else (§6.4). Adding one
+   * from a web task is not this task's to do, so the header says what it is
+   * searching instead of implying it reaches the whole project.
+   */
+  const needle = query.trim().toLowerCase();
+
+  const columns = useMemo(() => {
+    if (needle === '') return board.columns;
+
+    const matches = (task: Task): boolean =>
+      task.title.toLowerCase().includes(needle) || task.key.toLowerCase().includes(needle);
+
+    const next = {} as typeof board.columns;
+    for (const [column, tasks] of Object.entries(board.columns)) {
+      next[column as BoardColumn] = tasks.filter(matches);
+    }
+    return next;
+  }, [board.columns, needle]);
+
+  /**
+   * The same filter applied to the flat list.
+   *
+   * `ListView` takes `tasks`, not `columns`, so filtering only the columns
+   * would have left search working on the board and silently doing nothing in
+   * list view — one control with two behaviours depending on a toggle.
+   */
+  const tasks = useMemo(
+    () =>
+      needle === ''
+        ? board.state.tasks
+        : board.state.tasks.filter(
+            (task) =>
+              task.title.toLowerCase().includes(needle) || task.key.toLowerCase().includes(needle),
+          ),
+    [board.state.tasks, needle],
+  );
+
+  const shownCount = useMemo(
+    () => Object.values(columns).reduce((n, list) => n + list.length, 0),
+    [columns],
+  );
 
   // Read from the board's own list so the panel re-renders after a move —
   // holding a copy would show a stale status the moment the drag succeeded.
@@ -131,6 +244,51 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
   return (
     <div className="board">
       <header className="board-head">
+        {/* Which project this is, by name. The slug is an address. */}
+        <div className="board-context">
+          <h1 className="board-project">{project?.name ?? 'Board'}</h1>
+          {project !== undefined && <span className="board-slug">{project.slug}</span>}
+        </div>
+
+        <div className="board-search">
+          <label className="visually-hidden" htmlFor="board-search-input">
+            Search tasks
+          </label>
+          <input
+            id="board-search-input"
+            ref={searchRef}
+            type="search"
+            className="input"
+            placeholder="Search title or key"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setQuery('');
+            }}
+          />
+          {/* Says what it searches. The endpoint has no text parameter, so this
+              covers the tasks already loaded — a box that silently searched one
+              page while looking like it searched the project would be the same
+              failure as a picker that stops at page one. */}
+          <p className="board-search-note">
+            {needle === ''
+              ? 'Filters the tasks loaded below. Press / to search.'
+              : `${shownCount} of ${board.byId.size} loaded ${board.byId.size === 1 ? 'task' : 'tasks'} match`}
+          </p>
+        </div>
+
+        {mayCreate && !creating && (
+          <Button
+            onClick={() => {
+              setCreating(true);
+            }}
+          >
+            + New task
+          </Button>
+        )}
+
         <div className="board-views" role="group" aria-label="View">
           {(['kanban', 'list'] as const).map((mode) => (
             <button
@@ -215,6 +373,16 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
         </div>
       </header>
 
+      {mayCreate && creating && (
+        <NewTaskForm
+          slug={slug}
+          onCreated={board.reload}
+          onCancel={() => {
+            setCreating(false);
+          }}
+        />
+      )}
+
       {board.moveError !== undefined && (
         <p className="board-alert" role="alert">
           {board.moveError}
@@ -230,7 +398,7 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
         <ApiErrorState error={board.state.error} resource="this board" onRetry={board.reload} />
       ) : view === 'list' ? (
         <ListView
-          tasks={board.state.tasks}
+          tasks={tasks}
           byId={board.byId}
           members={members}
           filtered={filtered}
@@ -238,7 +406,7 @@ export function BoardScreen({ params, onParamsChange }: BoardScreenProps) {
         />
       ) : (
         <KanbanView
-          columns={board.columns}
+          columns={columns}
           byId={board.byId}
           members={members}
           theme={theme}

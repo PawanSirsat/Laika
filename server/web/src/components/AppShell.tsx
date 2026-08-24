@@ -354,7 +354,11 @@ export function AppShell() {
               <header className="screen-head">
                 <h1 className="screen-title">Board</h1>
               </header>
-              <BoardScreen params={params} onParamsChange={setParams} />
+              <BoardScreen
+                params={params}
+                onParamsChange={setParams}
+                me={session.status === 'authenticated' ? session.user : undefined}
+              />
             </>
           ) : route === undefined ? (
             <NotFound path={path} onNavigate={navigate} />
