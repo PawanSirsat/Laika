@@ -14,6 +14,9 @@ import { UserChrome } from './UserChrome.tsx';
 import { isPublic } from '../routes/route-table.ts';
 import { useRoute } from '../routes/use-route.ts';
 import { useSession } from '../api/use-session.ts';
+import { useSetupStatus } from '../api/use-setup-status.ts';
+import { completeSetup, fieldErrors } from '../api/setup.ts';
+import { ApiError } from '../api/errors.ts';
 import { useTheme } from '../theme/use-theme.ts';
 import { SignInError } from '../api/auth.ts';
 import './app-shell.css';
@@ -36,6 +39,13 @@ export function AppShell() {
   const [navOpen, setNavOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signInError, setSignInError] = useState<string | undefined>(undefined);
+  const [setupSubmitting, setSetupSubmitting] = useState(false);
+  const [setupError, setSetupError] = useState<string | undefined>(undefined);
+  const [setupFieldErrors, setSetupFieldErrors] = useState<Readonly<Record<string, string>>>({});
+
+  // Whether this instance has an owner yet. Read once on boot; the server's own
+  // gate is authoritative, this only decides what to render.
+  const { setupRequired, markComplete, recheck } = useSetupStatus();
 
   /**
    * Where to return after signing in (LAI-007 AC4). Captured when the guard
@@ -46,15 +56,24 @@ export function AppShell() {
 
   const routeIsPublic = isPublic(route) || route === undefined;
 
+  // Before anything else: an instance with no owner has exactly one useful
+  // screen. The server redirects browsers here too (setup-gate.ts SETUP_PATH),
+  // so this only covers in-app navigation.
+  useEffect(() => {
+    if (setupRequired !== true || path === '/setup') return;
+    navigate('/setup');
+  }, [setupRequired, path, navigate]);
+
   // The guard. One effect, one condition: an unauthenticated user on a
   // protected route goes to sign-in exactly once — `path !== '/login'` is what
   // stops it competing with itself on the way there.
   useEffect(() => {
     if (session.status !== 'anonymous') return;
+    if (setupRequired === true) return; // setup comes first
     if (routeIsPublic || path === '/login') return;
     setReturnTo(path);
     navigate('/login');
-  }, [session.status, routeIsPublic, path, navigate]);
+  }, [session.status, setupRequired, routeIsPublic, path, navigate]);
 
   // Signed in and sitting on the sign-in screen: go where they were headed.
   useEffect(() => {
@@ -80,6 +99,61 @@ export function AppShell() {
       }
     },
     [signIn],
+  );
+
+  /**
+   * Complete first-run setup.
+   *
+   * `POST /setup` **already sets the session cookie**, so there is no sign-in
+   * step: on 201 the instance is configured and this browser is the Owner.
+   * Re-checking the status flips the gate and the session probe picks the user
+   * up, which lands them in the authenticated shell.
+   */
+  const handleSetup = useCallback(
+    async (values: {
+      ownerName: string;
+      ownerEmail: string;
+      password: string;
+      orgName: string;
+      projectName: string;
+    }) => {
+      setSetupSubmitting(true);
+      setSetupError(undefined);
+      setSetupFieldErrors({});
+
+      try {
+        await completeSetup({
+          orgName: values.orgName,
+          ownerName: values.ownerName,
+          ownerEmail: values.ownerEmail,
+          ownerPassword: values.password,
+          projectName: values.projectName,
+        });
+        // Synchronous, so the redirect effect below does not bounce the new
+        // Owner back to /setup on the next render.
+        markComplete();
+        retry();
+        navigate('/board');
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.code === 'conflict') {
+          // Someone finished setup in another tab or another browser. That is
+          // not a failure of this form — the instance is ready, so say so and
+          // send them to sign in rather than showing a generic error.
+          setSetupError('This Laika has already been set up. Sign in instead.');
+          recheck();
+          return;
+        }
+        if (cause instanceof ApiError && cause.code === 'unprocessable') {
+          setSetupFieldErrors(fieldErrors(cause));
+          setSetupError('Some details need fixing before this instance can be created.');
+          return;
+        }
+        setSetupError(cause instanceof Error ? cause.message : 'Could not create this instance.');
+      } finally {
+        setSetupSubmitting(false);
+      }
+    },
+    [markComplete, recheck, retry, navigate],
   );
 
   const handleSignOut = useCallback(() => {
@@ -220,12 +294,15 @@ export function AppShell() {
               role="member"
               expiresIn="7 days"
             />
-          ) : path === '/first-boot' ? (
+          ) : path === '/setup' ? (
             <FirstBootScreen
               host={instanceHost}
-              migrationsApplied={0}
-              migrationsTotal={0}
-              smtpConfigured={false}
+              onSubmit={(values) => {
+                void handleSetup(values);
+              }}
+              submitting={setupSubmitting}
+              serverError={setupError}
+              fieldErrors={setupFieldErrors}
             />
           ) : (
             <Screen route={route} />

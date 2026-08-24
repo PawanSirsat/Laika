@@ -61,7 +61,7 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No invite in this link',
     body: 'An invite link carries a token. Ask whoever invited you to send the full link.',
   },
-  '/first-boot': {
+  '/setup': {
     headline: 'First-run setup is not built yet',
     body: 'Creating the organisation, the Owner account and the first project happens here, once.',
   },
