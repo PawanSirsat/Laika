@@ -2,11 +2,12 @@
 id: LAI-075
 title: First boot — match design 6a, the two-column layout
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-062]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T00:45:00+05:30
 ---
 
 ## Goal
