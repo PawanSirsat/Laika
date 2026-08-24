@@ -2,11 +2,12 @@
 id: LAI-060
 title: List the organisation's users — the API has no way to discover a person
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-010]
 discovered-from: LAI-059
-status: backlog
+status: in-progress
+started: 2026-08-24T11:07:10+05:30
 started:
 finished:
 ---
