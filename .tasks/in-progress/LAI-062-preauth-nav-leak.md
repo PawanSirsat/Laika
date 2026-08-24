@@ -2,11 +2,12 @@
 id: LAI-062
 title: Signed-out pages render the whole authenticated sidebar
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T23:15:00+05:30
 ---
 
 ## Goal
