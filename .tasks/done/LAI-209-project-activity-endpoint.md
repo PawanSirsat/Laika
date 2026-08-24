@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p2
 depends-on: []
 discovered-from: LAI-049
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -42,3 +42,12 @@ about one an agent is working on now — which is the opposite of what §11.4.1
 asks for. I deliberately did not use it.
 
 No new dependencies.
+
+## Closed as already delivered — PM, 2026-08-24
+
+**LAI-055 shipped this.** `GET /api/v1/projects/:slug/activity` is mounted and
+`can()`-gated on `project.read`, paginated per §6.3 — `server/src/http/routes/activity.ts`.
+
+Not a wasted filing: this was filed from LAI-049 before LAI-055 existed, and
+per §3 duplicates are cheap while lost discoveries are not. The board can badge
+`actor_kind` now.

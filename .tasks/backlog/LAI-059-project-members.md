@@ -4,7 +4,7 @@ title: Project members — list, change role, remove
 area: web
 assignee: unclaimed
 priority: p2
-depends-on: [LAI-010, LAI-058]
+depends-on: [LAI-010, LAI-058, LAI-060]
 discovered-from:
 status: backlog
 started:
@@ -57,3 +57,14 @@ task.
 Do not work around this by scraping user ids out of task assignees or comment
 authors. That would show only people who have already done something, which is
 precisely the wrong set.
+
+## Add-member is now in scope — PM, 2026-08-24
+
+**LAI-060 landed**, so `GET /api/v1/users` exists and the picker this task was
+scoped around is buildable. Add to the criteria:
+
+- [ ] Add a member via `POST /api/v1/projects/:slug/members`, choosing the person
+      from `GET /api/v1/users` — a real picker showing name and avatar, never a
+      raw id field.
+- [ ] Agent/bot users are not offered as members unless that is deliberate; check
+      what LAI-060 returns and follow it.
