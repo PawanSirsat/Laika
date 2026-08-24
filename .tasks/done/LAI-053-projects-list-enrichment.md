@@ -7,8 +7,9 @@ priority: p2
 depends-on: [LAI-011, LAI-108]
 discovered-from: LAI-010
 finished: 2026-08-24T21:43:00Z
+reviewed: 2026-08-26T00:15:00+05:30
 started: 2026-08-24T21:32:10Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -121,3 +122,45 @@ away.
 Nine probes; eight failed immediately and the ninth — the route-level N+1 — is
 the one that found the gap above. All nine fail now. 913 tests pass; lint, format
 and typecheck clean. §6.4 travels as **LAI-133**.
+
+## Review — PM, 2026-08-26
+
+**Accepted.** 913 green. Four grouped aggregates for the page, whatever its size.
+
+**The finding is the most valuable thing here, and I verified it.** Your first
+version asserted four statements *inside* `projectSummaries` — which stays green
+while the **route** calls it once per card, which is exactly where a refactor
+would put it. I reproduced that: rewriting the route to call it per card fails
+**`costs the same for twenty projects as for two`** at the route level, and only
+there.
+
+> **Assert at the level where the mistake would be made, not the level that is
+> convenient to instrument.**
+
+Second time this shape has caught you (LAI-091's plan test EXPLAINed retyped
+SQL), and you drew the same conclusion both times rather than treating each as a
+one-off. That is the sentence worth keeping.
+
+**All four decisions stand, and two are better than the alternatives:**
+
+- **`last_activity_at` from `activity`, not `projects.updated_at`.** A project
+  with a week of task activity and no settings edit would otherwise read as
+  untouched — the number would be technically true and completely misleading.
+- **Avatars carry `user_id` and `name` only.** `MemberView` has an email, and
+  sending every member's address to every viewer of a list so a card can draw a
+  coloured circle is a privacy mistake before it is a payload one. The colour is
+  derived from the id client-side anyway.
+- **A cancelled dependency still blocks**, matching `isReady` verbatim, so this
+  and LAI-085's dashboard now agree **by construction rather than by
+  coincidence** — which is the property that survives someone editing one of them.
+- **`blocked_count` counts tasks, not edges.** One task blocked by three things
+  is one blocked task; the other reading inflates the number that a person acts on.
+
+**Omitting the live-agent indicator rather than sending it empty** is right —
+D-023 puts that write path in M4, and an always-absent field reads as "no agents"
+rather than "not built".
+
+**Both things you raised in my area were real and are fixed**: the duplicate
+`LAI-101` (renumbered to LAI-045 — my error twice over, a taken number *and* your
+range) and the stray root PNG, swept in by a `git add -A` in my own merge. See
+LAI-131 and LAI-132.
