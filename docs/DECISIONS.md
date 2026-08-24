@@ -1016,3 +1016,107 @@ a documentation fix rather than a change.
 
 **Revisit when:** a fourth actor kind appears. Two is a distinction, three is a
 vocabulary, four suggests the wrong axis.
+
+---
+
+## D-023 — The heartbeat write path ships in M4, with the hooks that call it
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** a hook whose endpoint does not exist for a whole milestone
+cannot be tested, and an untested hook ships broken.
+
+**Context.** `ROADMAP.md` put the plugin's heartbeat hooks in M4 and
+`POST /api/v1/heartbeats` in M5. SPEC §8 requires hooks to fail silent (`|| true`)
+so a missing endpoint degrades to a no-op rather than breaking a coding session —
+which is why nobody noticed. But it means M4's builder has no way to verify the
+hook does anything at all, and M4's exit criterion ("a new repo goes from nothing
+to an agent working the board in one command") quietly excludes the presence half
+of what the plugin is for.
+
+**Decision.** The heartbeat **write path** moves to M4: accept `{repo, branch}`,
+token auth, `202`, store the row. M5 keeps everything derived — branch → task
+resolution, retention pruning, the presence and capacity views, dashboard
+rollups. M4's exit criterion now says a heartbeat from the agent is visible in
+the database.
+
+**Why the write path and not all of §9.** The endpoint is small and its only
+dependency is tokens, which land in M3. Branch → task resolution needs project
+prefixes and the derived views need the whole `tasks` model, so they belong with
+the milestone that presents them. Splitting on write-versus-read puts the cheap,
+verifiable half where the thing that calls it lives.
+
+**Rejected: move the hooks to M5.** Equally consistent, and it makes M4 a plugin
+that does not do the one thing the plugin exists for. It also defers the first
+end-to-end proof that a token minted by the CLI can authenticate a real request —
+which is most of M4's actual risk.
+
+**Consequences.** M4 grows by one small endpoint and M5 shrinks correspondingly.
+Nothing else moves. `heartbeats` already exists in the schema (§4.10, built in
+LAI-003), so this is a route and a service, not a migration.
+
+**The general lesson is the one worth keeping.** This is the fifth
+self-contradiction found in the planning documents today, and the fourth found by
+a builder rather than by me. The pattern is always the same: a section written
+before the thing existed, describing a shape that later turns out to be
+impossible, unbuildable, or out of order. See LAI-045 for the audit that follows
+from it.
+
+---
+
+## D-024 — Two contradictions found by auditing the unimplemented spec sections
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** five self-contradictions were found by builders today; this is
+the first two found before a builder hit them.
+
+**Context.** Every planning-document contradiction so far surfaced the same way:
+a builder implemented a section, then read it, then filed a task. §4's table
+count, §11.7's env surface, §6.3's error and rate-limit gaps, §4.8's nullability,
+and the M4/M5 heartbeat ordering (D-023) — five, four of them found by builders.
+
+The common cause is sections written in one pass before any code existed. So I
+audited the sections that are *still* unimplemented — §7 MCP, §9 presence,
+§10 webhooks, §12 LLM — looking specifically for the classes that had already
+bitten: an operation referencing something the schema cannot provide, a name that
+two sections spell differently, a thing scheduled before its prerequisite.
+
+§9 and §12 came back clean. §12's provider values match §4.2 exactly. Two
+findings in §7 and §10.
+
+### 1. `log_unlisted_work` has no REST twin
+
+§7 says every tool is "a thin wrapper over the same service layer the REST routes
+use", and §13.3 tests that a tool and its REST twin write identical `activity`
+rows. Nine tools have twins. `log_unlisted_work` does not: §6.4 has
+`GET /unlisted`, `POST /unlisted/:id/promote` and `DELETE /unlisted/:id`, but no
+route that *creates* an entry.
+
+**Decision: keep it agent-only and say so.** Unlisted work is by definition
+something an agent noticed outside any project — a human at the board files a
+task instead. Inventing `POST /api/v1/unlisted` to preserve a symmetry nobody
+designed would add a human write path with no use case behind it. §7.2 now names
+the exemption and §13.3 scopes parity to the nine tools that have twins, so a
+missing tenth pair reads as intended rather than as an oversight.
+
+### 2. `accepted_proposal_ids` referenced ids nothing defined
+
+`POST /meeting-reviews/:id/apply` takes `{ accepted_proposal_ids[] }`, and
+§10.2's proposal JSON contract — `{kind, task?, title?, description?, changes?,
+reason, quote}` — has **no id field**. §4.12 stores proposals as a
+`proposals_json` blob with no per-proposal identity either. The endpoint referred
+to something that did not exist anywhere.
+
+**Decision: the server assigns ids at store time; the model never supplies one.**
+Ids must survive the round trip from review screen back to server, so they cannot
+come from a model with no reason to make them unique or stable. Array index was
+the other candidate and is worse — it breaks the moment a proposal set is
+re-generated, and it breaks silently, applying the wrong proposal.
+
+**Consequences.** Both are documentation fixes; neither has code yet (M3 and M6).
+Which is the point — the previous five each cost a builder a claim, a release, or
+a rework. Auditing the *unimplemented* sections is cheap precisely because
+nothing has been built on them.
+
+**The habit worth keeping:** re-read a section against the rest of the document
+before its milestone starts, looking for operations that reference things the
+data model cannot provide. That is the shape all seven of these took.

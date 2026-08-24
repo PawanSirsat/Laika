@@ -579,6 +579,14 @@ agent.
 ### 7.2 Tool contract
 
 - **Guardrail: tools never bulk-mutate.** One task per call.
+- **`log_unlisted_work` is the one tool with no REST twin, deliberately** (D-024).
+  Every other tool wraps a service a route also calls. Unlisted work is *by
+  definition* something an agent noticed outside any project — a human at the
+  board would file a task instead — so there is no human write path to mirror.
+  Humans read it (`GET /api/v1/unlisted`) and act on it
+  (`POST /api/v1/unlisted/:id/promote`). The parity tests of §13.3 therefore
+  cover the nine tools that have twins; this one is exempt, and the exemption is
+  named so a missing tenth pair reads as intended rather than as a gap.
 - `finish_task` stops at `review` by design — agents do not close their own work.
 - Inputs are zod schemas exported as JSON Schema; unknown fields are rejected.
 - Errors are MCP tool errors carrying the §6.3 `code`, so an agent can branch on
@@ -718,6 +726,14 @@ The org's LLM provider (§12) receives: the transcript, the project's open tasks
     "changes": { "status": "done" }, "reason": "...", "quote": "..." }
 ]}
 ```
+
+**The server assigns each proposal a stable id when it stores `proposals_json`;
+the model does not supply one** (D-024). `POST /meeting-reviews/:id/apply` takes
+`{ accepted_proposal_ids[] }`, and those ids have to survive the round trip from
+review screen back to server — so they cannot come from a model that has no
+reason to make them unique or stable, and re-deriving them by array index breaks
+the moment a proposal set is re-generated. Ids are assigned once, at store time,
+and are opaque to the model.
 
 Every proposal renders in the review screen **with its transcript quote**, so a
 human can see what the model was reacting to.
@@ -1014,7 +1030,8 @@ log.
 Vitest. Unit tests for `can()` against §3.1 and §3.2; service tests against a
 real in-memory SQLite with migrations applied; HTTP tests through Hono's test
 client; and **parity tests** asserting an MCP tool and its REST twin produce
-identical `activity` rows.
+identical `activity` rows — for the nine tools that have a twin; `log_unlisted_work`
+is exempt and §7.2 says why.
 
 ### 13.4 Privacy
 

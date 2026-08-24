@@ -80,13 +80,16 @@ claims it, comments, and moves it to review — visible live in a human's browse
 **Goal: zero-config for the agent side.**
 
 - Plugin manifest, `.mcp.json` pointing at a deployment
+- **`POST /api/v1/heartbeats`** — the write path only: accept `{repo, branch}`,
+  token auth, `202`, store the row. Moved here from M5 (D-023) so the hooks have
+  something to talk to and M4 can be verified end to end
 - Hooks: heartbeat on session start and on a timer, branch detection
 - Skills teaching the claim/log/discovered-from protocol
 - Slash commands: standup, claim, task context
 - `npx laika init` CLI: authenticate, mint a token, write local config
 
 **Exit:** a new repo goes from nothing to an agent working the board in one
-command. Seeded early: **LAI-012** (plugin skeleton — no dependencies, so
+command, **and a heartbeat from that agent is visible in the database**. Seeded early: **LAI-012** (plugin skeleton — no dependencies, so
 Builder-B can build it during M1).
 
 ---
@@ -94,7 +97,8 @@ Builder-B can build it during M1).
 ## M5 — Presence and capacity
 **Goal: see who — human or agent — is on what, right now.**
 
-- `POST /api/v1/heartbeats`, retention pruning, branch → task resolution
+- Branch → task resolution, retention pruning (the write path itself ships in
+  M4 — D-023)
 - Presence view (live) and capacity view (in-progress + heartbeat + staleness)
 - Dashboard rollups from `activity`: throughput, cycle time, stuck work
 - Standup view: done since yesterday, in progress by whom, blocked, next up
