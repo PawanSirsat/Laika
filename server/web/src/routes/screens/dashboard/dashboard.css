@@ -1,0 +1,228 @@
+/* Dashboard (LAI-085). Tokens only. */
+
+.dash {
+  padding: var(--space-4) var(--space-5) var(--space-6);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.dash-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.dash-title {
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  margin: 0;
+}
+
+.dash-ranges {
+  display: flex;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.dash-range {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+  background: var(--card);
+  border: none;
+  border-left: 1px solid var(--bd);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.dash-range:first-child {
+  border-left: none;
+}
+
+.dash-range-on {
+  background: var(--accs);
+  color: var(--acc);
+}
+
+.dash-range:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: -2px;
+}
+
+.dash-panel {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--space-4);
+}
+
+.dash-panel-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  margin: 0 0 var(--space-3);
+}
+
+.dash-panel-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-normal);
+  color: var(--tx2);
+}
+
+.dash-note,
+.dash-empty {
+  font-size: var(--text-sm);
+  color: var(--tx3);
+  margin: 0;
+}
+
+/* ------------------------------------------------------------------ counts */
+
+.dash-counts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--space-3);
+}
+
+.dash-count {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-3);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+}
+
+.dash-count-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-xl);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  line-height: 1.1;
+}
+
+.dash-count-label {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dash-status-in_progress {
+  color: var(--acc);
+}
+
+.dash-status-review {
+  color: var(--amb);
+}
+
+.dash-status-done {
+  color: var(--grn);
+}
+
+.dash-status-cancelled {
+  color: var(--tx3);
+}
+
+/* ----------------------------------------------------------------- blocked */
+
+.dash-blocked,
+.dash-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.dash-blocked-row,
+.dash-event {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--tx);
+}
+
+.dash-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  white-space: nowrap;
+}
+
+.dash-blocked-title,
+.dash-what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-blocked-by {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--amb);
+  white-space: nowrap;
+}
+
+/* -------------------------------------------------------------------- feed */
+
+.dash-kind {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-2);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  white-space: nowrap;
+}
+
+/* The badge D-022 put `actor_kind` on every row for: agent work is visibly
+   different from human work at a glance, not on inspection. */
+.dash-kind-agent {
+  color: var(--pur);
+  background: var(--purs);
+  border-color: var(--purb);
+}
+
+.dash-kind-system {
+  color: var(--tx3);
+}
+
+.dash-actor {
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.dash-move {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+.dash-when {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  white-space: nowrap;
+}
