@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { SERVER_ROOT } from '../../src/paths.ts';
 import { authHarness } from '../helpers/auth.ts';
 import { packagesBranchingOnEnvironment } from '../helpers/runtime-closure.ts';
@@ -205,6 +206,25 @@ interface Posture {
 }
 
 /**
+ * `tsx` directly rather than through `npx`.
+ *
+ * `npx` re-resolves the binary on every call and measured ~35% slower per spawn
+ * (0.73-1.05s against 0.52-0.92s). That is not micro-optimisation here: spawn
+ * cost is the entire runtime of this block, and it is what made the first
+ * version load-sensitive.
+ */
+function tsxBinary(): { command: string; leading: readonly string[] } {
+  for (const candidate of [
+    join(SERVER_ROOT, 'node_modules', '.bin', 'tsx'),
+    join(SERVER_ROOT, '..', 'node_modules', '.bin', 'tsx'),
+  ]) {
+    if (existsSync(candidate)) return { command: candidate, leading: [] };
+  }
+
+  return { command: 'npx', leading: ['tsx'] };
+}
+
+/**
  * Ask a child process what it resolves to.
  *
  * `@better-auth/core` captures `NODE_ENV` into a module-level constant at import
@@ -213,7 +233,9 @@ interface Posture {
  * and being the environment is the only honest way to know.
  */
 function postureUnder(nodeEnv: string): Posture {
-  const output = execFileSync('npx', ['tsx', join('test', 'helpers', 'posture-probe.ts')], {
+  const { command, leading } = tsxBinary();
+
+  const output = execFileSync(command, [...leading, join('test', 'helpers', 'posture-probe.ts')], {
     cwd: SERVER_ROOT,
     env: { ...process.env, NODE_ENV: nodeEnv },
     encoding: 'utf8',
@@ -223,28 +245,52 @@ function postureUnder(nodeEnv: string): Posture {
   return JSON.parse(last) as Posture;
 }
 
+/**
+ * Every spawn happens **once, here**, and the tests below only read the result.
+ *
+ * The first version called `postureUnder` inside each `it`, which was five
+ * spawns at roughly 0.8s each — about 4s against vitest's 5s default. It passed
+ * alone and failed in PM's full parallel run at 5135ms, which is the worst kind
+ * of gate: one that trains people to re-run rather than read. Two spawns in a
+ * hook with a generous explicit budget cannot do that.
+ *
+ * The timeout is on the **spawning**, not on any assertion. If this ever trips,
+ * something is genuinely wrong with the child process — not with the machine
+ * being busy.
+ */
+const SPAWN_BUDGET_MS = 60_000;
+
 describe('development and production resolve the same posture as test (AC4)', () => {
-  // Spawning tsx twice is a few seconds. Worth it: this is the only assertion
-  // in the repo that measures an environment the suite does not run in, and it
-  // is the exact gap that let LAI-090 through.
-  const environments = ['development', 'production'] as const;
+  const measured = new Map<string, Posture>();
 
-  for (const nodeEnv of environments) {
+  beforeAll(() => {
+    for (const nodeEnv of ['development', 'production']) {
+      measured.set(nodeEnv, postureUnder(nodeEnv));
+    }
+  }, SPAWN_BUDGET_MS);
+
+  const posture = (nodeEnv: string): Posture => {
+    const found = measured.get(nodeEnv);
+    if (found === undefined) throw new Error(`no posture measured for ${nodeEnv}`);
+    return found;
+  };
+
+  for (const nodeEnv of ['development', 'production'] as const) {
     it(`${nodeEnv}: the origin check is on and no foreign origin is trusted`, () => {
-      const posture = postureUnder(nodeEnv);
+      const posture_ = posture(nodeEnv);
 
-      expect(posture.nodeEnv).toBe(nodeEnv);
-      expect(posture.skipOriginCheck).toBe(false);
-      expect(posture.skipCSRFCheck).toBe(false);
-      expect(posture.trustsForeignOrigin).toBe(false);
+      expect(posture_.nodeEnv).toBe(nodeEnv);
+      expect(posture_.skipOriginCheck).toBe(false);
+      expect(posture_.skipCSRFCheck).toBe(false);
+      expect(posture_.trustsForeignOrigin).toBe(false);
       // LAI-090's fix must hold everywhere too, not only where it was tested.
-      expect(posture.trustsLoopback).toBe(true);
+      expect(posture_.trustsLoopback).toBe(true);
     });
   }
 
   it('leaves exactly one difference, and it is the one that is written down', () => {
-    const dev = postureUnder('development');
-    const prod = postureUnder('production');
+    const dev = posture('development');
+    const prod = posture('production');
 
     const differing = (Object.keys(prod) as (keyof Posture)[]).filter(
       (key) => key !== 'nodeEnv' && dev[key] !== prod[key],
@@ -261,7 +307,7 @@ describe('development and production resolve the same posture as test (AC4)', ()
   it('a builder running `pnpm dev` is not exercising a weaker product', () => {
     // AC4 in one line. The only thing `pnpm dev` relaxes is better-auth's own
     // limiter, and ours covers the same paths — asserted above.
-    const dev = postureUnder('development');
+    const dev = posture('development');
 
     expect(dev.skipOriginCheck).toBe(false);
     expect(dev.trustsForeignOrigin).toBe(false);
