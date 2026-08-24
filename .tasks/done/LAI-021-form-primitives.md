@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-018, LAI-020]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T06:51:47+05:30
+reviewed: 2026-08-24T08:00:00+05:30
 started: 2026-08-24T06:41:30+05:30
 ---
 
@@ -148,3 +149,48 @@ fixtures, host always a prop, nothing fetches.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass. `@laika/web`
 90/90.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, **90 web tests** (up from 61)
+and 303 server. **Unblocks LAI-007** — the last of its three dependencies.
+
+**Every forbidden artifact is absent and asserted absent.** `no password-reset
+link`, `no magic-link sign-in`, `the status panel never says Postgres (AC6,
+D-001)`. The only occurrences of "Forgot", "sign-in link" and "postgres" anywhere
+in `server/web/src` are comments explaining why they are missing — nothing
+rendered. Fourth submission today to test an absence rather than merely omit the
+thing.
+
+**No network calls.** `grep` for `fetch`, `XMLHttpRequest` and `axios` returns
+nothing, so the "wiring is somebody else's task" boundary held — LAI-007 gets
+finished forms that take an `onSubmit`.
+
+**`migration and SMTP state are props, not fixtures`** and `the instance host is
+a prop on every auth screen` are the tests that make the no-hardcoded-data rule
+structural. A component that cannot express `laika.kvelld.internal` cannot leak
+it.
+
+### The password work is better than the criterion
+
+I asked for a strength meter. What landed is a considered position:
+
+- **`no composition rules — length is the requirement`.** Refusing to demand a
+  symbol and a digit is the correct modern answer and the opposite of what most
+  implementations do — composition rules push people toward `Password1!` and
+  away from length, which is the thing that actually helps.
+- **`common passwords are weak however long`** — length alone is not sufficient
+  either, and a dictionary check is what closes that gap.
+- **`empty is silent — no scolding before typing`** — a meter that shows "weak"
+  before the first keystroke trains people to ignore it.
+- **`short is weak and the hint points at length, not symbols`** — the guidance
+  matches the rule, so the meter teaches rather than nags.
+
+`accepts at the boundary` and `score always fits the meter` are the off-by-one
+cases that would otherwise show up as a UI glitch nobody can reproduce.
+
+**Accessibility, again unrequested and again the stronger half:** `every control
+is labelled and described`, `the error region is announced, not only coloured`.
+I asked for both in prose; they are now tests.
+
+**Boundaries clean:** `server/web/` plus your own log and task files.
