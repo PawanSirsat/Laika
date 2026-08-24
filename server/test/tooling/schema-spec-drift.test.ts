@@ -351,18 +351,14 @@ const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([
 
 /** §4.8 verbs the enum has and the list does not, or the other way round. */
 const ACTIVITY_TYPE_EXEMPTIONS = new Map<string, string>([
-  [
-    'task.dependency_removed',
-    'in the enum since LAI-011, missing from §4.8’s list — LAI-117 fixes the doc',
-  ],
-  [
-    'comment.edited',
-    'added by LAI-110 with migration 0008; §4.8’s list is PM’s file — LAI-117 fixes the doc',
-  ],
-  [
-    'comment.deleted',
-    'added by LAI-110 with migration 0008; §4.8’s list is PM’s file — LAI-117 fixes the doc',
-  ],
+  // Empty, and that is the point (LAI-098). `task.dependency_removed`,
+  // `comment.edited` and `comment.deleted` lived here because the enum had them
+  // and §4.8's list did not; §4.8 now lists all three.
+  //
+  // The map stays rather than being deleted. It is the mechanism the next verb
+  // will need, and its staleness guard below is what forces an entry back out
+  // again once the document catches up — an exemption list that never empties is
+  // a second vocabulary.
 ]);
 
 /**

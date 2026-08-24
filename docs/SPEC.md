@@ -308,7 +308,8 @@ exposes no mutation path, and a test asserts attempts fail. This one table feeds
 **audit**, **presence**, the **dashboard**, and the **SSE stream** (§11.5).
 
 Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
-`task.assigned`, `task.dependency_added`, `comment.added`, `project.created`,
+`task.assigned`, `task.dependency_added`, `task.dependency_removed`,
+`comment.added`, `comment.edited`, `comment.deleted`, `project.created`,
 `project.updated`, `project.archived`, `member.added`, `member.role_changed`,
 `member.removed`, `token.created`, `token.revoked`, `heartbeat.session`,
 `webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`.

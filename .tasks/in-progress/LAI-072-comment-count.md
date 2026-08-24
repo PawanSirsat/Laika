@@ -2,11 +2,12 @@
 id: LAI-072
 title: TaskView carries no comment count, so cards cannot show one
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-047]
 discovered-from:
-status: backlog
+started: 2026-08-24T21:08:07Z
+status: in-progress
 ---
 
 ## Goal
