@@ -24,6 +24,11 @@ services:
       # Required. No default on purpose — the container refuses to start
       # without it rather than inventing a throwaway key on every boot.
       LAIKA_SECRET: ${LAIKA_SECRET:?set LAIKA_SECRET in docker/.env — copy docker/env.example}
+      # Required, and deliberately not defaulted even though a default would
+      # "work" locally. It is pasted into invite links and webhook URLs, so a
+      # value that quietly points at localhost in production fails as a mail
+      # problem days later rather than as a startup error now.
+      LAIKA_PUBLIC_URL: ${LAIKA_PUBLIC_URL:?set LAIKA_PUBLIC_URL in docker/.env — the URL your users type, e.g. https://laika.example.com}
 
     ports:
       - '${LAIKA_PORT:-3000}:3000'
