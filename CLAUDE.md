@@ -99,6 +99,19 @@ and commit. Then write your log entry.
 own work done. If PM sends a task back, it returns to `.tasks/in-progress/` with
 review notes appended to the file — read them, fix, and move it to review again.
 
+**How a send-back travels between branches.** A task in review lives on the
+builder's branch; `master` has no copy, because PM merges only on accept. So PM
+writes the send-back **on `master`**, at `.tasks/in-progress/`, with the notes
+appended and the failed criteria unticked. Git sees an added file, not a rename,
+so **the builder ends up with two copies** after their next `git merge master`.
+The builder resolves it: `git rm .tasks/review/LAI-0XX-*.md`, keep the
+`in-progress` copy, carry on. PM's copy is always the authoritative one —
+`.tasks/` resolves in PM's favour (§4.2).
+
+Accepting is the other way round and needs no such step: PM merges the builder's
+branch first, which brings the file to `master` at `.tasks/review/`, and the
+`git mv` to `.tasks/done/` is then an ordinary rename.
+
 ## 3. Logging
 
 After **every** task and at the end of **every** session, append to
