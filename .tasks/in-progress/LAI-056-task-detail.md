@@ -2,11 +2,12 @@
 id: LAI-056
 title: Task detail slide-over
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-049, LAI-055]
 discovered-from: LAI-049
-status: backlog
+status: in-progress
+started: 2026-08-24T21:01:34+05:30
 ---
 
 ## Goal
