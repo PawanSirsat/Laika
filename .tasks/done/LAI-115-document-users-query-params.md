@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p3
 depends-on: [LAI-060]
 discovered-from: LAI-060
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -54,3 +54,10 @@ worth PM re-reading line 517 before deciding what, if anything, this needs.
 Same class as LAI-112 (the SSE wire format): under D-011 the spec is
 authoritative, so API surface it does not describe is not yet authoritative.
 p3 because nothing is blocked — the parameters are discoverable from the tests.
+
+## Done — PM, 2026-08-25
+
+§6.4 now lists it, read off the mounted routes rather than the roadmap. `/users`
+carries `limit`, `cursor`, `updated_since` and `include_inactive`, with a note
+that the cursor is `(name, id)` — a directory reads alphabetically, and a client
+paging it needs to know the order is not creation time.

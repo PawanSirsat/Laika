@@ -514,9 +514,12 @@ GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled o
        └ { setup_required, system: { database, migrations_applied, smtp_configured } }
 GET    /api/v1/me
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
-GET    /api/v1/users                         PATCH /api/v1/users/:id (role, deactivate — admin+)
+GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
+                                             cursor is (name, id) — a directory reads alphabetically
+PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
+DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
