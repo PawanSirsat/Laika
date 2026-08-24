@@ -12,7 +12,8 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // These return promises; the repo's no-floating-promises rule is on, so each
 // call is prefixed with `void`.
@@ -212,4 +213,35 @@ void describe('WCAG AA — body and secondary text on their own surfaces', () =>
       });
     }
   }
+});
+
+void describe('every var(--token) a stylesheet uses is actually defined', () => {
+  void test('no stylesheet reaches for a token that does not exist', async () => {
+    const src = fileURLToPath(new URL('../src/', import.meta.url));
+    const files = (await readdir(src, { recursive: true }))
+      .filter((f) => typeof f === 'string' && f.endsWith('.css'))
+      .map((f) => join(src, f));
+
+    const defined = new Set<string>();
+    const used = new Map<string, string>();
+    for (const file of files) {
+      const css = await readFile(file, 'utf8');
+      for (const [, name] of css.matchAll(/^\s*(--[a-zA-Z0-9-]+)\s*:/gm)) {
+        if (name !== undefined) defined.add(name);
+      }
+      for (const [, name] of css.matchAll(/var\((--[a-zA-Z0-9-]+)/g)) {
+        if (name !== undefined && !used.has(name)) used.set(name, file);
+      }
+    }
+
+    // A misspelt token is not a build error and not a lint error: the property
+    // silently keeps its inherited value, so muted text renders un-muted and
+    // nothing anywhere says so. `--fg-muted` for `--tx2` got this far once.
+    const missing = [...used].filter(([name]) => !defined.has(name));
+    assert.deepEqual(
+      missing.map(([name, file]) => `${name} (${file.slice(src.length)})`),
+      [],
+      'these tokens are used but never defined',
+    );
+  });
 });

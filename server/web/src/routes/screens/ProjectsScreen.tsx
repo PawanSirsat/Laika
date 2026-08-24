@@ -15,6 +15,8 @@ import './projects.css';
 export interface ProjectsScreenProps {
   /** Open a project's board. `?project=<slug>` is what BoardScreen reads. */
   readonly onOpen: (slug: string) => void;
+  /** Open its member list — the same `?project=` mechanism (LAI-059). */
+  readonly onOpenMembers: (slug: string) => void;
 }
 
 /**
@@ -25,7 +27,7 @@ export interface ProjectsScreenProps {
  * reads it, and it survives a reload for free. A second mechanism would be a
  * second thing to keep in sync.
  */
-export function ProjectsScreen({ onOpen }: ProjectsScreenProps) {
+export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
   const list = useProjects();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
@@ -234,14 +236,24 @@ export function ProjectsScreen({ onOpen }: ProjectsScreenProps) {
                     <p className="project-card-desc">{project.description}</p>
                   )}
 
-                  <Button
-                    variant="secondary"
-                    onClick={() => {
-                      onOpen(project.slug);
-                    }}
-                  >
-                    Open board
-                  </Button>
+                  <div className="project-card-actions">
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        onOpen(project.slug);
+                      }}
+                    >
+                      Open board
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={() => {
+                        onOpenMembers(project.slug);
+                      }}
+                    >
+                      Members
+                    </Button>
+                  </div>
                 </article>
               </li>
             ))}

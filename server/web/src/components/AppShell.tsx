@@ -6,6 +6,7 @@ import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
 import { LoginScreen } from '../routes/screens/LoginScreen.tsx';
 import { BoardScreen } from '../routes/screens/BoardScreen.tsx';
 import { NotFound } from '../routes/screens/NotFound.tsx';
+import { MembersScreen } from '../routes/screens/MembersScreen.tsx';
 import { ProjectsScreen } from '../routes/screens/ProjectsScreen.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
@@ -73,7 +74,10 @@ export function AppShell() {
     if (session.status !== 'anonymous') return;
     if (setupRequired === true) return; // setup comes first
     if (routeIsPublic || path === '/login') return;
-    setReturnTo(path);
+    // Pathname **and** query. Capturing only the path drops the parameter that
+    // says which project — `/members?project=laika-core` came back as
+    // `/members`, which renders "no project chosen" after a correct sign-in.
+    setReturnTo(path + window.location.search);
     navigate('/login');
   }, [session.status, setupRequired, routeIsPublic, path, navigate]);
 
@@ -277,6 +281,19 @@ export function AppShell() {
                 onOpen={(slug) => {
                   navigate(`/board?project=${encodeURIComponent(slug)}`);
                 }}
+                onOpenMembers={(slug) => {
+                  navigate(`/members?project=${encodeURIComponent(slug)}`);
+                }}
+              />
+            </>
+          ) : path === '/members' ? (
+            <>
+              <header className="screen-head">
+                <h1 className="screen-title">Members</h1>
+              </header>
+              <MembersScreen
+                slug={params.get('project') ?? undefined}
+                me={session.status === 'authenticated' ? session.user : undefined}
               />
             </>
           ) : path === '/board' ? (

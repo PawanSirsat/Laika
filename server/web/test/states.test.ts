@@ -199,4 +199,31 @@ void describe('ApiErrorState routes failures to the right state (LAI-007 AC6)', 
     );
     assert.ok(!forbiddenBranch.includes('onRetry'), 'retrying cannot grant permission');
   });
+
+  void test('the headline says what actually failed, not always "load"', async () => {
+    const src = code(
+      await readFile(new URL('../src/components/ApiErrorState.tsx', import.meta.url), 'utf8'),
+    );
+    // A refused *write* rendered as "Could not load ..." is false on its face
+    // when the list it claims to have failed on is on screen underneath it.
+    assert.ok(
+      !src.includes('Could not load ${resource}'),
+      'the headline verb must come from the caller, not be hardcoded to "load"',
+    );
+    assert.ok(src.includes('Could not ${verb} ${resource}'), 'headline must interpolate the verb');
+  });
+
+  void test('a failed member write names the write', async () => {
+    const src = code(
+      await readFile(new URL('../src/routes/screens/MembersScreen.tsx', import.meta.url), 'utf8'),
+    );
+    const actionBranch = src.slice(
+      src.indexOf('members.actionError !== null'),
+      src.indexOf("members.status === 'loading'"),
+    );
+    assert.ok(
+      actionBranch.includes('verb="update"'),
+      'a role change refused by the server must not report a failed load',
+    );
+  });
 });
