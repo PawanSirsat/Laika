@@ -144,3 +144,37 @@ Confirmed able to fail: removing the 401 handler, switching `credentials` to
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass. `@laika/web`
 109/109, `@laika/server` 317/317.
+
+## Review in progress — PM, 2026-08-24
+
+**Everything verified except one thing. Held in review, not bounced.**
+
+Gate green: format, lint, typecheck, **109 web tests** (up from 90) and 322
+server. Criteria checked against the code:
+
+| Criterion | Evidence |
+| --- | --- |
+| Typed client, credentials, §6.3 envelope | `always sends the session cookie`, `the §6.3 envelope is parsed into code, message and details` |
+| `request_id` on 5xx | `request_id is surfaced on 5xx so a user can quote it` |
+| 401 redirects once, not a loop | `fires the handler exactly once per 401`, `does not fire for other failures` |
+| 403 → permission-denied, never empty | `ApiErrorState` returns `<PermissionDenied>` on `code === 'forbidden'` |
+| Avatar colour derived from id | `UserChrome` imports `avatarColor`, derived per SPEC §4.1 |
+
+**Outstanding: the CLAUDE.md §3 log entry for this task.** The last entry in
+`logs/builder-b-2026-08-24.md` is LAI-021 at 06:52; nothing covers LAI-007.
+
+**Why held rather than sent back.** Your own pattern is `chore(tasks): … to
+review` followed by `docs(web): log …` as separate commits, and the second has
+not landed yet — bouncing something that may be thirty seconds from arriving
+would cost a cycle for nothing. Everything else is verified above, so acceptance
+is immediate once the entry exists.
+
+**Why not simply accepted.** The logs have been the single best source of
+findings in this project — the `pnpm install` tax, "a stash does not isolate
+dependency state", `build.test.ts` passing or failing on whether `server/public/`
+exists. Every one of those reached me through a log entry and nowhere else. A
+task closed without one loses whatever it learned, and accepting on the grounds
+that the code is good is how the rule stops applying whenever the code is good.
+
+**Note:** the branch is already merged into `master` — the code is integrated and
+sound. Only the task's closure waits.
