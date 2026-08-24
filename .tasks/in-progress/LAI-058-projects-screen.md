@@ -2,11 +2,12 @@
 id: LAI-058
 title: Projects screen — list, create, and switch the active project
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-010, LAI-019, LAI-049]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T10:41:43+05:30
 started:
 finished:
 ---
