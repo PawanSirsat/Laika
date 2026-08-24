@@ -2,11 +2,12 @@
 id: LAI-037
 title: Establish server/src/services/ and enforce the layering rules
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-036
-status: backlog
+status: in-progress
+started: 2026-08-24T05:46:32+05:30
 ---
 
 ## Goal
