@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { AssignControl } from './AssignControl.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -25,6 +26,12 @@ export interface TaskDetailPanelProps {
   /** The same call the board uses — not a second implementation (LAI-056). */
   readonly onMove: (taskId: string, to: BoardColumn) => void;
   readonly onClose: () => void;
+  /** The signed-in user's id, for Claim. */
+  readonly meId?: string | undefined;
+  /** False for a Viewer — `task.assign_other` is member+ (§3.2). */
+  readonly mayAssign?: boolean | undefined;
+  /** Reload the board after an assignment so the card's avatar follows. */
+  readonly onAssigned: () => void;
 }
 
 function personName(id: string | null, members: ReadonlyMap<string, Member>): string {
@@ -52,6 +59,9 @@ export function TaskDetailPanel({
   moveError,
   onMove,
   onClose,
+  meId,
+  mayAssign = false,
+  onAssigned,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -139,9 +149,13 @@ export function TaskDetailPanel({
               {task.ready && <span className="marker marker-ready">ready</span>}
               {blocked === true && <span className="marker marker-blocked">blocked</span>}
 
-              <span className="panel-assignee">
-                {task.assignee_id === null ? 'unassigned' : personName(task.assignee_id, members)}
-              </span>
+              <AssignControl
+                task={task}
+                members={members}
+                meId={meId}
+                mayAssign={mayAssign}
+                onChanged={onAssigned}
+              />
             </div>
 
             {moveError !== undefined && (
