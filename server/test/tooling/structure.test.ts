@@ -11,12 +11,63 @@ import { SERVER_ROOT } from '../../src/paths.ts';
  * `format-fix.test.ts` builds a real git repo. It needs no dependency, and the
  * failure message can explain itself — which a generic casing rule cannot.
  *
- * Scope is `server/src` only. `server/web/` is Builder-B's under D-016 and is
- * covered by LAI-039, which extends this file rather than adding a second one.
+ * Covers **both trees**: `server/src` (Builder-A) and `server/web/src`
+ * (Builder-B, D-016). One rule set, two trees — LAI-039 extended this file
+ * rather than adding a second copy, because two copies of a naming rule drift
+ * and then disagree, and the disagreement is settled by argument rather than by
+ * a test.
+ *
+ * It runs under **vitest**, in the server suite, even though `server/web/` tests
+ * under `node --test` (CONVENTIONS §4). Deliberate: this check only reads files,
+ * so the runner is irrelevant to what it asserts, and the rules stay singular
+ * only if they live in one file. The two *test* runners remain separate — that
+ * is a different decision and it still stands.
  */
 
 const SRC = join(SERVER_ROOT, 'src');
 const TEST = join(SERVER_ROOT, 'test');
+
+const WEB_SRC = join(SERVER_ROOT, 'web', 'src');
+const WEB_TEST = join(SERVER_ROOT, 'web', 'test');
+
+/**
+ * `.tsx` files that are **not** components, so the PascalCase-and-matching-export
+ * rule does not apply.
+ *
+ * `main.tsx` is Vite's entry point, named by convention and referenced from
+ * `index.html`. It is `.tsx` only because it contains JSX; it exports nothing.
+ * Renaming it `Main.tsx` would satisfy the letter of §3 while asserting the
+ * opposite of the truth — the same reasoning that keeps `src/index.ts` out of
+ * the barrel rule.
+ */
+const WEB_ENTRY_POINTS = new Set(['main.tsx']);
+
+/**
+ * Web `.ts` modules with no same-named test, and the test that does cover them.
+ *
+ * Web tests are grouped by concern rather than by module, because `@laika/web`
+ * has no component renderer (CONVENTIONS §4) — so most assertions are either
+ * unit tests of one pure module or structural checks spanning several. Splitting
+ * `api.test.ts` would separate the stubbed-fetch harness from half the cases
+ * that need it.
+ *
+ * Same rule as the server list above: this shrinks, it is not a hiding place.
+ */
+const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
+  ['api/client.ts', 'covered by test/api.test.ts, which stubs fetch for it and errors.ts together'],
+  ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
+  ['api/auth.ts', 'thin better-auth boundary; asserted through the sign-out body in api.test.ts'],
+  ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
+  ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  ['theme/theme.ts', 'DOM-bound theme application; asserted in a browser under LAI-018'],
+  ['theme/use-theme.ts', 'a React hook — no renderer in this package'],
+  ['theme/avatar-color.ts', 'derivation asserted through the token reference page in LAI-018'],
+  ['theme/token-list.ts', 'covered by test/tokens.test.ts, which checks it against tokens.css'],
+  ['routes/route-table.ts', 'covered by test/routes.test.ts alongside the sidebar it drives'],
+  ['routes/use-route.ts', 'History-API hook — no renderer; asserted in a browser under LAI-019'],
+  ['routes/screens/screen-copy.ts', 'covered by test/routes.test.ts with the routes it belongs to'],
+  ['components/forms/validation.ts', 'covered by test/forms.test.ts — real unit tests, 20 cases'],
+]);
 
 /**
  * `src` modules with no mirrored test, each with the reason.
@@ -272,3 +323,124 @@ function directoryExists(path: string): boolean {
     return false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// server/web — the same rules, the other tree (LAI-039).
+// ---------------------------------------------------------------------------
+
+const webSrcFiles = walk(WEB_SRC);
+const webSrcModules = webSrcFiles.filter((f) => extname(f) === '.ts' && !f.endsWith('.test.ts'));
+
+describe('CONVENTIONS §3 — naming, in server/web', () => {
+  it('names every directory under web/src/ in kebab-case', () => {
+    const dirs = new Set(
+      webSrcFiles.map((f) => relative(WEB_SRC, dirname(f))).filter((d) => d !== ''),
+    );
+
+    const offenders = [...dirs]
+      .flatMap((d) => d.split(sep))
+      .filter((segment) => !isKebabCase(segment))
+      .map((segment) => `web/src/…/${segment} — directories are kebab-case (CONVENTIONS §3)`);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('names every .ts and .css file in kebab-case', () => {
+    const offenders = webSrcFiles
+      .filter((f) => extname(f) === '.ts' || extname(f) === '.css')
+      .filter((f) => !isKebabCase(basename(f, extname(f))))
+      .map((f) => `${relative(SERVER_ROOT, f)} — kebab-case (CONVENTIONS §3)`);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('names every .tsx component in PascalCase, matching its exported component', () => {
+    const offenders = webSrcFiles
+      .filter((f) => extname(f) === '.tsx')
+      .filter((f) => !WEB_ENTRY_POINTS.has(basename(f)))
+      .flatMap((f) => {
+        const name = basename(f, '.tsx');
+        const rel = relative(SERVER_ROOT, f);
+
+        if (!isPascalCase(name)) {
+          return [`${rel} — .tsx components are PascalCase (CONVENTIONS §3)`];
+        }
+
+        const exportsIt = new RegExp(
+          `export\\s+(?:default\\s+)?(?:function|const|class)\\s+${name}\\b`,
+        ).test(readFileSync(f, 'utf8'));
+
+        return exportsIt ? [] : [`${rel} — must export a component named ${name} (CONVENTIONS §3)`];
+      });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the entry-point exemption honest', () => {
+    const present = new Set(webSrcFiles.map((f) => basename(f)));
+    const stale = [...WEB_ENTRY_POINTS].filter((name) => !present.has(name));
+    expect(stale).toEqual([]);
+  });
+
+  it('contains no barrel files', () => {
+    const offenders = webSrcFiles
+      .filter((f) => extname(f) === '.ts' || extname(f) === '.tsx')
+      .filter((f) => looksLikeBarrel(readFileSync(f, 'utf8')))
+      .map(
+        (f) =>
+          `${relative(SERVER_ROOT, f)} — re-export-only modules hide the import graph (CONVENTIONS §3)`,
+      );
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe('CONVENTIONS §4 — web test/ mirrors web src/', () => {
+  it('has a mirrored test for every web .ts module, or a listed exemption', () => {
+    // `.tsx` components are exempt as a class, not one by one: this package has
+    // no renderer by design, so per-component entries would say the same thing
+    // forty times.
+    const offenders = webSrcModules
+      .map((f) => relative(WEB_SRC, f))
+      .filter((rel) => !WEB_NO_MIRROR_REQUIRED.has(rel))
+      .filter((rel) => !srcFileExists(join(WEB_TEST, rel.replace(/\.ts$/, '.test.ts'))))
+      .map(
+        (rel) =>
+          `web/src/${rel} — expected web/test/${rel.replace(/\.ts$/, '.test.ts')}, or an entry in WEB_NO_MIRROR_REQUIRED with a reason (CONVENTIONS §4)`,
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it('keeps the web exemption list honest — every entry names a file that exists', () => {
+    const present = new Set(webSrcModules.map((f) => relative(WEB_SRC, f)));
+
+    const stale = [...WEB_NO_MIRROR_REQUIRED.keys()]
+      .filter((rel) => !present.has(rel))
+      .map((rel) => `${rel} — exempted but no such file; remove the entry`);
+
+    expect(stale).toEqual([]);
+  });
+
+  it('gives every web exemption a reason', () => {
+    const empty = [...WEB_NO_MIRROR_REQUIRED.entries()]
+      .filter(([, reason]) => reason.trim().length < 10)
+      .map(([rel]) => `${rel} — exemptions need a reason someone can disagree with`);
+
+    expect(empty).toEqual([]);
+  });
+
+  it('places every web test in a directory that exists under web/src/, or in helpers/', () => {
+    const offenders = walk(WEB_TEST)
+      .filter((f) => f.endsWith('.test.ts'))
+      .map((f) => relative(WEB_TEST, f))
+      .filter((rel) => !rel.startsWith(`helpers${sep}`))
+      .filter((rel) => {
+        const dir = dirname(rel);
+        return dir !== '.' && !directoryExists(join(WEB_SRC, dir));
+      })
+      .map((rel) => `web/test/${rel} — no matching directory under web/src/ (CONVENTIONS §4)`);
+
+    expect(offenders).toEqual([]);
+  });
+});
