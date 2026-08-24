@@ -7,8 +7,9 @@ priority: p2
 depends-on: [LAI-083]
 discovered-from:
 finished: 2026-08-24T19:57:19Z
+reviewed: 2026-08-25T16:00:00+05:30
 started: 2026-08-24T19:45:49Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -115,3 +116,25 @@ tooling if that is wanted; it is not in the ACs so it stayed in my scratchpad.
 Dragging a sprint edge to reschedule. The unscheduled tray is read-only for the
 same reason — dragging into a sprint is the Sprints screen's "Add tasks", and
 duplicating it here without the drag maths would be a worse copy.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Rendered with real sprints and tasks: month axis, one bar per
+sprint with its progress, `Today` marker, active/planned status, and an
+Unscheduled tray. The screen states its own constraint —
+*"Tasks have no dates of their own — open a sprint to see what is in it"* — which
+turns D-014 from a rule someone has to know into something the screen explains.
+
+**The test that fails on `due_date` / `planned_start` / `taskSpan`, or on any axis
+position derived from a task, is the right place to spend a test.** You said the
+pressure to add task dates will come from someone reasonable asking for a nicer
+Gantt, and that is exactly right — it already came, from Builder-B, who had
+proposed positioning bars from `started_at`/`completed_at`. **Your catch stopped
+it**: those are actuals, not a plan, and drawing them would render the past as
+though it were a schedule. That exchange is the guard working before the code
+existed.
+
+**Not stretching the axis to reach today is a good call** — a project whose next
+sprint is in March would otherwise be mostly empty January with every bar a
+sliver, for one marker. Saying which side today falls on is better than moving
+the axis to accommodate it.

@@ -7,8 +7,9 @@ priority: p2
 depends-on: [LAI-083]
 discovered-from:
 finished: 2026-08-24T20:07:14Z
+reviewed: 2026-08-25T16:00:00+05:30
 started: 2026-08-24T19:57:52Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -116,3 +117,34 @@ clamp holds the guarantee independently of branch order, and the comment now say
 so instead of implying the test covers it alone.
 
 814 server + 311 web tests pass.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Range control, work-by-status counts, blocked, and a live activity
+feed with actor kinds — all from the endpoints, nothing invented.
+
+**Both judgement calls are right, and the second is the one that mattered.**
+
+Narrowing blocked to *unmet dependency* rather than `ready === false` is correct:
+most unready tasks are assigned or moving, which is being worked on, not stuck.
+
+Treating a **cancelled dependency as still blocking** reads oddly and you shipped
+it anyway because it is `isReady`'s rule verbatim — and **refusing to paper over
+it here is the right instinct**. A dashboard that disagreed with the board's
+`ready` flag would be two truths, and the server computes one of them. If the
+rule is wrong it is wrong in `task-lifecycle.ts` and should be fixed there where
+everything sees it.
+
+**Inserting agent and system rows directly into `activity` to see the badge was
+seeding, not tampering** — the append-only triggers block `UPDATE` and `DELETE`,
+not `INSERT`, so you stayed inside the guarantee. Asserting a badge nobody had
+looked at would have been worse.
+
+**The `Math.max(0, …)` probe is the best thing in this message.** Deleting it left
+every test green because negatives already fell into the "just now" branch — so
+you checked whether it survives the obvious tidy-up, and with both changed a
+future timestamp renders **"-1 minutes ago"**. Clocks do disagree between server
+and browser. **A clamp whose protection is only visible in combination with
+another line is exactly what the next person deletes**, and the comment now says
+it holds the property independently of branch order rather than implying a test
+covers it.
