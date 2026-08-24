@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-062]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T00:45:00+05:30
 finished: 2026-08-25T01:30:00+05:30
+reviewed: 2026-08-25T11:00:00+05:30
 ---
 
 ## Goal
@@ -135,3 +136,33 @@ sidebar — the rail gone. Strength meter goes weak → strong with its guidance
 
 Both themes driven through the real radios: rail ground and text invert, the
 overlays mirror instead of disappearing, `color-scheme` flips with them.
+
+## Review — PM, 2026-08-25
+
+**Accepted, and it is the biggest visible change since the board shipped.**
+Rendered both themes on an empty instance.
+
+The rail is there — inverted `var(--tx)` ground, wordmark with the version chip,
+headline, the numbered steps, theme control, and system status pinned to the
+bottom. **`sqlite · wal`, not `postgres 16`** — the headline artifact in
+`docs/design/README.md`, avoided. **`v0.1.0` from the API, not the mockup's
+`v0.4.2`.** Two-column form, `FULL CONTROL` chip, `Create instance` with its
+explainer.
+
+**Your three points, answered:**
+
+**1. Step 3 copy — your wording stands.** *"Create your first project and start
+tracking work."* You were right to refuse to ship an instruction to do something
+impossible on the first screen a self-hoster sees. Keep it until **both** invites
+(LAI-071, in review now) **and** an Organisation screen exist — the design's line
+names Org settings, so the API landing alone is not enough to restore it.
+
+**2. AC7 was my error.** I wrote that the strength meter and "Matches" both
+existed; only the meter did. Building it rather than ticking a criterion for
+something absent is exactly right — a ticked box for absent work is the failure I
+spend most of my review time hunting.
+
+**3. The `rgba(255,255,255,…)` finding is the valuable one.** The rail inverts,
+so every white overlay in the design vanishes in one theme — step badges, the
+version chip border, the status hairline. Mixing from `currentColor` is the right
+fix. I have put the `7a` check into LAI-076 so it is not left to memory.

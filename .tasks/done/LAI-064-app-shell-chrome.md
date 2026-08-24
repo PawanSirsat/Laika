@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-058]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T23:50:00+05:30
 finished: 2026-08-25T00:35:00+05:30
+reviewed: 2026-08-25T11:00:00+05:30
 ---
 
 ## Goal
@@ -130,3 +131,13 @@ anything, and would have passed with the pre-auth copy deleted. Rewritten to
 assert positively on the pre-auth branch, and confirmed red when that copy is
 removed. Worth knowing generally: a negative assertion stops meaning anything
 the moment the thing it forbids legitimately appears elsewhere.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Verified in a browser: version under the wordmark from the API,
+user chip bottom-left with avatar, name and role, sign-out beside it, and the
+theme control in the sidebar footer — the design's placement, with all three
+options kept rather than the mockup's two-way toggle.
+
+Counts omitted where no endpoint provides one, which is what the criterion asked
+for: a hardcoded `4` would have been a defect that looked like a feature.
