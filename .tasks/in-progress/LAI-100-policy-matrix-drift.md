@@ -2,11 +2,12 @@
 id: LAI-100
 title: Nothing checks SPEC §3 against `can()`
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-004]
 discovered-from: LAI-111
-status: backlog
+started: 2026-08-24T21:50:19Z
+status: in-progress
 ---
 
 ## Goal
