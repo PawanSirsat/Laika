@@ -15,6 +15,11 @@ export interface KanbanViewProps {
   readonly onMove: (taskId: string, to: BoardColumn) => void;
   readonly filtered: boolean;
   readonly onOpen: (taskId: string) => void;
+  /** Opens the create form. Absent for anyone who may not create tasks. */
+  readonly onAdd?: (() => void) | undefined;
+  readonly canAdd?: boolean | undefined;
+  readonly sprintLabels?:
+    ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
 }
 
 /** Empty-column copy, from the prototype — per lane, not one generic sentence. */
@@ -32,6 +37,9 @@ export function KanbanView({
   onMove,
   filtered,
   onOpen,
+  onAdd,
+  canAdd = false,
+  sprintLabels,
 }: KanbanViewProps) {
   const [dragging, setDragging] = useState<string | undefined>(undefined);
   const [over, setOver] = useState<BoardColumn | undefined>(undefined);
@@ -99,6 +107,7 @@ export function KanbanView({
                         setOver(undefined);
                       }}
                       onOpen={onOpen}
+                      sprintLabels={sprintLabels}
                     />
 
                     {/*
@@ -128,6 +137,12 @@ export function KanbanView({
                 ))
               )}
             </div>
+
+            {canAdd && onAdd !== undefined && (
+              <button type="button" className="lane-add" onClick={onAdd}>
+                + Add task
+              </button>
+            )}
           </section>
         );
       })}

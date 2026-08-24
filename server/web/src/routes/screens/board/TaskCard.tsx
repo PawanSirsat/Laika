@@ -13,6 +13,9 @@ export interface TaskCardProps {
   readonly onDragStart: (taskId: string) => void;
   readonly onDragEnd: () => void;
   readonly onOpen: (taskId: string) => void;
+  /** `S1`-style label per sprint id, and which one is active. Real data. */
+  readonly sprintLabels?:
+    ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
 }
 
 function initials(name: string): string {
@@ -41,6 +44,7 @@ export function TaskCard({
   onDragStart,
   onDragEnd,
   onOpen,
+  sprintLabels,
 }: TaskCardProps) {
   const blocked = blockedState(task, byId);
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -49,6 +53,7 @@ export function TaskCard({
   const byAgent = task.created_via === 'mcp';
   // Sample: there is no tags table. See `demo/tags.ts`.
   const tags = demoTags(task.id);
+  const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
 
   return (
     <article
@@ -111,6 +116,11 @@ export function TaskCard({
           <span className="visually-hidden"> — open details</span>
         </button>
 
+        {sprint !== undefined && (
+          <span className={sprint.active ? 'card-sprint card-sprint-on' : 'card-sprint'}>
+            {sprint.label}
+          </span>
+        )}
         {task.ready && (
           <span className="marker marker-ready" title="Unassigned, unblocked, ready to pick up">
             ready

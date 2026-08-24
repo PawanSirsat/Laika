@@ -1,0 +1,275 @@
+/* The sprint band above the board (prototype, band A). Tokens only. */
+
+.strip {
+  background: var(--card);
+  border-bottom: 1px solid var(--bd);
+  padding: 0.625rem 1.125rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5625rem;
+}
+
+.strip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.strip-all,
+.strip-detail {
+  flex: none;
+  height: 2.125rem;
+  padding: 0 0.6875rem;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--tx2);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.strip-all-on {
+  background: var(--accs);
+  border-color: var(--accb);
+  color: var(--acc);
+}
+
+.strip-all:focus-visible,
+.strip-detail:focus-visible,
+.strip-chip:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.strip-chips {
+  flex: 1;
+  display: flex;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+/* Each sprint is an equal share of the row, as the prototype lays them out. */
+.strip-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 2.125rem;
+  padding: 0 0.5625rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.25rem;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.strip-chip-on {
+  background: var(--accs);
+  border-color: var(--accb);
+}
+
+/* Colour carries the sprint's state, as the design specifies. */
+.strip-chip-active .strip-chip-id,
+.strip-chip-active .strip-chip-frac {
+  color: var(--pur);
+}
+
+.strip-chip-completed .strip-chip-id,
+.strip-chip-completed .strip-chip-frac {
+  color: var(--grn);
+}
+
+.strip-chip-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3125rem;
+  min-width: 0;
+}
+
+.strip-chip-id {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-heavy);
+  color: var(--tx3);
+}
+
+.strip-chip-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.strip-chip-frac {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx3);
+}
+
+.strip-chip-bar {
+  display: block;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--tub);
+  overflow: hidden;
+}
+
+.strip-chip-bar span {
+  display: block;
+  height: 100%;
+  background: var(--acc);
+}
+
+.strip-chip-completed .strip-chip-bar span {
+  background: var(--grn);
+}
+
+/* ------------------------------------------------------------- summary row */
+
+.strip-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.6875rem;
+  padding-top: 0.5625rem;
+  border-top: 1px solid var(--bd);
+}
+
+.strip-ring {
+  width: 2.125rem;
+  height: 2.125rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.strip-ring-hole {
+  width: 1.625rem;
+  height: 1.625rem;
+  border-radius: var(--radius-pill);
+  background: var(--card);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.53125rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx2);
+}
+
+.strip-what {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.strip-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  margin: 0;
+  min-width: 0;
+}
+
+.strip-badge {
+  flex: none;
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.07em;
+  padding: 0.25rem 0.375rem;
+  border-radius: var(--radius-sm);
+  background: var(--tub);
+  color: var(--tx2);
+}
+
+.strip-badge-active {
+  background: var(--purs);
+  color: var(--pur);
+}
+
+.strip-badge-completed {
+  background: var(--grns);
+  color: var(--grn);
+}
+
+.strip-name {
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.01em;
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strip-dates {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+}
+
+.strip-goal {
+  margin: 0;
+  font-size: 0.65625rem;
+  font-weight: var(--weight-medium);
+  color: var(--tx2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.strip-stats {
+  flex: none;
+  display: flex;
+  margin: 0;
+}
+
+.strip-stat {
+  padding: 0 0.6875rem;
+  border-left: 1px solid var(--bd);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+
+.strip-stat dt {
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  color: var(--tx3);
+}
+
+.strip-stat-blocked dt {
+  color: var(--red);
+}
+
+.strip-stat dd {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-heavy);
+  color: var(--tx);
+}
+
+.strip-stat dd span {
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+}

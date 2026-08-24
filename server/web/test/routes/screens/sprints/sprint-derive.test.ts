@@ -42,6 +42,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     status: 'todo',
     priority: 'p2',
     assignee_id: null,
+    sprint_id: null,
     created_by: 'u1',
     created_via: 'web',
     discovered_from: null,
@@ -211,7 +212,7 @@ void describe('progressFor', () => {
 
 void describe('sprint_id, which the client Task type does not declare', () => {
   void test('reads it when the server sends it', () => {
-    assert.equal(readSprintId({ ...task({ id: '1' }), sprint_id: 's1' } as Task), 's1');
+    assert.equal(readSprintId({ ...task({ id: '1' }), sprint_id: 's1' }), 's1');
   });
 
   void test('degrades to null rather than leaking undefined through a cast', () => {
@@ -223,10 +224,7 @@ void describe('sprint_id, which the client Task type does not declare', () => {
   });
 
   void test('withSprintIds gives every task the field', () => {
-    const rows = withSprintIds([
-      task({ id: '1' }),
-      { ...task({ id: '2' }), sprint_id: 's1' } as Task,
-    ]);
+    const rows = withSprintIds([task({ id: '1' }), { ...task({ id: '2' }), sprint_id: 's1' }]);
     assert.deepEqual(
       rows.map((r) => r.sprint_id),
       [null, 's1'],
@@ -237,8 +235,8 @@ void describe('sprint_id, which the client Task type does not declare', () => {
 void describe('groupBySprint', () => {
   void test('buckets by sprint, with unassigned under null', () => {
     const rows = withSprintIds([
-      { ...task({ id: '1' }), sprint_id: 's1' } as Task,
-      { ...task({ id: '2' }), sprint_id: 's1' } as Task,
+      { ...task({ id: '1' }), sprint_id: 's1' },
+      { ...task({ id: '2' }), sprint_id: 's1' },
       task({ id: '3' }),
     ]);
     const grouped = groupBySprint(rows);

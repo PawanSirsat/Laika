@@ -26,6 +26,14 @@ export interface Task {
   readonly status: TaskStatus;
   readonly priority: TaskPriority;
   readonly assignee_id: string | null;
+  /**
+   * The sprint this task belongs to, or `null`.
+   *
+   * The server has returned this on every `TaskView` since LAI-011; the client
+   * type simply never declared it, so nothing in the UI could group or scope by
+   * sprint (LAI-121, found by Builder-A).
+   */
+  readonly sprint_id: string | null;
   readonly created_by: string;
   readonly created_via: string;
   readonly discovered_from: string | null;
@@ -58,6 +66,14 @@ export interface TaskFilter {
   /** A user id, or the literal `none` for unassigned. */
   readonly assignee?: string | undefined;
   readonly ready?: boolean | undefined;
+  /**
+   * A sprint id, or the literal `none` for tasks in no sprint.
+   *
+   * The server has accepted this since LAI-011 (`c.req.query('sprint')` in
+   * `http/routes/tasks.ts`); the client type simply never declared it, so the
+   * board could not scope to a sprint even though the API could.
+   */
+  readonly sprint?: string | undefined;
   readonly limit?: number | undefined;
   readonly cursor?: string | undefined;
 }
@@ -68,6 +84,7 @@ function toQuery(filter: TaskFilter): string {
   if (filter.priority !== undefined) params.set('priority', filter.priority);
   if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
   if (filter.ready !== undefined) params.set('ready', String(filter.ready));
+  if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
 

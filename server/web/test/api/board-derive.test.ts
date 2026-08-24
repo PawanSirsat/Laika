@@ -27,6 +27,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     status: 'todo',
     priority: 'p2',
     assignee_id: null,
+    sprint_id: null,
     created_by: 'u',
     created_via: 'web',
     discovered_from: null,
