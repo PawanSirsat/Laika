@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-009]
 discovered-from: LAI-009
-status: review
+status: done
 finished: 2026-08-24T08:13:00+05:30
+reviewed: 2026-08-24T09:55:00+05:30
 started: 2026-08-24T08:01:32+05:30
 ---
 
@@ -204,3 +205,39 @@ non-field failures. `routes.test.ts` gained the `SETUP_PATH` agreement check.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
 `@laika/web` **118/118**, `@laika/server` **370/370**.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, 370 server and **112 web**.
+
+**Verified against a running container**, not just the suite: fresh volume →
+`setup_required: true`; `POST /setup` → **201** with org, owner and project;
+`setup_required: false`; `GET /me` with the returned cookie → `org_role: owner`;
+`GET /board` → 200; a second `POST /setup` → `conflict`.
+
+**The shipped bundle contains the wiring** — `setup/status`, `setup_required`,
+`/me` and a `` `/api/v1` `` base are all present in the built JS, and no mockup
+fixture is. My first grep for `/api/v1/setup/status` returned zero because the
+client composes URLs from that base; the literal never appears. Worth recording
+as a review trap: a zero from grepping a minified bundle for a full URL proves
+nothing.
+
+**The 409 copy is specific, not generic** — *"This Laika has already been set up.
+Sign in instead."* — with `recheck()` so the app stops offering setup. That is
+the case where someone finished setup in another tab, and treating it as a form
+failure would tell the user their input was wrong when the instance is simply
+ready.
+
+**The redirect race was anticipated.** `markComplete()` and `retry()` run
+synchronously before `navigate('/board')`, with a comment saying why: otherwise
+the redirect effect bounces the new Owner straight back to `/setup` on the next
+render. That is a bug that would have appeared only on a real first boot, in a
+browser, once — which is the hardest kind to catch afterwards.
+
+**Three tests that pin the things that actually bit me during review:**
+`maps the camelCase form onto the snake_case wire body`, `never sends a key the
+server does not accept`, and `omits project_name entirely when blank`. I lost two
+attempts to exactly those wire-format details while testing the endpoint by hand.
+
+**Completes M1's last outstanding work.** LAI-009's criteria 5 and 6, moved here,
+are now met.
