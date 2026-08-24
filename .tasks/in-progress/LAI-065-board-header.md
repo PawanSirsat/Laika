@@ -2,11 +2,12 @@
 id: LAI-065
 title: Board header — project context, search, and New task
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-049]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T03:15:00+05:30
 ---
 
 ## Goal
