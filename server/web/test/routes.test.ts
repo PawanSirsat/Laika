@@ -105,6 +105,39 @@ void describe('routing (AC4, AC6)', () => {
     }
   });
 
+  void test('no copy claims a screen is unbuilt when it is built', async () => {
+    /*
+     * `/organisation` carried first boot's headline — "This instance has no
+     * owner yet" — on a screen you can only reach while signed in, so it told a
+     * signed-in owner there was no owner (LAI-063).
+     *
+     * Reading the whole map turned up two more of the same family: `/login` and
+     * `/setup` both said their screens were "not built yet" **after** they were
+     * built. Nothing caught any of the three, because copy is a string and no
+     * test knew which screens exist.
+     *
+     * This does: a route AppShell renders for real must not describe itself as
+     * unbuilt. Derived from AppShell's own branches, so it stays true as
+     * screens land.
+     */
+    const shell = code(
+      await readFile(fileURLToPath(new URL('components/AppShell.tsx', SRC)), 'utf8'),
+    );
+    const built = new Set(
+      [...shell.matchAll(/path === '([^']+)'/g)].map((m) => m[1]).filter((p) => p !== undefined),
+    );
+
+    const lying: string[] = [];
+    for (const [path, copy] of Object.entries(SCREEN_COPY)) {
+      if (!built.has(path)) continue;
+      const text = `${copy.headline} ${copy.body}`.toLowerCase();
+      if (/not built|arrives? with|will live here|happens here, once/.test(text)) {
+        lying.push(`${path} — "${copy.headline}"`);
+      }
+    }
+    assert.deepEqual(lying, [], 'these screens exist but their copy says otherwise');
+  });
+
   void test('no mockup fixtures in the copy', () => {
     const all = JSON.stringify(SCREEN_COPY);
     for (const fixture of ['Mira', 'Kellner', 'Sana', 'Verma', 'kvelld.internal', '13/34']) {

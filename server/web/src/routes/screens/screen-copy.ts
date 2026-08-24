@@ -46,8 +46,8 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     body: 'A personal access token lets an agent read and write this board as you. It is shown once when created.',
   },
   '/organisation': {
-    headline: 'This instance has no owner yet',
-    body: 'Organisation settings, members and invites live here.',
+    headline: 'Organisation settings are not built yet',
+    body: 'Members, invites, roles and the AI provider key live here.',
   },
   '/projects': {
     headline: 'No projects yet',
@@ -58,15 +58,15 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     body: 'Open a project from Projects to see who is on it.',
   },
   '/login': {
-    headline: 'Sign-in is not built yet',
-    body: 'The sign-in form, invite acceptance and the instance host indicator arrive with authentication.',
+    headline: 'Sign-in did not load',
+    body: 'Reload the page. If it keeps happening the instance may be restarting.',
   },
   '/invite': {
     headline: 'No invite in this link',
     body: 'An invite link carries a token. Ask whoever invited you to send the full link.',
   },
   '/setup': {
-    headline: 'First-run setup is not built yet',
-    body: 'Creating the organisation, the Owner account and the first project happens here, once.',
+    headline: 'First boot did not load',
+    body: 'Reload the page. If this instance already has an owner, sign in instead.',
   },
 };
