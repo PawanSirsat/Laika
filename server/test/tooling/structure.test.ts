@@ -60,6 +60,7 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-setup-status.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  ['api/use-board.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['theme/theme.ts', 'DOM-bound theme application; asserted in a browser under LAI-018'],
   ['theme/use-theme.ts', 'a React hook — no renderer in this package'],
   ['theme/avatar-color.ts', 'derivation asserted through the token reference page in LAI-018'],

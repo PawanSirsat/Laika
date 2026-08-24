@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { DEFAULT_PATH, matchRoute, type Route } from './route-table.ts';
 
 /**
@@ -18,6 +18,15 @@ export interface UseRoute {
   /** The matched route, or `undefined` for a 404. */
   readonly route: Route | undefined;
   readonly navigate: (to: string) => void;
+  /**
+   * The query string, as state.
+   *
+   * Filters live here rather than in a component so a filtered board is a
+   * link someone can paste (LAI-049) — and so back and forward move through
+   * filter changes the way people expect.
+   */
+  readonly params: URLSearchParams;
+  readonly setParams: (next: URLSearchParams) => void;
 }
 
 function currentPath(): string {
@@ -25,13 +34,32 @@ function currentPath(): string {
   return pathname === '/' ? DEFAULT_PATH : pathname;
 }
 
+function currentSearch(): string {
+  return window.location.search;
+}
+
 export function useRoute(): UseRoute {
   const [path, setPath] = useState<string>(() => currentPath());
+  const [search, setSearch] = useState<string>(() => currentSearch());
 
   const navigate = useCallback((to: string): void => {
-    if (to === window.location.pathname) return;
+    if (to === window.location.pathname + window.location.search) return;
     window.history.pushState({}, '', to);
-    setPath(to);
+    setPath(currentPath());
+    setSearch(currentSearch());
+  }, []);
+
+  /**
+   * Filter changes `replace` rather than `push`.
+   *
+   * Pushing would make Back step through every checkbox toggle before leaving
+   * the screen, which is the thing everyone hates about filter UIs.
+   */
+  const setParams = useCallback((next: URLSearchParams): void => {
+    const query = next.toString();
+    const url = query === '' ? window.location.pathname : `${window.location.pathname}?${query}`;
+    window.history.replaceState({}, '', url);
+    setSearch(query === '' ? '' : `?${query}`);
   }, []);
 
   // Back and forward buttons. Without this the URL changes and the view does
@@ -39,6 +67,7 @@ export function useRoute(): UseRoute {
   useEffect(() => {
     const onPop = (): void => {
       setPath(currentPath());
+      setSearch(currentSearch());
     };
     addEventListener('popstate', onPop);
     return () => {
@@ -61,5 +90,7 @@ export function useRoute(): UseRoute {
     document.title = route === undefined ? 'Not found · Laika' : `${route.label} · Laika`;
   }, [route]);
 
-  return { path, route, navigate };
+  const params = useMemo(() => new URLSearchParams(search), [search]);
+
+  return { path, route, navigate, params, setParams };
 }
