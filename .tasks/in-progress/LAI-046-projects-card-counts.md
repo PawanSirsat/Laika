@@ -2,11 +2,12 @@
 id: LAI-046
 title: Projects cards can have their progress bar now — LAI-053 landed
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-053, LAI-076]
 discovered-from: LAI-076
-status: backlog
+status: in-progress
+started: 2026-08-25T07:40:00+05:30
 ---
 
 ## Goal
