@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
+import { appendActivity, readPayload } from '../../src/db/activity.ts';
 import { activity, comments, orgs, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import {
@@ -209,24 +210,23 @@ describe('deleting is soft, and enforces §3.2 (AC3, AC4)', () => {
 });
 
 describe('activity (AC5)', () => {
-  it('writes exactly one row per mutation, distinguished by payload action', () => {
+  it('writes exactly one row per mutation', () => {
     const memberId = projectMember();
     const comment = addComment(t.db, actor(memberId), taskId, 'one');
     editComment(t.db, actor(memberId), comment.id, 'two');
     deleteComment(t.db, actor(memberId), comment.id);
 
+    // One row each — not two, not none. Which *verb* each one carries is asserted
+    // separately below; LAI-110 changed that from three `comment.added` rows to
+    // three distinct verbs, and this assertion is the half that did not change.
     const rows = t.db
       .select()
       .from(activity)
       .all()
-      .filter((r) => r.type === 'comment.added');
+      .map((r) => readPayload(r) as Record<string, unknown>)
+      .filter((r) => r.comment_id === comment.id);
 
-    expect(rows).toHaveLength(3);
-    expect(rows.map((r) => (JSON.parse(r.payloadJson) as { action: string }).action)).toEqual([
-      'created',
-      'edited',
-      'deleted',
-    ]);
+    expect(rows.map((r) => String(r.action))).toEqual(['created', 'edited', 'deleted']);
   });
 });
 
@@ -245,5 +245,78 @@ describe('listing is oldest first', () => {
   it('refuses a non-member reading', () => {
     const outsider = makeUser('member');
     expect(() => listComments(t.db, actor(outsider), taskId, LIST)).toThrow(ApiError);
+  });
+});
+
+describe('each mutation gets its own activity verb (LAI-110)', () => {
+  /** Activity rows for a comment, oldest first, as `type/action`. */
+  function trail(commentId: string): string[] {
+    return t.db
+      .select()
+      .from(activity)
+      .all()
+      .map((row) => ({ type: row.type, payload: readPayload(row) as Record<string, unknown> }))
+      .filter((row) => row.payload.comment_id === commentId)
+      .map((row) => `${row.type}/${String(row.payload.action)}`);
+  }
+
+  it('writes added, edited and deleted rather than three of the same', () => {
+    const memberId = projectMember();
+    const comment = addComment(t.db, actor(memberId), taskId, 'First');
+    editComment(t.db, actor(memberId), comment.id, 'Second');
+    deleteComment(t.db, actor(memberId), comment.id);
+
+    // The whole point: filtering `activity` by `type` — the obvious query, and what
+    // the indexes on that table are for — now gives the right answer.
+    expect(trail(comment.id)).toEqual([
+      'comment.added/created',
+      'comment.edited/edited',
+      'comment.deleted/deleted',
+    ]);
+  });
+
+  it('keeps the action payload, so pre-LAI-110 history stays readable', () => {
+    const memberId = projectMember();
+    const comment = addComment(t.db, actor(memberId), taskId, 'First');
+
+    // A row as it was written before the vocabulary grew: the verb says "added"
+    // and only the payload says otherwise. It must still be interpretable.
+    appendActivity(t.db, {
+      orgId: t.db.select().from(orgs).limit(1).get()!.id,
+      projectId: null,
+      taskId,
+      actorId: memberId,
+      actorKind: 'user',
+      type: 'comment.added',
+      payload: { action: 'deleted', comment_id: comment.id },
+    });
+
+    const rows = t.db
+      .select()
+      .from(activity)
+      .all()
+      .map((row) => readPayload(row) as Record<string, unknown>)
+      .filter((row) => row.comment_id === comment.id);
+
+    // Reading "what happened" from the payload works across both eras, which is
+    // why the field was kept rather than dropped as redundant.
+    expect(rows.map((row) => String(row.action))).toEqual(['created', 'deleted']);
+  });
+
+  it('allows both new verbs at the database, not merely in TypeScript', () => {
+    // The CHECK constraint is the enforcement (§4.8); migration 0008 rebuilt it.
+    const orgId = t.db.select().from(orgs).limit(1).get()!.id;
+
+    for (const type of ['comment.edited', 'comment.deleted'] as const) {
+      expect(() =>
+        appendActivity(t.db, {
+          orgId,
+          taskId,
+          actorId: adminId,
+          actorKind: 'user',
+          type,
+        }),
+      ).not.toThrow();
+    }
   });
 });

@@ -1,4 +1,16 @@
-import { and, desc, eq, getTableColumns, gte, lt, sql, type SQL } from 'drizzle-orm';
+import {
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  isNull,
+  lt,
+  or,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { type Db } from './client.ts';
 import { type ActivityType, type ActorKind } from './enums.ts';
 import { newId } from './ids.ts';
@@ -56,47 +68,6 @@ export function appendActivity(db: Db, entry: AppendActivity): Activity {
   return row;
 }
 
-export interface ListActivityFilter {
-  orgId: string;
-  projectId?: string;
-  taskId?: string;
-  /** Unix-ms, inclusive lower bound — the §6.3 `updated_since` semantic. */
-  since?: number;
-  before?: number;
-  limit?: number;
-}
-
-const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
-
-export function listActivity(db: Db, filter: ListActivityFilter): Activity[] {
-  const conditions: SQL[] = [eq(activity.orgId, filter.orgId)];
-
-  if (filter.projectId !== undefined) conditions.push(eq(activity.projectId, filter.projectId));
-  if (filter.taskId !== undefined) conditions.push(eq(activity.taskId, filter.taskId));
-  if (filter.since !== undefined) conditions.push(gte(activity.createdAt, filter.since));
-  if (filter.before !== undefined) conditions.push(lt(activity.createdAt, filter.before));
-
-  const limit = Math.min(filter.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
-
-  return db
-    .select()
-    .from(activity)
-    .where(and(...conditions))
-    .orderBy(desc(activity.createdAt), desc(activity.id))
-    .limit(limit)
-    .all();
-}
-
-/** Parse a stored payload. Returns `null` rather than throwing on bad JSON. */
-export function readPayload(row: Activity): unknown {
-  try {
-    return JSON.parse(row.payloadJson);
-  } catch {
-    return null;
-  }
-}
-
 // ------------------------------------------------------------ the SSE cursor
 
 /**
@@ -127,6 +98,115 @@ export interface ActivityEvent extends Activity {
  * happens, not a reason to ship an id that is wrong today.
  */
 const SEQ = sql<number>`rowid`;
+
+export interface ListActivityFilter {
+  orgId: string;
+  projectId?: string;
+  /**
+   * Restrict to these projects — the visible set the caller worked out by asking
+   * `can()` about each one (§3.3). Passing an empty array means "no projects",
+   * not "all of them"; that distinction is the whole point of the option, so it
+   * is handled explicitly below rather than left to `inArray`.
+   */
+  projectIds?: readonly string[];
+  /** Also return rows with no project — the org-level half of §4.8. */
+  includeOrgScoped?: boolean;
+  taskId?: string;
+  /** Unix-ms, inclusive lower bound — the §6.3 `updated_since` semantic. */
+  since?: number;
+  before?: number;
+  /** Keyset position for the newest-first order below (§6.3). */
+  cursor?: { createdAt: number; seq: number } | null;
+  limit?: number;
+}
+
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
+
+/**
+ * Read the feed, **newest first**.
+ *
+ * The order is the opposite of `listComments` (LAI-047) and that is deliberate: a
+ * conversation is read from the beginning, a feed is scanned from the top. Do not
+ * "fix" one to match the other.
+ *
+ * ## The tiebreaker is `seq`, not `id`
+ *
+ * `(created_at, id)` is the cursor shape everywhere else in §6.3, and for `tasks`
+ * or `projects` it is a total order. Here it is not: `activity` rows are written
+ * inside the transaction they describe, so several land in the same millisecond
+ * routinely — first-run setup writes `org.created` and `project.created` together
+ * — and within one millisecond a ULID is *random*, so which of the two came
+ * "first" was decided by chance on each read. It surfaced as a test that passed
+ * alone and failed in a full run.
+ *
+ * `created_at DESC, seq DESC` keeps chronology as the primary key (a row may be
+ * appended with a backdated timestamp — cron, a replayed webhook — and should
+ * still sort by when it happened) and resolves ties by true insert order. It is
+ * the same ordering the SSE stream delivers in, which is what makes the two
+ * agree on a tie rather than merely on a set.
+ *
+ * Returns `ActivityEvent`, so a row read here carries the same `seq` the stream
+ * puts in its `id:` field — a client can tell that a row it fetched over REST is
+ * the one it already watched arrive live (§11.5).
+ */
+export function listActivity(db: Db, filter: ListActivityFilter): ActivityEvent[] {
+  const conditions: SQL[] = [eq(activity.orgId, filter.orgId)];
+
+  if (filter.projectId !== undefined) conditions.push(eq(activity.projectId, filter.projectId));
+  if (filter.taskId !== undefined) conditions.push(eq(activity.taskId, filter.taskId));
+  if (filter.since !== undefined) conditions.push(gte(activity.createdAt, filter.since));
+  if (filter.before !== undefined) conditions.push(lt(activity.createdAt, filter.before));
+
+  if (filter.projectIds !== undefined) {
+    const inProjects =
+      filter.projectIds.length === 0
+        ? undefined
+        : inArray(activity.projectId, [...filter.projectIds]);
+    const orgScoped = filter.includeOrgScoped === true ? isNull(activity.projectId) : undefined;
+
+    if (inProjects === undefined && orgScoped === undefined) {
+      // Visible to nothing at all, so there is nothing to ask the database.
+      // `inArray(col, [])` renders as `WHERE false` and would give the same
+      // answer — this skips the round-trip, and says out loud that an empty
+      // visible set means "no projects" and never "all of them".
+      return [];
+    }
+
+    const scope = inProjects === undefined ? orgScoped : or(inProjects, orgScoped);
+    if (scope !== undefined) conditions.push(scope);
+  }
+
+  if (filter.cursor !== null && filter.cursor !== undefined) {
+    const { createdAt, seq } = filter.cursor;
+    // Strictly *before* the cursor, because the order is descending.
+    conditions.push(
+      or(
+        lt(activity.createdAt, createdAt),
+        and(eq(activity.createdAt, createdAt), sql`rowid < ${seq}`),
+      )!,
+    );
+  }
+
+  const limit = Math.min(filter.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+
+  return db
+    .select({ ...getTableColumns(activity), seq: SEQ })
+    .from(activity)
+    .where(and(...conditions))
+    .orderBy(desc(activity.createdAt), sql`rowid desc`)
+    .limit(limit)
+    .all();
+}
+
+/** Parse a stored payload. Returns `null` rather than throwing on bad JSON. */
+export function readPayload(row: Activity): unknown {
+  try {
+    return JSON.parse(row.payloadJson);
+  } catch {
+    return null;
+  }
+}
 
 /** The highest sequence written so far, or 0 for an empty table. */
 export function latestActivitySeq(db: Db): number {

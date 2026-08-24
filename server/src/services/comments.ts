@@ -16,15 +16,18 @@ import { assertCan } from '../policy/can.ts';
  *
  * ## Activity vocabulary
  *
- * §4.8's type list is closed and has **`comment.added` only** — nothing for edit
- * or delete. Growing it is a schema change and a task of its own, so all three
- * mutations write `comment.added` and distinguish themselves in the payload:
- * `{ action: 'created' | 'edited' | 'deleted' }`.
+ * Each mutation writes its own verb — `comment.added`, `comment.edited`,
+ * `comment.deleted` (LAI-110). Until then all three wrote `comment.added` and
+ * distinguished themselves in the payload, which meant an audit reader filtering
+ * on `type` — the obvious query, and what the indexes on that table are for — saw
+ * a deletion labelled "added".
  *
- * That is a wart, and worth naming: an audit reader filtering on `type` sees a
- * deletion labelled "added" and has to read the payload to find out otherwise.
- * `comment.edited` and `comment.deleted` are filed as LAI-110; when they land,
- * the `action` payload stays as the historical record for rows written before.
+ * **The `action` payload field stays.** Rows written before LAI-110 carry
+ * `{ action: 'created' | 'edited' | 'deleted' }` as their *only* distinguishing
+ * mark, so dropping it would make that history unreadable — an audit trail that
+ * loses its old entries when the vocabulary grows is not an audit trail. New rows
+ * carry both, which costs a few bytes and means one payload shape across the whole
+ * table.
  */
 
 export interface CommentView {
@@ -161,6 +164,8 @@ export function addComment(
     actorId: actor.userId,
     actorKind: 'user',
     type: 'comment.added',
+    // `action` is redundant with `type` for rows written from LAI-110 onward, and
+    // load-bearing for every row written before it. See the module comment.
     payload: { action: 'created', comment_id: id },
     now,
   });
@@ -199,7 +204,7 @@ export function editComment(
     taskId: task.id,
     actorId: actor.userId,
     actorKind: 'user',
-    type: 'comment.added',
+    type: 'comment.edited',
     payload: { action: 'edited', comment_id: commentId },
     now,
   });
@@ -243,7 +248,7 @@ export function deleteComment(
     taskId: task.id,
     actorId: actor.userId,
     actorKind: 'user',
-    type: 'comment.added',
+    type: 'comment.deleted',
     payload: { action: 'deleted', comment_id: commentId },
     now,
   });

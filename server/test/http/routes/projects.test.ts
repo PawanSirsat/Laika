@@ -233,3 +233,54 @@ describe('members over HTTP', () => {
     );
   });
 });
+
+/** PATCH `laika`, using this file's own request helper. */
+async function patchProject(body: unknown): Promise<Response> {
+  return req('/api/v1/projects/laika', { method: 'PATCH', body: JSON.stringify(body) });
+}
+
+describe('the repo field (LAI-108)', () => {
+  // Setup here creates the org but no project — every other block in this file
+  // creates its own.
+  beforeEach(async () => {
+    expect((await createProject({ name: 'Laika', slug: 'laika', prefix: 'LAI' })).status).toBe(201);
+  });
+
+  it('round-trips through PATCH and appears on GET', async () => {
+    const patched = await patchProject({ repo: 'PawanSirsat/Laika' });
+    expect(patched.status).toBe(200);
+    expect(((await patched.json()) as { repo: string | null }).repo).toBe('PawanSirsat/Laika');
+
+    const read = await req('/api/v1/projects/laika');
+    expect(((await read.json()) as { repo: string | null }).repo).toBe('PawanSirsat/Laika');
+  });
+
+  it('appears in the list, which no longer builds its own project shape', async () => {
+    await patchProject({ repo: 'owner/name' });
+
+    const list = (await (await req('/api/v1/projects')).json()) as {
+      data: { slug: string; repo: string | null }[];
+    };
+
+    // The list used to map rows to a hand-written copy of `ProjectView` that had
+    // no `repo`; this is the assertion that the copy is gone.
+    expect(list.data.find((p) => p.slug === 'laika')?.repo).toBe('owner/name');
+  });
+
+  it('422s a URL and a .git suffix, with the expected shape in the details', async () => {
+    for (const repo of ['https://github.com/owner/name', 'owner/name.git', 'bare']) {
+      const res = await patchProject({ repo });
+      expect(res.status, repo).toBe(422);
+
+      const body = (await res.json()) as { error: { code: string; details: unknown } };
+      expect(body.error.code).toBe('unprocessable');
+    }
+  });
+
+  it('clears with null', async () => {
+    await patchProject({ repo: 'owner/name' });
+    const cleared = await patchProject({ repo: null });
+
+    expect(((await cleared.json()) as { repo: string | null }).repo).toBeNull();
+  });
+});

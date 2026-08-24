@@ -133,6 +133,14 @@ export const projects = sqliteTable(
     /** Short uppercase display key, `LAI` — unique per org (§4.3). */
     prefix: text('prefix').notNull(),
     description: text('description'),
+    /**
+     * `owner/name` of the git repository this project tracks (§4.3).
+     *
+     * Not unique: a monorepo tracked by two projects is a real case (LAI-108), so
+     * §9.2's presence attribution has to cope with more than one match rather than
+     * this column pretending there can only be one.
+     */
+    repo: text('repo'),
     visibility: text('visibility', { enum: PROJECT_VISIBILITIES }).notNull().default('private'),
     /** The shared brief served to agents by `get_project_context` (§7.1). */
     contextMd: text('context_md').notNull().default(''),

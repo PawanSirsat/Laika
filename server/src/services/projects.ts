@@ -25,6 +25,8 @@ export interface ProjectView {
   prefix: string;
   name: string;
   description: string | null;
+  /** `owner/name`, or null. See `assertRepoShape` for why the shape is enforced. */
+  repo: string | null;
   visibility: 'public' | 'private';
   context_md: string;
   archived_at: number | null;
@@ -40,13 +42,22 @@ export interface MemberView {
   created_at: number;
 }
 
-function toView(row: typeof projects.$inferSelect): ProjectView {
+/**
+ * The one place a project row becomes a `ProjectView`.
+ *
+ * Exported because `routes/projects.ts` had grown a hand-written copy of this
+ * mapping for its tombstone path, and the two drifted the moment §4.3's `repo`
+ * column arrived (LAI-108) — the duplicate simply did not have the field. One
+ * mapping means the next column cannot do that.
+ */
+export function projectView(row: typeof projects.$inferSelect): ProjectView {
   return {
     id: row.id,
     slug: row.slug,
     prefix: row.prefix,
     name: row.name,
     description: row.description,
+    repo: row.repo,
     visibility: row.visibility,
     context_md: row.contextMd,
     archived_at: row.archivedAt,
@@ -191,7 +202,7 @@ export function createProject(
       now,
     });
 
-    return toView(db.select().from(projects).where(eq(projects.id, id)).get()!);
+    return projectView(db.select().from(projects).where(eq(projects.id, id)).get()!);
   });
 }
 
@@ -221,12 +232,86 @@ function assertPrefixFree(db: Db, orgId: string, prefix: string): void {
 export function getProject(db: Db, actor: ResolvedActor, slug: string): ProjectView {
   const row = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, row.id), 'project.read', { projectId: row.id });
-  return toView(row);
+  return projectView(row);
 }
 
+/**
+ * `owner/name` and nothing else (§4.3).
+ *
+ * §4.3 gives this column one job: map an incoming heartbeat's `repo` (§9.1) to a
+ * project. The plugin sends the repository as `owner/name`, so a value stored in
+ * any other shape can never match and the project silently gets no presence —
+ * the worst kind of failure, because the field looks set.
+ *
+ * **Rejected rather than normalised.** Accepting
+ * `https://github.com/owner/name.git` and rewriting it would mean deciding which
+ * hosts and which URL forms are legitimate, which is product nobody has asked
+ * for. A 422 naming the expected shape costs the caller one edit and costs Laika
+ * no guesses. The message includes an example, because "invalid format" on a
+ * field like this is a puzzle.
+ *
+ * A `.git` suffix is called out separately: it satisfies the character rules but
+ * would still never match what the plugin sends, and it is the second most likely
+ * thing someone pastes.
+ *
+ * **What is deliberately not checked.** Each segment must *start* alphanumeric,
+ * which is what rejects `./name` and `../owner/name` — the same family of mistake
+ * as a URL. Trailing punctuation is allowed: whether `name-` is a legal
+ * repository is the host's rule, hosts differ, and reimplementing GitHub's
+ * naming policy for GitLab and Gitea as well would be a guess dressed as
+ * validation.
+ */
+const REPO_SHAPE = /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** Long enough for any real `owner/name`; short enough not to be a text field. */
+export const REPO_MAX_LENGTH = 200;
+
+export function assertRepoShape(repo: string): void {
+  const detail = { repo, expected: 'owner/name', example: 'PawanSirsat/Laika' };
+
+  if (repo.length > REPO_MAX_LENGTH) {
+    throw new ApiError(
+      'unprocessable',
+      `repo must be at most ${String(REPO_MAX_LENGTH)} characters`,
+      detail,
+    );
+  }
+
+  if (repo.endsWith('.git')) {
+    throw new ApiError(
+      'unprocessable',
+      'repo must not end in ".git" — it is matched against what the plugin reports, which does not',
+      detail,
+    );
+  }
+
+  if (!REPO_SHAPE.test(repo)) {
+    throw new ApiError(
+      'unprocessable',
+      'repo must be "owner/name" — not a URL, and not a bare name',
+      detail,
+    );
+  }
+}
+
+/**
+ * `repo` is deliberately **not unique** (LAI-108).
+ *
+ * A monorepo tracked by two projects — a frontend project and a backend project
+ * over one repository — is a real arrangement, and a unique index would forbid it
+ * to buy an unambiguous heartbeat match. The ambiguity is better handled where it
+ * is understood: §9.2 resolves a task from the *branch*, so a heartbeat already
+ * has a second signal, and attributing to every matching project is a defensible
+ * answer that a constraint here would have taken off the table.
+ *
+ * The consequence is that the presence work must handle more than one match. It is
+ * filed as LAI-116 rather than left to be discovered.
+ */
 export interface UpdateProjectInput {
   name?: string | undefined;
   description?: string | undefined;
+  /** `owner/name`; `null` clears it. Absent leaves it alone. */
+  repo?: string | null | undefined;
   visibility?: 'public' | 'private' | undefined;
   context_md?: string | undefined;
   /** `true` archives, `false` restores. Absent leaves it alone. */
@@ -249,6 +334,10 @@ export function updateProject(
 
   if (input.name !== undefined) changes.name = input.name;
   if (input.description !== undefined) changes.description = input.description;
+  if (input.repo !== undefined) {
+    if (input.repo !== null) assertRepoShape(input.repo);
+    changes.repo = input.repo;
+  }
   if (input.visibility !== undefined) changes.visibility = input.visibility;
   if (input.context_md !== undefined) changes.contextMd = input.context_md;
 
@@ -264,7 +353,7 @@ export function updateProject(
     changes.archivedAt = null;
   }
 
-  if (Object.keys(changes).length === 0) return toView(row);
+  if (Object.keys(changes).length === 0) return projectView(row);
 
   db.update(projects)
     .set({ ...changes, updatedAt: now })
@@ -284,7 +373,7 @@ export function updateProject(
     now,
   });
 
-  return toView(db.select().from(projects).where(eq(projects.id, row.id)).get()!);
+  return projectView(db.select().from(projects).where(eq(projects.id, row.id)).get()!);
 }
 
 export function listMembers(db: Db, actor: ResolvedActor, slug: string): MemberView[] {
