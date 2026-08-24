@@ -1233,3 +1233,39 @@ not warrant being the seventh.
 being excluded. The fourth design-ahead-of-spec gap is closed — `repo` (LAI-108),
 the org presence toggle and the Calendar screen were the others, and the Calendar
 still has no decision behind it.
+
+## D-028 — both builders work on the UI; `server/web/` splits by screen
+
+**2026-08-25. Owner escalation**: seven of eight sidebar destinations are empty
+placeholders after 508 commits. The board is the only working screen.
+
+**Cause, and it is a management failure not a build one.** D-016 gave all of
+`server/web/` to Builder-B, so exactly one session could ever work on the
+interface — while Builder-A ran four milestones ahead building APIs with no
+screens to consume them. A complete sprints API sits unused; so do the activity
+feed and the event stream. PM kept both queues full instead of keeping the
+*product* moving.
+
+**Decision: Builder-A works on `server/web/` too**, split by screen so the two
+never touch the same file.
+
+| Area | Owner |
+| --- | --- |
+| `routes/screens/sprints/`, `timeline/`, `dashboard/` and their CSS | **Builder-A** |
+| `AppShell`, `Sidebar`, `route-table.ts`, `theme/`, `components/`, board, auth screens | **Builder-B** |
+| `server/src/**` | Builder-A, unchanged |
+
+**Shared files stay Builder-B's.** `route-table.ts` and `Sidebar.tsx` are edited
+by one session only; Builder-B registers every route up front (LAI-082) so
+Builder-A only ever adds files inside its own screen folders. That keeps the
+file-move lock meaningful without a merge queue.
+
+**Also decided: a nav item with no screen is not shipped.** Tokens, Capacity and
+Meeting review have no API behind them (M3, M5, M6) and are hidden until they do.
+A sidebar offering eight destinations where seven are dead reads as broken
+software; one offering four that work reads as early software. The second is what
+this is.
+
+**Reverts when the UI has caught up.** This is a rebalance, not a new steady
+state — when every shipped screen exists, `server/web/` returns to Builder-B and
+Builder-A returns to the API.
