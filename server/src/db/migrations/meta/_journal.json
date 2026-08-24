@@ -43,6 +43,13 @@
       "when": 1787542628669,
       "tag": "0005_task_dependency_removed",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787545721564,
+      "tag": "0006_one_active_sprint",
+      "breakpoints": true
     }
   ]
 }

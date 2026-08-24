@@ -198,6 +198,13 @@ export const sprints = sqliteTable(
     uniqueIndex('sprints_project_name_unique').on(t.projectId, t.name),
     index('sprints_project_starts_on_idx').on(t.projectId, t.startsOn),
     index('sprints_project_status_idx').on(t.projectId, t.status),
+    // §4.15: "At most one `active` sprint per project." A partial unique index
+    // makes that true of the *data*, not merely of the code path that writes it —
+    // `services/sprints.ts` still checks first, so the caller gets a 409 with the
+    // conflicting sprint named rather than a constraint violation as a 500.
+    uniqueIndex('sprints_one_active_per_project')
+      .on(t.projectId)
+      .where(sql`status = 'active'`),
     check('sprints_status_check', oneOf('status', SPRINT_STATUSES)),
     check('sprints_dates_check', sql.raw('ends_on > starts_on')),
   ],

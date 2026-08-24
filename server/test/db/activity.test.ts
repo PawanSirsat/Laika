@@ -17,12 +17,31 @@ afterEach(() => {
 });
 
 describe('activity is append-only (SPEC §4.8)', () => {
-  it('exports no update or delete path', () => {
-    // The repository is the sanctioned way in. If a mutating export ever appears
-    // here, this fails before anyone has to notice it in review.
+  it('exports one writer and readers, and nothing else', () => {
+    // The repository is the sanctioned way in. Listing the exports exactly means
+    // a new one is a decision somebody made on purpose, in a diff that says so.
     const exported = Object.keys(activityModule).sort();
 
-    expect(exported).toEqual(['appendActivity', 'listActivity', 'readPayload']);
+    expect(exported).toEqual([
+      'activityAtSeq',
+      'appendActivity',
+      'countActivityAfter',
+      'latestActivitySeq',
+      'listActivity',
+      'readActivityAfter',
+      'readPayload',
+    ]);
+  });
+
+  it('exports nothing whose name suggests a mutation', () => {
+    // The list above catches a new export; this catches the lazy fix for that
+    // failure, which is to paste the new name into the list without reading it.
+    // `appendActivity` is the one writer §4.8 allows, and it only ever inserts.
+    const mutators = Object.keys(activityModule).filter((name) =>
+      /update|delete|remove|purge|set|patch|truncate|prune/i.test(name),
+    );
+
+    expect(mutators).toEqual([]);
   });
 
   it('refuses an UPDATE at the database, not merely in the repository', () => {

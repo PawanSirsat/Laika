@@ -25,7 +25,7 @@ function fakeServer(): FakeServer {
   };
 }
 
-function harness(graceMs = 10_000) {
+function harness(graceMs = 10_000, onStopping?: () => void) {
   const server = fakeServer();
   const log = captureLog();
   const exit = vi.fn();
@@ -37,6 +37,7 @@ function harness(graceMs = 10_000) {
     log: log.logger,
     graceMs,
     exit,
+    ...(onStopping === undefined ? {} : { onStopping }),
     setTimer: (fn) => {
       timerFn = fn;
       return { unref };
@@ -129,6 +130,58 @@ describe('graceful shutdown', () => {
     }).not.toThrow();
 
     closeCallback?.();
+    expect(exit).toHaveBeenCalledWith(0);
+  });
+});
+
+describe('onStopping — releasing what holds the server open (LAI-048)', () => {
+  it('runs before the listener closes', () => {
+    const order: string[] = [];
+    const server = fakeServer();
+    const log = captureLog();
+
+    const shutdown = createShutdownHandler({
+      server,
+      log: log.logger,
+      exit: vi.fn(),
+      setTimer: () => ({ unref: vi.fn() }),
+      onStopping: () => order.push('stopping'),
+    });
+
+    const realClose = server.close.bind(server);
+    server.close = (callback) => {
+      order.push('close');
+      return realClose(callback);
+    };
+
+    shutdown('SIGTERM');
+
+    // Order is the whole point: an SSE stream is an in-flight request, so
+    // closing the listener first means waiting out the full grace period and
+    // then cutting the connection mid-frame.
+    expect(order).toEqual(['stopping', 'close']);
+  });
+
+  it('a throwing hook does not turn a clean shutdown into a failure', () => {
+    const { server, exit, log, shutdown } = harness(10_000, () => {
+      throw new Error('stream registry exploded');
+    });
+
+    shutdown('SIGTERM');
+    server.finishClose();
+
+    expect(exit).toHaveBeenCalledWith(0);
+    expect(log.find('shutdown.stopping_failed')).toMatchObject({
+      message: 'stream registry exploded',
+    });
+  });
+
+  it('is optional', () => {
+    const { server, exit, shutdown } = harness();
+
+    shutdown('SIGTERM');
+    server.finishClose();
+
     expect(exit).toHaveBeenCalledWith(0);
   });
 });

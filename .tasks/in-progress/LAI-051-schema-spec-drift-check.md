@@ -2,11 +2,12 @@
 id: LAI-051
 title: Nothing catches drift between SPEC §4 and schema.ts
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-105
-status: backlog
+status: in-progress
+started: 2026-08-24T10:11:45+05:30
 ---
 
 ## Goal

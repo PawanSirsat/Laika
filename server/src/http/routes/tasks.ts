@@ -95,6 +95,7 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       status: parseEnum(c.req.query('status'), STATUSES, 'status'),
       priority: parseEnum(c.req.query('priority'), PRIORITIES, 'priority'),
       assignee: c.req.query('assignee'),
+      sprint: c.req.query('sprint'),
       ready: parseReady(c.req.query('ready')),
     });
 

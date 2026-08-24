@@ -12,6 +12,7 @@ import { openDb } from './db/client.ts';
 import { runMigrations } from './db/migrate.ts';
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
+import { ActivityFeed } from './services/activity-feed.ts';
 import { createShutdownHandler } from './shutdown.ts';
 import { readVersion } from './version.ts';
 
@@ -34,12 +35,17 @@ function main(): void {
     secureCookies: env.secureCookies,
   });
 
+  // Built here rather than inside `createApp` because the shutdown handler needs
+  // the same instance to close the streams it is feeding.
+  const activityFeed = new ActivityFeed({ db });
+
   const app = createApp({
     version,
     logger: log,
     auth,
     db,
     sqlite,
+    activityFeed,
     ...(env.publicDir === undefined ? {} : { publicDir: env.publicDir }),
   });
 
@@ -56,6 +62,11 @@ function main(): void {
   const shutdown = createShutdownHandler({
     server,
     log,
+    // SSE responses never end on their own (§11.5); without this every deploy
+    // waits out the full grace period.
+    onStopping: () => {
+      activityFeed.closeAll();
+    },
     // Checkpoints the WAL and releases the file lock, so the next boot does not
     // start by recovering a journal.
     onClosed: () => {
