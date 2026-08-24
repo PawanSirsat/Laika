@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import type Database from 'better-sqlite3';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
@@ -18,6 +19,9 @@ import { createSecurityHeaders } from './http/middleware/security-headers.ts';
 import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-headers.ts';
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes } from './http/routes/me.ts';
+import { setupRoutes } from './http/routes/setup.ts';
+import { setupGate } from './http/middleware/setup-gate.ts';
+import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
 import { type Db } from './db/client.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
@@ -56,6 +60,8 @@ export interface CreateAppOptions {
    */
   auth?: Auth;
   db?: Db;
+  /** Needed for the setup transaction's `BEGIN IMMEDIATE` (LAI-009). */
+  sqlite?: Database.Database;
   /** Injectable so tests can drive the clock and assert exhaustion. */
   rateLimiter?: RateLimiter;
   /** Overridable so tests can point at a directory whose contents they control. */
@@ -72,9 +78,14 @@ export interface CreateAppOptions {
  */
 export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   const log = options.logger ?? createLogger();
+  const db = options.db;
+
   const staticOptions = {
     publicDir: options.publicDir ?? PUBLIC_DIR,
     fallbackDocument: options.fallbackDocument ?? FALLBACK_DOCUMENT,
+    // Re-read per request: setup stops being required the moment it succeeds,
+    // and the app is built once at startup.
+    setupRequired: db === undefined ? undefined : () => setupRequired(db),
   };
 
   const app = new Hono<AppEnv>();
@@ -110,6 +121,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   );
   app.use('*', rateLimitMiddleware(options.rateLimiter ?? new RateLimiter()));
 
+  // After rateLimit, before the routes: an un-set-up instance answers `conflict`
+  // for every API path except setup and health (LAI-009 AC1).
+  if (db !== undefined) {
+    app.use('*', setupGate(db));
+  }
+
   // After rateLimit: a replayed response should still cost a token, or a retry
   // loop on a stored 201 becomes a free unlimited request.
   if (options.db !== undefined) {
@@ -120,6 +137,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // fallback must never shadow an API path.
   app.route(`${API_BASE}/health`, healthRoutes(options.version));
   app.route(`${API_BASE}/me`, meRoutes());
+
+  if (db !== undefined && options.auth !== undefined && options.sqlite !== undefined) {
+    app.route(`${API_BASE}/setup`, setupRoutes({ db, sqlite: options.sqlite, auth: options.auth }));
+  }
 
   // better-auth owns everything under /api/v1/auth (§6.4). Mounted with `on`
   // rather than `route` so every method and sub-path reaches its handler.

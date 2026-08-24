@@ -38,6 +38,7 @@ export function authHarness(): AuthHarness {
     logger: log.logger,
     auth,
     db: t.db,
+    sqlite: t.sqlite,
   });
 
   return {
