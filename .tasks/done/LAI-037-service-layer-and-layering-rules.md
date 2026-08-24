@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-036
-status: review
+status: done
 started: 2026-08-24T05:46:32+05:30
 finished: 2026-08-24T05:51:54+05:30
+reviewed: 2026-08-24T06:45:00+05:30
 ---
 
 ## Goal
@@ -119,3 +120,49 @@ boundary already enforced rather than discovering it later.
 
 **Not extracted, deliberately:** anything other than `/me`. The task says the
 point is the shape, and LAI-010/LAI-011 follow the pattern for projects and tasks.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, **288 server tests** (up from
+283) and 41 web. `server/src/services/me.ts` exists, `http/routes/me.ts` has
+**zero** references to `db`, and `toolchain.test.ts` has moved to
+`test/tooling/`.
+
+**I verified the layering rules myself rather than taking the log's word**,
+because a lint rule that does not bite is worse than no rule — it looks like
+enforcement. Introduced two violations, ran `pnpm lint`, restored:
+
+```
+route importing db/     → error  Routes are transport only and reach data
+                                 through services/ (CONVENTIONS §2)
+service importing http/ → error  services/ knows nothing about transport —
+                                 that is what lets MCP tools reuse it
+                                 (CONVENTIONS §2, SPEC §7)
+```
+
+Both fired. Working tree restored clean, `pnpm lint` back to 0.
+
+**The messages are the part I did not ask for and would not have thought to
+specify.** A restricted-import error normally says only that an import is
+restricted, which tells a builder they are blocked and nothing about why. These
+name the rule, cite the section, and give the reason — so someone who hits it at
+2am learns the architecture instead of reaching for an eslint-disable. That is
+the difference between a rule that is obeyed and a rule that is understood.
+
+### What this task actually achieves
+
+**MCP parity is now structural rather than aspirational.** SPEC §7 requires every
+MCP tool to be "a thin wrapper over the same service layer the REST routes use",
+and until now nothing prevented divergence except intention. A route cannot reach
+`db/`; a service cannot reach `http/`. The §13.3 parity tests will confirm a
+property the structure guarantees instead of being the only thing holding it up.
+
+**Choosing `/me` as the worked example was right** — one actor, one lookup, no
+writes. The shape is what LAI-010 and LAI-011 copy, and a bigger example would
+have taught more about projects than about layering.
+
+**Unblocks LAI-038**, and removes the LAI-037 half of the gate on LAI-010 and
+LAI-011 — they now wait only on LAI-009.
+
+**Scope exception over `eslint.config.js` discharged.** Diff touched exactly that
+file outside `server/`.
