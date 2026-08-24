@@ -110,14 +110,27 @@ void describe('the shell actually applies the rule', () => {
     assert.ok(sidebar.includes('<Brand />'), 'and the sidebar must show the same one');
   });
 
-  void test('the theme control is outside the gate', async () => {
+  void test('the theme control is reachable with no session', async () => {
     // AC3: someone setting up an instance at night should not have to sign in
     // to stop being dazzled.
+    //
+    // Asserted **positively**, on the pre-auth branch. This started life as
+    // "the toggle is not inside the signed-in branch", which stopped meaning
+    // anything the moment LAI-064 moved the signed-in copy into the sidebar
+    // footer: the toggle then appeared in *both* branches, the negative check
+    // no longer matched, and it would have passed just as happily with the
+    // pre-auth copy deleted.
     const src = code(
       await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
     );
-    const gated = /\{signedIn &&[\s\S]{0,400}<ThemeToggle/.test(src);
-    assert.ok(!gated, 'the theme toggle must render pre-auth');
-    assert.ok(src.includes('<ThemeToggle />'));
+
+    const start = src.indexOf('{!signedIn && (');
+    assert.notEqual(start, -1, 'there must be a pre-auth branch in the header');
+    const preAuth = src.slice(start, src.indexOf('</header>', start));
+
+    assert.ok(
+      preAuth.includes('<ThemeToggle />'),
+      'the theme control must render when there is no session',
+    );
   });
 });

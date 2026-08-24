@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Brand } from './Brand.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { showsAppNav } from './shell-chrome.ts';
+import { useShellContext } from '../api/use-shell-context.ts';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
 import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
@@ -204,6 +205,10 @@ export function AppShell() {
    */
   const signedIn = showsAppNav(session);
 
+  // Real numbers only. `undefined` renders nothing — see `useShellContext`.
+  const projectSlug = params.get('project') ?? undefined;
+  const { version, sprintCount } = useShellContext(projectSlug, signedIn);
+
   return (
     <div className={signedIn ? 'shell' : 'shell shell-preauth'}>
       <a className="skip-link" href="#main">
@@ -218,6 +223,20 @@ export function AppShell() {
           onClose={() => {
             setNavOpen(false);
           }}
+          projectSlug={projectSlug}
+          version={version}
+          counts={{ '/sprints': sprintCount }}
+          footer={
+            <>
+              <UserChrome
+                user={session.user}
+                theme={theme}
+                onSignOut={handleSignOut}
+                signingOut={signingOut}
+              />
+              <ThemeToggle />
+            </>
+          }
         />
       )}
 
@@ -234,7 +253,13 @@ export function AppShell() {
       )}
 
       <div className="shell-body">
-        <header className="shell-head">
+        {/*
+          Signed in, this bar holds only the narrow-viewport nav toggle, which
+          CSS hides above 900px — so on a desktop it would be an empty strip
+          with a border. `shell-head-quiet` collapses it there and the media
+          query brings it back where the toggle is needed.
+        */}
+        <header className={signedIn ? 'shell-head shell-head-quiet' : 'shell-head'}>
           {signedIn ? (
             <button
               type="button"
@@ -256,20 +281,21 @@ export function AppShell() {
             <Brand />
           )}
 
-          <div className="shell-head-right">
-            <ThemeToggle />
-            {/* No "Not signed in" chip pre-auth: it is part of the
-                authenticated chrome, and on a sign-in page it states the
-                obvious next to a form that already says it. */}
-            {signedIn && (
-              <UserChrome
-                user={session.user}
-                theme={theme}
-                onSignOut={handleSignOut}
-                signingOut={signingOut}
-              />
-            )}
-          </div>
+          {/*
+            The user chip and theme control live in the sidebar footer once
+            there is a sidebar (LAI-064). Pre-auth there is none, and the theme
+            control must stay reachable — someone setting up an instance at
+            night should not have to sign in to stop being dazzled (LAI-062
+            AC3). So the header carries it exactly when the sidebar cannot.
+
+            No "Not signed in" chip: it is authenticated chrome, and beside a
+            sign-in form it states the obvious.
+          */}
+          {!signedIn && (
+            <div className="shell-head-right">
+              <ThemeToggle />
+            </div>
+          )}
         </header>
 
         <main id="main" className="shell-main" tabIndex={-1}>
