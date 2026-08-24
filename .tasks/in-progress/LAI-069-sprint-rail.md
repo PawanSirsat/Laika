@@ -2,11 +2,12 @@
 id: LAI-069
 title: Sprint rail and active-sprint banner on the board
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-068]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T09:05:00+05:30
 ---
 
 ## Goal
