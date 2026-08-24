@@ -107,7 +107,7 @@ let orgId: string;
 let laikaId: string;
 let otherId: string;
 let feed: ActivityFeed;
-let timers: { armed: number; cleared: number; fire: () => void };
+let timers: { armed: number; cleared: number; intervals: number[]; fire: () => void };
 
 function makeUser(orgRole: 'owner' | 'admin' | 'member' | 'viewer'): string {
   const id = newId();
@@ -150,8 +150,17 @@ function write(projectId: string | null, type: ActivityType = 'task.created'): v
   });
 }
 
-/** The router mounted where the app mounts it, with `actor` already resolved. */
-function bareApp(userId: string | null): Hono<AppEnv> {
+/**
+ * The router mounted where the app mounts it, with `actor` already resolved.
+ *
+ * `keepaliveMs` is injected as 1 by default so a test can fire the timer by hand.
+ * Pass `{ shippedKeepalive: true }` to leave it out and exercise the real default
+ * — which is the only way to prove the number AC5 names is actually wired.
+ */
+function bareApp(
+  userId: string | null,
+  options: { shippedKeepalive?: boolean } = {},
+): Hono<AppEnv> {
   const log = captureLog();
   const app = new Hono<AppEnv>();
 
@@ -169,9 +178,13 @@ function bareApp(userId: string | null): Hono<AppEnv> {
     eventRoutes({
       db: t.db,
       feed,
-      keepaliveMs: 1,
-      setTimer: (fn) => {
+      // Omitted entirely rather than passed as `undefined`: under
+      // `exactOptionalPropertyTypes` those are different things, and only the
+      // omission reaches the `?? KEEPALIVE_MS` default.
+      ...(options.shippedKeepalive === true ? {} : { keepaliveMs: 1 }),
+      setTimer: (fn, ms) => {
         timers.armed += 1;
+        timers.intervals.push(ms);
         timers.fire = fn;
         return {} satisfies RepeatingTimer;
       },
@@ -202,7 +215,7 @@ async function refused(
 
 beforeEach(() => {
   t = freshDb();
-  timers = { armed: 0, cleared: 0, fire: noop };
+  timers = { armed: 0, cleared: 0, intervals: [], fire: noop };
   feed = new ActivityFeed({
     db: t.db,
     // Never fires on its own: every test drives `feed.poll()` explicitly.
@@ -412,6 +425,29 @@ describe('the keepalive (AC5)', () => {
     expect(frame.comment).toBe('keepalive');
     expect(frame.event).toBeNull();
     expect(frame.data).toBe('');
+
+    await client.disconnect();
+  });
+
+  /**
+   * AC5 names 25 seconds in bold, and until this test existed nothing referenced
+   * `KEEPALIVE_MS` at all: every other test here injects `keepaliveMs`, so what
+   * they proved was "a frame is sent on the interval we asked for", not the
+   * interval the server actually uses. PM changed the constant to 250_000 and all
+   * 560 tests passed.
+   *
+   * Asserting the literal `25_000` rather than `KEEPALIVE_MS` is the whole point —
+   * comparing the constant to itself passes for any value, which is the same
+   * mistake in a different place.
+   */
+  it('asks for a 25-second interval when nothing overrides it (AC5)', async () => {
+    const res = await bareApp(ownerId, { shippedKeepalive: true }).request('/api/v1/events');
+    expect(res.status).toBe(200);
+
+    const client = sseClient(res);
+    await client.next();
+
+    expect(timers.intervals).toEqual([25_000]);
 
     await client.disconnect();
   });
