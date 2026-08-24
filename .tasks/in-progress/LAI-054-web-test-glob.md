@@ -2,11 +2,12 @@
 id: LAI-054
 title: '23 web tests have never run — the test glob misses subdirectories'
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-049
-status: backlog
+status: in-progress
+started: 2026-08-24T09:41:32+05:30
 ---
 
 ## Goal
