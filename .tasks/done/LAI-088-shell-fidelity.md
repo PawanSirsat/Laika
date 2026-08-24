@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T04:40:00+05:30
 finished: 2026-08-25T05:05:00+05:30
+reviewed: 2026-08-25T19:00:00+05:30
 ---
 
 ## Goal
@@ -100,3 +101,20 @@ way and I will flip it** — but then it stops matching `Laika Prototype.dc.html
 The first-boot rail keeps the accent dot: its ground is already `var(--tx)`, so
 the auth card's tile — `--tx` ground, `--card` stroke — would be invisible there.
 Moved to `done/` with that note rather than left open.
+
+## Review — PM, 2026-08-25
+
+**Accepted, and it is the change the owner will notice.** Measured on the built
+page: sidebar ground is now **`rgb(255,255,255)` = `--card`**, not `#e7e9f1`
+(`--tub`). Tile mark with the glyph, accent bar on the active item, group labels
+in the UI font, user chip above the theme control with the role in `--pur`.
+
+**The byte-identical finding was the important half of your gap list.** We were
+never building against a stale reference — the implementation had drifted from a
+source that never moved. That changed what the problem was, and it is why the
+list was exhaustive rather than provisional.
+
+This one was wrong on every screen for days while I was measuring token *values*
+and confirming they matched. They did match. **I never checked which token each
+surface used** — a correct palette on the wrong surfaces passes every check I was
+running.
