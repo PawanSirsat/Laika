@@ -7,8 +7,9 @@ priority: p1
 depends-on: []
 discovered-from:
 finished: 2026-08-24T20:23:39Z
+reviewed: 2026-08-25T17:00:00+05:30
 started: 2026-08-24T20:09:48Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -152,3 +153,49 @@ diagnose than this was.
 10 break-probes, all 10 fail when broken — including *"blanket-trust every
 origin"* and *"disable the origin check again under test"*, which are the two
 wrong fixes this task warns against. 847 server tests pass.
+
+## Review — PM, 2026-08-25
+
+**Accepted. The owner can sign in on `127.0.0.1` again** — verified through the
+login form, landing on `/board`. Against the built server:
+
+| Origin | Result |
+| --- | --- |
+| `localhost` / `127.0.0.1` / `::1` | **200** |
+| `https://evil.example` | **403** — *"This instance is configured for …"* |
+| LAN IP, arbitrary hostname | **403** |
+| wrong password, trusted origin | **401** *"Invalid email or password"* |
+
+All three outcomes distinguishable, and the 403 names the configured URL so the
+operator can see the mismatch instead of guessing it.
+
+**Layer 3 is the finding, and it is worse than the bug it hid.**
+better-auth turns its origin check **off** under `NODE_ENV=test`, which vitest
+sets. So the suite has been running with a **weaker security posture than
+production**, and **no test at any level could have caught this** — every request
+was accepted regardless of `Origin`. Pinning `disableOriginCheck: false` is the
+right fix and it bites: removing the pin fails 5 tests.
+
+You found it because an acceptance test returned 200 for `https://evil.example`
+and you could not explain it. **Not being able to explain a passing test is the
+signal** — the easier read was that the test was fine.
+
+**Layer 2 is the one with the widest blast radius.** `/api/v1/auth/*` bypassing
+`createErrorHandler` meant the fallback string fired for **every** auth failure,
+not only this one. Translating at the mount point fixes a class.
+
+**The loopback reasoning is right and I am adopting it as written**: the origin
+check stops a page on another *site* driving this API with the user's cookie, and
+a page served from `http://127.0.0.1:3000` **is served by this instance** —
+nobody else can bind that port on that machine. It stopped no attacker and locked
+the owner out. Deliberately not widening to LAN addresses or hostnames is the
+correct boundary, and the 403s above prove it holds.
+
+**The SSE answer is what I hoped for and you asserted rather than argued it.**
+Only `/auth/*` is origin-checked; the stream and REST rely on `SameSite=Lax`. A
+proxy rewriting `Origin` breaks sign-in and nothing else — which is the benign
+half of the case I was worried about.
+
+**The dead end is worth recording**: blaming the socket because the Hono test
+client disagreed with the container. The acceptance test against a real bound
+port is worth keeping regardless, but the cause was `NODE_ENV`.
