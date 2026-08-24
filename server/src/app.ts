@@ -21,6 +21,7 @@ import { meRoutes } from './http/routes/me.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
 import { type Db } from './db/client.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
+import { allowedMethodsFor } from './http/allowed-methods.ts';
 
 /**
  * Hash the fallback document's inline `<style>` block at startup so the policy
@@ -135,6 +136,19 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // A reserved prefix that reached here is a genuinely unknown API route, and
     // it answers as JSON (SPEC §6.3) rather than as an HTML document.
     if (isReservedPath(c.req.path)) {
+      // Hono answers a method mismatch with 404, so without this a client cannot
+      // tell "wrong method" from "no such endpoint" (D-021).
+      const allowed = allowedMethodsFor(app as unknown as Hono<never>, c.req.path);
+
+      if (allowed.length > 0) {
+        c.header('Allow', allowed.join(', '));
+        throw new ApiError(
+          'method_not_allowed',
+          `${c.req.method} is not allowed on ${c.req.path}`,
+          { allowed },
+        );
+      }
+
       throw ApiError.notFound(`No route for ${c.req.method} ${c.req.path}`);
     }
     return spa(c);

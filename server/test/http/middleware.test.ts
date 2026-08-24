@@ -24,7 +24,7 @@ describe('bodyLimit (SPEC §11.2, §13.1)', () => {
     expect(res.status).toBe(200);
   });
 
-  it('refuses a body over 1 MiB through the §6.3 envelope, not a raw 413', async () => {
+  it('refuses a body over 1 MiB as payload_too_large (D-021)', async () => {
     const { app } = appWithEcho();
 
     const res = await app.request('/api/v1/echo', {
@@ -37,7 +37,7 @@ describe('bodyLimit (SPEC §11.2, §13.1)', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
 
     const body = (await res.json()) as { error: { code: string; details: unknown } };
-    expect(body.error.code).toBe('unprocessable');
+    expect(body.error.code).toBe('payload_too_large');
     expect('details' in body.error).toBe(true);
   });
 });
@@ -97,12 +97,20 @@ describe('status-to-code mapping for errors raised inside Hono', () => {
     });
     app.route('/api/v1/raise', raiser);
 
-    for (const status of [405, 410, 415]) {
-      const res = await app.request(`/api/v1/raise/${String(status)}`);
+    const expected: Record<number, string> = {
+      // 405 has its own code since D-021; the rest still fall back rather than
+      // being reported as server faults.
+      405: 'method_not_allowed',
+      410: 'bad_request',
+      415: 'bad_request',
+    };
+
+    for (const [status, code] of Object.entries(expected)) {
+      const res = await app.request(`/api/v1/raise/${status}`);
       const body = (await res.json()) as { error: { code: string } };
 
-      expect(res.status, String(status)).toBe(status);
-      expect(body.error.code, String(status)).toBe('bad_request');
+      expect(res.status, status).toBe(Number(status));
+      expect(body.error.code, status).toBe(code);
     }
   });
 });

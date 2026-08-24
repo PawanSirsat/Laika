@@ -4,8 +4,11 @@
  * One definition, one mapper. Handlers throw `ApiError`; nothing builds an error
  * response by hand, so the shape cannot drift between endpoints.
  *
- * LAI-006 owns the rest of §6.3 (pagination, idempotency, rate limiting, zod
- * validation) and will import these codes rather than redefine them.
+ * The vocabulary is **closed**: ten codes, ten statuses, and a handler does not
+ * invent one. `payload_too_large` and `method_not_allowed` are deliberately not
+ * folded into `bad_request` (D-021) — clients branch on `code`, and the remedies
+ * differ: too-large means send less, wrong method means call differently,
+ * malformed means fix the JSON. One code for three remedies is one too few.
  */
 
 export const ERROR_STATUS = {
@@ -13,7 +16,9 @@ export const ERROR_STATUS = {
   unauthorized: 401,
   forbidden: 403,
   not_found: 404,
+  method_not_allowed: 405,
   conflict: 409,
+  payload_too_large: 413,
   unprocessable: 422,
   rate_limited: 429,
   internal: 500,

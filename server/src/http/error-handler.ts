@@ -7,16 +7,13 @@ import { ApiError, type ErrorBody, type ErrorCode, ERROR_STATUS, isApiError } fr
 /**
  * Map an HTTP status raised inside Hono onto the SPEC §6.3 code vocabulary.
  *
- * That vocabulary is closed and coarser than HTTP: it has no entry for `413`
- * (which `bodyLimit` raises on every route per §13.1) or `405`. So the accurate
- * status is preserved on the response and the *nearest* code is reported
- * alongside it — a client switching on `code` is never misled, even though code
- * and status do not always pair up the way §6.3's table implies. Filed as
- * LAI-022 for PM; widening the vocabulary is a spec change, not a handler
- * decision.
+ * Since D-021 the vocabulary covers every status the framework actually raises
+ * here — `413` from `bodyLimit` and `405` from a method mismatch each have their
+ * own code rather than being folded into `bad_request`, because a client branches
+ * on `code` and the remedies differ.
  *
- * The fallbacks matter: collapsing every unmapped status to `internal` would
- * turn a `405` into a reported server error.
+ * The 4xx fallback still matters: collapsing an unmapped client error to
+ * `internal` would report the caller's mistake as a server fault.
  */
 function codeForStatus(status: number): ErrorCode {
   switch (status) {
@@ -28,9 +25,12 @@ function codeForStatus(status: number): ErrorCode {
       return 'forbidden';
     case 404:
       return 'not_found';
+    case 405:
+      return 'method_not_allowed';
     case 409:
       return 'conflict';
     case 413:
+      return 'payload_too_large';
     case 422:
       return 'unprocessable';
     case 429:
@@ -39,6 +39,20 @@ function codeForStatus(status: number): ErrorCode {
       return status >= 400 && status < 500 ? 'bad_request' : 'internal';
   }
 }
+
+/** Used when a framework exception carries no message of its own. */
+const DEFAULT_MESSAGE: Record<ErrorCode, string> = {
+  bad_request: 'Bad request',
+  unauthorized: 'Not authenticated',
+  forbidden: 'You do not have permission to perform this action',
+  not_found: 'Not found',
+  method_not_allowed: 'That method is not allowed on this path',
+  conflict: 'Conflict',
+  payload_too_large: 'Request body is too large',
+  unprocessable: 'Request could not be processed',
+  rate_limited: 'Too many requests',
+  internal: 'Internal server error',
+};
 
 function respond(c: Context<AppEnv>, body: ErrorBody, status: number): Response {
   return c.json(body, status as never);
@@ -69,13 +83,16 @@ export function createErrorHandler(log: Logger): ErrorHandler<AppEnv> {
 
     if (err instanceof HTTPException) {
       const code = codeForStatus(err.status);
+      // Hono's own exceptions sometimes carry no message — `bodyLimit` throws a
+      // bare 413 — and `"message": ""` tells a client nothing.
+      const message = err.message === '' ? DEFAULT_MESSAGE[code] : err.message;
       log.warn('http.error', {
         request_id: requestId,
         code,
         status: err.status,
-        message: err.message,
+        message,
       });
-      return respond(c, new ApiError(code, err.message).toBody(), err.status);
+      return respond(c, new ApiError(code, message).toBody(), err.status);
     }
 
     // Anything else is a bug. The detail goes to the log and nowhere else.
