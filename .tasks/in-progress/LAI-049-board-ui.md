@@ -2,11 +2,12 @@
 id: LAI-049
 title: Board UI — kanban and list views
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-011, LAI-007]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T09:21:28+05:30
 ---
 
 ## Goal
