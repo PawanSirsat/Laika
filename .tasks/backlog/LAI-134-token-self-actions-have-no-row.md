@@ -55,3 +55,35 @@ Worth stating plainly: this is not a security hole. The actions are self-scoped
 and behave correctly. It is a **documentation** gap that nobody could see until
 §3 was compared to `can()` mechanically — which is the whole argument for LAI-100
 existing.
+
+## PM decision, and why I am not doing it myself — 2026-08-26
+
+**Decision: widen the existing row, do not add a new one.**
+
+> `| Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |`
+
+Reading and revoking *your own* token is the same self-scoped concept as
+generating it. A separate row whose only definition is "the same people as that
+one" is two cells to keep in step by hand — the same reasoning that settled the
+org activity feed in LAI-111.
+
+**I tried to land both halves under D-033 and stopped, which is the rule working
+rather than failing.** Widening the row is one named edit. But the check then
+calls `can(actor, 'token.read_own')` **without a resource**, and a self-scoped
+action returns false without `{ ownerId }` — so it fails six ways:
+
+```
+token.read_own / Owner: expected false to be true
+```
+
+Making that work means teaching the check how self-scoped actions are verified —
+probably via the `own` qualifier already in `QUALIFIERS` — and **that is a design
+change to your file, not a named edit to it.** D-033 is a keyhole for atomicity,
+not a general licence, and this is where it ends.
+
+So: **the §3.1 wording above is decided and mine; the mapping and the qualifier
+mechanics are yours.** Take both halves in one commit under D-033, naming the
+§3.1 row — I have written the exact text so there is nothing to guess.
+
+I reverted my attempt; master is green and the two exemptions still stand, which
+is the correct interim state.
