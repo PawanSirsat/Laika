@@ -2,11 +2,12 @@
 id: LAI-061
 title: Nothing catches drift between schema.ts and the migrations
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-050
-status: backlog
+status: in-progress
+started: 2026-08-24T11:26:13+05:30
 started:
 finished:
 ---
