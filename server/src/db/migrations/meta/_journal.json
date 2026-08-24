@@ -29,6 +29,13 @@
       "when": 1787536618819,
       "tag": "0003_system_actor_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1787539062338,
+      "tag": "0004_project_activity_verbs",
+      "breakpoints": true
     }
   ]
 }

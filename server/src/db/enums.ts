@@ -45,7 +45,14 @@ export type CreatedVia = (typeof CREATED_VIA)[number];
 export const ACTOR_KINDS = ['user', 'agent', 'system'] as const;
 export type ActorKind = (typeof ACTOR_KINDS)[number];
 
-/** §4.8, verbatim. Adding a type here is a schema change, deliberately. */
+/**
+ * §4.8. Adding a type here is a schema change, deliberately — it rebuilds the
+ * `activity` table's CHECK constraint.
+ *
+ * `project.updated`, `project.archived` and `member.removed` were added by
+ * LAI-010, which needs a verb for every mutation it performs (§4.8: this table
+ * is the audit trail). SPEC §4.8's list needs the matching edit — see LAI-107.
+ */
 export const ACTIVITY_TYPES = [
   'org.created',
   'task.created',
@@ -55,8 +62,11 @@ export const ACTIVITY_TYPES = [
   'task.dependency_added',
   'comment.added',
   'project.created',
+  'project.updated',
+  'project.archived',
   'member.added',
   'member.role_changed',
+  'member.removed',
   'token.created',
   'token.revoked',
   'heartbeat.session',

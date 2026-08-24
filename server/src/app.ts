@@ -20,6 +20,7 @@ import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes } from './http/routes/me.ts';
 import { setupRoutes } from './http/routes/setup.ts';
+import { projectRoutes } from './http/routes/projects.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
@@ -140,6 +141,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
 
   if (db !== undefined && options.auth !== undefined && options.sqlite !== undefined) {
     app.route(`${API_BASE}/setup`, setupRoutes({ db, sqlite: options.sqlite, auth: options.auth }));
+    app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
   }
 
   // better-auth owns everything under /api/v1/auth (§6.4). Mounted with `on`
