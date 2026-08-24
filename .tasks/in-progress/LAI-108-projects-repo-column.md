@@ -2,11 +2,12 @@
 id: LAI-108
 title: '`projects.repo` is in SPEC §4.3 and not in the schema'
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-010]
 discovered-from: LAI-010
-status: backlog
+status: in-progress
+started: 2026-08-24T11:46:15+05:30
 ---
 
 ## Goal
