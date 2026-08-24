@@ -1,5 +1,5 @@
 ---
-id: LAI-101
+id: LAI-045
 title: The activity payload names Drizzle properties, not API fields
 area: server
 assignee: unclaimed
@@ -43,3 +43,17 @@ halves must land together, and the exemption mechanism from D-033 applies.
 
 Not urgent. It is a defect of clarity, not of correctness, and the cost only
 grows with the number of rows.
+
+## Renumbered from LAI-101 — PM, 2026-08-25
+
+**Two errors, both mine.** `LAI-101` was already taken (the `format:fix` task,
+filed from LAI-005 with four references) **and** 100–199 is Builder-A's range
+under D-017 — mine is 001–099. I filed into someone else's range on a number
+already in use.
+
+Moved to the next free PM id. **The old LAI-101 keeps its number**: it has
+references and §3 is explicit that renumbering an existing task is what LAI-015
+had to clean up. This one had none, so it is the cheap one to move — which is
+why doing it today mattered.
+
+Builder-A raised it rather than fixing it, which was right: `.tasks/` is mine.

@@ -42,3 +42,9 @@ test-results/
 # a developer global gitignore — otherwise `pnpm format` checks a file git ignores
 # and the gate goes red on one machine and green on another.
 .claude/settings.local.json
+
+# Screenshot debris. Anchored, so `docs/design/` may still carry real images.
+# A Playwright MCP `filename` resolves against the *server's* cwd, not the
+# caller's, so a builder verifying a screen can land a PNG in whichever worktree
+# the MCP happens to run in — and a `git add -A` then sweeps it into a commit.
+/*.png
