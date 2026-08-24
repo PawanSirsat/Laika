@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import { ApiError } from './errors.ts';
 
 /**
  * Tasks (SPEC §6.4, LAI-011).
@@ -155,6 +156,56 @@ export function canCreateTask(
   const membership = memberships.find((m) => m.project_id === projectId);
   if (membership === undefined) return false;
   return membership.role === 'lead' || membership.role === 'member';
+}
+
+/**
+ * Assign a task, or clear it.
+ *
+ * `null` unassigns — the ordinary state, not an error. `PATCH` distinguishes
+ * "leave it alone" (absent) from "clear it" (`null`), which is why this always
+ * sends the key.
+ */
+export function assignTask(taskId: string, assigneeId: string | null): Promise<Task> {
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
+    method: 'PATCH',
+    body: { assignee_id: assigneeId },
+  });
+}
+
+/**
+ * Claim a task for yourself.
+ *
+ * A separate endpoint from `assignTask` because the server does a
+ * **compare-and-swap** here: it only writes where `assignee_id IS NULL`, and
+ * answers `409` with the winner's id in `details.assignee_id` when someone got
+ * there first. The client must not re-implement that race — it sends the
+ * request and renders whichever answer comes back.
+ */
+export function claimTask(taskId: string): Promise<Task> {
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}/claim`, { method: 'POST' });
+}
+
+/** Who won a claim we lost, if the server said. */
+export function claimWinner(cause: unknown): string | undefined {
+  if (!(cause instanceof ApiError) || cause.code !== 'conflict') return undefined;
+  const details: unknown = cause.details;
+  if (typeof details !== 'object' || details === null) return undefined;
+  const id = (details as { readonly assignee_id?: unknown }).assignee_id;
+  return typeof id === 'string' ? id : undefined;
+}
+
+/**
+ * May this actor assign a task to **someone else**?
+ *
+ * `task.assign_other` is member-or-lead (§3.2). Claiming for yourself is a
+ * different action and a Viewer cannot do that either, since it writes.
+ */
+export function canAssignOthers(
+  orgRole: string,
+  projectId: string,
+  memberships: readonly { readonly project_id: string; readonly role: string }[],
+): boolean {
+  return canCreateTask(orgRole, projectId, memberships);
 }
 
 /**

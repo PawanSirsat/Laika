@@ -547,6 +547,9 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
       {openTask !== undefined && (
         <TaskDetailPanel
           slug={slug}
+          meId={me?.id}
+          mayAssign={mayCreate}
+          onAssigned={board.reload}
           task={openTask}
           byId={board.byId}
           members={members}

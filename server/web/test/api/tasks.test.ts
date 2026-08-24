@@ -7,7 +7,12 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import { ApiError } from '../../src/api/errors.ts';
 import {
+  assignTask,
+  canAssignOthers,
+  claimTask,
+  claimWinner,
   canCreateTask,
   changeStatus,
   createTask,
@@ -193,5 +198,52 @@ void describe('canCreateTask (LAI-065)', () => {
 
   void test('no membership in this project means no', () => {
     assert.equal(canCreateTask('member', project, [{ project_id: 'other', role: 'lead' }]), false);
+  });
+});
+
+void describe('assignment (LAI-097)', () => {
+  void test('assignTask sends the id, and null to unassign', async () => {
+    let calls = stub({ id: 't1' });
+    await assignTask('t1', 'u9');
+    assert.equal(calls[0]?.url, '/api/v1/tasks/t1');
+    assert.equal(calls[0]?.init.method, 'PATCH');
+    assert.equal(body(calls[0]).assignee_id, 'u9');
+
+    calls = stub({ id: 't1' });
+    await assignTask('t1', null);
+    // `null` clears; absent would mean "leave it alone". They are different
+    // requests, so the key is always sent.
+    assert.ok('assignee_id' in body(calls[0]));
+    assert.equal(body(calls[0]).assignee_id, null);
+  });
+
+  void test('claimTask posts to the compare-and-swap endpoint', async () => {
+    const calls = stub({ id: 't1' });
+    await claimTask('t1');
+    assert.equal(calls[0]?.url, '/api/v1/tasks/t1/claim');
+    assert.equal(calls[0]?.init.method, 'POST');
+  });
+
+  void test('claimWinner reads the winner out of a losing 409', () => {
+    // The whole point of the compare-and-swap: the server says who got there
+    // first, and a generic failure would throw that away.
+    const lost = new ApiError('conflict', 'That task is already claimed', 409, {
+      assignee_id: 'u-sana',
+    });
+    assert.equal(claimWinner(lost), 'u-sana');
+  });
+
+  void test('claimWinner is undefined for anything else', () => {
+    assert.equal(claimWinner(new ApiError('conflict', 'A different conflict', 409)), undefined);
+    assert.equal(claimWinner(new ApiError('forbidden', 'no', 403)), undefined);
+    assert.equal(claimWinner(new Error('boom')), undefined);
+    assert.equal(claimWinner(null), undefined);
+  });
+
+  void test('a Viewer may not assign others', () => {
+    // `task.assign_other` is member+ (§3.2), so this mirrors task creation.
+    assert.equal(canAssignOthers('viewer', 'p1', [{ project_id: 'p1', role: 'lead' }]), false);
+    assert.equal(canAssignOthers('member', 'p1', [{ project_id: 'p1', role: 'member' }]), true);
+    assert.equal(canAssignOthers('owner', 'p1', []), true);
   });
 });
