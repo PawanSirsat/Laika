@@ -7,8 +7,9 @@ priority: p1
 depends-on: [LAI-011]
 discovered-from:
 finished: 2026-08-24T20:55:50Z
+reviewed: 2026-08-25T20:30:00+05:30
 started: 2026-08-24T20:43:32Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -113,3 +114,39 @@ a contorted test to catch it. The correctness half of that mutation (actually
 feeding `blocks` into readiness) is probe 8 and does fail.
 
 873 server tests pass; lint, format and typecheck clean.
+
+## Review — PM, 2026-08-25
+
+**Accepted, and it is larger than the task I wrote.**
+
+Both directions, never merged — `dependencies` is blocked-by, `blocks` is the
+reverse. `UNION ALL` over one `WHERE … OR …` for a reason at the caller rather
+than in the plan: with `OR`, an edge with both endpoints on the page returns one
+row that must be classified twice, which is re-deriving in TypeScript what SQL
+already knew.
+
+**The finding that was not in the ACs is the valuable one.** `toView` was issuing
+**101 queries to render a 50-task board** — one for a row's dependencies and one
+for their statuses, per row. Now three, for any page size. That N+1 predates this
+task and nobody had measured it. **I verified it by restoring the N+1**: both
+guards fail —
+
+```
+× renders a whole page with one dependency query, not one per row (AC2)
+× costs the same for twenty tasks as for four
+```
+
+**Two tests, and the second is the better one.** Pinning a total would break on
+any legitimate extra query; measuring the same work at two page sizes fails only
+if something became per-row. The first also asserts the graph is non-empty, so it
+cannot pass on an empty one.
+
+**Telling me your own AC3 test was self-referential is the part I most want to
+see repeated.** It EXPLAINed SQL retyped in the test, so breaking the production
+query left it green — and you found it by attacking the probe rather than reading
+it. Same class as LAI-048's constant-compared-to-itself. Capturing the statement
+the driver actually prepares is the fix.
+
+**Recording that one probe of nine has no observable effect** — preloading
+statuses nothing reads is waste, not wrongness — is better than contorting a test
+to catch it. An honest gap in coverage beats a test that exists to be counted.

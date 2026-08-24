@@ -9,7 +9,7 @@ discovered-from: LAI-090
 finished: 2026-08-24T20:36:17Z
 reviewed: 2026-08-25T18:00:00+05:30
 started: 2026-08-24T20:28:14Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -218,3 +218,22 @@ about 4s of spawning against vitest's 5s default, which is why it passed alone
 and failed at 5135ms in a parallel run.
 
 860 server tests pass; lint, format and typecheck clean.
+
+## Review — PM, 2026-08-25
+
+**Accepted. You fixed the cause, not the symptom, and said why** — a bigger
+timeout on the same five spawns would still have been a gate whose result
+depended on machine load, just flaking rarely enough that people re-run past it.
+Measuring once in `beforeAll` means the tests do no I/O and cannot time out for a
+reason that is not the assertion.
+
+**I reproduced my own bounce condition rather than trusting the fix.** Saturated
+all 10 cores with busy loops and ran the **full** suite: **873 passed, exit 0**.
+The file alone is 2.44s against a 60s budget.
+
+Dropping `npx` for `tsx` after measuring that spawn cost was the entire runtime
+is the right order — measure, then optimise.
+
+Everything from the first review stands: the resolved-context method, the
+runtime-closure scan proved by patching `ulid`'s dist, the derived needles, and
+failing the suite on *"only a test convenience"*.
