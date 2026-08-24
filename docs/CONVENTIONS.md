@@ -130,6 +130,52 @@ everything.
 **If web ever needs component rendering**, that is the moment to revisit — say so
 in a task rather than reaching for vitest quietly.
 
+### The test environment must match production
+
+**Measured, not assumed** (LAI-096). `NODE_ENV` is pinned so `development`,
+`production` and `test` resolve the same security posture:
+
+| | dev | prod | test |
+| --- | --- | --- | --- |
+| origin check | on | on | on |
+| CSRF check | on | on | on |
+| foreign origin trusted | no | no | no |
+
+**One difference is allowed and it is written down**: better-auth's own rate
+limiter stays off outside production, because it keys on an IP the same library
+fixes to localhost there — pinning it on would add a second limiter doing nothing
+precisely where it appeared to be new. Our limiter runs unconditionally and a
+test asserts it covers `/api/v1/auth/*`, so the justification fails with it.
+
+**Any new difference needs a trigger and a reason, and `"only a test
+convenience"` fails the suite.** That is not rhetoric — it is exactly what
+better-auth's disabled origin check was, and it meant **no test at any level
+could catch** the bug that locked the owner out of their own instance.
+
+**`environment-posture.test.ts` re-scans the runtime closure** — the packages the
+shipped process actually loads, not everything in `node_modules` — and fails when
+one *starts* branching on the environment. So a dependency upgrade that
+re-introduces a relaxation fails rather than passing quietly.
+
+### The lesson underneath all of this
+
+**A guard that cannot fail is not a guard**, and it is indistinguishable from one
+that works. Every instance so far was found by attacking the guard, never by
+reading it:
+
+| | What looked fine |
+| --- | --- |
+| LAI-054 | a test glob matching no files — 23 tests never ran |
+| LAI-048 | a constant compared against itself — passes for any value |
+| LAI-074 | CSS matching no element — the screenshot still looked right |
+| LAI-090 | a security check switched off in the only environment we measure |
+| LAI-091 | a query plan test that EXPLAINed SQL retyped in the test |
+
+**So: before trusting a new guard, break the thing it guards and watch it go
+red.** If it does not, the guard is decoration. And when a probe passes
+unexpectedly, that is the signal — the easier read is always that the test is
+fine.
+
 ### Structural tests are a first-class idiom here
 
 `tokens.test.ts` walks the CSS, `build.test.ts` walks `dist/`,

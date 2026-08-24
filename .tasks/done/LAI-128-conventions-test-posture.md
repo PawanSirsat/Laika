@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p3
 depends-on: [LAI-096]
 discovered-from: LAI-096
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -58,3 +58,14 @@ matching nothing), LAI-048 (a constant compared to itself), LAI-074 (CSS matchin
 no element), LAI-090 (a security check off in the only environment we measure),
 and the two probes in LAI-084 that stayed green because the code they targeted
 could not execute.
+
+## Done — PM, 2026-08-25
+
+CONVENTIONS §4 now carries the measured posture table, the one allowed difference
+with its reason, the rule that `"only a test convenience"` fails the suite, and
+the runtime-closure scan.
+
+It also records the general lesson with all five instances, because that is the
+part that generalises: **a guard that cannot fail is indistinguishable from one
+that works**, and every instance was found by *attacking* the guard rather than
+reading it.
