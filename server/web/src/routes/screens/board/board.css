@@ -1,0 +1,389 @@
+/* The board (LAI-049). Tokens only. */
+
+.board {
+  padding: var(--space-4) var(--space-5) var(--space-6);
+}
+
+.board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.board-views {
+  display: flex;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.board-view {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+  background: var(--card);
+  border: none;
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.board-view-on {
+  background: var(--accs);
+  color: var(--acc);
+}
+
+.board-view:focus-visible,
+.board-clear:focus-visible,
+.board-refresh:focus-visible,
+.list-sort:focus-visible,
+.lane-move-select:focus-visible,
+.board-alert-close:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.board-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+
+.board-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+.board-filter select {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-sm);
+  padding: 2px var(--space-2);
+}
+
+.board-filter-check input {
+  accent-color: var(--acc);
+}
+
+.board-clear,
+.board-refresh {
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.board-alert {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-4);
+}
+
+.board-alert-close {
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--red);
+  background: transparent;
+  border: 1px solid var(--redb);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  margin-left: auto;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------- kanban */
+
+.kanban {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(13rem, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+  overflow-x: auto;
+}
+
+.lane {
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2);
+  min-height: 8rem;
+}
+
+/* The drop target has to be visible before the mouse is released, or a drag is
+   a guess. */
+.lane-over {
+  border-color: var(--acc);
+  background: var(--accs);
+}
+
+.lane-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-1) var(--space-2) var(--space-2);
+}
+
+.lane-title {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tx2);
+  margin: 0;
+}
+
+.lane-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+.lane-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.lane-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lane-move-select {
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-1);
+  width: 100%;
+}
+
+/* ----------------------------------------------------------------- card */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow);
+  padding: var(--space-3);
+  cursor: grab;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+/* In flight. The card has NOT moved — the server has not answered yet. */
+.card-moving {
+  opacity: 0.6;
+  cursor: progress;
+  border-color: var(--accb);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.card-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--tx2);
+}
+
+.card-priority {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+}
+
+.card-priority-p1 {
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+}
+.card-priority-p2 {
+  color: var(--amb);
+  background: var(--ambs);
+  border: 1px solid var(--ambb);
+}
+.card-priority-p3 {
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+}
+
+.card-title {
+  font-size: var(--text-sm);
+  color: var(--tx);
+  margin: var(--space-2) 0;
+  line-height: 1.4;
+}
+
+.card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.card-markers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.marker {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  border-radius: var(--radius-pill);
+  padding: 0 var(--space-2);
+  margin-left: var(--space-1);
+}
+
+.marker-ready {
+  color: var(--grn);
+  background: var(--grns);
+  border: 1px solid var(--grnb);
+}
+.marker-blocked {
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+}
+.marker-deps {
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+}
+/* A dependency outside the loaded set — stated, not guessed. */
+.marker-unknown {
+  color: var(--amb);
+  background: var(--ambs);
+  border: 1px solid var(--ambb);
+}
+
+.card-avatar {
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--bd2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  flex: none;
+}
+
+.card-unassigned {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+/* ----------------------------------------------------------------- list */
+
+.list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.list th,
+.list td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--bd);
+}
+
+.list th {
+  background: var(--tub);
+}
+
+.list tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.list-sort {
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tx2);
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.list-key,
+.list-updated {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  white-space: nowrap;
+}
+
+.list-priority {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+}
+
+.list-priority-p1 {
+  color: var(--red);
+}
+.list-priority-p2 {
+  color: var(--amb);
+}
+.list-priority-p3 {
+  color: var(--tx2);
+}
+
+@media (max-width: 1100px) {
+  .kanban {
+    grid-template-columns: repeat(5, minmax(12rem, 1fr));
+  }
+}

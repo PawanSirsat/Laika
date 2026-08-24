@@ -4,6 +4,7 @@ import { ThemeToggle } from './ThemeToggle.tsx';
 import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
 import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
 import { LoginScreen } from '../routes/screens/LoginScreen.tsx';
+import { BoardScreen } from '../routes/screens/BoardScreen.tsx';
 import { NotFound } from '../routes/screens/NotFound.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
@@ -33,7 +34,7 @@ import './app-shell.css';
  * slot; wiring it to `GET /api/v1/me` is LAI-007, which depends on the API.
  */
 export function AppShell() {
-  const { path, route, navigate } = useRoute();
+  const { path, route, navigate, params, setParams } = useRoute();
   const { session, signIn, signOut, retry } = useSession();
   const { theme } = useTheme();
   const [navOpen, setNavOpen] = useState(false);
@@ -266,6 +267,13 @@ export function AppShell() {
             <div className="shell-gate">
               <LoadingState shape="card" count={1} label="Redirecting to sign in" />
             </div>
+          ) : path === '/board' ? (
+            <>
+              <header className="screen-head">
+                <h1 className="screen-title">Board</h1>
+              </header>
+              <BoardScreen params={params} onParamsChange={setParams} />
+            </>
           ) : route === undefined ? (
             <NotFound path={path} onNavigate={navigate} />
           ) : path === '/design/tokens' ? (
