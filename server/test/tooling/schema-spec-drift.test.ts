@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { getTableConfig, SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { describe, expect, it } from 'vitest';
 import { ACTIVITY_TYPES, ACTOR_KINDS } from '../../src/db/enums.ts';
-import * as schemaModule from '../../src/db/schema.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
+import { declaredSchema } from '../helpers/declared-schema.ts';
 
 /**
  * SPEC §4 against `db/schema.ts` — in both directions (LAI-051).
@@ -24,8 +23,12 @@ import { SERVER_ROOT } from '../../src/paths.ts';
  * precisely because **the document is the artefact**: parsing SPEC.md is reading
  * the spec, whereas parsing `env.ts` would only have been guessing at the code.
  *
- * The schema half *is* executed: `getTableConfig` reports the columns Drizzle
- * will actually emit, so a column that exists only in a comment is not counted.
+ * The schema half *is* executed, through the shared reader in
+ * `test/helpers/declared-schema.ts` — the same one
+ * `schema-migration-drift.test.ts` uses to compare the declaration *downward*
+ * against the migrations (LAI-061). One reader, two comparisons: a second notion
+ * of "what schema.ts says" sitting between the spec and the database would break
+ * the chain in the middle, quietly.
  *
  * ## §4 is written in two formats
  *
@@ -157,26 +160,10 @@ const specTables = parseSpecTables();
 const specActivityTypes = parseSpecActivityTypes();
 const specActorKinds = fieldsIn(activityNotesFor('actor_kind'));
 
-/**
- * The columns Drizzle will actually emit, read by running `getTableConfig` rather
- * than by parsing `schema.ts`. A column that exists only in a comment does not
- * count, and a `.notNull()` chain cannot hide one.
- */
-const schemaTables = new Map<string, string[]>();
-
-for (const value of Object.values(schemaModule)) {
-  // A plain loop rather than `filter` with a type predicate: narrowing the union
-  // of concrete table types down to the generic `SQLiteTable` is not assignable
-  // under `exactOptionalPropertyTypes`, and the cast that silences it would be
-  // load-bearing rather than cosmetic.
-  if (!(value instanceof SQLiteTable)) continue;
-
-  const config = getTableConfig(value);
-  schemaTables.set(
-    config.name,
-    config.columns.map((column) => column.name),
-  );
-}
+/** Table name → column names, from the shared declaration reader. */
+const schemaTables = new Map<string, string[]>(
+  [...declaredSchema()].map(([name, table]) => [name, table.columns.map((c) => c.name)]),
+);
 
 // ---------------------------------------------------------------- exemptions
 
