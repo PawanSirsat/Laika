@@ -3,8 +3,11 @@
 **I own `server/`. Nothing else.**
 
 The single Node process that is Laika: Hono API, Drizzle/SQLite, better-auth, the
-`can()` policy module, the `/mcp` endpoint, SSE, in-process cron, and the React +
-Vite SPA under `server/web/`.
+`can()` policy module, the `/mcp` endpoint, SSE and in-process cron.
+
+**Not `server/web/`.** D-016 gave the frontend to Builder-B, and this file said
+otherwise until 2026-08-24. The split is API versus UI, not directory depth: I
+never touch `server/web/`, and Builder-B never touches `server/src/`.
 
 ## I own
 
