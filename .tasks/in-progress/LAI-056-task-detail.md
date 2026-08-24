@@ -6,7 +6,8 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-049, LAI-055]
 discovered-from: LAI-049
-status: in-progress
+status: review
+finished: 2026-08-24T21:12:24+05:30
 started: 2026-08-24T21:01:34+05:30
 ---
 
@@ -17,21 +18,21 @@ route of its own — §11.4.2 lists it as a Board sub-view.
 
 ## Acceptance criteria
 
-- [ ] Opens from a card on both kanban and list views; closes on escape and on
+- [x] Opens from a card on both kanban and list views; closes on escape and on
       backdrop click; focus moves into the panel and returns to the card on close.
-- [ ] Shows description, `created_via` provenance, and the `discovered-from` link
+- [x] Shows description, `created_via` provenance, and the `discovered-from` link
       where one exists.
-- [ ] **Dependencies with `BLOCKED BY` relations and each blocker's status** —
+- [x] **Dependencies with `BLOCKED BY` relations and each blocker's status** —
       the design's wording. A blocker that is `done` must be visibly different
       from one that is not, since that is the whole reason the list is there.
-- [ ] Comments (LAI-047), oldest first, **distinguishing human from agent** via
+- [x] Comments (LAI-047), oldest first, **distinguishing human from agent** via
       `actor_kind` — the badge LAI-020 and LAI-049 already use.
-- [ ] Activity trail (LAI-055), newest first.
-- [ ] Claim and status controls, reusing LAI-049's transition call so a rejected
+- [x] Activity trail (LAI-055), newest first.
+- [x] Claim and status controls, reusing LAI-049's transition call so a rejected
       transition behaves identically in both places.
-- [ ] Empty, loading, error and permission-denied states from LAI-020. A `403`
+- [x] Empty, loading, error and permission-denied states from LAI-020. A `403`
       renders permission-denied, never an empty panel.
-- [ ] No hardcoded data (CLAUDE.md §5.1).
+- [x] No hardcoded data (CLAUDE.md §5.1).
 
 ## Notes / context
 
@@ -48,3 +49,91 @@ LAI-049 tested.
 
 No new dependencies. If a slide-over seems to need a library, file a task naming
 it.
+
+---
+
+## Implementation notes for review (Builder-B)
+
+`src/api/comments.ts`, `activity.ts`, `use-task-detail.ts`;
+`src/routes/screens/board/TaskDetailPanel.tsx` + `task-detail.css`. Cards and
+list rows gained an opener.
+
+### A silent bug this task surfaced, from LAI-049
+
+`GET /projects/:slug/members` returns **`{ members: [...] }`**, not the
+`{ data, next_cursor }` envelope every other list uses. I had typed it as a page
+in LAI-049, so `.data` was `undefined`, the member map was empty, and **every
+name fell back to a raw ULID**.
+
+The board hid it — cards show initials in an avatar, and an unknown assignee
+just renders "unassigned". The panel shows names in three places at once, which
+is where it became obvious: *"01M0T6D7VM2JX3C58YDHB2FFXT commented"*.
+
+Same class as the `items` vs `data` bug in LAI-049: **a wrong envelope does not
+throw, it renders something almost right.** Fixed, with a regression test, and
+the type now carries a comment saying why it is not a `Page`.
+
+### Focus restore had to be explicit
+
+AC1 wants focus back on the card at close. I first assumed the browser would do
+it once the dialog unmounted — **it does not**; focus falls to `<body>`, so a
+keyboard user who pressed Escape lands at the top of the document and re-tabs
+the whole sidebar. Caught in the browser, which is the only place it shows.
+The effect now captures `document.activeElement` on open and restores it on
+cleanup, guarded on the element still being in the document.
+
+### Verified in a browser
+
+| Check | Result |
+| --- | --- |
+| Opens from kanban **and** list | via a focusable key button, not a click on the draggable card |
+| Focus | moves into the panel; **returns to the opener** on Escape |
+| Close | Escape and backdrop click both work |
+| Provenance | `created_via: api`, created-by name, **discovered-from → `LC-1 SSE reconnect`** |
+| Blocked by | `LC-1` with its status; a `done` blocker renders struck-through with a green marker instead of red |
+| Comments | 2 → 3 after posting, oldest-first, draft cleared |
+| Activity | newest-first, and the new `comment.added` row appeared at the top |
+| **Illegal transition from the panel** | *"Cannot move a task from backlog to done"*, status stayed `backlog` |
+
+That last row is the point of reusing `board.move` rather than copying it — the
+panel gets LAI-049's no-lie behaviour for free, and there is one implementation
+to keep correct.
+
+### `actor_kind` is not on comments
+
+AC4 names `actor_kind`, and `CommentView` does not carry it — only the activity
+feed does. A comment that arrived over MCP is agent-authored by definition, so
+`isAgentComment` reads `created_via === 'mcp'`: the same fact by a different
+route, not a guess. `api` is deliberately **not** badged — a token-authenticated
+human script uses it as often as an agent does, and the badge claims something
+specific.
+
+Flagging rather than silently substituting, since the criterion names a field
+that does not exist on that view.
+
+### The two orderings
+
+Comments oldest-first, activity newest-first, in one panel. Both come from the
+server and neither is re-sorted here. The panel's doc comment says why in two
+sentences, because it will read as a bug to whoever sees it next — which the
+task predicted.
+
+### Small things
+
+- Description renders as **plain text**, not markdown: a renderer is a
+  dependency this task may not add, and injecting raw HTML would be worse than
+  unstyled prose.
+- A dependency outside the loaded set shows `not loaded` rather than being
+  omitted — the same honesty as the board's `deps ?`.
+
+### Tests — 14 new, 177 in the package
+
+`activity.test.ts` (unknown event types degrade to themselves; `statusTransition`
+refuses a comment carrying `from`/`to`), `comments.test.ts` (tombstones never
+reach the thread; `api` is not badged as an agent), and the `listMembers`
+envelope guard.
+
+### Gate
+
+`pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
+`@laika/web` **177/177**, `@laika/server` **731/731**.
