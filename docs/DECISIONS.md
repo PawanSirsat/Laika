@@ -1190,3 +1190,46 @@ the whole repo.
 
 **Consequence**: PM stops treating a `WEB_*` edit as a crossing. Any other change
 to that file from Builder-B is still one.
+
+## D-027 — task tags are real, project-scoped, and flat
+
+**2026-08-25. Decided by the owner**, on the question LAI-073 raised: the design
+put a tag chip on every task card while the spec, schema and API had no such
+concept, and PM does not add a feature to the spec by writing it down.
+
+**Decision: tags exist.** SPEC §4.16 defines them; §3.2, §4.5, §4.13 and §6.4
+are updated to match.
+
+**The shape, and why.** Read off how the design actually uses them, not invented:
+
+- **Many-to-many, via a join table.** One prototype task carries `['agent',
+  'core']`, so a single column was never going to work. Rejected a JSON array on
+  `tasks`: renaming a tag would be an update across every row, "which tags exist"
+  would be a full scan, and nothing would stop `ui` and `UI` diverging.
+- **Project-scoped, unique per project.** `ui` on a server project and `ui` on
+  the web project are different concerns. It also keeps the picker short enough
+  to choose from, which is what makes tagging get used.
+- **Lowercase slug, enforced.** `^[a-z0-9][a-z0-9-]{0,23}$`. Case-variant
+  duplicates are the specific failure that makes tag filters worthless.
+- **Created by being applied.** No separate create step — an unknown name on a
+  task creates the tag. Tagging stays one field rather than a workflow.
+- **No colour.** Every chip in the design renders in the neutral `--tub`/`--bd`
+  pair. A colour column means a palette decision and a settings screen for
+  something the design never asks for.
+- **Flat — no hierarchy, groups, or required tags.** That is how tag systems
+  become a taxonomy nobody maintains. `priority`, `sprint_id` and
+  `discovered_from` already carry the structured groupings.
+
+**Policy reuses existing §3.2 cells rather than adding a new axis**: applying a
+tag is part of editing a task (member+), while renaming or deleting one affects
+everyone who filters by it (lead+). Two new matrix rows, no new concept.
+
+**Activity uses `task.updated` with `{ field: 'tags', from, to }`** — the shape
+`sprint_id` already uses. Deliberately **not** a new §4.8 verb: that vocabulary
+has needed extending six times already (LAI-110, LAI-113), and this change does
+not warrant being the seventh.
+
+**Consequence.** LAI-079 builds the schema and API; LAI-066's tag chip stops
+being excluded. The fourth design-ahead-of-spec gap is closed — `repo` (LAI-108),
+the org presence toggle and the Calendar screen were the others, and the Calendar
+still has no decision behind it.
