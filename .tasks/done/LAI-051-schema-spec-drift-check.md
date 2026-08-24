@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-105
-status: review
+status: done
 started: 2026-08-24T10:11:45+05:30
 finished: 2026-08-24T10:20:22+05:30
+reviewed: 2026-08-24T14:30:00+05:30
 ---
 
 ## Goal
@@ -137,3 +138,11 @@ in the safe-looking direction anywhere else it is used.
 **Not done, deliberately:** none of the three real drifts is fixed here. Two are
 `docs/` and one needs a schema column; all three have tasks, and reconciling them
 inside this task would have hidden the evidence that the check works.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified it can fail: I removed `projects.repo` from `schema.ts`
+and got **2 failures**, with the message naming both the object and the
+direction — *§4 specifies projects.repo — schema.ts has no such column (the spec
+is ahead of the code)*. The direction matters; "these differ" would not have told
+anyone which to change.

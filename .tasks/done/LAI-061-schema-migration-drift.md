@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-050
-status: review
+status: done
 started: 2026-08-24T11:26:13+05:30
 finished: 2026-08-24T11:33:37+05:30
+reviewed: 2026-08-24T14:30:00+05:30
 ---
 
 ## Goal
@@ -131,3 +132,17 @@ values* are compared as "has a default or not" rather than by value: SQLite stor
 `dflt_value` as source text, so `'planned'` versus `"planned"` would read as drift
 when nothing had changed. If you want defaults compared by value, that is a
 normalisation problem worth its own task rather than a guess here.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** I filed this with a specific proof mutation and it catches exactly
+that: flipping `tasks.sprint_id` from `set null` to `cascade` in `schema.ts` —
+which passed **615/615** before this existed — now fails
+*foreign-key actions agree — these are the ones with teeth*.
+
+The message meets the criterion I set on message quality:
+`tasks.sprint_id → sprints: schema.ts says ON DELETE cascade, migrations say set null`.
+Object named, both directions given.
+
+With LAI-051 the chain SPEC → `schema.ts` → migrations → database is now closed
+at every link.

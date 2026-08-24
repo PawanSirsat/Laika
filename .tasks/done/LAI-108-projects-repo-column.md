@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-010]
 discovered-from: LAI-010
-status: review
+status: done
 started: 2026-08-24T11:46:15+05:30
 finished: 2026-08-24T11:54:31+05:30
+reviewed: 2026-08-24T14:30:00+05:30
 ---
 
 ## Goal
@@ -124,3 +125,9 @@ which is precisely what that guard is for. One exemption left in that list
 (`orgs.presence_enabled`, waiting on LAI-207). Worth noting the two drift checks
 did real work on this task rather than just passing: the migration check also
 caught my probe that added a unique index to `schema.ts` alone.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** `projects.repo` added with migration 0007. Deliberately not unique,
+with the reasoning in the schema — a monorepo tracked by two projects is a real
+case, and a unique index would have made that unrepresentable for no gain.

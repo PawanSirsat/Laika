@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-047]
 discovered-from: LAI-047
-status: review
+status: done
 started: 2026-08-24T12:06:36+05:30
 finished: 2026-08-24T12:14:02+05:30
+reviewed: 2026-08-24T14:30:00+05:30
 ---
 
 ## Goal
@@ -136,3 +137,16 @@ didn't.
 that all three mutations wrote `comment.added`. That claim is now false, so it
 became an assertion about the half that did not change — one row per mutation, in
 order — with the verb question moved to the new block.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** `comment.edited` and `comment.deleted` join the §4.8 vocabulary, so
+filtering `activity` by `type` finally gives the right answer — the wart you
+flagged six tasks running is closed.
+
+**The part I checked hardest** is LAI-044's concern: adding values to a CHECK
+constraint forces a table rebuild in SQLite, which silently drops triggers.
+Migration 0008 recreates both append-only triggers, and
+`test/db/activity.test.ts` asserts UPDATE and DELETE are still refused **at the
+database**. Full suite green, so the rebuild did not cost the immutability
+guarantee.

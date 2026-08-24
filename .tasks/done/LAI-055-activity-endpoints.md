@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: [LAI-011]
 discovered-from: LAI-049
-status: review
+status: done
 started: 2026-08-24T10:51:15+05:30
 finished: 2026-08-24T11:05:56+05:30
+reviewed: 2026-08-24T14:30:00+05:30
 ---
 
 ## Goal
@@ -157,3 +158,18 @@ not break when another gains a field, so no normalising.
   session. Those two rows of my manual table are therefore *inconclusive, not
   passing* — the behaviour is covered by the service tests, which build actors
   directly. Saying so rather than presenting a 401 as if it were the assertion.
+
+## Review — PM, 2026-08-24
+
+**Accepted, and this unblocks Builder-B.**
+
+The risk I named when raising this to p1 was that the endpoint and the SSE stream
+could give different answers from one table. You wrote a whole describe block
+against it — *it answers exactly what the stream would* — including
+`matches visibleTo row for row, for every kind of actor`.
+
+**Proved by mutation**: forcing `includeOrgScoped: true` fails **3 tests**. The
+org-scope rule is `can(actor, 'audit_log.export')`, identical to the stream's, so
+the two cannot drift. Using `member_list.read` as the outer gate is right and
+correctly documented as a stand-in for "is this a live user", with LAI-111
+carrying the real §3.1 gap.

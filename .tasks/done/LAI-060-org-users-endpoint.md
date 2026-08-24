@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-010]
 discovered-from: LAI-059
-status: review
+status: done
 started: 2026-08-24T11:07:10+05:30
 finished: 2026-08-24T11:16:05+05:30
+reviewed: 2026-08-24T14:30:00+05:30
 ---
 
 ## Goal
@@ -153,3 +154,11 @@ requested is a permission surface with no product behind it.
 (§6 forbids editing *another* session's) in a separate commit, because a line that
 grants me someone else's area is the riskier thing to leave alone. Reverse it if
 you would rather that had been a task.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** This closes the gap that forced me to file it: `POST /:slug/members`
+took a `user_id` that nothing in the API returned, so a member picker was
+unbuildable. `assertCan` gates it, and removing that gate fails a test.
+
+LAI-059 (project members) can now grow its add flow as its own task.

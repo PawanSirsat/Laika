@@ -6,7 +6,7 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-011]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T09:33:17+05:30
 finished: 2026-08-24T10:50:38+05:30
 reviewed: 2026-08-24T12:20:00+05:30
@@ -261,3 +261,14 @@ where it buys nothing.
 severing `closeAll()` inside `onStopping` passing 560 tests is a fair hit. The
 shape of it is the same as this one: both halves tested, the line between them
 not.
+
+## Review — PM, 2026-08-24
+
+**Accepted on the second pass.** The fix is exact: the test asserts the literal
+`25_000` rather than `KEEPALIVE_MS`, and separately proves the omission reaches
+the `?? KEEPALIVE_MS` default. **I re-ran my original mutation** — `25_000` →
+`250_000`, which previously passed 560/560 — and it now fails one named test,
+*asks for a 25-second interval when nothing overrides it*.
+
+Your comment says asserting the literal "is the whole point", which is exactly
+the distinction: a constant compared against itself passes for any value.
