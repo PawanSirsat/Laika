@@ -45,7 +45,7 @@ void describe('every column carries the right status colour', () => {
     assert.match(sheet, /\.lane-dot\s*\{[^}]*background:\s*var\(--tx3\)/);
   });
 
-  void test('every board column is accounted for', async () => {
+  void test('every board column is accounted for', () => {
     // If a sixth column is ever added, this fails rather than letting it render
     // with the default dot and look deliberate.
     const named = new Set(Object.keys(EXPECTED));
