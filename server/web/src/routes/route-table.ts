@@ -64,7 +64,7 @@ export const ROUTES: readonly Route[] = [
   { path: '/projects', label: 'Projects', group: null, phase: 'Phase 2' },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
-  { public: true, path: '/first-boot', label: 'First boot', group: null, phase: 'Phase 1' },
+  { public: true, path: '/setup', label: 'First boot', group: null, phase: 'Phase 1' },
 
   // The LAI-018 and LAI-020 reference pages. Kept reachable — both tasks
   // required them — but out of the product nav, since they are not product.
