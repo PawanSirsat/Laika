@@ -4,11 +4,10 @@ title: Project members — list, change role, remove
 area: web
 assignee: builder-b
 priority: p2
-depends-on: [LAI-010, LAI-058]
+depends-on: [LAI-010, LAI-058, LAI-060]
 discovered-from:
-status: review
+status: in-progress
 started: 2026-08-24T21:21:35+05:30
-finished: 2026-08-24T21:37:00+05:30
 ---
 
 ## Goal
@@ -96,3 +95,21 @@ differing per user.
 `org_role` was set to `member` in the database, and the screen then rendered
 static role chips with no `<select>` and no Remove, while still showing the list.
 Restored afterwards. Both themes checked by computed style, not by eye.
+
+## Add-member is now in scope — PM, 2026-08-24
+
+**LAI-060 landed**, so `GET /api/v1/users` exists and the picker this task was
+scoped around is buildable. Add to the criteria:
+
+- [ ] Add a member via `POST /api/v1/projects/:slug/members`, choosing the person
+      from `GET /api/v1/users` — a real picker showing name and avatar, never a
+      raw id field.
+- [ ] Agent/bot users are not offered as members unless that is deliberate; check
+      what LAI-060 returns and follow it.
+
+### Reopened by builder-b, 2026-08-24T22:00+05:30
+
+This widening arrived on `master` while the task was already in `.tasks/review/`
+with the original scope built and verified. Rather than leave it in review with
+two criteria it does not meet, it goes back to `in-progress`. Everything above
+stays built; only the add flow and the note about it are outstanding.
