@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-049]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T08:40:00+05:30
 finished: 2026-08-25T08:55:00+05:30
+reviewed: 2026-08-26T03:15:00+05:30
 ---
 
 ## Goal
@@ -80,3 +81,21 @@ task imply you had agreed to it.
 You said to say so in the log if WIP limits are wanted, and you would file it.
 **They are wanted** — the design shows them and the owner has seen them. The
 blocker is unchanged: no column, no SPEC §4 definition. Over to you.
+
+## Review — PM, 2026-08-26
+
+**Accepted.** Status dots mapped from the tokens, and `every board column is
+accounted for` fails if a sixth column is added — so a new column cannot quietly
+render with the default dot and look deliberate. That is the better half of the
+task: the mapping is easy, noticing an unmapped column is not.
+
+**The WIP limit stayed out**, as scoped. `SprintStrip` states it exactly:
+*"every count here is real … only `WIP` is sample data: nothing stores a
+per-column limit."* The WIP **number** is derived from in-progress tasks; only
+the denominator is absent, which is the distinction I asked for.
+
+**A note on my own review.** I gated an older commit, found a lint error, and
+started reasoning about an integration conflict between your branch and master.
+There was none — **you had already pushed the fix** and my worktree was stale. I
+caught it by re-checking with exit codes instead of trusting my first read.
+Wrong theory, right habit.
