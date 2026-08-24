@@ -1,11 +1,11 @@
-import { and, asc, eq, gt, gte, or, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, or, sql } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
-import { type ProjectRole } from '../db/enums.ts';
+import { type ProjectRole, TASK_STATUSES, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
-import { projectMemberships, projects, users } from '../db/schema.ts';
+import { activity, projectMemberships, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
@@ -33,6 +33,42 @@ export interface ProjectView {
   created_at: number;
   updated_at: number;
 }
+
+/**
+ * Just enough of a person to draw an avatar (§11.4.2.1, LAI-053).
+ *
+ * Id and display name, and deliberately **not** `MemberView` — that carries an
+ * email, and sending every member's address to every viewer of a project list so
+ * a card can draw a coloured circle is a privacy and payload mistake. The colour
+ * itself is derived from the id client-side (§4.1, LAI-018), so it is not sent
+ * either.
+ */
+export interface AvatarView {
+  user_id: string;
+  name: string;
+}
+
+/** The per-project numbers the Projects screen needs (§11.4.2.1). */
+export interface ProjectSummary extends ProjectView {
+  /** Live tasks by §4.5 status. Every status is present, zero included. */
+  task_counts: Record<TaskStatus, number>;
+  /** Tasks with at least one dependency that is not `done` (§4.5, derived). */
+  blocked_count: number;
+  member_count: number;
+  /** The first few members by name, for avatars. See `AVATAR_LIMIT`. */
+  members: AvatarView[];
+  /** Newest `activity` row for this project, or null if nothing has happened. */
+  last_activity_at: number | null;
+}
+
+/**
+ * How many members a card shows before it stops being a row of avatars.
+ *
+ * `member_count` carries the real total, so a card can render "+7" without the
+ * list growing with the team. Sending every member of every project on every
+ * page load is the shape this exists to avoid.
+ */
+export const AVATAR_LIMIT = 5;
 
 export interface MemberView {
   user_id: string;
@@ -139,6 +175,124 @@ export function listProjects(
   // Filtered in code rather than SQL: `can()` is the only authority (§3.3), and
   // duplicating its rules into a WHERE clause is how the two drift apart.
   return rows.filter((row) => canSeeProject(actor, row.id)).slice(0, options.limit + 1);
+}
+
+/**
+ * The per-project numbers for a whole page, in **four** aggregate queries —
+ * never one per card (LAI-053).
+ *
+ * Each is grouped over the page's project ids, so the cost is a function of how
+ * many *statuses* and *members* exist rather than of how many projects are
+ * listed. A 50-project page costs the same four round trips as a 2-project one,
+ * which is asserted rather than claimed.
+ *
+ * **The live-agent indicator is deliberately absent.** It needs heartbeats
+ * (M4, D-023) and there is no honest value to send — a card that showed "no
+ * agents" would be indistinguishable from one that showed the truth, so the
+ * field does not exist and the screen renders the indicator only when it does.
+ */
+export function projectSummaries(
+  db: Db,
+  projectIds: readonly string[],
+): Map<string, Omit<ProjectSummary, keyof ProjectView>> {
+  const empty = (): Omit<ProjectSummary, keyof ProjectView> => ({
+    task_counts: Object.fromEntries(TASK_STATUSES.map((s) => [s, 0])) as Record<TaskStatus, number>,
+    blocked_count: 0,
+    member_count: 0,
+    members: [],
+    last_activity_at: null,
+  });
+
+  const summaries = new Map(projectIds.map((id) => [id, empty()]));
+  if (projectIds.length === 0) return summaries;
+
+  const ids = [...projectIds];
+
+  // 1. Tasks by status.
+  for (const row of db
+    .select({ projectId: tasks.projectId, status: tasks.status, total: sql<number>`COUNT(*)` })
+    .from(tasks)
+    .where(inArray(tasks.projectId, ids))
+    .groupBy(tasks.projectId, tasks.status)
+    .all()) {
+    const summary = summaries.get(row.projectId);
+    if (summary !== undefined) summary.task_counts[row.status] = row.total;
+  }
+
+  // 2. Blocked: a live task with at least one dependency that is not `done`.
+  //    `COUNT(DISTINCT)` because a task blocked by three things is still one
+  //    blocked task. Matches `isReady` in task-lifecycle.ts — a **cancelled**
+  //    dependency still blocks, because that rule requires `done` and nothing
+  //    else, and disagreeing here would put a different number on the card than
+  //    the board's own `ready` flag implies.
+  for (const row of db.all<{ projectId: string; total: number }>(
+    sql`SELECT t.project_id AS projectId, COUNT(DISTINCT t.id) AS total
+          FROM tasks t
+          JOIN task_dependencies d ON d.task_id = t.id
+          JOIN tasks dep ON dep.id = d.depends_on_task_id
+         WHERE t.project_id IN (${sql.join(
+           ids.map((id) => sql`${id}`),
+           sql`, `,
+         )})
+           AND t.status NOT IN ('done', 'cancelled')
+           AND dep.status <> 'done'
+         GROUP BY t.project_id`,
+  )) {
+    const summary = summaries.get(row.projectId);
+    if (summary !== undefined) summary.blocked_count = row.total;
+  }
+
+  // 3. Members, ordered so the avatars a card shows are stable between reads.
+  for (const row of db
+    .select({
+      projectId: projectMemberships.projectId,
+      userId: users.id,
+      name: users.name,
+    })
+    .from(projectMemberships)
+    .innerJoin(users, eq(users.id, projectMemberships.userId))
+    .where(inArray(projectMemberships.projectId, ids))
+    .orderBy(asc(projectMemberships.projectId), asc(users.name), asc(users.id))
+    .all()) {
+    const summary = summaries.get(row.projectId);
+    if (summary === undefined) continue;
+
+    summary.member_count += 1;
+    if (summary.members.length < AVATAR_LIMIT) {
+      summary.members.push({ user_id: row.userId, name: row.name });
+    }
+  }
+
+  // 4. Last activity. §4.8 is the only source of truth for "when did something
+  //    happen here" — `projects.updated_at` moves only when the row itself
+  //    changes, so a project with a week of task activity and no settings edit
+  //    would look untouched.
+  for (const row of db
+    .select({ projectId: activity.projectId, last: sql<number>`MAX(${activity.createdAt})` })
+    .from(activity)
+    .where(inArray(activity.projectId, ids))
+    .groupBy(activity.projectId)
+    .all()) {
+    const summary = row.projectId === null ? undefined : summaries.get(row.projectId);
+    if (summary !== undefined) summary.last_activity_at = row.last;
+  }
+
+  return summaries;
+}
+
+/** A project row plus its summary, for the list endpoint. */
+export function projectSummaryView(
+  row: typeof projects.$inferSelect,
+  summary: Omit<ProjectSummary, keyof ProjectView> | undefined,
+): ProjectSummary {
+  return {
+    ...projectView(row),
+    task_counts: summary?.task_counts ?? ({} as Record<TaskStatus, number>),
+    blocked_count: summary?.blocked_count ?? 0,
+    member_count: summary?.member_count ?? 0,
+    members: summary?.members ?? [],
+    last_activity_at: summary?.last_activity_at ?? null,
+  };
 }
 
 export interface CreateProjectInput {
