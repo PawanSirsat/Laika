@@ -9,7 +9,7 @@ discovered-from: LAI-090
 finished: 2026-08-24T20:36:17Z
 reviewed: 2026-08-25T18:00:00+05:30
 started: 2026-08-24T20:28:14Z
-status: in-progress
+status: review
 ---
 
 ## Goal
@@ -133,7 +133,7 @@ reconstructed.
 
 **The substance is accepted in full. One fix, and it is timing, not reasoning.**
 
-- [ ] **`environment-posture.test.ts` is load-sensitive and has no explicit
+- [x] **`environment-posture.test.ts` is load-sensitive and has no explicit
       timeout.** It failed for me in the full suite —
       *"leaves exactly one difference, and it is the one that is written down"*,
       **timed out in 5000ms after 5135ms**. Run alone it passes 13/13, with and
@@ -183,3 +183,38 @@ the justification fails with it.
 
 **Three tests now fail when the origin check is relaxed. Before LAI-090 it failed
 none** — which was the whole problem.
+
+
+---
+
+## Builder-A — send-back addressed (2026-08-24T20:43:25Z)
+
+**Fixed by removing the timing sensitivity, not by raising the number.** A bigger
+timeout on the same five spawns would still have been a gate whose result
+depended on how busy the machine was; it would just have flaked less often, which
+is worse, because a rare flake is the kind people re-run past.
+
+Three changes:
+
+1. **Two spawns instead of five.** Every measurement now happens once in
+   `beforeAll` and the tests read the result. They perform no I/O at all, so they
+   cannot time out for a reason that is not about the assertion.
+2. **`tsx` directly rather than through `npx`.** Measured over three runs each:
+   `npx tsx` 0.73-1.05s per spawn, the binary 0.52-0.92s. Not micro-optimisation
+   — spawn cost is the entire runtime of that block.
+3. **An explicit `SPAWN_BUDGET_MS = 60_000` on the hook**, with a comment saying
+   the cost is process spawns rather than a slow assertion, and that a trip means
+   something is genuinely wrong with the child process.
+
+### Reproduced the failure condition rather than assuming it was gone
+
+Saturated all 10 cores with busy loops and ran it under that load:
+
+- the file alone: **13/13, 2.44s of test time against a 60s budget** — a 24x margin;
+- the full parallel suite under the same load: **860 passed**.
+
+Three consecutive unloaded full-suite runs also pass. Previously the block spent
+about 4s of spawning against vitest's 5s default, which is why it passed alone
+and failed at 5135ms in a parallel run.
+
+860 server tests pass; lint, format and typecheck clean.
