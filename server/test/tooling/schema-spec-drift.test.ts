@@ -212,10 +212,6 @@ const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([
     'orgs.presence_enabled',
     'the drift that motivated this check — §4.2 specifies it, LAI-003 predates the row, LAI-207 adds it',
   ],
-  [
-    'projects.repo',
-    '§4.3 specifies it; needed to attribute heartbeats to a project — LAI-108 adds it',
-  ],
 ]);
 
 /** §4.8 verbs the enum has and the list does not, or the other way round. */

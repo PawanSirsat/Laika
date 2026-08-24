@@ -11,7 +11,9 @@ import {
   joinPublicProject,
   listMembers,
   listProjects,
+  projectView,
   removeMember,
+  REPO_MAX_LENGTH,
   updateProject,
   type ProjectView,
 } from '../../services/projects.ts';
@@ -50,6 +52,9 @@ const CreateBody = strictObject({
 const UpdateBody = strictObject({
   name: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().max(2000).optional(),
+  // `owner/name` (§4.3). Trimmed but not rewritten — the service refuses a URL
+  // rather than guessing at one, and `null` clears the field.
+  repo: z.string().trim().min(1).max(REPO_MAX_LENGTH).nullable().optional(),
   visibility: z.enum(['public', 'private']).optional(),
   context_md: z.string().max(100_000).optional(),
   archived: z.boolean().optional(),
@@ -95,22 +100,9 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     const archived = new Set(archivedTombstones(paged.data));
 
     const page: Page<WithTombstones<ProjectView>> = {
-      data: paged.data.map((row) =>
-        archived.has(row.id)
-          ? tombstone(row.id)
-          : ({
-              id: row.id,
-              slug: row.slug,
-              prefix: row.prefix,
-              name: row.name,
-              description: row.description,
-              visibility: row.visibility,
-              context_md: row.contextMd,
-              archived_at: row.archivedAt,
-              created_at: row.createdAt,
-              updated_at: row.updatedAt,
-            } satisfies ProjectView),
-      ),
+      // `projectView` from the service, not a copy of it: this mapping used to be
+      // written out here and was missing §4.3's `repo` the moment it landed.
+      data: paged.data.map((row) => (archived.has(row.id) ? tombstone(row.id) : projectView(row))),
       next_cursor: paged.next_cursor,
     };
 

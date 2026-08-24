@@ -50,6 +50,13 @@
       "when": 1787545721564,
       "tag": "0006_one_active_sprint",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1787552226098,
+      "tag": "0007_projects_repo",
+      "breakpoints": true
     }
   ]
 }
