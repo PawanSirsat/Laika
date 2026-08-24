@@ -1383,3 +1383,39 @@ them.
 
 **§5.1 is amended, not overturned**: hardcoded data remains a defect in shipped
 code. `src/demo/` is a named exception that cannot ship.
+
+## D-033 — a task may authorise a named cross-area edit, when a drift check demands atomicity
+
+**2026-08-25.** Four changes have now needed two owners in one commit: §4.16
+(LAI-079), §4.8 (LAI-098), `tasks.acceptance_md` (LAI-092/130), and the
+`dependencies` rename still to come (LAI-099).
+
+The drift checks are **right** to demand it — the alternative is a spec that lags
+silently, which is what LAI-051 and LAI-061 exist to prevent. What is wrong is
+the *mechanism*: a task file carrying exact text, a round trip, a branch that is
+red between the halves, and verification only possible by one session applying
+the other's edit locally and reverting it. Builder-A described that as
+"a workaround rather than a workflow", which is right.
+
+**Decision: a task may authorise one session to edit specific, named things
+outside its area — but only where a drift check would otherwise force a red
+master.**
+
+- **Named, not broad.** Sections by number (`SPEC §4.5`), or a single exemption
+  entry — never a file, never a directory. "And whatever else is needed" grants
+  nothing, exactly as CLAUDE.md §1 already says.
+- **Recorded in the task**, so the crossing is auditable in the same place the
+  work is.
+- **Only for atomicity.** If the halves *can* land separately with master green,
+  they must — ownership is unchanged for everything else.
+
+**The limit, and why it is narrow.** LAI-092 needed no exception at all:
+`COLUMNS_NOT_IN_SPEC` already models "code ahead of spec" and self-expires, so
+the halves landed a commit apart with master green throughout. **That is the
+normal case and it must stay normal.** The exception is for the other shape —
+where an exemption is one the reviewer wants *gone in that commit*, so leaving it
+is not an option.
+
+**What this does not change.** `docs/` is still PM's and application code is still
+the builders'. This is a keyhole, opened by a named task, for a problem the
+checks create on purpose.

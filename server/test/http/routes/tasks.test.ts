@@ -212,3 +212,62 @@ describe('patch', () => {
     expect(body.assignee_id).toBeNull();
   });
 });
+
+/**
+ * LAI-092 over HTTP — the boundary rules, which are the route's to enforce.
+ */
+describe('acceptance criteria on the wire', () => {
+  it('accepts it on create and returns it', async () => {
+    const res = await post('/api/v1/projects/laika/tasks', {
+      title: 'With acceptance',
+      acceptance_md: 'Second claim returns 409.',
+    });
+
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { acceptance_md: string }).acceptance_md).toBe(
+      'Second claim returns 409.',
+    );
+  });
+
+  it('defaults to null rather than an empty string', () => {
+    return newTask('Quiet').then(async (created) => {
+      const fetched = (await (await req(`/api/v1/tasks/${created.id}`)).json()) as {
+        acceptance_md: string | null;
+      };
+      expect(fetched.acceptance_md).toBeNull();
+    });
+  });
+
+  it('accepts null on update to clear it, which is not the same as omitting it', async () => {
+    const created = await newTask('Clearable', { acceptance_md: 'set' });
+
+    const cleared = await req(`/api/v1/tasks/${created.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ acceptance_md: null }),
+    });
+
+    expect(cleared.status).toBe(200);
+    expect(((await cleared.json()) as { acceptance_md: string | null }).acceptance_md).toBeNull();
+  });
+
+  it('refuses an acceptance longer than the limit', async () => {
+    const res = await post('/api/v1/projects/laika/tasks', {
+      title: 'Too long',
+      acceptance_md: 'x'.repeat(10_001),
+    });
+
+    expect(res.status).toBe(422);
+  });
+
+  it('still refuses unknown fields beside it', async () => {
+    // The strict-object rule (§6.3) must not have been loosened to let the new
+    // field through.
+    const res = await post('/api/v1/projects/laika/tasks', {
+      title: 'Sneaky',
+      acceptance_md: 'fine',
+      acceptance: 'not a field',
+    });
+
+    expect(res.status).toBe(422);
+  });
+});

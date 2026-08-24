@@ -62,6 +62,11 @@ crossing into another area.
 if it names the exact files, one by one (LAI-001 does this for repo-root config).
 A task that says "and whatever else is needed" grants nothing.
 
+**A task may also authorise a *named* cross-area edit when a drift check demands
+atomicity** (D-033) — a SPEC section by number, or a single exemption entry;
+never a file, never a directory. Only where the two halves cannot land separately
+with `master` green. If they can, they must.
+
 **If you need a change outside your area, do not make it.** Write a task file in
 `.tasks/backlog/` describing the change, with the correct `area:`, and continue
 with what you can do without it. If it blocks you, add its id to your current

@@ -232,6 +232,7 @@ project role `viewer`.
 | `priority` | `p1` \| `p2` \| `p3`, default `p2` |
 | `assignee_id` | nullable FK `users` |
 | `sprint_id` | nullable FK `sprints` (§4.15) — unassigned means backlog, not "no sprint yet" |
+| `acceptance_md` | nullable — what *done* means for this task, in prose (LAI-092) |
 
 **`dependencies` means *blocked by*, and `blocks` is the reverse.** Both are on
 `TaskView`; they are never merged, because a task blocking three others and one
