@@ -964,3 +964,55 @@ headers, because advertising a budget where none applies misleads the caller.
 two decisions describe behaviour that already exists; they close the gap between
 what the code does and what the document claims, which is the gap that produced
 all three of these tasks in the first place.
+
+---
+
+## D-022 — `activity` nullability follows the type vocabulary; `system` is a third actor kind
+**Date:** 2026-08-24 · **Status:** accepted
+
+**In one line:** a null actor means "no person did this", enforced — not "somebody
+forgot to set it".
+
+**Context.** SPEC §4.8 marked only `task_id` nullable while the same section
+defines event types that cannot have a project (`token.created`,
+`token.revoked`, `unlisted.logged`, org-level `member.added`) or a human actor
+(`webhook.commit`, `webhook.received`, and every §11.6 cron job). The table as
+written made rows the table requires impossible to insert.
+
+Builder-A hit this implementing LAI-003, deviated to nullable, and flagged it in
+a source comment rather than quietly diverging — which is how it reached a
+decision instead of becoming folklore.
+
+**Decision.**
+
+1. `project_id` is **nullable**; org-scoped events have no project.
+2. `actor_kind` gains a third value: **`system`** — no human, meaning cron or an
+   inbound webhook.
+3. `actor_id` is **nullable if and only if `actor_kind = 'system'`**, enforced by
+   a database check constraint in both directions.
+
+**Rejected: a seeded system user.** Every event would then have a real actor and
+no query would need null handling, which is genuinely tidier. But it puts a fake
+row in `users` that appears in member lists, can in principle be invited,
+assigned work or given a token, and has to be seeded correctly by LAI-009's
+first-run transaction — a thing that must never be got wrong, forever, to avoid
+a null check. It also overloads `users` with something that is not a user.
+
+`actor_kind` already exists to classify who acted, and the UI already branches on
+it to badge agent actions. Adding a third case uses the mechanism that is there
+rather than inventing a second one.
+
+**Why the constraint matters more than the nullability.** Plain `actor_id
+NULL`-able would make a null ambiguous: system-authored, or a bug that failed to
+set the actor? For the table that feeds the audit trail, that ambiguity is the
+whole problem. Tying null to `actor_kind = 'system'` in both directions makes the
+schema answer the question instead of the reader guessing.
+
+**Consequences.** `ACTOR_KINDS` grows, the check constraint is new, and both need
+a migration — **LAI-044**. Anything reading `activity` must handle three actor
+kinds, and the UI needs a system presentation distinct from user and agent. The
+existing schema already has `project_id` and `actor_id` nullable, so that half is
+a documentation fix rather than a change.
+
+**Revisit when:** a fourth actor kind appears. Two is a distinction, three is a
+vocabulary, four suggests the wrong axis.

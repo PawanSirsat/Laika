@@ -255,13 +255,30 @@ finishes.
 | field | notes |
 | --- | --- |
 | `id` | ULID |
-| `org_id`, `project_id`, `task_id` (nullable) | |
-| `actor_id` | |
-| `actor_kind` | `user` (cookie) \| `agent` (token-authenticated) |
+| `org_id` | **not null** — every event belongs to the one org |
+| `project_id` | **nullable** — org-scoped events have no project (D-022) |
+| `task_id` | nullable |
+| `actor_id` | **nullable, and only when `actor_kind = 'system'`** (D-022) |
+| `actor_kind` | `user` (cookie) \| `agent` (token) \| `system` (no human — cron or webhook) |
 | `actor_token_id` | nullable — *which* token, for audit |
 | `type` | closed vocabulary, below |
 | `payload_json` | the before/after diff or details |
 | `created_at` | |
+
+**Nullability follows from the type vocabulary, not from convenience** (D-022).
+Applied literally, an all-not-null table would make events this same section
+requires impossible to write:
+
+- **No project**: `member.added` at org level, `member.role_changed`,
+  `token.created`, `token.revoked`, `unlisted.logged`.
+- **No human actor**: `webhook.commit`, `webhook.received`, and everything the
+  in-process cron writes (§11.6) — heartbeat pruning, stale-task flagging, invite
+  and meeting-review expiry.
+
+`actor_id IS NULL` is **not** a general allowance. A database check constraint
+ties it to `actor_kind = 'system'` in both directions, so a null actor always
+means "no person did this" and never "somebody forgot to set it". That
+distinction is the whole value of an audit table.
 
 **No updates, no deletes, ever** — no endpoint exists, the Drizzle helper module
 exposes no mutation path, and a test asserts attempts fail. This one table feeds
