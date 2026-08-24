@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-102
-status: review
+status: done
 started: 2026-08-24T05:26:25+05:30
 finished: 2026-08-24T05:31:13+05:30
+reviewed: 2026-08-24T06:20:00+05:30
 ---
 
 ## Goal
@@ -96,3 +97,56 @@ would exist for, so "remove the row" may be the better answer.
 failure is loud — the container will exit with `Invalid LAIKA_SECRET: "<unset>"`
 rather than starting misconfigured. Nothing else in `server/` needs to change for
 that half to land.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, **283 server tests** + 24 web.
+
+**The rename is complete with no alias**, which was the criterion most likely to
+be softened. The only surviving mentions of the old names are a comment
+explaining *why* the prefix exists, and two tests — `no longer reads the old
+SERVER_SECRET name` and `no longer reads the old PUBLIC_URL name` — that assert
+the alias's **absence**. Testing that something is gone is the only way "no
+fallback" stays true after the next refactor.
+
+`LAIKA_PUBLIC_URL` throws in production and defaults to `http://localhost:$PORT`
+elsewhere, exactly as specified. The secret's 32-character minimum and its
+redaction survived the move (LAI-024). `never falls back to ./data in production,
+even when /data is unwritable` is a case I did not ask for and would not have
+thought of.
+
+Wiring cookie `Secure` to an `https` `LAIKA_PUBLIC_URL` is also beyond the task
+and correct.
+
+### I broke the container, and this is not your defect
+
+`docker compose up` fails on `master` as of this merge. Verified by running the
+container's exact environment against the built server:
+
+```
+Invalid LAIKA_PUBLIC_URL: "<unset>". Expected a value in production —
+invite links and webhook URLs are built from it.
+```
+
+Compose sets `NODE_ENV=production`, `PORT`, `LAIKA_DB_PATH` and `LAIKA_SECRET`.
+It has never set `PUBLIC_URL`, because until this task nothing required it.
+
+**The cause is my sequencing note on this task**, which said to take LAI-032
+first because "the server tolerating a missing container var is a clearer failure
+than the reverse". That has the failure direction backwards. The risk was never
+the container passing a name the server ignores — that is harmless. It is the
+server *requiring* a name the container never set, which is fatal at boot. I
+reasoned about the rename and missed that I was also adding a **new required
+variable** in the same change.
+
+You could not have fixed it: `docker/` is Builder-B's under D-016, and this task
+scoped you to `server/`. The right behaviour was to do exactly what the task said,
+which you did.
+
+**LAI-033 is now urgent and has gained a criterion** — it must *add*
+`LAIKA_PUBLIC_URL` to compose, not merely rename what is there. As written it
+would not have fixed this, because there was no `PUBLIC_URL` in `docker/` to
+rename.
+
+**LAI-105 accepted as correctly filed**: `LAIKA_DISABLE_INVITE_ONLY` is in §11.7
+and read by nothing. That is the drift D-018 named, now with a task against it.
