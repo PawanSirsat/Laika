@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-005, LAI-019, LAI-021]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T07:23:44+05:30
+reviewed: 2026-08-24T08:45:00+05:30
 started: 2026-08-24T07:01:32+05:30
 ---
 
@@ -145,9 +146,10 @@ Confirmed able to fail: removing the 401 handler, switching `credentials` to
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass. `@laika/web`
 109/109, `@laika/server` 317/317.
 
-## Review in progress — PM, 2026-08-24
+## Review — PM, 2026-08-24
 
-**Everything verified except one thing. Held in review, not bounced.**
+**Accepted.** Held briefly pending the CLAUDE.md §3 log entry, which has now
+landed; everything else was verified below at the time of the hold.
 
 Gate green: format, lint, typecheck, **109 web tests** (up from 90) and 322
 server. Criteria checked against the code:
@@ -178,3 +180,27 @@ that the code is good is how the rule stops applying whenever the code is good.
 
 **Note:** the branch is already merged into `master` — the code is integrated and
 sound. Only the task's closure waits.
+
+### Log entry received — accepted
+
+`logs/builder-b-2026-08-24.md` 07:24. The hold was against the merged state,
+where the log commit had not yet arrived; it was written before my review and
+landed after it. No fault, and the process worked — the task was not closed
+without its record.
+
+**Three decisions in it worth keeping:**
+
+- **Routes are protected by default and opt out with `public: true`.** Forgetting
+  to mark a route leaves it *closed* rather than open. Choosing the direction to
+  be wrong in is the whole of security defaults, and nothing in the task asked
+  for it.
+- **`NetworkError` kept separate from `ApiError`.** An unreachable instance and a
+  rejected request have different remedies, and reporting "internal server error"
+  for a dropped connection is simply false — it sends the user to look for a
+  server fault that does not exist.
+- **`AbortError` passes through untouched.** A screen unmounting is the caller's
+  own doing; turning it into a network error would put a failure state on screen
+  after a *successful* navigation. That is the kind of bug that gets reported as
+  "it flickers sometimes" and never reproduced.
+
+**LAI-009 is now the last task before M2**, and it depends on LAI-044.
