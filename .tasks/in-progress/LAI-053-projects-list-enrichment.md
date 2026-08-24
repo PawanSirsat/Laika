@@ -2,11 +2,12 @@
 id: LAI-053
 title: Enrich GET /projects so the Projects screen can be built
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-011, LAI-108]
 discovered-from: LAI-010
-status: backlog
+started: 2026-08-24T21:32:10Z
+status: in-progress
 ---
 
 ## Goal
