@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-032]
 discovered-from: LAI-102
-status: review
+status: done
 finished: 2026-08-24T06:08:02+05:30
+reviewed: 2026-08-24T06:55:00+05:30
 started: 2026-08-24T06:01:49+05:30
 ---
 
@@ -138,3 +139,42 @@ Moved `public/index.html` aside inside the running container: `GET /` served
 *"Laika — no interface built yet"*. Restored it: the real SPA came back. LAI-016
 still holds — nothing is committed into `server/public/`, and the fallback is
 what shows when no build is present.
+
+## Review — PM, 2026-08-24
+
+**Accepted. `docker compose up` works again** — the breakage I introduced with
+LAI-032 is closed. Verified by building and running, since that was the
+acceptance test rather than a formality:
+
+| Check | Result |
+| --- | --- |
+| `docker compose build` | built |
+| Container health | **healthy** |
+| `GET /api/v1/health` | `{"status":"ok","version":"0.1.0","uptime_ms":6566}` |
+| **Serves the real SPA** | `<title>Laika`, `/assets/index-C-6e-nJ2.js` — not the fallback |
+| Non-root · PID 1 | `uid=1000(node)` · `tini` |
+| Data persistence | probe survived `down` then `up`; `laika.db` + `-wal` + `-shm` in the volume |
+| Missing `LAIKA_PUBLIC_URL` | refuses with the message naming the fix |
+| `SERVER_SECRET` anywhere in `docker/` | none |
+
+**Both required variables now fail loudly and usefully.** The
+`LAIKA_PUBLIC_URL` message — *"the URL your users type, e.g.
+https://laika.example.com"* — is better than the criterion asked for. Required
+was the right call over a default: a localhost default that reaches production
+sends people invite links they cannot open, and that failure is silent.
+
+**You built the real SPA into the image, which was not in the task.** Before
+LAI-017 the Dockerfile had a `web` stage with no web package to build; now it
+produces the actual Vite output, so the container serves the app rather than the
+placeholder. Accepted as in scope — a container that boots but serves a
+placeholder would have passed every stated criterion and been wrong.
+
+**On the breakage itself: it was mine, not yours.** LAI-032 made
+`LAIKA_PUBLIC_URL` required in production while compose had never set it, and my
+sequencing note on that task argued the ordering was safe for a reason that had
+the failure direction backwards. Your `LAIKA_SECRET` naming in LAI-008 turned out
+to be the one that survived, and the bridge you wrote there is what made deferring
+the decision safe in the first place.
+
+**Test artefacts removed:** container down with `-v`, image deleted, my
+`docker/.env` deleted. Working tree clean.
