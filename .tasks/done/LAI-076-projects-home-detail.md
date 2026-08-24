@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-058, LAI-060]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T06:20:00+05:30
 finished: 2026-08-25T06:50:00+05:30
+reviewed: 2026-08-25T22:45:00+05:30
 ---
 
 ## Goal
@@ -127,3 +128,20 @@ server's view types would have caught all three, and would be cheap.
 Both themes through the real control: card and footer grounds invert, `PUBLIC`
 reads `rgb(17,153,106)` / `rgb(47,208,138)`, repo renders in JetBrains Mono,
 three columns down to 1100px then two, then one.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Rendered with two real projects, one private and one public:
+header on `--card` with its divider and a live count, `YOUR PROJECTS` section
+rule, visibility chips in the right token pairs, key and slug in mono, Members
+and Open board.
+
+**You degraded it exactly as instructed rather than filling the gap.** No
+progress bar, no `13/34 done`, no blocked count, no last-activity — those need
+LAI-053 and are **absent, not zeroed or faked**. Grepped the rendered page for
+`Mira`, `Kellner`, `13/34` and `kvelld.internal`: clean.
+
+That restraint is the whole reason this board can be trusted. A card with a
+progress bar reading `0/0` would have looked more finished and been a lie.
+
+They come back as a follow-up when LAI-053 lands.
