@@ -35,6 +35,7 @@ import { type Db } from './db/client.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
+import { translateAuthResponse } from './http/auth-errors.ts';
 
 /**
  * Hash the fallback document's inline `<style>` block at startup so the policy
@@ -188,7 +189,20 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // rather than `route` so every method and sub-path reaches its handler.
   if (options.auth !== undefined) {
     const configuredAuth = options.auth;
-    app.on(['GET', 'POST'], `${AUTH_BASE_PATH}/*`, (c) => configuredAuth.handler(c.req.raw));
+
+    app.on(['GET', 'POST'], `${AUTH_BASE_PATH}/*`, async (c) => {
+      const response = await configuredAuth.handler(c.req.raw);
+
+      // Successes pass through untouched — they carry better-auth's session
+      // payload and `Set-Cookie`. Failures are re-emitted in the §6.3 envelope,
+      // because this handler bypasses `createErrorHandler` and a second error
+      // shape on one prefix is a second thing every client has to know
+      // (LAI-090).
+      return translateAuthResponse(response, {
+        publicUrl: options.publicUrl ?? '',
+        origin: c.req.header('Origin') ?? null,
+      });
+    });
   }
 
   app.use('*', createStaticHandler(staticOptions));
