@@ -2,11 +2,12 @@
 id: LAI-080
 title: The drift check has no way to say "specified, not yet built"
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-051]
 discovered-from: LAI-073
-status: backlog
+started: 2026-08-24T19:10:24Z
+status: in-progress
 ---
 
 ## Goal
