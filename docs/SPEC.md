@@ -422,13 +422,53 @@ those projects. A Viewer's token can never write, whatever its scope says.
 - **`updated_since=<unix-ms>`** on every list endpoint: rows changed at or after
   it, **including tombstones** `{ "id": "...", "deleted": true }` for
   soft-deletes. This is how an agent or a reconnecting SPA catches up cheaply.
-- **Errors**: `{ "error": { "code", "message", "details" } }` with codes
-  `bad_request`, `unauthorized`, `forbidden`, `not_found`, `conflict`,
-  `unprocessable`, `rate_limited`, `internal` → 400/401/403/404/409/422/429/500.
+- **Errors**: `{ "error": { "code", "message", "details" } }`. The vocabulary is
+  closed — a handler does not invent a code:
+
+  | code | status |
+  | --- | --- |
+  | `bad_request` | 400 |
+  | `unauthorized` | 401 |
+  | `forbidden` | 403 |
+  | `not_found` | 404 |
+  | `method_not_allowed` | 405 |
+  | `conflict` | 409 |
+  | `payload_too_large` | 413 |
+  | `unprocessable` | 422 |
+  | `rate_limited` | 429 |
+  | `internal` | 500 |
+
+  **`payload_too_large` and `method_not_allowed` are distinct codes, not folded
+  into `bad_request`** (D-021). Clients branch on `code`, not on status, and the
+  remedies differ: a too-large body means send less, a wrong method means call
+  differently, a malformed body means fix the JSON. Collapsing them would make
+  three different problems indistinguishable to the caller. `bodyLimit` is on
+  every route (§13.1), so 413 is routine behaviour rather than a corner case.
 - **Idempotency**: `POST` accepts `Idempotency-Key`; replays within 24h return
   the original response. Same key with a different body is `conflict`.
 - **Rate limits**: in-process token bucket — 120 req/min per token, 600/min per
-  session, 30/min for heartbeats. `429` with `Retry-After`.
+  session, 30/min for heartbeats. `429` with `Retry-After`, never below one
+  second.
+
+  **Writes share the general budget; there is no separate write limit** (D-021).
+  Per-token 120/min already bounds the case a write budget was meant to catch —
+  an agent looping on `update_status` — more tightly than 60/min writes would,
+  because a token cannot exceed 120 requests of *any* kind. A second bucket would
+  add machinery for a case the first already covers.
+
+  **Anonymous requests share one bucket, and the liveness probe and static assets
+  are exempt from limiting entirely.** A Docker `HEALTHCHECK` that receives a
+  `429` marks the container unhealthy and restarts it, turning a burst of
+  anonymous traffic into an outage; exempt paths therefore emit no rate headers
+  at all, since advertising a budget where none applies misleads the client.
+
+  The single shared anonymous bucket is a **deliberate limitation, not an
+  oversight**. The obvious improvement is a per-IP bucket, and behind a reverse
+  proxy that requires trusting `X-Forwarded-For` — which, done without knowing
+  which hop set it, lets any client forge its own identity and is worse than one
+  shared bucket. Laika is explicitly deployed behind Caddy or nginx (§11.7), so
+  this is not hypothetical. Changing it is a security decision with its own task
+  (LAI-030), not a tidy-up.
 - **Validation**: zod at the boundary; unknown body fields are rejected
   (`unprocessable`), not silently dropped. Inferred types are the handler's
   argument types.

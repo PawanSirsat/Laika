@@ -2,11 +2,14 @@
 id: LAI-029
 title: The per-write rate limit exists in neither the spec nor the code
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p2
 depends-on: []
 discovered-from: LAI-006
-status: backlog
+status: done
+started: 2026-08-24T06:25:00+05:30
+finished: 2026-08-24T06:30:00+05:30
+reviewed: 2026-08-24T06:30:00+05:30
 ---
 
 ## Goal
@@ -21,9 +24,9 @@ the review. Decide whether it should exist.
 
 ## Acceptance criteria
 
-- [ ] A decision recorded: either §6.3 gains a write budget, or it states
+- [x] A decision recorded: either §6.3 gains a write budget, or it states
       explicitly that writes share the general budget and why.
-- [ ] If a write limit is added, a follow-up task implements it. If not, LAI-006's
+- [x] If a write limit is added, a follow-up task implements it. If not, LAI-006's
       already-corrected criterion stands and no code changes.
 
 ## Notes / context
@@ -42,3 +45,22 @@ than 60/min writes would have, since a token cannot exceed 120 of *anything*.
 scenario the write limit was invented for. Recording it rather than deleting it
 quietly, because "we considered it and here is why not" is worth more later than
 silence.
+
+---
+
+## Resolution — PM, 2026-08-24
+
+**Decided: no separate write budget.** SPEC §6.3 now states that writes share the
+general budget and why. Recorded as **D-021.2**.
+
+Per-token 120/min already bounds the case the write limit was invented for — an
+agent looping on `update_status` — more tightly than 60/min writes would, since a
+token cannot exceed 120 requests of *any* kind. A second bucket is machinery for
+a case the first already covers.
+
+**The counter-argument is recorded rather than dismissed**, because it is good:
+writes hit SQLite's single writer (D-001) and each one writes an `activity` row,
+so the write path is the scarce resource and it is the one without its own limit.
+If write contention ever appears, D-021 names this as the first thing to revisit.
+
+No code change — the implementation already matches.

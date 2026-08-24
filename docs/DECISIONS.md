@@ -903,3 +903,64 @@ a PM who will edit the spec next.
 
 **Revisit when:** never. The measurement half of this work was useful and should
 continue; the deciding half was not mine.
+
+---
+
+## D-021 — Three §6.3 API-contract decisions
+**Date:** 2026-08-24 · **Status:** accepted
+
+Three findings from three different tasks all landed on SPEC §6.3. Settled
+together because they edit one section and deciding them separately would have
+meant writing that section three times.
+
+### 1. `payload_too_large` (413) and `method_not_allowed` (405) are their own codes
+
+**Not folded into `bad_request`.** The envelope gives clients a `code` precisely
+so they branch on meaning rather than status, and the three remedies are
+different: a too-large body means send less, a wrong method means call
+differently, a malformed body means fix the JSON. Collapsing them makes three
+problems indistinguishable to the caller and pushes the mapping into each
+handler's judgement — which is what a closed vocabulary exists to prevent.
+
+413 is not a corner case: §13.1 puts `bodyLimit` on every route, so it is the
+documented behaviour of every endpoint. 405 arrives once routes declare methods.
+
+*From LAI-022, filed by Builder-A during LAI-002.*
+
+### 2. Writes share the general rate budget — no separate write limit
+
+LAI-006's task text called for "60/min writes" and §6.3 never had it; the
+implementation followed the spec (D-011) and the gap surfaced at review.
+
+**Not restoring it.** The case a write budget was invented for is an agent
+looping on `update_status`, and per-token 120/min already bounds that *more*
+tightly, because a token cannot exceed 120 requests of any kind. A second bucket
+adds machinery for a case the first already covers.
+
+The argument the other way is real and worth recording: writes hit SQLite's
+single writer (D-001) and each one writes an `activity` row, so the write path is
+the scarce resource and it is the one without its own limit. If write contention
+ever shows up, this is the first thing to revisit.
+
+*From LAI-029.*
+
+### 3. Anonymous traffic shares one bucket, deliberately
+
+Documented as a limitation rather than left to look like an oversight. The
+obvious improvement — per-IP buckets — requires trusting `X-Forwarded-For` behind
+a reverse proxy, and trusting it without knowing which hop set it lets any client
+forge its own identity. That is worse than one shared bucket, and Laika is
+explicitly deployed behind Caddy or nginx (§11.7).
+
+The liveness probe and static assets are exempt from limiting entirely: a Docker
+`HEALTHCHECK` receiving `429` marks the container unhealthy and restarts it,
+turning a burst of anonymous traffic into an outage. Exempt paths emit no rate
+headers, because advertising a budget where none applies misleads the caller.
+
+*From LAI-104, the `docs/` half of LAI-030 that Builder-A could not edit.*
+
+**Consequences.** The error vocabulary grows from eight codes to ten, so
+`server/src/http/errors.ts` and its tests need updating — **LAI-042**. The other
+two decisions describe behaviour that already exists; they close the gap between
+what the code does and what the document claims, which is the gap that produced
+all three of these tasks in the first place.

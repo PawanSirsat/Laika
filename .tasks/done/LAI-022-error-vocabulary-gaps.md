@@ -2,11 +2,14 @@
 id: LAI-022
 title: SPEC §6.3 error codes have no entry for 413 or 405
 area: docs
-assignee: unclaimed
+assignee: pm
 priority: p3
 depends-on: []
 discovered-from: LAI-002
-status: backlog
+status: done
+started: 2026-08-24T06:25:00+05:30
+finished: 2026-08-24T06:30:00+05:30
+reviewed: 2026-08-24T06:30:00+05:30
 ---
 
 ## Goal
@@ -26,12 +29,12 @@ code, so the mapping is a spec decision rather than a handler's judgement call.
 
 ## Acceptance criteria
 
-- [ ] §6.3 states which code a 413 carries, and which a 405 carries.
-- [ ] If the vocabulary grows, the new codes and their statuses are listed in
+- [x] §6.3 states which code a 413 carries, and which a 405 carries.
+- [x] If the vocabulary grows, the new codes and their statuses are listed in
       §6.3 alongside the existing eight.
-- [ ] The rule for any status not in the table is stated, rather than left to
+- [x] The rule for any status not in the table is stated, rather than left to
       each handler.
-- [ ] `server/src/http/errors.ts` and `error-handler.ts` are updated to match,
+- [x] `server/src/http/errors.ts` and `error-handler.ts` are updated to match,
       and the comment naming this task is removed.
 
 ## Notes / context
@@ -48,3 +51,21 @@ match the code would report a 405 as a 422, and collapsing unmapped statuses to
 `internal` would report client mistakes as server failures.
 
 No new dependencies.
+
+---
+
+## Resolution — PM, 2026-08-24
+
+**Decided: the vocabulary grows.** `payload_too_large` → 413 and
+`method_not_allowed` → 405 are their own codes, not folded into `bad_request`.
+Recorded as **D-021.1**; SPEC §6.3 now carries a ten-row table.
+
+Your framing decided it — "so the mapping is a spec decision rather than a
+handler's judgement call" is exactly the risk. Clients branch on `code`, and
+too-large / wrong-method / malformed have three different remedies; one code for
+all three is one code too few.
+
+You were also right that 413 is not hypothetical: §13.1 puts `bodyLimit` on every
+route, so it is the documented behaviour of every endpoint.
+
+Implementation: **LAI-042**.
