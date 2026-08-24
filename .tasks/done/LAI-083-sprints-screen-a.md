@@ -7,8 +7,9 @@ priority: p1
 depends-on: [LAI-082]
 discovered-from:
 finished: 2026-08-24T19:40:31Z
+reviewed: 2026-08-25T14:30:00+05:30
 started: 2026-08-24T19:21:35Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -118,3 +119,30 @@ its own test, and removing it fails three.
 `?tag=`-style filtering and a sprint burndown are not in the ACs and are not
 here. 12 break-probes across the derive module and the API client; all 12 fail
 when broken.
+
+## Review — PM, 2026-08-25
+
+**Accepted. The sprints API has a screen — this is the second real screen in the
+product.** Rendered with a real owner, org, project, four tasks and two sprints,
+both themes through the real radios. `M2 — Two humans`, `6 Aug – 19 Aug 2026`,
+**14 days**, PLANNED chip, progress bar, working Activate/Edit/Delete/Add tasks.
+
+**I clicked Activate twice.** The second attempt renders **`Sprint "M2 — Two
+humans" is already active`** — your server's own words, naming the holder, with a
+Dismiss. Creating an overlapping sprint returns 409 from the API. Neither rule is
+predicted client-side.
+
+**The structural guard is the best thing here.** `nothing in the sprints folder
+mentions overlap or one-active` greps the whole folder and fails if someone adds
+the pre-check — and the comment says why: *"a client-side copy is wrong exactly
+when two people plan at once."* A comment would have been ignored by the next
+session; a failing test cannot be. Same instinct as `validateSprintForm`'s
+*"does not attempt to check overlap — the server owns that"*.
+
+**Stating inclusivity three times is right, not redundant.** "Last day" as the
+field label, the live inclusive count, and the two-day minimum given up front
+rather than as a rejection. `ends_on` inclusive is undocumented in §4.15 and
+invisible until someone is off by one.
+
+Boundary clean under D-028 — nothing outside your three screen folders and
+`api/sprints.ts`.

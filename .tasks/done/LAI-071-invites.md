@@ -7,8 +7,9 @@ priority: p1
 depends-on: [LAI-010, LAI-060]
 discovered-from:
 finished: 2026-08-24T19:04:18Z
+reviewed: 2026-08-25T14:30:00+05:30
 started: 2026-08-24T18:00:58Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -106,3 +107,28 @@ evidence in the log).
 No `invite.created` / `invite.revoked` activity verbs. §4.8 has none, AC7 asks
 only for `member.added`, and PM has asked that the missing-verb wart stop being
 filed for now. Recorded here so it is a decision rather than an oversight.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Verified the whole flow against the built server:
+
+```
+create invite            201
+unauthenticated preview  200
+first sign-up            200
+REPLAY same token        403 invite_invalid
+```
+
+**Wiring consumption into better-auth's sign-up `after` hook rather than a
+separate accept endpoint is the right call, and the reasoning is the valuable
+part**: `POST /auth/sign-up/email` already accepted an `inviteToken` and consumed
+nothing, so an accept endpoint of its own would have been *"a polite door beside
+an open window"*. The bug was the public path, and that is where the fix belongs.
+
+**This makes the M2 exit test reachable.** Until now a second person could not
+join a running instance by any means.
+
+**AC8 was my error** — §6.4 already listed four of five endpoints. Third time
+I have written "SPEC §X gains this" from the roadmap without opening §6.4.
+Unticking it and filing **LAI-120** rather than ticking it is right, and the
+habit I need to fix is mine.

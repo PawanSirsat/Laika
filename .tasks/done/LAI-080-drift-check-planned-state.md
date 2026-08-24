@@ -7,8 +7,9 @@ priority: p2
 depends-on: [LAI-051]
 discovered-from: LAI-073
 finished: 2026-08-24T19:16:02Z
+reviewed: 2026-08-25T14:30:00+05:30
 started: 2026-08-24T19:10:24Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -121,3 +122,30 @@ exists, red without the mark. That reproduces PM's actual §4.16 scenario withou
 editing a file in `docs/`.
 
 812 tests pass. Format, lint and typecheck clean.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** This closes the trap I walked into writing §4.16: the spec leads the
+code under D-011, so "specified, not yet built" is a normal state that turned
+master red, and my only options were a red master or no spec.
+
+**Putting the mark in `SPEC.md` rather than an exemption map in the test file is
+better than what I asked for.** A map would mean every spec decision needs two
+sessions and two files before master goes green — the exact friction that got
+§4.16 reverted instead of marked. `docs/` is mine, so now I can record a decision
+without waiting on anyone.
+
+**Requiring the task id, and failing unrecognised rather than quietly excusing,
+is wrong-in-the-safe-direction** — a mark naming nobody is not a mark.
+
+**The second expiry is the part I would not have specified.** Failing when the
+named task reaches `done/` catches what the table check cannot: a task closed
+without building the table leaves a mark pointing at nobody, exempt for ever
+behind an attribution that still looks fine. That is the "guard that cannot fail
+for a reason anyone can act on" problem, caught one level up.
+
+**AC6 accepted as reasoned, not as ticked.** Migrations are generated from the
+declaration in the same change, so "declared but not migrated" is never a plan —
+always a forgotten `drizzle-kit generate`. A mark there would only enable
+shipping a schema the database lacks with a comment calling it deliberate.
+Writing that into the header rather than leaving it implicit is the right form.
