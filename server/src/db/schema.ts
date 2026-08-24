@@ -318,13 +318,17 @@ export const comments = sqliteTable(
  * migration installs triggers that abort either statement outright — see
  * `migrations/` and `test/db/activity.test.ts`.
  *
- * **Deviation from §4.8, flagged for review (LAI-020).** The section marks only
- * `task_id` nullable, but four of the activity types it defines are not
- * project-scoped (`token.created`, `token.revoked`, `unlisted.logged`,
- * `member.added` at org level) and some are not user-authored (`webhook.commit`,
- * and the cron jobs of §11.6). Keeping `project_id` and `actor_id` NOT NULL would
- * make rows the same section requires impossible to write, so both are nullable
- * here. `org_id` stays NOT NULL — every event belongs to the one org.
+ * **Nullability follows the type vocabulary (D-022).** §4.8 originally marked
+ * only `task_id` nullable, which made rows the same section requires impossible
+ * to insert: four of its event types have no project (`token.created`,
+ * `token.revoked`, `unlisted.logged`, org-level `member.added`) and several have
+ * no human actor (`webhook.commit`, `webhook.received`, every §11.6 cron job).
+ *
+ * So `project_id` and `actor_id` are nullable, and — the part that matters more —
+ * `actor_id IS NULL` **if and only if** `actor_kind = 'system'`. Without the
+ * biconditional a null is ambiguous: system-authored, or a bug that failed to set
+ * the actor? For the table that feeds the audit trail, that ambiguity is the
+ * whole problem. `org_id` stays NOT NULL; every event belongs to the one org.
  */
 export const activity = sqliteTable(
   'activity',
@@ -352,6 +356,9 @@ export const activity = sqliteTable(
     index('activity_actor_id_idx').on(t.actorId),
     check('activity_actor_kind_check', oneOf('actor_kind', ACTOR_KINDS)),
     check('activity_type_check', oneOf('type', ACTIVITY_TYPES)),
+    // D-022, both directions: a system event has no actor, and a non-system
+    // event must have one. Either half alone leaves a null meaning two things.
+    check('activity_system_actor_check', sql.raw("(actor_id IS NULL) = (actor_kind = 'system')")),
   ],
 );
 
