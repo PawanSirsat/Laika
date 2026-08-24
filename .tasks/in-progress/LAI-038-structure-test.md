@@ -2,11 +2,12 @@
 id: LAI-038
 title: structure.test.ts — enforce naming and test-mirroring
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-037]
 discovered-from: LAI-036
-status: backlog
+status: in-progress
+started: 2026-08-24T06:26:26+05:30
 ---
 
 ## Goal
