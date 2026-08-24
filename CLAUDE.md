@@ -22,14 +22,17 @@ If you do not know which session you are, stop and ask. Do not guess.
 | **Builder-A** | `server/` **except `server/web/`** | `server/web/`, `plugin/`, `cli/`, `docker/`, `docs/`, other sessions' logs |
 | **Builder-B** | `server/web/`, `plugin/`, `cli/`, `docker/` | the rest of `server/`, `docs/`, other sessions' logs |
 
-**`server/web/` is the frontend and belongs to Builder-B** (D-016). So are the
-`WEB_*` maps in `server/test/tooling/structure.test.ts` (D-026) — ownership
-follows what a section describes, not the directory the file sits in. The rest of
-that file is Builder-A's. Everything
+**`server/web/` is the frontend and belongs to Builder-B** (D-016). Everything
 else under `server/` — API, database, policy, MCP — is Builder-A's. The split is
 API versus UI, not directory depth: Builder-B never touches `server/src/`, and
 Builder-A never touches `server/web/`. `server/public/` is build output and
 belongs to nobody; it is gitignored (LAI-016).
+
+One file is shared. The **`WEB_*` maps** in
+`server/test/tooling/structure.test.ts` are **Builder-B's** (D-026); the rest of
+that file is Builder-A's. Ownership there follows what a section *describes*, not
+the directory the file sits in — the same principle D-016 settled for
+`server/web/`.
 
 Every session may edit its own log file and move its own task files, and nothing
 else outside the table.
