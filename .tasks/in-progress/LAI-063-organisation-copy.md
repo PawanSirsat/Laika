@@ -2,11 +2,12 @@
 id: LAI-063
 title: The Organisation screen says the instance has no owner
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T08:15:00+05:30
 ---
 
 ## Goal
