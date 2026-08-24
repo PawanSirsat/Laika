@@ -99,6 +99,19 @@ role `viewer` — no escalation via project assignment, enforced in code.
 | Generate own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
 | List / revoke **anyone's** token | ✓ | ✓ | — | — |
 | Export audit log | ✓ | ✓ | — | — |
+
+**Reading the org-wide activity feed follows *Export audit log*.** Rows with
+`project_id IS NULL` — `token.created`, `member.role_changed`, `unlisted.logged`,
+`org.created` — **are** the audit log, read live rather than exported, so they
+answer to the same cell. Project-scoped rows follow `project.read` instead, which
+is the rule that governs reading the same events over REST: a stream that showed
+more than the REST API would be a second, weaker permission system (§11.5).
+
+**Deliberately not a separate cell.** Adding one would mean a new action whose
+only definition is "the same people as Export audit log", and two cells that must
+be kept in step by hand. If the two ever need to differ — a Member who may watch
+the feed but not export it — that is the moment to split them, and the split will
+be obvious because someone will be asking for it.
 | Configure webhooks | ✓ | ✓ | — | — |
 
 ### 3.2 Project-level permission matrix
@@ -219,6 +232,16 @@ project role `viewer`.
 | `priority` | `p1` \| `p2` \| `p3`, default `p2` |
 | `assignee_id` | nullable FK `users` |
 | `sprint_id` | nullable FK `sprints` (§4.15) — unassigned means backlog, not "no sprint yet" |
+
+**`dependencies` means *blocked by*, and `blocks` is the reverse.** Both are on
+`TaskView`; they are never merged, because a task blocking three others and one
+blocked by three are the same shape with opposite meanings. **Readiness depends
+only on `dependencies`** — never on what a task blocks (§4.5).
+
+The name `dependencies` predates `blocks` and no longer says which direction it
+is. Renaming it to `blocked_by` is a breaking wire change and is filed as
+**LAI-099**, to land **before M3** — that is when tokens ship and agents outside
+this repo start reading the API, which is the last moment the rename is cheap.
 | `created_by` | FK `users` |
 | `created_via` | `web` \| `mcp` \| `api` \| `webhook` \| `meeting` |
 | `discovered_from` | nullable self-FK |
@@ -514,9 +537,12 @@ GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled o
        └ { setup_required, system: { database, migrations_applied, smtp_configured } }
 GET    /api/v1/me
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
-GET    /api/v1/users                         PATCH /api/v1/users/:id (role, deactivate — admin+)
+GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
+                                             cursor is (name, id) — a directory reads alphabetically
+PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
+DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
@@ -946,10 +972,61 @@ due dates remain a §1.1 non-goal specifically to protect that boundary
 ### 11.5 Live updates — SSE
 
 `GET /api/v1/events` (D-003). One `text/event-stream` per client, filtered
-server-side to the projects that actor may see, emitting `activity` rows. Each
-event carries a monotonic id; on reconnect the client sends `Last-Event-ID` and,
-if the gap is too large, falls back to `?updated_since=` (§6.3). Comment frame
-every 25s to survive proxies.
+server-side to the projects that actor may see, emitting `activity` rows.
+`?project=<slug>` narrows it further.
+
+#### The wire format
+
+Written down because it was invented in the implementation and existed only
+there — D-011 makes the spec authoritative, and an undocumented format is not.
+`server/test/http/routes/events.test.ts` asserts every clause below.
+
+**Activity frames are named after the §4.8 type** — `event: task.created`. A
+client uses `addEventListener` per type, so **`onmessage` never fires**. That
+trade is deliberate: it lets a client subscribe to one kind of change rather than
+switching inside a single handler, and it is the single thing most likely to cost
+an afternoon if unstated.
+
+**Control frames use a name with no dot** — `ready`, `gap`, `closing`. Every name
+in §4.8's closed vocabulary contains one, so the two can never collide and a
+client can tell them apart without a list.
+
+**Only activity frames carry `id:`.** A control frame is not a position in the
+log and must never move the client's resume point.
+
+| Frame | When | Body |
+| --- | --- | --- |
+| `ready` | first, always | `{ seq, project_id }` — where the stream is starting |
+| `<§4.8 type>` | an activity row the actor may see | the row, §6.3-cased, with `actor_kind` |
+| `gap` | the client asked to resume from too far back | `{ reason, missed, limit, updated_since }` |
+| `closing` | graceful shutdown (LAI-002) | `{ reason: 'server_shutdown' }` |
+
+**Resuming.** No `Last-Event-ID` starts at the head and replays nothing — a page
+that has just loaded its state over REST does not want it replayed at it. With
+one, the server replays what was missed, up to **500 rows** (`MAX_REPLAY`). Past
+that it sends `gap` with the exact `?updated_since=` value to catch up with
+(§6.3) and then goes live. **The limit is a memory bound as much as a policy
+one**: every replayed row is buffered until the client reads it, so an unbounded
+replay is an unbounded allocation triggered by a header the client controls.
+
+An id from *ahead* of the log — a restored backup, or a client that kept an id
+across a database replacement — returns `gap` with `reason: unknown_last_event_id`
+rather than pretending the client is up to date.
+
+**Keepalive** is a comment frame every **25 seconds**, so a proxy does not call
+an idle stream dead. The server sends `retry: 3000` once, on the first frame,
+rather than trusting every client's default.
+
+**Backpressure.** At **1000** unwritten frames the connection is dropped; the
+client reconnects with its last id and misses nothing. A paused tab is
+disconnected rather than buffered indefinitely.
+
+**`closing` means a deploy, not a fault.** A client should reconnect rather than
+show an error.
+
+**An open stream re-reads its actor.** Streams outlive role changes, so a
+demotion or deactivation takes effect on the next batch — without this it is the
+one place in the API where a permission change would not apply.
 
 ### 11.6 Scheduled work — in-process cron
 

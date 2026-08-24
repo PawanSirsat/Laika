@@ -6,7 +6,7 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T05:10:00+05:30
 ---
 
@@ -109,3 +109,18 @@ unaffected — this changes no styling.
 **Found while testing, not mine:** Builder-A's sprints screen renders its error
 state with **no retry**, so a reader who hits it has no way forward without a
 reload. Worth a task.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** The app can no longer sit on a skeleton for ever. The setup-gate
+409 is handled in the shared session layer, so a tab open across an instance
+reset lands on first boot rather than a dead grey screen — which is exactly how
+the owner found it.
+
+Handling it **globally rather than per screen** is the right call: each screen
+owns its own fetch, so fixing `use-sprints` would have left the same hole in
+every other screen.
+
+The ceiling matters as much as the 409. **A spinner that never resolves says
+"data is coming" and means "this will never load"** — the reader waits instead of
+acting, which is the most expensive kind of wrong.

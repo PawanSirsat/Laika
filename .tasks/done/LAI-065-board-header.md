@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-049]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T03:15:00+05:30
 finished: 2026-08-25T04:05:00+05:30
+reviewed: 2026-08-25T19:00:00+05:30
 ---
 
 ## Goal
@@ -107,3 +108,16 @@ Search → `1 of 4`, then `0 of 4`, then clears. `/` focuses search from the pag
 and **does not** steal the key from a focused field. Project named from the API
 (`Laika Core`, slug beneath). Board/List toggle, all three filters and Refresh
 all still present. Both themes through the real radios.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** There is now a way to create a task from the UI, which there was
+not since LAI-011 shipped the endpoint. Search with the `/` hint inside the
+field, project context, priority cycle, Board/List.
+
+**I was wrong about `Agent work` and you were right to build it.** I said it
+needed `created_via` filtering that did not exist. `created_via` ships on every
+task and `mcp` is what an agent writes through — so the filter is **real**, not
+sample data, and the comment says so at the point someone would doubt it.
+Filtering client-side over the loaded page is the same honest compromise as
+search.

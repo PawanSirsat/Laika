@@ -3,7 +3,12 @@ import type Database from 'better-sqlite3';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
-import { addDependency, DependencyError, directDependencies } from '../db/dependencies.ts';
+import {
+  addDependency,
+  dependencyEdges,
+  DependencyError,
+  type DependencyEdges,
+} from '../db/dependencies.ts';
 import { type TaskPriority, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
@@ -38,29 +43,75 @@ export interface TaskView {
   created_via: string;
   discovered_from: string | null;
   ready: boolean;
+  /**
+   * Ids this task is **blocked by** — the forward edge of §4.6.
+   *
+   * Named `dependencies` rather than `blocked_by` because that is the wire
+   * contract clients already read; renaming it is a breaking change and belongs
+   * in its own task, not smuggled in beside a new field. `blocks` below is the
+   * other direction and they are deliberately not merged.
+   */
   dependencies: string[];
+  /**
+   * Ids this task **blocks** — the reverse edge, read through §4.13's
+   * `task_dependencies(depends_on_task_id)` index (LAI-091).
+   *
+   * The opposite meaning to `dependencies`, and the question that makes someone
+   * go and unblock other people. A task holding up three others used to show
+   * nothing at all.
+   */
+  blocks: string[];
   created_at: number;
   updated_at: number;
 }
 
 type TaskRow = typeof tasks.$inferSelect;
 
-/** Statuses of everything a task depends on, for the §4.5 readiness rule. */
-function dependencyStatuses(db: Db, taskId: string): TaskStatus[] {
-  const ids = directDependencies(db, taskId);
-  if (ids.length === 0) return [];
-
-  return db
-    .select({ status: tasks.status })
-    .from(tasks)
-    .where(inArray(tasks.id, ids))
-    .all()
-    .map((r) => r.status);
+/**
+ * Everything a page of task views needs from other tables, in a fixed number of
+ * queries rather than a number that grows with the page (LAI-091).
+ *
+ * Before this, `toView` read one task's dependencies and then their statuses,
+ * per row — so a 50-task board issued 101 queries to render. It is now three,
+ * whatever the page size: the tasks, both dependency directions, and the
+ * statuses of everything referenced.
+ */
+interface ViewContext {
+  readonly edges: DependencyEdges;
+  /** Status of every task named by an edge, for the §4.5 readiness rule. */
+  readonly statuses: ReadonlyMap<string, TaskStatus>;
 }
 
-function toView(db: Db, row: TaskRow, prefix: string): TaskView {
-  const deps = directDependencies(db, row.id);
-  const statuses = deps.length === 0 ? [] : dependencyStatuses(db, row.id);
+function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
+  const edges = dependencyEdges(
+    db,
+    rows.map((row) => row.id),
+  );
+
+  // Only the blocked-by side is needed: readiness depends on what blocks you and
+  // never on what you block. Loading the other side's statuses would be work
+  // that no rule reads.
+  const referenced = [...new Set([...edges.blockedBy.values()].flat())];
+
+  const statuses = new Map<string, TaskStatus>(
+    referenced.length === 0
+      ? []
+      : db
+          .select({ id: tasks.id, status: tasks.status })
+          .from(tasks)
+          .where(inArray(tasks.id, referenced))
+          .all()
+          .map((r) => [r.id, r.status] as const),
+  );
+
+  return { edges, statuses };
+}
+
+function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
+  const deps = context.edges.blockedBy.get(row.id) ?? [];
+  const statuses = deps
+    .map((id) => context.statuses.get(id))
+    .filter((status): status is TaskStatus => status !== undefined);
 
   return {
     id: row.id,
@@ -77,15 +128,24 @@ function toView(db: Db, row: TaskRow, prefix: string): TaskView {
     created_by: row.createdBy,
     created_via: row.createdVia,
     discovered_from: row.discoveredFrom,
+    // §4.5's rule, unchanged by LAI-091: readiness is a function of what blocks
+    // this task. `blocks` is deliberately not an input — a task holding up ten
+    // others is no less ready to be picked up itself.
     ready: isReady({
       status: row.status,
       assigneeId: row.assigneeId,
       dependencyStatuses: statuses,
     }),
     dependencies: deps,
+    blocks: context.edges.blocks.get(row.id) ?? [],
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
+}
+
+/** One task's view, loading only what that task needs. */
+function viewOne(db: Db, row: TaskRow, prefix: string): TaskView {
+  return toView(row, prefix, loadViewContext(db, [row]));
 }
 
 /** Load a task and the project it belongs to, or 404. */
@@ -106,7 +166,7 @@ export function getTask(db: Db, actor: ResolvedActor, taskId: string): TaskView 
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
 
-  return toView(db, task, project.prefix);
+  return viewOne(db, task, project.prefix);
 }
 
 export interface CreateTaskInput {
@@ -168,7 +228,7 @@ export function createTask(
       now,
     });
 
-    return toView(db, db.select().from(tasks).where(eq(tasks.id, id)).get()!, project.prefix);
+    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, id)).get()!, project.prefix);
   });
 }
 
@@ -230,7 +290,9 @@ export function listTasks(
     .orderBy(asc(tasks.updatedAt), asc(tasks.id))
     .all();
 
-  const views = rows.map((row) => toView(db, row, project.prefix));
+  // One context for the whole page — the point of LAI-091's batching.
+  const context = loadViewContext(db, rows);
+  const views = rows.map((row) => toView(row, project.prefix, context));
 
   // `ready` is derived, so it cannot be a SQL predicate without duplicating the
   // rule (§4.5). Filtering after the query keeps one definition of readiness.
@@ -276,7 +338,7 @@ export function updateTask(
     changes.assigneeId = input.assignee_id;
   }
 
-  if (Object.keys(changes).length === 0) return toView(db, task, project.prefix);
+  if (Object.keys(changes).length === 0) return viewOne(db, task, project.prefix);
 
   db.update(tasks)
     .set({ ...changes, updatedAt: now })
@@ -298,7 +360,7 @@ export function updateTask(
     now,
   });
 
-  return toView(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+  return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
 }
 
 /**
@@ -349,7 +411,7 @@ export function claimTask(
       now,
     });
 
-    return toView(db, after, project.prefix);
+    return viewOne(db, after, project.prefix);
   });
 }
 
@@ -402,7 +464,7 @@ export function changeStatus(
     now,
   });
 
-  return toView(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+  return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
 }
 
 export function addTaskDependency(

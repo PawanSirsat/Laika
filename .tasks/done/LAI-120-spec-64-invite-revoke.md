@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p3
 depends-on: [LAI-071]
 discovered-from: LAI-071
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -49,3 +49,10 @@ Related: LAI-080 is about "specified, not yet built" turning the drift check red
 This is the mirror case — built, not yet specified — and it does **not** turn
 anything red today, because LAI-051 checks §4 against `schema.ts` and nothing
 checks §6.4 against the routes. That gap may be worth its own task.
+
+## Done — PM, 2026-08-25
+
+§6.4 now lists it, read off the mounted routes rather than the roadmap. `/users`
+carries `limit`, `cursor`, `updated_since` and `include_inactive`, with a note
+that the cursor is `(name, id)` — a directory reads alphabetically, and a client
+paging it needs to know the order is not creation time.

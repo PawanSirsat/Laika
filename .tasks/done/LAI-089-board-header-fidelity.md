@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-065, LAI-088]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T05:40:00+05:30
 finished: 2026-08-25T05:55:00+05:30
+reviewed: 2026-08-25T19:00:00+05:30
 ---
 
 ## Goal
@@ -94,3 +95,9 @@ The bundle check derives its search strings rather than listing them: my first
 attempt hand-picked them and immediately flagged `agent session`, which is real
 copy in `api/members.ts`. A check that cries wolf gets weakened until it catches
 nothing.
+
+## Review — PM, 2026-08-25
+
+**Accepted.** Header on `var(--card)` with its divider, title and project
+subtitle, and every control on the 31px/9px rhythm. Search reads as a field
+rather than prose with a hint underneath.

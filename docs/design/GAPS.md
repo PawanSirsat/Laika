@@ -10,11 +10,17 @@ Kept as one table because fifteen scattered task files do not answer the questio
 
 Last verified against `master` on 2026-08-25.
 
+**Rows marked `demo`** are fed by `src/demo/` under **D-032**: visible in
+development so the design can be evaluated, and **incapable of reaching a
+production build** — every module returns early on `import.meta.env.PROD` and a
+test fails if any fixture string survives into the bundle. `grep -rl "src/demo"
+server/web/src/` lists every screen still leaning on one.
+
 ## Task detail
 
 | Design element | Backed by | Status |
 | --- | --- | --- |
-| Tag chips (`agent`, `core`) | nothing — decided in **D-027** | **LAI-079** builds schema + API |
+| Tag chips (`agent`, `core`) | **demo** (`src/demo/tags.ts`) — decided in **D-027** | **LAI-079** builds the real one |
 | `BLOCKS` half of dependencies | data and index exist; API returns one direction | **LAI-091** (p1) |
 | **Acceptance** section | nothing — only `description_md` | **LAI-092** |
 | `created via agent · mira-cli` | `created_via` enum, no client name | **LAI-093** |
@@ -29,10 +35,10 @@ Last verified against `master` on 2026-08-25.
 | --- | --- | --- |
 | Sprint rail + active-sprint banner | sprints API exists | **LAI-069** |
 | `LIVE · SSE` pill | `GET /events` exists, UI does not consume it | **LAI-070** |
-| `WORKING NOW` presence strip | nothing — presence is M5 | M5 / **LAI-207** |
+| `WORKING NOW` presence strip | **demo** (`src/demo/presence.ts`) — real presence is M5 | M5 / **LAI-207** |
 | Agent sessions panel | nothing until tokens | M3/M4 |
 | `Stale · no movement` panel | `stale_flagged_at` not exposed | **LAI-208** |
-| `WIP 3/4` limits | **no column, nothing in §4** | **dropped** — see below |
+| `WIP 3/4` limits | **demo** (`src/demo/wip.ts`) — no column exists | needs a spec decision |
 | `Agent work 5` filter | no `created_via`/`actor_kind` filtering | not filed |
 
 ## Projects home
