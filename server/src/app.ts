@@ -21,6 +21,7 @@ import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes } from './http/routes/me.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
+import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
@@ -160,10 +161,12 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/setup`, setupRoutes({ db, sqlite: options.sqlite, auth: options.auth }));
     // Task routes mount on the same prefix; Hono merges the two routers.
     app.route(`${API_BASE}/projects`, projectTaskRoutes({ db, sqlite: options.sqlite }));
+    app.route(`${API_BASE}/projects`, projectSprintRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));
     app.route(`${API_BASE}/tasks`, taskRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/comments`, commentRoutes({ db }));
+    app.route(`${API_BASE}/sprints`, sprintRoutes({ db, sqlite: options.sqlite }));
   }
 
   // better-auth owns everything under /api/v1/auth (§6.4). Mounted with `on`

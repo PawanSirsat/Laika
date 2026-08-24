@@ -32,6 +32,8 @@ export interface TaskView {
   status: TaskStatus;
   priority: TaskPriority;
   assignee_id: string | null;
+  /** Null is the ordinary state: not in a sprint, never "no sprint yet" (§4.5). */
+  sprint_id: string | null;
   created_by: string;
   created_via: string;
   discovered_from: string | null;
@@ -71,6 +73,7 @@ function toView(db: Db, row: TaskRow, prefix: string): TaskView {
     status: row.status,
     priority: row.priority,
     assignee_id: row.assigneeId,
+    sprint_id: row.sprintId,
     created_by: row.createdBy,
     created_via: row.createdVia,
     discovered_from: row.discoveredFrom,
@@ -175,6 +178,8 @@ export interface ListTasksFilter {
   priority?: TaskPriority | undefined;
   /** `true` returns only ready tasks, `false` only unready ones (§4.5). */
   ready?: boolean | undefined;
+  /** A sprint id, or `none` for tasks in no sprint (§4.15, §6.4). */
+  sprint?: string | undefined;
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
@@ -199,6 +204,13 @@ export function listTasks(
     // absent.
     conditions.push(
       filter.assignee === 'none' ? isNull(tasks.assigneeId) : eq(tasks.assigneeId, filter.assignee),
+    );
+  }
+  if (filter.sprint !== undefined) {
+    // `sprint=none` for the same reason as `assignee=none`: over a query string
+    // every value is a string and "" cannot be told apart from absent.
+    conditions.push(
+      filter.sprint === 'none' ? isNull(tasks.sprintId) : eq(tasks.sprintId, filter.sprint),
     );
   }
   if (filter.updatedSince !== null && filter.updatedSince !== undefined) {

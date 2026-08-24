@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `sprints_one_active_per_project` ON `sprints` (`project_id`) WHERE status = 'active';
