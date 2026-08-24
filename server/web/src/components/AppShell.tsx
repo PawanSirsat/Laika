@@ -233,14 +233,17 @@ export function AppShell() {
           version={version}
           counts={{ '/sprints': sprintCount }}
           footer={
+            /* Theme control above the user chip — the order the prototype uses
+               (LAI-088). The task text has these the other way round; the
+               design file is the authority and it puts the theme control first. */
             <>
+              <ThemeToggle />
               <UserChrome
                 user={session.user}
                 theme={theme}
                 onSignOut={handleSignOut}
                 signingOut={signingOut}
               />
-              <ThemeToggle />
             </>
           }
         />

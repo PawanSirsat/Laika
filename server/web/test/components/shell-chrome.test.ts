@@ -106,8 +106,11 @@ void describe('the shell actually applies the rule', () => {
       await readFile(new URL('../../src/components/Sidebar.tsx', import.meta.url), 'utf8'),
     );
 
-    assert.ok(shell.includes('<Brand />'), 'the shell must show the brand when there is no nav');
-    assert.ok(sidebar.includes('<Brand />'), 'and the sidebar must show the same one');
+    // Matched on the component, not one exact spelling: LAI-088 gives the
+    // sidebar `<Brand variant="tile" />` to match the prototype, and the
+    // criterion is that the identity is rendered — not how it is configured.
+    assert.match(shell, /<Brand[\s/>]/, 'the shell must show the brand when there is no nav');
+    assert.match(sidebar, /<Brand[\s/>]/, 'and the sidebar must show the same one');
   });
 
   void test('a route that suppresses the shell header supplies both parts itself', async () => {

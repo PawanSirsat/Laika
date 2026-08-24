@@ -50,7 +50,7 @@ export function Sidebar({
   return (
     <nav id="sidebar" className={open ? 'sidebar sidebar-open' : 'sidebar'} aria-label="Primary">
       <div className="sidebar-head">
-        <Brand />
+        <Brand variant="tile" />
 
         {/*
           The prototype reads `laika-core · v0.4`, which puts a project name and
@@ -81,54 +81,60 @@ export function Sidebar({
         )}
       </div>
 
-      {NAV_GROUPS.filter((group) => routesInGroup(group).length > 0).map((group) => (
-        <div key={group} className="sidebar-group">
-          <h2 className="sidebar-group-title" id={`nav-${group}`}>
-            {group}
-          </h2>
-          <ul className="sidebar-list" aria-labelledby={`nav-${group}`}>
-            {routesInGroup(group).map((route) => {
-              const active = route.path === currentPath;
-              const count = counts?.[route.path];
+      <div className="sidebar-nav">
+        {NAV_GROUPS.filter((group) => routesInGroup(group).length > 0).map((group) => (
+          <div key={group} className="sidebar-group">
+            <h2 className="sidebar-group-title" id={`nav-${group}`}>
+              {group}
+            </h2>
+            <ul className="sidebar-list" aria-labelledby={`nav-${group}`}>
+              {routesInGroup(group).map((route) => {
+                const active = route.path === currentPath;
+                const count = counts?.[route.path];
 
-              return (
-                <li key={route.path}>
-                  <a
-                    href={route.path}
-                    className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
-                    // `page`, not `true` — this link *is* the current page.
-                    aria-current={active ? 'page' : undefined}
-                    onClick={(event) => {
-                      // Let the browser handle modified clicks: new tab, new
-                      // window, download. Hijacking those is the thing people
-                      // hate about hand-rolled routers.
-                      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-                      event.preventDefault();
-                      onNavigate(route.path);
-                      onClose();
-                    }}
-                  >
-                    <span className="sidebar-link-label">{route.label}</span>
+                return (
+                  <li key={route.path}>
+                    <a
+                      href={route.path}
+                      className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
+                      // `page`, not `true` — this link *is* the current page.
+                      aria-current={active ? 'page' : undefined}
+                      onClick={(event) => {
+                        // Let the browser handle modified clicks: new tab, new
+                        // window, download. Hijacking those is the thing people
+                        // hate about hand-rolled routers.
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                          return;
+                        event.preventDefault();
+                        onNavigate(route.path);
+                        onClose();
+                      }}
+                    >
+                      {/* Always present, transparent until active — so selecting
+                        an item does not shift its label sideways. */}
+                      <span className="sidebar-link-bar" aria-hidden="true" />
+                      <span className="sidebar-link-label">{route.label}</span>
 
-                    {/*
+                      {/*
                       Only where a count is real, and only when there is
                       something to count. `Sprints 4` and `Meeting review 4` are
                       fixtures in the mockup; meeting review has no endpoint at
                       all. A zero badge is noise, so it is left off too.
                     */}
-                    {count !== undefined && count > 0 && (
-                      <span className="sidebar-count">
-                        {count}
-                        <span className="visually-hidden"> {route.label.toLowerCase()}</span>
-                      </span>
-                    )}
-                  </a>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
+                      {count !== undefined && count > 0 && (
+                        <span className="sidebar-count">
+                          {count}
+                          <span className="visually-hidden"> {route.label.toLowerCase()}</span>
+                        </span>
+                      )}
+                    </a>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </div>
 
       {footer !== undefined && <div className="sidebar-footer">{footer}</div>}
     </nav>

@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p3
 depends-on: []
 discovered-from: LAI-074
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -34,3 +34,11 @@ have the real mark.
 One line in `FirstBootScreen.tsx` plus whatever the rail needs to invert the
 tile. Filed rather than folded into LAI-074 because LAI-075 is accepted and this
 is not LAI-074's business.
+
+## Closed as superseded — builder-b, 2026-08-25
+
+LAI-088 brings the tile mark to the sidebar. The **first-boot rail keeps the
+accent dot**: its ground is already `var(--tx)`, and the tile is `--tx` ground
+with a `--card` stroke, so a straight reuse would be an invisible square on an
+identical background. Making it work there needs an inverted variant, which is a
+design decision rather than a one-line change — refile if the owner wants it.
