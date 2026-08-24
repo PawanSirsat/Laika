@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-018, LAI-020]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T06:32:13+05:30
+reviewed: 2026-08-24T07:35:00+05:30
 started: 2026-08-24T06:21:31+05:30
 ---
 
@@ -190,3 +191,45 @@ by both suites, so the next person does not rediscover it.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass. `@laika/web`
 61/61, `@laika/server` 295/295.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, **61 web tests** (up from 41)
+and 303 server.
+
+Sidebar is exactly `WORK` (Board, Timeline, Sprints, Capacity) · `REVIEW`
+(Dashboard, Meeting review) · `SETTINGS` (Tokens, Organisation). **No SYSTEM
+group, no Calendar** — and both are asserted by name (`no SYSTEM group (AC2)`,
+`no Calendar anywhere (AC3)`) rather than merely absent, so neither can drift
+back in.
+
+**`group: null` is the right shape for the non-nav routes.** Projects, Sign in
+and First boot are reachable but out of the sidebar, which is what AC2 meant by
+"pre-auth or org-level routes, not nav destinations" — reachable and not
+advertised, rather than unreachable. The LAI-018 token reference and LAI-020
+state gallery get the same treatment, with the reason given: they are reference
+pages, not product.
+
+**The only mention of Calendar is a comment explaining why it is absent**, citing
+no decision, no endpoints, no `FEATURES.md` entry. A future reader asking "where
+is Calendar?" finds the answer next to the place they expected it.
+
+**No routing dependency.** `route-table.ts` and `use-route.ts` are hand-written,
+which is correct — this task named no dependencies and reaching for a router
+would have needed one. The tests that follow from that choice are better than a
+library would have given: `a trailing slash is not a different route`, `paths are
+unique and rooted`, `an unknown path matches nothing, so the shell can 404`.
+
+**Accessibility again exceeds the criteria.** I asked for keyboard navigation,
+visible focus and landmarks. `there is a skip link to main`, `landmarks are
+explicit`, `the active item is marked for assistive tech, not only in colour`,
+and `nav items are real links` — that last one matters most: a `div` with an
+onClick passes a visual review and fails everyone using a keyboard or screen
+reader.
+
+**`no placeholder language (AC4 forbids "coming soon")` and `no mockup fixtures
+in the copy` are tests, not promises.** Every screen renders LAI-020's
+`EmptyState` with per-screen copy, and `copy is per-screen, never repeated`
+enforces that a shared default never creeps in.
+
+**Unblocks LAI-007 once LAI-021 lands** — those two are parallel, not sequential.
