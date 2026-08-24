@@ -23,6 +23,12 @@ export type NavGroup = (typeof NAV_GROUPS)[number];
 
 export interface Route {
   readonly path: string;
+  /**
+   * Requires a signed-in user. Everything is protected except the pre-auth
+   * screens — a default of "protected" means forgetting to mark a route leaves
+   * it closed rather than open.
+   */
+  readonly public?: true;
   /** Sidebar label and document title. */
   readonly label: string;
   /**
@@ -56,14 +62,14 @@ export const ROUTES: readonly Route[] = [
 
   // Routed, but not nav destinations.
   { path: '/projects', label: 'Projects', group: null, phase: 'Phase 2' },
-  { path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
-  { path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
-  { path: '/first-boot', label: 'First boot', group: null, phase: 'Phase 1' },
+  { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
+  { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
+  { public: true, path: '/first-boot', label: 'First boot', group: null, phase: 'Phase 1' },
 
   // The LAI-018 and LAI-020 reference pages. Kept reachable — both tasks
   // required them — but out of the product nav, since they are not product.
-  { path: '/design/tokens', label: 'Design tokens', group: null, phase: 'reference' },
-  { path: '/design/states', label: 'States', group: null, phase: 'reference' },
+  { public: true, path: '/design/tokens', label: 'Design tokens', group: null, phase: 'reference' },
+  { public: true, path: '/design/states', label: 'States', group: null, phase: 'reference' },
 ];
 
 export const DEFAULT_PATH = '/board';
@@ -72,6 +78,11 @@ export const DEFAULT_PATH = '/board';
 export function matchRoute(path: string): Route | undefined {
   const normalised = path.length > 1 && path.endsWith('/') ? path.slice(0, -1) : path;
   return ROUTES.find((r) => r.path === normalised);
+}
+
+/** Routes reachable without signing in. */
+export function isPublic(route: Route | undefined): boolean {
+  return route?.public === true;
 }
 
 export function routesInGroup(group: NavGroup): readonly Route[] {
