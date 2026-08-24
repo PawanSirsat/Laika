@@ -2,11 +2,12 @@
 id: LAI-079
 title: Tags — schema, API, and the §4.16 spec text
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-011, LAI-051]
 discovered-from: LAI-073
-status: backlog
+started: 2026-08-24T19:05:17Z
+status: in-progress
 ---
 
 ## Goal
