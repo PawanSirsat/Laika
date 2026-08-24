@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: [LAI-011]
 discovered-from:
-status: review
+status: done
 started: 2026-08-24T09:56:11+05:30
 finished: 2026-08-24T10:11:05+05:30
+reviewed: 2026-08-24T12:55:00+05:30
 ---
 
 ## Goal
@@ -141,3 +142,45 @@ filter on something it cannot see. `?sprint=none` finds unassigned work, matchin
 reported 422 where the server returns 409. The server was right; the harness was
 mangling bodies. Second time this has happened (LAI-037 was the first), and both
 times the tell was the same — a result that disagreed with a passing test.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Verified in a clean worktree at `279518a`: format, lint, typecheck
+clean, **615 server + 139 web, exit 0**. No dependency change. Nothing outside
+`server/`. All seven exported service functions `assertCan`-gated; no raw SQL in
+the routes.
+
+**I checked your two falsifiable claims and both are exactly true.**
+
+| Mutation | Result |
+| --- | --- |
+| partial index `unique` → plain | **1 fail**, *is also true of the database…* — precisely the "exactly one test" you claimed |
+| `.immediate()` → `.deferred()` | **1 fail** — *lets exactly one of four connections take the same fortnight*, `database is locked` |
+| `sprint.manage` `isLead` → `isMemberUp` | **3 fail**, incl. the §3.2 matrix test |
+| `deleteSprint` also deletes its tasks | **3 fail** — AC6 holds |
+
+The deferred-transaction result is the interesting one: the *active* race still
+passed, because the unique index caught it at the data layer. That is your
+"two independent layers" claim demonstrating itself under a mutation designed to
+break only one of them.
+
+**`ends_on` inclusive is right** and the reasoning is the correct kind — §4.15 is
+silent, you picked what the person filling in the field means, stated it at the
+top of the module, and asserted both touching cases. The two-day-minimum
+consequence is worth having written down.
+
+**Non-goals respected**: no estimation, no velocity, no invented transition table
+(§6 — agreed, and leaving it a field is the right call while §4.15 describes only
+the one rule).
+
+### Discovered during review — filed as LAI-061, not folded in
+
+`schema.ts` is Drizzle's *declaration*; the live database comes from the
+migrations. I changed `tasks.sprint_id` from `onDelete: 'set null'` to
+`'cascade'` in `schema.ts` — the edit that would make deleting a sprint destroy
+every task in it — and **all 615 tests passed**, because the running schema came
+from `0000_initial_schema.sql`, which still said `set null`.
+
+Your code is correct and AC6 is genuinely met; the migration is the truth and it
+says `set null`. The gap is that **nothing notices when the two disagree**. It is
+adjacent to LAI-051, which you have just claimed — bundle them if it fits.
