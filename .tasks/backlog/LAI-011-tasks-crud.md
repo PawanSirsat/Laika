@@ -17,8 +17,8 @@ transitioned and linked — with the derived `ready` computation that the MCP
 
 ## Acceptance criteria
 
-- [ ] `POST /api/v1/projects/:id/tasks` and
-      `GET /api/v1/projects/:id/tasks` with filters `status`, `assignee`,
+- [ ] `POST /api/v1/projects/:slug/tasks` and
+      `GET /api/v1/projects/:slug/tasks` with filters `status`, `assignee`,
       `priority`, `ready`, plus `updated_since` and cursor pagination.
 - [ ] `GET /api/v1/tasks/:id` and `PATCH /api/v1/tasks/:id`.
 - [ ] `POST /api/v1/tasks/:id/claim` is a compare-and-swap: sets assignee +
@@ -67,3 +67,19 @@ holding the two paths together instead of the structure. `no-restricted-imports`
 will fail `pnpm lint` if a route imports `db/` directly.
 
 LAI-037 ships one worked example (`/api/v1/me`) to copy the shape from.
+
+---
+
+## PM pre-flight correction — 2026-08-24
+
+**Project routes are `:slug`, not `:id`.** The criteria above said
+`/api/v1/projects/:id`; SPEC §6.4 keys every project route by `:slug`, and this
+task's own LAI-015 note already said so. The criteria and the note contradicted
+each other. Corrected to `:slug`.
+
+**Task routes stay `:id`** — `/api/v1/tasks/:id` is correct per §6.4. Projects
+have a human-facing URL identity; tasks are addressed by ULID.
+
+Found by pre-flighting the task against the spec before it was claimed, rather
+than by the builder hitting it mid-task. Fifth authoring error of this kind
+today, and the first caught before it cost anyone.

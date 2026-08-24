@@ -4,7 +4,7 @@ title: First-run setup — create org, Owner account, first project
 area: server
 assignee: unclaimed
 priority: p2
-depends-on: [LAI-005, LAI-007]
+depends-on: [LAI-005, LAI-007, LAI-044]
 discovered-from:
 status: backlog
 ---
@@ -28,8 +28,9 @@ empty board. This is the milestone's demo.
 - [ ] Setup UI in the SPA: org name, Owner email/password, optional project name
       and key, with validation and a clear error path.
 - [ ] After setup the user is signed in and lands in the authenticated shell.
-- [ ] Setup writes `activity` rows (`project.created` and org creation) with the
-      Owner as actor.
+- [ ] Setup writes `activity` rows — **`org.created`** and `project.created` —
+      with the Owner as actor. `org.created` is added to the vocabulary by
+      **LAI-044**; this task must not invent it (§4.8's type list is closed).
 - [ ] `LAIKA_SECRET` is validated at boot before setup is offered (see LAI-008).
 
 ## Notes / context
@@ -41,3 +42,24 @@ The transcript/LLM provider configuration screen is **M6**, not this task. Leave
 the org's `llm_provider` at `none`.
 
 No new dependencies.
+
+---
+
+## PM pre-flight correction — 2026-08-24
+
+**This task required an activity row it had no type for.** The criterion said
+"`activity` rows (`project.created` and org creation)", and §4.8's closed type
+vocabulary has **no org-creation type** — `enums.ts` says adding one is a schema
+change, deliberately. As written, the criterion was unsatisfiable without either
+inventing a type (forbidden) or dropping the row.
+
+**Resolved:** `org.created` joins the vocabulary in **LAI-044**, which is already
+opening the activity enum and its check constraint for the `system` actor kind.
+One migration touching `activity` rather than two. **`depends-on` now includes
+LAI-044.**
+
+Creating the org is the single most significant event in an instance's life; an
+audit trail that starts at the first project rather than the first org has a hole
+at the beginning.
+
+Found by pre-flight, before the task was claimed.

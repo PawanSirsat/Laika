@@ -29,6 +29,20 @@ kind and the constraint that gives a null actor its meaning.
       to D-022 — the deviation is now the rule.
 - [ ] Full gate green.
 
+## Added by PM — 2026-08-24: also add `org.created`
+
+LAI-009 requires an `activity` row for org creation and §4.8's type vocabulary
+has none. Folding it in here rather than filing separately: this task already
+opens the activity enum and its check constraint, and two migrations touching one
+table is how a schema gets a conflict.
+
+- [ ] `ACTIVITY_TYPES` gains **`org.created`**, and SPEC §4.8's type list gains it
+      too — PM will make the §4.8 edit; you do the enum and the constraint.
+- [ ] The same migration carries both changes: the `system` actor kind and
+      `org.created`.
+
+Nothing writes it yet — LAI-009 does, and now depends on this task.
+
 ## Notes / context
 
 D-022 and SPEC §4.8.
