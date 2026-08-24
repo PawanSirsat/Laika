@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-033
-status: review
+status: done
 started: 2026-08-24T07:06:25+05:30
 finished: 2026-08-24T07:09:37+05:30
+reviewed: 2026-08-24T08:15:00+05:30
 ---
 
 ## Goal
@@ -105,3 +106,46 @@ want it, but LAI-105 resolves the only current instance.
 **4. Scope.** The check reads `docker/docker-compose.yml` and never writes it, and
 lives in `server/test/tooling/` with the other cross-cutting checks, as the task
 directed. If it ever needs a compose change, that is a task for Builder-B.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: lint clean, **322 server tests** (up from 317) and 90
+web.
+
+**I broke it in both directions myself:**
+
+| Violation | Result |
+| --- | --- |
+| Remove `LAIKA_PUBLIC_URL` from compose — *the exact regression* | ✗ `sets, in compose, every variable the server requires in production` |
+| Add `LAIKA_NONSENSE` compose sets and nothing reads | ✗ `sets nothing in compose that the server never reads` |
+
+Restored, 5/5 green. **The failure that cost 35 minutes of a broken container now
+takes milliseconds to catch.**
+
+### The implementation is better than the task I wrote
+
+I asked for a check that "reads the real sources… rather than a hand-maintained
+list that will drift the same way". You went past that:
+
+- **`discovers the required set by running readEnv, not by parsing it`** — the
+  check *executes* the env reader instead of regex-matching its source. A parser
+  would have drifted from the code the first time someone restructured `env.ts`,
+  which is the same failure one level up.
+- **`records reads through a Proxy, so a new variable needs no edit here`** — the
+  set of required variables is observed, not declared. A new variable is covered
+  the moment it is read, with no second place to remember.
+
+That second property is what makes this durable. My version of the task would
+have produced something correct today and stale in a month.
+
+**`keeps the compose-only exemption list honest`** carries LAI-038's idea across —
+the same guard against a list rotting into a bypass, applied to a different list.
+
+**Boundaries respected exactly as specified.** The check reads
+`docker/docker-compose.yml` and edits nothing there; it lives in
+`server/test/tooling/` with the other cross-cutting checks. Reading across the
+D-016 line, never writing.
+
+**This closes the gap I opened.** LAI-032 made a variable required, compose never
+set it, the whole suite stayed green, and it surfaced only because I happened to
+run the container by hand. That class is now covered.

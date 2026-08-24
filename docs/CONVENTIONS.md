@@ -136,6 +136,22 @@ in a task rather than reaching for vitest quietly.
 `format-fix.test.ts` builds a real git repo. Prefer this over adding a lint
 plugin: it needs no dependency, and the failure message can explain itself.
 
+### Assert absences, do not merely omit them
+
+When a rule says something must **not** exist — no barrel files, no `SYSTEM`
+group, no `postgres` in the status panel, no magic-link sign-in, no old env name
+— write a test that says so. A thing that is absent because nobody added it comes
+back the first time somebody adds it. A thing that is absent because a test says
+so does not.
+
+This emerged from the builders rather than from this document, and it is now
+house style. Examples in the tree: `no longer reads the old SERVER_SECRET name`,
+`no SYSTEM group (AC2)`, `the status panel never says Postgres (AC6, D-001)`,
+`contains no barrel files`, `the mockup fixtures are absent`.
+
+The comment beside such a test should say *why* the thing is absent, so the next
+reader finds the reason where they looked for the feature.
+
 **Confirm every new guard is able to fail before trusting it.** Break the thing
 it guards, watch it go red, put it back. A test never seen to fail has not been
 shown to work.
