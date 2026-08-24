@@ -2,11 +2,12 @@
 id: LAI-074
 title: Login screen — match design 5a
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-062]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T02:30:00+05:30
 ---
 
 ## Goal

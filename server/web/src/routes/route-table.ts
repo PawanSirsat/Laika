@@ -55,28 +55,46 @@ export interface Route {
    * Anything setting this **must** render both — `shell-chrome.test.ts` checks.
    */
   readonly ownsChrome?: true;
+  /**
+   * How far this route actually is, which is what decides whether it appears in
+   * the nav (LAI-082).
+   *
+   * - `ready` — a real screen, wired to real endpoints.
+   * - `building` — a registered shell someone is filling in right now (D-028).
+   * - absent — no screen. The route still resolves, so a direct URL renders the
+   *   placeholder, but **it is not offered in the nav**.
+   *
+   * The default is the hidden one on purpose. Seven of eight sidebar entries
+   * were dead links because visibility was the default and hiding took an act
+   * of memory; this way a screen has to earn its place by having been built.
+   */
+  readonly status?: 'ready' | 'building';
   /** Which phase brings it to life, so an empty state can say what it waits on. */
   readonly phase: string;
 }
 
 export const ROUTES: readonly Route[] = [
   // WORK
-  { path: '/board', label: 'Board', group: 'WORK', phase: 'Phase 2' },
-  { path: '/timeline', label: 'Timeline', group: 'WORK', phase: 'Phase 2.5' },
-  { path: '/sprints', label: 'Sprints', group: 'WORK', phase: 'Phase 2' },
-  { path: '/capacity', label: 'Capacity', group: 'WORK', phase: 'Phase 5' },
+  { path: '/board', label: 'Board', group: 'WORK', status: 'ready', phase: 'Phase 2' },
+  { path: '/sprints', label: 'Sprints', group: 'WORK', status: 'building', phase: 'Phase 2' },
+  { path: '/timeline', label: 'Timeline', group: 'WORK', status: 'building', phase: 'Phase 2.5' },
+  { path: '/projects', label: 'Projects', group: 'WORK', status: 'ready', phase: 'Phase 2' },
 
   // REVIEW
-  { path: '/dashboard', label: 'Dashboard', group: 'REVIEW', phase: 'Phase 5' },
-  { path: '/meeting-review', label: 'Meeting review', group: 'REVIEW', phase: 'Phase 6' },
+  { path: '/dashboard', label: 'Dashboard', group: 'REVIEW', status: 'building', phase: 'Phase 5' },
 
   // SETTINGS
-  { path: '/tokens', label: 'Tokens', group: 'SETTINGS', phase: 'Phase 3' },
   { path: '/organisation', label: 'Organisation', group: 'SETTINGS', phase: 'Phase 1' },
 
-  // Routed, but not nav destinations.
-  { path: '/projects', label: 'Projects', group: null, phase: 'Phase 2' },
-  { path: '/members', label: 'Members', group: null, phase: 'Phase 2' },
+  // Routed and reachable by URL, but not offered in the nav: no screen behind
+  // them yet, so an entry would be a dead link. They come back the moment they
+  // have a `status`.
+  { path: '/capacity', label: 'Capacity', group: 'WORK', phase: 'Phase 5' },
+  { path: '/meeting-review', label: 'Meeting review', group: 'REVIEW', phase: 'Phase 6' },
+  { path: '/tokens', label: 'Tokens', group: 'SETTINGS', phase: 'Phase 3' },
+
+  // Reached from a project rather than the nav.
+  { path: '/members', label: 'Members', group: null, status: 'ready', phase: 'Phase 2' },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
   {
@@ -107,6 +125,24 @@ export function isPublic(route: Route | undefined): boolean {
   return route?.public === true;
 }
 
+/**
+ * Does this route get a nav entry?
+ *
+ * One rule, read by the sidebar and by the test that guards it. A route with no
+ * `status` has no screen behind it, so offering it in the nav is offering a dead
+ * link — which is exactly what shipped: seven of eight destinations were empty
+ * placeholders and nothing in the code could tell.
+ */
+export function isShipped(route: Route): boolean {
+  return route.status !== undefined;
+}
+
+/** Nav entries for a group — shipped routes only. */
 export function routesInGroup(group: NavGroup): readonly Route[] {
-  return ROUTES.filter((r) => r.group === group);
+  return ROUTES.filter((r) => r.group === group && isShipped(r));
+}
+
+/** Every route offered in the nav, in table order. */
+export function navRoutes(): readonly Route[] {
+  return ROUTES.filter((r) => r.group !== null && isShipped(r));
 }
