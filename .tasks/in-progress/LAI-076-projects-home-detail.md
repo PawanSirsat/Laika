@@ -2,11 +2,12 @@
 id: LAI-076
 title: Projects home — match design 7a, the full card anatomy
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-058, LAI-060]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T06:20:00+05:30
 ---
 
 ## Goal
