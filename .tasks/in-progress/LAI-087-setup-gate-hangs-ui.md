@@ -2,11 +2,12 @@
 id: LAI-087
 title: A 409 from the setup gate leaves the whole app in a loading skeleton for ever
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T05:10:00+05:30
 ---
 
 ## Goal
