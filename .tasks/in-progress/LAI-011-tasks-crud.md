@@ -2,11 +2,12 @@
 id: LAI-011
 title: Tasks CRUD — statuses, dependencies, discovered-from, activity
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-010, LAI-037]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T09:06:23+05:30
 ---
 
 ## Goal
