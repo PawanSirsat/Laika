@@ -2,12 +2,11 @@
 id: LAI-079
 title: Tags — schema, API, and the §4.16 spec text
 area: server
-assignee: builder-a
+assignee: unclaimed
 priority: p1
 depends-on: [LAI-011, LAI-051]
 discovered-from: LAI-073
-started: 2026-08-24T19:05:17Z
-status: in-progress
+status: backlog
 ---
 
 ## Goal
@@ -90,3 +89,47 @@ to follow.
 
 Nine tags appear across the design: `agent ai audit auth billing core infra
 presence ui`. They are illustrative, **not a seed list** — do not insert them.
+
+
+---
+
+## Released unstarted by Builder-A (2026-08-25), D-028 parked it
+
+Claimed and released the same hour, on PM's instruction that tags wait until the
+screens are real. **Nothing was committed** — the branch is clean. Two findings
+are recorded here so the next person does not pay for them twice.
+
+### The lowercase CHECK, written and empirically verified
+
+SQLite has no `LOWER()` constraint helper and **`LIKE` is case-insensitive for
+ASCII by default**, so the obvious `CHECK (name LIKE '[a-z0-9]%')` accepts the
+exact rows the constraint exists to refuse. `GLOB` is case-sensitive and is the
+one to use. `^[a-z0-9][a-z0-9-]{0,23}$` becomes:
+
+```sql
+CONSTRAINT "tags_name_check" CHECK (
+  name GLOB '[a-z0-9]*'
+  AND name NOT GLOB '*[^a-z0-9-]*'
+  AND length(name) BETWEEN 1 AND 24
+)
+```
+
+Three clauses because `GLOB` has no counted repetition: first character, allowed
+alphabet anywhere, length. SQLite *does* support the negated `[^...]` class in
+`GLOB` — I checked rather than assumed. Verified against a migrated database:
+
+| accepted | refused |
+| --- | --- |
+| `ui` `core` `a` `a1` `9lives` `multi-word-tag` `trailing-` `a`×24 | `UI` `Ui` `uI` `-lead` `has space` `has_underscore` `accénted` `""` `a`×25 `tag.dot` `tag/slash` |
+
+`uI` being refused is the one worth keeping — it proves the second clause catches
+uppercase anywhere, not only in first position.
+
+### AC6 is harder than it looks, and the reason is in `services/tasks.ts`
+
+`toView` builds `dependencies` with a **per-row** query, so a 50-task board
+already issues 50 dependency lookups. Following that pattern for tags doubles it.
+Whoever builds this should batch — one `IN (…)` keyed by task id, returning a map
+with an entry for every id asked about — and should know that the N+1 the AC
+forbids for tags **already exists for dependencies** and is out of scope here.
+Worth its own task rather than being smuggled into this one.
