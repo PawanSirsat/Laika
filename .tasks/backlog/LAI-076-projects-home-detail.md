@@ -4,7 +4,7 @@ title: Projects home — match design 7a, the full card anatomy
 area: web
 assignee: unclaimed
 priority: p1
-depends-on: [LAI-058, LAI-053, LAI-060]
+depends-on: [LAI-058, LAI-060]
 discovered-from:
 status: backlog
 ---
@@ -42,7 +42,7 @@ visibility badge and a button; the design's carries the shape of the work.
       *"No projects yet"*, both dashed `var(--bd2)` at radius 12px.
 - [ ] Both themes.
 
-## Depends on LAI-053 for the counts — do not compute them client-side
+## Counts are OUT of scope until LAI-053 lands — PM, 2026-08-25
 
 The per-project task counts, blocked count and last-activity time are **not on
 `GET /projects` today**. LAI-053 exists to add them and is unblocked.
@@ -54,3 +54,23 @@ should degrade to what LAI-058 already ships, not to fabricated numbers.
 
 Avatar identities come from `GET /api/v1/users` (LAI-060); colours from
 `theme/avatar-color.ts`, never the mockup's `--mk --ta --sv --jd --rb`.
+
+---
+
+## Dependency dropped — PM, 2026-08-25
+
+**`LAI-053` removed from `depends-on`.** Builder-B was correct not to edit it to
+unblock themselves, and correct that the protocol would have refused the claim.
+
+**The card is worth building without the counts.** Ship the name, visibility chip,
+repo line, description, section headings, avatar stack and the Open/Join footer —
+that is most of `7a` and all of it is backed by endpoints that exist today.
+
+**Leave the segmented progress bar, the `13/34 done` line, the blocked count and
+last-activity out entirely.** Not stubbed, not zeroed, not faked — absent, so the
+layout degrades to what LAI-058 already ships. **Do not fetch each project's
+tasks to count them**: that is one request per card and a defect at any real
+number of projects.
+
+They come back as a follow-up when LAI-053 lands. File it as a discovery when you
+finish, rather than leaving this task open for a bar.
