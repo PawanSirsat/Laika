@@ -2,40 +2,35 @@
 #
 # Laika container entrypoint.
 #
-# One job: refuse to start without a server secret, then exec the real process.
+# One job: refuse to start on a configuration that would fail later or, worse,
+# succeed wrongly. Then exec the real process.
+#
 # `exec` matters — it makes node PID 1's direct child under tini, so SIGTERM
 # reaches it and LAI-002's graceful shutdown runs.
+#
+# The server validates all of this too (server/src/env.ts). Checking here as
+# well is deliberate: a container that dies in a restart loop shows an operator
+# a stack of identical log lines, while these messages say what to set and how
+# to generate it. Keep the two in step — the 32-character minimum below is the
+# server's MIN_SECRET_LENGTH.
 
 set -eu
 
-# SPEC §11.7 calls this SERVER_SECRET. LAI-008's acceptance criteria call it
-# LAIKA_SECRET. Nothing in the server reads either one yet (server/src/env.ts
-# says so explicitly), so both names are accepted here and normalised to the
-# spec's name — that way the compose file matches the task, and LAI-005 finds
-# what SPEC §11.7 told it to look for. Reconciling the two names is LAI-202.
-if [ -z "${SERVER_SECRET:-}" ] && [ -n "${LAIKA_SECRET:-}" ]; then
-  SERVER_SECRET="$LAIKA_SECRET"
-  export SERVER_SECRET
-fi
-if [ -z "${LAIKA_SECRET:-}" ] && [ -n "${SERVER_SECRET:-}" ]; then
-  LAIKA_SECRET="$SERVER_SECRET"
-  export LAIKA_SECRET
-fi
-
+# --- LAIKA_SECRET --------------------------------------------------------
+# Key material for encrypting the org's stored API keys and SMTP settings.
 if [ -z "${LAIKA_SECRET:-}" ]; then
   cat >&2 <<'MSG'
-laika: refusing to start — no server secret is set.
+laika: refusing to start — LAIKA_SECRET is not set.
 
-LAIKA_SECRET (SPEC §11.7 calls it SERVER_SECRET) is the key material that
-encrypts the org's stored API keys and SMTP credentials. Starting without it
-would mean generating a throwaway secret on every boot, which silently makes
-yesterday's encrypted values unreadable.
+It encrypts the org's stored API keys and SMTP credentials. Starting without it
+would mean a throwaway key on every boot, which silently makes yesterday's
+encrypted values unreadable.
 
 Generate one and keep it with your volume — losing it loses those secrets:
 
     openssl rand -base64 48
 
-Then set it, e.g. in docker/.env next to docker-compose.yml:
+Then set it in docker/.env next to docker-compose.yml:
 
     LAIKA_SECRET=<the value>
 
@@ -51,11 +46,41 @@ if [ "${#LAIKA_SECRET}" -lt 32 ]; then
   exit 1
 fi
 
+# --- LAIKA_PUBLIC_URL ----------------------------------------------------
+# Invite links and webhook URLs are built from it. The server requires it in
+# production; the message here explains the consequence rather than the rule.
+if [ -z "${LAIKA_PUBLIC_URL:-}" ]; then
+  cat >&2 <<'MSG'
+laika: refusing to start — LAIKA_PUBLIC_URL is not set.
+
+Invite links and webhook URLs are built from it, so a missing or wrong value is
+not a startup problem — it is people receiving invitations that point somewhere
+they cannot reach, and GitHub delivering webhooks to nowhere.
+
+Set it to the URL your users type, including the scheme, with no trailing slash:
+
+    LAIKA_PUBLIC_URL=https://laika.example.com
+
+Behind a TLS proxy (docker/Caddyfile.example) this is the proxy's address, not
+the container's.
+MSG
+  exit 1
+fi
+
+case "$LAIKA_PUBLIC_URL" in
+  http://*|https://*) ;;
+  *)
+    echo "laika: refusing to start — LAIKA_PUBLIC_URL has no http(s) scheme: $LAIKA_PUBLIC_URL" >&2
+    echo "laika: it is pasted into links, so it must be a URL people can click." >&2
+    exit 1 ;;
+esac
+
+# --- /data ----------------------------------------------------------------
 # The volume is the whole backup story (D-002); if it is not writable, fail here
 # with a sentence rather than inside SQLite with an errno.
-DATA_DIR="${DATA_DIR:-/data}"
-if [ ! -w "$DATA_DIR" ]; then
-  echo "laika: refusing to start — $DATA_DIR is not writable by $(id -un) (uid $(id -u))." >&2
+data_dir="${LAIKA_DATA_DIR:-/data}"
+if [ ! -w "$data_dir" ]; then
+  echo "laika: refusing to start — $data_dir is not writable by $(id -un) (uid $(id -u))." >&2
   echo "laika: the named volume should be owned by uid 1000; a host bind mount needs chown." >&2
   exit 1
 fi

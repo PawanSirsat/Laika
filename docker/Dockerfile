@@ -27,6 +27,7 @@ WORKDIR /app
 # Manifests first: this layer is cached until a dependency actually changes.
 COPY pnpm-workspace.yaml pnpm-lock.yaml package.json .npmrc ./
 COPY server/package.json server/
+COPY server/web/package.json server/web/
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
@@ -42,40 +43,31 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
 FROM deps AS web
 WORKDIR /app
 COPY . .
-RUN if [ -f server/web/package.json ]; then \
-      pnpm --filter @laika/web build; \
-    else \
-      echo "no server/web — building an empty public/ (LAI-017 not landed)"; \
-    fi; \
-    mkdir -p /out && cp -R server/public/. /out/ 2>/dev/null || true
+# `pnpm build` writes to server/public via vite's outDir. No `|| true` here:
+# an SPA that fails to build must fail the image, not ship an empty public/ and
+# surface as a 500 on `GET /` at runtime. That is exactly what happened when
+# this stage swallowed the error (LAI-033).
+RUN pnpm --filter @laika/web build \
+ && test -f server/public/index.html \
+ && mkdir -p /out && cp -R server/public/. /out/
 
 # ---------------------------------------------------------------------------
-# server — TypeScript to JavaScript.
+# server — TypeScript to JavaScript, via the package's own build script.
 #
-# PROVISIONAL: tsc is invoked directly with flag overrides because
-# @laika/server has no build script and server/ is Builder-A's area
-# (LAI-024, plus LAI-201 for the migrations assets). The shared tsconfig sets
-# noEmit for typechecking, so the
-# emit flags have to be forced from here.
-# When LAI-024 lands, this whole RUN becomes:
-#     RUN pnpm --filter @laika/server build
 # ---------------------------------------------------------------------------
 FROM deps AS server
 WORKDIR /app
 COPY . .
-# tsconfig.json's `include` also covers test/ and the vitest/drizzle configs,
-# and `--project` cannot be narrowed with file arguments (TS5042). So compile
-# everything here and ship only dist/src — the test output never leaves this
-# stage. tsc infers server/ as the common root, hence the src/ prefix.
-RUN pnpm exec tsc \
-      --project server/tsconfig.json \
-      --noEmit false \
-      --outDir /build/out \
-      --sourceMap false \
-      --declaration false \
- && test -f /build/out/src/index.js \
- && mv /build/out/src /build/dist \
- && test ! -e /build/dist/index.test.js
+# `build` = clean + tsc -p tsconfig.build.json + build:assets, and build:assets
+# copies src/static and src/db/migrations into dist/ — both non-TypeScript and
+# both required at runtime. This Dockerfile used to run tsc itself and copy the
+# assets by hand; when the server moved the fallback to dist/static/ the
+# hand-rolled copy kept putting it in src/static/ and `GET /` started 500ing.
+# Calling the package's own build script is what keeps that from recurring.
+RUN pnpm --filter @laika/server build \
+ && test -f /app/server/dist/index.js \
+ && test -f /app/server/dist/static/fallback.html \
+ && test -f /app/server/dist/db/migrations/meta/_journal.json
 
 # ---------------------------------------------------------------------------
 # prod-deps — production dependencies only, flattened.
@@ -112,21 +104,15 @@ WORKDIR /app/server
 
 COPY --from=prod-deps --chown=root:root /prod/node_modules ./node_modules
 COPY --from=prod-deps --chown=root:root /prod/package.json ./package.json
-COPY --from=server    --chown=root:root /build/dist ./dist
 
-# paths.ts resolves the fallback document relative to the package root, so it
-# must exist at server/src/static/ even in a compiled image (LAI-016).
-COPY --chown=root:root server/src/static ./src/static
+# dist already carries the fallback document and the generated migrations —
+# `build:assets` puts them there. Nothing is copied by hand any more.
+COPY --from=server    --chown=root:root /app/server/dist ./dist
 
-# tsc emits JavaScript and nothing else, so the generated migrations — .sql and
-# meta/*.json — are not in dist. migrate.ts resolves them from import.meta.url,
-# i.e. beside the compiled module, so they have to land at dist/db/migrations.
-# Without this the container boots, fails with "Can't find meta/_journal.json",
-# and restart-loops.
-COPY --chown=root:root server/src/db/migrations ./dist/db/migrations
-
-# Empty unless the SPA stage produced a build. The server falls back to
-# src/static/fallback.html when public/index.html is absent.
+# The built SPA. The server falls back to dist/static/fallback.html only when
+# public/index.html is absent, which after LAI-017 should never be the case in
+# a built image — the web stage fails the build rather than shipping an empty
+# directory.
 COPY --from=web --chown=root:root /out ./public
 
 COPY --chown=root:root docker/entrypoint.sh /usr/local/bin/laika-entrypoint

@@ -20,6 +20,7 @@ docker/
 cd docker
 cp env.example .env
 printf 'LAIKA_SECRET=%s\n' "$(openssl rand -base64 48)" >> .env   # replace the placeholder
+# and set LAIKA_PUBLIC_URL to the address people will actually type
 docker compose up --build -d
 curl http://127.0.0.1:3000/api/v1/health
 ```
@@ -41,24 +42,41 @@ Running it directly, note that `/data` must be a volume — the image deliberate
 contains no database:
 
 ```bash
-docker run --rm -p 3000:3000 -v laika-data:/data -e LAIKA_SECRET="$(openssl rand -base64 48)" laika:local
+docker run --rm -p 3000:3000 -v laika-data:/data \
+  -e LAIKA_SECRET="$(openssl rand -base64 48)" \
+  -e LAIKA_PUBLIC_URL="http://localhost:3000" \
+  laika:local
 ```
 
 ## Environment
 
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
-| `LAIKA_SECRET` | **yes** | — | Key material for encrypting stored API keys and SMTP settings. The container refuses to start without it, and refuses anything under 32 characters. Accepted as `SERVER_SECRET` too — SPEC §11.7 uses that name, LAI-008 used this one, and LAI-202 will settle it. |
-| `LAIKA_DB_PATH` | no | `/data/laika.db` | Must stay inside `/data`, or the database lands somewhere backups do not reach. |
+| `LAIKA_SECRET` | **yes** | — | Key material for encrypting stored API keys and SMTP settings. Minimum 32 characters. The container refuses to start without it. |
+| `LAIKA_PUBLIC_URL` | **yes** | — | The URL your users type, scheme included, no trailing slash. Invite links and webhook URLs are built from it. Behind a TLS proxy this is the **proxy's** address, not the container's. |
+| `LAIKA_DB_PATH` | no | `/data/laika.db` | Must stay inside the data volume, or the database lands somewhere backups do not reach. |
+| `LAIKA_DATA_DIR` | no | `/data` | Where the database and backups live. `LAIKA_DB_PATH` wins if both are set. |
 | `PORT` | no | `3000` | Container-internal. Map it with compose's `LAIKA_PORT`. |
 | `LAIKA_PORT` | no | `3000` | Host port compose publishes. Compose-only, not read by the server. |
 | `NODE_ENV` | no | `production` | |
+
+Every variable the server reads is `LAIKA_`-prefixed (D-018), except the two
+conventional ones — `PORT` and `NODE_ENV`.
+
+**`LAIKA_PUBLIC_URL` has no default on purpose.** A default that works on a
+laptop is the failure this variable exists to prevent: it would send invite
+links to `localhost` from a real deployment, and that surfaces days later as a
+mail problem rather than immediately as a configuration one.
 
 Everything lives in `docker/.env`, which is gitignored. **No secret is ever
 committed** — `env.example` carries an obvious placeholder.
 
 Losing `LAIKA_SECRET` makes previously encrypted settings unreadable. Keep it
 wherever you keep the volume backup.
+
+Both required variables are checked twice — once by compose's `${VAR:?…}`
+interpolation, which fails before a container is created, and again by
+`entrypoint.sh` for anyone running the image directly with `docker run`.
 
 ## Backup and restore
 
@@ -94,8 +112,9 @@ a global directive later.
 
 ## What the image does and does not contain
 
-- Compiled JavaScript, production dependencies, the generated migrations, and
-  the fallback document. No TypeScript, no `tsx`, no `vitest`, no compiler.
+- Compiled JavaScript, production dependencies, the built SPA, the generated
+  migrations, and the fallback document. No TypeScript, no `tsx`, no `vitest`,
+  no compiler.
 - **No database.** `/data` is a declared `VOLUME`; the image ships empty.
 - Runs as the `node` user (uid 1000), never root. `no-new-privileges` is set in
   compose.
@@ -119,14 +138,16 @@ ignores `.env*`, so the dot-prefixed name would be untracked and invisible.
 
 ## Known gaps
 
-| Gap | Blocked on |
-| --- | --- |
-| The SPA build stage produces an empty `public/`. | LAI-017 (itself blocked on LAI-022) |
-| The server is compiled by `tsc` invoked from the Dockerfile, because `@laika/server` has no `build` script. | LAI-024 (+ LAI-201) |
-| `LAIKA_SECRET` vs SPEC §11.7's `SERVER_SECRET`. Both accepted for now. | LAI-202 |
+Both gaps recorded here are closed. The image now builds the real SPA
+(`pnpm --filter @laika/web build`, LAI-017) and builds the server with the
+package's own script (`pnpm --filter @laika/server build`, LAI-024) rather than
+open-coding `tsc` and copying assets by hand.
 
-Neither gap stops the container working today: it builds, boots, migrates,
-serves health and the placeholder, and survives `down` / `up`.
+Each build stage asserts its own output — `index.html` for the SPA,
+`dist/index.js`, `dist/static/fallback.html` and the migrations journal for the
+server. An earlier version swallowed a failed SPA build with `|| true` and
+shipped an empty `public/`, which surfaced as a 500 on `GET /` rather than as a
+failed build.
 
 If you need a change here, write a task file in `.tasks/backlog/` with
 `area: docker`.
