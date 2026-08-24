@@ -11,11 +11,12 @@ import {
   joinPublicProject,
   listMembers,
   listProjects,
-  projectView,
+  projectSummaries,
+  projectSummaryView,
   removeMember,
   REPO_MAX_LENGTH,
   updateProject,
-  type ProjectView,
+  type ProjectSummary,
 } from '../../services/projects.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
@@ -99,10 +100,20 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     // list, and a client that only saw changed rows would keep showing it.
     const archived = new Set(archivedTombstones(paged.data));
 
-    const page: Page<WithTombstones<ProjectView>> = {
-      // `projectView` from the service, not a copy of it: this mapping used to be
-      // written out here and was missing §4.3's `repo` the moment it landed.
-      data: paged.data.map((row) => (archived.has(row.id) ? tombstone(row.id) : projectView(row))),
+    // One set of aggregates for the whole page (LAI-053). Computed after paging
+    // so it covers exactly the rows being returned, and skipping tombstones —
+    // an archived project's counts are not something a catching-up client wants.
+    const summaries = projectSummaries(
+      db,
+      paged.data.filter((row) => !archived.has(row.id)).map((row) => row.id),
+    );
+
+    const page: Page<WithTombstones<ProjectSummary>> = {
+      // `projectSummaryView` from the service, not a copy of it: this mapping used
+      // to be written out here and was missing §4.3's `repo` the moment it landed.
+      data: paged.data.map((row) =>
+        archived.has(row.id) ? tombstone(row.id) : projectSummaryView(row, summaries.get(row.id)),
+      ),
       next_cursor: paged.next_cursor,
     };
 

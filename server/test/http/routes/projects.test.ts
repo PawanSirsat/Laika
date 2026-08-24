@@ -284,3 +284,91 @@ describe('the repo field (LAI-108)', () => {
     expect(((await cleared.json()) as { repo: string | null }).repo).toBeNull();
   });
 });
+
+/**
+ * LAI-053 AC2, at the level the N+1 would actually reappear.
+ *
+ * The service-level test guards `projectSummaries`; this guards the **route**,
+ * which is where a well-meaning refactor would put the aggregate call inside the
+ * `map` and reintroduce one query per card without touching the service at all.
+ * I found that gap by breaking the route and watching the service test stay
+ * green.
+ */
+describe('GET /api/v1/projects does not query per card', () => {
+  function statementsDuring<T>(run: () => Promise<T>): Promise<[T, string[]]> {
+    const recorded: string[] = [];
+    const real = h.t.sqlite.prepare.bind(h.t.sqlite);
+
+    (h.t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+      recorded.push(source);
+      return real(source);
+    };
+
+    return run().then(
+      (value): [T, string[]] => {
+        (h.t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+        return [value, recorded];
+      },
+      (error: unknown) => {
+        (h.t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+        throw error;
+      },
+    );
+  }
+
+  /** `from` so a second batch does not collide with the first on slug. */
+  async function makeProjects(count: number, from = 0): Promise<void> {
+    for (let i = from; i < from + count; i += 1) {
+      const res = await req('/api/v1/projects', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: `P${String(i)}`,
+          slug: `p${String(i)}`,
+          prefix: `PX${String(i)}`,
+        }),
+      });
+      expect(res.status, await res.clone().text()).toBe(201);
+    }
+  }
+
+  it('costs the same for twenty projects as for two', async () => {
+    await makeProjects(2);
+    const [, few] = await statementsDuring(() => req('/api/v1/projects?limit=50'));
+
+    await makeProjects(18, 2);
+    const [res, many] = await statementsDuring(() => req('/api/v1/projects?limit=50'));
+
+    expect(res.status).toBe(200);
+    const page = (await res.json()) as { data: { id: string }[] };
+    expect(page.data).toHaveLength(20);
+
+    // The property: statement count is a function of the aggregate shape, not of
+    // how many cards are on the page.
+    expect(many.length).toBe(few.length);
+  });
+
+  it('returns the fields the Projects screen needs', async () => {
+    await makeProjects(1);
+    const res = await req('/api/v1/projects?limit=50');
+    const page = (await res.json()) as {
+      data: Record<string, unknown>[];
+    };
+
+    const project = page.data.find((row) => row.id !== undefined);
+    expect(project).toBeDefined();
+
+    for (const field of [
+      'repo',
+      'task_counts',
+      'blocked_count',
+      'member_count',
+      'members',
+      'last_activity_at',
+    ]) {
+      expect(Object.keys(project ?? {}), field).toContain(field);
+    }
+
+    // Deferred, not faked (AC4): heartbeats are M4 (D-023).
+    expect(Object.keys(project ?? {})).not.toContain('live_agents');
+  });
+});

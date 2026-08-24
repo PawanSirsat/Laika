@@ -12,9 +12,13 @@ import {
   joinPublicProject,
   listMembers,
   listProjects,
+  projectSummaries,
   removeMember,
   updateProject,
+  AVATAR_LIMIT,
 } from '../../src/services/projects.ts';
+import { addTaskDependency, changeStatus, createTask } from '../../src/services/tasks.ts';
+import { appendActivity } from '../../src/db/activity.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 let t: TestDb;
@@ -399,5 +403,265 @@ describe('joining a public project (§3.1)', () => {
 
     joinPublicProject(t.db, actor(memberId), 'open');
     expect(() => joinPublicProject(t.db, actor(memberId), 'open')).toThrow(/already a member/);
+  });
+});
+
+/**
+ * LAI-053. The Projects screen needs nine things per card (§11.4.2.1) and the
+ * list endpoint returned six of them — but the cost of adding the rest must not
+ * be one query per card.
+ */
+describe('projectSummaries (SPEC §11.4.2.1)', () => {
+  /** Count the statements a call prepares, by instrumenting the driver. */
+  function statementsDuring(run: () => void): string[] {
+    const recorded: string[] = [];
+    const real = t.sqlite.prepare.bind(t.sqlite);
+
+    (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+      recorded.push(source);
+      return real(source);
+    };
+
+    try {
+      run();
+    } finally {
+      (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+    }
+
+    return recorded;
+  }
+
+  it('counts tasks by status, with every status present', () => {
+    const { adminId, project } = seedProject();
+    const a = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'a' });
+    createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'b' });
+    changeStatus(t.db, actor(adminId), a.id, 'todo');
+
+    const summary = projectSummaries(t.db, [project.id]).get(project.id);
+
+    // Zero is a measurement; a missing key is not. A card reading `counts.review`
+    // must get 0 rather than undefined.
+    expect(summary?.task_counts).toEqual({
+      backlog: 1,
+      todo: 1,
+      in_progress: 0,
+      review: 0,
+      done: 0,
+      cancelled: 0,
+    });
+  });
+
+  it('counts a blocked task once however many things block it', () => {
+    const { adminId, project } = seedProject();
+    const blocked = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'blocked' });
+    const first = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'one' });
+    const second = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'two' });
+
+    addTaskDependency(t.sqlite, t.db, actor(adminId), blocked.id, first.id);
+    addTaskDependency(t.sqlite, t.db, actor(adminId), blocked.id, second.id);
+
+    // One blocked task, not two — `COUNT(DISTINCT)`.
+    expect(projectSummaries(t.db, [project.id]).get(project.id)?.blocked_count).toBe(1);
+  });
+
+  it('stops counting a task as blocked once its dependency is done', () => {
+    const { adminId, project } = seedProject();
+    const blocked = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'blocked' });
+    const blocker = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'blocker' });
+    addTaskDependency(t.sqlite, t.db, actor(adminId), blocked.id, blocker.id);
+
+    expect(projectSummaries(t.db, [project.id]).get(project.id)?.blocked_count).toBe(1);
+
+    for (const status of ['todo', 'in_progress', 'review', 'done'] as const) {
+      changeStatus(t.db, actor(adminId), blocker.id, status);
+    }
+
+    expect(projectSummaries(t.db, [project.id]).get(project.id)?.blocked_count).toBe(0);
+  });
+
+  it('agrees with `ready`: a cancelled dependency still blocks', () => {
+    // `isReady` requires every dependency to be `done` and nothing else, so a
+    // cancelled one keeps a task unready for ever. A different rule here would
+    // put a number on the card that the board's own flag contradicts.
+    const { adminId, project } = seedProject();
+    const blocked = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'blocked' });
+    const blocker = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'blocker' });
+    addTaskDependency(t.sqlite, t.db, actor(adminId), blocked.id, blocker.id);
+    changeStatus(t.db, actor(adminId), blocker.id, 'cancelled');
+
+    expect(projectSummaries(t.db, [project.id]).get(project.id)?.blocked_count).toBe(1);
+  });
+
+  it('does not count a finished task as blocked', () => {
+    const { adminId, project } = seedProject();
+    const blocked = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'blocked' });
+    const blocker = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'blocker' });
+    addTaskDependency(t.sqlite, t.db, actor(adminId), blocked.id, blocker.id);
+    changeStatus(t.db, actor(adminId), blocked.id, 'cancelled');
+
+    expect(projectSummaries(t.db, [project.id]).get(project.id)?.blocked_count).toBe(0);
+  });
+
+  it('reports the member count and a capped list of avatars', () => {
+    const { adminId, project } = seedProject();
+
+    // `createProject` makes its creator a lead, so the project starts with one.
+    const before = projectSummaries(t.db, [project.id]).get(project.id)?.member_count ?? 0;
+    expect(before).toBe(1);
+
+    const added = AVATAR_LIMIT + 3;
+    for (let i = 0; i < added; i += 1) {
+      addMember(t.db, actor(adminId), 'laika', makeUser('member'), 'member');
+    }
+
+    const summary = projectSummaries(t.db, [project.id]).get(project.id);
+
+    // The count is the truth; the list is what a row of avatars can hold.
+    expect(summary?.member_count).toBe(before + added);
+    expect(summary?.members).toHaveLength(AVATAR_LIMIT);
+  });
+
+  it('sends identity for avatars and nothing more', () => {
+    // Not `MemberView`: that carries an email, and every viewer of a project
+    // list does not need every member's address to draw a coloured circle.
+    const { adminId, project } = seedProject();
+    addMember(t.db, actor(adminId), 'laika', makeUser('member'), 'member');
+
+    const avatar = projectSummaries(t.db, [project.id]).get(project.id)?.members[0];
+
+    expect(Object.keys(avatar ?? {}).sort()).toEqual(['name', 'user_id']);
+  });
+
+  it('takes last_activity_at from activity, not from the project row', () => {
+    // §4.8 is the only source of truth for "when did something happen here".
+    // `projects.updated_at` moves only when the row itself changes, so a project
+    // with a week of task activity and no settings edit would look untouched.
+    const { adminId, project } = seedProject();
+    const later = Date.now() + 60_000;
+
+    appendActivity(t.db, {
+      orgId,
+      projectId: project.id,
+      actorId: adminId,
+      actorKind: 'user',
+      type: 'task.created',
+      now: later,
+    });
+
+    const summary = projectSummaries(t.db, [project.id]).get(project.id);
+
+    expect(summary?.last_activity_at).toBe(later);
+    expect(summary?.last_activity_at).toBeGreaterThan(project.updated_at);
+  });
+
+  it('reports null last activity for a project nothing has happened in', () => {
+    // `createProject` writes a `project.created` row, so the honest way to see
+    // the null case is a project id with no activity at all.
+    expect(projectSummaries(t.db, ['nonexistent']).get('nonexistent')?.last_activity_at).toBeNull();
+  });
+
+  it('gives every requested id an entry, zeroed', () => {
+    const summary = projectSummaries(t.db, ['nope']).get('nope');
+
+    expect(summary?.member_count).toBe(0);
+    expect(summary?.blocked_count).toBe(0);
+    expect(summary?.members).toEqual([]);
+  });
+
+  it('asks for nothing when given nothing', () => {
+    expect(projectSummaries(t.db, []).size).toBe(0);
+  });
+
+  it('does not offer a live-agent field (AC4)', () => {
+    // Deferred, not faked: it needs heartbeats (M4, D-023) and there is no
+    // honest value. A card showing "no agents" would be indistinguishable from
+    // one showing the truth, so the field does not exist.
+    const { project } = seedProject();
+    const summary = projectSummaries(t.db, [project.id]).get(project.id);
+
+    for (const invented of ['live_agents', 'agent_count', 'agents_online', 'live_agent']) {
+      expect(Object.keys(summary ?? {})).not.toContain(invented);
+    }
+  });
+
+  it('costs the same four queries for twenty projects as for two (AC2)', () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 20; i += 1) {
+      const admin = makeUser('admin');
+      const project = createProject(t.sqlite, t.db, actor(admin), {
+        name: `P${String(i)}`,
+        slug: `p${String(i)}`,
+        prefix: `P${String(i)}X`,
+      });
+      createTask(t.sqlite, t.db, actor(admin), `p${String(i)}`, { title: 'a task' });
+      ids.push(project.id);
+    }
+
+    const many = statementsDuring(() => {
+      projectSummaries(t.db, ids);
+    });
+    const few = statementsDuring(() => {
+      projectSummaries(t.db, ids.slice(0, 2));
+    });
+
+    // The property: cost is a function of the aggregate shape, not the page size.
+    expect(many).toHaveLength(few.length);
+    expect(many).toHaveLength(4);
+  });
+});
+
+/**
+ * LAI-053 AC5 and AC6 — enriching a list must not widen it, and must not break
+ * the paging it already had.
+ */
+describe('enrichment does not change who sees what', () => {
+  it('a viewer with no membership still sees no private project', () => {
+    // The summaries are computed for the page `listProjects` returned, so they
+    // cannot widen it — but that is a property worth holding, not assuming.
+    const { project } = seedProject('secret', 'SEC', 'private');
+    const outsider = makeUser('member');
+
+    const visible = listProjects(t.db, actor(outsider), LIST);
+
+    expect(visible.map((row) => row.id)).not.toContain(project.id);
+  });
+
+  it('does not leak counts for a project the actor cannot see', () => {
+    const { adminId, project } = seedProject('secret', 'SEC', 'private');
+    createTask(t.sqlite, t.db, actor(adminId), 'secret', { title: 'private work' });
+
+    const outsider = makeUser('member');
+    const ids = listProjects(t.db, actor(outsider), LIST).map((row) => row.id);
+
+    expect(ids).not.toContain(project.id);
+  });
+
+  it('still pages and still honours updated_since', () => {
+    const admin = makeUser('admin');
+    for (let i = 0; i < 5; i += 1) {
+      createProject(t.sqlite, t.db, actor(admin), {
+        name: `P${String(i)}`,
+        slug: `p${String(i)}`,
+        prefix: `P${String(i)}X`,
+      });
+    }
+
+    const first = listProjects(t.db, actor(admin), { ...LIST, limit: 2 });
+    expect(first.length).toBeGreaterThan(2); // limit + 1, so the page knows there is more
+
+    const second = listProjects(t.db, actor(admin), {
+      ...LIST,
+      limit: 2,
+      cursor: { sortKey: first[1]?.updatedAt ?? 0, id: first[1]?.id ?? '' },
+    });
+
+    // No overlap between pages — the keyset still works.
+    const firstTwo = first.slice(0, 2).map((r) => r.id);
+    expect(second.map((r) => r.id).filter((id) => firstTwo.includes(id))).toEqual([]);
+
+    // And a watermark in the future returns nothing.
+    expect(
+      listProjects(t.db, actor(admin), { ...LIST, updatedSince: Date.now() + 60_000 }),
+    ).toEqual([]);
   });
 });
