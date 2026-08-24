@@ -1,0 +1,234 @@
+/* Form primitives (LAI-021). Tokens only — no literal colours. */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.field-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.field-required {
+  color: var(--red);
+  margin-left: 2px;
+}
+
+.field-help {
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  margin: 0;
+}
+
+/* Empty most of the time; it holds the live region open so an error announces
+   when it appears rather than creating the region and the text together. */
+.field-error {
+  font-size: var(--text-xs);
+  color: var(--red);
+  margin: 0;
+  min-height: 1em;
+}
+
+.input {
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.input::placeholder {
+  color: var(--tx3);
+}
+
+.input:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+  border-color: var(--acc);
+}
+
+.input:disabled {
+  background: var(--tub);
+  color: var(--tx3);
+  cursor: not-allowed;
+}
+
+.input:read-only:not(:disabled) {
+  background: var(--tub);
+}
+
+/* Invalid is carried by the border *and* the message, never by colour alone. */
+.field-invalid .input {
+  border-color: var(--red);
+}
+
+.select {
+  appearance: auto;
+}
+
+.input-affix {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-2);
+}
+
+.input-affix-button {
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-3);
+  cursor: pointer;
+  flex: none;
+}
+
+.input-affix-button:hover:not(:disabled) {
+  color: var(--tx);
+}
+
+.input-affix-button:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------- strength */
+
+.strength {
+  margin-top: var(--space-2);
+}
+
+.strength-bars {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.strength-bar {
+  height: 4px;
+  flex: 1;
+  border-radius: var(--radius-pill);
+  background: var(--tub);
+}
+
+.strength-weak {
+  background: var(--red);
+}
+.strength-fair {
+  background: var(--amb);
+}
+.strength-good {
+  background: var(--acc);
+}
+.strength-strong {
+  background: var(--grn);
+}
+
+.strength-text {
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  margin: var(--space-1) 0 0;
+}
+
+.strength-label {
+  font-weight: var(--weight-bold);
+  text-transform: capitalize;
+}
+
+.strength-text-weak {
+  color: var(--red);
+}
+.strength-text-fair {
+  color: var(--amb);
+}
+.strength-text-good {
+  color: var(--acc);
+}
+.strength-text-strong {
+  color: var(--grn);
+}
+
+/* ------------------------------------------------------------- checkbox */
+
+.checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.checkbox-input {
+  margin: 0;
+  width: 1rem;
+  height: 1rem;
+  flex: none;
+  accent-color: var(--acc);
+  margin-top: 2px;
+}
+
+.checkbox-input:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.checkbox-label {
+  font-size: var(--text-sm);
+  color: var(--tx);
+}
+
+/* --------------------------------------------------------------- button */
+
+.button {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.button:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button-block {
+  width: 100%;
+}
+
+.button-primary {
+  background: var(--acc);
+  color: var(--card);
+  border-color: var(--acc);
+}
+
+.button-secondary {
+  background: var(--card);
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.button-secondary:hover:not(:disabled) {
+  border-color: var(--tx3);
+}
+
+.button-danger {
+  background: var(--reds);
+  color: var(--red);
+  border-color: var(--redb);
+}
