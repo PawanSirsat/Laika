@@ -9,6 +9,7 @@ import { consumeInvite, removeOrphanedInvitee } from '../services/invites.ts';
 import { avatarColorFor } from './avatar.ts';
 import { findUsableInvite, inviteMatchesEmail, isInviteOnly } from './invites.ts';
 import { scrubTelemetryEnv } from './telemetry.ts';
+import { trustedOriginsFor } from './trusted-origins.ts';
 
 export const AUTH_BASE_PATH = '/api/v1/auth';
 
@@ -108,9 +109,34 @@ export function createAuth(options: CreateAuthOptions) {
       // `SameSite=Lax` plus better-auth's own origin check is the CSRF story for
       // cookie-authenticated mutations (§6.1, §13.1).
       disableCSRFCheck: false,
+      /**
+       * Set explicitly because better-auth's **default depends on the
+       * environment** (LAI-090):
+       *
+       * ```js
+       * skipOriginCheck: options.advanced?.disableOriginCheck !== undefined
+       *   ? options.advanced.disableOriginCheck
+       *   : isTest() ? true : false
+       * ```
+       *
+       * Under `NODE_ENV=test` — which vitest sets — the origin check is **off**.
+       * So the suite ran with a weaker security posture than production, and no
+       * test at any level could have caught the origin rejection that locked the
+       * owner out: every request was accepted regardless of `Origin`.
+       *
+       * A check that cannot fail in the test environment is a check nobody can
+       * regression-test. Pinning it to `false` makes the posture identical
+       * everywhere, which is the only way `test/auth/origin.test.ts` means
+       * anything.
+       */
+      disableOriginCheck: false,
     },
 
-    trustedOrigins: [options.baseUrl],
+    // Loopback spellings are one host (LAI-090). `localhost`, `127.0.0.1` and
+    // `::1` name the same machine, and treating them as different origins locked
+    // the owner out of their own instance with a message about their password.
+    // See `trusted-origins.ts` for what this deliberately does *not* widen.
+    trustedOrigins: trustedOriginsFor(options.baseUrl),
 
     hooks: {
       /**
