@@ -15,25 +15,9 @@ import assert from 'node:assert/strict';
 import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { before, describe, test } from 'node:test';
+import { code } from './helpers/code.ts';
 
 const COMPONENTS = fileURLToPath(new URL('../src/components/', import.meta.url));
-
-/**
- * Strip comments before scanning.
- *
- * These guards are about what the code *does*, and every one of them tripped on
- * its own explanatory comment the first time it ran: the banner's doc block
- * names the fixture hostname precisely to say it must not be hardcoded, and
- * says `role="alert"` to explain why it uses `role="status"` instead. Scanning
- * prose for the thing the prose warns about is a test that punishes writing
- * things down.
- *
- * String-aware enough for this source (no `//` inside string literals here); if
- * that changes, this needs a real tokeniser rather than a quiet false negative.
- */
-function code(source: string): string {
-  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-}
 
 const COMPONENT_FILES = [
   'ConnectionBanner.tsx',
@@ -175,7 +159,17 @@ void describe('accessibility affordances', () => {
 
   void test('focus is redrawn, never removed', () => {
     assert.ok(css.includes(':focus-visible'), 'no visible focus style for keyboard users');
-    assert.ok(!/outline:\s*(none|0)\s*;/.test(css), 'focus outline removed without replacement');
+
+    // `outline: none` is allowed in exactly one place: a rule that also carries
+    // `:not(:focus-visible)`, which suppresses the ring for programmatic focus
+    // (the skip link's target) while keeping it for keyboard users. Anywhere
+    // else it takes focus indication away from someone who needs it.
+    const offenders = [...css.matchAll(/([^{}]*)\{([^}]*)\}/g)]
+      .filter(([, , body]) => /outline:\s*(none|0)\s*;/.test(body ?? ''))
+      .map(([, selector]) => (selector ?? '').trim())
+      .filter((selector) => !selector.includes(':not(:focus-visible)'));
+
+    assert.deepEqual(offenders, [], 'focus outline removed without replacement');
   });
 
   void test('skeleton animation respects prefers-reduced-motion', () => {
