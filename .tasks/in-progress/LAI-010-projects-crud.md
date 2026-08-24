@@ -2,11 +2,12 @@
 id: LAI-010
 title: Projects CRUD and membership management
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-004, LAI-006, LAI-009, LAI-037]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T08:06:21+05:30
 ---
 
 ## Goal
