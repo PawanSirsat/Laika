@@ -2,11 +2,12 @@
 id: LAI-071
 title: Invites — send, accept, and the role the invitee lands on
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p1
 depends-on: [LAI-010, LAI-060]
 discovered-from:
-status: backlog
+started: 2026-08-24T18:00:58Z
+status: in-progress
 ---
 
 ## Goal
