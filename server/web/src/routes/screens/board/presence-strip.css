@@ -1,0 +1,139 @@
+/* The presence strip (prototype, band C). Tokens only. */
+
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5625rem 1.125rem;
+  background: var(--page);
+  border-bottom: 1px solid var(--bd);
+  flex-wrap: wrap;
+}
+
+.presence-label {
+  flex: none;
+  margin: 0;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.09em;
+  color: var(--tx3);
+}
+
+.presence-people {
+  flex: 1;
+  display: flex;
+  gap: 0.4375rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.presence-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.125rem;
+  padding: 0.125rem 0.6875rem 0.125rem 0.1875rem;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-pill);
+  background: var(--card);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.presence-chip-on {
+  border-color: var(--accb);
+  background: var(--accs);
+}
+
+.presence-chip:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.presence-face {
+  position: relative;
+  flex: none;
+  display: flex;
+}
+
+.presence-avatar {
+  width: 1.6875rem;
+  height: 1.6875rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+}
+
+/* The badge on the corner, not beside — the work is the person's. */
+.presence-bot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: var(--radius-pill);
+  background: var(--pur);
+  border: 2px solid var(--card);
+}
+
+.presence-who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.presence-name {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: 0.65625rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  white-space: nowrap;
+}
+
+.presence-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: var(--tx3);
+}
+
+.presence-dot-live,
+.presence-dot-active {
+  background: var(--grn);
+}
+
+.presence-dot-idle {
+  background: var(--amb);
+}
+
+.presence-where {
+  font-size: 0.53125rem;
+  color: var(--tx3);
+  white-space: nowrap;
+}
+
+.presence-clear {
+  flex: none;
+  font: inherit;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  color: var(--acc);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.presence-note {
+  flex: none;
+  margin: 0;
+  font-size: 0.53125rem;
+  color: var(--tx3);
+}

@@ -6,6 +6,12 @@ import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './board/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
+import { SprintStrip } from './board/SprintStrip.tsx';
+import { BoardRail } from './board/BoardRail.tsx';
+import { PresenceStrip } from './board/PresenceStrip.tsx';
+import { useEvents } from '../../api/use-events.ts';
+import { listSprints, type Sprint } from '../../api/sprints.ts';
+import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { useBoard } from '../../api/use-board.ts';
 import type { BoardColumn } from '../../api/board-derive.ts';
@@ -49,6 +55,9 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
   const [openTaskId, setOpenTaskId] = useState<string | undefined>(undefined);
   const [project, setProject] = useState<Project | undefined>(undefined);
+  const [sprints, setSprints] = useState<readonly Sprint[]>([]);
+  /** Every task in the project, unscoped — the strip counts across sprints. */
+  const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -59,14 +68,17 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const readyParam = params.get('ready');
   const ready = readyParam === null ? undefined : readyParam === 'true';
   const agentOnly = params.get('agent') === 'true';
+  const sprintScope = params.get('sprint') ?? undefined;
 
   const filter: TaskFilter = useMemo(
     () => ({
       ...(priority === undefined ? {} : { priority }),
       ...(assignee === undefined ? {} : { assignee }),
       ...(ready === undefined ? {} : { ready }),
+      // Scoping to a sprint is server-side — the endpoint has always taken it.
+      ...(sprintScope === undefined ? {} : { sprint: sprintScope }),
     }),
-    [priority, assignee, ready],
+    [priority, assignee, ready, sprintScope],
   );
 
   const filtered =
@@ -163,6 +175,35 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   }, [slug]);
 
   const board = useBoard(slug, filter);
+  // The first consumer the SSE endpoint has ever had (LAI-070).
+  const stream = useEvents(slug);
+
+  // Sprints for the strip, plus an unscoped task list so its per-sprint counts
+  // are of the whole project rather than of whatever the board is filtered to.
+  useEffect(() => {
+    if (slug === undefined) return;
+    const controller = new AbortController();
+
+    listSprints(slug, {}, controller.signal)
+      .then((page) => {
+        setSprints(page.data);
+      })
+      .catch(() => {
+        setSprints([]);
+      });
+
+    listTasks(slug, { limit: 200 }, controller.signal)
+      .then((page) => {
+        setAllTasks(page.data);
+      })
+      .catch(() => {
+        setAllTasks([]);
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [slug, board.state.tasks]);
 
   const mayCreate =
     me !== undefined &&
@@ -214,6 +255,15 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
     [board.state.tasks, needle, agentOnly, matches],
   );
 
+  /** `S1`, `S2`… in the sprint order the strip shows. Real data. */
+  const sprintLabels = useMemo(() => {
+    const map = new Map<string, { label: string; active: boolean }>();
+    sprints.forEach((sprint, index) => {
+      map.set(sprint.id, { label: `S${String(index + 1)}`, active: sprint.status === 'active' });
+    });
+    return map;
+  }, [sprints]);
+
   const shownCount = useMemo(
     () => Object.values(columns).reduce((n, list) => n + list.length, 0),
     [columns],
@@ -251,7 +301,18 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
 
   return (
     <div className="board">
-      <ScreenHeader title="Board" context={project?.slug}>
+      <ScreenHeader
+        title="Board"
+        context={
+          <>
+            {project?.slug}
+            <span className={`live live-${stream.status}`} title={`Event stream: ${stream.status}`}>
+              <span className="live-dot" aria-hidden="true" />
+              {stream.status === 'live' ? 'LIVE · SSE' : 'RECONNECTING'}
+            </span>
+          </>
+        }
+      >
         <label className="board-search">
           <span className="visually-hidden">Search tasks</span>
           <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
@@ -389,6 +450,27 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         )}
       </ScreenHeader>
 
+      <SprintStrip
+        sprints={sprints}
+        tasks={allTasks}
+        selected={sprintScope}
+        onSelect={(id) => {
+          setParam('sprint', id);
+        }}
+        onOpenSprints={() => {
+          window.location.assign('/sprints');
+        }}
+      />
+
+      <PresenceStrip
+        members={members}
+        theme={theme}
+        assignee={assignee}
+        onFilter={(id) => {
+          setParam('assignee', id);
+        }}
+      />
+
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">
           {shownCount} of {board.byId.size} loaded {board.byId.size === 1 ? 'task' : 'tasks'} match.{' '}
@@ -420,27 +502,44 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         <LoadingState shape="card" count={4} label="Loading tasks" />
       ) : board.state.status === 'error' ? (
         <ApiErrorState error={board.state.error} resource="this board" onRetry={board.reload} />
-      ) : view === 'list' ? (
-        <ListView
-          tasks={tasks}
-          byId={board.byId}
-          members={members}
-          filtered={filtered}
-          onOpen={setOpenTaskId}
-        />
       ) : (
-        <KanbanView
-          columns={columns}
-          byId={board.byId}
-          members={members}
-          theme={theme}
-          movingId={board.movingId}
-          onMove={(id, to) => {
-            void board.move(id, to);
-          }}
-          filtered={filtered}
-          onOpen={setOpenTaskId}
-        />
+        <div className="board-main">
+          {view === 'list' ? (
+            <ListView
+              tasks={tasks}
+              byId={board.byId}
+              members={members}
+              filtered={filtered}
+              onOpen={setOpenTaskId}
+            />
+          ) : (
+            <KanbanView
+              columns={columns}
+              byId={board.byId}
+              members={members}
+              theme={theme}
+              movingId={board.movingId}
+              onMove={(id, to) => {
+                void board.move(id, to);
+              }}
+              filtered={filtered}
+              onOpen={setOpenTaskId}
+              onAdd={() => {
+                setCreating(true);
+              }}
+              canAdd={mayCreate}
+              sprintLabels={sprintLabels}
+            />
+          )}
+
+          <BoardRail
+            status={stream.status}
+            events={stream.recent}
+            gapped={stream.gapped}
+            tasks={allTasks}
+            members={members}
+          />
+        </div>
       )}
 
       {/* Reuses `board.move` — the same call the drag uses, so a rejected

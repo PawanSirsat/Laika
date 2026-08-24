@@ -220,6 +220,11 @@ export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
         />
       ) : (
         <>
+          <p className="projects-section">
+            <span>YOUR PROJECTS</span>
+            <span className="projects-rule" aria-hidden="true" />
+          </p>
+
           <ul className="projects-list">
             {list.projects.map((project) => (
               <li key={project.id}>
@@ -229,40 +234,55 @@ export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
                     <span
                       className={
                         project.visibility === 'public'
-                          ? 'project-visibility project-visibility-public'
-                          : 'project-visibility'
+                          ? 'project-chip project-chip-public'
+                          : 'project-chip'
                       }
                     >
-                      {project.visibility}
+                      {project.visibility.toUpperCase()}
                     </span>
                   </header>
 
-                  <p className="project-card-meta">
-                    <code>{project.prefix}-1</code> · <code>{project.slug}</code>
-                  </p>
+                  {/* The repo the project tracks. Omitted when unset rather than
+                      shown empty — `projects.repo` is nullable. */}
+                  {project.repo !== null && project.repo !== '' && (
+                    <p className="project-repo">{project.repo}</p>
+                  )}
 
                   {project.description !== null && project.description !== '' && (
                     <p className="project-card-desc">{project.description}</p>
                   )}
 
-                  <div className="project-card-actions">
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        onOpen(project.slug);
-                      }}
-                    >
-                      Open board
-                    </Button>
-                    <Button
-                      variant="secondary"
+                  {/*
+                    The design puts a progress bar, task counts, a blocked count
+                    and last-activity here. `GET /projects` returns none of them
+                    (LAI-053), and counting them per card is one request per
+                    project — a defect at any real number of projects. Absent
+                    rather than fabricated; the layout degrades to this.
+                  */}
+
+                  <footer className="project-card-foot">
+                    <code className="project-key">{project.prefix}-1</code>
+                    <span className="project-slug">{project.slug}</span>
+                    <span className="project-foot-spacer" />
+                    <button
+                      type="button"
+                      className="project-members"
                       onClick={() => {
                         onOpenMembers(project.slug);
                       }}
                     >
                       Members
-                    </Button>
-                  </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="project-open"
+                      onClick={() => {
+                        onOpen(project.slug);
+                      }}
+                    >
+                      Open board
+                    </button>
+                  </footer>
                 </article>
               </li>
             ))}

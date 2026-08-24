@@ -10,16 +10,14 @@
  *
  * The design shows a limit only on In progress (`WIP 3/4`), amber when over.
  */
+import { DEMO_ENABLED } from './enabled.ts';
 
 export const DEMO_WIP_LIMIT = 4;
 
 /** Which column carries a limit in the design. */
 export function demoWipLimit(column: string): number | undefined {
-  // D-032: demo data must be incapable of reaching a production build. Vite
-  // substitutes this literally, so everything below is dead code in prod and the
-  // minifier removes the fixtures with it. `demo-not-in-bundle.test.ts` greps
-  // the built bundle and fails if any of it survives.
-  if (import.meta.env.PROD) return undefined;
+  // D-032: off unless deliberately enabled — see `demo/enabled.ts`.
+  if (!DEMO_ENABLED) return undefined;
 
   return column === 'in_progress' ? DEMO_WIP_LIMIT : undefined;
 }

@@ -43,12 +43,23 @@ async function demoModules(): Promise<readonly string[]> {
  * to the demo layer by construction, so a hit is always real — and the list
  * maintains itself as fixtures change.
  */
+/**
+ * Every source file **outside** `demo/`.
+ *
+ * Excluded by path, not by matching a comment inside the file. The first version
+ * did the latter and broke silently the moment I reworded that comment: every
+ * demo string then counted as "appears elsewhere", the needle list emptied, and
+ * the bundle check passed while testing nothing. The `needles.length > 0`
+ * assertion below is what caught it.
+ */
 async function readAll(dir: string): Promise<readonly string[]> {
   const out: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
     if (!entry.isFile()) continue;
     if (!/\.tsx?$/.test(entry.name)) continue;
-    out.push(await readFile(join(entry.parentPath ?? dir, entry.name), 'utf8'));
+    const parent = entry.parentPath ?? dir;
+    if (parent.includes('/demo')) continue;
+    out.push(await readFile(join(parent, entry.name), 'utf8'));
   }
   return out;
 }
@@ -67,9 +78,7 @@ async function fixtureStrings(): Promise<readonly string[]> {
   );
   const candidates = new Set(demoSources.flatMap(literals));
 
-  const elsewhere = (await readAll(fileURLToPath(new URL('../../src/', import.meta.url)))).filter(
-    (text) => !text.includes('D-032: demo data must be incapable'),
-  );
+  const elsewhere = await readAll(fileURLToPath(new URL('../../src/', import.meta.url)));
 
   for (const candidate of [...candidates]) {
     if (elsewhere.some((text) => text.includes(candidate))) candidates.delete(candidate);
@@ -78,12 +87,13 @@ async function fixtureStrings(): Promise<readonly string[]> {
 }
 
 void describe('demo data cannot reach a production build', () => {
-  void test('every demo module returns early on PROD', async () => {
+  void test('every demo module is behind DEMO_ENABLED', async () => {
     const missing: string[] = [];
     for (const file of await demoModules()) {
+      if (file === 'enabled.ts') continue;
       const src = await readFile(join(DEMO_DIR, file), 'utf8');
       const exported = (src.match(/^export function /gm) ?? []).length;
-      const guards = (src.match(/import\.meta\.env\.PROD/g) ?? []).length;
+      const guards = (src.match(/if \(!DEMO_ENABLED\)/g) ?? []).length;
       if (exported > 0 && guards < exported) {
         missing.push(
           `${file} — ${String(exported)} exported function(s), ${String(guards)} guard(s)`,
@@ -91,6 +101,18 @@ void describe('demo data cannot reach a production build', () => {
       }
     }
     assert.deepEqual(missing, [], 'these could ship their fixtures to a real deployment');
+  });
+
+  void test('the flag defaults to off in a production build', async () => {
+    // The whole guarantee rests on one expression. If it ever gains a clause
+    // that is true by default, every guard below it stops guarding.
+    const src = await readFile(join(DEMO_DIR, 'enabled.ts'), 'utf8');
+    assert.match(src, /import\.meta\.env\.DEV/, 'dev builds should show the design');
+    assert.match(src, /VITE_LAIKA_DEMO === '1'/, 'and an explicit opt-in for a demo bundle');
+    assert.ok(
+      !/DEMO_ENABLED: boolean =\s*true/.test(src),
+      'DEMO_ENABLED must never be unconditionally true',
+    );
   });
 
   void test('no fixture string survives into the built bundle', async () => {
@@ -114,6 +136,11 @@ void describe('demo data cannot reach a production build', () => {
       }
     }
 
-    assert.deepEqual(found, [], 'demo fixtures reached the production bundle');
+    assert.deepEqual(
+      found,
+      [],
+      'demo fixtures reached the bundle. If you built with VITE_LAIKA_DEMO=1 to look at the ' +
+        'design, that is expected — rebuild with `pnpm build` before trusting this check.',
+    );
   });
 });

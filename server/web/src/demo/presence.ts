@@ -13,6 +13,7 @@
  * even though the activity is not — a presence strip full of invented names
  * would be harder to read past than one showing real colleagues.
  */
+import { DEMO_ENABLED } from './enabled.ts';
 
 export type PresenceState = 'live' | 'active' | 'idle' | 'away';
 
@@ -42,11 +43,8 @@ const WHERE: readonly string[] = [
 
 /** Assigns each person a slot in the design's pattern, in list order. */
 export function demoPresenceFor(index: number): DemoPresence | undefined {
-  // D-032: demo data must be incapable of reaching a production build. Vite
-  // substitutes this literally, so everything below is dead code in prod and the
-  // minifier removes the fixtures with it. `demo-not-in-bundle.test.ts` greps
-  // the built bundle and fails if any of it survives.
-  if (import.meta.env.PROD) return undefined;
+  // D-032: off unless deliberately enabled — see `demo/enabled.ts`.
+  if (!DEMO_ENABLED) return undefined;
 
   const slot = PATTERN[index % PATTERN.length];
   if (slot === undefined) return undefined;
@@ -54,11 +52,8 @@ export function demoPresenceFor(index: number): DemoPresence | undefined {
 }
 
 export function demoPresenceNote(people: number, agents: number): string {
-  // D-032: demo data must be incapable of reaching a production build. Vite
-  // substitutes this literally, so everything below is dead code in prod and the
-  // minifier removes the fixtures with it. `demo-not-in-bundle.test.ts` greps
-  // the built bundle and fails if any of it survives.
-  if (import.meta.env.PROD) return '';
+  // D-032: off unless deliberately enabled — see `demo/enabled.ts`.
+  if (!DEMO_ENABLED) return '';
 
   const s = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`;
   return `${s(agents, 'agent session')} live · ${s(people, 'person')} active`.replace(

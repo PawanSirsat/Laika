@@ -21,6 +21,14 @@ export interface Project {
   readonly prefix: string;
   readonly name: string;
   readonly description: string | null;
+  /**
+   * `owner/name` of the git repository this project tracks (§4.3), or `null`.
+   *
+   * Served on every `ProjectView` since LAI-108; the client type never declared
+   * it, so nothing in the UI could show it. Same shape of gap as `sprint_id` on
+   * `Task` (LAI-121) — the payload was there, the type was not.
+   */
+  readonly repo: string | null;
   readonly visibility: 'public' | 'private';
   readonly context_md: string;
   readonly archived_at: number | null;

@@ -1,0 +1,244 @@
+/* The board's right rail (prototype, band D right). Tokens only. */
+
+.rail {
+  width: 16.625rem;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.rail-card {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  padding: 0.6875rem 0.6875rem 0.5625rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.rail-head h2 {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
+  color: var(--tx);
+}
+
+.rail-head code {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.53125rem;
+  color: var(--tx3);
+}
+
+.rail-count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx3);
+}
+
+/* The stream's own state — green live, amber reconnecting. */
+.rail-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: var(--radius-pill);
+  background: var(--tx3);
+}
+
+.rail-dot-live {
+  background: var(--grn);
+  animation: rail-pulse 2s ease-in-out infinite;
+}
+
+.rail-dot-connecting,
+.rail-dot-dropped {
+  background: var(--amb);
+}
+
+@keyframes rail-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-dot-live {
+    animation: none;
+  }
+}
+
+.rail-empty,
+.rail-note,
+.rail-gap {
+  margin: 0;
+  font-size: 0.59375rem;
+  color: var(--tx3);
+}
+
+.rail-gap {
+  color: var(--amb);
+}
+
+.rail-feed,
+.rail-sessions,
+.rail-stale {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+}
+
+.rail-feed li {
+  display: flex;
+  gap: 0.375rem;
+  align-items: baseline;
+}
+
+.rail-feed time {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.53125rem;
+  color: var(--tx3);
+}
+
+.rail-feed-what {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.59375rem;
+  color: var(--tx2);
+  line-height: 1.4;
+}
+
+.rail-bot {
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  color: var(--pur);
+  background: var(--purs);
+  border-radius: var(--radius-sm);
+  padding: 0 0.1875rem;
+  margin-right: 0.25rem;
+}
+
+.rail-session-who {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+}
+
+.rail-pill {
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.05em;
+  border-radius: var(--radius-sm);
+  padding: 0.0625rem 0.25rem;
+  background: var(--tub);
+  color: var(--tx3);
+}
+
+.rail-pill-running {
+  background: var(--purs);
+  color: var(--pur);
+}
+
+.rail-session-task,
+.rail-session-meta {
+  margin: 0;
+  font-size: 0.53125rem;
+  color: var(--tx3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-bar {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--tub);
+  overflow: hidden;
+}
+
+.rail-bar span {
+  display: block;
+  height: 100%;
+  background: var(--pur);
+}
+
+.rail-stale li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.rail-stale-title {
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-stale-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.53125rem;
+  color: var(--tx3);
+}
+
+.rail-stale-meta code {
+  font-family: var(--font-mono);
+}
+
+.rail-stale-meta em {
+  font-style: normal;
+  margin-left: auto;
+}
+
+/* The rail sits beside the columns; below 1200px it drops under them. */
+.board-main {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+}
+
+.board-main > .kanban,
+.board-main > .list {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 1200px) {
+  .board-main {
+    flex-direction: column;
+  }
+  .rail {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .rail-card {
+    flex: 1 1 15rem;
+  }
+}

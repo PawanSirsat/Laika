@@ -12,6 +12,7 @@
  * across renders and reloads — a chip that changed on every paint would read as
  * a bug rather than as sample data.
  */
+import { DEMO_ENABLED } from './enabled.ts';
 
 export type TagTone = 'agent' | 'presence' | 'auth' | 'ui' | 'neutral';
 
@@ -48,11 +49,8 @@ function hash(value: string): number {
  * design, and a board where every card has chips reads as noise.
  */
 export function demoTags(taskId: string): readonly DemoTag[] {
-  // D-032: demo data must be incapable of reaching a production build. Vite
-  // substitutes this literally, so everything below is dead code in prod and the
-  // minifier removes the fixtures with it. `demo-not-in-bundle.test.ts` greps
-  // the built bundle and fails if any of it survives.
-  if (import.meta.env.PROD) return [];
+  // D-032: off unless deliberately enabled — see `demo/enabled.ts`.
+  if (!DEMO_ENABLED) return [];
 
   const h = hash(taskId);
   const count = h % 3;
