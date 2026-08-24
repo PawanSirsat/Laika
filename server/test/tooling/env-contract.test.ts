@@ -61,7 +61,7 @@ function variablesTheServerReads(): Set<string> {
       },
       has: () => true,
     },
-  ) as NodeJS.ProcessEnv;
+  );
 
   readEnv(probe);
 
