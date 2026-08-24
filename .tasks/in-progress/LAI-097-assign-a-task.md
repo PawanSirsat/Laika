@@ -2,11 +2,12 @@
 id: LAI-097
 title: A task cannot be assigned to anyone from the UI
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-056, LAI-060]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T07:00:00+05:30
 ---
 
 ## Goal
