@@ -2,11 +2,12 @@
 id: LAI-110
 title: '`comment.added` is doing the work of three verbs'
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-047]
 discovered-from: LAI-047
-status: backlog
+status: in-progress
+started: 2026-08-24T12:06:36+05:30
 ---
 
 ## Goal
