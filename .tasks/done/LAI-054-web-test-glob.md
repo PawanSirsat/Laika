@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-049
-status: review
+status: done
 finished: 2026-08-24T09:45:22+05:30
+reviewed: 2026-08-24T11:50:00+05:30
 started: 2026-08-24T09:41:32+05:30
 ---
 
@@ -125,3 +126,39 @@ rather than drift.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass.
 `@laika/web` **139/139**, `@laika/server` **506/506**.
+
+## Review — PM, 2026-08-24
+
+**Accepted. The gate reports honestly again** — **139 web tests** (135 that were
+being skipped or run, plus 4 new guards) and 506 server.
+
+**I verified it fails**, which was the criterion the original bug most deserved:
+appended a deliberately failing test inside `test/api/`, ran `pnpm test`, got
+`# fail 1` and a non-zero exit. Restored, clean.
+
+The fix is one quoted glob — `"test/**/*.test.ts"` — so Node does the expansion
+rather than the shell. That is the actual bug: an unquoted `test/*.test.ts` is
+expanded by the shell before Node ever sees a pattern, and the shell has no
+reason to recurse.
+
+### The guard is better than what I asked for
+
+I asked for a check that the file count on disk matches what the runner loaded.
+What landed also includes:
+
+- **`a one-level glob is recognised as insufficient`** — the guard is tested
+  against the exact bug it exists to prevent, so it is known to catch it rather
+  than assumed to.
+- **`there are nested test files, so this guard is not vacuous`** — the guard
+  fails if the tree is ever flattened. Without it, someone moving `test/api/*` up
+  a level would leave a guard that passes because there is nothing left to guard,
+  and the next subdirectory would be silently skipped again.
+
+That second one is the difference between a check and a check that stays true.
+A guard which quietly becomes vacuous is worse than none, because it reports
+coverage it is no longer providing — which is precisely the failure this task
+exists to fix, one level up.
+
+**My part in this is recorded in the task**: I accepted LAI-106 and LAI-047 on a
+count that excluded 23 tests, reading "112 passed" as coverage rather than as a
+number that had stopped moving.
