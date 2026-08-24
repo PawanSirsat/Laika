@@ -1,3 +1,4 @@
+import { StateGallery } from './components/StateGallery.tsx';
 import { TokenReference } from './theme/TokenReference.tsx';
 import { useTheme } from './theme/use-theme.ts';
 import type { ThemePreference } from './theme/theme.ts';
@@ -20,10 +21,10 @@ export function App() {
     <main className="app">
       <header className="app-head">
         <div>
-          <h1 className="app-title">Laika — design tokens</h1>
+          <h1 className="app-title">Laika — design system</h1>
           <p className="app-sub">
-            Both themes, side by side. Values verbatim from <code>docs/design/</code>. Routing and
-            the app shell land in LAI-019.
+            States and tokens, both themes. Values verbatim from <code>docs/design/</code>. Routing
+            and the app shell land in LAI-019.
           </p>
         </div>
 
@@ -48,6 +49,7 @@ export function App() {
         </fieldset>
       </header>
 
+      <StateGallery />
       <TokenReference />
     </main>
   );

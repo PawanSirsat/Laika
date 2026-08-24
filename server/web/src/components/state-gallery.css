@@ -1,0 +1,62 @@
+/* The states gallery (LAI-020 AC7). Tokens only. */
+
+.gallery {
+  padding: var(--space-5);
+  background: var(--page);
+  color: var(--tx);
+  font-family: var(--font-ui);
+}
+
+.gallery-heading {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-heavy);
+  margin: 0;
+}
+
+.gallery-sub {
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  margin: var(--space-1) 0 var(--space-5);
+  max-width: 60ch;
+}
+
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  gap: var(--space-4);
+}
+
+.gallery-item {
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.gallery-item > header {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--bd);
+}
+
+.gallery-item-title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  margin: 0;
+}
+
+.gallery-item-note {
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  margin: var(--space-1) 0 0;
+}
+
+/* --tub so the specimen sits on the recessed surface a real screen would use. */
+.gallery-stage {
+  padding: var(--space-4);
+  background: var(--tub);
+  min-height: 9rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}

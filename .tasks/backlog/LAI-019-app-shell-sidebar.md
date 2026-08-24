@@ -4,7 +4,7 @@ title: App shell, sidebar and routing
 area: web
 assignee: unclaimed
 priority: p1
-depends-on: [LAI-018]
+depends-on: [LAI-018, LAI-020]
 discovered-from:
 status: backlog
 ---
@@ -44,3 +44,27 @@ is LAI-007, which depends on the API.
 
 Match the design's *style*, not its markup — the prototype is inline-styled HTML
 rendered by a foreign runtime (`docs/design/README.md`).
+
+---
+
+## Released by Builder-B, 2026-08-24 — undeclared dependency on LAI-020
+
+Claimed, then released within a minute of reading it. No code written.
+
+**Acceptance criterion 4 requires LAI-020.** It says every route must render
+"its **empty state** from LAI-020 — not fake content, not 'coming soon'
+placeholders". LAI-020 builds exactly those components and is still in
+`.tasks/backlog/`. `depends-on` listed only LAI-018, so this task looked ready
+when it was not.
+
+**Why I did not work around it.** The only ways through were to render
+placeholders, which the criterion forbids by name, or to write my own
+empty-state component — which would duplicate LAI-020's first acceptance
+criterion and then conflict with it, in the same area, by the same builder.
+
+`depends-on` corrected to `[LAI-018, LAI-020]`. **Nothing is blocked**: LAI-020
+is claimable now and I am taking it next, so this is a reordering of my own
+queue rather than a stall. This task should be ready as soon as LAI-020 is
+accepted.
+
+The rest of the task is unchanged and needs no rewrite.
