@@ -1,0 +1,274 @@
+/* The app shell (LAI-019). Every value is a token. */
+
+.shell {
+  display: flex;
+  min-height: 100vh;
+  background: var(--page);
+  color: var(--tx);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+}
+
+/* Hidden until focused. A keyboard user should not have to tab the whole nav
+   on every navigation to reach the screen. */
+.skip-link {
+  position: absolute;
+  left: var(--space-2);
+  top: calc(var(--space-2) * -8);
+  z-index: 10;
+  background: var(--card);
+  color: var(--tx);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-3);
+  font-weight: var(--weight-semibold);
+  transition: top 120ms ease;
+}
+
+.skip-link:focus-visible {
+  top: var(--space-2);
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------- sidebar */
+
+.sidebar {
+  width: 13.5rem;
+  flex: none;
+  background: var(--tub);
+  border-right: 1px solid var(--bd);
+  padding: var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.sidebar-mark {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--acc);
+  flex: none;
+}
+
+.sidebar-wordmark {
+  font-weight: var(--weight-heavy);
+  font-size: var(--text-md);
+}
+
+.sidebar-group-title {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  /* --tx3 is below AA for body text (LAI-018) but clears the 3:1 bar for large
+     and non-text; these are 11px all-caps labels, not prose. */
+  color: var(--tx3);
+  margin: 0 0 var(--space-2);
+  padding: 0 var(--space-2);
+}
+
+.sidebar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-link {
+  display: block;
+  padding: var(--space-2) var(--space-2);
+  border-radius: var(--radius-md);
+  color: var(--tx2);
+  text-decoration: none;
+  font-weight: var(--weight-medium);
+}
+
+.sidebar-link:hover {
+  background: var(--card);
+  color: var(--tx);
+}
+
+.sidebar-link:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: -2px;
+}
+
+/* Active is carried by colour *and* a weight change *and* a fill — colour alone
+   fails for anyone who cannot distinguish it. */
+.sidebar-link-active {
+  background: var(--accs);
+  color: var(--acc);
+  font-weight: var(--weight-bold);
+}
+
+/* ---------------------------------------------------------------- body */
+
+.shell-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--bd);
+  background: var(--card);
+}
+
+.shell-head-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  margin-left: auto;
+}
+
+.shell-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/*
+ * The skip link focuses `main` programmatically, and an outline around the whole
+ * screen reads as a rendering bug rather than as focus. `:not(:focus-visible)`
+ * is what makes this safe: it suppresses the ring only for the programmatic
+ * case, so a keyboard user who reaches `main` still sees where they are.
+ * Plain `outline: none` here would fail the guard in test/states.test.ts, and
+ * rightly.
+ */
+.shell-main:focus:not(:focus-visible) {
+  outline: none;
+}
+
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: var(--space-1) var(--space-3);
+  margin: 0;
+}
+
+.theme-toggle-option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+}
+
+.theme-toggle-option:focus-within {
+  color: var(--tx);
+}
+
+.shell-user {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+}
+
+.shell-user-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--tub);
+  border: 1px solid var(--bd2);
+  flex: none;
+}
+
+/* --------------------------------------------------- narrow viewports */
+
+.shell-navtoggle {
+  display: none;
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: var(--space-2);
+  cursor: pointer;
+  color: var(--tx);
+}
+
+.shell-navtoggle:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.shell-navtoggle-bars,
+.shell-navtoggle-bars::before,
+.shell-navtoggle-bars::after {
+  display: block;
+  width: 1rem;
+  height: 2px;
+  background: currentColor;
+  border-radius: var(--radius-sm);
+}
+
+.shell-navtoggle-bars::before,
+.shell-navtoggle-bars::after {
+  content: '';
+  position: relative;
+}
+
+.shell-navtoggle-bars::before {
+  top: -5px;
+}
+
+.shell-navtoggle-bars::after {
+  top: 3px;
+}
+
+.shell-scrim {
+  position: fixed;
+  inset: 0;
+  background: var(--bd2);
+  z-index: 4;
+}
+
+/*
+ * The sidebar collapses off-canvas below 900px (LAI-019 AC5). Not a media query
+ * that redefines colours — only layout — so the theme contract from LAI-018
+ * still holds: every colour is declared in :root and .dk and nowhere else.
+ */
+@media (max-width: 900px) {
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 5;
+    transform: translateX(-100%);
+    transition: transform 160ms ease;
+  }
+
+  .sidebar-open {
+    transform: translateX(0);
+    box-shadow: var(--shadow);
+  }
+
+  .shell-navtoggle {
+    display: block;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .skip-link {
+    transition: none;
+  }
+}
