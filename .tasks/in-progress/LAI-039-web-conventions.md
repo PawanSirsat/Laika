@@ -2,11 +2,12 @@
 id: LAI-039
 title: Apply the conventions to server/web and extend the structure test
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-038]
 discovered-from: LAI-036
-status: backlog
+status: in-progress
+started: 2026-08-24T07:41:25+05:30
 ---
 
 ## Goal
