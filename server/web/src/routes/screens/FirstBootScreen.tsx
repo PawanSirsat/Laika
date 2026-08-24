@@ -1,9 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../../components/forms/Button.tsx';
-import { Checkbox } from '../../components/forms/Checkbox.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
 import { TextInput } from '../../components/forms/TextInput.tsx';
-import { SystemStatus } from './SystemStatus.tsx';
 import {
   email as validateEmail,
   password as validatePassword,
@@ -18,17 +16,20 @@ export interface FirstBootSubmit {
   readonly password: string;
   readonly orgName: string;
   readonly projectName: string;
-  readonly trackPresence: boolean;
 }
 
 export interface FirstBootScreenProps {
   readonly host: string;
-  readonly migrationsApplied: number;
-  readonly migrationsTotal: number;
-  readonly smtpConfigured: boolean;
   readonly onSubmit?: ((values: FirstBootSubmit) => void) | undefined;
   readonly submitting?: boolean;
   readonly serverError?: string | undefined;
+  /**
+   * Per-field complaints from a `422`, keyed by the server's field name
+   * (`org_name`, `owner_email`, …). Shown under the matching input rather than
+   * as one banner — a form that says "invalid" and leaves you hunting is a form
+   * that gets abandoned.
+   */
+  readonly fieldErrors?: Readonly<Record<string, string>> | undefined;
 }
 
 /**
@@ -36,16 +37,26 @@ export interface FirstBootScreenProps {
  * opt-in, and the system panel.
  *
  * Runs once — `POST /setup` is disabled after an org exists (SPEC §3) — which is
- * why the copy says so plainly. Wiring is LAI-009.
+ * why the copy says so plainly. Wired in LAI-106.
+ *
+ * **No presence toggle and no system panel**, both deliberately (LAI-106):
+ *
+ * - `trackPresence` had no server field. `POST /setup` rejects unknown keys
+ *   (§6.3), so sending it would have failed the whole submission, and *not*
+ *   sending it while still showing the checkbox would have been a control that
+ *   silently does nothing — the exact failure strict validation exists to
+ *   prevent. → LAI-207.
+ * - `SystemStatus` needs migration and SMTP state, and `GET /setup/status`
+ *   returns only `setup_required`. Hardcoded numbers on a status panel are
+ *   worse than no panel, so the panel waits for real data. → LAI-206. The
+ *   component itself is unchanged and still tested.
  */
 export function FirstBootScreen({
   host,
-  migrationsApplied,
-  migrationsTotal,
-  smtpConfigured,
   onSubmit,
   submitting = false,
   serverError,
+  fieldErrors = {},
 }: FirstBootScreenProps) {
   const [ownerName, setOwnerName] = useState('');
   const [ownerEmail, setOwnerEmail] = useState('');
@@ -53,7 +64,6 @@ export function FirstBootScreen({
   const [confirm, setConfirm] = useState('');
   const [orgName, setOrgName] = useState('');
   const [projectName, setProjectName] = useState('');
-  const [trackPresence, setTrackPresence] = useState(true);
   const [touched, setTouched] = useState(false);
 
   const nameCheck = required(ownerName, 'Your name');
@@ -72,14 +82,7 @@ export function FirstBootScreen({
           e.preventDefault();
           setTouched(true);
           if (valid) {
-            onSubmit?.({
-              ownerName,
-              ownerEmail,
-              password,
-              orgName,
-              projectName,
-              trackPresence,
-            });
+            onSubmit?.({ ownerName, ownerEmail, password, orgName, projectName });
           }
         }}
       >
@@ -108,7 +111,7 @@ export function FirstBootScreen({
             autoComplete="name"
             required
             disabled={submitting}
-            error={touched && !nameCheck.ok ? nameCheck.message : undefined}
+            error={touched && !nameCheck.ok ? nameCheck.message : fieldErrors.owner_name}
           />
           <TextInput
             label="Email"
@@ -118,7 +121,7 @@ export function FirstBootScreen({
             autoComplete="username"
             required
             disabled={submitting}
-            error={touched && !emailCheck.ok ? emailCheck.message : undefined}
+            error={touched && !emailCheck.ok ? emailCheck.message : fieldErrors.owner_email}
           />
           <PasswordInput
             label="Choose a password"
@@ -128,7 +131,9 @@ export function FirstBootScreen({
             showStrength
             required
             disabled={submitting}
-            error={touched && !passwordCheck.ok ? passwordCheck.message : undefined}
+            error={
+              touched && !passwordCheck.ok ? passwordCheck.message : fieldErrors.owner_password
+            }
           />
           <PasswordInput
             label="Confirm password"
@@ -150,21 +155,15 @@ export function FirstBootScreen({
             onChange={setOrgName}
             required
             disabled={submitting}
-            error={touched && !orgCheck.ok ? orgCheck.message : undefined}
+            error={touched && !orgCheck.ok ? orgCheck.message : fieldErrors.org_name}
           />
           <TextInput
             label="First project"
             value={projectName}
             onChange={setProjectName}
             disabled={submitting}
-            help="Optional. You can create projects once you are inside."
-          />
-          <Checkbox
-            label="Track presence"
-            checked={trackPresence}
-            onChange={setTrackPresence}
-            disabled={submitting}
-            help="Record which repo and task each person is working in. Powers the capacity view."
+            help="Optional. You can create projects once you are inside. Its key is derived from the name."
+            error={fieldErrors.project_name}
           />
         </fieldset>
 
@@ -177,14 +176,6 @@ export function FirstBootScreen({
           invite.
         </p>
       </form>
-
-      <aside className="auth-side">
-        <SystemStatus
-          migrationsApplied={migrationsApplied}
-          migrationsTotal={migrationsTotal}
-          smtpConfigured={smtpConfigured}
-        />
-      </aside>
     </div>
   );
 }

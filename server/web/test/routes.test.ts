@@ -58,7 +58,10 @@ void describe('the absences the criteria are actually about', () => {
     // Pre-auth and org-level routes exist but are not nav destinations.
     assert.ok(!NAV_GROUPS.includes('SYSTEM' as never));
     assert.ok(!sidebar.includes('SYSTEM'), 'Sidebar.tsx must not render a SYSTEM group');
-    for (const path of ['/login', '/first-boot', '/projects']) {
+    // `/setup`, not `/first-boot`: the server redirects un-set-up browsers to
+    // SETUP_PATH (`server/src/http/middleware/setup-gate.ts`), and a route table
+    // that disagrees with that constant sends them to a 404 (LAI-106).
+    for (const path of ['/login', '/setup', '/projects']) {
       const route = ROUTES.find((r) => r.path === path);
       assert.ok(route, `${path} should still be routed`);
       assert.equal(route.group, null, `${path} must not be a nav item`);
@@ -169,5 +172,34 @@ void describe('no API calls in the shell (LAI-019 notes)', () => {
       assert.ok(!/\bfetch\s*\(/.test(src), `${name} must not call the API — that is LAI-007`);
       assert.ok(!src.includes('EventSource'), `${name} must not open a stream`);
     }
+  });
+});
+
+void describe('the setup route matches the server (LAI-106)', () => {
+  void test('/setup exists, is public, and is not a nav item', () => {
+    const setup = ROUTES.find((r) => r.path === '/setup');
+    assert.ok(setup, 'the server redirects un-set-up browsers to /setup');
+    assert.equal(setup.group, null, 'first boot is not a nav destination');
+    assert.equal(setup.public, true, 'it must be reachable before an owner exists');
+  });
+
+  void test('agrees with SETUP_PATH in the server middleware', async () => {
+    // The one constant both halves depend on. Read rather than duplicated:
+    // a route table that disagrees with the redirect target is a 404 on the
+    // very first page a new instance shows anyone.
+    const gate = await readFile(
+      fileURLToPath(new URL('../../src/http/middleware/setup-gate.ts', SRC)),
+      'utf8',
+    );
+    const match = /SETUP_PATH\s*=\s*'([^']+)'/.exec(gate);
+    assert.ok(match, 'could not find SETUP_PATH — has the server moved it?');
+    assert.ok(
+      ROUTES.some((r) => r.path === match[1]),
+      `the server redirects to ${String(match[1])}, which the SPA does not route`,
+    );
+  });
+
+  void test('no stale /first-boot route remains', () => {
+    assert.ok(!ROUTES.some((r) => r.path === '/first-boot'));
   });
 });
