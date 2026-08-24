@@ -1,3 +1,4 @@
+import { Brand } from './Brand.tsx';
 import { NAV_GROUPS, routesInGroup } from '../routes/route-table.ts';
 
 export interface SidebarProps {
@@ -27,10 +28,7 @@ export interface SidebarProps {
 export function Sidebar({ currentPath, onNavigate, open, onClose }: SidebarProps) {
   return (
     <nav id="sidebar" className={open ? 'sidebar sidebar-open' : 'sidebar'} aria-label="Primary">
-      <div className="sidebar-brand">
-        <span className="sidebar-mark" aria-hidden="true" />
-        <span className="sidebar-wordmark">Laika</span>
-      </div>
+      <Brand />
 
       {NAV_GROUPS.map((group) => (
         <div key={group} className="sidebar-group">

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Brand } from './Brand.tsx';
 import { Sidebar } from './Sidebar.tsx';
+import { showsAppNav } from './shell-chrome.ts';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
 import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
@@ -188,24 +190,40 @@ export function AppShell() {
     };
   }, [navOpen]);
 
+  /**
+   * The app chrome belongs to a signed-in session, not to a list of routes
+   * (LAI-062).
+   *
+   * Keying it on the route would mean every route added later inherits whatever
+   * default it happened to get — which is exactly how `/login`, `/setup` and
+   * `/invite` came to render eight protected destinations beside the words "Not
+   * signed in", each one bouncing straight back to `/login`. Keying it on the
+   * session fails safe in both directions: a new pre-auth screen has no nav
+   * without anyone remembering to exclude it, and a protected screen shows no
+   * nav until there is genuinely someone to navigate as.
+   */
+  const signedIn = showsAppNav(session);
+
   return (
-    <div className="shell">
+    <div className={signedIn ? 'shell' : 'shell shell-preauth'}>
       <a className="skip-link" href="#main">
         Skip to content
       </a>
 
-      <Sidebar
-        currentPath={path}
-        onNavigate={navigate}
-        open={navOpen}
-        onClose={() => {
-          setNavOpen(false);
-        }}
-      />
+      {signedIn && (
+        <Sidebar
+          currentPath={path}
+          onNavigate={navigate}
+          open={navOpen}
+          onClose={() => {
+            setNavOpen(false);
+          }}
+        />
+      )}
 
       {/* Click-catcher behind the off-canvas nav. `aria-hidden` and not
           focusable: Escape and the toggle are the accessible ways out. */}
-      {navOpen && (
+      {signedIn && navOpen && (
         <div
           className="shell-scrim"
           aria-hidden="true"
@@ -217,35 +235,39 @@ export function AppShell() {
 
       <div className="shell-body">
         <header className="shell-head">
-          <button
-            type="button"
-            className="shell-navtoggle"
-            aria-expanded={navOpen}
-            aria-controls="sidebar"
-            onClick={() => {
-              setNavOpen((v) => !v);
-            }}
-          >
-            <span className="visually-hidden">
-              {navOpen ? 'Close navigation' : 'Open navigation'}
-            </span>
-            <span className="shell-navtoggle-bars" aria-hidden="true" />
-          </button>
+          {signedIn ? (
+            <button
+              type="button"
+              className="shell-navtoggle"
+              aria-expanded={navOpen}
+              aria-controls="sidebar"
+              onClick={() => {
+                setNavOpen((v) => !v);
+              }}
+            >
+              <span className="visually-hidden">
+                {navOpen ? 'Close navigation' : 'Open navigation'}
+              </span>
+              <span className="shell-navtoggle-bars" aria-hidden="true" />
+            </button>
+          ) : (
+            // The identity outlives the navigation: no nav here, but the page
+            // still says what it is.
+            <Brand />
+          )}
 
           <div className="shell-head-right">
             <ThemeToggle />
-            {session.status === 'authenticated' ? (
+            {/* No "Not signed in" chip pre-auth: it is part of the
+                authenticated chrome, and on a sign-in page it states the
+                obvious next to a form that already says it. */}
+            {signedIn && (
               <UserChrome
                 user={session.user}
                 theme={theme}
                 onSignOut={handleSignOut}
                 signingOut={signingOut}
               />
-            ) : (
-              <div className="shell-user" data-state="unauthenticated">
-                <span className="shell-user-avatar" aria-hidden="true" />
-                <span className="shell-user-text">Not signed in</span>
-              </div>
             )}
           </div>
         </header>
