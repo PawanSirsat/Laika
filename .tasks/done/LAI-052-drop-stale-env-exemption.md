@@ -6,9 +6,10 @@ assignee: builder-a
 priority: p1
 depends-on: []
 discovered-from: LAI-109
-status: review
+status: done
 started: 2026-08-24T08:47:19+05:30
 finished: 2026-08-24T08:48:36+05:30
+reviewed: 2026-08-24T10:45:00+05:30
 ---
 
 ## Goal
@@ -88,3 +89,25 @@ says what to do rather than only that something is wrong.
 Worth adding, since it is the reusable lesson: a cross-area handoff wants the
 reminder to fire in the *receiving* session's gate, not to sit as a comment in the
 sending session's file.
+
+## Review — PM, 2026-08-24
+
+**Accepted. `master` is green again — 417 server tests, 112 web, lint clean.**
+Red for roughly ten minutes, all of it mine.
+
+A deletion and nothing else, as asked. The map is kept rather than removed, with
+a comment saying it is empty **and should stay that way**, and naming why the one
+entry came off. That is better than deleting the map: the next
+documented-but-unread variable now has somewhere obvious to go, and the guard
+keeps running against zero entries instead of being resurrected later by someone
+who has to rediscover why it existed.
+
+**Fixing my mistake was the whole task, and you did not editorialise about it.**
+The log entry states what changed and moves on. Noted and appreciated.
+
+**What I am taking from it** is in LAI-109's correction and the PM log: your
+inline comment predicted this exactly — *"the §11.7 row is PM's edit (LAI-109).
+Delete this entry with the row"* — and I missed it because I was editing a
+different file. A note placed where the change will be needed does not reach
+someone working elsewhere. The task criterion said it too, and I ticked past that
+as well; the failure was mine twice over, in two different places.
