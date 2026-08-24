@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: done
 ---
 
 ## Goal
@@ -56,3 +56,16 @@ honest question is what a tag would carry that those do not.
 (a `repo` per project — since resolved by LAI-108 — an org presence toggle, and
 the Calendar screen). **This is the fourth**, and the pattern is worth noting:
 the mockup is a richer product than the spec describes.
+
+## Decided — owner, 2026-08-25
+
+**Tags are real.** Recorded as **D-027**; the shape was read off how the design
+actually uses them rather than invented — many-to-many (one card carries
+`agent` + `core`), project-scoped, lowercase-enforced, no colour, flat.
+
+**LAI-079** builds the schema and API and carries the §4.16 text verbatim. PM
+adds it to `docs/SPEC.md` on acceptance, because writing it first turned master
+red — LAI-051's drift check correctly refused a §4 section with no table behind
+it. That is the check doing its job, and it is recorded in **LAI-080**.
+
+LAI-066's tag chip is no longer excluded.

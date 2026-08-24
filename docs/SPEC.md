@@ -110,8 +110,6 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Manage project members | ✓ | — | — |
 | Edit project settings and `context_md` | ✓ | — | — |
 | Create / edit / delete sprints | ✓ | — | — |
-| Apply or remove a task's tags | ✓ | ✓ | — |
-| Rename or delete a tag project-wide | ✓ | — | — |
 | Assign tasks into or out of a sprint | ✓ | ✓ | — |
 | Create / edit / move any task | ✓ | ✓ | — |
 | Claim a task (`start_working`) | ✓ | ✓ | — |
@@ -234,9 +232,6 @@ project role `viewer`.
 'done'`. This is what `list_ready_tasks` returns (§7.1) and what the board's
 "Ready" column shows. Deriving it means it can never go stale.
 
-**Tags are not a column on `tasks`.** They are many-to-many through §4.16, so a
-task may carry several and a tag may be filtered on across the project.
-
 **`backlog` vs `todo`:** `backlog` is unrefined; `todo` is groomed and ready to
 be picked up. Both count as ready when unassigned and unblocked — the distinction
 is for humans triaging, not for the readiness computation.
@@ -352,8 +347,6 @@ prompts, or transcript content (D-005). Cron deletes rows older than 30 days.
 `project_memberships(project_id, user_id)` unique, `projects(slug)` unique,
 `unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`,
 `sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`.
-`tags(project_id, name)` unique, `task_tags(tag_id)` — the `?tag=` filter reads by
-tag, so the join needs an index from that side, not only from `task_id`.
 
 ### 4.14 `unlisted_work`
 
@@ -403,48 +396,6 @@ Appended after §4.14 so §4.13 Indexes keeps its number (D-011).
 not a velocity model.
 
 ---
-
-### 4.16 `tags` and `task_tags`
-
-Appended after §4.15 so §4.13 Indexes keeps its number (D-011). Decided in D-027.
-
-**`tags`**
-
-| field | notes |
-| --- | --- |
-| `id` | ULID |
-| `project_id` | FK `projects` — tags are **project-scoped** |
-| `name` | lowercase slug, unique per project |
-| `created_at` | |
-
-**`task_tags`** — the join. `(task_id, tag_id)` composite primary key,
-`task_id` FK `tasks` `ON DELETE cascade`, `tag_id` FK `tags` `ON DELETE cascade`.
-
-**Rules.**
-
-- **A task has many tags and a tag has many tasks.** The design applies two to a
-  single task (`agent` + `core`), so this is a join table, not a column.
-- `name` matches `^[a-z0-9][a-z0-9-]{0,23}$`. Lowercase is enforced, not
-  suggested: `UI`, `Ui` and `ui` as three different tags is the failure mode that
-  makes tag filters useless.
-- **Unique per project**, not per org. `ui` on a server project and `ui` on the
-  web project are different concerns, and a project-scoped list stays short
-  enough to pick from.
-- A tag is created as a side effect of applying it to a task — there is no
-  separate "create tag" step. Applying an unknown name creates it; that is what
-  keeps tagging a one-field action rather than a workflow.
-- **Deleting a tag never deletes a task.** It removes the join rows only, exactly
-  as deleting a sprint releases its tasks (§4.15).
-- **Tags carry no colour.** The design renders every chip in the neutral
-  `--tub` / `--bd` pair, and a per-tag colour column would be a settings screen
-  and a palette decision for no gain the design asks for.
-- Changing a task's tags is `task.updated` in `activity` with
-  `{ field: 'tags', from, to }` — the same shape `sprint_id` uses (§4.8). **No
-  new activity verb.**
-
-**Non-goal: hierarchy.** Tags are flat. Nesting, groups, and required-tag rules
-are how tag systems become a taxonomy nobody maintains; `priority`, `sprint_id`
-and `discovered_from` already carry the structured groupings.
 
 ## 5. Task lifecycle
 
@@ -571,14 +522,11 @@ GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
-GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&tag=&updated_since=&cursor=
+GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&updated_since=&cursor=
 GET    /api/v1/projects/:slug/sprints        POST /api/v1/projects/:slug/sprints   (lead+)
 GET    /api/v1/sprints/:id                   PATCH /api/v1/sprints/:id   DELETE /api/v1/sprints/:id  (lead+)
 POST   /api/v1/sprints/:id/tasks             body { task_ids[] }  — assign into the sprint
 DELETE /api/v1/sprints/:id/tasks/:taskId     remove from the sprint (task itself is untouched)
-GET    /api/v1/projects/:slug/tags           list with usage counts, for the picker and the filter
-PATCH  /api/v1/projects/:slug/tags/:name     rename project-wide (lead+)
-DELETE /api/v1/projects/:slug/tags/:name     remove from every task (lead+); tasks are untouched
 GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date ranges and their tasks
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id

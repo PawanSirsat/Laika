@@ -4,7 +4,7 @@ title: Task card anatomy — priority, key, sprint, dependencies, assignee
 area: web
 assignee: unclaimed
 priority: p1
-depends-on: [LAI-049, LAI-050, LAI-060]
+depends-on: [LAI-049, LAI-050, LAI-060, LAI-079]
 discovered-from:
 status: backlog
 ---
@@ -30,10 +30,12 @@ API returns** — I checked `TaskView` field by field before writing this.
 
 ## Explicitly NOT in this task
 
-- **Tag chips** (`presence`, `core`, `auth`, `ui` …). **Tags do not exist** —
-  no column in `schema.ts`, nothing in `TaskView`, no mention in SPEC §4. The
-  design assumes a feature the spec never defined. Filed as **LAI-073**; do not
-  invent them, and do not derive them from the title.
+- ~~**Tag chips**~~ — **now in scope.** The owner decided tags are real
+  (**D-027**, 2026-08-25) and **LAI-079** builds them, which is why this task now
+  depends on it. Render the chips from `TaskView.tags`:
+  neutral `--tub` ground, `--bd` border, `--tx2` text — **no per-tag colour**,
+  which D-027 settled deliberately. A task may carry several; the design shows
+  two on one card.
 - **Comment count** (`💬 5`). Not on `TaskView`. Filed as **LAI-072**.
 
 ## Notes / context
