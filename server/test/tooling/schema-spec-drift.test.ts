@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ACTIVITY_TYPES, ACTOR_KINDS } from '../../src/db/enums.ts';
@@ -62,9 +62,9 @@ function fieldsIn(text: string): string[] {
  * would be swept up by any looser rule, and §4.14's field list is its *second*
  * paragraph, which any "first paragraph" rule would miss.
  */
-function parseSpecTables(): Map<string, string[]> {
+export function parseSpecTables(text: string): Map<string, string[]> {
   const tables = new Map<string, string[]>();
-  const lines = spec.split('\n');
+  const lines = text.split('\n');
 
   let current: string | null = null;
   let format: 'unknown' | 'table' | 'prose' = 'unknown';
@@ -127,6 +127,138 @@ function parseSpecTables(): Map<string, string[]> {
   return tables;
 }
 
+// ------------------------------------------------------- planned sections
+
+/**
+ * The mark that says "specified, scheduled, not built yet" (LAI-080).
+ *
+ * A line of its own inside the §4 section:
+ *
+ * ```markdown
+ * ### 4.16 `tags`
+ *
+ * **Planned — LAI-079.**
+ * ```
+ *
+ * Trailing prose inside the bold run is allowed (`**Planned — LAI-079 builds
+ * this.**`), so the document can read as a document.
+ *
+ * ## Why it lives in SPEC.md and not in an exemption map here
+ *
+ * D-011 makes the spec authoritative, so the spec leads the code, so the gap
+ * between deciding and building is a **normal** state rather than a fault. The
+ * mark has to be writable by whoever writes the section — and `docs/` is PM's
+ * while this file is Builder-A's. An exemption map here would mean every spec
+ * decision needed a second person to touch a second file before master went
+ * green again, which is precisely the friction that got §4.16 reverted rather
+ * than marked (LAI-080's own history).
+ *
+ * It is also the honest place: a reader of §4.16 learns it is not built by
+ * reading §4.16, not by grepping a test.
+ */
+const PLANNED_MARK = /^\*\*Planned\s*[—-]\s*(LAI-\d{3})[^*]*\*\*\s*$/m;
+
+export interface PlannedSection {
+  /** The table the section names — the key `parseSpecTables` uses. */
+  table: string;
+  /** The heading as written, for a message a human can navigate by. */
+  heading: string;
+  /** The task that will build it. The expiry mechanism, not decoration. */
+  taskId: string;
+}
+
+/**
+ * Every §4 section carrying the mark.
+ *
+ * Sections are split on `### 4.N` headings rather than parsed line by line: the
+ * mark is a paragraph, and the section it belongs to is whichever heading
+ * precedes it.
+ */
+export function parsePlannedSections(text: string): Map<string, PlannedSection> {
+  const found = new Map<string, PlannedSection>();
+  const headings = [...text.matchAll(/^### (4\.\d+ `([a-z_]+)`.*)$/gm)];
+
+  headings.forEach((match, i) => {
+    const start = (match.index ?? 0) + match[0].length;
+    const end = headings[i + 1]?.index ?? text.length;
+    const mark = PLANNED_MARK.exec(text.slice(start, end));
+
+    if (mark === null) return;
+
+    found.set(match[2]!, {
+      table: match[2]!,
+      heading: `§${match[1]!}`,
+      taskId: mark[1]!,
+    });
+  });
+
+  return found;
+}
+
+/** Task ids that have already been accepted — `.tasks/done/` is the expiry. */
+export function closedTaskIds(root: string): Set<string> {
+  const dir = join(root, '.tasks', 'done');
+  const ids = new Set<string>();
+
+  for (const entry of readdirSync(dir)) {
+    const id = /^(LAI-\d{3})/.exec(entry);
+    if (id !== null) ids.add(id[1]!);
+  }
+
+  return ids;
+}
+
+// ------------------------------------- the three checks the mark participates in
+
+/** §4 sections with no table, excluding the ones honestly marked planned. */
+export function unbuiltTables(
+  specTables: ReadonlyMap<string, unknown>,
+  planned: ReadonlyMap<string, PlannedSection>,
+  schemaTables: ReadonlyMap<string, unknown>,
+): string[] {
+  return [...specTables.keys()]
+    .filter((table) => !schemaTables.has(table) && !planned.has(table))
+    .map((table) => `§4 specifies table "${table}" — schema.ts has no such table`);
+}
+
+/**
+ * Marks whose table has landed.
+ *
+ * This is the half that makes the mark safe to have at all. An exemption nobody
+ * is forced to remove is a lie the check tells for ever, so the moment the table
+ * exists the mark becomes the failure.
+ */
+export function marksOutlivingTheirTable(
+  planned: ReadonlyMap<string, PlannedSection>,
+  schemaTables: ReadonlyMap<string, unknown>,
+): string[] {
+  return [...planned.values()]
+    .filter((entry) => schemaTables.has(entry.table))
+    .map(
+      (entry) =>
+        `${entry.heading} is marked "Planned — ${entry.taskId}" but schema.ts now has "${entry.table}" — remove the mark`,
+    );
+}
+
+/**
+ * Marks naming a task that is already accepted.
+ *
+ * The second expiry, and the one that catches the case the first cannot: a task
+ * closed without building the table leaves a mark pointing at nobody. Without
+ * this the section stays exempt for ever with an attribution that looks fine.
+ */
+export function marksNamingClosedTasks(
+  planned: ReadonlyMap<string, PlannedSection>,
+  closed: ReadonlySet<string>,
+): string[] {
+  return [...planned.values()]
+    .filter((entry) => closed.has(entry.taskId))
+    .map(
+      (entry) =>
+        `${entry.heading} is marked "Planned — ${entry.taskId}" but ${entry.taskId} is in .tasks/done/ — either the table was never built or the mark is stale`,
+    );
+}
+
 /**
  * The notes cell of one row of §4.8's table.
  *
@@ -156,7 +288,10 @@ function parseSpecActivityTypes(): string[] {
   return [...paragraph.matchAll(/`([a-z_]+\.[a-z_]+)`/g)].map((m) => m[1]!);
 }
 
-const specTables = parseSpecTables();
+const REPO_ROOT = join(SERVER_ROOT, '..');
+
+const specTables = parseSpecTables(spec);
+const plannedSections = parsePlannedSections(spec);
 const specActivityTypes = parseSpecActivityTypes();
 const specActorKinds = fieldsIn(activityNotesFor('actor_kind'));
 
@@ -292,12 +427,17 @@ describe('the parser itself', () => {
 });
 
 describe('§4 and schema.ts describe the same tables', () => {
-  it('has a table for every §4 section', () => {
-    const missing = [...specTables.keys()]
-      .filter((table) => !schemaTables.has(table))
-      .map((table) => `§4 specifies table "${table}" — schema.ts has no such table`);
+  it('has a table for every §4 section that is not marked planned', () => {
+    expect(unbuiltTables(specTables, plannedSections, schemaTables)).toEqual([]);
+  });
 
-    expect(missing).toEqual([]);
+  it('has no planned mark that has outlived its reason', () => {
+    // The synthetic tests below prove the mechanism; this one runs it against the
+    // real document, which is where a stale mark would actually sit.
+    expect([
+      ...marksOutlivingTheirTable(plannedSections, schemaTables),
+      ...marksNamingClosedTasks(plannedSections, closedTaskIds(REPO_ROOT)),
+    ]).toEqual([]);
   });
 
   it('has a §4 section for every table', () => {
@@ -393,6 +533,150 @@ describe('§4.8’s closed vocabularies match enums.ts', () => {
   it('agrees on actor_kind in both directions', () => {
     expect([...ACTOR_KINDS].sort()).toEqual([...specActorKinds].sort());
   });
+});
+
+/**
+ * LAI-080. Fed synthetic spec text rather than `docs/SPEC.md`, for two reasons:
+ * the real document has no planned section most of the time, so a test reading it
+ * would assert nothing; and `docs/` is PM's, so proving the mechanism must not
+ * require editing it.
+ */
+describe('the planned mark (LAI-080)', () => {
+  const SECTION = [
+    '### 4.16 `tags`',
+    '',
+    '**Planned — LAI-079.**',
+    '',
+    '`id`, `project_id`, `name`, `created_at`.',
+    '',
+    '### 4.17 `widgets`',
+    '',
+    '`id`, `created_at`.',
+    '',
+  ].join('\n');
+
+  const planned = parsePlannedSections(SECTION);
+
+  it('finds the mark and the task it names', () => {
+    expect([...planned.keys()]).toEqual(['tags']);
+    expect(planned.get('tags')).toEqual({
+      table: 'tags',
+      heading: '§4.16 `tags`',
+      taskId: 'LAI-079',
+    });
+  });
+
+  it('reads trailing prose inside the mark, so the document can read as prose', () => {
+    expect(
+      parsePlannedSections('### 4.16 `tags`\n\n**Planned — LAI-079 builds this.**\n').get('tags')
+        ?.taskId,
+    ).toBe('LAI-079');
+  });
+
+  it('refuses a mark that names no task — an unattributed hole is the failure mode', () => {
+    // The exemption is only safe because somebody is on the hook for removing it.
+    for (const bad of ['**Planned.**', '**Planned — soon.**', '**Planned — LAI-79.**']) {
+      expect([...parsePlannedSections(`### 4.16 \`tags\`\n\n${bad}\n`).keys()]).toEqual([]);
+    }
+  });
+
+  it('does not read a mark from the section above or below it', () => {
+    const two = parsePlannedSections(SECTION);
+    expect(two.has('widgets')).toBe(false);
+  });
+
+  // AC5, all three directions, on the same synthetic section.
+  it('passes for the marked section while its table does not exist', () => {
+    const schema = new Map<string, string[]>();
+
+    // Both halves in one assertion: `tags` is marked and excused, `widgets` is
+    // not marked and is still reported. A test that only checked the first would
+    // pass for a `unbuiltTables` that excused everything.
+    expect(unbuiltTables(parseSpecTables(SECTION), planned, schema)).toEqual([
+      '§4 specifies table "widgets" — schema.ts has no such table',
+    ]);
+    expect(marksOutlivingTheirTable(planned, schema)).toEqual([]);
+  });
+
+  it('fails once the table exists — the mark cannot outlive its reason', () => {
+    const schema = new Map([['tags', ['id']]]);
+
+    expect(marksOutlivingTheirTable(planned, schema)).toEqual([
+      '§4.16 `tags` is marked "Planned — LAI-079" but schema.ts now has "tags" — remove the mark',
+    ]);
+  });
+
+  it('fails once the task it names is accepted', () => {
+    expect(marksNamingClosedTasks(planned, new Set(['LAI-079']))).toEqual([
+      '§4.16 `tags` is marked "Planned — LAI-079" but LAI-079 is in .tasks/done/ — either the table was never built or the mark is stale',
+    ]);
+    expect(marksNamingClosedTasks(planned, new Set(['LAI-050']))).toEqual([]);
+  });
+
+  it('still fails for an unmarked section with no table — the check is not weakened', () => {
+    // The one thing this must not become is a way to turn the check off.
+    const unmarked = parseSpecTables('### 4.17 `widgets`\n\n`id`, `created_at`.\n');
+
+    expect(unbuiltTables(unmarked, new Map(), new Map())).toEqual([
+      '§4 specifies table "widgets" — schema.ts has no such table',
+    ]);
+  });
+
+  it('works on the real document, not only on a ten-line fixture', () => {
+    // The fixture above proves the rules; this proves the parser survives being
+    // handed the actual §4 with one section added — which is the change PM will
+    // really make, and the case a fixture cannot vouch for.
+    const withSection = `${spec}\n### 4.16 \`tags\`\n\n**Planned — LAI-079.**\n\n\`id\`, \`project_id\`, \`name\`, \`created_at\`.\n`;
+
+    const tables = parseSpecTables(withSection);
+    const marks = parsePlannedSections(withSection);
+
+    // The new section parsed, and every real one still did.
+    expect(tables.get('tags')).toEqual(['id', 'project_id', 'name', 'created_at']);
+    expect(tables.get('users')).toEqual([...(specTables.get('users') ?? [])]);
+    expect(marks.get('tags')?.taskId).toBe('LAI-079');
+
+    // Green while unbuilt...
+    expect(unbuiltTables(tables, marks, schemaTables)).toEqual([]);
+    // ...red the moment the table lands.
+    expect(
+      marksOutlivingTheirTable(marks, new Map([...schemaTables, ['tags', ['id']]])),
+    ).toHaveLength(1);
+    // ...and red without the mark, which is the state that got §4.16 reverted.
+    const unmarked = parsePlannedSections(withSection.replace('**Planned — LAI-079.**', ''));
+    expect(unbuiltTables(tables, unmarked, schemaTables)).toEqual([
+      '§4 specifies table "tags" — schema.ts has no such table',
+    ]);
+  });
+
+  it('reads .tasks/done/ as the set of accepted tasks', () => {
+    const closed = closedTaskIds(REPO_ROOT);
+
+    // LAI-051 built this file, so it is accepted by definition of being here.
+    expect(closed.has('LAI-051')).toBe(true);
+    expect(closed.has('LAI-999')).toBe(false);
+  });
+});
+
+describe('§4 sections currently marked planned', () => {
+  const entries = [...plannedSections.values()];
+
+  // One green line per planned section, so `pnpm test` output distinguishes
+  // "not built yet" from "these disagree" without anyone reading the diff (AC4).
+  if (entries.length === 0) {
+    it('none — every §4 section has its table', () => {
+      expect(entries).toEqual([]);
+    });
+  }
+
+  for (const entry of entries) {
+    it(`${entry.heading} — planned, ${entry.taskId}`, () => {
+      expect(marksOutlivingTheirTable(new Map([[entry.table, entry]]), schemaTables)).toEqual([]);
+      expect(
+        marksNamingClosedTasks(new Map([[entry.table, entry]]), closedTaskIds(REPO_ROOT)),
+      ).toEqual([]);
+    });
+  }
 });
 
 describe('the exemption lists stay honest', () => {

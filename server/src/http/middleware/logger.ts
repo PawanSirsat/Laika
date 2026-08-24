@@ -13,6 +13,9 @@ import { type AppEnv } from '../context.ts';
  * The logger runs *before* auth in the §11.2 chain, so it reads the actor in its
  * `finally` block — by then the auth middleware downstream has set it. Reading it
  * up front would log every request as anonymous.
+ *
+ * `path` is redacted first — see `redactPath`. One §6.4 endpoint carries a
+ * credential in its URL, and a log line is a file that outlives the request.
  */
 export function requestLogger(log: Logger) {
   return createMiddleware<AppEnv>(async (c, next) => {
@@ -33,10 +36,36 @@ export function requestLogger(log: Logger) {
         actor_kind: actor === null || actor === undefined ? null : 'user',
         token_id: actor?.token === null || actor?.token === undefined ? null : 'token',
         method: c.req.method,
-        path: c.req.path,
+        path: redactPath(c.req.path),
         status: c.res.status,
         duration_ms: Math.round(performance.now() - startedAt),
       });
     }
   });
+}
+
+/** The one §6.4 path whose parameter is a secret (LAI-071). */
+const INVITE_PREFIX = '/api/v1/invites/';
+
+/**
+ * Replace a secret path segment with its parameter name.
+ *
+ * `GET /api/v1/invites/:token` takes the invite token in the URL, which §6.4
+ * chose and this file does not get to change. Only the SHA-256 of that token is
+ * stored (§4.11) precisely so a database dump does not hand out working invites
+ * — and writing the plaintext into every access log line would undo that, in a
+ * file that is routinely shipped somewhere else and kept far longer.
+ *
+ * Deliberately narrow. `/api/v1/invites` (the list) and `/api/v1/invites/accept`
+ * are not secrets and stay readable, so a redaction that swallowed them would
+ * cost real diagnostic information for nothing. Everything outside the prefix is
+ * returned untouched.
+ */
+export function redactPath(path: string): string {
+  if (!path.startsWith(INVITE_PREFIX)) return path;
+
+  const rest = path.slice(INVITE_PREFIX.length);
+  if (rest === '' || rest === 'accept' || rest.includes('/')) return path;
+
+  return `${INVITE_PREFIX}:token`;
 }

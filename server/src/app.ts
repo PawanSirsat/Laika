@@ -24,6 +24,7 @@ import { projectRoutes } from './http/routes/projects.ts';
 import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { userRoutes } from './http/routes/users.ts';
+import { inviteRoutes } from './http/routes/invites.ts';
 import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts';
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
@@ -78,6 +79,11 @@ export interface CreateAppOptions {
    * test does not care.
    */
   activityFeed?: ActivityFeed;
+  /**
+   * `LAIKA_PUBLIC_URL` (§11.7) — the origin invite links are built from. Absent
+   * yields relative links; see `acceptUrlFor`.
+   */
+  publicUrl?: string;
   /** Overridable so tests can point at a directory whose contents they control. */
   publicDir?: string;
   fallbackDocument?: string;
@@ -167,6 +173,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/projects`, projectActivityRoutes({ db }));
     app.route(`${API_BASE}/activity`, activityRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
+    app.route(
+      `${API_BASE}/invites`,
+      inviteRoutes({ db, auth: options.auth, publicUrl: options.publicUrl }),
+    );
     app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));
     app.route(`${API_BASE}/tasks`, taskRoutes({ db, sqlite: options.sqlite }));

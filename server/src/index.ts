@@ -30,6 +30,7 @@ function main(): void {
 
   const auth = createAuth({
     db,
+    sqlite,
     secret: env.serverSecret,
     baseUrl: env.publicUrl,
     secureCookies: env.secureCookies,
@@ -46,6 +47,7 @@ function main(): void {
     db,
     sqlite,
     activityFeed,
+    publicUrl: env.publicUrl,
     ...(env.publicDir === undefined ? {} : { publicDir: env.publicDir }),
   });
 

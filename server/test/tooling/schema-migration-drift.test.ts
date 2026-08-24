@@ -37,6 +37,25 @@ import { freshDb, type TestDb } from '../helpers/db.ts';
  * cannot declare one, so `activity`'s append-only triggers exist only in the
  * migrations. LAI-044's test guards those behaviourally instead, by attempting an
  * `UPDATE` and a `DELETE`.
+ *
+ * ## There is no "planned" mark here, and that is deliberate (LAI-080)
+ *
+ * The spec↔schema check above it needs one: D-011 makes the spec authoritative,
+ * so a decision is written down before it is built, and the interval between the
+ * two is a **normal** state. Marking it is what stops a legitimate state from
+ * turning master red.
+ *
+ * This check has no equivalent interval. A migration is generated *from* the
+ * declaration by `drizzle-kit generate`, mechanically, in the same change — there
+ * is no judgement between the two and nothing to schedule. So "declared but not
+ * yet migrated" is never a plan; it is always somebody forgetting to run the
+ * generator, and the next boot applies a migration set that does not build the
+ * schema the code expects.
+ *
+ * Adding a mark here would therefore create exactly one new capability: a way to
+ * ship a schema the database does not have, with a comment explaining that it
+ * was on purpose. It is not built for that reason, not because nobody thought
+ * about it.
  */
 
 let t: TestDb;

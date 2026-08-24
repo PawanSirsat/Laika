@@ -1292,3 +1292,34 @@ option was locally convenient, which is why it is a decision and not a merge
 conflict.
 
 Reverts with D-028.
+
+## D-030 — a shared module has one owner and the consumer guards its own contract
+
+**2026-08-25. Amends D-029.** Builder-B pointed out that D-029 created a silent
+failure mode: `api/sprints.ts` became Builder-A's, but `api/use-shell-context.ts`
+— the sidebar's — imports `countSprints` from it. Builder-A could change that
+function and neither session would know until the nav badge quietly stopped
+working.
+
+Three options were on the table: leave it with Builder-B and re-serialise the two
+sessions D-028 exists to parallelise; move it and let Builder-B copy what the
+shell needs; or move the count into Builder-A's folder and have the shell reach
+into it.
+
+**Decision: ownership stands with Builder-A, and Builder-B writes a contract test
+for `countSprints` in their own test area.**
+
+Ownership follows the developer (D-029) — Builder-A is adding create, update,
+activate and delete while Builder-B needs one read function. But **a consumer that
+depends on someone else's module protects that dependency with a test it owns.**
+If Builder-A changes the signature or the shape, Builder-B's test goes red in the
+same `pnpm test` run. Nobody has to remember.
+
+**The general rule: a cross-ownership dependency is allowed, an unguarded one is
+not.** Copying to avoid the dependency creates two truths that drift; forbidding
+it serialises the work. A test makes the coupling explicit and loud, which is the
+only property that actually matters — the failure mode Builder-B identified is
+bad because it is *silent*, not because it is coupled.
+
+Same shape as LAI-054 and LAI-061: the defect is never the dependency, it is the
+absence of anything that fails when it breaks.
