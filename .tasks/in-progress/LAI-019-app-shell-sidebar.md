@@ -2,11 +2,12 @@
 id: LAI-019
 title: App shell, sidebar and routing
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-018]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T05:41:30+05:30
 ---
 
 ## Goal
