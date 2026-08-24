@@ -110,6 +110,26 @@ void describe('the shell actually applies the rule', () => {
     assert.ok(sidebar.includes('<Brand />'), 'and the sidebar must show the same one');
   });
 
+  void test('a route that suppresses the shell header supplies both parts itself', async () => {
+    // `ownsChrome` removes the shell header entirely, which takes the brand and
+    // the theme control with it. First boot is a full-page design whose rail
+    // carries both; if either ever goes, that route loses it with nothing above
+    // noticing — the other checks here only look at the shell.
+    const table = code(
+      await readFile(new URL('../../src/routes/route-table.ts', import.meta.url), 'utf8'),
+    );
+    const boot = code(
+      await readFile(
+        new URL('../../src/routes/screens/FirstBootScreen.tsx', import.meta.url),
+        'utf8',
+      ),
+    );
+
+    assert.match(table, /'\/setup'[^}]*ownsChrome: true/, '/setup must claim its own chrome');
+    assert.ok(boot.includes('<Brand />'), 'it must render its own brand');
+    assert.ok(boot.includes('<ThemeToggle />'), 'and its own theme control (LAI-062 AC3)');
+  });
+
   void test('the theme control is reachable with no session', async () => {
     // AC3: someone setting up an instance at night should not have to sign in
     // to stop being dazzled.

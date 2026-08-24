@@ -21,21 +21,20 @@ export interface ShellContext {
  * is no org-wide sprint list. With no `?project=` there is no count, so the
  * badge is absent rather than zero.
  *
- * `enabled` is the session: nothing here is rendered before sign-in, because the
- * sidebar itself is not (LAI-062). Fetching anyway meant a signed-out `/login`
- * that happened to carry `?project=` fired a request that could only 401 —
- * console noise for data nobody was going to see.
+ * `enabled` is the session, and it gates **only the sprint count**. That call
+ * needs a session, so a signed-out `/login` carrying `?project=` used to fire a
+ * request that could only 401 — console noise for a badge inside a sidebar that
+ * is not rendered.
+ *
+ * `/health` is public and stays ungated: first boot has no session by
+ * definition, and it is the screen that most wants to say which version it is
+ * about to install (LAI-075).
  */
 export function useShellContext(slug: string | undefined, enabled: boolean): ShellContext {
   const [version, setVersion] = useState<string | undefined>(undefined);
   const [sprintCount, setSprintCount] = useState<number | undefined>(undefined);
 
   useEffect(() => {
-    if (!enabled) {
-      setVersion(undefined);
-      return;
-    }
-
     const controller = new AbortController();
 
     getHealth(controller.signal)
@@ -49,7 +48,7 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
     return () => {
       controller.abort();
     };
-  }, [enabled]);
+  }, []);
 
   useEffect(() => {
     if (slug === undefined || !enabled) {

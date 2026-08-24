@@ -41,6 +41,20 @@ export interface Route {
    * it.
    */
   readonly group: NavGroup | null;
+  /**
+   * The screen draws its own chrome — Laika mark, wordmark **and** theme
+   * control — so the shell adds no header at all.
+   *
+   * First boot is a full-page design (`6a`) whose left rail runs the height of
+   * the page and carries all three. Letting the shell add its header put a
+   * second wordmark above the rail and a bar across the top the design does not
+   * have.
+   *
+   * Absent means "the shell provides the chrome", which is the safe default: a
+   * new route gets the brand and the theme control rather than losing them.
+   * Anything setting this **must** render both — `shell-chrome.test.ts` checks.
+   */
+  readonly ownsChrome?: true;
   /** Which phase brings it to life, so an empty state can say what it waits on. */
   readonly phase: string;
 }
@@ -65,7 +79,14 @@ export const ROUTES: readonly Route[] = [
   { path: '/members', label: 'Members', group: null, phase: 'Phase 2' },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
-  { public: true, path: '/setup', label: 'First boot', group: null, phase: 'Phase 1' },
+  {
+    public: true,
+    path: '/setup',
+    label: 'First boot',
+    group: null,
+    ownsChrome: true,
+    phase: 'Phase 1',
+  },
 
   // The LAI-018 and LAI-020 reference pages. Kept reachable — both tasks
   // required them — but out of the product nav, since they are not product.

@@ -181,3 +181,311 @@
 .status-warn {
   background: var(--amb);
 }
+
+/* ===================================================== first boot — design 6a */
+
+.boot {
+  display: flex;
+  min-height: 100vh;
+  background: var(--page);
+  color: var(--tx);
+}
+
+/*
+ * The rail is an inverted panel: ground `--tx`, text `--page`. Both tokens flip
+ * with the theme, so it is dark-on-light in light and light-on-dark in dark —
+ * inverted in both, which is what the design asks for.
+ *
+ * **The overlays are mixed from `currentColor`, not written as white.** Design
+ * `6a` uses `rgba(255,255,255,.14)` for the step badges, the chip border and the
+ * status hairline, which is correct only while the rail is dark. In dark theme
+ * the rail inverts to light and every one of those overlays disappears — the
+ * numbered badges, the version chip's border and the rule above the status all
+ * vanished. Mixing from the rail's own foreground gives the design's value in
+ * light and the mirrored one in dark, and adds no new colour (D-020).
+ *
+ * `color-scheme` is flipped with it so native controls — the theme radios —
+ * paint for the ground they are actually on rather than the document's.
+ */
+.boot-rail {
+  width: 420px;
+  flex: none;
+  box-sizing: border-box;
+  background: var(--tx);
+  color: var(--page);
+  padding: var(--space-6) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  color-scheme: dark;
+}
+
+.dk .boot-rail {
+  color-scheme: light;
+}
+
+.boot-rail-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/*
+ * The wordmark takes the inverted ground's text colour. The mark keeps its
+ * accent fill: design 6a draws a 30px white tile with a glyph inside it, and
+ * `Brand` has no glyph — scaled up and filled flat it reads as a missing image
+ * rather than a logo. The accent dot is legible on both inverted grounds.
+ */
+.boot-rail .sidebar-wordmark {
+  font-size: 1.0625rem;
+  letter-spacing: -0.02em;
+  color: var(--page);
+}
+
+.boot-version {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.07em;
+  opacity: 0.6;
+  border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 0.1875rem 0.3125rem;
+}
+
+.boot-rail-lede {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.boot-headline {
+  margin: 0;
+  font-size: 1.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1.2;
+  letter-spacing: -0.028em;
+  text-wrap: pretty;
+}
+
+.boot-sub {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-normal);
+  line-height: 1.6;
+  opacity: 0.72;
+  text-wrap: pretty;
+}
+
+.boot-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.boot-steps li {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  opacity: 0.8;
+  text-wrap: pretty;
+}
+
+.boot-step-n {
+  flex: none;
+  width: 1.1875rem;
+  height: 1.1875rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+/*
+ * The theme control sits on the inverted ground, where `--tx2` is the page's
+ * secondary text and therefore near-invisible. Re-tinted to the rail's own
+ * foreground with the same overlay treatment as the rail's other inset
+ * elements.
+ */
+.boot-rail .theme-toggle {
+  border-color: color-mix(in srgb, currentColor 25%, transparent);
+  align-self: flex-start;
+}
+
+.boot-rail .theme-toggle-option {
+  color: var(--page);
+  opacity: 0.72;
+}
+
+.boot-rail .theme-toggle-option:focus-within,
+.boot-rail .theme-toggle-option:hover {
+  opacity: 1;
+}
+
+/* Pinned to the bottom, above the design's hairline. */
+.boot-rail .status {
+  margin-top: auto;
+  background: none;
+  border: none;
+  border-top: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  border-radius: 0;
+  box-shadow: none;
+  padding: var(--space-4) 0 0;
+}
+
+.boot-rail .status-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.boot-rail .status-row {
+  display: block;
+  padding: 0;
+  border-bottom: none;
+}
+
+.boot-rail .status-row dd {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  color: var(--page);
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.status-dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+}
+
+.status-ok {
+  background: var(--grn);
+}
+
+.status-warn {
+  background: var(--amb);
+}
+
+/* ------------------------------------------------------------ right column */
+
+.boot-form {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.boot-eyebrow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.boot-eyebrow-label {
+  font-size: 0.59375rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  color: var(--tx3);
+}
+
+.boot-host {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx3);
+}
+
+.boot-group {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.boot-group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: 0;
+  font-size: var(--text-base);
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.boot-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--bd);
+}
+
+.boot-chip {
+  font-size: 0.59375rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--pur);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) 0.375rem;
+}
+
+.boot-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.boot-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.boot-footnote {
+  margin: 0;
+  flex: 1;
+  min-width: 12rem;
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  text-wrap: pretty;
+}
+
+/* One column, and the rail stops being a rail. */
+@media (max-width: 900px) {
+  .boot {
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .boot-rail {
+    width: auto;
+  }
+
+  .boot-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

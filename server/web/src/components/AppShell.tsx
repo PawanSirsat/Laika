@@ -204,6 +204,9 @@ export function AppShell() {
    * nav until there is genuinely someone to navigate as.
    */
   const signedIn = showsAppNav(session);
+  // A full-page screen that draws its own brand and theme control gets no
+  // header on top of it (LAI-075).
+  const ownsChrome = route?.ownsChrome === true;
 
   // Real numbers only. `undefined` renders nothing — see `useShellContext`.
   const projectSlug = params.get('project') ?? undefined;
@@ -259,29 +262,26 @@ export function AppShell() {
           with a border. `shell-head-quiet` collapses it there and the media
           query brings it back where the toggle is needed.
         */}
-        <header className={signedIn ? 'shell-head shell-head-quiet' : 'shell-head'}>
-          {signedIn ? (
-            <button
-              type="button"
-              className="shell-navtoggle"
-              aria-expanded={navOpen}
-              aria-controls="sidebar"
-              onClick={() => {
-                setNavOpen((v) => !v);
-              }}
-            >
-              <span className="visually-hidden">
-                {navOpen ? 'Close navigation' : 'Open navigation'}
-              </span>
-              <span className="shell-navtoggle-bars" aria-hidden="true" />
-            </button>
-          ) : (
-            // The identity outlives the navigation: no nav here, but the page
-            // still says what it is.
-            <Brand />
-          )}
+        {ownsChrome ? null : (
+          <header className={signedIn ? 'shell-head shell-head-quiet' : 'shell-head'}>
+            {signedIn ? (
+              <button
+                type="button"
+                className="shell-navtoggle"
+                aria-expanded={navOpen}
+                aria-controls="sidebar"
+                onClick={() => {
+                  setNavOpen((v) => !v);
+                }}
+              >
+                <span className="visually-hidden">
+                  {navOpen ? 'Close navigation' : 'Open navigation'}
+                </span>
+                <span className="shell-navtoggle-bars" aria-hidden="true" />
+              </button>
+            ) : null}
 
-          {/*
+            {/*
             The user chip and theme control live in the sidebar footer once
             there is a sidebar (LAI-064). Pre-auth there is none, and the theme
             control must stay reachable — someone setting up an instance at
@@ -291,12 +291,14 @@ export function AppShell() {
             No "Not signed in" chip: it is authenticated chrome, and beside a
             sign-in form it states the obvious.
           */}
-          {!signedIn && (
-            <div className="shell-head-right">
-              <ThemeToggle />
-            </div>
-          )}
-        </header>
+            {!signedIn && <Brand />}
+            {!signedIn && (
+              <div className="shell-head-right">
+                <ThemeToggle />
+              </div>
+            )}
+          </header>
+        )}
 
         <main id="main" className="shell-main" tabIndex={-1}>
           {/*
@@ -382,6 +384,7 @@ export function AppShell() {
           ) : path === '/setup' ? (
             <FirstBootScreen
               host={instanceHost}
+              version={version}
               onSubmit={(values) => {
                 void handleSetup(values);
               }}
