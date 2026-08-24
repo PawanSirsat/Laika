@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Brand } from '../../components/Brand.tsx';
 import { Button } from '../../components/forms/Button.tsx';
 import { Checkbox } from '../../components/forms/Checkbox.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
@@ -51,7 +52,8 @@ export function LoginScreen({
   const valid = emailCheck.ok && passwordCheck.ok;
 
   return (
-    <div className="auth">
+    <div className="auth auth-signin">
+      <p className="auth-eyebrow">SIGN IN</p>
       <form
         className="auth-card"
         noValidate
@@ -61,11 +63,31 @@ export function LoginScreen({
           if (valid) onSubmit?.({ email, password, keepSignedIn });
         }}
       >
+        <Brand variant="tile" />
+
         <header className="auth-head">
           <h1 className="auth-title">Sign in to your instance</h1>
-          {/* Always visible: on a self-hosted tool, which instance you are
-              signing into is not obvious from the page. */}
-          <p className="auth-host">{host}</p>
+          {/*
+            Always visible, with a padlock: on self-hosted software people run
+            several instances, and which one this form signs into is not
+            otherwise apparent. The host is real — `laika.kvelld.internal` is a
+            fixture.
+          */}
+          <p className="auth-host">
+            <svg
+              className="auth-lock"
+              width="11"
+              height="11"
+              viewBox="0 0 24 24"
+              fill="none"
+              strokeWidth="2.4"
+              aria-hidden="true"
+            >
+              <rect x="4" y="11" width="16" height="10" rx="2" />
+              <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+            </svg>
+            <span>{host}</span>
+          </p>
         </header>
 
         {failure !== undefined && (
@@ -113,6 +135,14 @@ export function LoginScreen({
         <Button type="submit" fullWidth busy={submitting} busyLabel="Signing in…">
           Sign in
         </Button>
+
+        {/*
+          No "Forgot?", no OR divider, no "Email me a sign-in link". All three
+          are prominent in the mockup and none is buildable: there is no
+          password-reset endpoint (SPEC §6.4) and magic-link auth is neither
+          specified nor possible without SMTP (§14 q11). Their absence will read
+          as an omission; it is not.
+        */}
 
         <p className="auth-note">
           No account? Only an Owner or Admin can invite you. Ask them for a link.
