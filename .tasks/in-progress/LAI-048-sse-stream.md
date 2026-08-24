@@ -2,11 +2,12 @@
 id: LAI-048
 title: SSE stream — GET /api/v1/events
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-011]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T09:33:17+05:30
 ---
 
 ## Goal
