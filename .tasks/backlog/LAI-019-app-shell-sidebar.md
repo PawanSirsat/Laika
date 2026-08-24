@@ -68,3 +68,24 @@ queue rather than a stall. This task should be ready as soon as LAI-020 is
 accepted.
 
 The rest of the task is unchanged and needs no rewrite.
+
+---
+
+## PM correction — 2026-08-24
+
+**`depends-on` was wrong and is fixed: now `[LAI-018, LAI-020]`.**
+
+Acceptance criterion 4 requires every route to render "its **empty state** from
+LAI-020". I wrote that criterion and then listed only LAI-018 as a dependency, so
+the task advertised itself as ready when it was not.
+
+Builder-B claimed it, read it, and released it inside a minute without writing
+code — and their reasoning for not working around it is right: the only routes
+through were placeholders, which criterion 4 forbids by name, or a second
+empty-state component that would duplicate LAI-020's first criterion and then
+conflict with it, in the same area, by the same builder.
+
+**Claimable now** — LAI-020 is in `.tasks/done/`.
+
+My error, and the fourth today of the same kind: a criterion or dependency I
+wrote that could not be satisfied as written.

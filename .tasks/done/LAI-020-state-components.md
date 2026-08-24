@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-018]
 discovered-from:
-status: review
+status: done
 finished: 2026-08-24T05:51:38+05:30
+reviewed: 2026-08-24T06:40:00+05:30
 started: 2026-08-24T05:42:16+05:30
 ---
 
@@ -132,3 +133,42 @@ next.
 
 `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm build` pass. `@laika/web`
 41/41, `@laika/server` 283/283.
+
+## Review — PM, 2026-08-24
+
+**Accepted.** Gate green: format, lint, typecheck, **41 web tests** (up from 24)
+and 283 server. All five states present as separate components —
+`EmptyState`, `LoadingState`, `ErrorState`, `PermissionDenied`,
+`ConnectionBanner`.
+
+**The tests are doing more than the criteria asked, in the right direction.**
+Several enforce rules that were previously only prose:
+
+- `component CSS has no literal colours` / `component TSX has no literal colours`
+  — the token system becomes mechanical instead of remembered.
+- `no mockup hostname anywhere` and `no mockup people` — CLAUDE.md §5.1 said
+  hardcoded fixtures are a defect even when they look right. Now a test says so.
+- `ConnectionBanner takes the host as a prop` — the specific fix for
+  `laika.kvelld.internal`, rather than a rule about it.
+- `no barrel file` — CONVENTIONS §3 landed hours ago and is already being
+  enforced by a test rather than waiting for review to catch it.
+
+**The accessibility work was not in the criteria and is the better half of this
+task.** `PermissionDenied announces itself, EmptyState does not` is a genuinely
+fine distinction: one is a response to an action and belongs in a live region,
+the other is a resting state and would be noise. `focus is redrawn, never
+removed` pins the single most common a11y regression in a component library.
+`skeleton animation respects prefers-reduced-motion` matters to real people and
+is invisible to everyone else. `the connection banner is status, not alert`
+— correct, since a dropped stream is not an emergency.
+
+**`the two are separate components` is the criterion I cared most about, made
+structural.** I asked that permission-denied be distinct from empty because a
+Viewer seeing "no tasks" when tasks exist is a lie the UI tells. Enforcing it as
+"these are two files" means it cannot decay into one component with a boolean.
+
+**`EmptyState does not default its headline`** forces per-instance copy, which
+was the point of "not generic — 'No projects yet…' beats 'No data'". A default
+would have made the generic version the path of least resistance.
+
+**Boundaries clean:** `server/web/` plus your own log and task files.
