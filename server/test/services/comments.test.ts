@@ -7,6 +7,7 @@ import { activity, comments, orgs, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import {
   addComment,
+  commentCounts,
   createdViaFor,
   deleteComment,
   editComment,
@@ -318,5 +319,87 @@ describe('each mutation gets its own activity verb (LAI-110)', () => {
         }),
       ).not.toThrow();
     }
+  });
+});
+
+/**
+ * LAI-072. Every card in the design shows a comment count; `TaskView` had none,
+ * so a board could only get one by fetching comments per card.
+ */
+describe('commentCounts (SPEC §4.7)', () => {
+  it('counts the live comments on each task', () => {
+    const other = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'Other' }).id;
+
+    addComment(t.db, actor(adminId), taskId, 'one');
+    addComment(t.db, actor(adminId), taskId, 'two');
+    addComment(t.db, actor(adminId), other, 'elsewhere');
+
+    const counts = commentCounts(t.db, [taskId, other]);
+
+    expect(counts.get(taskId)).toBe(2);
+    expect(counts.get(other)).toBe(1);
+  });
+
+  it('excludes soft-deleted comments, so it agrees with the thread that opens', () => {
+    // The failure this prevents: a card promising three comments that opens onto
+    // two, which nobody can explain from the UI.
+    const first = addComment(t.db, actor(adminId), taskId, 'stays');
+    const second = addComment(t.db, actor(adminId), taskId, 'goes');
+
+    expect(commentCounts(t.db, [taskId]).get(taskId)).toBe(2);
+
+    deleteComment(t.db, actor(adminId), second.id);
+
+    expect(commentCounts(t.db, [taskId]).get(taskId)).toBe(1);
+    // And it matches what a reader is actually shown.
+    expect(listComments(t.db, actor(adminId), taskId, LIST)).toHaveLength(1);
+    expect(first.id).toBeDefined();
+  });
+
+  it('reports zero for a task with no comments, rather than omitting it', () => {
+    // A caller must never have to tell "none" from "not loaded".
+    expect(commentCounts(t.db, [taskId]).get(taskId)).toBe(0);
+  });
+
+  it('reports zero for a task whose comments were all deleted', () => {
+    const only = addComment(t.db, actor(adminId), taskId, 'gone');
+    deleteComment(t.db, actor(adminId), only.id);
+
+    expect(commentCounts(t.db, [taskId]).get(taskId)).toBe(0);
+  });
+
+  it('asks for nothing when given nothing', () => {
+    expect(commentCounts(t.db, []).size).toBe(0);
+  });
+
+  it('ignores tasks outside the requested set', () => {
+    const other = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'Other' }).id;
+    addComment(t.db, actor(adminId), other, 'elsewhere');
+
+    expect([...commentCounts(t.db, [taskId]).keys()]).toEqual([taskId]);
+  });
+
+  it('counts in one query however many tasks are asked about', () => {
+    const ids = [taskId];
+    for (let i = 0; i < 12; i += 1) {
+      const id = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: `t${String(i)}` }).id;
+      addComment(t.db, actor(adminId), id, 'x');
+      ids.push(id);
+    }
+
+    const prepared: string[] = [];
+    const real = t.sqlite.prepare.bind(t.sqlite);
+    (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+      prepared.push(source);
+      return real(source);
+    };
+
+    try {
+      expect(commentCounts(t.db, ids).size).toBe(13);
+    } finally {
+      (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+    }
+
+    expect(prepared.filter((sql) => sql.includes('comments'))).toHaveLength(1);
   });
 });

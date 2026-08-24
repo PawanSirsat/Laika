@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, or } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
@@ -131,6 +131,44 @@ export function listComments(
   const visible = options.updatedSince === null ? rows.filter((r) => r.deletedAt === null) : rows;
 
   return visible.slice(0, options.limit + 1);
+}
+
+/**
+ * How many live comments each of these tasks has, in **one** query (LAI-072).
+ *
+ * ## Derived, never stored
+ *
+ * A counter column would be a second source of truth that drifts from the rows
+ * the moment any write path forgets it — and §4.7's soft delete means "the
+ * number of comments" is already a question with two answers. Counting at read
+ * time cannot disagree with the thread the reader then opens, which is the
+ * failure worth avoiding: a card promising three comments that opens onto two is
+ * a bug nobody can explain from the UI.
+ *
+ * ## Soft-deleted comments do not count
+ *
+ * `deleted_at IS NULL`, matching what `listComments` shows a reader by default.
+ * The one place that deliberately returns deleted rows is a `updated_since`
+ * catch-up, which needs the tombstone (§6.3) — a *count* has no such need, so it
+ * has no such exception.
+ *
+ * Returns an entry for every id asked about, zero included, so a caller never
+ * has to tell "no comments" from "not loaded".
+ */
+export function commentCounts(db: Db, taskIds: readonly string[]): Map<string, number> {
+  const counts = new Map<string, number>(taskIds.map((id) => [id, 0]));
+  if (taskIds.length === 0) return counts;
+
+  const rows = db
+    .select({ taskId: comments.taskId, total: sql<number>`COUNT(*)` })
+    .from(comments)
+    .where(and(inArray(comments.taskId, [...taskIds]), isNull(comments.deletedAt)))
+    .groupBy(comments.taskId)
+    .all();
+
+  for (const row of rows) counts.set(row.taskId, row.total);
+
+  return counts;
 }
 
 export function addComment(

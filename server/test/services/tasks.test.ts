@@ -16,6 +16,7 @@ import {
   removeTaskDependency,
   updateTask,
 } from '../../src/services/tasks.ts';
+import { addComment, deleteComment } from '../../src/services/comments.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 let t: TestDb;
@@ -526,5 +527,77 @@ describe('what a task blocks (SPEC §4.6, §4.13)', () => {
     const large = measure(20);
 
     expect(large).toBe(small);
+  });
+});
+
+/**
+ * LAI-072 — the count every card in the design shows, and what it costs.
+ */
+describe('comment count on a task view (SPEC §4.7)', () => {
+  /** Same driver instrumentation the dependency tests use. */
+  function statementsDuring(run: () => void): string[] {
+    const recorded: string[] = [];
+    const real = t.sqlite.prepare.bind(t.sqlite);
+
+    (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+      recorded.push(source);
+      return real(source);
+    };
+
+    try {
+      run();
+    } finally {
+      (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+    }
+
+    return recorded;
+  }
+
+  it('is zero for a task nobody has commented on', () => {
+    expect(newTask('Quiet').comment_count).toBe(0);
+  });
+
+  it('counts live comments and drops soft-deleted ones', () => {
+    const task = newTask('Chatty');
+
+    addComment(t.db, actor(adminId), task.id, 'one');
+    const doomed = addComment(t.db, actor(adminId), task.id, 'two');
+
+    expect(getTask(t.db, actor(adminId), task.id).comment_count).toBe(2);
+
+    deleteComment(t.db, actor(adminId), doomed.id);
+
+    // The card must agree with the thread it opens onto.
+    expect(getTask(t.db, actor(adminId), task.id).comment_count).toBe(1);
+  });
+
+  it('counts a whole page in one query, not one per card (AC3)', () => {
+    const ids = Array.from({ length: 20 }, (_, i) => newTask(`c${String(i)}`).id);
+    for (const id of ids) addComment(t.db, actor(adminId), id, 'hello');
+
+    let page: ReturnType<typeof listTasks> = [];
+    const statements = statementsDuring(() => {
+      page = listTasks(t.db, actor(adminId), 'laika', LIST);
+    });
+
+    expect(page).toHaveLength(20);
+    // Not passing on an empty set: every card really has a comment.
+    expect(page.every((task) => task.comment_count === 1)).toBe(true);
+
+    const commentQueries = statements.filter((sql) => sql.includes('comments'));
+    expect(commentQueries).toHaveLength(1);
+  });
+
+  it('does not make the page cost grow with the page', () => {
+    const measure = (size: number): number => {
+      const ids = Array.from({ length: size }, (_, i) => newTask(`n${String(i)}`).id);
+      for (const id of ids) addComment(t.db, actor(adminId), id, 'x');
+
+      return statementsDuring(() => {
+        listTasks(t.db, actor(adminId), 'laika', { ...LIST, limit: 200 });
+      }).length;
+    };
+
+    expect(measure(20)).toBe(measure(4));
   });
 });
