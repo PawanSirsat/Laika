@@ -2,11 +2,12 @@
 id: LAI-047
 title: Comments — create, list, edit, soft-delete
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: [LAI-011]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-24T09:26:27+05:30
 ---
 
 ## Goal
