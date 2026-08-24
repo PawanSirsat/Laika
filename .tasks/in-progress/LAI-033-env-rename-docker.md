@@ -2,11 +2,12 @@
 id: LAI-033
 title: Rename env vars to the LAIKA_ prefix in docker/
 area: docker
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-032]
 discovered-from: LAI-102
-status: backlog
+status: in-progress
+started: 2026-08-24T06:01:49+05:30
 ---
 
 ## Goal
