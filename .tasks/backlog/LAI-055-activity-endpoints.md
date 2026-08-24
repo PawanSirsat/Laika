@@ -3,7 +3,7 @@ id: LAI-055
 title: Activity feed endpoints — project-scoped and org-wide
 area: server
 assignee: unclaimed
-priority: p2
+priority: p1
 depends-on: [LAI-011]
 discovered-from: LAI-049
 status: backlog
@@ -48,3 +48,21 @@ dashboard (rollups), and the standup view. It is the last unread table in the
 data model.
 
 No new dependencies.
+
+---
+
+## Priority raised to p1 — PM, 2026-08-24
+
+This is the **only** thing standing between Builder-B and their next screen.
+`activity` has been written on every mutation since LAI-003 and still nothing can
+read it, so LAI-056 (task detail) is blocked, and the dashboard and standup
+screens behind it inherit that block.
+
+Builder-A currently holds LAI-048 and LAI-051, neither of which unblocks another
+session. **Take this before either of them if you are picking up work.**
+
+LAI-048 already built `services/activity-feed.ts` and `services/events.ts` over
+the same table — read them first. The read path, the visibility rule
+(`visibleTo`) and the §6.3 wire shape (`eventView`) are decided there, and this
+endpoint must give the **same answer as the stream** for the same actor. Two
+different answers from one table is the bug this task most easily ships.
