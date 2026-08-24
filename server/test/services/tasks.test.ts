@@ -402,3 +402,129 @@ describe('listing and filters (AC1)', () => {
     expect(() => listTasks(t.db, actor(outsider), 'laika', LIST)).toThrow(ApiError);
   });
 });
+
+/**
+ * LAI-091 — both directions of §4.6, and the cost of rendering a page of them.
+ */
+describe('what a task blocks (SPEC §4.6, §4.13)', () => {
+  /** a ← b ← c: c depends on b, b depends on a. */
+  function chain(): [string, string, string] {
+    const a = newTask('a').id;
+    const b = newTask('b').id;
+    const c = newTask('c').id;
+    addTaskDependency(t.sqlite, t.db, actor(adminId), b, a);
+    addTaskDependency(t.sqlite, t.db, actor(adminId), c, b);
+    return [a, b, c];
+  }
+
+  /** Count the statements a call prepares, by instrumenting the driver. */
+  function statementsDuring(run: () => void): string[] {
+    const recorded: string[] = [];
+    const real = t.sqlite.prepare.bind(t.sqlite);
+
+    (t.sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+      recorded.push(source);
+      return real(source);
+    };
+
+    try {
+      run();
+    } finally {
+      (t.sqlite as unknown as { prepare: typeof real }).prepare = real;
+    }
+
+    return recorded;
+  }
+
+  it('reports both directions separately on one view', () => {
+    const [a, b, c] = chain();
+
+    // The head of the chain blocks something and is blocked by nothing — the
+    // exact case that used to render as no dependency information at all.
+    expect(getTask(t.db, actor(adminId), a).dependencies).toEqual([]);
+    expect(getTask(t.db, actor(adminId), a).blocks).toEqual([b]);
+
+    expect(getTask(t.db, actor(adminId), b).dependencies).toEqual([a]);
+    expect(getTask(t.db, actor(adminId), b).blocks).toEqual([c]);
+
+    expect(getTask(t.db, actor(adminId), c).dependencies).toEqual([b]);
+    expect(getTask(t.db, actor(adminId), c).blocks).toEqual([]);
+  });
+
+  it('never merges them — they mean opposite things', () => {
+    const [a, , c] = chain();
+    const head = getTask(t.db, actor(adminId), a);
+    const tail = getTask(t.db, actor(adminId), c);
+
+    // Merged into one list, the head and the tail would look identical: each has
+    // exactly one edge. The direction is the entire content.
+    expect(head.dependencies).toHaveLength(0);
+    expect(head.blocks).toHaveLength(1);
+    expect(tail.dependencies).toHaveLength(1);
+    expect(tail.blocks).toHaveLength(0);
+  });
+
+  it('leaves `ready` a function of what blocks you, never of what you block (AC4)', () => {
+    const [a, b] = chain();
+
+    // `a` blocks `b` and is blocked by nothing: still ready.
+    const head = getTask(t.db, actor(adminId), a);
+    expect(head.blocks).toHaveLength(1);
+    expect(head.ready).toBe(true);
+
+    // `b` is blocked by an unfinished `a`, and its own `blocks` has no bearing.
+    expect(getTask(t.db, actor(adminId), b).ready).toBe(false);
+
+    for (const status of ['todo', 'in_progress', 'review', 'done'] as const) {
+      changeStatus(t.db, actor(adminId), a, status);
+    }
+
+    // Finishing `a` unblocks `b`. `a` is no longer ready because it is done —
+    // not because of anything it blocks.
+    expect(getTask(t.db, actor(adminId), b).ready).toBe(true);
+    expect(getTask(t.db, actor(adminId), a).ready).toBe(false);
+  });
+
+  it('renders a whole page with one dependency query, not one per row (AC2)', () => {
+    const ids = Array.from({ length: 20 }, (_, i) => newTask(`t${String(i)}`).id);
+    for (let i = 1; i < ids.length; i += 1) {
+      addTaskDependency(t.sqlite, t.db, actor(adminId), ids[i]!, ids[i - 1]!);
+    }
+
+    let page: ReturnType<typeof listTasks> = [];
+    const statements = statementsDuring(() => {
+      page = listTasks(t.db, actor(adminId), 'laika', LIST);
+    });
+
+    expect(page).toHaveLength(20);
+    // Every row carries real edges, so this is not passing on an empty graph.
+    expect(page.every((task) => task.blocks.length + task.dependencies.length > 0)).toBe(true);
+
+    const dependencyQueries = statements.filter((sql) => sql.includes('task_dependencies'));
+
+    // One, whatever the page size. Before LAI-091 this was one per row.
+    expect(dependencyQueries).toHaveLength(1);
+    expect(dependencyQueries[0]).toContain('UNION ALL');
+  });
+
+  it('costs the same for twenty tasks as for four', () => {
+    // The property behind the number above, and the one that actually matters:
+    // the cost must not move with the page. Pinning a total would break on any
+    // legitimate extra query; this only fails if something became per-row.
+    const measure = (size: number): number => {
+      const ids = Array.from({ length: size }, (_, i) => newTask(`m${String(i)}`).id);
+      for (let i = 1; i < ids.length; i += 1) {
+        addTaskDependency(t.sqlite, t.db, actor(adminId), ids[i]!, ids[i - 1]!);
+      }
+
+      return statementsDuring(() => {
+        listTasks(t.db, actor(adminId), 'laika', { ...LIST, limit: 200 });
+      }).length;
+    };
+
+    const small = measure(4);
+    const large = measure(20);
+
+    expect(large).toBe(small);
+  });
+});

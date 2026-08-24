@@ -84,6 +84,69 @@ export function addDependency(
   });
 }
 
+/**
+ * Both directions of the dependency graph for a whole page of tasks, in **one**
+ * query (SPEC §4.6, §4.13 — LAI-091).
+ *
+ * ## Why both directions, and why they must stay apart
+ *
+ * `task_dependencies(task_id, depends_on_task_id)` is read forwards to answer
+ * *"what blocks me"* and backwards to answer *"what am I holding up"*. §4.13
+ * requires an index on `depends_on_task_id` whose **only** purpose is that
+ * reverse lookup, and until now nothing performed it. The two answers mean
+ * opposite things: merging them would make a task that blocks three others look
+ * blocked by three others, which is worse than showing neither.
+ *
+ * ## Why `UNION ALL` rather than one `WHERE … OR …`
+ *
+ * Both plan identically — SQLite uses `MULTI-INDEX OR` and reaches the same two
+ * indexes, confirmed by `EXPLAIN QUERY PLAN` in the tests. The difference is
+ * correctness at the caller: with `OR`, an edge whose **both** endpoints are on
+ * the page comes back as a single row that has to be classified twice, and
+ * working out which side matched is re-deriving in TypeScript what SQL already
+ * knew. `UNION ALL` emits that edge once per direction and labels it, so the
+ * caller cannot get it wrong.
+ */
+export interface DependencyEdges {
+  /** Task id → the ids it depends on. Sorted, so a view is stable. */
+  readonly blockedBy: ReadonlyMap<string, string[]>;
+  /** Task id → the ids that depend on **it**. The §4.13 reverse read. */
+  readonly blocks: ReadonlyMap<string, string[]>;
+}
+
+export function dependencyEdges(db: Db, taskIds: readonly string[]): DependencyEdges {
+  const blockedBy = new Map<string, string[]>();
+  const blocks = new Map<string, string[]>();
+
+  for (const id of taskIds) {
+    blockedBy.set(id, []);
+    blocks.set(id, []);
+  }
+
+  if (taskIds.length === 0) return { blockedBy, blocks };
+
+  const ids = sql.join(
+    taskIds.map((id) => sql`${id}`),
+    sql`, `,
+  );
+
+  const rows = db.all<{ owner: string; other: string; reverse: number }>(
+    sql`SELECT task_id AS owner, depends_on_task_id AS other, 0 AS reverse
+          FROM task_dependencies WHERE task_id IN (${ids})
+        UNION ALL
+        SELECT depends_on_task_id AS owner, task_id AS other, 1 AS reverse
+          FROM task_dependencies WHERE depends_on_task_id IN (${ids})`,
+  );
+
+  for (const row of rows) {
+    (row.reverse === 1 ? blocks : blockedBy).get(row.owner)?.push(row.other);
+  }
+
+  for (const list of [...blockedBy.values(), ...blocks.values()]) list.sort();
+
+  return { blockedBy, blocks };
+}
+
 /** Ids this task directly depends on. */
 export function directDependencies(db: Db, taskId: string): string[] {
   return db
