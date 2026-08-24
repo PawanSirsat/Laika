@@ -115,10 +115,25 @@ export interface Member {
   readonly name: string;
   readonly email: string;
   readonly role: string;
+  readonly created_at: number;
 }
 
-export function listMembers(slug: string, signal?: AbortSignal): Promise<Page<Member>> {
-  return request<Page<Member>>(
+/**
+ * Members come back as `{ members: [...] }` — **not** the `{ data, next_cursor }`
+ * page envelope every other list uses.
+ *
+ * Typed as a page originally, which read `.data`, got `undefined`, and left the
+ * member map empty — so every name on the board and in the detail panel
+ * degraded silently to a raw ULID. Same class of failure as the `items` vs
+ * `data` bug in LAI-049: a wrong envelope does not throw, it just renders
+ * something almost right.
+ */
+export interface MemberList {
+  readonly members: readonly Member[];
+}
+
+export function listMembers(slug: string, signal?: AbortSignal): Promise<MemberList> {
+  return request<MemberList>(
     `/projects/${encodeURIComponent(slug)}/members`,
     signal === undefined ? {} : { signal },
   );

@@ -7,7 +7,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { changeStatus, listTasks } from '../../src/api/tasks.ts';
+import { changeStatus, listMembers, listTasks } from '../../src/api/tasks.ts';
 
 interface Call {
   url: string;
@@ -87,5 +87,34 @@ void describe('changeStatus', () => {
     // was instead of moving it and snapping back.
     stub({ error: { code: 'unprocessable', message: 'done cannot return to backlog' } }, 422);
     await assert.rejects(changeStatus('t1', 'backlog'));
+  });
+});
+
+void describe('listMembers uses its own envelope, not the page one', () => {
+  void test('reads { members: [...] }', async () => {
+    // Regression guard. `/members` does not use `{ data, next_cursor }`, and
+    // reading `.data` returned undefined — leaving every name on the board and
+    // in the detail panel as a raw ULID. It fails silently, so it needs a test.
+    stub({
+      members: [
+        {
+          user_id: 'u1',
+          email: 'ada@example.com',
+          name: 'Ada Lovelace',
+          role: 'lead',
+          created_at: 0,
+        },
+      ],
+    });
+
+    const list = await listMembers('laika-core');
+    assert.equal(list.members.length, 1);
+    assert.equal(list.members[0]?.name, 'Ada Lovelace');
+  });
+
+  void test('escapes the slug', async () => {
+    const calls = stub({ members: [] });
+    await listMembers('a b/c');
+    assert.ok(calls[0]?.url.includes('a%20b%2Fc'));
   });
 });

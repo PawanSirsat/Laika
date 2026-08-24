@@ -13,6 +13,7 @@ export interface KanbanViewProps {
   readonly movingId: string | undefined;
   readonly onMove: (taskId: string, to: BoardColumn) => void;
   readonly filtered: boolean;
+  readonly onOpen: (taskId: string) => void;
 }
 
 /** Empty-column copy, from the prototype — per lane, not one generic sentence. */
@@ -29,6 +30,7 @@ export function KanbanView({
   movingId,
   onMove,
   filtered,
+  onOpen,
 }: KanbanViewProps) {
   const [dragging, setDragging] = useState<string | undefined>(undefined);
   const [over, setOver] = useState<BoardColumn | undefined>(undefined);
@@ -86,6 +88,7 @@ export function KanbanView({
                         setDragging(undefined);
                         setOver(undefined);
                       }}
+                      onOpen={onOpen}
                     />
 
                     {/*

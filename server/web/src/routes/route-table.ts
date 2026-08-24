@@ -62,6 +62,7 @@ export const ROUTES: readonly Route[] = [
 
   // Routed, but not nav destinations.
   { path: '/projects', label: 'Projects', group: null, phase: 'Phase 2' },
+  { path: '/members', label: 'Members', group: null, phase: 'Phase 2' },
   { public: true, path: '/login', label: 'Sign in', group: null, phase: 'Phase 1' },
   { public: true, path: '/invite', label: 'Accept invite', group: null, phase: 'Phase 2' },
   { public: true, path: '/setup', label: 'First boot', group: null, phase: 'Phase 1' },

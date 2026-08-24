@@ -76,6 +76,13 @@ export function listProjects(
   );
 }
 
+export function getProject(slug: string, signal?: AbortSignal): Promise<Project> {
+  return request<Project>(
+    `/projects/${encodeURIComponent(slug)}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
 export interface CreateProjectInput {
   readonly name: string;
   readonly slug: string;

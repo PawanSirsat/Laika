@@ -8,6 +8,7 @@ export interface ListViewProps {
   readonly byId: ReadonlyMap<string, Task>;
   readonly members: ReadonlyMap<string, Member>;
   readonly filtered: boolean;
+  readonly onOpen: (taskId: string) => void;
 }
 
 type SortKey = 'key' | 'title' | 'status' | 'assignee' | 'priority' | 'deps' | 'updated';
@@ -18,7 +19,7 @@ type SortKey = 'key' | 'title' | 'status' | 'assignee' | 'priority' | 'deps' | '
  * "Same tasks, same filters" is the contract — this takes the list the board
  * already has rather than fetching its own, so the two views cannot disagree.
  */
-export function ListView({ tasks, byId, members, filtered }: ListViewProps) {
+export function ListView({ tasks, byId, members, filtered, onOpen }: ListViewProps) {
   const [sort, setSort] = useState<{ key: SortKey; asc: boolean }>({ key: 'key', asc: true });
 
   const name = (task: Task): string =>
@@ -91,7 +92,18 @@ export function ListView({ tasks, byId, members, filtered }: ListViewProps) {
           const blocked = blockedState(task, byId);
           return (
             <tr key={task.id}>
-              <td className="list-key">{task.key}</td>
+              <td className="list-key">
+                <button
+                  type="button"
+                  className="card-open"
+                  onClick={() => {
+                    onOpen(task.id);
+                  }}
+                >
+                  {task.key}
+                  <span className="visually-hidden"> — open details</span>
+                </button>
+              </td>
               <td>
                 {task.title}
                 {task.ready && <span className="marker marker-ready">ready</span>}

@@ -53,6 +53,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No projects yet',
     body: 'Create the first one and point it at a repo.',
   },
+  '/members': {
+    headline: 'No project chosen',
+    body: 'Open a project from Projects to see who is on it.',
+  },
   '/login': {
     headline: 'Sign-in is not built yet',
     body: 'The sign-in form, invite acceptance and the instance host indicator arrive with authentication.',

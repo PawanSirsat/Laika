@@ -12,11 +12,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 // These return promises; the repo's no-floating-promises rule is on, so each
 // call is prefixed with `void`.
 import { before, describe, test } from 'node:test';
+import { code } from './helpers/code.ts';
 import {
   ALL_COLOR_TOKENS,
   CONTRAST_PAIRS,
@@ -212,4 +214,86 @@ void describe('WCAG AA — body and secondary text on their own surfaces', () =>
       });
     }
   }
+});
+
+void describe('every var(--token) a stylesheet uses is actually defined', () => {
+  void test('no stylesheet reaches for a token that does not exist', async () => {
+    const src = fileURLToPath(new URL('../src/', import.meta.url));
+    const files = (await readdir(src, { recursive: true }))
+      .filter((f) => typeof f === 'string' && f.endsWith('.css'))
+      .map((f) => join(src, f));
+
+    const defined = new Set<string>();
+    const used = new Map<string, string>();
+    for (const file of files) {
+      const css = await readFile(file, 'utf8');
+      for (const [, name] of css.matchAll(/^\s*(--[a-zA-Z0-9-]+)\s*:/gm)) {
+        if (name !== undefined) defined.add(name);
+      }
+      for (const [, name] of css.matchAll(/var\((--[a-zA-Z0-9-]+)/g)) {
+        if (name !== undefined && !used.has(name)) used.set(name, file);
+      }
+    }
+
+    // A misspelt token is not a build error and not a lint error: the property
+    // silently keeps its inherited value, so muted text renders un-muted and
+    // nothing anywhere says so. `--fg-muted` for `--tx2` got this far once.
+    const missing = [...used].filter(([name]) => !defined.has(name));
+    assert.deepEqual(
+      missing.map(([name, file]) => `${name} (${file.slice(src.length)})`),
+      [],
+      'these tokens are used but never defined',
+    );
+  });
+});
+
+void describe('the theme is one shared value, not one per component', () => {
+  void test('useTheme reads a store rather than holding its own state', async () => {
+    const src = code(await readFile(new URL('../src/theme/use-theme.ts', import.meta.url), 'utf8'));
+
+    // Per-component `useState` here is a silent bug, and an unusually
+    // convincing one. Toggling the theme puts `.dk` on the document, so
+    // everything coloured by CSS variables changes and the app looks correct —
+    // while every colour computed in JS from `theme` (each `avatarColor()`
+    // call) keeps rendering the previous palette. Dark mode gets light-theme
+    // avatars: pale chips with dark text, on every screen that draws a person.
+    assert.ok(
+      src.includes('useSyncExternalStore'),
+      'useTheme must read a shared store so all consumers see one theme',
+    );
+    assert.ok(
+      !src.includes('useState'),
+      'per-component state here leaves every other consumer stale on a toggle',
+    );
+  });
+
+  void test('every JS consumer of the theme goes through the hook', async () => {
+    const src = fileURLToPath(new URL('../src/', import.meta.url));
+    const files = (await readdir(src, { recursive: true }))
+      .filter((f) => typeof f === 'string' && (f.endsWith('.tsx') || f.endsWith('.ts')))
+      .filter((f) => !f.startsWith('theme/'))
+      .map((f) => join(src, f));
+
+    // `avatarColor(id, theme)` is only correct if `theme` is live. Two ways to
+    // get a live one: call the hook, or take it as a prop from a parent that
+    // did. Anything else — reading the stored preference, defaulting the
+    // argument away — reintroduces exactly the staleness the store removes.
+    const offenders: string[] = [];
+    for (const file of files) {
+      const text = code(await readFile(file, 'utf8'));
+      if (!text.includes('avatarColor(')) continue;
+      const live = text.includes('useTheme()') || text.includes('readonly theme: Theme');
+      if (!live) offenders.push(file.slice(src.length));
+    }
+    assert.deepEqual(offenders, [], 'these compute an avatar colour without a live theme');
+
+    // And the preference is never read outside the theme module — that is the
+    // back door round the store.
+    const backdoors: string[] = [];
+    for (const file of files) {
+      const text = code(await readFile(file, 'utf8'));
+      if (text.includes('readPreference(')) backdoors.push(file.slice(src.length));
+    }
+    assert.deepEqual(backdoors, [], 'read the theme through the hook, not from storage');
+  });
 });
