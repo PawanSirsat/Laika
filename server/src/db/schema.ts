@@ -231,6 +231,19 @@ export const tasks = sqliteTable(
     number: integer('number').notNull(),
     title: text('title').notNull(),
     descriptionMd: text('description_md'),
+    /**
+     * What "done" means for this task (§11.4, LAI-092).
+     *
+     * **Prose, not a checklist.** A checklist implies per-item state, which
+     * implies who ticked each one and when — a table of its own and a
+     * permissions question with it. Prose is the smaller honest step, and going
+     * further later is additive rather than a migration away from this.
+     *
+     * Nullable because most tasks will not have one, and `NULL` is not the same
+     * claim as an empty string: one says nobody specified acceptance, the other
+     * says someone specified that there is none.
+     */
+    acceptanceMd: text('acceptance_md'),
     status: text('status', { enum: TASK_STATUSES }).notNull().default('backlog'),
     priority: text('priority', { enum: TASK_PRIORITIES }).notNull().default('p2'),
     assigneeId: text('assignee_id').references(() => users.id, { onDelete: 'set null' }),

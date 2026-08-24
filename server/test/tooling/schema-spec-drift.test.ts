@@ -326,6 +326,10 @@ const TABLES_NOT_IN_SPEC = new Map<string, string>([
  */
 const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
   [
+    'tasks.acceptance_md',
+    'added by LAI-092; §4.5 is PM’s file and LAI-130 adds the field there. This entry expires itself — the test below fails the moment §4.5 lists it.',
+  ],
+  [
     'users.email_verified',
     'required by better-auth’s user model (§11.3); §4.1 defers credentials to it',
   ],

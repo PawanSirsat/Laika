@@ -27,9 +27,17 @@ import { parseBody, strictObject, z } from '../validation.ts';
 const STATUSES = ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled'] as const;
 const PRIORITIES = ['p1', 'p2', 'p3'] as const;
 
+/**
+ * Acceptance is prose, and shorter than a description on purpose: it answers
+ * "what does done mean here", not "what is this about". 10k is generous for
+ * that and small enough that nobody pastes a spec into it (LAI-092).
+ */
+const ACCEPTANCE_MAX = 10_000;
+
 const CreateBody = strictObject({
   title: z.string().trim().min(1).max(300),
   description_md: z.string().max(100_000).optional(),
+  acceptance_md: z.string().max(ACCEPTANCE_MAX).optional(),
   priority: z.enum(PRIORITIES).optional(),
   status: z.enum(STATUSES).optional(),
   assignee_id: z.string().min(1).optional(),
@@ -40,6 +48,9 @@ const CreateBody = strictObject({
 const UpdateBody = strictObject({
   title: z.string().trim().min(1).max(300).optional(),
   description_md: z.string().max(100_000).optional(),
+  // `null` clears it, absent leaves it alone — the same distinction the
+  // assignee below draws, and the one a sprint's `goal` already draws.
+  acceptance_md: z.string().max(ACCEPTANCE_MAX).nullable().optional(),
   priority: z.enum(PRIORITIES).optional(),
   // `null` unassigns; absent leaves it alone. They are different requests.
   assignee_id: z.string().min(1).nullable().optional(),

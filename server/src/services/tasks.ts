@@ -35,6 +35,8 @@ export interface TaskView {
   number: number;
   title: string;
   description_md: string | null;
+  /** What "done" means here — prose, nullable (§4.5, LAI-092). */
+  acceptance_md: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   assignee_id: string | null;
@@ -137,6 +139,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     number: row.number,
     title: row.title,
     description_md: row.descriptionMd,
+    acceptance_md: row.acceptanceMd,
     status: row.status,
     priority: row.priority,
     assignee_id: row.assigneeId,
@@ -189,6 +192,7 @@ export function getTask(db: Db, actor: ResolvedActor, taskId: string): TaskView 
 export interface CreateTaskInput {
   title: string;
   description_md?: string | undefined;
+  acceptance_md?: string | undefined;
   priority?: TaskPriority | undefined;
   status?: TaskStatus | undefined;
   assignee_id?: string | undefined;
@@ -222,6 +226,7 @@ export function createTask(
         number,
         title: input.title,
         descriptionMd: input.description_md ?? null,
+        acceptanceMd: input.acceptance_md ?? null,
         status: input.status ?? 'backlog',
         priority: input.priority ?? 'p2',
         assigneeId: input.assignee_id ?? null,
@@ -322,6 +327,12 @@ export function listTasks(
 export interface UpdateTaskInput {
   title?: string | undefined;
   description_md?: string | undefined;
+  /**
+   * `null` clears it, absent leaves it alone — different requests, as `goal` on
+   * a sprint already is. An empty string would store "acceptance is nothing",
+   * which is a claim nobody meant to make.
+   */
+  acceptance_md?: string | null | undefined;
   priority?: TaskPriority | undefined;
   assignee_id?: string | null | undefined;
   now?: number;
@@ -347,6 +358,7 @@ export function updateTask(
 
   if (input.title !== undefined) changes.title = input.title;
   if (input.description_md !== undefined) changes.descriptionMd = input.description_md;
+  if (input.acceptance_md !== undefined) changes.acceptanceMd = input.acceptance_md;
   if (input.priority !== undefined) changes.priority = input.priority;
 
   const reassigning = input.assignee_id !== undefined && input.assignee_id !== task.assigneeId;

@@ -601,3 +601,90 @@ describe('comment count on a task view (SPEC §4.7)', () => {
     expect(measure(20)).toBe(measure(4));
   });
 });
+
+/**
+ * LAI-092. "What does done mean here" as a field an agent can read, rather than
+ * prose buried in a description where it stops being checkable.
+ */
+describe('acceptance criteria (SPEC §4.5)', () => {
+  it('is null when nobody specified any, not an empty string', () => {
+    // The two are different claims: `null` says nobody said, `''` says somebody
+    // said there is none.
+    expect(newTask('No acceptance').acceptance_md).toBeNull();
+  });
+
+  it('is stored and returned when given at creation', () => {
+    const task = newTask('With acceptance', {
+      acceptance_md: 'Second claim returns 409 and an audit row is written.',
+    });
+
+    expect(task.acceptance_md).toBe('Second claim returns 409 and an audit row is written.');
+    expect(getTask(t.db, actor(adminId), task.id).acceptance_md).toBe(task.acceptance_md);
+  });
+
+  it('can be set, changed and cleared afterwards', () => {
+    const task = newTask('Later');
+
+    expect(
+      updateTask(t.db, actor(adminId), task.id, { acceptance_md: 'first' }).acceptance_md,
+    ).toBe('first');
+    expect(
+      updateTask(t.db, actor(adminId), task.id, { acceptance_md: 'second' }).acceptance_md,
+    ).toBe('second');
+
+    // `null` clears it; absent leaves it alone. Different requests.
+    expect(
+      updateTask(t.db, actor(adminId), task.id, { acceptance_md: null }).acceptance_md,
+    ).toBeNull();
+  });
+
+  it('is left alone by an update that does not mention it', () => {
+    const task = newTask('Untouched', { acceptance_md: 'keep me' });
+
+    const after = updateTask(t.db, actor(adminId), task.id, { title: 'Renamed' });
+
+    expect(after.title).toBe('Renamed');
+    expect(after.acceptance_md).toBe('keep me');
+  });
+
+  it('records the change as task.updated with the field named, and adds no verb', () => {
+    // AC5: §4.8's vocabulary has been extended enough (LAI-110). This must ride
+    // on the existing verb.
+    const task = newTask('Audited');
+    updateTask(t.db, actor(adminId), task.id, { acceptance_md: 'done means this' });
+
+    const rows = t.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, task.id))
+      .all()
+      .filter((row) => row.type === 'task.updated');
+
+    expect(rows).toHaveLength(1);
+    expect(JSON.parse(rows[0]?.payloadJson ?? '{}')).toMatchObject({ changed: ['acceptanceMd'] });
+
+    // And nothing invented a new type.
+    const types = new Set(
+      t.db
+        .select()
+        .from(activity)
+        .where(eq(activity.taskId, task.id))
+        .all()
+        .map((r) => r.type),
+    );
+    expect([...types].some((type) => type.startsWith('acceptance.'))).toBe(false);
+  });
+
+  it('does not live inside the description', () => {
+    // The Notes are explicit: a heading parsed out of markdown is a format
+    // nobody can validate and every client re-implements.
+    const task = newTask('Separate', {
+      description_md: 'Why this matters.',
+      acceptance_md: 'What done looks like.',
+    });
+
+    expect(task.description_md).toBe('Why this matters.');
+    expect(task.acceptance_md).toBe('What done looks like.');
+    expect(task.description_md).not.toContain('What done looks like.');
+  });
+});
