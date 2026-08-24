@@ -22,6 +22,7 @@ import { meRoutes } from './http/routes/me.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
+import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
@@ -145,7 +146,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // Task routes mount on the same prefix; Hono merges the two routers.
     app.route(`${API_BASE}/projects`, projectTaskRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/projects`, projectRoutes({ db, sqlite: options.sqlite }));
+    app.route(`${API_BASE}/tasks`, taskCommentRoutes({ db }));
     app.route(`${API_BASE}/tasks`, taskRoutes({ db, sqlite: options.sqlite }));
+    app.route(`${API_BASE}/comments`, commentRoutes({ db }));
   }
 
   // better-auth owns everything under /api/v1/auth (§6.4). Mounted with `on`
