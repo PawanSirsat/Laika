@@ -1,0 +1,140 @@
+/* The task panel's tag editor (LAI-081). */
+.tagp {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tagp-head {
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  margin: 0;
+}
+
+.tagp-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/**
+ * The same neutral chip the card uses. **No per-tag colour** — D-027 refused a
+ * palette, and a chip that were tinted here but not on the card would read as
+ * two different things.
+ */
+.tagp-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.1875rem;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  padding: 0.1875rem 0.25rem 0.1875rem 0.375rem;
+  border-radius: var(--radius-sm);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  color: var(--tx2);
+}
+
+.tagp-none {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.tagp-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.875rem;
+  height: 0.875rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tx3);
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tagp-remove:hover:not(:disabled) {
+  background: var(--reds);
+  color: var(--red);
+}
+
+.tagp-add {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.tagp-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.tagp-apply {
+  flex: none;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--bd2);
+  background: var(--card);
+  color: var(--tx);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.tagp-apply:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Suggestions from the project's existing tags, busiest first. */
+.tagp-suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.tagp-suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  padding: 0.1875rem 0.3125rem;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 1px dashed var(--bd2);
+  color: var(--tx3);
+  cursor: pointer;
+}
+
+.tagp-suggestion:hover:not(:disabled) {
+  border-style: solid;
+  color: var(--tx2);
+  background: var(--tub);
+}
+
+/* The count is the point of the suggestion list, so it is legible, not faint. */
+.tagp-count {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  color: var(--tx2);
+}
+
+.tagp-error {
+  font-size: var(--text-xs);
+  color: var(--red);
+  line-height: 1.4;
+  margin: 0;
+}

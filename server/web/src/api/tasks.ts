@@ -84,6 +84,11 @@ export interface TaskFilter {
    * board could not scope to a sprint even though the API could.
    */
   readonly sprint?: string | undefined;
+  /**
+   * A tag name. Filtering happens **server-side** — `?tag=` has been accepted
+   * since LAI-079 — so the board never loads everything and filters in memory.
+   */
+  readonly tag?: string | undefined;
   readonly limit?: number | undefined;
   readonly cursor?: string | undefined;
 }
@@ -95,6 +100,7 @@ function toQuery(filter: TaskFilter): string {
   if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
   if (filter.ready !== undefined) params.set('ready', String(filter.ready));
   if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
+  if (filter.tag !== undefined) params.set('tag', filter.tag);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
 
