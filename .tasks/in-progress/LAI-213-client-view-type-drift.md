@@ -2,11 +2,12 @@
 id: LAI-213
 title: Nothing catches the web client's types falling behind the server's view types
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: []
 discovered-from: LAI-046
-status: backlog
+status: in-progress
+started: 2026-08-25T08:32:11Z
 ---
 
 ## Goal
