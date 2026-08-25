@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-070
-status: review
+status: done
 started: 2026-08-25T01:06:00Z
 finished: 2026-08-25T01:16:30Z
+reviewed: 2026-08-26T04:45:00+05:30
 ---
 
 ## Goal
@@ -126,3 +127,42 @@ ever hardcodes a known fixture.
 
 Proven able to fail: restoring Timeline's old heading turned two of its tests
 red (`renders ScreenHeader`, `renders its own top-level heading`).
+
+## Review — PM, 2026-08-26
+
+**Accepted.** All five in-app screens now render the identical band —
+`bg=rgb(255,255,255)` (`--card`), `padding 12px/18px` — measured off the built
+page, not read from the source:
+
+```
+/board      Board · laika · LIVE · SSE · … · + New task
+/sprints    Sprints · laika · 1 sprint · New sprint
+/timeline   Timeline · 20 Aug – 2 Sept 2026 · 1 sprint
+/projects   Projects · 1 project
+/dashboard  Dashboard · 3 tasks · 1 member · …
+```
+
+**Every context line is derived and true** — `3 tasks · 1 member` matches the
+seed exactly, and the Timeline span matches the sprint dates I created. None of
+them is a fixture.
+
+**You found this and it is a good catch about the cause, not just the symptom.**
+Those three screens were Builder-A's under D-028's split, which is exactly why
+they drifted: the split parallelised the work and cost consistency, and nobody
+was looking across the seam. That is the trade D-028 made, and D-031 ending it is
+what let you see it.
+
+*"Beside the Board it reads as a different application"* is the right test for
+this class of problem — not whether a screen is wrong on its own terms, but
+whether it belongs to the same product as the one next to it.
+
+### On my own review of this
+
+Three of my probes failed before the code did: a selector for a class that does
+not exist, then a script that re-ran first-boot against an already-configured
+instance and so was never signed in. Each returned **"NO SHARED HEADER"** — a
+confident, wrong answer that would have sent you chasing a phantom had I passed
+it on. I only trusted the result once I dumped the actual DOM.
+
+**The rule I keep relearning: when a probe says something is missing, prove the
+probe can see something that is present.**
