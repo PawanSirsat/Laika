@@ -6,8 +6,9 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-090]
 discovered-from: LAI-090
-status: in-progress
+status: review
 started: 2026-08-25T06:11:14Z
+finished: 2026-08-25T06:35:19Z
 ---
 
 ## Goal
@@ -40,7 +41,7 @@ address people actually type**, and that gap is what cost the owner a session.
       are not, and their CSRF story is the `SameSite=Lax` cookie. A proxy that
       rewrites `Origin` therefore breaks sign-in and nothing else, which is worth
       a reader knowing before they debug the wrong thing.
-- [ ] **`docker/README.md` says what `LAIKA_PUBLIC_URL` must match** and what
+- [x] **`docker/README.md` says what `LAIKA_PUBLIC_URL` must match** and what
       breaks if it does not (AC6). `docker/` is **Builder-B's**, so this
       criterion may need to travel again — split it if that is cleaner.
 
@@ -73,3 +74,54 @@ spellings are one host, what a mismatch returns, and the three distinguishable
 outcomes. **Lift the constraint from there rather than restating it**: the README
 needs to say what `LAIKA_PUBLIC_URL` must match and what breaks if it does not,
 which is one paragraph pointing at §6.1, not a second copy that can drift.
+
+---
+
+## The last criterion (builder-b, 2026-08-25T06:35:19Z)
+
+`docker/README.md` gains **It must match the address people actually type**, and
+the `LAIKA_PUBLIC_URL` table row now says sign-in is checked against it rather
+than only describing the value.
+
+**Lifted from §6.1, not restated.** Per the reassignment note, the section gives
+the operational consequence — configure one address, open the board at another,
+sign-in is refused while everything else keeps working — and links to
+[SPEC §6.1] for the rule itself. It says so out loud, because the reason matters
+more than the link: *two statements of one rule drift, and the one in the README
+is the one nobody updates.*
+
+## Verified against a running instance rather than transcribed
+
+The instance is configured `LAIKA_PUBLIC_URL=http://localhost:3370`:
+
+| Request | Result |
+| --- | --- |
+| right credentials, `Origin: http://127.0.0.1:3370` | **200** — the loopback spellings really are one host (LAI-090) |
+| right credentials, `Origin: https://evil.example.com` | **403** `forbidden` |
+
+The `403` body carries exactly what §6.1 promises — `reason:
+"origin_mismatch"`, `configured_url`, `origin` — and a message naming both
+addresses and both remedies. **The README quotes that message in the form the
+server actually sends**, with a plausible deployment URL substituted for my dev
+port, so an operator can match what they are looking at against what is written.
+
+I checked the behaviour before describing it because the whole failure this task
+documents is someone believing a plausible description of a system that does
+something else.
+
+## Also confirmed while in the file
+
+`NODE_ENV=production` is set in **both** `Dockerfile` and `docker-compose.yml`.
+That matters more than it looks: better-auth's rate limiting is production-only
+(LAI-096's measured table, and LAI-220 today), so the shipped image does **not**
+have the gap a bare `docker run` without it would. Nothing to change; worth
+knowing it was checked.
+
+## Not done, deliberately
+
+The task's Notes suggest `docs/CONVENTIONS.md` could grow a *"things the test
+environment must not weaken"* note, with better-auth's `skipOriginCheck` as its
+first entry. `docs/` is PM's (CLAUDE.md §1) and it is not a criterion here, so it
+stays a suggestion. It is a good one — the same environment-gated blind spot
+produced LAI-220 today, where a bug was **unreachable by every way we normally
+check** because the behaviour only exists under `NODE_ENV=production`.

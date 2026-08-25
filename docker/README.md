@@ -53,7 +53,7 @@ docker run --rm -p 3000:3000 -v laika-data:/data \
 | Variable | Required | Default | Notes |
 | --- | --- | --- | --- |
 | `LAIKA_SECRET` | **yes** | — | Key material for encrypting stored API keys and SMTP settings. Minimum 32 characters. The container refuses to start without it. |
-| `LAIKA_PUBLIC_URL` | **yes** | — | The URL your users type, scheme included, no trailing slash. Invite links and webhook URLs are built from it. Behind a TLS proxy this is the **proxy's** address, not the container's. |
+| `LAIKA_PUBLIC_URL` | **yes** | — | The URL your users type, scheme included, no trailing slash. Invite links and webhook URLs are built from it, and **sign-in is checked against it** — see below. Behind a TLS proxy this is the **proxy's** address, not the container's. |
 | `LAIKA_DB_PATH` | no | `/data/laika.db` | Must stay inside the data volume, or the database lands somewhere backups do not reach. |
 | `LAIKA_DATA_DIR` | no | `/data` | Where the database and backups live. `LAIKA_DB_PATH` wins if both are set. |
 | `PORT` | no | `3000` | Container-internal. Map it with compose's `LAIKA_PORT`. |
@@ -67,6 +67,36 @@ conventional ones — `PORT` and `NODE_ENV`.
 laptop is the failure this variable exists to prevent: it would send invite
 links to `localhost` from a real deployment, and that surfaces days later as a
 mail problem rather than immediately as a configuration one.
+
+### It must match the address people actually type
+
+`LAIKA_PUBLIC_URL` is not only the base for invite and webhook links. It is the
+origin that **`/api/v1/auth/*` is checked against**. Configure one address, open
+the board at another, and sign-in is refused while everything else keeps
+working — the page loads, the event stream runs, and only the credential
+exchange fails. That is the trap: it looks like a password problem.
+
+It does not look like one for long, because the refusal names both addresses:
+
+```
+403 forbidden
+This instance is configured for http://localhost:3000 and the request came from
+http://192.168.1.20:3000. Open it at the configured address, or set
+LAIKA_PUBLIC_URL to the address you use.
+```
+
+**Loopback spellings are interchangeable.** `localhost`, `127.0.0.1` and `::1`
+name the same machine, so a local instance configured for one accepts the
+others. Everything else is a different origin — a LAN address, a machine
+hostname, a domain, or a reverse proxy that rewrites `Origin`.
+
+So: if you reach Laika at `https://laika.example.com`, that is the value, even
+though the container itself only ever sees `http://0.0.0.0:3000`.
+
+**The rule itself — which paths are checked, and what a mismatch
+returns — is [SPEC §6.1](../docs/SPEC.md#61-authentication).** What is here is
+the operational consequence, deliberately not a second copy: two statements of
+one rule drift, and the one in the README is the one nobody updates.
 
 Everything lives in `docker/.env`, which is gitignored. **No secret is ever
 committed** — `env.example` carries an obvious placeholder.
