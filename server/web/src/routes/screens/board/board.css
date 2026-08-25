@@ -255,6 +255,9 @@
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
   color: var(--tx2);
+  /* A key is one token. In a narrow column it was breaking after the hyphen —
+     `LC-` above `4` — which reads as two things and matches no task. */
+  white-space: nowrap;
 }
 
 .card-priority {
@@ -665,7 +668,16 @@
   gap: 0.25rem;
 }
 
-/* Sample data — there is no tags table. See demo/tags.ts. */
+/**
+ * One chip style, for every tag (LAI-066, D-027).
+ *
+ * The per-tone rules that used to live here — `--purs` for `agent`, `--accs`
+ * for `presence` and so on — went with the demo module that invented them.
+ * **D-027 refused a per-tag palette on purpose**: a colour has to be chosen,
+ * stored, kept distinguishable in both themes, and explained to whoever adds
+ * the tenth tag. Tags are now real (LAI-079) and are plain strings, with no
+ * colour to render even if we wanted one.
+ */
 .card-tag {
   font-size: 0.53125rem;
   font-weight: var(--weight-bold);
@@ -673,31 +685,26 @@
   padding: 0.1875rem 0.3125rem;
   border-radius: var(--radius-sm);
   background: var(--tub);
+  border: 1px solid var(--bd);
   color: var(--tx2);
 }
 
-.card-tag-agent {
-  background: var(--purs);
-  color: var(--pur);
-}
-.card-tag-presence {
-  background: var(--accs);
-  color: var(--acc);
-}
-.card-tag-auth {
-  background: var(--grns);
-  color: var(--grn);
-}
-.card-tag-ui {
-  background: var(--ambs);
-  color: var(--amb);
-}
-
 /* The exception, stated before the footer rather than as one marker among many. */
+/**
+ * One line, always.
+ *
+ * Naming the blocker (LAI-066) put a task title in here, and a title is
+ * arbitrarily long: as a wrapping flex row it stacked into three lines and
+ * spilled out of a narrow column. The row no longer wraps and the title
+ * truncates — the key is the part you search for, so the key never truncates.
+ */
 .card-blocked {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
+  /* Wraps to a second line on purpose — see `.card-blocked-detail`. */
+  flex-wrap: wrap;
+  gap: 0 0.375rem;
+  min-width: 0;
   margin: 0;
   padding: 0.25rem 0.375rem;
   background: var(--reds);
@@ -705,7 +712,48 @@
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   font-size: 0.65625rem;
   font-weight: var(--weight-semibold);
+  line-height: 1.35;
   color: var(--red);
+  white-space: nowrap;
+}
+
+/* The blocker's key: never shortened, because it is what you go and look up. */
+.card-blocked b {
+  flex: none;
+  font-weight: var(--weight-heavy);
+}
+
+.card-blocked-lead {
+  flex: none;
+}
+
+/**
+ * The blocker's title, on its own line.
+ *
+ * Measured rather than guessed: in a 167px column the title sharing a line with
+ * `blocked by LC-1` was left **17px** — one character and an ellipsis, which
+ * tells the reader nothing they did not already have from the key. `flex-basis:
+ * 100%` puts it on the next line with the full card width.
+ */
+.card-blocked-detail {
+  display: flex;
+  gap: 0.25rem;
+  flex: 1 0 100%;
+  min-width: 0;
+}
+
+/* The first thing to give way when even a whole line is not enough. */
+.card-blocked-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* `+2` must survive the truncation beside it, or the card understates how
+   blocked the task is. */
+.card-blocked-more {
+  flex: none;
+  opacity: 0.8;
 }
 
 .card-blocked svg {

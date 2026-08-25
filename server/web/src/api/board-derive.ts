@@ -47,6 +47,28 @@ export function blockedState(task: Task, byId: ReadonlyMap<string, Task>): boole
   return unknown ? undefined : false;
 }
 
+/**
+ * The dependencies that are actually holding a task up.
+ *
+ * `blockedState` answers *whether* — this answers *which*, because LAI-066 asks
+ * the card to **name the blocker**: a bare "blocked" badge tells someone they
+ * are stuck and then makes them go hunting for what by.
+ *
+ * Only unmet ones, and only those loaded on this board. A dependency the board
+ * has not loaded cannot be named, which is the same `undefined` case
+ * `blockedState` reports — the card says the count is unknown rather than
+ * naming a subset and implying it is the whole story.
+ */
+export function blockers(task: Task, byId: ReadonlyMap<string, Task>): readonly Task[] {
+  const found: Task[] = [];
+  for (const id of task.dependencies) {
+    const dependency = byId.get(id);
+    if (dependency === undefined) continue;
+    if (dependency.status !== 'done' && dependency.status !== 'cancelled') found.push(dependency);
+  }
+  return found;
+}
+
 export function byIdIndex(tasks: readonly Task[]): ReadonlyMap<string, Task> {
   return new Map(tasks.map((t) => [t.id, t]));
 }

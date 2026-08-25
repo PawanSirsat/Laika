@@ -45,6 +45,15 @@ export interface Task {
    */
   readonly ready: boolean;
   readonly dependencies: readonly string[];
+  /**
+   * Tag names, served since LAI-079.
+   *
+   * **Plain strings, and no colour anywhere.** D-027 settled that deliberately:
+   * a per-tag palette means a colour that has to be chosen, stored, kept
+   * distinguishable in both themes, and explained to whoever adds the tenth
+   * tag. The board's chips are neutral, and the word is the identity.
+   */
+  readonly tags: readonly string[];
   readonly created_at: number;
   readonly updated_at: number;
 }

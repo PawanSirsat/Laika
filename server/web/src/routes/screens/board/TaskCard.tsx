@@ -1,6 +1,5 @@
-import { demoTags } from '../../../demo/tags.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
-import { blockedState } from '../../../api/board-derive.ts';
+import { blockedState, blockers } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
@@ -51,8 +50,10 @@ export function TaskCard({
   const colour = assignee === undefined ? undefined : avatarColor(assignee.user_id, theme);
   // Real: `created_via` ships on every task and `mcp` is the agent path.
   const byAgent = task.created_via === 'mcp';
-  // Sample: there is no tags table. See `demo/tags.ts`.
-  const tags = demoTags(task.id);
+  // Real since LAI-079. This was `demoTags(task.id)` until the tags table
+  // landed; a demo module beside a live endpoint is a defect under D-032.
+  const tags = task.tags;
+  const held = blockers(task, byId);
   const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
 
   return (
@@ -77,9 +78,12 @@ export function TaskCard({
 
       {tags.length > 0 && (
         <div className="card-tags">
+          {/* Neutral, every one of them. D-027 refused a per-tag palette:
+              a colour has to be chosen, stored, kept legible in both themes and
+              explained to whoever adds the tenth tag. The word is the identity. */}
           {tags.map((tag) => (
-            <span key={tag.label} className={`card-tag card-tag-${tag.tone}`}>
-              {tag.label}
+            <span key={tag} className="card-tag">
+              {tag}
             </span>
           ))}
         </div>
@@ -91,7 +95,34 @@ export function TaskCard({
             <rect x="4" y="11" width="16" height="9" rx="2" />
             <path d="M8 11V7a4 4 0 0 1 8 0v4" />
           </svg>
-          blocked by a dependency
+          {/*
+            Name it. "Blocked by a dependency" tells someone they are stuck and
+            then makes them go hunting for what by — which is the whole cost of
+            being blocked, paid twice. The design says "blocked by LAI-140 event
+            store", so the key and the title both appear.
+
+            One blocker is named even when there are several: the card has a
+            line, not a list, and the first is where the reader has to go
+            anyway. The count says there are more.
+          */}
+          {held.length === 0 ? (
+            'blocked by a dependency'
+          ) : (
+            <>
+              <span className="card-blocked-lead">
+                blocked by <b>{held[0]?.key}</b>
+              </span>
+              {/* Second line, because the first has no room left: in a 167px
+                  column the title was being given 17px — one character. Its own
+                  line gives it the card's full width. */}
+              <span className="card-blocked-detail">
+                <span className="card-blocked-what">{held[0]?.title}</span>
+                {held.length > 1 && (
+                  <span className="card-blocked-more">{`+${String(held.length - 1)}`}</span>
+                )}
+              </span>
+            </>
+          )}
         </p>
       )}
 
