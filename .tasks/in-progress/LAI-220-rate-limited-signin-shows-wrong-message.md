@@ -2,12 +2,12 @@
 id: LAI-220
 title: A rate-limited sign-in tells the user their password is wrong
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-078
-status: backlog
-started:
+status: in-progress
+started: 2026-08-25T02:40:46Z
 finished:
 ---
 
