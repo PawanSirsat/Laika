@@ -1,41 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { API_BASE } from './client.ts';
 import { listProjectActivity } from './activity.ts';
+import { STREAM_TYPES } from './stream-types.ts';
+import { subscribeToEvents } from './event-stream.ts';
 import type { ActivityEvent } from './activity.ts';
 
-/**
- * The activity types the server names its SSE frames with (§4.8).
- *
- * `EventSource` only fires `onmessage` for **unnamed** frames, and the server
- * names every activity frame with its type — so a client that forgets to
- * subscribe by name silently receives nothing at all while looking connected.
- * Kept in step with `server/src/db/enums.ts`; `use-events.test.ts` asserts it.
- */
-export const STREAM_TYPES: readonly string[] = [
-  'org.created',
-  'task.created',
-  'task.updated',
-  'task.status_changed',
-  'task.assigned',
-  'task.dependency_added',
-  'task.dependency_removed',
-  'comment.added',
-  'comment.edited',
-  'comment.deleted',
-  'project.created',
-  'project.updated',
-  'project.archived',
-  'member.added',
-  'member.role_changed',
-  'member.removed',
-  'token.created',
-  'token.revoked',
-  'heartbeat.session',
-  'webhook.commit',
-  'webhook.received',
-  'meeting.applied',
-  'unlisted.logged',
-];
+export { STREAM_TYPES };
 
 export type StreamStatus = 'connecting' | 'live' | 'dropped';
 
@@ -145,7 +114,6 @@ export function useEvents(slug: string | undefined): UseEvents {
   const lastErrorAt = useRef<number | undefined>(undefined);
   const [, setNow] = useState(0);
   const [tick, setTick] = useState(0);
-  const source = useRef<EventSource | undefined>(undefined);
 
   /**
    * Seed from history, then let the stream extend it.
@@ -181,69 +149,73 @@ export function useEvents(slug: string | undefined): UseEvents {
     setStatus('connecting');
     setGapped(false);
 
-    const es = new EventSource(`${API_BASE}/events?project=${encodeURIComponent(slug)}`);
-    source.current = es;
+    // One connection per project, shared with every other consumer — see
+    // `event-stream.ts`. This hook used to own an `EventSource` outright, which
+    // was correct while the board was the only listener and stopped being
+    // correct the moment the shell needed the same events (LAI-122).
+    const unsubscribe = subscribeToEvents(slug, (frame) => {
+      switch (frame.kind) {
+        case 'activity': {
+          try {
+            const parsed: unknown = JSON.parse(frame.data);
+            setRecent((current) => [parsed as ActivityEvent, ...current].slice(0, KEEP));
+            setTick((n) => n + 1);
+          } catch {
+            // A frame we cannot parse is not worth breaking the board over.
+          }
+          return;
+        }
 
-    const push = (event: MessageEvent<string>): void => {
-      try {
-        const parsed: unknown = JSON.parse(event.data);
-        setRecent((current) => [parsed as ActivityEvent, ...current].slice(0, KEEP));
-        setTick((n) => n + 1);
-      } catch {
-        // A frame we cannot parse is not worth breaking the board over.
+        case 'ready':
+          setStatus('live');
+          return;
+
+        case 'gap':
+          setGapped(true);
+          // `id` is deliberately absent on control frames, so this never moves
+          // the resume position — it only says to catch up.
+          setGap((last) => nextGap(last, frame.data));
+          return;
+
+        case 'closing':
+          // A deploy, not a fault (`reason: server_shutdown`). EventSource will
+          // reconnect on its own, so say "connecting" rather than showing an
+          // error to someone whose instance is simply restarting.
+          setStatus('connecting');
+          return;
+
+        case 'open': {
+          setStatus('live');
+          // A successful connection ends the run of failures; leaving the count
+          // standing would show "attempt 7" on a stream that is working.
+          setAttempt(0);
+          setRetry(undefined);
+          lastErrorAt.current = undefined;
+          return;
+        }
+
+        case 'error': {
+          // EventSource retries on its own; `dropped` is the honest label while
+          // it does, rather than claiming to be live.
+          setStatus('dropped');
+          setAttempt((n) => n + 1);
+
+          const at = Date.now();
+          const previous = lastErrorAt.current;
+          lastErrorAt.current = at;
+
+          // Two failures give the interval the browser is actually using. One
+          // does not, so the banner shows the attempt without a countdown.
+          if (previous !== undefined) {
+            const intervalMs = at - previous;
+            setRetry({ dueAt: at + intervalMs, intervalMs });
+          }
+          return;
+        }
       }
-    };
-
-    for (const type of STREAM_TYPES) es.addEventListener(type, push as EventListener);
-
-    // Control frames carry no `id:` and are not activity.
-    es.addEventListener('ready', () => {
-      setStatus('live');
-    });
-    es.addEventListener('gap', (event) => {
-      setGapped(true);
-      // `id` is deliberately absent on control frames, so this never moves the
-      // resume position — it only says to catch up.
-      setGap((last) => nextGap(last, (event as MessageEvent<string>).data));
     });
 
-    es.addEventListener('closing', () => {
-      // A deploy, not a fault (`reason: server_shutdown`). EventSource will
-      // reconnect on its own, so say "connecting" rather than showing an error
-      // to someone whose instance is simply restarting.
-      setStatus('connecting');
-    });
-
-    es.onopen = () => {
-      setStatus('live');
-      // A successful connection ends the run of failures; leaving the count
-      // standing would show "attempt 7" on a stream that is working.
-      setAttempt(0);
-      setRetry(undefined);
-      lastErrorAt.current = undefined;
-    };
-    es.onerror = () => {
-      // EventSource retries on its own; `dropped` is the honest label while it
-      // does, rather than claiming to be live.
-      setStatus('dropped');
-      setAttempt((n) => n + 1);
-
-      const at = Date.now();
-      const previous = lastErrorAt.current;
-      lastErrorAt.current = at;
-
-      // Two failures give the interval the browser is actually using. One does
-      // not, so the banner shows the attempt without a countdown.
-      if (previous !== undefined) {
-        const intervalMs = at - previous;
-        setRetry({ dueAt: at + intervalMs, intervalMs });
-      }
-    };
-
-    return () => {
-      es.close();
-      source.current = undefined;
-    };
+    return unsubscribe;
   }, [slug]);
 
   /**

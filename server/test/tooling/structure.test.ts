@@ -102,6 +102,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['theme/use-theme.ts', 'a React hook — no renderer in this package'],
   ['api/use-shell-context.ts', 'a React hook — no renderer in this package'],
   ['theme/avatar-color.ts', 'derivation asserted through the token reference page in LAI-018'],
+  [
+    'api/stream-types.ts',
+    'the §4.8 name list; covered by test/api/use-events.test.ts, which asserts it against the server enum',
+  ],
   ['theme/token-list.ts', 'covered by test/tokens.test.ts, which checks it against tokens.css'],
   ['routes/route-table.ts', 'covered by test/routes.test.ts alongside the sidebar it drives'],
   ['routes/use-route.ts', 'History-API hook — no renderer; asserted in a browser under LAI-019'],

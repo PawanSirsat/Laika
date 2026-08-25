@@ -49,6 +49,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     discovered_from: null,
     ready: true,
     dependencies: [],
+    tags: [],
     created_at: 0,
     updated_at: 0,
     ...over,
