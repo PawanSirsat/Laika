@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE } from './client.ts';
+import { listProjectActivity } from './activity.ts';
 import type { ActivityEvent } from './activity.ts';
 
 /**
@@ -38,12 +39,67 @@ export const STREAM_TYPES: readonly string[] = [
 
 export type StreamStatus = 'connecting' | 'live' | 'dropped';
 
+/** One `gap` frame, in the form a consumer can act on. */
+export interface GapSignal {
+  /** Rises on every gap. The dependency to key a catch-up effect on. */
+  readonly seq: number;
+  /**
+   * `updated_since` from the frame, when the server had one to give.
+   *
+   * A hint that narrows the refetch, not a precondition for doing it — see
+   * `gap` on {@link UseEvents}.
+   */
+  readonly since: number | undefined;
+}
+
 export interface UseEvents {
   readonly status: StreamStatus;
   /** Newest first, capped — this feeds a rail, not an archive. */
   readonly recent: readonly ActivityEvent[];
   /** True after the server said it dropped frames we can no longer replay. */
   readonly gapped: boolean;
+  /**
+   * The last `gap` the server sent, or `undefined` if it has not sent one.
+   *
+   * **`seq` is what a consumer keys its catch-up on, never `since`.** The server
+   * emits two shapes of gap and only one carries a watermark: `replay_too_large`
+   * knows the client's last confirmed event and says where to resume, while
+   * `unknown_last_event_id` — a restored backup, a replaced `laika.db` — has no
+   * idea what the client already has and sends `updated_since: null`.
+   *
+   * Keyed on the timestamp, that second shape reloads nothing: the board sits
+   * stale under a pill that still reads live, which is the exact failure the
+   * `gap` frame exists to prevent. `seq` rises on **every** gap, so recovery
+   * does not depend on the server having had a watermark to give.
+   */
+  readonly gap: GapSignal | undefined;
+  /** Rises on every activity frame, so a consumer can react without diffing. */
+  readonly tick: number;
+}
+
+/**
+ * Fold one `gap` frame into the signal a consumer watches.
+ *
+ * Pure, and separate from the hook, because the case that matters is the one
+ * with nothing in it: `unknown_last_event_id` sends `updated_since: null`, and
+ * an implementation that only reacts when a watermark arrives ignores that gap
+ * completely. **`seq` therefore rises unconditionally** — including when the
+ * body does not parse at all. A gap we cannot read is still a gap.
+ */
+export function nextGap(last: GapSignal | undefined, data: string): GapSignal {
+  const seq = (last?.seq ?? 0) + 1;
+
+  let since: number | undefined;
+  try {
+    const body: unknown = JSON.parse(data);
+    const raw = (body as { readonly updated_since?: unknown }).updated_since;
+    // `null` is the server saying it has no watermark, not a timestamp of 0.
+    if (typeof raw === 'number') since = raw;
+  } catch {
+    // Left undefined. `seq` has already moved.
+  }
+
+  return { seq, since };
 }
 
 const KEEP = 12;
@@ -64,7 +120,37 @@ export function useEvents(slug: string | undefined): UseEvents {
   const [status, setStatus] = useState<StreamStatus>('connecting');
   const [recent, setRecent] = useState<readonly ActivityEvent[]>([]);
   const [gapped, setGapped] = useState(false);
+  const [gap, setGap] = useState<GapSignal | undefined>(undefined);
+  const [tick, setTick] = useState(0);
   const source = useRef<EventSource | undefined>(undefined);
+
+  /**
+   * Seed from history, then let the stream extend it.
+   *
+   * The panel is a view of the project's activity, not a log of what happened
+   * to be observed since the tab opened — opening to "nothing has happened"
+   * on a busy project would be simply false.
+   */
+  useEffect(() => {
+    if (slug === undefined) return;
+    const controller = new AbortController();
+
+    listProjectActivity(slug, KEEP, controller.signal)
+      .then((page) => {
+        setRecent((live) => {
+          // Anything the stream already delivered wins; history fills behind it.
+          const ids = new Set(live.map((e) => e.id));
+          return [...live, ...page.data.filter((e) => !ids.has(e.id))].slice(0, KEEP);
+        });
+      })
+      .catch(() => {
+        // History is a nicety; the stream is the feature.
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [slug]);
 
   useEffect(() => {
     if (slug === undefined) return;
@@ -79,6 +165,7 @@ export function useEvents(slug: string | undefined): UseEvents {
       try {
         const parsed: unknown = JSON.parse(event.data);
         setRecent((current) => [parsed as ActivityEvent, ...current].slice(0, KEEP));
+        setTick((n) => n + 1);
       } catch {
         // A frame we cannot parse is not worth breaking the board over.
       }
@@ -90,11 +177,18 @@ export function useEvents(slug: string | undefined): UseEvents {
     es.addEventListener('ready', () => {
       setStatus('live');
     });
-    es.addEventListener('gap', () => {
+    es.addEventListener('gap', (event) => {
       setGapped(true);
+      // `id` is deliberately absent on control frames, so this never moves the
+      // resume position — it only says to catch up.
+      setGap((last) => nextGap(last, (event as MessageEvent<string>).data));
     });
+
     es.addEventListener('closing', () => {
-      setStatus('dropped');
+      // A deploy, not a fault (`reason: server_shutdown`). EventSource will
+      // reconnect on its own, so say "connecting" rather than showing an error
+      // to someone whose instance is simply restarting.
+      setStatus('connecting');
     });
 
     es.onopen = () => {
@@ -112,5 +206,5 @@ export function useEvents(slug: string | undefined): UseEvents {
     };
   }, [slug]);
 
-  return { status, recent, gapped };
+  return { status, recent, gapped, gap, tick };
 }

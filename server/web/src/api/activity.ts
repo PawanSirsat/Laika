@@ -40,6 +40,25 @@ export function listTaskActivity(
 }
 
 /**
+ * The project's recent activity, newest first.
+ *
+ * The panel is **seeded from here and then extended by the stream**. Without
+ * this it would open empty on every load and only fill as things happened —
+ * which reads as "nothing has ever happened" rather than "you just got here".
+ */
+export function listProjectActivity(
+  slug: string,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<Page<ActivityEvent>> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return request<Page<ActivityEvent>>(
+    `/projects/${encodeURIComponent(slug)}/activity?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/**
  * Human wording for an event type.
  *
  * A map rather than a formatter so an unknown type degrades to something
