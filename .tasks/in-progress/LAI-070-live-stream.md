@@ -2,11 +2,12 @@
 id: LAI-070
 title: Live activity — the SSE stream on the board
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-048, LAI-055, LAI-049]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T09:45:00+05:30
 ---
 
 ## Goal
