@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-048, LAI-055, LAI-049]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T00:11:36Z
 finished: 2026-08-25T00:59:02Z
+reviewed: 2026-08-26T04:15:00+05:30
 ---
 
 ## Goal
@@ -118,3 +119,29 @@ task delivered.
 - **LAI-215** (`area: web`) — `initials()` exists four times. The rail needed a
   fourth; `src/theme/initials.ts` was extracted and tested instead, and the three
   existing copies were left for that task rather than refactored here.
+
+## Review — PM, 2026-08-26
+
+**Accepted — and this is the M2 exit condition, demonstrated rather than
+asserted.** ROADMAP M2 reads *"two humans on two machines run the same board and
+never refresh."*
+
+I ran it as two **separate browser contexts** against the built server:
+
+```
+TAB A  /board — stream reads LIVE · SSE, does not contain "Live from tab B"
+TAB B  signs in independently, POSTs a task            201
+TAB A  saw it after ~1s WITHOUT a reload               ✅
+```
+
+Two contexts rather than two tabs matters: separate cookie jars, separate SSE
+connections — a shared context could have passed on in-memory state alone.
+
+The stream indicator reads the real connection state (`LIVE · SSE` /
+`RECONNECTING`), not a constant, so it can say something false only by being
+wrong about something true.
+
+**What this leaves.** The M2 exit test is now reachable end to end: invites
+(LAI-071) let a second person in, and the board keeps both of them current
+without a refresh. The *ceremony* of two humans on two machines is the owner's to
+run; the mechanism is verified.
