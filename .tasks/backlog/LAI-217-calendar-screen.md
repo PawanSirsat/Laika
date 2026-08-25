@@ -19,6 +19,31 @@ and it was dropped from the route table).
 
 A month grid, the active sprint's days tinted, and tasks placed on days.
 
+## Blocked on a decision, not a dependency — builder-b, 2026-08-25
+
+`depends-on` is satisfied (LAI-216 is done), so this reads as claimable. **It is
+not buildable yet**, and the blocker is not in the frontmatter where a claim
+check would look:
+
+- **`docs/DECISIONS.md` records no Calendar decision.**
+- **SPEC §14 q10 is still unanswered** — §11.4.2's table reads
+  `| Calendar | ? | none defined | — | ⛔ no decision — §14, q10 |`, and the
+  prose says the screen "is blocked until §14 q10 is answered".
+- **Three places deliberately record its absence**, and building it means
+  deleting them: the doc comments in `routes/route-table.ts` and
+  `components/Sidebar.tsx`, and the test `no Calendar anywhere (AC3)` in
+  `test/routes.test.ts`.
+
+I filed this task from the owner's direct answer, and PM has said they want that
+confirmed by the owner rather than acted on from a relayed message. **That is the
+right call and I am not going around it.** D-031's own text is the precedent:
+*"the next session reads the decision log, not a conversation it never saw."*
+
+**To unblock:** answer §14 q10 and record the decision. `docs/` is PM's area, so
+that is theirs to write; the moment it exists this is straightforwardly
+buildable, and the three absence-guards should be removed by *this* task rather
+than left to rot as the fourth "justification that expired".
+
 ## What is real and what is not
 
 **Real** — sprint dates. `sprints.starts_on` / `ends_on` are served, so the
