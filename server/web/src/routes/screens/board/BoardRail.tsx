@@ -1,6 +1,9 @@
 import { DemoNotice } from '../../../components/DemoNotice.tsx';
 import { describeEvent } from '../../../api/activity.ts';
 import { demoAgentSessions } from '../../../demo/agent-sessions.ts';
+import { avatarColor } from '../../../theme/avatar-color.ts';
+import { initials } from '../../../theme/initials.ts';
+import { useTheme } from '../../../theme/use-theme.ts';
 import type { ActivityEvent } from '../../../api/activity.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import type { StreamStatus } from '../../../api/use-events.ts';
@@ -37,6 +40,9 @@ function ageDays(at: number, now: number): number {
 export function BoardRail({ status, events, gapped, tasks, members }: BoardRailProps) {
   const now = Date.now();
   const sessions = demoAgentSessions(tasks);
+  // Read through the hook, not `document.documentElement`: avatar colours are
+  // computed in JS, so they only follow the theme if this component re-renders.
+  const { theme } = useTheme();
 
   const stale = tasks
     .filter((t) => t.status !== 'done' && ageDays(t.updated_at, now) >= STALE_DAYS)
@@ -65,17 +71,45 @@ export function BoardRail({ status, events, gapped, tasks, members }: BoardRailP
           </p>
         ) : (
           <ol className="rail-feed">
-            {events.map((event) => (
-              <li key={event.id}>
-                <time dateTime={new Date(event.created_at).toISOString()}>
-                  {clock(event.created_at)}
-                </time>
-                <span className="rail-feed-what">
-                  {event.actor_kind === 'agent' && <span className="rail-bot">agent</span>}
-                  {describeEvent(event)}
-                </span>
-              </li>
-            ))}
+            {events.map((event) => {
+              // `actor_id` is on every row precisely so this needs no second
+              // lookup; the members map turns it into a name we can show.
+              const actor = event.actor_id === null ? undefined : members.get(event.actor_id);
+              const name = actor?.name ?? (event.actor_kind === 'system' ? 'Laika' : 'Someone');
+              const ink = avatarColor(event.actor_id ?? event.id, theme);
+
+              return (
+                <li key={event.id}>
+                  <time dateTime={new Date(event.created_at).toISOString()}>
+                    {clock(event.created_at)}
+                  </time>
+                  <span className="rail-feed-who">
+                    <span
+                      className="rail-feed-avatar"
+                      style={{ background: ink.background, color: ink.foreground }}
+                    >
+                      {initials(name)}
+                    </span>
+                    {/* The design marks an agent with a corner dot on the
+                        avatar rather than a word, so the row stays scannable
+                        at 8.5px. The name carries the meaning for a reader
+                        who cannot see the dot. */}
+                    {event.actor_kind === 'agent' && (
+                      <span className="rail-feed-bot" aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="rail-feed-what">
+                    <b>{name}</b>
+                    {/* Only the qualifier is hidden text — the name is already
+                        rendered, and repeating it here reads it twice aloud. */}
+                    {event.actor_kind === 'agent' && (
+                      <span className="visually-hidden"> (agent)</span>
+                    )}{' '}
+                    {describeEvent(event)}
+                  </span>
+                </li>
+              );
+            })}
           </ol>
         )}
       </section>

@@ -178,6 +178,38 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   // The first consumer the SSE endpoint has ever had (LAI-070).
   const stream = useEvents(slug);
 
+  /**
+   * The cards follow the stream, not just the panel.
+   *
+   * Debounced: a burst of frames — someone moving several tasks — should cost
+   * one refetch, not one each. `Refresh` stays because a person who suspects
+   * they are stale should not have to trust an indicator.
+   */
+  useEffect(() => {
+    if (stream.tick === 0) return;
+    const timer = setTimeout(() => {
+      board.reload();
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [stream.tick]);
+
+  /**
+   * A `gap` means the server could not replay everything we missed.
+   *
+   * We reload the board wholesale rather than fetching `?updated_since=` deltas:
+   * the board holds the complete list for one project, so a full read is a
+   * **superset** of the catch-up and cannot miss a deletion that a delta feed
+   * would omit. That is also why `gap.since` is not consulted here — it would
+   * narrow a request that is already correct, and keying on it would skip the
+   * reload entirely for a gap that arrived without one.
+   */
+  useEffect(() => {
+    if (stream.gap === undefined) return;
+    board.reload();
+  }, [stream.gap?.seq]);
+
   // Sprints for the strip, plus an unscoped task list so its per-sprint counts
   // are of the whole project rather than of whatever the board is filtered to.
   useEffect(() => {

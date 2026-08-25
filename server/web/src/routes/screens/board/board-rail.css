@@ -106,15 +106,63 @@
 
 .rail-feed li {
   display: flex;
-  gap: 0.375rem;
-  align-items: baseline;
+  /* The design's 7px, and its 6px 0 row padding with a hairline between. */
+  gap: 0.4375rem;
+  align-items: flex-start;
+  padding: 0.375rem 0;
+  border-bottom: 1px solid var(--bd);
+}
+
+.rail-feed li:last-child {
+  border-bottom: none;
 }
 
 .rail-feed time {
   flex: none;
   font-family: var(--font-mono);
   font-size: 0.53125rem;
+  font-weight: var(--weight-semibold);
+  /* 1.5 so the timestamp sits on the avatar's optical centre, not its top. */
+  line-height: 1.5;
   color: var(--tx3);
+}
+
+/* The 18px initials circle from the design, and the anchor for the agent dot. */
+.rail-feed-who {
+  position: relative;
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+}
+
+.rail-feed-avatar {
+  display: flex;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.46875rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+/**
+ * Agent marker: the design's corner dot, not a word.
+ *
+ * The border is `--card` so the dot reads as lifted off the avatar rather than
+ * merged into it — which means it tracks the panel it sits on in both themes,
+ * where a fixed white would only work in one.
+ */
+.rail-feed-bot {
+  position: absolute;
+  right: -0.1875rem;
+  bottom: -0.1875rem;
+  width: 0.6875rem;
+  height: 0.6875rem;
+  border-radius: var(--radius-sm);
+  background: var(--pur);
+  border: 1.5px solid var(--card);
 }
 
 .rail-feed-what {
@@ -125,14 +173,10 @@
   line-height: 1.4;
 }
 
-.rail-bot {
-  font-size: 0.5rem;
-  font-weight: var(--weight-heavy);
-  color: var(--pur);
-  background: var(--purs);
-  border-radius: var(--radius-sm);
-  padding: 0 0.1875rem;
-  margin-right: 0.25rem;
+/* The actor's name is the subject of the sentence, so it carries the ink. */
+.rail-feed-what b {
+  font-weight: var(--weight-bold);
+  color: var(--tx);
 }
 
 .rail-session-who {
