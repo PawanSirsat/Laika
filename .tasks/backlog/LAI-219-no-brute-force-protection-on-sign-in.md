@@ -1,6 +1,6 @@
 ---
 id: LAI-219
-title: Sign-in has no lockout, no attempt limit and no per-account throttle
+title: Sign-in has no per-account lockout, and its only brake is production-only
 area: server
 assignee: unclaimed
 priority: p2
@@ -13,32 +13,39 @@ finished:
 
 ## Goal
 
-LAI-078 AC2 said not to invent a lockout counter, and to *"check what better-auth
-is configured to do"* and file a task if it does nothing. It does nothing.
+**Corrected 2026-08-25** after another session measured `429`s where this task
+claimed there were none. Both measurements were right; they were taken under
+different `NODE_ENV`s. The correction below is what I then measured myself, and
+it changes the premise without changing the conclusion.
 
-**Measured on a running instance** — eight consecutive failed sign-ins for a real
-account:
+There is **no per-account lockout**. There *is* a brake, and it is not ours:
 
-```
-attempt 1..8   401   {"code":"unauthorized","message":"Invalid email or password"}
-headers        x-ratelimit-limit: 600   x-ratelimit-remaining: 599, 598, 598, 598 …
-```
+| | fires after | keyed on | development | production | test |
+| --- | --- | --- | --- | --- | --- |
+| **better-auth's limiter** | 3 rapid failures, `429` for ~10s | the caller | **off** | **on** | **off** |
+| our `rateLimitMiddleware` | 600/min, refills at 10/s | one shared anonymous bucket | on | on | on |
 
-Identical every time. No attempt counter, no `Retry-After`, no ban, no delay.
-`server/src/auth/auth.ts` configures no `rateLimit` and no lockout.
+Measured in `NODE_ENV=production` — attempts 1–3 `401`, 4–8 `429` — and the
+`429` carried `x-ratelimit-remaining: 595`, so **our** limiter had not fired and
+does not fire here in practice. The body is better-auth's
+(`"Too many requests. Please try again later."`, `x-retry-after: 10`), not ours
+(`"Too many requests"` with `retry_after_seconds`).
 
-**The only thing in front of it is the general limiter**, and it does not fit
-this job:
+In `NODE_ENV=development` there is no brake at all: eight consecutive failures
+return eight identical `401`s. That is the environment a self-hosted operator
+gets by **omitting** `NODE_ENV`, which is worth stating plainly.
 
-- The policy applied is `session` — **600 requests/minute**, refilling
-  continuously at 10/second. `x-ratelimit-remaining` stops falling because the
-  bucket refills as fast as a guesser spends it.
-- Unauthenticated requests **share one bucket** (`http/middleware/rate-limit.ts`
-  explains why: per-IP needs a trusted-proxy config Laika does not have yet). So
-  the budget is not per-account and not per-attacker.
+### What is actually missing
 
-A shared 600/min with continuous refill is a fair-use limit on a working API. It
-is not brute-force protection, and nothing else is.
+1. **A per-account lockout.** better-auth's limiter is keyed on the caller, so it
+   slows a burst from one address and does nothing about a slow attempt spread
+   across many against one account.
+2. **A brake that does not depend on `NODE_ENV`.** The only protection on this
+   path today evaporates if the operator does not set it.
+
+**Do not build a second limiter beside the one that already exists** — that was
+the risk in this task's original wording. `rateLimitMiddleware` is fine at what
+it does; it is simply not brute-force protection and was never meant to be.
 
 ## Why it matters here specifically
 
@@ -67,7 +74,8 @@ existing owner having chosen something weaker before that rule existed.
 
 - **The UI is ready for whichever shape this takes.** `LoginScreen` takes
   `rejected?: boolean` and renders *"Email or password is wrong."* with no
-  number. When the server has something true to say, that prop becomes the
+  number. It now distinguishes `401` from `429` (LAI-220) — before that fix a
+  rate-limited user was told their password was wrong. When the server has something true to say, that prop becomes the
   richer one — and a **new task** should do it, not this one.
 - Its previous prop was `{ attemptsLeft: number | undefined; lockoutMinutes }`,
   rendering the prototype's *"3 attempts left before a 15-minute lockout"*.
