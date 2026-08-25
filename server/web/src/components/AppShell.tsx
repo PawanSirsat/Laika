@@ -7,6 +7,8 @@ import { useShellContext } from '../api/use-shell-context.ts';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
 import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
+import { acceptInvite } from '../api/invites.ts';
+import { useInvite } from '../api/use-invite.ts';
 import { LoginScreen } from '../routes/screens/LoginScreen.tsx';
 import { BoardScreen } from '../routes/screens/BoardScreen.tsx';
 import { SprintsScreen } from '../routes/screens/sprints/SprintsScreen.tsx';
@@ -52,6 +54,18 @@ export function AppShell() {
   const [setupSubmitting, setSetupSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | undefined>(undefined);
   const [setupFieldErrors, setSetupFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [inviteError, setInviteError] = useState<string | undefined>(undefined);
+
+  /**
+   * The invite token, from the link the invitee was sent.
+   *
+   * Read unconditionally rather than inside the `/invite` branch: hooks cannot
+   * be called conditionally, and `useInvite` does nothing when the token is
+   * absent, which is every other route.
+   */
+  const inviteToken = path === '/invite' ? (params.get('token') ?? undefined) : undefined;
+  const inviteState = useInvite(inviteToken);
 
   // Whether this instance has an owner yet. Read once on boot; the server's own
   // gate is authoritative, this only decides what to render.
@@ -127,6 +141,46 @@ export function AppShell() {
    * Re-checking the status flips the gate and the session probe picks the user
    * up, which lands them in the authenticated shell.
    */
+  /**
+   * Accept the invite: create the account, spend the token, become signed in.
+   *
+   * Mirrors `handleSetup` because it is the same shape of thing — the response
+   * carries the session cookie, so `retry()` is what turns this tab from
+   * anonymous into authenticated rather than a second sign-in round trip.
+   */
+  const handleAcceptInvite = useCallback(
+    async (values: { name: string; password: string; email?: string }) => {
+      if (inviteToken === undefined) return;
+
+      setInviteSubmitting(true);
+      setInviteError(undefined);
+
+      try {
+        await acceptInvite({
+          token: inviteToken,
+          name: values.name,
+          password: values.password,
+          ...(values.email === undefined ? {} : { email: values.email }),
+        });
+        retry();
+        navigate('/board');
+      } catch (cause) {
+        // `403` is the token being refused between the preview and the submit —
+        // it expired while the form was open, or someone else spent a link
+        // invite first. The server's own wording is used rather than a reworded
+        // one, because it is the only party that knows which.
+        setInviteError(
+          cause instanceof ApiError
+            ? cause.message
+            : 'Could not create your account. The instance may be unreachable.',
+        );
+      } finally {
+        setInviteSubmitting(false);
+      }
+    },
+    [inviteToken, retry, navigate],
+  );
+
   const handleSetup = useCallback(
     async (values: {
       ownerName: string;
@@ -391,17 +445,19 @@ export function AppShell() {
               serverError={signInError}
             />
           ) : path === '/invite' ? (
-            // Layout preview until LAI-007 reads the invite token and supplies
-            // the real inviter, org, email, role and expiry. The values below
-            // are generic English rather than a fabricated person or company —
-            // no Mira Kellner, no Kvelld Dynamics (CLAUDE.md §5.1).
             <InviteScreen
               host={instanceHost}
-              inviterName="An administrator"
-              orgName="this organisation"
-              email="the address your invite was sent to"
-              role="member"
-              expiresIn="7 days"
+              invite={inviteState.invite}
+              loading={inviteState.loading}
+              refused={inviteState.refused}
+              onSubmit={(values) => {
+                void handleAcceptInvite(values);
+              }}
+              onRequestNew={() => {
+                navigate('/login');
+              }}
+              submitting={inviteSubmitting}
+              serverError={inviteError}
             />
           ) : path === '/setup' ? (
             <FirstBootScreen
