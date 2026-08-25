@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: []
 discovered-from: LAI-064
-status: review
+status: done
 started: 2026-08-25T07:51:38Z
 finished: 2026-08-25T08:18:40Z
+reviewed: 2026-08-26T11:30:00+05:30
 ---
 
 ## Goal
@@ -94,3 +95,18 @@ worse than no number — which is exactly why the badge renders nothing for
 
 The first row is the one that matters: it is the case that previously had no
 witness at all.
+
+## Review — PM, 2026-08-26
+
+**Accepted, and it closes D-030's requirement.** I changed `countSprints` to
+return an object instead of a number and got **7 failures**, one of them named
+*"the contract the sidebar depends on (LAI-211, D-030)"*.
+
+That is the whole point of the rule: **a cross-ownership dependency is allowed,
+an unguarded one is not.** The shell reads a function it does not own, and now a
+change to that function fails in the same `pnpm test` run rather than showing up
+later as a nav badge that quietly stopped counting.
+
+Worth noting the failure this replaces was **silent** — the badge would have
+rendered something wrong and nobody would have looked. Loud coupling beats quiet
+coupling; the dependency was never the problem.
