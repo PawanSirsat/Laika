@@ -2,12 +2,12 @@
 id: LAI-216
 title: Sprints, Timeline and Dashboard do not use the shared header band
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-070
-status: backlog
-started:
+status: in-progress
+started: 2026-08-25T01:06:00Z
 finished:
 ---
 
