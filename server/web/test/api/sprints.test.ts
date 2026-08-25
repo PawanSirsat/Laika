@@ -25,7 +25,17 @@ import {
 } from '../../src/api/sprints.ts';
 
 function sprint(id: string): Sprint {
-  return { id, name: `Sprint ${id}`, goal: null, starts_on: 0, ends_on: 1, status: 'planned' };
+  return {
+    id,
+    project_id: 'p',
+    name: `Sprint ${id}`,
+    goal: null,
+    starts_on: 0,
+    ends_on: 1,
+    status: 'planned',
+    created_at: 0,
+    updated_at: 0,
+  };
 }
 
 function stubPages(pages: readonly { data: Sprint[]; next_cursor: string | null }[]): string[] {

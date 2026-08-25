@@ -30,6 +30,9 @@ function sprint(over: Partial<Sprint> & { id: string }): Sprint {
     starts_on: day('2026-08-01'),
     ends_on: day('2026-08-14'),
     status: 'planned',
+    project_id: 'p',
+    created_at: 0,
+    updated_at: 0,
     ...over,
   };
 }

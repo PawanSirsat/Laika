@@ -44,7 +44,24 @@ export interface Task {
    * bug LAI-049 warns about, because the two definitions would drift.
    */
   readonly ready: boolean;
+  /** Acceptance criteria, as written. Markdown source, not rendered. */
+  readonly acceptance_md: string | null;
   readonly dependencies: readonly string[];
+  /**
+   * Ids this task **blocks** — the reverse edge of `dependencies`.
+   *
+   * Declared because it is served (LAI-213). Nothing renders it yet; a card
+   * saying what it is holding up, rather than only what holds it, is LAI-223's
+   * note.
+   */
+  readonly blocks: readonly string[];
+  /**
+   * Live comments, derived at read time and excluding soft-deleted ones
+   * (LAI-072), so it cannot disagree with the thread the reader opens.
+   *
+   * Declared here, rendered by LAI-223.
+   */
+  readonly comment_count: number;
   /**
    * Tag names, served since LAI-079.
    *

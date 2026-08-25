@@ -50,6 +50,9 @@ function task(over: Partial<Task> & { id: string }): Task {
     ready: true,
     dependencies: [],
     tags: [],
+    acceptance_md: null,
+    blocks: [],
+    comment_count: 0,
     created_at: 0,
     updated_at: 0,
     ...over,
@@ -63,6 +66,9 @@ function sprint(over: Partial<Sprint> & { id: string }): Sprint {
     starts_on: AUG_1,
     ends_on: AUG_14,
     status: 'planned',
+    project_id: 'p',
+    created_at: 0,
+    updated_at: 0,
     ...over,
   };
 }
