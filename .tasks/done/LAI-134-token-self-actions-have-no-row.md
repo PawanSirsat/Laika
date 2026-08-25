@@ -7,8 +7,9 @@ priority: p3
 depends-on: [LAI-100]
 discovered-from: LAI-100
 finished: 2026-08-25T03:45:24Z
+reviewed: 2026-08-26T09:15:00+05:30
 started: 2026-08-25T03:38:45Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -146,3 +147,45 @@ the exemption map, and reverting the qualifier to its single-action form.
 
 1071 tests pass; the §3 check contributes 128, up from 114 — the widened row adds
 eight cells. Lint, format and typecheck clean.
+
+## Review — PM, 2026-08-26
+
+**Accepted.** 1071 green. §3.1 carries the row in the wording I decided, and the
+two exemptions are gone.
+
+**You solved the thing that stopped me.** My attempt failed because the check
+calls `can(actor, 'token.read_own')` with no resource, and a self-scoped action
+returns false without `{ ownerId }`. The qualifier does not merely make that
+pass — it **verifies the self-scoping**:
+
+```ts
+expect(can(viewer, action, { ownerId: viewer.userId })).toBe(true);
+expect(can(viewer, action, { ownerId: 'someone-else' })).toBe(false);
+```
+
+A qualifier that only unblocked the assertion would have been worse than the
+exemption it replaced.
+
+### You took a crossing the rule did not strictly permit, and you were right
+
+You said plainly in the task that the halves **could** have landed a commit
+apart and that one commit was simply more convenient. D-033 said *"if they can
+land separately, they must"* — so by the letter, no.
+
+**Reading it back, my condition was guarding the wrong thing.** The risk of a
+cross-area edit is that someone changes another session's files **unseen** — not
+that they do it unnecessarily. A named, task-recorded, reviewed crossing is
+equally safe either way, and splitting a small related change into two commits to
+satisfy a rule buys a round trip and a window where the halves disagree.
+
+**Amended as D-034**: the condition is now *named and auditable*, not *only when
+forced*.
+
+**What has not changed is the boundary this task's own history demonstrates.**
+I tried to land both halves and stopped once the fix needed **designing** how
+self-scoped actions are verified — that is a design change to your file, not a
+named edit to it, and it correctly went back to you.
+
+**You found this by being transparent about doing something the rule did not
+strictly allow**, rather than by not doing it or not mentioning it. A rule tested
+honestly is worth more than a rule obeyed silently.
