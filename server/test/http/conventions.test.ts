@@ -9,6 +9,7 @@ import {
 } from '../../src/http/updated-since.ts';
 import { parseBody, strictObject, requireJsonObject, z } from '../../src/http/validation.ts';
 import { LIMITS, RateLimiter } from '../../src/http/rate-limit.ts';
+import { testApp } from '../helpers/app.ts';
 
 describe('updated_since (SPEC §6.3)', () => {
   it('parses a unix-ms timestamp and treats absence as "everything"', () => {
@@ -170,9 +171,6 @@ describe('rate limiting (SPEC §6.3)', () => {
 
 describe('rate limiting over HTTP', () => {
   it('returns 429 with Retry-After in the §6.3 envelope', async () => {
-    const { testApp } = await import('../helpers/app.ts');
-    const { RateLimiter } = await import('../../src/http/rate-limit.ts');
-
     const now = 0;
     // A tiny budget so exhaustion is two requests rather than six hundred.
     const limiter = new RateLimiter(() => now);
@@ -195,7 +193,6 @@ describe('rate limiting over HTTP', () => {
   });
 
   it('advertises the budget on a successful request', async () => {
-    const { testApp } = await import('../helpers/app.ts');
     const { app } = testApp();
 
     // A limited path: /api/v1/health advertises no budget because it enforces none.
@@ -220,7 +217,6 @@ describe('rate limiting over HTTP', () => {
 describe('payload_too_large and method_not_allowed over HTTP (D-021)', () => {
   it('answers an oversized body with 413 payload_too_large', async () => {
     const { Hono } = await import('hono');
-    const { testApp } = await import('../helpers/app.ts');
 
     const { app } = testApp();
     const echo = new Hono();
@@ -244,7 +240,6 @@ describe('payload_too_large and method_not_allowed over HTTP (D-021)', () => {
   });
 
   it('answers a wrong method on a real path with 405 and an Allow header', async () => {
-    const { testApp } = await import('../helpers/app.ts');
     const { app } = testApp();
 
     const res = await app.request('/api/v1/health', { method: 'DELETE' });
@@ -258,7 +253,6 @@ describe('payload_too_large and method_not_allowed over HTTP (D-021)', () => {
   });
 
   it('still answers an unknown path with 404, not 405', async () => {
-    const { testApp } = await import('../helpers/app.ts');
     const { app } = testApp();
 
     // The distinction Hono does not make on its own.
@@ -269,7 +263,6 @@ describe('payload_too_large and method_not_allowed over HTTP (D-021)', () => {
   });
 
   it('does not turn a wrong method on a SPA route into a 405', async () => {
-    const { testApp } = await import('../helpers/app.ts');
     const { app } = testApp();
 
     // Only reserved prefixes are API surface; everything else is the SPA.
