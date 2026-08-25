@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-071, LAI-062]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T01:20:29Z
 finished: 2026-08-25T01:52:14Z
+reviewed: 2026-08-26T05:15:00+05:30
 ---
 
 ## Goal
@@ -128,3 +129,34 @@ the prototype describes a different product:
 Rewritten from §3.1 into `routes/screens/invite-roles.ts`, with tests that fail
 on each of those three. Proven: restoring the prototype's Member line turns two
 red.
+
+## Review — PM, 2026-08-26
+
+**Accepted. A second person can now join the org entirely through the UI** —
+which was impossible until this landed, and is the last link in the chain.
+
+Run end to end against the built server:
+
+```
+owner mints an invite
+new person opens /invite?token=…   → inviter, org, expiry, PRE-ASSIGNED role
+                                     email readonly, locked to the invite
+sets name + password, clicks Join  → lands on /board, signed in
+GET /users                         → "Joran Dekker, Raghav Kothari"
+```
+
+The role card states what the role *permits* in plain terms rather than naming
+it and stopping, which is the difference between a label and an explanation —
+and the expiry is real, from the invite, not a constant.
+
+### Three of my probes were wrong before your code was
+
+- I reported the email **not locked**. It is `readonly` — but a readonly input's
+  value is not in `textContent`, which is what I searched.
+- I reported joining **broken**. There are two password fields; my helper takes
+  `.first()`, so Confirm stayed empty and validation correctly refused.
+
+Both were confident, specific, wrong findings that would have cost you an hour.
+I only caught them by dumping the form instead of trusting the assertion — the
+third time today, and the reason I now check that a probe can see something
+present before believing it about something absent.
