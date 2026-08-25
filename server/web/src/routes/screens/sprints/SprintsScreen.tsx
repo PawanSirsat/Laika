@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -102,10 +103,24 @@ export function SprintsScreen() {
     );
   }
 
+  /**
+   * Derived, and silent when it would have to guess.
+   *
+   * The count is only known once the list is `ready`, so until then there is no
+   * context rather than a placeholder. `truncated` means the list hit
+   * `MAX_PAGES` and the number is a **floor**, so it is shown as `4+` — writing
+   * a bare `4` there would be the screen stating something it does not know.
+   */
+  const headerContext =
+    slug === undefined || sprints.state.status !== 'ready'
+      ? undefined
+      : `${slug} · ${String(sprints.state.rows.length)}${sprints.state.truncated ? '+' : ''} ${
+          sprints.state.rows.length === 1 && !sprints.state.truncated ? 'sprint' : 'sprints'
+        }`;
+
   return (
     <div className="sprints">
-      <header className="sprints-head">
-        <h1 className="sprints-title">Sprints</h1>
+      <ScreenHeader title="Sprints" context={headerContext}>
         {canManage && !formOpen && (
           <button
             type="button"
@@ -118,7 +133,7 @@ export function SprintsScreen() {
             New sprint
           </button>
         )}
-      </header>
+      </ScreenHeader>
 
       {sprints.actionError !== undefined && (
         <p className="sprint-alert" role="alert">

@@ -7,25 +7,28 @@
  * axis — so it cannot drift away from the bars it points at.
  */
 
+/**
+ * The header band spans the full width and everything else is inset, which is
+ * the Board's arrangement. Padding on the wrapper would inset the band too, and
+ * a header bar that stops short of the edges is not the design's header bar.
+ */
 .timeline {
-  padding: var(--space-4) var(--space-5) var(--space-6);
+  padding-bottom: var(--space-6);
 }
 
-.timeline-head {
-  margin-bottom: var(--space-4);
+.timeline > :not(.screen-bar) {
+  margin-left: 1.125rem;
+  margin-right: 1.125rem;
 }
 
-.timeline-title {
-  font-size: var(--text-xl);
-  font-weight: var(--weight-bold);
-  color: var(--tx);
-  margin: 0;
-}
+/* `.timeline-head` and `.timeline-title` were removed with the old heading.
+   Dead rules are left out rather than kept: twice in this repo a stale rule
+   has quietly broken the thing that replaced it. */
 
 .timeline-sub {
   font-size: var(--text-sm);
   color: var(--tx3);
-  margin: var(--space-1) 0 0;
+  margin: var(--space-3) 0 var(--space-4);
   max-width: 60ch;
 }
 

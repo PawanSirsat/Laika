@@ -4,6 +4,7 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { isProject, listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
+import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { useSprints } from '../sprints/use-sprints.ts';
 import {
@@ -128,14 +129,22 @@ export function TimelineScreen() {
 
   return (
     <div className="timeline">
-      <header className="timeline-head">
-        <h1 className="timeline-title">Timeline</h1>
-        <p className="timeline-sub">
-          {/* Said out loud because a Gantt normally implies task bars, and their
-              absence here is a decision (D-014) rather than an omission. */}
-          One bar per sprint. Tasks have no dates of their own — open a sprint to see what is in it.
-        </p>
-      </header>
+      <ScreenHeader
+        title="Timeline"
+        /* Derived, never a fixture: the axis the chart actually drew and the
+           sprints actually on it. */
+        context={`${formatRange(range.from, range.to)} · ${String(rows.length)} ${
+          rows.length === 1 ? 'sprint' : 'sprints'
+        }`}
+      />
+
+      {/* Kept out of the header band rather than deleted with it: a Gantt
+          normally implies task bars, and their absence here is a decision
+          (D-014) rather than an omission. It belongs with the chart it
+          explains, not in a header that has to stay one line. */}
+      <p className="timeline-sub">
+        One bar per sprint. Tasks have no dates of their own — open a sprint to see what is in it.
+      </p>
 
       <div className="timeline-chart">
         <div className="timeline-months" aria-hidden="true">

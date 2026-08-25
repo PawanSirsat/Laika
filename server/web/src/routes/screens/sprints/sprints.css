@@ -7,24 +7,22 @@
  * the failure the token contract exists to prevent.
  */
 
+/* Band full-width, content inset — the Board's arrangement. */
 .sprints {
-  padding: var(--space-4) var(--space-5) var(--space-6);
+  padding-bottom: var(--space-6);
 }
 
-.sprints-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-4);
+.sprints > :not(.screen-bar) {
+  margin-left: 1.125rem;
+  margin-right: 1.125rem;
 }
 
-.sprints-title {
-  font-size: var(--text-xl);
-  font-weight: var(--weight-bold);
-  color: var(--tx);
-  margin: 0;
+/* The first inset child needs the space the old header's margin used to give. */
+.sprints > :not(.screen-bar):first-of-type {
+  margin-top: var(--space-4);
 }
+
+/* `.sprints-head` / `.sprints-title` removed with the heading they styled. */
 
 /* ------------------------------------------------------------------ buttons */
 
