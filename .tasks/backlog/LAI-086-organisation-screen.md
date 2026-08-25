@@ -2,12 +2,12 @@
 id: LAI-086
 title: Organisation screen — the last hidden nav item with no home
 area: web
-assignee: builder-b
+assignee: unclaimed
 priority: p2
 depends-on: [LAI-071, LAI-059]
 discovered-from: LAI-082
-status: in-progress
-started: 2026-08-25T02:32:09Z
+status: backlog
+started:
 ---
 
 ## Goal
