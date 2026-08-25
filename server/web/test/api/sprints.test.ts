@@ -240,3 +240,74 @@ void describe('who may do what — mirrors policy/can.ts, decides nothing', () =
     assert.equal(canAssignToSprints('member', 'p2', member), false);
   });
 });
+
+/**
+ * The contract `api/use-shell-context.ts` depends on (LAI-211).
+ *
+ * ## Why this block exists, and why the reason is not the one the task gave
+ *
+ * LAI-211 was written under **D-029**, when `api/sprints.ts` was Builder-A's and
+ * the shell was Builder-B's, and it asked for a comment explaining why a
+ * Builder-B test guards a Builder-A module. **D-031 retired that**: the split is
+ * over and both files are Builder-B's again, so that explanation would be false
+ * the day it was written.
+ *
+ * **D-030's general rule survives its example**, which is what CLAUDE.md says
+ * about it: *a cross-ownership dependency is allowed, an unguarded one is not.*
+ * The boundary simply moved. `countSprints` walks pages of an endpoint owned by
+ * Builder-A (`server/src/http/routes/sprints.ts`) under D-016, and the sidebar
+ * badge is the only thing that reads the total — so the contract worth pinning
+ * is between this client and the server's paging, not between two web folders.
+ *
+ * ## What was already covered, and what was not
+ *
+ * The `countSprints` block above already proves the paging behaviour thoroughly.
+ * What nothing asserted is the **link**: that the shell reaches the total
+ * *through* `countSprints` at all. Rewrite `use-shell-context.ts` to take
+ * `listSprints(...).data.length` and every test above still passes, while a
+ * project with more than one page of sprints quietly shows a low number —
+ * and a wrong number is worse than no number, which is the whole reason the
+ * badge renders nothing for `undefined`.
+ */
+void describe('the contract the sidebar depends on (LAI-211, D-030)', () => {
+  void test('countSprints answers with a number, not a page', async () => {
+    // The shell renders it directly. A `{ count }` or a `Page` would render as
+    // `[object Object]` in the badge, which no type error catches at runtime if
+    // the server's shape drifts.
+    stubPages([{ data: [sprint('1')], next_cursor: null }]);
+    const total = await countSprints('laika-core');
+    assert.equal(typeof total, 'number');
+    assert.ok(Number.isInteger(total));
+  });
+
+  void test('it is callable as the shell calls it — slug alone', async () => {
+    // `signal` and `maxPages` are optional. If either became required, the
+    // shell would stop compiling, but this states the shape the consumer
+    // relies on rather than leaving it to a type error somewhere else.
+    stubPages([{ data: [], next_cursor: null }]);
+    assert.equal(await countSprints('laika-core'), 0);
+  });
+
+  void test('and with the signal the shell passes', async () => {
+    // The shell aborts on a project switch. A signature that dropped the
+    // parameter would leave a stale count racing the new project's.
+    stubPages([{ data: [sprint('1')], next_cursor: null }]);
+    const controller = new AbortController();
+    assert.equal(await countSprints('laika-core', controller.signal), 1);
+  });
+
+  void test('the shell reaches the total through countSprints', async () => {
+    // The link nothing else guards. Taking `.data.length` from a single
+    // `listSprints` call would pass every behavioural test above and undercount
+    // any project past its first page.
+    const source = await readFile(
+      new URL('../../src/api/use-shell-context.ts', import.meta.url),
+      'utf8',
+    );
+    assert.match(source, /countSprints\(/, 'the sidebar no longer counts via countSprints');
+    assert.ok(
+      !source.includes('listSprints('),
+      'the shell is paging sprints itself — that is what countSprints is for',
+    );
+  });
+});
