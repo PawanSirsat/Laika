@@ -6,8 +6,9 @@ assignee: builder-a
 priority: p3
 depends-on: [LAI-100]
 discovered-from: LAI-100
+finished: 2026-08-25T03:45:24Z
 started: 2026-08-25T03:38:45Z
-status: in-progress
+status: review
 ---
 
 ## Goal
@@ -34,12 +35,12 @@ rather than defining it.
 
 ## Acceptance criteria
 
-- [ ] Decide which, and record it:
+- [x] Decide which, and record it:
       - **widen the row** — "Generate, list and revoke own tokens" — if the three
         are one capability; or
       - **add a row** — "List / revoke own token | ✓ | ✓ | ✓ | ✓ |" — if they are
         distinct enough to be granted separately.
-- [ ] Update `ORG_ROWS` in `server/test/tooling/policy-spec-drift.test.ts` to map
+- [x] Update `ORG_ROWS` in `server/test/tooling/policy-spec-drift.test.ts` to map
       the row to the actions, and **delete both entries from
       `ACTIONS_WITHOUT_A_ROW`**. The staleness test there fails if you widen the
       spec and leave the exemption, so this cannot be half-done.
@@ -88,3 +89,60 @@ mechanics are yours.** Take both halves in one commit under D-033, naming the
 
 I reverted my attempt; master is green and the two exemptions still stand, which
 is the correct interim state.
+
+
+---
+
+## Builder-A notes (2026-08-26)
+
+### Both halves in one commit, under the D-033 crossing this task names
+
+One line of `docs/SPEC.md` — the §3.1 row, exactly as PM wrote it — plus
+`ORG_ROWS`, the emptied exemption map, and the self-scope mechanics. The diff to
+`docs/` is one row and nothing else; I checked before committing.
+
+### The mechanics PM stopped at
+
+`can(actor, 'token.read_own')` with no resource is `false`, correctly — "read
+your own token" is meaningless without saying which. §3.1 carries the ownership
+in the **row label** ("Generate, read and revoke own tokens") rather than as a
+cell qualifier, so the cell stays a plain `✓` and the check has to supply what
+the label implies.
+
+A `SELF_SCOPED` set does that, and the check asserts **both halves**:
+
+- `can(actor, action, { ownerId: actor.userId })` matches the cell;
+- `can(actor, action, { ownerId: 'someone-else' })` is `false` **for every role**.
+
+The second is not decoration. Without it the check passes for a `can()` that
+returned `true` unconditionally — I probed exactly that, and it goes green until
+the negative assertion is restored. A cell that says "your own" asserts nothing
+unless it also says "and not anyone else's".
+
+### Why `comment.edit` and `comment.delete` are not in that set
+
+They look self-scoped and are not — a lead may act on anyone's comment. §3.2 says
+so in the cell (`own + any` against `own`), so they take the qualifier path. I
+had them in the set briefly; listing them would make this file assert that a lead
+**cannot** touch another's comment the moment that cell were ever written plainly,
+which is a wrong assertion waiting for a spec edit.
+
+### The qualifier had to become action-aware
+
+`✓ (read_only forced)` now sits on a row covering three actions. Asserting the
+scope forcing for all three would have been a tautology for two, so it verifies
+`token.create_own` for the forcing and the other two for what they actually say.
+
+### `ACTIONS_WITHOUT_A_ROW` is empty
+
+That was the point. The map stays as the mechanism, and its staleness test forces
+an entry back out the moment §3 grows an action it does not grant.
+
+### Verification
+
+Five probes, all five fail when broken: reverting §3.1, letting a self-scoped
+action allow another's resource, dropping the negative assertion, re-populating
+the exemption map, and reverting the qualifier to its single-action form.
+
+1071 tests pass; the §3 check contributes 128, up from 114 — the widened row adds
+eight cells. Lint, format and typecheck clean.
