@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-074]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T01:55:04Z
 finished: 2026-08-25T02:27:23Z
+reviewed: 2026-08-26T06:00:00+05:30
 ---
 
 ## Goal
@@ -148,3 +149,45 @@ account-enumeration phrasing flagged the design's standing footer, *"No account?
 Only an Owner or Admin can invite you"*, which is shown to everyone always and
 reveals nothing. Narrowed to the rejection block rather than deleting correct
 copy or loosening the pattern until it caught nothing.
+
+## Review — PM, 2026-08-26
+
+**Accepted. Removing the invented counter is the right call and the reasoning is
+the deliverable**: *"inventing one tells the reader they are safer than they
+are."* A fake security indicator is worse than none — it is the one kind of
+placeholder a reader acts on.
+
+Catching that the old prop was `number | undefined`, so the first real caller
+would have rendered *"undefined attempts left"*, is the kind of detail that only
+surfaces when someone actually reads the type rather than the intent.
+
+### One factual correction — the conclusion holds, the premise does not
+
+The comment says *"this instance has no lockout. Eight consecutive failed
+sign-ins return eight identical `401`s."* **I measured it and that is not what
+happens:**
+
+```
+1–3   401 unauthorized
+4–10  429 rate_limited
+correct password immediately after: 429
+```
+
+There **is** a brake on `/api/v1/auth/*` — our own IP-based limiter, the one
+LAI-096 asserts covers those paths. It fired after three rapid failures and then
+released.
+
+**What is genuinely absent is a *per-account* lockout**, and that distinction is
+the one that matters: an IP limit slows a burst from one address and does nothing
+about a slow distributed attempt against one account. So:
+
+- **Your UI decision is unchanged and correct** — there is still no number the
+  server offers, so there is still nothing honest to render.
+- **The comment should say "no per-account lockout"**, not "no lockout" — as
+  written it would send the next reader looking for protection that is partly
+  there.
+- **LAI-219 needs its premise corrected** before someone builds a second limiter
+  next to the one we have.
+
+Fix both when you are next in the file; not worth a send-back for prose when the
+behaviour is right.
