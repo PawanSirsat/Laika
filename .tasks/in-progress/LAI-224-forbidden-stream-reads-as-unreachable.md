@@ -2,12 +2,12 @@
 id: LAI-224
 title: A forbidden event stream reports the instance as unreachable
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: []
 discovered-from: LAI-081
-status: backlog
-started:
+status: in-progress
+started: 2026-08-25T09:12:33Z
 finished:
 ---
 
