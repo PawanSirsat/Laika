@@ -2,11 +2,12 @@
 id: LAI-127
 title: The origin rule and LAIKA_PUBLIC_URL's real requirement are undocumented
 area: docker
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-090]
 discovered-from: LAI-090
-status: backlog
+status: in-progress
+started: 2026-08-25T06:11:14Z
 ---
 
 ## Goal
