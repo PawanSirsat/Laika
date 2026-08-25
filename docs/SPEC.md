@@ -96,7 +96,7 @@ role `viewer` — no escalation via project assignment, enforced in code.
 | Deactivate user | ✓ | ✓ | — | — |
 | View member list | ✓ | ✓ | ✓ | ✓ |
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
-| Generate own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
+| Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
 | List / revoke **anyone's** token | ✓ | ✓ | — | — |
 | Export audit log | ✓ | ✓ | — | — |
 

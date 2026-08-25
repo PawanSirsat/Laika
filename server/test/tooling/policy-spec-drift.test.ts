@@ -54,7 +54,10 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Deactivate user', ['user.deactivate']],
   ['View member list', ['member_list.read']],
   ['Join a public project', ['project.join_public']],
-  ['Generate own tokens', ['token.create_own']],
+  [
+    'Generate, read and revoke own tokens',
+    ['token.create_own', 'token.read_own', 'token.revoke_own'],
+  ],
   ["List / revoke anyone's token", ['token.list_any', 'token.revoke_any']],
   ['Export audit log', ['audit_log.export']],
   ['Configure webhooks', ['webhook.configure']],
@@ -86,14 +89,10 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
-  [
-    'token.read_own',
-    '§3.1 grants "Generate own tokens" and never mentions reading them back. `can()` allows it self-scoped (ownerId === actor). LAI-134 asks PM to decide: widen the row, or add one.',
-  ],
-  [
-    'token.revoke_own',
-    'Same gap as token.read_own — §3.1 has "List / revoke **anyone\'s** token" for admin+ and nothing for your own. LAI-134.',
-  ],
+  // Empty since LAI-134, and it should stay that way: an action `can()` allows
+  // and §3 never grants is a permission with no written source. The map remains
+  // as the mechanism, with the staleness test below forcing an entry back out
+  // once §3 catches up.
 ]);
 
 /**
@@ -120,6 +119,28 @@ const PROSE_RULES: readonly {
     why: 'The implicit-lead rule. Not a cell: it changes which *role* §3.2 is read with, and `effectiveProjectRole` implements it. Asserted directly below.',
   },
 ];
+
+/**
+ * Actions whose answer depends on **whose** resource it is (§3.1, LAI-134).
+ *
+ * `can(actor, 'token.read_own')` with no resource is `false` — correctly, since
+ * "read your own token" is meaningless without saying which token. §3.1 carries
+ * that in the **row label** ("Generate, read and revoke own tokens") rather than
+ * as a cell qualifier, so the cell is a plain `✓` and the check has to supply
+ * the ownership the label implies.
+ *
+ * Listing them explicitly rather than inferring: an action that is self-scoped
+ * and **not** listed fails loudly against its own `✓`, which is the right way to
+ * be wrong. The reverse — inferring self-scope from a `false` answer — would
+ * silently excuse a genuine disagreement.
+ *
+ * **`comment.edit` and `comment.delete` are deliberately not here.** They *look*
+ * self-scoped and are not: a lead may act on anyone's comment. §3.2 says so in
+ * the cell (`own + any` against `own`), so they take the qualifier path, and
+ * listing them would make this file assert that a lead cannot touch another's
+ * comment the moment that cell were ever written plainly.
+ */
+const SELF_SCOPED: ReadonlySet<Action> = new Set<Action>(['token.read_own', 'token.revoke_own']);
 
 // ------------------------------------------------------------- the qualifiers
 
@@ -185,10 +206,22 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     'read_only forced',
     {
       why: 'A Viewer may hold a token; its scope is forced regardless of what was asked for.',
-      verify: () => {
-        expect(can(orgActor('viewer'), 'token.create_own', {})).toBe(true);
-        expect(forcedTokenScope('viewer', 'full')).toBe('read_only');
-        expect(forcedTokenScope('member', 'full')).toBe('full');
+      verify: (action: Action) => {
+        const viewer = orgActor('viewer');
+
+        // The row covers three actions since LAI-134, and only the first is
+        // about creating. Asserting the forcing for all three would be a
+        // tautology for two of them — the self-scoped pair is verified for what
+        // it actually says instead.
+        if (action === 'token.create_own') {
+          expect(can(viewer, 'token.create_own', {})).toBe(true);
+          expect(forcedTokenScope('viewer', 'full')).toBe('read_only');
+          expect(forcedTokenScope('member', 'full')).toBe('full');
+          return;
+        }
+
+        expect(can(viewer, action, { ownerId: viewer.userId })).toBe(true);
+        expect(can(viewer, action, { ownerId: 'someone-else' })).toBe(false);
       },
     },
   ],
@@ -357,6 +390,24 @@ function check(cell: Cell, action: Action, role: string, actor: Actor, projectId
     ).toBeDefined();
 
     qualifier?.verify(action, role);
+    return;
+  }
+
+  if (SELF_SCOPED.has(action)) {
+    const scoped = projectId === undefined ? {} : { projectId };
+
+    // Both halves, or this asserts nothing: the cell says the role may act on
+    // **their own**, which is only meaningful alongside the fact that they may
+    // not act on anyone else's.
+    expect(
+      can(actor, action, { ...scoped, ownerId: actor.userId }),
+      `${action} / ${role} / own`,
+    ).toBe(cell.allowed);
+
+    expect(
+      can(actor, action, { ...scoped, ownerId: 'someone-else' }),
+      `${action} / ${role} / someone else's — a self-scoped action must never allow this`,
+    ).toBe(false);
     return;
   }
 
