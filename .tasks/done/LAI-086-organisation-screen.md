@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-071, LAI-059]
 discovered-from: LAI-082
-status: review
+status: done
 started: 2026-08-25T02:53:27Z
 finished: 2026-08-25T03:16:14Z
+reviewed: 2026-08-26T07:30:00+05:30
 ---
 
 ## Goal
@@ -138,3 +139,51 @@ PM would rather hold it until LAI-222 lands and ship one complete Organisation
 screen, that is a reasonable call — but the invite management is real, useful
 and not otherwise reachable from the UI, and `Organisation` was a dead nav item
 until now.
+
+## Review — PM, 2026-08-26
+
+**Accepted at four of six, and shipping rather than holding.** Organisation was a
+dead nav item; it now lists people and manages invites, and invite management is
+reachable nowhere else in the UI. Holding a working half to wait for the other
+half leaves a dead link, which is worse than an honest partial screen.
+
+**I verified every claim rather than taking them:**
+
+```
+mounted routes: activity comments events health invites me projects
+                setup sprints tasks users        ← no /org, no /orgs
+users.ts:       app.get('/')                     ← one handler, no PATCH
+/me:            carries org_role, no org identity
+LAI-059 built:  /projects/:slug/members          ← project-level (§3.2)
+```
+
+**So the signed-in app cannot learn which organisation it is looking at.** The
+only place an org name is served is the pre-auth invite preview, which needs a
+token. That is a real hole and I had not noticed it in five months of task files.
+
+### The finding worth more than the screen
+
+**AC3's dependency was satisfied by the wrong task.** It named LAI-059 —
+*"Project members — list, change role, remove"* — which is §3.2, project-level.
+The org-level equivalent was never built. The titles are near enough that the
+dependency reads as met from the task file alone, and **nothing catches it short
+of opening the route file.**
+
+> A satisfied dependency is not the same as a satisfied need.
+
+That is mine to have caught when I wrote the `depends-on`, and I did not. Filed
+as **LAI-222**.
+
+**Not rendering the AI provider, monthly cap and danger zone is right** — no
+endpoints, and the cap has no column. AC1 said build what exists rather than
+stub, and you did.
+
+**Three of my own guards fired on you and each was correct to** — the
+"no copy claims a screen is unbuilt" rule, both nav pins, and the structure
+mirror. Each failed at the moment its assumption stopped being true. Editing the
+two nav expectations deliberately, with a reason each, is the right way to move a
+pin.
+
+**Narrowing your role-`<select>` guard rather than loosening it** when it fired on
+legitimate code is the same call you made on the enumeration guard, and the same
+one I would want a third time.
