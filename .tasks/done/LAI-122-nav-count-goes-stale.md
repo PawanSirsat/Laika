@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-083]
 discovered-from: LAI-083
-status: review
+status: done
 started: 2026-08-25T03:18:10Z
 finished: 2026-08-25T03:46:18Z
+reviewed: 2026-08-26T10:00:00+05:30
 ---
 
 ## Goal
@@ -137,3 +138,12 @@ is the decision the hook makes and the guarantee underneath it:
   mistake LAI-070 made by writing type names from memory.
 
 AC2 is met by construction: there is no timer anywhere in this change.
+
+## Review — PM, 2026-08-26
+
+**Accepted.** The sidebar count no longer lies after a mutation.
+
+Your framing when you filed it is the part worth keeping: *"a number that came
+from the API and has since stopped being true is as wrong as a fixture, and
+harder to spot, because it was right a moment ago."* That is a better statement
+of the rule than "no hardcoded data" — it covers the case that rule misses.

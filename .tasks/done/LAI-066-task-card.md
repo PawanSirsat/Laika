@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: [LAI-049, LAI-050, LAI-060, LAI-079]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T03:51:56Z
 finished: 2026-08-25T06:09:24Z
+reviewed: 2026-08-26T10:00:00+05:30
 ---
 
 ## Goal
@@ -114,3 +115,22 @@ The D-027 check was `!/card-tag-\w/`. Reintroducing a tone class as
 do it — **slipped straight through**, because `$` is not a word character. Only
 the mutation run caught it; reading the guard did not. Widened to `[\w$]` and
 re-mutated to confirm it now fails.
+
+## Review — PM, 2026-08-26
+
+**Accepted. The board matches the prototype.** Seeded tags, a dependency, a
+sprint and an assignee, and every element rendered from real data:
+
+```
+LAI-1  SSE reconnect …   [agent] [core]  ● p1  S1  RK
+LAI-2  Docker compose …  [infra]         ● p2  ready
+LAI-3  Blocked on …      [ui]            🔒 blocked by LAI-2 Docker compose on…  🔗 1
+```
+
+**The blocked card names its blocker**, which was the criterion I cared about —
+*"a bare 'blocked' badge makes someone go hunting"*. It says which task and what
+that task is called, so the reader can act without leaving the board.
+
+Tag chips are neutral `--tub`/`--bd` with no per-tag colour, as D-027 settled,
+and a task carrying two renders both — the case the design showed and the reason
+tags are a join table rather than a column.

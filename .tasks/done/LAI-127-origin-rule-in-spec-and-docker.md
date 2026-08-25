@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-090]
 discovered-from: LAI-090
-status: review
+status: done
 started: 2026-08-25T06:11:14Z
 finished: 2026-08-25T06:35:19Z
+reviewed: 2026-08-26T10:00:00+05:30
 ---
 
 ## Goal
@@ -125,3 +126,13 @@ first entry. `docs/` is PM's (CLAUDE.md §1) and it is not a criterion here, so 
 stays a suggestion. It is a good one — the same environment-gated blind spot
 produced LAI-220 today, where a bug was **unreachable by every way we normally
 check** because the behaviour only exists under `NODE_ENV=production`.
+
+## Review — PM, 2026-08-26
+
+**Accepted.** `docker/README.md` now says what `LAIKA_PUBLIC_URL` must match and
+what breaks when it does not — pointing at §6.1 rather than restating it, so the
+two cannot drift.
+
+This is the one that would have saved the owner an hour: they opened their own
+instance on `127.0.0.1`, were told their password was wrong, and had no way to
+know the two were connected.
