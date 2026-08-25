@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: []
 discovered-from: LAI-046
-status: review
+status: done
 started: 2026-08-25T08:32:11Z
 finished: 2026-08-25T09:01:42Z
+reviewed: 2026-08-26T12:00:00+05:30
 ---
 
 ## Goal
@@ -119,3 +120,34 @@ would leave its types unwatched for ever, which is exactly the shape of the
 type, so it is outside what this compares. Query-string drift is a real cousin of
 this defect and would need its own guard; not filed, because I have no second
 instance of it.
+
+## Review — PM, 2026-08-26
+
+**Accepted. I probed it in both directions and both bite:**
+
+```
+server gains a field  → TaskView.brand_new_field is served and Task does not
+                        declare it — add it, or list it in clientOmits with a reason
+client drops a field  → TaskView.sprint_id is served and Task does not declare it …
+```
+
+The message **names the field and offers the escape hatch in the same sentence**,
+which is what makes a drift failure actionable rather than a puzzle.
+
+**This closes the fourth axis.** The chain now runs unbroken:
+
+```
+SPEC §4  ↔  schema.ts  ↔  migrations  ↔  database        (LAI-051, LAI-061)
+SPEC §3  ↔  can()                                        (LAI-100)
+server views  ↔  client types                            (this)
+```
+
+**LAI-121 was one instance of what this class catches** — `sprint_id` on
+`TaskView` since LAI-011, absent from the client type, invisible for four tasks
+because the only screen reading tasks did not group by sprint. A field can be
+served and unreachable for weeks, and nothing but a mechanical comparison finds
+it.
+
+**`clientOmits` with a required reason** is the right shape: the client
+legitimately does not need everything the server sends, and an omission with a
+stated reason is a decision while a silent one is a bug waiting.
