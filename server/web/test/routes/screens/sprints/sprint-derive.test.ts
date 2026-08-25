@@ -27,6 +27,7 @@ import {
   validateSprintForm,
   withSprintIds,
   type SprintFormValues,
+  daysLeft,
 } from '../../../../src/routes/screens/sprints/sprint-derive.ts';
 
 const AUG_1 = Date.parse('2026-08-01T00:00:00.000Z');
@@ -311,5 +312,41 @@ void describe('the screen does not re-implement a server rule', () => {
         `${name} appears to refuse a second activation locally`,
       );
     }
+  });
+});
+
+void describe('daysLeft counts the last day (LAI-069)', () => {
+  const day = 24 * 60 * 60 * 1000;
+  const noon = (iso: string): number => Date.parse(`${iso}T12:00:00Z`);
+  const midnight = (iso: string): number => Date.parse(`${iso}T00:00:00Z`);
+
+  void test('a sprint ending today has one day left, not zero', () => {
+    // END_IS_INCLUSIVE: the day you are standing in is still a day you can work.
+    assert.equal(daysLeft(midnight('2026-08-25'), noon('2026-08-25')), 1);
+  });
+
+  void test('ending tomorrow leaves two', () => {
+    assert.equal(daysLeft(midnight('2026-08-26'), noon('2026-08-25')), 2);
+  });
+
+  void test('the answer does not depend on the time of day', () => {
+    // `ends_on` is a date; `now` is an instant. Subtracting them raw would make
+    // the number change over the course of an afternoon.
+    const ends = midnight('2026-08-30');
+    const early = daysLeft(ends, Date.parse('2026-08-25T00:01:00Z'));
+    const late = daysLeft(ends, Date.parse('2026-08-25T23:59:00Z'));
+    assert.equal(early, late);
+  });
+
+  void test('a finished sprint has none left, never a negative', () => {
+    assert.equal(daysLeft(midnight('2026-08-20'), noon('2026-08-25')), 0);
+    assert.equal(daysLeft(midnight('2020-01-01'), noon('2026-08-25')), 0);
+  });
+
+  void test('agrees with sprintDays over a whole sprint', () => {
+    // On the first day, days left should equal the sprint's length.
+    const start = midnight('2026-09-01');
+    const end = midnight('2026-09-14');
+    assert.equal(daysLeft(end, start + day / 2), sprintDays(start, end));
   });
 });

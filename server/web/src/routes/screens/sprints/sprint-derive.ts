@@ -89,6 +89,23 @@ export function sprintDays(startsOn: number, endsOn: number): number {
   return Math.round((endsOn - startsOn) / DAY) + 1;
 }
 
+/**
+ * Whole days remaining, **counting the last day**.
+ *
+ * `END_IS_INCLUSIVE`, so a sprint whose `ends_on` is today has one day left,
+ * not zero — the day you are standing in is still a day you can work. Both
+ * sides are normalised to UTC midnight first, because `ends_on` is a date and
+ * `now` is an instant; subtracting them raw makes the answer depend on the time
+ * of day the page happens to be open.
+ *
+ * Never negative: a finished sprint has no days left, it does not have -3.
+ */
+export function daysLeft(endsOn: number, now: number): number {
+  const today = new Date(now);
+  const midnight = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  return Math.max(0, Math.round((endsOn - midnight) / DAY) + 1);
+}
+
 /** `4 Aug – 17 Aug 2026` — one year when they share it, two when they do not. */
 export function formatRange(startsOn: number, endsOn: number): string {
   const start = new Date(startsOn);

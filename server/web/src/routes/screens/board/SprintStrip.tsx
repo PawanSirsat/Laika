@@ -1,4 +1,4 @@
-import { demoWipLimit } from '../../../demo/wip.ts';
+import { daysLeft, formatRange } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import type { Task } from '../../../api/tasks.ts';
 import './sprint-strip.css';
@@ -32,26 +32,8 @@ function countFor(tasks: readonly Task[], sprintId: string | undefined): Counts 
   };
 }
 
-const DAY = 86_400_000;
-
-/** Whole days from now until the sprint ends. Negative once it has passed. */
-function daysLeft(sprint: Sprint | undefined, now: number): number | undefined {
-  if (sprint === undefined) return undefined;
-  return Math.ceil((sprint.ends_on - now) / DAY);
-}
-
 function pct(done: number, total: number): number {
   return total === 0 ? 0 : Math.round((done / total) * 100);
-}
-
-const MONTH = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-function formatRange(sprint: Sprint): string {
-  const from = new Date(sprint.starts_on);
-  const to = new Date(sprint.ends_on);
-  const sameMonth = from.getMonth() === to.getMonth();
-  const left = `${String(from.getDate())}${sameMonth ? '' : ` ${MONTH[from.getMonth()] ?? ''}`}`;
-  return `${left} – ${String(to.getDate())} ${MONTH[to.getMonth()] ?? ''}`;
 }
 
 /**
@@ -77,8 +59,10 @@ export function SprintStrip({
   const current = sprints.find((s) => s.id === selected);
   const counts = countFor(tasks, selected);
   const ring = pct(counts.done, counts.total);
-  const remaining = daysLeft(current, now);
-  const wipLimit = demoWipLimit('in_progress');
+  // Inclusive, and normalised to UTC midnight — see `daysLeft`. My first pass
+  // used `ceil((ends_on - now) / DAY)`, which reported **0** on a sprint's last
+  // day, when the honest answer is 1.
+  const remaining = current === undefined ? undefined : daysLeft(current.ends_on, now);
 
   return (
     <section className="strip" aria-label="Sprints">
@@ -147,7 +131,9 @@ export function SprintStrip({
               {current === undefined ? 'ALL SPRINTS' : current.status.toUpperCase()}
             </span>
             <span className="strip-name">{current?.name ?? 'Every task in this project'}</span>
-            {current !== undefined && <span className="strip-dates">{formatRange(current)}</span>}
+            {current !== undefined && (
+              <span className="strip-dates">{formatRange(current.starts_on, current.ends_on)}</span>
+            )}
           </p>
           {current?.goal != null && current.goal !== '' && (
             <p className="strip-goal">{current.goal}</p>
@@ -166,12 +152,11 @@ export function SprintStrip({
             <dt>BLOCKED</dt>
             <dd>{counts.blocked}</dd>
           </div>
+          {/* A count, not a limit. Nothing stores a per-column limit, so a
+              denominator here would be invented (LAI-067, LAI-069). */}
           <div className="strip-stat">
             <dt>WIP</dt>
-            <dd>
-              {counts.wip}
-              {wipLimit !== undefined && <span>/{wipLimit}</span>}
-            </dd>
+            <dd>{counts.wip}</dd>
           </div>
           <div className="strip-stat">
             <dt>DAYS LEFT</dt>
