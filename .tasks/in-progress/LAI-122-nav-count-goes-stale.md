@@ -2,11 +2,12 @@
 id: LAI-122
 title: The sidebar sprint count goes stale the moment a screen changes the data
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-083]
 discovered-from: LAI-083
-status: backlog
+status: in-progress
+started: 2026-08-25T03:18:10Z
 ---
 
 ## Goal
