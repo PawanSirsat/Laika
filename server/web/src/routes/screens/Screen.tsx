@@ -1,7 +1,7 @@
 import { EmptyState } from '../../components/EmptyState.tsx';
+import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { SCREEN_COPY } from './screen-copy.ts';
 import type { Route } from '../route-table.ts';
-import './screen.css';
 
 /**
  * A routed screen before its endpoints exist.
@@ -16,10 +16,7 @@ export function Screen({ route }: { readonly route: Route }) {
 
   return (
     <>
-      <header className="screen-head">
-        <h1 className="screen-title">{route.label}</h1>
-        <p className="screen-phase">{route.phase}</p>
-      </header>
+      <ScreenHeader title={route.label} context={route.phase} />
 
       {copy === undefined ? (
         <EmptyState headline={route.label} />

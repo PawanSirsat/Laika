@@ -1,6 +1,6 @@
 import { EmptyState } from '../../components/EmptyState.tsx';
+import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { DEFAULT_PATH } from '../route-table.ts';
-import './screen.css';
 
 /**
  * A real 404, not a blank frame (LAI-019 AC6).
@@ -17,10 +17,7 @@ export function NotFound({
 }) {
   return (
     <>
-      <header className="screen-head">
-        <h1 className="screen-title">Not found</h1>
-        <p className="screen-phase">404</p>
-      </header>
+      <ScreenHeader title="Not found" context="404" />
 
       <EmptyState
         headline="There is no screen at this address"

@@ -2,11 +2,11 @@
 id: LAI-077
 title: Accept invite screen — match design 5a's right-hand card
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-071, LAI-062]
 discovered-from:
-status: backlog
+status: in-progress
 ---
 
 ## Goal
