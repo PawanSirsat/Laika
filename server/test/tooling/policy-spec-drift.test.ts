@@ -64,6 +64,8 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Manage project members', ['project.members.manage']],
   ['Edit project settings and context_md', ['project.settings.edit']],
   ['Create / edit / delete sprints', ['sprint.manage']],
+  ["Apply or remove a task's tags", ['task.write']],
+  ['Rename or delete a tag project-wide', ['project.settings.edit']],
   ['Assign tasks into or out of a sprint', ['task.assign_sprint']],
   ['Create / edit / move any task', ['task.write']],
   ['Claim a task (start_working)', ['task.claim']],
@@ -242,7 +244,7 @@ describe('the parser reads §3, prose and all', () => {
     // first non-table line would drop a permission and report success.
     expect(org.rows.map((row) => row.label)).toContain('Configure webhooks');
     expect(org.rows).toHaveLength(11);
-    expect(project.rows).toHaveLength(13);
+    expect(project.rows).toHaveLength(15);
   });
 
   it('keeps qualifiers instead of flattening them to a tick', () => {

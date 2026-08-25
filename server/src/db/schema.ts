@@ -51,6 +51,30 @@ function oneOfOrNull(column: string, values: readonly string[]) {
   return sql.raw(`${column} IS NULL OR ${column} IN (${list})`);
 }
 
+/**
+ * §4.16's `^[a-z0-9][a-z0-9-]{0,23}$`, as a SQLite `GLOB`.
+ *
+ * **`GLOB`, not `LIKE`**, for two independent reasons — measured, because the
+ * first correction I wrote for this was only half right:
+ *
+ *  1. **`LIKE` has no character classes.** SQLite's `LIKE` understands `%` and
+ *     `_` and nothing else, so `name LIKE '[a-z0-9]%'` matches a literal `[`
+ *     — `'[a-z0-9]x' LIKE '[a-z0-9]%'` is true and `'ui' LIKE '[a-z0-9]%'` is
+ *     false. It does not accept the wrong rows; it rejects every real one.
+ *  2. **`LIKE` is case-insensitive for ASCII.** So a pattern that *does* work,
+ *     like `name LIKE 'u%'`, matches `UI` too — which is the trap this
+ *     constraint exists to close, and the one worth remembering.
+ *
+ * `GLOB` has the classes and is case-sensitive: `'UI' GLOB '[a-z0-9]*'` is
+ * false, `'ui'` is true.
+ *
+ * Three clauses because `GLOB` has no counted repetition: the first character,
+ * the allowed alphabet anywhere, and the length. SQLite does support the negated
+ * `[^…]` class in `GLOB` — checked, not assumed.
+ */
+const TAG_NAME_GLOB =
+  "name GLOB '[a-z0-9]*' AND name NOT GLOB '*[^a-z0-9-]*' AND length(name) BETWEEN 1 AND 24";
+
 const createdAt = integer('created_at').notNull();
 const updatedAt = integer('updated_at').notNull();
 
@@ -542,6 +566,62 @@ export const unlistedWork = sqliteTable(
   ],
 );
 
+// ------------------------------------------------ §4.16 tags and task_tags
+
+/**
+ * Project-scoped labels (§4.16, D-027).
+ *
+ * The `CHECK` exists because the failure it prevents is not a bad request — it
+ * is `UI`, `Ui` and `ui` living as three separate tags, which makes a tag filter
+ * worthless and cannot be undone once the rows are there. Service validation
+ * alone would leave any other writer free to create them.
+ */
+export const tags = sqliteTable(
+  'tags',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    createdAt,
+  },
+  (t) => [
+    // §4.13: unique **per project**, not per org — `ui` on a server project and
+    // `ui` on the web one are different concerns.
+    uniqueIndex('tags_project_name_unique').on(t.projectId, t.name),
+    check('tags_name_check', sql.raw(TAG_NAME_GLOB)),
+  ],
+);
+
+/**
+ * The join. A task has many tags and a tag has many tasks — the design applies
+ * `agent` and `core` to one card, which is what settles this as a table rather
+ * than a column.
+ *
+ * Both sides cascade: deleting a task removes its labels, and deleting a **tag**
+ * removes the labels and **not the tasks** (§4.16). The composite primary key is
+ * what makes applying the same tag twice impossible rather than merely unusual.
+ */
+export const taskTags = sqliteTable(
+  'task_tags',
+  {
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    tagId: text('tag_id')
+      .notNull()
+      .references(() => tags.id, { onDelete: 'cascade' }),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.taskId, t.tagId] }),
+    // §4.13. The `?tag=` filter reads from the tag side, and the composite
+    // primary key indexes `(task_id, tag_id)` only.
+    index('task_tags_tag_id_idx').on(t.tagId),
+  ],
+);
+
 // ------------------------------------------- better-auth: sessions, accounts,
 // verifications (SPEC §4.1, §11.3 — "its tables alongside ours")
 //
@@ -666,3 +746,5 @@ export type Heartbeat = typeof heartbeats.$inferSelect;
 export type Invite = typeof invites.$inferSelect;
 export type MeetingReview = typeof meetingReviews.$inferSelect;
 export type UnlistedWork = typeof unlistedWork.$inferSelect;
+export type Tag = typeof tags.$inferSelect;
+export type TaskTag = typeof taskTags.$inferSelect;

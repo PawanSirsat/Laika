@@ -16,6 +16,7 @@ import {
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
+import { MAX_TAGS_PER_TASK } from '../../services/tags.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -38,6 +39,7 @@ const CreateBody = strictObject({
   title: z.string().trim().min(1).max(300),
   description_md: z.string().max(100_000).optional(),
   acceptance_md: z.string().max(ACCEPTANCE_MAX).optional(),
+  tags: z.array(z.string().trim().min(1).max(64)).max(MAX_TAGS_PER_TASK).optional(),
   priority: z.enum(PRIORITIES).optional(),
   status: z.enum(STATUSES).optional(),
   assignee_id: z.string().min(1).optional(),
@@ -51,6 +53,10 @@ const UpdateBody = strictObject({
   // `null` clears it, absent leaves it alone — the same distinction the
   // assignee below draws, and the one a sprint's `goal` already draws.
   acceptance_md: z.string().max(ACCEPTANCE_MAX).nullable().optional(),
+  // Replaces the whole set. Validation of each name is the service's — the
+  // regex, the lowercasing and the duplicate rule live with the CHECK they
+  // mirror, not in two places.
+  tags: z.array(z.string().trim().min(1).max(64)).max(MAX_TAGS_PER_TASK).optional(),
   priority: z.enum(PRIORITIES).optional(),
   // `null` unassigns; absent leaves it alone. They are different requests.
   assignee_id: z.string().min(1).nullable().optional(),
@@ -103,6 +109,9 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       limit,
       cursor,
       updatedSince: parseUpdatedSince(c.req.query('updated_since')),
+      ...(c.req.query('tag') === undefined || c.req.query('tag') === ''
+        ? {}
+        : { tag: c.req.query('tag') }),
       status: parseEnum(c.req.query('status'), STATUSES, 'status'),
       priority: parseEnum(c.req.query('priority'), PRIORITIES, 'priority'),
       assignee: c.req.query('assignee'),

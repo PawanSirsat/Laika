@@ -123,6 +123,8 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Manage project members | ✓ | — | — |
 | Edit project settings and `context_md` | ✓ | — | — |
 | Create / edit / delete sprints | ✓ | — | — |
+| Apply or remove a task's tags | ✓ | ✓ | — |
+| Rename or delete a tag project-wide | ✓ | — | — |
 | Assign tasks into or out of a sprint | ✓ | ✓ | — |
 | Create / edit / move any task | ✓ | ✓ | — |
 | Claim a task (`start_working`) | ✓ | ✓ | — |
@@ -372,6 +374,8 @@ prompts, or transcript content (D-005). Cron deletes rows older than 30 days.
 `project_memberships(project_id, user_id)` unique, `projects(slug)` unique,
 `unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`,
 `sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`.
+`tags(project_id, name)` unique and `task_tags(tag_id)` — the `?tag=` filter
+reads from the tag side, so the join needs an index from that end too.
 
 ### 4.14 `unlisted_work`
 
@@ -421,6 +425,49 @@ Appended after §4.14 so §4.13 Indexes keeps its number (D-011).
 not a velocity model.
 
 ---
+
+### 4.16 `tags`
+
+Appended after §4.15 so §4.13 Indexes keeps its number (D-011). Decided in D-027.
+
+**`tags`**
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `project_id` | FK `projects` — tags are **project-scoped** |
+| `name` | lowercase slug, unique per project |
+| `created_at` | |
+
+### 4.17 `task_tags`
+
+The join between §4.5 and §4.16.
+
+| field | notes |
+| --- | --- |
+| `task_id` | FK `tasks` `ON DELETE cascade`, half of the primary key |
+| `tag_id` | FK `tags` `ON DELETE cascade`, the other half |
+
+**Rules.**
+
+- **A task has many tags and a tag has many tasks.** The design applies two to a
+  single task (`agent` + `core`), so this is a join table, not a column.
+- `name` matches `^[a-z0-9][a-z0-9-]{0,23}$`, **enforced at the database with
+  `GLOB`, not `LIKE`** — for two independent reasons. `LIKE` has no character
+  classes at all, so `LIKE '[a-z0-9]%'` matches the bracket *literally* and
+  rejects every real name; and `LIKE` is case-insensitive for ASCII, so a pattern
+  that does work (`LIKE 'u%'`) accepts `UI`. Case-variant duplicates are the
+  failure that makes a tag filter worthless.
+- **Unique per project**, not per org. `ui` on a server project and `ui` on the
+  web project are different concerns.
+- A tag is created as a side effect of applying it — no separate create step.
+- **Deleting a tag never deletes a task.** Join rows only, as §4.15 does.
+- **Tags carry no colour.** The design renders every chip in the neutral
+  `--tub`/`--bd` pair.
+- Changing a task's tags is `task.updated` with `{ field: 'tags', from, to }`.
+
+**Non-goal: hierarchy.** Tags are flat. `priority`, `sprint_id` and
+`discovered_from` already carry the structured groupings.
 
 ## 5. Task lifecycle
 
@@ -581,11 +628,14 @@ GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
-GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&updated_since=&cursor=
+GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&tag=&updated_since=&cursor=
 GET    /api/v1/projects/:slug/sprints        POST /api/v1/projects/:slug/sprints   (lead+)
 GET    /api/v1/sprints/:id                   PATCH /api/v1/sprints/:id   DELETE /api/v1/sprints/:id  (lead+)
 POST   /api/v1/sprints/:id/tasks             body { task_ids[] }  — assign into the sprint
 DELETE /api/v1/sprints/:id/tasks/:taskId     remove from the sprint (task itself is untouched)
+GET    /api/v1/projects/:slug/tags           list with usage counts, for the picker and the filter
+PATCH  /api/v1/projects/:slug/tags/:name     rename project-wide (lead+)
+DELETE /api/v1/projects/:slug/tags/:name     remove from every task (lead+); tasks are untouched
 GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date ranges and their tasks
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
