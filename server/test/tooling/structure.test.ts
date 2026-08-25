@@ -86,7 +86,6 @@ function webPatternExempt(rel: string): boolean {
 const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/client.ts', 'covered by test/api.test.ts, which stubs fetch for it and errors.ts together'],
   ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
-  ['api/auth.ts', 'thin better-auth boundary; asserted through the sign-out body in api.test.ts'],
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-setup-status.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],

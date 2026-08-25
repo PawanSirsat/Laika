@@ -27,12 +27,29 @@ interface AuthFailure {
 export class SignInError extends Error {
   /** better-auth's code, kept so a caller can distinguish causes if it needs to. */
   readonly code: string | undefined;
+  /**
+   * The HTTP status, because **not every failed sign-in is a wrong password**.
+   *
+   * `401` is a credential rejection. `429` is better-auth's rate limiter, which
+   * fires after three rapid failures in production — and a caller that cannot
+   * tell them apart shows *"Email or password is wrong"* to someone whose
+   * password is right, who then retries, stays limited, and concludes they have
+   * forgotten it (LAI-220). Carried here rather than re-derived from the
+   * message, which is prose and will be reworded.
+   */
+  readonly status: number | undefined;
 
-  constructor(message: string, code?: string) {
+  constructor(message: string, code?: string, status?: number) {
     super(message);
     this.name = 'SignInError';
     this.code = code;
+    this.status = status;
   }
+}
+
+/** Wrong email or password, as opposed to any other reason sign-in failed. */
+export function isCredentialRejection(cause: unknown): boolean {
+  return cause instanceof SignInError && cause.status === 401;
 }
 
 export async function signIn(credentials: Credentials): Promise<void> {
@@ -51,7 +68,12 @@ export async function signIn(credentials: Credentials): Promise<void> {
     // here is "check your details", not "you were signed out".
     if (cause instanceof Error && 'status' in cause) {
       const failure = (cause as { details?: AuthFailure }).details ?? {};
-      throw new SignInError(failure.message ?? 'Email or password is wrong.', failure.code);
+      const status = (cause as { status?: unknown }).status;
+      throw new SignInError(
+        failure.message ?? 'Email or password is wrong.',
+        failure.code,
+        typeof status === 'number' ? status : undefined,
+      );
     }
     throw cause;
   }

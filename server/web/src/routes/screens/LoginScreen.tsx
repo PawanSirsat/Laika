@@ -27,13 +27,21 @@ export interface LoginScreenProps {
    * A **boolean**, not a counter. It used to be
    * `{ attemptsLeft, lockoutMinutes }`, rendering *"3 attempts left before a
    * 15-minute lockout"* — the prototype's line. Nothing ever passed it, and
-   * nothing could have: **this instance has no lockout.** Eight consecutive
-   * failed sign-ins return eight identical `401`s with no counter, no
-   * `Retry-After`, and no ban. `attemptsLeft` was even `number | undefined`, so
-   * the one caller who ever tried would have rendered *"undefined attempts
-   * left"*. LAI-219 asks for real brute-force protection; until it exists there
-   * is no number to show, and inventing one tells the reader they are safer
-   * than they are.
+   * `attemptsLeft` was `number | undefined`, so the one caller who ever tried
+   * would have rendered *"undefined attempts left"*.
+   *
+   * **There is no per-account lockout, and no attempts counter on the wire.**
+   * What does exist is better-auth's own limiter: three rapid failures, then
+   * `429` for ten seconds. It is **on in production only** — off in development
+   * and test (LAI-096's measured table) — and it is keyed on the caller, not on
+   * the account, so it slows one address and does nothing about a slow attempt
+   * spread across many. Our own limiter never fires here: it allows 600/min
+   * refilling continuously, and had 595 tokens left on the request that was
+   * rejected.
+   *
+   * So there is still no number for this screen to show. LAI-219 asks for real
+   * per-account protection; until then, inventing a count tells the reader they
+   * are safer than they are.
    */
   readonly rejected?: boolean;
   /** Anything else the server said — unreachable instance, rate limit. */

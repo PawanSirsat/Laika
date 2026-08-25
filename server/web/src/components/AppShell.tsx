@@ -30,7 +30,7 @@ import { useSetupStatus } from '../api/use-setup-status.ts';
 import { completeSetup, fieldErrors } from '../api/setup.ts';
 import { ApiError } from '../api/errors.ts';
 import { useTheme } from '../theme/use-theme.ts';
-import { SignInError } from '../api/auth.ts';
+import { isCredentialRejection, SignInError } from '../api/auth.ts';
 import './app-shell.css';
 
 /**
@@ -132,8 +132,14 @@ export function AppShell() {
         // treatment; an unreachable instance is not theirs to fix at all, and
         // showing "email or password is wrong" for it sends someone to reset a
         // password that was never the problem.
-        if (cause instanceof SignInError) {
+        if (isCredentialRejection(cause)) {
           setSignInRejected(true);
+        } else if (cause instanceof SignInError) {
+          // The server refused for a reason of its own — rate limiting is the
+          // one that actually happens. Its message is the only accurate thing
+          // available, and it must not be replaced with a guess about the
+          // password, which may well be correct (LAI-220).
+          setSignInError(cause.message);
         } else {
           setSignInError('Could not reach the instance.');
         }
