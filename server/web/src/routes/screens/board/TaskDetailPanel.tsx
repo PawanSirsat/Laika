@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AssignControl } from './AssignControl.tsx';
+import { TagPicker } from './TagPicker.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -30,6 +31,16 @@ export interface TaskDetailPanelProps {
   readonly meId?: string | undefined;
   /** False for a Viewer — `task.assign_other` is member+ (§3.2). */
   readonly mayAssign?: boolean | undefined;
+  /**
+   * False for a Viewer — editing a task is member+ (§3.2).
+   *
+   * A Viewer still **sees** the tags: they are part of reading the task, and
+   * filtering the board by one is a read. They simply get no way to change
+   * them, rather than a control that answers `403`.
+   */
+  readonly mayEdit?: boolean | undefined;
+  /** The board reloads so the card's chips follow the panel. */
+  readonly onTagsChanged: (tags: readonly string[]) => void;
   /** Reload the board after an assignment so the card's avatar follows. */
   readonly onAssigned: () => void;
 }
@@ -61,6 +72,8 @@ export function TaskDetailPanel({
   onClose,
   meId,
   mayAssign = false,
+  mayEdit = false,
+  onTagsChanged,
   onAssigned,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
@@ -163,6 +176,18 @@ export function TaskDetailPanel({
                 {moveError}
               </p>
             )}
+          </section>
+
+          <section className="panel-section">
+            {/* Tags before description: they are what someone came here to
+                change, and the description is read far more than it is edited. */}
+            <TagPicker
+              slug={slug}
+              taskId={task.id}
+              tags={task.tags}
+              mayEdit={mayEdit}
+              onChanged={onTagsChanged}
+            />
           </section>
 
           <section className="panel-section">

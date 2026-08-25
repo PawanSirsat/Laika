@@ -12,6 +12,7 @@ import { BoardRail } from './board/BoardRail.tsx';
 import { PresenceStrip } from './board/PresenceStrip.tsx';
 import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
+import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { useBoard } from '../../api/use-board.ts';
@@ -57,6 +58,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const [openTaskId, setOpenTaskId] = useState<string | undefined>(undefined);
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
+  const [projectTags, setProjectTags] = useState<readonly ProjectTag[]>([]);
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   const [creating, setCreating] = useState(false);
@@ -70,6 +72,11 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const ready = readyParam === null ? undefined : readyParam === 'true';
   const agentOnly = params.get('agent') === 'true';
   const sprintScope = params.get('sprint') ?? undefined;
+  /**
+   * `?tag=` — in the URL so it survives a reload and can be linked (LAI-081),
+   * the same mechanism `?project=` and `?sprint=` already use.
+   */
+  const tagScope = params.get('tag') ?? undefined;
 
   const filter: TaskFilter = useMemo(
     () => ({
@@ -78,8 +85,11 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
       ...(ready === undefined ? {} : { ready }),
       // Scoping to a sprint is server-side — the endpoint has always taken it.
       ...(sprintScope === undefined ? {} : { sprint: sprintScope }),
+      // Same for the tag: `?tag=` has been accepted since LAI-079, so the board
+      // asks for the subset rather than loading everything and filtering here.
+      ...(tagScope === undefined ? {} : { tag: tagScope }),
     }),
-    [priority, assignee, ready, sprintScope],
+    [priority, assignee, ready, sprintScope, tagScope],
   );
 
   const filtered =
@@ -223,6 +233,16 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
       })
       .catch(() => {
         setSprints([]);
+      });
+
+    // The project's tag vocabulary, for the filter. Re-read on `attempt` with
+    // everything else, so applying a brand-new tag adds it to the list without
+    // a reload.
+    listProjectTags(slug, controller.signal)
+      .then(setProjectTags)
+      .catch(() => {
+        // Only the filter's options are lost; the board itself is unaffected.
+        setProjectTags([]);
       });
 
     listTasks(slug, { limit: 200 }, controller.signal)
@@ -411,6 +431,31 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
           {priority === undefined ? 'Priority: all' : `${priority.toUpperCase()} only`}
         </button>
 
+        {/*
+          The tag filter sits with the other filters rather than on the cards:
+          this is where a reader already looks for "show me less". The counts
+          come from the same endpoint the picker uses, so the list is the
+          project's real vocabulary and not whatever happens to be on screen.
+        */}
+        {projectTags.length > 0 && (
+          <label className="bar-control">
+            <span className="visually-hidden">Tag</span>
+            <select
+              value={tagScope ?? ''}
+              onChange={(e) => {
+                setParam('tag', e.target.value);
+              }}
+            >
+              <option value="">Any tag</option>
+              {projectTags.map((tag) => (
+                <option key={tag.name} value={tag.name}>
+                  {tag.name} ({tag.task_count})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
         <label className="bar-control">
           <span className="visually-hidden">Assignee</span>
           <select
@@ -591,13 +636,23 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         </div>
       )}
 
-      {/* Reuses `board.move` — the same call the drag uses, so a rejected
-          transition behaves identically in both places (LAI-056). */}
+      {/*
+        Reuses `board.move` — the same call the drag uses, so a rejected
+        transition behaves identically in both places (LAI-056).
+
+        `mayEdit` shares `mayCreate`: editing a task is member+ (§3.2) and that
+        permission is already resolved. A Viewer sees tags and gets no way to
+        change them, rather than a control that answers 403.
+      */}
       {openTask !== undefined && (
         <TaskDetailPanel
           slug={slug}
           meId={me?.id}
           mayAssign={mayCreate}
+          mayEdit={mayCreate}
+          onTagsChanged={() => {
+            board.reload();
+          }}
           onAssigned={board.reload}
           task={openTask}
           byId={board.byId}
