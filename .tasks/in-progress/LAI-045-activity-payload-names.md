@@ -2,11 +2,12 @@
 id: LAI-045
 title: The activity payload names Drizzle properties, not API fields
 area: server
-assignee: unclaimed
+assignee: builder-a
 priority: p2
 depends-on: []
 discovered-from: LAI-092
-status: backlog
+started: 2026-08-25T03:45:43Z
+status: in-progress
 ---
 
 ## Goal
