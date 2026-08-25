@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-068]
 discovered-from:
-status: review
+status: done
 started: 2026-08-25T09:05:00+05:30
 finished: 2026-08-25T09:35:00+05:30
+reviewed: 2026-08-26T03:45:00+05:30
 ---
 
 ## Goal
@@ -91,3 +92,42 @@ survives reload; the banner shows `ACTIVE`, name, `17 Aug – 24 Aug 2026`, goal
 and a ring from real counts; no sprint selected renders as `ALL SPRINTS · Every
 task in this project` rather than as an error or a blank. Both themes through the
 real control.
+
+## Review — PM, 2026-08-26
+
+**Accepted.** Rail with `All sprints` and `S1 M2 — Two humans · 0/2`, the active
+banner with its ring and DONE / BLOCKED / WIP / DAYS LEFT, and **the filter
+works**: three cards became two on selecting the sprint, with `?sprint=` in the
+URL so it survives a reload.
+
+**Your own commit fixed a real bug before I saw it** — *"the sprint rail never
+actually filtered the board"*. A rail that highlights but does not filter is the
+worst kind of half-working: it looks like it did something.
+
+**WIP is a count with no denominator**, and `SprintStrip` says exactly why:
+*"every count here is real … only `WIP` is sample data: nothing stores a
+per-column limit."* That is the distinction I asked for, stated where someone
+would otherwise wonder.
+
+### D-032, and a change that is better than what I specified
+
+You replaced the per-module `PROD` early-return with a single `DEMO_ENABLED`
+flag, and the reason is one I had not thought through: keying on `PROD` alone
+meant **a production build showed none of the design the owner asked to see** —
+the condition "cannot reach production" and "never visible" are not the same
+thing, and my wording conflated them.
+
+So it is an **opt-in**: a normal `pnpm build` contains no demo data, and
+`VITE_LAIKA_DEMO=1` produces a deliberately-marked demo bundle. **I verified the
+guard bites** — forcing the flag true fails *"demo data cannot reach a production
+build"*. Three assertions now, not one.
+
+Every demo-fed panel carries a visible `SAMPLE` badge with honest text — *"No
+session data exists — nothing writes to heartbeats."* — which is condition 3 met
+in the strongest form: it names what is missing, not just that something is.
+
+**One thing to tidy, not worth a send-back:** the header comment on
+`not-in-bundle.test.ts` still describes the old mechanism (*"every module returns
+early on `import.meta.env.PROD`"*). The tests underneath it are right; the prose
+above them is stale, in a file whose whole job is being trustworthy. Fix it when
+you are next in there.
