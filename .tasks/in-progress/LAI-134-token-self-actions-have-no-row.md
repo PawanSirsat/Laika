@@ -2,11 +2,12 @@
 id: LAI-134
 title: '`can()` allows two token actions §3.1 never grants'
 area: docs
-assignee: unclaimed
+assignee: builder-a
 priority: p3
 depends-on: [LAI-100]
 discovered-from: LAI-100
-status: backlog
+started: 2026-08-25T03:38:45Z
+status: in-progress
 ---
 
 ## Goal
