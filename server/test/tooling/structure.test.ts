@@ -94,6 +94,10 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-members.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-invite.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'routes/screens/organisation/use-organisation.ts',
+    'a React hook — no renderer in this package (CONVENTIONS §4)',
+  ],
   ['theme/theme.ts', 'DOM-bound theme application; asserted in a browser under LAI-018'],
   ['theme/use-theme.ts', 'a React hook — no renderer in this package'],
   ['api/use-shell-context.ts', 'a React hook — no renderer in this package'],

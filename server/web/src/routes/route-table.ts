@@ -84,7 +84,13 @@ export const ROUTES: readonly Route[] = [
   { path: '/dashboard', label: 'Dashboard', group: 'REVIEW', status: 'building', phase: 'Phase 5' },
 
   // SETTINGS
-  { path: '/organisation', label: 'Organisation', group: 'SETTINGS', phase: 'Phase 1' },
+  {
+    path: '/organisation',
+    label: 'Organisation',
+    group: 'SETTINGS',
+    phase: 'Phase 1',
+    status: 'ready',
+  },
 
   // Routed and reachable by URL, but not offered in the nav: no screen behind
   // them yet, so an entry would be a dead link. They come back the moment they

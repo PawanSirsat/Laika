@@ -10,7 +10,15 @@
 
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
-import { acceptInvite, previewInvite, INVITE_REFUSED_REASON } from '../../src/api/invites.ts';
+import {
+  INVITE_REFUSED_REASON,
+  acceptInvite,
+  canManageOrg,
+  createInvite,
+  listInvites,
+  previewInvite,
+  revokeInvite,
+} from '../../src/api/invites.ts';
 
 interface Captured {
   readonly url: string;
@@ -39,10 +47,16 @@ function stub(status: number, body: unknown): Captured[] {
   const calls: Captured[] = [];
   globalThis.fetch = ((input: string | URL, init?: RequestInit) => {
     calls.push({ url: input instanceof URL ? input.href : input, init });
+
+    // A 204 may not carry a body — `new Response('null', { status: 204 })`
+    // throws, and the throw surfaces as a NetworkError from `request()`, which
+    // looks like the instance being unreachable rather than a broken stub.
+    // `revokeInvite` really does answer 204, so this matters here.
+    const empty = status === 204 || status === 205 || status === 304;
     return Promise.resolve(
-      new Response(JSON.stringify(body), {
+      new Response(empty ? null : JSON.stringify(body), {
         status,
-        headers: { 'content-type': 'application/json' },
+        ...(empty ? {} : { headers: { 'content-type': 'application/json' } }),
       }),
     );
   }) as unknown as typeof fetch;
@@ -121,6 +135,55 @@ void describe('the refusal wording is the server’s, not ours', () => {
         INVITE_REFUSED_REASON.includes(word),
         `"${word}" missing — the message would imply the server told us which`,
       );
+    }
+  });
+});
+
+void describe('managing invites from the organisation screen (LAI-086)', () => {
+  void test('a link invite sends email: null rather than omitting it', async () => {
+    const calls = stub(201, { invite: {}, token: 't', accept_url: 'u' });
+    await createInvite({ email: null, org_role: 'member' });
+
+    const body = jsonBody(calls[0]);
+    // The schema spells "no address" and "absent" the same way on purpose, so a
+    // client that means a link invite should say so rather than rely on the
+    // default. `'email' in body` distinguishes the two; truthiness does not.
+    assert.ok('email' in body, 'email was omitted, not sent as null');
+    assert.equal(body.email, null);
+    assert.equal(body.org_role, 'member');
+  });
+
+  void test('revoke escapes the id into the path', async () => {
+    const calls = stub(204, null);
+    await revokeInvite('abc/../../users');
+    assert.match(calls[0]?.url ?? '', /\/invites\/abc%2F\.\.%2F\.\.%2Fusers$/);
+    assert.equal(calls[0]?.init?.method, 'DELETE');
+  });
+
+  void test('listing invites is a plain GET', async () => {
+    const calls = stub(200, { data: [], next_cursor: null });
+    await listInvites();
+    assert.match(calls[0]?.url ?? '', /\/invites$/);
+    assert.equal(calls[0]?.init?.method ?? 'GET', 'GET');
+  });
+});
+
+void describe('canManageOrg matches SPEC §3.1, and the server', () => {
+  void test('Owner and Admin may; Member and Viewer may not', () => {
+    // §3.1 "Invite users / change org roles" is Owner and Admin only.
+    // Confirmed against a running instance: a viewer gets 403 on GET /invites
+    // and 200 on GET /users, which is exactly this split.
+    assert.equal(canManageOrg('owner'), true);
+    assert.equal(canManageOrg('admin'), true);
+    assert.equal(canManageOrg('member'), false);
+    assert.equal(canManageOrg('viewer'), false);
+  });
+
+  void test('an unknown role is refused, not waved through', () => {
+    // A role this build has not heard of is a newer server, and guessing
+    // permissive is the wrong way to be wrong.
+    for (const unknown of ['', 'root', 'superuser', 'OWNER', 'Admin']) {
+      assert.equal(canManageOrg(unknown), false, `${unknown} was allowed`);
     }
   });
 });

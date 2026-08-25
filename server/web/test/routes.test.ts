@@ -52,9 +52,12 @@ void describe('sidebar groups (AC1)', () => {
       routesInGroup('REVIEW').map((r) => r.label),
       ['Dashboard'],
     );
+    // `SETTINGS` is no longer empty: LAI-086 built the Organisation screen, so
+    // it earned its place back by the same rule that took it away — a route is
+    // offered once there is a screen behind it.
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
-      [],
+      ['Organisation'],
     );
   });
 });

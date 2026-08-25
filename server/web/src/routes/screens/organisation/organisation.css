@@ -1,0 +1,205 @@
+/* The organisation screen (LAI-086). Band full-width, content inset. */
+.org {
+  padding-bottom: var(--space-6);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.org > :not(.screen-bar) {
+  margin-left: 1.125rem;
+  margin-right: 1.125rem;
+}
+
+.org-card {
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+}
+
+.org-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.org-card-head h2 {
+  font-size: var(--text-md);
+  font-weight: var(--weight-heavy);
+  color: var(--tx);
+  margin: 0;
+}
+
+.org-count {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.org-note {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  line-height: 1.5;
+  margin: var(--space-3) 0 0;
+  max-width: 70ch;
+}
+
+.org-people,
+.org-invites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.org-people li,
+.org-invites li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--bd);
+}
+
+.org-people li:last-child,
+.org-invites li:last-child {
+  border-bottom: none;
+}
+
+/**
+ * A deactivated person is dimmed but **not hidden**.
+ *
+ * They still hold history — tasks they created, comments they wrote — and a
+ * directory that omits them makes those references unattributable.
+ */
+.org-person-inactive {
+  opacity: 0.55;
+}
+
+.org-avatar {
+  flex: none;
+  display: flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.org-person-who,
+.org-invite-who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.org-person-name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.org-person-email {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.org-person-role {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+}
+
+.org-chip {
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  padding: 0.0625rem 0.25rem;
+}
+
+.org-chip-you {
+  color: var(--acc);
+  background: var(--accs);
+  border-color: var(--accb);
+}
+
+.org-chip-off {
+  color: var(--amb);
+  background: var(--ambs);
+  border-color: var(--ambb);
+}
+
+.org-invite-form {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.org-invite-email {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.org-invite-email .input {
+  width: 100%;
+}
+
+/**
+ * The one-time link.
+ *
+ * Given the flow's own purple rather than a neutral panel: it is the same
+ * credential the invite screen is built around, and it is the only moment it
+ * will ever be visible.
+ */
+.org-issued {
+  margin-top: var(--space-3);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+}
+
+.org-issued-head {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-heavy);
+  color: var(--tx);
+  margin: 0;
+}
+
+.org-issued-body {
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  line-height: 1.5;
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+/* Wraps rather than truncating: a half-copied invite link is useless. */
+.org-issued-url {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2);
+  margin-bottom: var(--space-2);
+  overflow-wrap: anywhere;
+}

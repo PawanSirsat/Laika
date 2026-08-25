@@ -45,9 +45,18 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No tokens yet',
     body: 'A personal access token lets an agent read and write this board as you. It is shown once when created.',
   },
+  /*
+   * An empty state, not an "unbuilt" notice — the screen exists (LAI-086).
+   *
+   * It is close to unreachable in practice, because whoever is reading it is
+   * themselves in the list. It stays because every route carries copy: that is
+   * what stops a routed path ever rendering a bare headline, and a screen that
+   * loses its copy the moment it gains a component is one refactor away from
+   * exactly that.
+   */
   '/organisation': {
-    headline: 'Organisation settings are not built yet',
-    body: 'Members, invites, roles and the AI provider key live here.',
+    headline: 'Nobody else here yet',
+    body: 'Invite someone and they will appear alongside you.',
   },
   '/projects': {
     headline: 'No projects yet',

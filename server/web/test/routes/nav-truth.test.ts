@@ -91,7 +91,9 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // rather than a side effect noticed by a person opening the app.
     assert.deepEqual(
       navRoutes().map((r) => r.label),
-      ['Board', 'Sprints', 'Timeline', 'Projects', 'Dashboard'],
+      // `Organisation` returns with LAI-086. A deliberate edit to this line,
+      // which is what it is here for.
+      ['Board', 'Sprints', 'Timeline', 'Projects', 'Dashboard', 'Organisation'],
     );
   });
 
@@ -108,8 +110,13 @@ void describe('the sidebar offers nothing that does not exist', () => {
       'the sidebar must skip groups with no shipped routes',
     );
 
+    // Saying so, as instructed: `SETTINGS` is no longer empty — LAI-086 built
+    // the Organisation screen and it earned the group back. **No group is empty
+    // today**, which means the filter above is currently guarding nothing
+    // observable; it stays because the next hidden route re-creates the case,
+    // and the rule is what matters rather than today's list.
     const empty = NAV_GROUPS.filter((g) => routesInGroup(g).length === 0);
-    assert.deepEqual(empty, ['SETTINGS'], 'SETTINGS is empty today — if that changes, say so here');
+    assert.deepEqual(empty, [], 'a nav group has gone empty — the sidebar must still skip it');
   });
 
   void test('the screens Builder-A owns are registered and routed', () => {

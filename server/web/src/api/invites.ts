@@ -1,4 +1,5 @@
 import { request } from './client.ts';
+import type { Page } from './tasks.ts';
 
 /**
  * Invites (SPEC §6.4, §4.11 — API by LAI-071, screen by LAI-077).
@@ -95,4 +96,68 @@ export function acceptInvite(input: AcceptInviteInput): Promise<AcceptedInvite> 
       ...(input.email === undefined ? {} : { email: input.email }),
     },
   });
+}
+
+/**
+ * One pending invite, as `GET /invites` lists them.
+ *
+ * Note there is **no token here**. The token is shown once, at creation, and is
+ * stored hashed — so a list can say who was invited and to what, and cannot
+ * re-issue the link. Anyone who lost theirs needs a new invite.
+ */
+export interface PendingInvite {
+  readonly id: string;
+  /** `null` for a link invite — one bound to no address (§4.11). */
+  readonly email: string | null;
+  readonly org_role: OrgRole;
+  readonly project_id: string | null;
+  readonly project_role: ProjectRole | null;
+  readonly created_by: string;
+  readonly created_at: number;
+  readonly expires_at: number;
+  /** SMTP is unconfigured (LAI-206), so this is `false` for everything today. */
+  readonly email_sent: boolean;
+}
+
+export interface CreateInviteInput {
+  /** `null` for a link invite, which anyone holding the URL may spend. */
+  readonly email: string | null;
+  readonly org_role: OrgRole;
+}
+
+export interface CreatedInvite {
+  readonly invite: PendingInvite;
+  /** Shown **once**. Never listed again — the server keeps only a hash. */
+  readonly token: string;
+  readonly accept_url: string;
+}
+
+/** Pending invites for the org. `admin+` — the server decides, not the screen. */
+export function listInvites(signal?: AbortSignal): Promise<Page<PendingInvite>> {
+  return request<Page<PendingInvite>>('/invites', signal === undefined ? {} : { signal });
+}
+
+export function createInvite(input: CreateInviteInput): Promise<CreatedInvite> {
+  return request<CreatedInvite>('/invites', {
+    method: 'POST',
+    // `email: null` is sent explicitly rather than omitted: the schema spells
+    // "no address" and "absent" the same way on purpose, and a client that
+    // means a link invite should say so.
+    body: { email: input.email, org_role: input.org_role },
+  });
+}
+
+export function revokeInvite(id: string): Promise<void> {
+  return request<void>(`/invites/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Who may manage invites and see the org's people (SPEC §3.1).
+ *
+ * *"Invite users / change org roles"* is Owner and Admin. A Member or Viewer
+ * gets no controls at all rather than controls that answer `403` — the server
+ * refuses either way, and a button that always fails is worse than no button.
+ */
+export function canManageOrg(orgRole: string): boolean {
+  return orgRole === 'owner' || orgRole === 'admin';
 }

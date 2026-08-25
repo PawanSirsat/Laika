@@ -16,6 +16,7 @@ import { TimelineScreen } from '../routes/screens/timeline/TimelineScreen.tsx';
 import { DashboardScreen } from '../routes/screens/dashboard/DashboardScreen.tsx';
 import { NotFound } from '../routes/screens/NotFound.tsx';
 import { MembersScreen } from '../routes/screens/MembersScreen.tsx';
+import { OrganisationScreen } from '../routes/screens/organisation/OrganisationScreen.tsx';
 import { ProjectsScreen } from '../routes/screens/ProjectsScreen.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
@@ -423,6 +424,8 @@ export function AppShell() {
                 }}
               />
             </>
+          ) : path === '/organisation' && session.status === 'authenticated' ? (
+            <OrganisationScreen me={session.user} />
           ) : path === '/members' ? (
             <>
               <MembersScreen
