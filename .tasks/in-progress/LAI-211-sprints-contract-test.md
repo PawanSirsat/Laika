@@ -2,11 +2,12 @@
 id: LAI-211
 title: Contract test for countSprints, the shell's cross-ownership dependency
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: []
 discovered-from: LAI-064
-status: backlog
+status: in-progress
+started: 2026-08-25T07:51:38Z
 ---
 
 ## Goal
