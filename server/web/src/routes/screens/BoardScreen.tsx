@@ -6,6 +6,7 @@ import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './board/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
+import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { BoardRail } from './board/BoardRail.tsx';
 import { PresenceStrip } from './board/PresenceStrip.tsx';
@@ -481,6 +482,22 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
           </button>
         )}
       </ScreenHeader>
+
+      {/*
+        Mounted here rather than in the shell: it reports the state of *this*
+        board's stream, and `useEvents` is scoped to this project. It has existed
+        since LAI-019 and appeared only in the design gallery — the pill said
+        RECONNECTING and nothing explained what that meant for the reader.
+      */}
+      {stream.status === 'dropped' && (
+        <ConnectionBanner
+          host={window.location.host}
+          attempt={stream.attempt}
+          {...(stream.retryInSeconds === undefined
+            ? {}
+            : { retryInSeconds: stream.retryInSeconds })}
+        />
+      )}
 
       <SprintStrip
         sprints={sprints}

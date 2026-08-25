@@ -13,6 +13,18 @@ export interface FieldProps {
   readonly help?: string | undefined;
   /** Set once the field is invalid. Replaces nothing — help stays visible. */
   readonly error?: string | undefined;
+  /**
+   * Invalid, with the explanation somewhere else.
+   *
+   * Sign-in rejection is the case: the server will not say *which* of the two
+   * fields is wrong — deliberately, so the form cannot be used to discover
+   * which addresses exist — so the message belongs to the form, not to a field.
+   * The field still has to *look* wrong, and `aria-invalid` still has to be set,
+   * or the only signal is a colour some readers cannot see.
+   *
+   * Ignored when `error` is set; a field with its own message does not need it.
+   */
+  readonly invalid?: boolean;
   readonly required?: boolean;
   /**
    * Rendered with the ids it must wire up. Every control here is labelled and
@@ -35,7 +47,15 @@ export interface FieldProps {
  * The error is in a live region so it is **announced, not only coloured** —
  * colour alone excludes anyone who cannot see it, which is the criterion.
  */
-export function Field({ label, help, error, required = false, children }: FieldProps) {
+export function Field({
+  label,
+  help,
+  error,
+  invalid = false,
+  required = false,
+  children,
+}: FieldProps) {
+  const isInvalid = error !== undefined || invalid;
   const inputId = useId();
   const helpId = `${inputId}-help`;
   const errorId = `${inputId}-error`;
@@ -46,7 +66,7 @@ export function Field({ label, help, error, required = false, children }: FieldP
       .join(' ') || undefined;
 
   return (
-    <div className={error === undefined ? 'field' : 'field field-invalid'}>
+    <div className={isInvalid ? 'field field-invalid' : 'field'}>
       <label className="field-label" htmlFor={inputId}>
         {label}
         {required && (
@@ -56,7 +76,7 @@ export function Field({ label, help, error, required = false, children }: FieldP
         )}
       </label>
 
-      {children({ inputId, describedBy, invalid: error !== undefined })}
+      {children({ inputId, describedBy, invalid: isInvalid })}
 
       {help !== undefined && (
         <p className="field-help" id={helpId}>

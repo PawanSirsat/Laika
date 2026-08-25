@@ -14,6 +14,8 @@ export interface TextInputProps {
   readonly autoComplete?: string | undefined;
   /** Locked but still readable — the invite screen's email field. */
   readonly readOnly?: boolean;
+  /** Invalid, with the explanation shown by the form. See `Field`. */
+  readonly invalid?: boolean;
 }
 
 export function TextInput({
@@ -28,9 +30,10 @@ export function TextInput({
   placeholder,
   autoComplete,
   readOnly = false,
+  invalid = false,
 }: TextInputProps) {
   return (
-    <Field label={label} help={help} error={error} required={required}>
+    <Field label={label} help={help} error={error} invalid={invalid} required={required}>
       {({ inputId, describedBy, invalid }) => (
         <input
           id={inputId}

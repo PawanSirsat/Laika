@@ -75,6 +75,24 @@ export interface UseEvents {
   readonly gap: GapSignal | undefined;
   /** Rises on every activity frame, so a consumer can react without diffing. */
   readonly tick: number;
+  /**
+   * How many reconnect attempts have failed in a row. `0` while connected.
+   *
+   * Counted from `EventSource`'s own `error` events rather than assumed, so it
+   * is the number of attempts that actually happened.
+   */
+  readonly attempt: number;
+  /**
+   * Seconds until the next attempt, or `undefined` when it is not knowable yet.
+   *
+   * **Measured, not hardcoded.** The server sends a `retry:` hint on the `ready`
+   * frame and `EventSource` honours it internally without exposing it, so the
+   * only honest source is the observed gap between two consecutive failures.
+   * That means the first drop has no countdown — there is nothing to measure
+   * from — and LAI-078 AC4 allows exactly that: show the state without a
+   * countdown rather than inventing one.
+   */
+  readonly retryInSeconds: number | undefined;
 }
 
 /**
@@ -121,6 +139,11 @@ export function useEvents(slug: string | undefined): UseEvents {
   const [recent, setRecent] = useState<readonly ActivityEvent[]>([]);
   const [gapped, setGapped] = useState(false);
   const [gap, setGap] = useState<GapSignal | undefined>(undefined);
+  const [attempt, setAttempt] = useState(0);
+  /** When the next attempt is due, and how long the last wait was. */
+  const [retry, setRetry] = useState<{ dueAt: number; intervalMs: number } | undefined>(undefined);
+  const lastErrorAt = useRef<number | undefined>(undefined);
+  const [, setNow] = useState(0);
   const [tick, setTick] = useState(0);
   const source = useRef<EventSource | undefined>(undefined);
 
@@ -193,11 +216,28 @@ export function useEvents(slug: string | undefined): UseEvents {
 
     es.onopen = () => {
       setStatus('live');
+      // A successful connection ends the run of failures; leaving the count
+      // standing would show "attempt 7" on a stream that is working.
+      setAttempt(0);
+      setRetry(undefined);
+      lastErrorAt.current = undefined;
     };
     es.onerror = () => {
       // EventSource retries on its own; `dropped` is the honest label while it
       // does, rather than claiming to be live.
       setStatus('dropped');
+      setAttempt((n) => n + 1);
+
+      const at = Date.now();
+      const previous = lastErrorAt.current;
+      lastErrorAt.current = at;
+
+      // Two failures give the interval the browser is actually using. One does
+      // not, so the banner shows the attempt without a countdown.
+      if (previous !== undefined) {
+        const intervalMs = at - previous;
+        setRetry({ dueAt: at + intervalMs, intervalMs });
+      }
     };
 
     return () => {
@@ -206,5 +246,28 @@ export function useEvents(slug: string | undefined): UseEvents {
     };
   }, [slug]);
 
-  return { status, recent, gapped, gap, tick };
+  /**
+   * A one-second heartbeat, only while dropped.
+   *
+   * The countdown has to move, and nothing else re-renders while the stream is
+   * down. Gated on `status` so a healthy board is not re-rendering once a
+   * second for a number nobody is looking at.
+   */
+  useEffect(() => {
+    if (status !== 'dropped' || retry === undefined) return;
+    const timer = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [status, retry]);
+
+  // `round`, not `ceil`. The measured interval lands a few milliseconds over a
+  // whole second, and `ceil` turns a 3.005s wait into "retrying in 4s" — a
+  // number that is never right, on a line whose only job is being accurate.
+  const retryInSeconds =
+    retry === undefined ? undefined : Math.max(0, Math.round((retry.dueAt - Date.now()) / 1000));
+
+  return { status, recent, gapped, gap, tick, attempt, retryInSeconds };
 }
