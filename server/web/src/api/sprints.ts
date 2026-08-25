@@ -26,11 +26,15 @@ export type SprintStatus = (typeof SPRINT_STATUSES)[number];
 
 export interface Sprint {
   readonly id: string;
+  /** Which project it belongs to. Served since LAI-011; declared by LAI-213. */
+  readonly project_id: string;
   readonly name: string;
   readonly goal: string | null;
   readonly starts_on: number;
   readonly ends_on: number;
   readonly status: SprintStatus;
+  readonly created_at: number;
+  readonly updated_at: number;
 }
 
 export interface ListSprintsQuery {
