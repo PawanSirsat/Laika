@@ -2,11 +2,12 @@
 id: LAI-081
 title: Applying tags, and filtering the board by one
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-079, LAI-056, LAI-066]
 discovered-from: LAI-073
-status: backlog
+status: in-progress
+started: 2026-08-25T06:51:45Z
 ---
 
 ## Goal
