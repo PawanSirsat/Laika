@@ -309,6 +309,14 @@ const schemaTables = new Map<string, string[]>(
  * table nobody agreed to.
  */
 const TABLES_NOT_IN_SPEC = new Map<string, string>([
+  [
+    'tags',
+    'built by LAI-079 to D-027; §4.16 is PM’s file and lands with the merge. This entry expires itself — the test below fails the moment §4 describes it.',
+  ],
+  [
+    'task_tags',
+    'the join half of §4.16, same as `tags` above — built by LAI-079, expires when §4.16 lands.',
+  ],
   ['sessions', 'better-auth owns its own tables (§11.3) — "do not hand-write session columns"'],
   ['accounts', 'better-auth: credential and OAuth records (§4.1 note, §11.3)'],
   ['verifications', 'better-auth: email verification and reset tokens (§11.3)'],
@@ -622,26 +630,29 @@ describe('the planned mark (LAI-080)', () => {
     // The fixture above proves the rules; this proves the parser survives being
     // handed the actual §4 with one section added — which is the change PM will
     // really make, and the case a fixture cannot vouch for.
-    const withSection = `${spec}\n### 4.16 \`tags\`\n\n**Planned — LAI-079.**\n\n\`id\`, \`project_id\`, \`name\`, \`created_at\`.\n`;
+    // `widgets`, not `tags`: this fixture needs a table that does **not** exist,
+    // and `tags` stopped qualifying the moment LAI-079 built it. A fixture whose
+    // premise quietly became false is how a test starts asserting nothing.
+    const withSection = `${spec}\n### 4.99 \`widgets\`\n\n**Planned — LAI-079.**\n\n\`id\`, \`project_id\`, \`name\`, \`created_at\`.\n`;
 
     const tables = parseSpecTables(withSection);
     const marks = parsePlannedSections(withSection);
 
     // The new section parsed, and every real one still did.
-    expect(tables.get('tags')).toEqual(['id', 'project_id', 'name', 'created_at']);
+    expect(tables.get('widgets')).toEqual(['id', 'project_id', 'name', 'created_at']);
     expect(tables.get('users')).toEqual([...(specTables.get('users') ?? [])]);
-    expect(marks.get('tags')?.taskId).toBe('LAI-079');
+    expect(marks.get('widgets')?.taskId).toBe('LAI-079');
 
     // Green while unbuilt...
     expect(unbuiltTables(tables, marks, schemaTables)).toEqual([]);
     // ...red the moment the table lands.
     expect(
-      marksOutlivingTheirTable(marks, new Map([...schemaTables, ['tags', ['id']]])),
+      marksOutlivingTheirTable(marks, new Map([...schemaTables, ['widgets', ['id']]])),
     ).toHaveLength(1);
     // ...and red without the mark, which is the state that got §4.16 reverted.
     const unmarked = parsePlannedSections(withSection.replace('**Planned — LAI-079.**', ''));
     expect(unbuiltTables(tables, unmarked, schemaTables)).toEqual([
-      '§4 specifies table "tags" — schema.ts has no such table',
+      '§4 specifies table "widgets" — schema.ts has no such table',
     ]);
   });
 
