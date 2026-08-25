@@ -21,8 +21,21 @@ export interface LoginScreenProps {
   readonly host: string;
   readonly onSubmit?: ((values: LoginSubmit) => void) | undefined;
   readonly submitting?: boolean;
-  /** Rejected credentials, from the server. Wiring is LAI-007. */
-  readonly failure?: { readonly attemptsLeft: number | undefined; readonly lockoutMinutes: number };
+  /**
+   * The server rejected these credentials.
+   *
+   * A **boolean**, not a counter. It used to be
+   * `{ attemptsLeft, lockoutMinutes }`, rendering *"3 attempts left before a
+   * 15-minute lockout"* — the prototype's line. Nothing ever passed it, and
+   * nothing could have: **this instance has no lockout.** Eight consecutive
+   * failed sign-ins return eight identical `401`s with no counter, no
+   * `Retry-After`, and no ban. `attemptsLeft` was even `number | undefined`, so
+   * the one caller who ever tried would have rendered *"undefined attempts
+   * left"*. LAI-219 asks for real brute-force protection; until it exists there
+   * is no number to show, and inventing one tells the reader they are safer
+   * than they are.
+   */
+  readonly rejected?: boolean;
   /** Anything else the server said — unreachable instance, rate limit. */
   readonly serverError?: string | undefined;
 }
@@ -39,7 +52,7 @@ export function LoginScreen({
   host,
   onSubmit,
   submitting = false,
-  failure,
+  rejected = false,
   serverError,
 }: LoginScreenProps) {
   const [email, setEmail] = useState('');
@@ -90,11 +103,20 @@ export function LoginScreen({
           </p>
         </header>
 
-        {failure !== undefined && (
-          <p className="auth-alert" role="alert">
-            Email or password is wrong. {failure.attemptsLeft} attempt
-            {failure.attemptsLeft === 1 ? '' : 's'} left before a {failure.lockoutMinutes}-minute
-            lockout.
+        {rejected && (
+          <p className="auth-rejected" role="alert">
+            <span className="auth-rejected-glyph" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none">
+                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+                <path d="M12 7v6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                <circle cx="12" cy="16.75" r="1.15" fill="currentColor" />
+              </svg>
+            </span>
+            {/* Never "no account with that email": the same sentence for a wrong
+                password and an address that does not exist is what stops this
+                form being used to find out which addresses do. The server
+                answers identically for both — verified, not assumed. */}
+            <span>Email or password is wrong.</span>
           </p>
         )}
 
@@ -113,6 +135,7 @@ export function LoginScreen({
           required
           disabled={submitting}
           error={touched && !emailCheck.ok ? emailCheck.message : undefined}
+          invalid={rejected}
         />
 
         <PasswordInput

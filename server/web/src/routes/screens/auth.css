@@ -822,3 +822,31 @@
   margin: var(--space-3) 0 0;
   text-align: center;
 }
+
+/* --------------------------------------------- sign-in rejection (LAI-078) */
+
+/**
+ * The design's wrong-credentials row: glyph beside the message, 11px/600.
+ *
+ * A row rather than a bare paragraph because the glyph carries the meaning for
+ * anyone who cannot separate the red from the surrounding text.
+ */
+.auth-rejected {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin: 0 0 var(--space-4);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+  color: var(--red);
+  text-wrap: pretty;
+}
+
+.auth-rejected-glyph {
+  flex: none;
+  display: block;
+  /* Optical alignment with the first line of 11px/1.35 text. */
+  margin-top: 0.0625rem;
+  color: var(--red);
+}

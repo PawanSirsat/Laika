@@ -9,6 +9,8 @@ export interface PasswordInputProps {
   readonly onChange: (value: string) => void;
   readonly help?: string | undefined;
   readonly error?: string | undefined;
+  /** Invalid, with the explanation shown by the form. See `Field`. */
+  readonly invalid?: boolean;
   readonly required?: boolean;
   readonly disabled?: boolean;
   readonly autoComplete?: 'current-password' | 'new-password';
@@ -33,11 +35,12 @@ export function PasswordInput({
   disabled = false,
   autoComplete = 'current-password',
   showStrength = false,
+  invalid = false,
 }: PasswordInputProps) {
   const [revealed, setRevealed] = useState(false);
 
   return (
-    <Field label={label} help={help} error={error} required={required}>
+    <Field label={label} help={help} error={error} invalid={invalid} required={required}>
       {({ inputId, describedBy, invalid }) => (
         <>
           <div className="input-affix">

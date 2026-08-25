@@ -65,9 +65,17 @@
   background: var(--tub);
 }
 
-/* Invalid is carried by the border *and* the message, never by colour alone. */
+/**
+ * Invalid is carried by the border **and** the message, never by colour alone.
+ *
+ * The design fills the field rather than only outlining it — `--reds` ground,
+ * `--redb` border — which reads at a glance without relying on a 1px edge. Both
+ * are alpha tints of the same red, so they follow the theme instead of needing a
+ * dark-mode override.
+ */
 .field-invalid .input {
-  border-color: var(--red);
+  background: var(--reds);
+  border-color: var(--redb);
 }
 
 .select {

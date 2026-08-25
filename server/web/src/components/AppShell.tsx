@@ -51,6 +51,7 @@ export function AppShell() {
   const [navOpen, setNavOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signInError, setSignInError] = useState<string | undefined>(undefined);
+  const [signInRejected, setSignInRejected] = useState(false);
   const [setupSubmitting, setSetupSubmitting] = useState(false);
   const [setupError, setSetupError] = useState<string | undefined>(undefined);
   const [setupFieldErrors, setSetupFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -118,6 +119,7 @@ export function AppShell() {
   const handleSignIn = useCallback(
     async (values: { email: string; password: string; keepSignedIn: boolean }) => {
       setSignInError(undefined);
+      setSignInRejected(false);
       try {
         await signIn({
           email: values.email,
@@ -125,9 +127,16 @@ export function AppShell() {
           rememberMe: values.keepSignedIn,
         });
       } catch (cause) {
-        setSignInError(
-          cause instanceof SignInError ? cause.message : 'Could not reach the instance.',
-        );
+        // Two different situations with two different remedies. Rejected
+        // credentials are the reader's to fix and get the design's field-level
+        // treatment; an unreachable instance is not theirs to fix at all, and
+        // showing "email or password is wrong" for it sends someone to reset a
+        // password that was never the problem.
+        if (cause instanceof SignInError) {
+          setSignInRejected(true);
+        } else {
+          setSignInError('Could not reach the instance.');
+        }
       }
     },
     [signIn],
@@ -442,6 +451,7 @@ export function AppShell() {
                 void handleSignIn(values);
               }}
               submitting={session.status === 'loading'}
+              rejected={signInRejected}
               serverError={signInError}
             />
           ) : path === '/invite' ? (
