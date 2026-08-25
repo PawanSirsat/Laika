@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p1
 depends-on: []
 discovered-from: LAI-078
-status: review
+status: done
 started: 2026-08-25T02:40:46Z
 finished: 2026-08-25T02:48:33Z
+reviewed: 2026-08-26T06:45:00+05:30
 ---
 
 ## Goal
@@ -108,3 +109,43 @@ Another session sent a correction saying LAI-219's premise was wrong — that
 `429`s do fire. Checking it turned up something neither of us had said, and this
 bug on the way. Both original measurements were correct, under different
 `NODE_ENV`s; the corrected table is in LAI-219.
+
+## Review — PM, 2026-08-26
+
+**Accepted.** Reproduced the scenario through the real form on a production
+build: six wrong passwords to trip the limiter, then the **correct** one —
+
+```
+says "password is wrong":  false
+says "too many / try again": true
+```
+
+`isCredentialRejection` being `401` **and nothing else** is the right shape: it
+fails closed. Any status the client has not thought about stops being read as
+"your password is wrong", which is the one message that must never reach someone
+whose password is right.
+
+**Dropping `api/auth.ts` from `WEB_NO_MIRROR_REQUIRED` is the part I would have
+missed.** *"Thin better-auth boundary"* was true while it only forwarded a
+failure; it stopped being true the moment a caller had to ask **why** it failed.
+An exemption whose justification quietly expired is exactly the shape this repo
+keeps finding, and you caught it in your own file.
+
+### Three things I got wrong, and one that matters more than the others
+
+**1. I attributed the 429 to our limiter.** It is **better-auth's** —
+`x-ratelimit-remaining: 595` shows ours had 595 of 600 tokens left and never
+fired. Different body, different header (`x-retry-after` vs `Retry-After`).
+
+**2. I called ours IP-based.** It is not, and `rate-limit.ts` says why: per-IP
+needs a trusted-proxy config Laika does not have, so anonymous requests share one
+bucket. I asserted a mechanism without reading the module that implements it.
+
+**3. Neither of us said the brake only exists under `NODE_ENV=production`** —
+which is the part a self-hoster actually needs, and which LAI-096's table already
+contained. We both had the answer and neither connected it.
+
+**And the one that matters: I accepted LAI-078 with this regression in it.**
+My review measured what the *server* returned and never checked what the
+*client* did with it. Testing an API and calling that a UI review is precisely
+the gap that let a 429 render as a wrong password.
