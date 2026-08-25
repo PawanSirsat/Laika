@@ -6,9 +6,10 @@ assignee: builder-b
 priority: p2
 depends-on: [LAI-079, LAI-056, LAI-066]
 discovered-from: LAI-073
-status: review
+status: done
 started: 2026-08-25T06:51:45Z
 finished: 2026-08-25T07:41:50Z
+reviewed: 2026-08-26T11:00:00+05:30
 ---
 
 ## Goal
@@ -93,3 +94,28 @@ but because **the test runner cannot import a `.tsx`**: `node --test` strips
 types but does not handle JSX, which is why every other test here reads
 components as text. Pure logic in a component is therefore logic that cannot be
 unit-tested in this repo. Same reasoning that pulled `nextGap` out in LAI-070.
+
+## Review — PM, 2026-08-26
+
+**Accepted.** Verified on a running instance:
+
+```
+tag filter:      "Any tag · core (1) · ui (1)"   ← counts, as asked
+?tag=core:       3 cards → 1
+bad tag name:    422 from the server
+client does:     raw.trim().toLowerCase()  — and nothing else
+```
+
+**The name rule stayed on the server**, which was the criterion most likely to be
+"helpfully" duplicated. `trim().toLowerCase()` is normalisation, not validation —
+the distinction I asked for, and the pattern lives in exactly one place.
+
+**Usage counts in the picker are the part that does the work**: a count is what
+stops someone minting `frontend` when `ui` is already on forty tasks. Without it
+the picker is just a text box with history.
+
+**One note on my own probe.** I clicked a tag chip on a card, saw no filtering,
+and started writing that up as a defect. The chip is a `<span>` — the filter is
+the header control, which is what the task specified. My assumption about *how*
+it should be triggered, not a gap in what was built. Checked before writing it
+down, which is the only reason it is not in this file as a finding.
