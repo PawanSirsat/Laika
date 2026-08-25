@@ -85,23 +85,46 @@
   margin-bottom: var(--space-4);
 }
 
-.auth-role-head {
-  font-size: var(--text-sm);
-  color: var(--tx);
-  margin: 0;
+/* `.auth-role-head` / `.auth-role-badge` were replaced by the design's own
+   YOUR ROLE label and PRE-ASSIGNED chip below (LAI-077). */
+
+.auth-role-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
-.auth-role-badge {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  text-transform: uppercase;
-  color: var(--pur);
-  background: var(--purs);
-  border: 1px solid var(--purb);
-  border-radius: var(--radius-pill);
-  padding: 0 var(--space-2);
-  margin-left: var(--space-1);
+.auth-role-label {
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--tx3);
+}
+
+/* The design's 26px chip: neutral, not purple — it labels the role rather than
+   being the role, and a purple chip beside a purple card competes with it. */
+.auth-role-chip {
+  display: flex;
+  align-items: center;
+  height: 1.625rem;
+  padding: 0 0.625rem;
+  border-radius: 0.4375rem;
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.05em;
+  color: var(--tx2);
+}
+
+.auth-role-name {
+  font-size: 0.8125rem;
+  font-weight: var(--weight-heavy);
+  color: var(--tx);
+  margin: var(--space-2) 0 0;
 }
 
 .auth-role-permits {
@@ -682,4 +705,120 @@
   line-height: 1.5;
   color: var(--tx3);
   text-wrap: pretty;
+}
+
+/* ------------------------------------------------- accept invite (LAI-077) */
+
+/**
+ * The invite card is purple where sign-in is neutral.
+ *
+ * Not decoration: someone arriving here has a link from a colleague, and the
+ * one thing they must not do is mistake this for an ordinary sign-in form and
+ * wonder why their password does not work.
+ */
+.auth-card-invite {
+  border-color: var(--purb);
+}
+
+.auth-kicker {
+  font-size: 0.59375rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  color: var(--pur);
+  margin: 0 0 var(--space-4);
+}
+
+.auth-kicker-warn {
+  color: var(--amb);
+}
+
+/* Who invited you, on the flow's own tint. */
+.auth-inviter {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.auth-inviter-avatar {
+  flex: none;
+  display: flex;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.auth-inviter-who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+  min-width: 0;
+}
+
+.auth-inviter-line {
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  line-height: 1.4;
+}
+
+.auth-inviter-line b {
+  font-weight: var(--weight-heavy);
+  color: var(--tx);
+}
+
+/* Mono, because it is a fact about the token rather than prose. */
+.auth-inviter-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+/* The padlock sits over the field, so the lock is visible without reading. */
+.auth-locked {
+  position: relative;
+}
+
+.auth-locked-glyph {
+  position: absolute;
+  right: var(--space-3);
+  /* Clears the label above and centres on the input itself. */
+  top: 2.05rem;
+  color: var(--tx3);
+  pointer-events: none;
+}
+
+.auth-locked input {
+  background: var(--tub);
+  color: var(--tx2);
+  padding-right: var(--space-6);
+}
+
+.auth-expired-glyph {
+  display: block;
+  color: var(--amb);
+  margin-bottom: var(--space-2);
+}
+
+/* The explanation needs air under it before the way out, or the two read as
+   one block and the button looks like part of the sentence. */
+.auth-refused-note {
+  margin-bottom: var(--space-4);
+}
+
+.auth-fineprint {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  line-height: 1.5;
+  margin: var(--space-3) 0 0;
+  text-align: center;
 }

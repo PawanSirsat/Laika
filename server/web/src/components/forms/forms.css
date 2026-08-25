@@ -232,3 +232,16 @@
   color: var(--red);
   border-color: var(--redb);
 }
+
+/**
+ * The invite flow's primary action (LAI-077).
+ *
+ * `--card` for the label, not a literal white: `--pur` is a mid violet in both
+ * themes, and the dark theme's card is near-black — hardcoding white would be
+ * right by accident in one theme and wrong in the other.
+ */
+.button-invite {
+  background: var(--pur);
+  color: var(--card);
+  border-color: var(--pur);
+}

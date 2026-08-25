@@ -1,6 +1,14 @@
 import './forms.css';
 
-export type ButtonVariant = 'primary' | 'secondary' | 'danger';
+/**
+ * `invite` is `primary` in the invite flow's purple (LAI-077).
+ *
+ * A distinct variant rather than a descendant override in `auth.css`: the
+ * design makes the invite flow purple where sign-in is neutral, precisely so
+ * the two are not mistaken for each other, and a rule that only fires inside
+ * one card is invisible from here and silently lost if the card is renamed.
+ */
+export type ButtonVariant = 'primary' | 'secondary' | 'danger' | 'invite';
 
 export interface ButtonProps {
   readonly children: string;
