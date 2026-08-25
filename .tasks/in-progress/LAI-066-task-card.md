@@ -2,11 +2,12 @@
 id: LAI-066
 title: Task card anatomy — priority, key, sprint, dependencies, assignee
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p1
 depends-on: [LAI-049, LAI-050, LAI-060, LAI-079]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T03:51:56Z
 ---
 
 ## Goal
