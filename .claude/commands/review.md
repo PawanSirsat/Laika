@@ -8,6 +8,18 @@ For **each** file in `.tasks/review/`, oldest first:
 
 **1. Read the task.** Goal, every acceptance criterion, notes, `depends-on`.
 
+**Check what each `depends-on` actually delivers, not that it is in `done/`.**
+LAI-086 depended on LAI-059 — *"Project members — list, change role, remove"* —
+which built `/projects/:slug/members`, **project-level (§3.2)**. The org-level
+equivalent it needed was never built. The titles are near enough that the
+dependency read as satisfied from the task file alone, and nothing caught it
+short of opening the route file.
+
+> **A satisfied dependency is not the same as a satisfied need.**
+
+Open the thing the dependency built. It costs a minute and it is a whole task's
+round trip when it is wrong.
+
 **2. Read the actual diff**, not the summary. The work is on the builder's
 branch, not on `master`:
 

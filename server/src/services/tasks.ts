@@ -16,6 +16,7 @@ import { projects, taskDependencies, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { commentCounts } from './comments.ts';
+import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import { requireProjectBySlug } from './projects.ts';
 import { assertTransition, isReady } from './task-lifecycle.ts';
 
@@ -52,6 +53,8 @@ export interface TaskView {
    * the reader opens.
    */
   comment_count: number;
+  /** Project-scoped labels, sorted (§4.16). Empty when none are applied. */
+  tags: string[];
   /**
    * Ids this task is **blocked by** — the forward edge of §4.6.
    *
@@ -91,6 +94,8 @@ interface ViewContext {
   readonly statuses: ReadonlyMap<string, TaskStatus>;
   /** Live comment count per task (LAI-072). */
   readonly comments: ReadonlyMap<string, number>;
+  /** Tags per task (§4.16, LAI-079). */
+  readonly tags: ReadonlyMap<string, string[]>;
 }
 
 function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
@@ -115,14 +120,9 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
           .map((r) => [r.id, r.status] as const),
   );
 
-  return {
-    edges,
-    statuses,
-    comments: commentCounts(
-      db,
-      rows.map((row) => row.id),
-    ),
-  };
+  const ids = rows.map((row) => row.id);
+
+  return { edges, statuses, comments: commentCounts(db, ids), tags: tagsForTasks(db, ids) };
 }
 
 function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
@@ -158,6 +158,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     dependencies: deps,
     blocks: context.edges.blocks.get(row.id) ?? [],
     comment_count: context.comments.get(row.id) ?? 0,
+    tags: context.tags.get(row.id) ?? [],
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -193,6 +194,7 @@ export interface CreateTaskInput {
   title: string;
   description_md?: string | undefined;
   acceptance_md?: string | undefined;
+  tags?: readonly string[] | undefined;
   priority?: TaskPriority | undefined;
   status?: TaskStatus | undefined;
   assignee_id?: string | undefined;
@@ -239,6 +241,18 @@ export function createTask(
       })
       .run();
 
+    // Inside the same transaction as the insert: a task that exists without the
+    // labels it was created with is a half-applied create, and the caller has no
+    // way to tell which half landed.
+    if (input.tags !== undefined) {
+      setTaskTags(db, {
+        taskId: id,
+        projectId: project.id,
+        names: normaliseTagNames(input.tags),
+        now,
+      });
+    }
+
     appendActivity(db, {
       orgId: project.orgId,
       projectId: project.id,
@@ -256,6 +270,8 @@ export function createTask(
 
 export interface ListTasksFilter {
   status?: TaskStatus | undefined;
+  /** §4.16's `?tag=` — a tag name, normalised before it is looked up. */
+  tag?: string | undefined;
   assignee?: string | undefined;
   priority?: TaskPriority | undefined;
   /** `true` returns only ready tasks, `false` only unready ones (§4.5). */
@@ -295,6 +311,13 @@ export function listTasks(
       filter.sprint === 'none' ? isNull(tasks.sprintId) : eq(tasks.sprintId, filter.sprint),
     );
   }
+  if (filter.tag !== undefined) {
+    // Resolved to ids first so the filter is an indexed `IN` over the tag side —
+    // §4.13's `task_tags(tag_id)` index exists for exactly this. An unknown tag
+    // yields an empty list, which `inArray` renders as `WHERE false`.
+    conditions.push(inArray(tasks.id, taskIdsWithTag(db, project.id, filter.tag)));
+  }
+
   if (filter.updatedSince !== null && filter.updatedSince !== undefined) {
     conditions.push(gte(tasks.updatedAt, filter.updatedSince));
   }
@@ -333,6 +356,8 @@ export interface UpdateTaskInput {
    * which is a claim nobody meant to make.
    */
   acceptance_md?: string | null | undefined;
+  /** Replaces the whole set — `PATCH { tags }` reads as "these are its tags". */
+  tags?: readonly string[] | undefined;
   priority?: TaskPriority | undefined;
   assignee_id?: string | null | undefined;
   now?: number;
@@ -367,7 +392,36 @@ export function updateTask(
     changes.assigneeId = input.assignee_id;
   }
 
-  if (Object.keys(changes).length === 0) return viewOne(db, task, project.prefix);
+  // Tags are not a column, so they are not in `changes` — they are applied
+  // separately and get their own activity row naming the field (§4.16, D-027).
+  const tagChange =
+    input.tags === undefined
+      ? null
+      : setTaskTags(db, {
+          taskId,
+          projectId: project.id,
+          names: normaliseTagNames(input.tags),
+          now,
+        });
+
+  if (tagChange !== null) {
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId,
+      actorId: actor.userId,
+      actorKind: 'user',
+      // `task.updated` with the field named — the shape `sprint_id` uses, and
+      // deliberately not a seventh §4.8 verb (D-027).
+      type: 'task.updated',
+      payload: { field: 'tags', from: tagChange.from, to: tagChange.to },
+      now,
+    });
+  }
+
+  if (Object.keys(changes).length === 0) {
+    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+  }
 
   db.update(tasks)
     .set({ ...changes, updatedAt: now })

@@ -1419,3 +1419,38 @@ is not an option.
 **What this does not change.** `docs/` is still PM's and application code is still
 the builders'. This is a keyhole, opened by a named task, for a problem the
 checks create on purpose.
+
+## D-034 — D-033's condition was wrong: named and auditable, not "only when forced"
+
+**2026-08-26. Amends D-033.** I wrote that a cross-area edit is permitted *only*
+where the halves cannot land separately with master green — "if they can, they
+must".
+
+LAI-134 was the first case to test it. Builder-A took the crossing and said
+plainly in the task that the halves **could** have landed a commit apart, since
+the exemption held either way, and that one commit was simply more convenient.
+By the letter of D-033 that was not allowed.
+
+**On reading it back, my condition was guarding the wrong thing.** The risk a
+cross-area edit creates is that someone changes another session's files
+**unseen**. It is not that they do it *unnecessarily*. A named, task-recorded,
+reviewed crossing is equally safe whether or not a drift check forced it — and
+splitting a small related change across two commits to satisfy a rule adds a
+round trip and a window where the two halves disagree, for no gain.
+
+**Decision: the condition is "named and auditable", not "only when forced".**
+
+- The task **names exactly what will be touched** — a section by number, a single
+  entry, a specific mapping. Never a file, never a directory.
+- The reviewer **sees the crossing** and says so in the review.
+- Ownership is otherwise unchanged: `docs/` is PM's, application code is the
+  builders'.
+
+**What is still forbidden** is what LAI-134's own history shows: I tried to land
+both halves myself and stopped once it became clear the fix needed *designing*
+how self-scoped actions are verified. **A named edit is not a design change to
+someone else's file.** That boundary is the one that matters, and it is unchanged.
+
+Builder-A found this by being transparent about doing something the rule did not
+strictly permit, rather than either not doing it or not mentioning it. A rule
+tested honestly is worth more than a rule obeyed silently.

@@ -18,6 +18,7 @@ import {
   updateProject,
   type ProjectSummary,
 } from '../../services/projects.ts';
+import { deleteTag, listProjectTags, renameTag } from '../../services/tags.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince, tombstone, type WithTombstones } from '../updated-since.ts';
@@ -67,6 +68,10 @@ const MemberBody = strictObject({
 });
 
 const RoleBody = strictObject({ role: z.enum(['lead', 'member', 'viewer']) });
+
+// The shape is validated in `services/tags.ts` beside the CHECK it mirrors, so
+// this only bounds the length — two regexes for one rule is how they drift.
+const RenameTagBody = strictObject({ name: z.string().trim().min(1).max(64) });
 
 /** Every route needs a signed-in actor; the gate is `can()`, this is the 401. */
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
@@ -138,6 +143,32 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
 
   app.post('/:slug/join', (c) =>
     c.json({ members: joinPublicProject(db, requireActor(c), c.req.param('slug')) }, 201),
+  );
+
+  /**
+   * §6.4's three tag endpoints (§4.16, LAI-079).
+   *
+   * They live on the project because a tag is project-scoped — `ui` on a server
+   * project is not `ui` on the web one. There is no create endpoint: a tag comes
+   * into existence by being applied to a task, which is `PATCH /tasks/:id`.
+   */
+  app.get('/:slug/tags', (c) =>
+    c.json({ tags: listProjectTags(db, requireActor(c), c.req.param('slug')) }),
+  );
+
+  app.patch('/:slug/tags/:name', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(RenameTagBody, await c.req.json().catch(() => null));
+
+    return c.json(
+      renameTag(sqlite, db, actor, c.req.param('slug'), c.req.param('name'), body.name),
+    );
+  });
+
+  app.delete('/:slug/tags/:name', (c) =>
+    // The count of tasks that lost the label. **Not** a count of anything
+    // deleted — §4.16 is explicit that removing a tag removes join rows only.
+    c.json(deleteTag(sqlite, db, requireActor(c), c.req.param('slug'), c.req.param('name'))),
   );
 
   app.get('/:slug/members', (c) =>
