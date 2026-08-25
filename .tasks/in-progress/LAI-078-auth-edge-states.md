@@ -2,11 +2,12 @@
 id: LAI-078
 title: Auth error and connection states
 area: web
-assignee: unclaimed
+assignee: builder-b
 priority: p2
 depends-on: [LAI-074]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-25T01:55:04Z
 ---
 
 ## Goal
