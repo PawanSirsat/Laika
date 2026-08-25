@@ -7,6 +7,8 @@ priority: p2
 depends-on: [LAI-071, LAI-062]
 discovered-from:
 status: review
+started: 2026-08-25T01:20:29Z
+finished: 2026-08-25T01:52:14Z
 ---
 
 ## Goal
