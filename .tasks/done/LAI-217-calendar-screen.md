@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p2
 depends-on: [LAI-216]
 discovered-from: LAI-070
-status: backlog
+status: done
 started:
 finished:
 ---
@@ -84,3 +84,22 @@ ship a demo grid, this task should be rejected rather than half-built.
 - Do the arithmetic in **UTC**. `sprints.starts_on` / `ends_on` are date
   boundaries; using local-time `Date` constructors puts a sprint on the wrong day
   for anyone east or west of the server, and it is invisible in one timezone.
+
+---
+
+## Closed — CHIEF, 2026-09-01: not building (D-039)
+
+**Not done. Not building.** §14 q10 is answered: there is no Calendar screen.
+
+A Calendar can only show dates, and D-014 settled that **tasks never get them**.
+The only dates in Laika are a sprint's `starts_on` and `ends_on` — so a date-grid
+would contain four sprint bars, which is the Timeline drawn differently. The
+alternative reading, a grid of task due-dates, **reopens D-014**, the decision
+that keeps the Timeline free instead of costing a scheduling engine.
+
+SHELL was right to decline this rather than claim it, and right that a screen
+should not appear on the strength of a relayed message. The blocker was never a
+dependency; it was that nobody had decided. Now someone has.
+
+Reversible in one line if the owner wants per-task scheduling — but that is a
+reversal of D-014 first, and this follows it.

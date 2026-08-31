@@ -1659,3 +1659,139 @@ named edit is not a design change to someone else's file"*).
 
 **Revisit if** a third session needs entries in the same maps, or if a mapping
 change ever requires touching the parser to land.
+
+---
+
+## D-039 — The four questions that were blocking work, answered
+
+**Date:** 2026-09-01 · **Decided by:** CHIEF, on the owner's instruction to
+finish what is pending · **Status:** accepted
+
+Four things had been sitting unanswered and were blocking or distorting work.
+The owner asked for everything outstanding to be done rather than escalated, so
+each is decided here with its reasoning, and each can be reversed by them in one
+line.
+
+### 1. There is no Calendar screen (closes §14 q10, closes LAI-217)
+
+§14 q10 asks whether the prototype's `WORK → Calendar` is *"a date-grid over
+sprints, nearly free like the Timeline"*, or something that *"implies per-task
+dates and reopens D-014"*.
+
+**It is neither, because there is nothing to put on it.** D-014 settled that
+**tasks never get dates**. The only dates in the product are a sprint's
+`starts_on` and `ends_on` — and a date-grid whose only content is four sprint
+bars is the Timeline drawn differently. It would be a second view of one dataset,
+carrying a nav entry, a route and a screen's worth of code to say what §11.4.3
+already says.
+
+Building it the other way — a calendar of task due-dates — **reopens D-014**,
+which is the one decision keeping the Timeline free rather than costing a
+scheduling engine.
+
+**So: no Calendar.** `LAI-217` is closed as *not building*, not as done. If the
+owner wants per-task scheduling, that is a reversal of D-014 and this decision
+follows it rather than leading.
+
+### 2. `@mentions` and Watch ride the existing SSE stream (unblocks LAI-094)
+
+Three options were open: in-app only, in-app over the existing stream, or email.
+
+**In-app over the existing stream.** `/api/v1/events` already exists, already
+fans out per project, already carries `Last-Event-ID` replay, and the board
+already consumes it. A notification is an `activity` row a person is interested
+in — which is a thing the stream is already delivering. The other two both add a
+delivery mechanism: email needs SMTP configured, a queue, retries, and a bounce
+story before a single mention arrives, and in-app-only-without-the-stream means
+polling something the stream already pushes.
+
+**Email is not refused, it is sequenced.** When SMTP exists for invites it can
+carry mentions too, and the read model will already be built.
+
+### 3. `@modelcontextprotocol/sdk` stays, and is revisited at M7
+
+79 packages, 17 direct, including `express`, `cors`, `express-rate-limit` and
+`cross-spawn` (LAI-406). Measured: **none of them load** — they arrive through
+the SDK's express adapter, OAuth router and stdio client, none of which Laika
+imports. It is disk and SBOM surface, not runtime surface.
+
+**Keep it.** The alternative is writing the Streamable HTTP transport ourselves,
+which is a wire protocol we would then own and have to track — and M3 works. But
+it is a real surface on a self-hosted product, so it goes on the **M7 release
+polish** list explicitly rather than being forgotten now that the deps are quiet.
+
+### 4. M1's exit criterion is met
+
+*"`docker compose up` → open the browser → create the Owner account → see an
+empty authenticated shell."*
+
+Done, repeatedly, most recently on 2026-09-01: the volume was destroyed, the
+image rebuilt from `master`, `POST /api/v1/setup` created the Owner, and a
+browser signed in and rendered the authenticated shell. Nothing about it needs a
+second person to perform it — it needed **someone** to perform it, and it has
+been.
+
+**Revisit if** the owner reverses D-014 (which reopens 1), SMTP lands before
+LAI-094 is built (which changes 2's sequencing), or an SBOM review rejects the
+SDK's surface (which forces 3).
+
+---
+
+## D-040 — The design's timeline is not reachable, and we keep ours
+
+**Date:** 2026-09-01 · **Decided by:** CHIEF, from SHELL's measurement on
+LAI-426 · **Status:** accepted · **Depends on** D-014
+
+The owner asked for the UI to match `Laika Prototype.dc.html`. LAI-426 built the
+timeline exactly as the design draws it — one row per task, sprints as columns —
+and it was measured against the prototype at the same viewport rather than
+judged by eye.
+
+| | prototype | ours, built to the design's shape |
+| --- | --- | --- |
+| rows | 13 | 17 |
+| **distinct bar geometries** | **13** | **2** |
+
+**Every task in a sprint occupies the same pixels**, so the horizontal axis
+carries one bit per row — which of two sprints — spread over seventeen rows.
+
+**Three things make this unreachable rather than merely imprecise.**
+
+1. **The stagger is the content.** The design's bars start and end on thirteen
+   different dates (`LAI-131` 27 Jul–5 Aug, `LAI-139` 10–16 Aug, `LAI-152`
+   15–24 Aug…). Remove the stagger and the chart is a legend with extra rows.
+2. **Tasks cross sprint boundaries.** `LAI-152` runs 15–24 Aug, beginning in S3
+   and ending inside S4. A task belongs to **exactly one** sprint, so a
+   sprint-derived bar **cannot express this at all.** This is the load-bearing
+   point: it is not precision we are declining to render, it is a relationship
+   the data cannot hold.
+3. **Each bar carries a progress fill** — a second per-task quantity we also do
+   not have.
+
+**And the built version is actively worse than what it replaces.** It is 2.5
+screens of scrolling at the owner's 41 tasks to read two sprint dates, and it
+**asserts a precision the data does not have**: a reader sees seventeen bars with
+crisp edges on specific dates and reasonably believes those dates mean something
+about the task. Ours said the same thing in three rows and implied nothing.
+
+**Decision: keep the sprint-per-row timeline. LAI-426 is closed as not building.**
+
+**What it would take to have the design's version**, stated plainly so the choice
+stays open: `tasks.starts_on` and `tasks.ends_on`, a way to set them, and
+something to keep them consistent with the sprint they sit in and with their
+dependencies. That is a scheduling engine, and refusing it is the whole content
+of D-014 — *"draw it from sprint boundaries and it costs a view; draw it from
+task dates and it costs a scheduling engine."*
+
+**This is the second time the design has asked for per-task dates** (the first
+was §14 q10's Calendar, closed in D-039 for the same reason). That is not the
+prototype being wrong — it was drawn before D-014 existed. It means **D-014 is
+load-bearing for two screens**, and reversing it is a larger decision than either
+screen.
+
+**Kept from the attempt:** the subtitle no longer reads *"One bar per sprint"*.
+It says the bar spans the sprint and that tasks have no dates of their own —
+because a constraint a reader cannot see reads as a bug.
+
+**Revisit if** the owner wants task-level scheduling. That reverses D-014 first;
+this decision and D-039's Calendar both follow it rather than lead.
