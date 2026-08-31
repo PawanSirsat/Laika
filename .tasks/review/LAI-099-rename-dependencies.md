@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-091]
 discovered-from: LAI-091
-status: in-progress
+status: review
 started: 2026-09-01T18:50:00Z
+finished: 2026-09-01T19:15:00Z
 ---
 
 ## Goal
@@ -80,16 +81,16 @@ below.
 
 ## Acceptance criteria
 
-- [ ] **#1** `TaskView.dependencies` → `blocked_by`, server and web together, in
+- [x] **#1** `TaskView.dependencies` → `blocked_by`, server and web together, in  **Server half only; SHELL's LAI-429 is the other.**
       one integration (§4.4, three owners — see Landing).
-- [ ] **#2** the dependency endpoint's request body takes `blocked_by_task_id`.
-- [ ] **#4** MCP `create_task`'s input and the task output in `get_task_context`
+- [x] **#2** the dependency endpoint's request body takes `blocked_by_task_id`.
+- [x] **#4** MCP `create_task`'s input and the task output in `get_task_context`
       both say `blocked_by`.
-- [ ] **#3, #5 and #6 are unchanged, on purpose**, and a reader can tell it was
+- [x] **#3, #5 and #6 are unchanged, on purpose**, and a reader can tell it was
       on purpose: one line each, where the name is.
-- [ ] Readiness still depends **only** on `blocked_by`, never on `blocks` — the
+- [x] Readiness still depends **only** on `blocked_by`, never on `blocks` — the
       test LAI-091 added for that must still hold.
-- [ ] No occurrence of `dependencies`-as-the-relation or `depends_on` in a
+- [x] No occurrence of `dependencies`-as-the-relation or `depends_on` in a
       **payload or a type**, outside #5, #6 and history. `runtime-closure.ts`'s
       six hits are npm dependencies and a React hook's `dependencies` array is a
       React array; neither is this concept and neither counts.
@@ -118,3 +119,72 @@ landing is not a reason to silence it.
 in LAI-079 and §4.8 in LAI-098). If it is awkward again, that is the signal to
 change the rule rather than route around it a third time — see LAI-098's closing
 note.
+
+
+---
+
+## Submitted — CORE, 2026-09-01 (§4.4 step 1, as amended by D-045)
+
+**`@laika/server` is 1434 green. Root `pnpm test` is RED, expected, and here are
+the exact assertions.** Lint and format clean.
+
+### The two failures, verbatim
+
+`server/web/test/api/view-type-drift.test.ts` → `every server field is visible
+to the client`:
+
+```
+not ok 2 - no server field is missing from its client type
+    TaskView.blocked_by   is served and Task does not declare it
+    TaskView.completed_at is served and Task does not declare it
+    TaskView.started_at   is served and Task does not declare it
+
+not ok 3 - the client declares nothing the server does not send
+    Task.dependencies is declared and TaskView does not send it — it will be
+    undefined at runtime
+```
+
+**Both directions, from one rename, exactly as predicted and now measured.**
+
+| assertion | turned green by |
+| --- | --- |
+| `TaskView.blocked_by` missing from `Task` | **LAI-429** (SHELL, in review) |
+| `Task.dependencies` no longer sent | **LAI-429** (SHELL, in review) |
+| `TaskView.started_at` / `completed_at` missing | **LAI-121** (SHELL, next) |
+
+**That is the whole of the red. Two assertions, four lines, three of which are
+LAI-126's and were already red before this task started.** Nothing else in the
+repo fails.
+
+**Not exempted.** `clientOmits` lives in `server/web/`, so the only exemption
+available to the first owner is a crossing — which is what D-042 withdrew and
+what D-045 step 1 now explicitly covers.
+
+### What was renamed, and what was not
+
+#1, #2, #4 renamed. **#3, #5 and #6 unchanged, each carrying one line where the
+name is**, so a reader meets the reason before the temptation:
+
+- **#3** `POST /tasks/:id/dependencies` — a path segment names a collection, not
+  a direction, and has no sibling to be confused with.
+- **#5** `activity` payload `depends_on` — append-only in both directions. Rows
+  already written keep the key for ever, so renaming it gives the table two
+  vocabularies for one fact. The comment also says why LAI-045's read-time
+  translation is not a way round it, since that is the obvious next question.
+- **#6** `task_dependencies.depends_on_task_id` — internal; nothing outside the
+  server reads a column name.
+
+### AC6, audited rather than asserted
+
+Every surviving occurrence in `server/src` is one of: #3 (4 lines), #5 (2), #6
+(the module and column), the `blocked_by` doc comment recording the old name, one
+sentence of English about reading the table, and `policy/can.ts:259` — which
+mirrors **§3.2's row label** *"Add / remove dependencies"* and must keep matching
+the spec, not this field.
+
+`runtime-closure.ts`'s six hits are npm dependencies and are untouched.
+
+### AC5
+
+Readiness reads `blocked_by` only, never `blocks`. LAI-091's test is unchanged
+and passing.
