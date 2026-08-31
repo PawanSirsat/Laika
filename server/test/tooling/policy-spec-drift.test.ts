@@ -289,8 +289,29 @@ describe('the parser reads §3, prose and all', () => {
     // `Export audit log` and `Configure webhooks`. A parser that stopped at the
     // first non-table line would drop a permission and report success.
     expect(org.rows.map((row) => row.label)).toContain('Configure webhooks');
-    expect(org.rows).toHaveLength(11);
-    expect(project.rows).toHaveLength(15);
+  });
+
+  it('does not read past §3.1 into §3.2’s table', () => {
+    // The other half of the same property, and the one `toContain` cannot
+    // carry: a parser that recovered from the prose by swallowing everything to
+    // the end of §3 would also find `Configure webhooks`, and would silently
+    // grant every project permission at org level.
+    //
+    // **This was `expect(org.rows).toHaveLength(11)` and
+    // `expect(project.rows).toHaveLength(15)` until LAI-408.** Counts are
+    // contingent facts, not the property: §3.1 legitimately grew a twelfth row
+    // ("Log own unlisted work") and the assertion fired on correct work —
+    // D-037, and not the first time. The overlap below says the same thing
+    // about the parser and stays true however many rows §3 grows.
+    const orgLabels = new Set(org.rows.map((row) => row.label));
+    const leaked = project.rows.map((row) => row.label).filter((label) => orgLabels.has(label));
+
+    expect(leaked, '§3.2 rows appearing in the §3.1 matrix — the parser over-read').toEqual([]);
+
+    // And both tables were genuinely read, so an empty overlap is evidence
+    // rather than an accident of one of them being empty.
+    expect(org.rows.length).toBeGreaterThan(5);
+    expect(project.rows.length).toBeGreaterThan(5);
   });
 
   it('keeps qualifiers instead of flattening them to a tick', () => {
