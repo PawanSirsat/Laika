@@ -2,11 +2,12 @@
 id: LAI-405
 title: Unlisted work — read, promote, dismiss
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T12:35:00Z
 ---
 
 ## Goal
