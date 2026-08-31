@@ -18,35 +18,6 @@ import type { Task } from '../../../api/tasks.ts';
  */
 
 /**
- * A task, plus the field the client type is missing.
- *
- * The server's `TaskView` has carried `sprint_id` since LAI-011 and
- * `GET /projects/:slug/tasks` returns it on every row. `api/tasks.ts` never
- * declared it, because the board is the only screen that reads tasks and the
- * board does not care — so the gap has been invisible.
- *
- * That file is Builder-B's, so this is a local declaration rather than a fix,
- * and **LAI-121** is filed to move it where it belongs. It is a type over data
- * that really is there, not a widening: `readSprintId` checks at runtime rather
- * than asserting, so a server that stopped sending it degrades to "no sprint"
- * instead of `undefined` leaking through a cast.
- */
-export interface SprintTask extends Task {
-  readonly sprint_id: string | null;
-}
-
-/** Read `sprint_id` off a task without trusting the client type to have it. */
-export function readSprintId(task: Task): string | null {
-  const value = (task as { sprint_id?: unknown }).sprint_id;
-  return typeof value === 'string' ? value : null;
-}
-
-/** The single boundary where tasks gain the field. */
-export function withSprintIds(tasks: readonly Task[]): SprintTask[] {
-  return tasks.map((task) => ({ ...task, sprint_id: readSprintId(task) }));
-}
-
-/**
  * `ends_on` is the **last day of the sprint**, not the morning after (§4.15).
  *
  * A sprint that ends on the 14th includes the 14th, which is what a person
@@ -147,8 +118,8 @@ export function progressFor(tasks: readonly Task[]): SprintProgress {
 }
 
 /** Tasks grouped by the sprint they are in. Unassigned tasks are under `null`. */
-export function groupBySprint(tasks: readonly SprintTask[]): Map<string | null, SprintTask[]> {
-  const bySprint = new Map<string | null, SprintTask[]>();
+export function groupBySprint(tasks: readonly Task[]): Map<string | null, Task[]> {
+  const bySprint = new Map<string | null, Task[]>();
 
   for (const task of tasks) {
     const key = task.sprint_id;

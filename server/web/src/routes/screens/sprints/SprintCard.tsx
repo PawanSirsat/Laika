@@ -1,9 +1,10 @@
 import type { Sprint } from '../../../api/sprints.ts';
-import { formatRange, sprintDays, type SprintProgress, type SprintTask } from './sprint-derive.ts';
+import { formatRange, sprintDays, type SprintProgress } from './sprint-derive.ts';
+import type { Task } from '../../../api/tasks.ts';
 
 export interface SprintCardProps {
   readonly sprint: Sprint;
-  readonly tasks: readonly SprintTask[];
+  readonly tasks: readonly Task[];
   readonly progress: SprintProgress;
   readonly canManage: boolean;
   readonly canAssign: boolean;

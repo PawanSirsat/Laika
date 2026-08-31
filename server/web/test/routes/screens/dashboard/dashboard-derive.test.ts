@@ -46,6 +46,8 @@ function task(over: Partial<Task> & { id: string }): Task {
     acceptance_md: null,
     blocks: [],
     comment_count: 0,
+    started_at: null,
+    completed_at: null,
     created_at: 0,
     updated_at: 0,
     ...over,

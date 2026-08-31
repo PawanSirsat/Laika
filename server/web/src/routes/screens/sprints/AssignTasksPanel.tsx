@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import type { Sprint } from '../../../api/sprints.ts';
-import type { SprintTask } from './sprint-derive.ts';
+import type { Task } from '../../../api/tasks.ts';
 
 export interface AssignTasksPanelProps {
   readonly sprint: Sprint;
-  readonly available: readonly SprintTask[];
+  readonly available: readonly Task[];
   readonly busy: boolean;
   readonly onAssign: (taskIds: readonly string[]) => Promise<boolean>;
   readonly onClose: () => void;

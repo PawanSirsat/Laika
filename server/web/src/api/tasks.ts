@@ -81,6 +81,21 @@ export interface Task {
    * tag. The board's chips are neutral, and the word is the identity.
    */
   readonly tags: readonly string[];
+  /**
+   * When the task first entered `in_progress`, and when it reached `done`
+   * (LAI-126). Unix ms, `null` until each happens.
+   *
+   * **Actuals, not a plan.** D-014 gives tasks no dates so the timeline stays a
+   * rendering pass over sprint boundaries rather than a scheduling engine —
+   * these record what *happened*, where a Gantt bar asserts what is *planned*.
+   * Declaring them is right; **drawing task bars from them is a separate
+   * decision that needs the owner** (D-040 refused the design's task-level
+   * timeline for exactly this reason). `routes/screens/timeline/` has a guard
+   * that fails if a task-derived value reaches the axis, and it should stay
+   * failing until someone reopens D-014 deliberately.
+   */
+  readonly started_at: number | null;
+  readonly completed_at: number | null;
   readonly created_at: number;
   readonly updated_at: number;
 }
