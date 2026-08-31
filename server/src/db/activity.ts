@@ -14,6 +14,7 @@ import {
 import { type Db } from './client.ts';
 import { type ActivityType, type ActorKind } from './enums.ts';
 import { newId } from './ids.ts';
+import * as schema from './schema.ts';
 import { activity, type Activity } from './schema.ts';
 
 /**
@@ -67,6 +68,61 @@ export function appendActivity(db: Db, entry: AppendActivity): Activity {
 
   return row;
 }
+
+/** A Drizzle column's SQL name, which for these tables *is* the API's name. */
+function sqlNameOf(table: unknown, key: string): string | undefined {
+  const columns = table as Record<string, { name?: unknown } | undefined>;
+  const name = columns[key]?.name;
+  return typeof name === 'string' ? name : undefined;
+}
+
+/**
+ * Drizzle property names → the names the API uses (LAI-045).
+ *
+ * `updateTask` and `updateProject` build their `changed` list from
+ * `Object.keys(changes)`, which are **Drizzle properties** — `acceptanceMd`,
+ * `descriptionMd`, `assigneeId`. Everything else on the wire is `snake_case`
+ * (§6.3), so an audit row was the one place a reader met a second spelling of a
+ * field they had just read from the API.
+ *
+ * **Derived from the schema, never a hand-written pair.** A Drizzle column
+ * carries its SQL name, and for these tables the SQL name *is* the API name, so
+ * a column added tomorrow maps correctly without anyone remembering to. The test
+ * for this reads the same source, so the code and the check cannot disagree
+ * about what a property is called.
+ */
+export function apiFieldNames(table: unknown, propertyKeys: readonly string[]): string[] {
+  // An unmapped key falls through as itself rather than throwing: a payload with
+  // a slightly wrong name is a legible audit row, and an exception here would
+  // fail the mutation it was only describing.
+  return propertyKeys.map((key) => sqlNameOf(table, key) ?? key);
+}
+
+/**
+ * Every Drizzle property in the schema whose SQL name differs from it.
+ *
+ * Table-scoped translation is the right thing on the **write** side, where the
+ * caller knows which table it changed. On the **read** side there is no table to
+ * hand: a row written months ago says `task.updated`, not which Drizzle object
+ * produced it. So this is schema-wide — checked to be unambiguous, 70 properties
+ * and **no property mapping to two different SQL names**, and
+ * `activity-payload-names.test.ts` re-checks that rather than trusting today's
+ * measurement.
+ */
+const DRIZZLE_TO_API: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+
+  for (const table of Object.values(schema)) {
+    if (typeof table !== 'object' || table === null) continue;
+
+    for (const key of Object.keys(table)) {
+      const name = sqlNameOf(table, key);
+      if (name !== undefined && name !== key) map.set(key, name);
+    }
+  }
+
+  return map;
+})();
 
 // ------------------------------------------------------------ the SSE cursor
 
@@ -199,13 +255,65 @@ export function listActivity(db: Db, filter: ListActivityFilter): ActivityEvent[
     .all();
 }
 
-/** Parse a stored payload. Returns `null` rather than throwing on bad JSON. */
+/**
+ * Parse a stored payload, **verbatim**. Returns `null` rather than throwing on
+ * bad JSON.
+ *
+ * This is what the row literally says. For what a client should be shown, use
+ * {@link apiPayload} — see there for why the two differ.
+ */
 export function readPayload(row: Activity): unknown {
   try {
     return JSON.parse(row.payloadJson);
   } catch {
     return null;
   }
+}
+
+/**
+ * The payload as the API presents it — old rows included (LAI-045 AC3).
+ *
+ * `activity` is append-only (§4.8), so every row written before LAI-045 keeps
+ * `changed: ['acceptanceMd']` for ever. Fixing only the write side would leave
+ * the audit trail speaking **two** vocabularies split by date, which is the
+ * defect this task exists to remove, merely reshaped.
+ *
+ * So the translation happens on read, at the boundary: `eventView` is the single
+ * point every row passes through on its way to a client — SSE (`routes/events.ts`)
+ * and REST (`services/activity.ts`) both — so one call here covers every
+ * consumer, present and future.
+ *
+ * **The stored row is not rewritten and `readPayload` still returns it verbatim.**
+ * Normalising a field's *name* does not alter the audited fact — `acceptanceMd`
+ * and `acceptance_md` are the same column — but an audit log should still be able
+ * to show exactly what was written, so the verbatim reader stays.
+ *
+ * ## Why only `changed`
+ *
+ * Deliberately narrow. Camel-case could only ever reach a payload through the two
+ * sites that built one from `Object.keys(changes)` — `updateTask` and
+ * `updateProject` — and both wrote it into `changed`. Every other payload in the
+ * codebase is hand-written and already `snake_case` (audited under LAI-045: 22
+ * `appendActivity` call sites, those two the only offenders).
+ *
+ * Translating *every* string in a payload would be broader and worse: payloads
+ * also carry user-supplied values — a project called `startsOn` is legal — and
+ * rewriting one of those would corrupt an audit row to fix a name that was never
+ * wrong.
+ */
+export function apiPayload(row: Activity): unknown {
+  const payload = readPayload(row);
+  if (typeof payload !== 'object' || payload === null) return payload;
+
+  const record = payload as Record<string, unknown>;
+  if (!Array.isArray(record.changed)) return payload;
+
+  return {
+    ...record,
+    changed: (record.changed as readonly unknown[]).map((entry) =>
+      typeof entry === 'string' ? (DRIZZLE_TO_API.get(entry) ?? entry) : entry,
+    ),
+  };
 }
 
 /** The highest sequence written so far, or 0 for an empty table. */

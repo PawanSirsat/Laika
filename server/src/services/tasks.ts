@@ -1,7 +1,7 @@
 import { and, asc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
-import { appendActivity } from '../db/activity.ts';
+import { apiFieldNames, appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import {
   addDependency,
@@ -439,7 +439,7 @@ export function updateTask(
     type: reassigning ? 'task.assigned' : 'task.updated',
     payload: reassigning
       ? { from: task.assigneeId, to: input.assignee_id ?? null }
-      : { changed: Object.keys(changes) },
+      : { changed: apiFieldNames(tasks, Object.keys(changes)) },
     now,
   });
 
