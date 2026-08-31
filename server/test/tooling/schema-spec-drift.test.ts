@@ -325,11 +325,11 @@ const TABLES_NOT_IN_SPEC = new Map<string, string>([
   // the moment those sections exist — which is the merge itself.
   [
     'task_watchers',
-    'LAI-094, in flight: awaiting §4\'s `task_watchers` section, written by CHIEF and applied in the merge commit. The staleness test removes this entry the moment it lands.',
+    "LAI-094, in flight: awaiting §4's `task_watchers` section, written by CHIEF and applied in the merge commit. The staleness test removes this entry the moment it lands.",
   ],
   [
     'comment_mentions',
-    'LAI-094, in flight: awaiting §4\'s `comment_mentions` section, written by CHIEF and applied in the merge commit. The staleness test removes this entry the moment it lands.',
+    "LAI-094, in flight: awaiting §4's `comment_mentions` section, written by CHIEF and applied in the merge commit. The staleness test removes this entry the moment it lands.",
   ],
 ]);
 
