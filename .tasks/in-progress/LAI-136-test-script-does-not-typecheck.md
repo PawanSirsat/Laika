@@ -2,11 +2,12 @@
 id: LAI-136
 title: pnpm test cannot catch a type error, so a green suite looks stronger than it is
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-045
-status: backlog
+status: in-progress
+started: 2026-09-01T10:35:00Z
 ---
 
 ## Goal
