@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createShutdownHandler, type ClosableServer } from '../src/shutdown.ts';
+import {
+  createRuntimeShutdown,
+  createShutdownHandler,
+  type ClosableServer,
+} from '../src/shutdown.ts';
+import { ActivityFeed } from '../src/services/activity-feed.ts';
+import { freshDb } from './helpers/db.ts';
 import { captureLog } from './helpers/app.ts';
 
 interface FakeServer extends ClosableServer {
@@ -183,5 +189,145 @@ describe('onStopping — releasing what holds the server open (LAI-048)', () => 
     server.finishClose();
 
     expect(exit).toHaveBeenCalledWith(0);
+  });
+});
+
+describe('the runtime wiring (LAI-057)', () => {
+  /**
+   * The gap this closes: `onStopping` was four lines inside `index.ts`'s
+   * `main()`, which binds a port and reads the environment and so cannot be
+   * called. During the LAI-048 review that call was replaced with a comment and
+   * **all 560 tests passed** — both halves were covered in isolation and the
+   * line joining them was not.
+   */
+
+  interface Recorder {
+    server: { close: (cb?: () => void) => void; closeIdleConnections: () => void };
+    closed: string[];
+  }
+
+  function recorder(): Recorder {
+    const closed: string[] = [];
+    return {
+      closed,
+      server: {
+        close: (cb?: () => void) => {
+          closed.push('server');
+          cb?.();
+        },
+        closeIdleConnections: () => undefined,
+      },
+    };
+  }
+
+  it('closes the activity feed before the listener', () => {
+    // **Order matters and is the reason the wiring exists.** A stream still open
+    // is an in-flight request: close the listener first and the server waits out
+    // the whole grace period, then cuts the stream mid-frame. §11.5.
+    const r = recorder();
+    const feed = {
+      closeAll: () => {
+        r.closed.push('feed');
+      },
+    };
+
+    const shutdown = createRuntimeShutdown({
+      server: r.server,
+      log: captureLog().logger,
+      activityFeed: feed,
+      sqlite: {
+        close: () => {
+          r.closed.push('sqlite');
+        },
+      },
+      exit: () => undefined,
+      setTimer: () => ({ unref: () => undefined }),
+    });
+
+    shutdown('SIGTERM');
+
+    expect(r.closed).toEqual(['feed', 'server', 'sqlite']);
+  });
+
+  it('fails if the feed is no longer wired to onStopping', () => {
+    // The assertion the task asks for, stated as its own case: severing the
+    // connection while both halves remain individually correct.
+    const r = recorder();
+    let feedClosed = false;
+
+    const shutdown = createRuntimeShutdown({
+      server: r.server,
+      log: captureLog().logger,
+      activityFeed: {
+        closeAll: () => {
+          feedClosed = true;
+        },
+      },
+      sqlite: { close: () => undefined },
+      exit: () => undefined,
+      setTimer: () => ({ unref: () => undefined }),
+    });
+
+    shutdown('SIGTERM');
+
+    expect(feedClosed, 'onStopping no longer closes the activity feed').toBe(true);
+  });
+
+  it('closes the database after the last request drains, not before', () => {
+    // `sqlite.close()` on `onClosed` is the neighbour the task asked me to check
+    // while here. A handle closed too early is a query cut off mid-flight; one
+    // never closed leaves a WAL the next boot has to recover.
+    const r = recorder();
+
+    const shutdown = createRuntimeShutdown({
+      server: r.server,
+      log: captureLog().logger,
+      activityFeed: { closeAll: () => undefined },
+      sqlite: {
+        close: () => {
+          r.closed.push('sqlite');
+        },
+      },
+      exit: () => undefined,
+      setTimer: () => ({ unref: () => undefined }),
+    });
+
+    shutdown('SIGTERM');
+
+    expect(r.closed.indexOf('sqlite')).toBeGreaterThan(r.closed.indexOf('server'));
+  });
+
+  it('reaches a real ActivityFeed’s subscribers', () => {
+    // The doubles above prove the wiring; this proves the thing it is wired to
+    // does what the wiring assumes. Without it, `closeAll` could be renamed to
+    // something that no longer notifies and every test above would still pass.
+    const t = freshDb();
+    try {
+      const feed = new ActivityFeed({ db: t.db, setTimer: () => ({ unref: () => undefined }) });
+      let ended = false;
+
+      feed.subscribe({
+        from: 0,
+        onEvents: () => undefined,
+        onClose: () => {
+          ended = true;
+        },
+      });
+
+      const shutdown = createRuntimeShutdown({
+        server: recorder().server,
+        log: captureLog().logger,
+        activityFeed: feed,
+        sqlite: { close: () => undefined },
+        exit: () => undefined,
+        setTimer: () => ({ unref: () => undefined }),
+      });
+
+      shutdown('SIGTERM');
+
+      expect(ended, 'a live subscriber was not told the server is going away').toBe(true);
+    } finally {
+      t.close();
+    }
   });
 });

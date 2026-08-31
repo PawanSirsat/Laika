@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SERVER_ROOT } from '../../src/paths.ts';
+import { DEFAULT_GRACE_MS } from '../../src/shutdown.ts';
 
 /**
  * LAI-024. `tsc` emits TypeScript and nothing else, so the two assets the server
@@ -263,6 +264,37 @@ describe('the built server, run the way the container runs it', () => {
     rmSync(emptyPublic, { recursive: true, force: true });
   }, 60_000);
 
+  it('shuts down promptly with an SSE stream open (LAI-057)', async (ctx) => {
+    skipIfBuildFailed(ctx);
+    // The end-to-end half of LAI-057, and the only thing that would notice
+    // `index.ts` no longer calling `createRuntimeShutdown` at all.
+    //
+    // An SSE response never ends by itself (§11.5), so it is an in-flight
+    // request: without `onStopping` closing the feed the server waits out the
+    // whole 10s grace and then cuts the stream mid-frame. From a browser that
+    // is indistinguishable from a network fault, which is why it went unnoticed.
+    //
+    // The assertion is a **number**, not "it exited" — it exits either way.
+    const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-shutdown-'));
+
+    const { elapsed, serverLog } = await timeShutdownWithOpenStream(PORT + 3, emptyPublic);
+
+    // **Measured, both ways.** Wired: 4.0s. With `onStopping` severed: 10.0s —
+    // the full grace, then the forced exit. The threshold sits between them.
+    //
+    // It is not tighter because 4s is *not* what this should cost, and pinning
+    // it at 4s would freeze a stall as the standard. The server's own log puts
+    // `shutdown.start` → `shutdown.complete` at 4005ms, so the delay is inside
+    // the server, after the feed closes — filed as **LAI-142**, out of scope
+    // here (this task guards the wiring, it does not tune it).
+    expect(
+      elapsed,
+      `shutdown took ${String(elapsed)}ms with a stream open. The grace period is ${String(DEFAULT_GRACE_MS)}ms, and waiting it out is what "the activity feed was never closed" looks like.\n\nserver log:\n${serverLog}`,
+    ).toBeLessThan(7_000);
+
+    rmSync(emptyPublic, { recursive: true, force: true });
+  }, 60_000);
+
   it('serves the committed fallback when no SPA has been built', async (ctx) => {
     skipIfBuildFailed(ctx);
     // An empty directory *is* the "no build yet" condition, stated rather than
@@ -304,6 +336,98 @@ describe('the built server, run the way the container runs it', () => {
     rmSync(builtPublic, { recursive: true, force: true });
   }, 60_000);
 });
+
+/**
+ * How long the built server takes to exit after SIGTERM, with an SSE stream
+ * open (LAI-057).
+ *
+ * Returns the milliseconds, so the caller asserts on a number rather than on
+ * "it eventually exited" — which is true either way and is the reason this was
+ * uncovered for so long.
+ *
+ * The server's own log comes back too: on a failure, `shutdown.start` and
+ * `shutdown.complete` say whether the delay was inside the server or in getting
+ * the signal to it, which is the first question anyone will ask.
+ */
+async function timeShutdownWithOpenStream(
+  port: number,
+  publicDir: string,
+): Promise<{ elapsed: number; serverLog: string }> {
+  const dbDir = mkdtempSync(join(tmpdir(), 'laika-shutdown-'));
+
+  const child = spawn('node', [join(DIST, 'index.js')], {
+    cwd: SERVER_ROOT,
+    env: {
+      ...process.env,
+      PORT: String(port),
+      NODE_ENV: 'development',
+      LAIKA_PUBLIC_URL: `http://127.0.0.1:${String(port)}`,
+      LAIKA_SECRET: 'a-test-secret-that-is-long-enough-to-be-accepted',
+      LAIKA_DB_PATH: join(dbDir, 'laika.db'),
+      LAIKA_PUBLIC_DIR: publicDir,
+    },
+    stdio: 'pipe',
+  });
+
+  const exited = new Promise<void>((resolve) => {
+    child.on('exit', () => {
+      resolve();
+    });
+  });
+
+  // The server's own view, so a slow exit can be attributed rather than guessed
+  // at: its log says when it started stopping and when it finished.
+  let serverLog = '';
+  child.stdout.on('data', (chunk: Buffer) => {
+    serverLog += chunk.toString();
+  });
+  child.stderr.on('data', (chunk: Buffer) => {
+    serverLog += chunk.toString();
+  });
+
+  let elapsed = Number.NaN;
+
+  try {
+    await waitForHealth(port);
+    const base = `http://127.0.0.1:${String(port)}`;
+
+    // A session, because `/events` needs an actor.
+    const setup = await fetch(`${base}/api/v1/setup`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: base },
+      body: JSON.stringify({
+        org_name: 'Laika',
+        owner_name: 'Ada',
+        owner_email: 'ada@example.test',
+        owner_password: 'correct-horse-battery-staple',
+      }),
+    });
+    if (setup.status !== 201) throw new Error(`setup failed: ${String(setup.status)}`);
+    const cookie = (setup.headers.get('set-cookie') ?? '').split(';')[0] ?? '';
+
+    // The connection that never ends by itself. This is the whole point: with
+    // one of these open, a server that does not close its feed on `onStopping`
+    // waits out the full grace period before cutting it.
+    const controller = new AbortController();
+    const stream = await fetch(`${base}/api/v1/events`, {
+      headers: { Cookie: cookie, Accept: 'text/event-stream' },
+      signal: controller.signal,
+    });
+    if (stream.status !== 200) throw new Error(`stream failed: ${String(stream.status)}`);
+
+    const startedAt = Date.now();
+    child.kill('SIGTERM');
+    await exited;
+    elapsed = Date.now() - startedAt;
+
+    controller.abort();
+  } finally {
+    child.kill('SIGKILL');
+    rmSync(dbDir, { recursive: true, force: true });
+  }
+
+  return { elapsed, serverLog };
+}
 
 async function waitForHealth(port: number): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt++) {

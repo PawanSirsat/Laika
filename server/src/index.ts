@@ -13,7 +13,7 @@ import { runMigrations } from './db/migrate.ts';
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
-import { createShutdownHandler } from './shutdown.ts';
+import { createRuntimeShutdown } from './shutdown.ts';
 import { readVersion } from './version.ts';
 
 function main(): void {
@@ -61,20 +61,11 @@ function main(): void {
     });
   });
 
-  const shutdown = createShutdownHandler({
-    server,
-    log,
-    // SSE responses never end on their own (§11.5); without this every deploy
-    // waits out the full grace period.
-    onStopping: () => {
-      activityFeed.closeAll();
-    },
-    // Checkpoints the WAL and releases the file lock, so the next boot does not
-    // start by recovering a journal.
-    onClosed: () => {
-      sqlite.close();
-    },
-  });
+  // The wiring lives in `shutdown.ts` so it is reachable from a test (LAI-057).
+  // It used to be four lines here, in a function nothing can call — and during
+  // the LAI-048 review `onStopping` was replaced with a comment and every test
+  // still passed.
+  const shutdown = createRuntimeShutdown({ server, log, activityFeed, sqlite });
 
   process.on('SIGTERM', () => {
     shutdown('SIGTERM');
