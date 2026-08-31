@@ -89,23 +89,11 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
-  // Was empty since LAI-134 and should return to empty. This entry exists for
-  // **one merge**, not as a design decision.
-  //
-  // LAI-408 needs `log_unlisted_work` to call `can()`, and §3.1 had no cell for
-  // it. CHIEF wrote the row — "Log own unlisted work | ✓ | ✓ | ✓ | ✓" — and is
-  // applying it to `docs/SPEC.md` in the merge commit that lands this branch,
-  // because `docs/` is CHIEF's and `server/` is CORE's and neither half is
-  // useful alone. Until those two halves meet, the action exists here and the
-  // row does not exist there.
-  //
-  // **The staleness test below deletes this entry the moment §3.1 carries the
-  // row**, which is the merge itself — so this cannot outlive the situation
-  // that justifies it.
-  [
-    'unlisted.log_own',
-    'Awaiting §3.1\'s "Log own unlisted work" row, written by CHIEF and applied in the merge commit for LAI-408. The staleness test removes this entry the moment it lands.',
-  ],
+  // Empty since LAI-134, and empty again since LAI-408. It should stay that
+  // way: an action `can()` allows and §3 never grants is a permission with no
+  // written source. The map remains as the mechanism, with the staleness test
+  // below forcing an entry back out once §3 catches up — which is exactly what
+  // it did to LAI-408's entry, on the merge that entry named.
 ]);
 
 /**
@@ -212,6 +200,44 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
       verify: () => {
         expect(can(orgActor('viewer'), 'project.join_public', { visibility: 'public' })).toBe(true);
         expect(projectRoleOnJoin('viewer')).toBe('viewer');
+      },
+    },
+  ],
+  [
+    'read_only forced, so never in practice',
+    {
+      why: "The role permits it and the credential does not. A Viewer holds this permission and can never exercise it: their token is forced `read_only` (§4.9, LAI-402) and `unlisted.log_own` is not a read action, so `tokenAllows` refuses it. The cell says ✓ rather than — because the restriction is not the role's, and if `read_only` forcing were ever relaxed the matrix already says what should happen.",
+      verify: (action: Action) => {
+        const viewer = orgActor('viewer');
+
+        // Both halves, because either alone is misleading. The ✓ on its own
+        // reads as a Viewer gaining a write; the refusal on its own reads as
+        // the role denying it, which is not what §3.1 says.
+        expect(can(viewer, action, {}), 'the role permits it').toBe(true);
+
+        expect(
+          can(
+            { ...viewer, token: { id: 'tok', scope: 'read_only', projectIds: null } },
+            action,
+            {},
+          ),
+          'the credential refuses it',
+        ).toBe(false);
+
+        // And the forcing is what makes a Viewer's token `read_only` in the
+        // first place — without this the pair above would hold for a Viewer who
+        // simply happened to ask for a read-only token.
+        expect(forcedTokenScope('viewer', 'full')).toBe('read_only');
+
+        // The refusal is the scope's, not the action's: a member's `full` token
+        // may do it, so this is not an action nobody can ever perform.
+        expect(
+          can(
+            { ...orgActor('member'), token: { id: 'tok', scope: 'full', projectIds: null } },
+            action,
+            {},
+          ),
+        ).toBe(true);
       },
     },
   ],
