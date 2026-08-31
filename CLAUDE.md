@@ -397,6 +397,49 @@ your own on your own port with its own database file, and remove it afterwards.
 
 ---
 
+### 4.4 A change that needs two owners at once
+
+Some changes cannot be split. A SPEC §3 row and the `can()` action it grants; a
+server field and the client type that declares it; a rename that spans `docs/`,
+`server/` and `server/web/`. **Each half fails the repo's own guards alone** —
+which is the guards working, not a problem with them.
+
+This has now happened four times (LAI-408, LAI-417, LAI-093, LAI-094) and been
+improvised each time. **It is not an exception to ownership. It is a merge
+procedure**, and it is written here so nobody invents a fifth version of it or
+reaches for an exemption instead.
+
+**The procedure.**
+
+1. **Each owner builds their own half and submits normally.** Nobody edits
+   another area, and nobody submits a branch they know is red — a builder whose
+   half cannot be green alone says so and waits.
+2. **A self-expiring exemption carries the gap**, named for the other half and
+   the merge that retires it — the `ACTIONS_WITHOUT_A_ROW` and
+   `TABLES_NOT_IN_SPEC` shape. **It must be proved to expire**, not assumed.
+3. **CHIEF merges the first half into `master` locally and does not push.** All
+   three worktrees share one object database (§4.2), so the other session can
+   merge CHIEF's *unpushed* local `master` immediately.
+4. **The second owner merges local `master`, completes their half against a green
+   gate, and pushes.** Their branch is never red.
+5. **CHIEF merges the second half, applies any `docs/` half, runs the full gate,
+   and pushes everything to `origin` as one green state.**
+
+**`origin/master` never sees the red.** That is the property worth having, and it
+is why "co-ordinate the merge" beats every alternative that was tried first.
+
+**Three owners works the same way**, one round more: both builders in review
+before CHIEF merges either. If a change needs more than three, it is too large
+and wants splitting before it wants a procedure.
+
+**What this is not.** It is not permission to edit another area because the merge
+is inconvenient — CHIEF withdrew exactly that widening in D-042. It is not a
+reason to loosen a guard: **an exemption that silences a check on the one field
+it exists to deliver is a worse outcome than a round trip.** And it is not a way
+to land a half nobody has reviewed; each half is reviewed as its own task.
+
+---
+
 ## 5. Code rules
 
 **Structure, naming and layering live in `docs/CONVENTIONS.md`** — where files go,
