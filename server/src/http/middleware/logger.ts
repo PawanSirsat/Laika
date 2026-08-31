@@ -31,10 +31,17 @@ export function requestLogger(log: Logger) {
       log.info('http.request', {
         request_id: c.get('requestId'),
         actor_id: actor?.userId ?? null,
-        // `agent` once a request arrives on a token (M3); every credential today
-        // is a cookie session (§6.1).
-        actor_kind: actor === null || actor === undefined ? null : 'user',
-        token_id: actor?.token === null || actor?.token === undefined ? null : 'token',
+        // Real since LAI-403: a request that arrived on a personal access token
+        // is an `agent`, and the row names which token. Before that this said
+        // `'user'` and the literal string `'token'` — the one place that would
+        // otherwise lie about every agent request.
+        actor_kind:
+          actor === null || actor === undefined
+            ? null
+            : actor.token === null || actor.token === undefined
+              ? 'user'
+              : 'agent',
+        token_id: actor?.token?.id ?? null,
         method: c.req.method,
         path: redactPath(c.req.path),
         status: c.res.status,

@@ -69,8 +69,8 @@ describe('an org viewer can hold only project role viewer (SPEC §3, D-006)', ()
 });
 
 describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () => {
-  const full: TokenContext = { scope: 'full', projectIds: null };
-  const readOnly: TokenContext = { scope: 'read_only', projectIds: null };
+  const full: TokenContext = { id: 'tok_full', scope: 'full', projectIds: null };
+  const readOnly: TokenContext = { id: 'tok_ro', scope: 'read_only', projectIds: null };
 
   it('a read_only token cannot write, whatever the role allows', () => {
     const lead = actor('owner', 'lead', readOnly);
@@ -99,7 +99,11 @@ describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () =
   });
 
   it('restricts a project-pinned token to its projects', () => {
-    const pinned = actor('member', 'member', { scope: 'full', projectIds: ['p1'] });
+    const pinned = actor('member', 'member', {
+      id: 'tok_pinned',
+      scope: 'full',
+      projectIds: ['p1'],
+    });
 
     expect(can(pinned, 'task.write', { projectId: 'p1' })).toBe(true);
     expect(can(pinned, 'task.write', { projectId: 'p2' })).toBe(false);
@@ -107,7 +111,7 @@ describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () =
   });
 
   it('leaves org-scoped actions alone when a token is project-pinned', () => {
-    const pinned = actor('admin', null, { scope: 'full', projectIds: ['p1'] });
+    const pinned = actor('admin', null, { id: 'tok_pinned', scope: 'full', projectIds: ['p1'] });
 
     expect(can(pinned, 'member_list.read')).toBe(true);
     expect(can(pinned, 'user.invite')).toBe(true);

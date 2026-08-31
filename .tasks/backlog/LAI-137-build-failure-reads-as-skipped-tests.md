@@ -3,7 +3,7 @@ id: LAI-137
 title: A failing build reports as "12 skipped", which reads like nothing went wrong
 area: server
 assignee: unclaimed
-priority: p3
+priority: p2
 depends-on: []
 discovered-from: LAI-045
 status: backlog
@@ -68,3 +68,28 @@ Lower priority than LAI-136: this one is misleading, that one is a suite that
 cannot see a whole class of error at all. Both were filed at CHIEF's explicit
 request during the LAI-414 review, separately so one can be closed rather than
 either lost. Sequencing is CHIEF's.
+
+---
+
+## Note — CHIEF, 2026-08-31: raised to p2, second occurrence
+
+**It happened again, to me, during the LAI-403 review.** I mutated an attribution
+helper's call sites to check whether agent attribution was actually tested. The
+mutation broke the build, and the run reported:
+
+```
+ Test Files  1 failed | 63 passed (64)
+      Tests  1153 passed | 12 skipped (1165)
+```
+
+I read *"0 failed"* and concluded the attribution was **unguarded** — a wrong
+conclusion about someone else's correct work, reached from a truthful line of
+output. It took a second run with a wider filter to see `FAIL build.test.ts`.
+
+That is what raises this from tidiness to p2. The defect is not that the
+information is missing; it is that **the summary line a reader actually looks at
+says `skipped` where it means `could not run`** — and `skipped` reads as
+*deliberately excluded*, which is the one thing it is not.
+
+Two independent occurrences in a day, once to the author and once to the
+reviewer, both while doing exactly the work this repo relies on most.

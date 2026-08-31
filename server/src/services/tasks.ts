@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
-import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { apiFieldNames, appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import {
@@ -257,8 +257,7 @@ export function createTask(
       orgId: project.orgId,
       projectId: project.id,
       taskId: id,
-      actorId: actor.userId,
-      actorKind: 'user',
+      ...activityActor(actor),
       type: 'task.created',
       payload: { key: `${project.prefix}-${String(number)}`, title: input.title },
       now,
@@ -409,8 +408,7 @@ export function updateTask(
       orgId: project.orgId,
       projectId: project.id,
       taskId,
-      actorId: actor.userId,
-      actorKind: 'user',
+      ...activityActor(actor),
       // `task.updated` with the field named — the shape `sprint_id` uses, and
       // deliberately not a seventh §4.8 verb (D-027).
       type: 'task.updated',
@@ -432,8 +430,7 @@ export function updateTask(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     // §5: "A task may be reassigned while in_progress — that is `task.assigned`,
     // not a status change."
     type: reassigning ? 'task.assigned' : 'task.updated',
@@ -487,8 +484,7 @@ export function claimTask(
       orgId: project.orgId,
       projectId: project.id,
       taskId,
-      actorId: actor.userId,
-      actorKind: 'user',
+      ...activityActor(actor),
       type: 'task.status_changed',
       payload: { from: 'todo', to: 'in_progress', assignee_id: actor.userId, via: 'claim' },
       now,
@@ -540,8 +536,7 @@ export function changeStatus(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'task.status_changed',
     payload: { from: task.status, to },
     now,
@@ -579,8 +574,7 @@ export function addTaskDependency(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'task.dependency_added',
     payload: { depends_on: dependsOnTaskId },
     now,
@@ -615,8 +609,7 @@ export function removeTaskDependency(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'task.dependency_removed',
     payload: { depends_on: dependsOnTaskId },
     now,
