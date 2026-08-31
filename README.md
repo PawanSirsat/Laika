@@ -11,14 +11,14 @@ does, under the same permissions.
 
 | Path | What | Owner |
 | --- | --- | --- |
-| `server/` | Hono API, Drizzle/SQLite, MCP endpoint, React SPA | Builder-A |
-| `plugin/` | The shipped Claude Code plugin | Builder-B |
-| `cli/` | The `laika` npm CLI | Builder-B |
-| `docker/` | Dockerfile, compose, Caddyfile example | Builder-B |
-| `docs/` | `SPEC.md`, `ROADMAP.md`, `DECISIONS.md` | PM |
-| `.tasks/` | The board — one file per task, directory = status | PM moves to done |
+| `server/` | Hono API, Drizzle/SQLite, MCP endpoint, React SPA | CORE |
+| `plugin/` | The shipped Claude Code plugin | SHELL |
+| `cli/` | The `laika` npm CLI | SHELL |
+| `docker/` | Dockerfile, compose, Caddyfile example | SHELL |
+| `docs/` | `SPEC.md`, `ROADMAP.md`, `DECISIONS.md` | CHIEF |
+| `.tasks/` | The board — one file per task, directory = status | CHIEF moves to done |
 | `logs/` | One log file per session per day | each session, its own |
-| `.sessions/` | Identity files: who owns what | PM |
+| `.sessions/` | Identity files: who owns what | CHIEF |
 
 ## If you are a session working on this repo
 

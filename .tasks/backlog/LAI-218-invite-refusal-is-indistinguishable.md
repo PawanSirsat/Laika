@@ -78,7 +78,7 @@ partial match.
 
 ## Notes
 
-- `area: docs` because the first step is a decision only PM can take. Whichever
+- `area: docs` because the first step is a decision only CHIEF can take. Whichever
   way it goes, the code change belongs to a different task and a different area.
 - The design (`5a`) shows "This invite has expired" and names the inviter, so
   choosing option 1 means the shipped screen deliberately differs from the

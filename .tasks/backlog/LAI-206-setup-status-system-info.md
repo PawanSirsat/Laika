@@ -50,7 +50,7 @@ No new dependencies.
 
 ---
 
-## PM decision — 2026-08-24: the payload
+## CHIEF decision — 2026-08-24: the payload
 
 `GET /api/v1/setup/status` returning only `{ setup_required }` was underspecified
 — §6.4 named the route and never said what it returns. Now defined there:

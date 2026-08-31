@@ -6,7 +6,7 @@ description: Use when finishing a task or ending a session in the Laika repo, to
 # Laika logging
 
 One log file per session per day: `logs/<session>-<YYYY-MM-DD>.md` — e.g.
-`logs/builder-a-2026-08-24.md`. Append only. **Never open another session's log
+`logs/core-2026-08-24.md`. Append only. **Never open another session's log
 file**, not even to read-and-copy the format; the format is right here.
 
 Write an entry after **every** task and at the **end of every session**.

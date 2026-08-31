@@ -1,6 +1,6 @@
 ---
 id: LAI-221
-title: Releasing a claim PM has already merged leaves master and the builder disagreeing
+title: Releasing a claim CHIEF has already merged leaves master and the builder disagreeing
 area: docs
 assignee: unclaimed
 priority: p2
@@ -14,21 +14,21 @@ finished:
 ## Goal
 
 **Observed, not hypothetical.** CLAUDE.md §2 covers claiming and send-backs and
-says nothing about a builder **releasing** a task that PM has already merged.
+says nothing about a builder **releasing** a task that CHIEF has already merged.
 
 What happened:
 
-1. I claimed LAI-086 — `git mv backlog → in-progress`, committed on `builder-b`.
-2. PM merged `builder-b` into `master` for unrelated accepted work. The claim
+1. I claimed LAI-086 — `git mv backlog → in-progress`, committed on `shell`.
+2. CHIEF merged `shell` into `master` for unrelated accepted work. The claim
    came with it, so **master now had LAI-086 at `.tasks/in-progress/`**.
 3. A p1 regression appeared. I released LAI-086 unstarted — `git mv in-progress
-   → backlog`, `assignee: unclaimed` — committed on `builder-b`.
+   → backlog`, `assignee: unclaimed` — committed on `shell`.
 4. State afterwards:
 
 ```
-master     .tasks/in-progress/LAI-086-…   assignee: builder-b
-builder-a  .tasks/backlog/LAI-086-…       assignee: unclaimed
-builder-b  .tasks/backlog/LAI-086-…       assignee: unclaimed
+master     .tasks/in-progress/LAI-086-…   assignee: shell
+core  .tasks/backlog/LAI-086-…       assignee: unclaimed
+shell  .tasks/backlog/LAI-086-…       assignee: unclaimed
 ```
 
 **`master` is the branch §2 tells everyone to trust**, and it said the task was
@@ -53,7 +53,7 @@ Nothing in the protocol made that happen.
 ## Acceptance criteria
 
 - [ ] CLAUDE.md §2 says what a builder does when releasing a task whose claim is
-      already on `master`, and what PM does with the resulting state.
+      already on `master`, and what CHIEF does with the resulting state.
 - [ ] The `git log --all` claim check in §2 and in `.claude/skills/` is either
       accurate for a released task, or it says plainly that a hit needs the
       current path checked before concluding the task is taken. Today the
@@ -66,10 +66,10 @@ Nothing in the protocol made that happen.
 
 ## Notes
 
-- The narrow fix might be "a release is only complete once PM merges it", making
-  it PM's move rather than the builder's. That is a real cost: a builder cannot
+- The narrow fix might be "a release is only complete once CHIEF merges it", making
+  it CHIEF's move rather than the builder's. That is a real cost: a builder cannot
   then hand work back without waiting.
 - Or the claim check grows a second step: history says *look here*, current state
   says *is it actually taken*. Two commands instead of one, and it stays exact.
-- PM asked for this to be filed and said the fix is theirs to write. Recorded
+- CHIEF asked for this to be filed and said the fix is theirs to write. Recorded
   here as observed, with no decision taken.

@@ -15,7 +15,7 @@ status: backlog
 `blocks`, meaning the reverse — and next to it, `dependencies` no longer says
 which direction it is. `blocked_by` would.
 
-Builder-A raised it and deliberately did **not** rename it inside LAI-091,
+CORE raised it and deliberately did **not** rename it inside LAI-091,
 because it is the wire contract the web client reads and a breaking change
 deserves its own task rather than a ride-along. That was the right call.
 

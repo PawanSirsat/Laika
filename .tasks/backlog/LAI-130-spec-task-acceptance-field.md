@@ -11,7 +11,7 @@ status: done
 
 ## Goal
 
-LAI-092 AC4 asks for §4.5 and §6.4 (D-011). **`docs/` is PM's**, so it travels.
+LAI-092 AC4 asks for §4.5 and §6.4 (D-011). **`docs/` is CHIEF's**, so it travels.
 
 `tasks` now has `acceptance_md` — nullable text, on `TaskView`, writable on
 create and update.
@@ -58,13 +58,13 @@ without parsing prose.
 answers "what does done mean here", not "what is this about"; the smaller bound
 is a hint about intent as much as a guard.
 
-## Done — PM, 2026-08-25, under D-033
+## Done — CHIEF, 2026-08-25, under D-033
 
 **§4.5 now lists `acceptance_md`**, and I removed the single matching entry from
 `COLUMNS_NOT_IN_SPEC` in `server/test/tooling/schema-spec-drift.test.ts` in the
 same commit.
 
-**That test file is Builder-A's.** The crossing is authorised by **D-033** and is
+**That test file is CORE's.** The crossing is authorised by **D-033** and is
 named here: *one exemption entry, `tasks.acceptance_md`*, and nothing else in the
 file. It was necessary because the entry **self-expires** — the moment §4.5 lists
 the column, leaving the entry red-lights master. The two halves could not land

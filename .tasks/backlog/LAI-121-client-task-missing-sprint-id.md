@@ -18,7 +18,7 @@ LAI-011, and `GET /api/v1/projects/:slug/tasks` returns it on every row.
 Nothing noticed because the board was the only screen reading tasks and the board
 does not group by sprint. LAI-083 does, and had to declare the field locally in
 `routes/screens/sprints/sprint-derive.ts` (`SprintTask`, `readSprintId`) because
-`api/` is Builder-B's.
+`api/` is SHELL's.
 
 That local declaration is a checked read, not a cast — a server that stopped
 sending the field degrades to "no sprint" rather than leaking `undefined` through

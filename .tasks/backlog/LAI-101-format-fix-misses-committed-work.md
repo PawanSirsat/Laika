@@ -41,16 +41,16 @@ in place of `HEAD`, keeping the untracked-files half as it is. Watch the
 is the safe outcome, but confirm rather than assume.
 
 **This needs a root `package.json` edit.** Root config has no standing owner
-(D-017); PM grants it per task by name, so that grant has to be added here before
+(D-017); CHIEF grants it per task by name, so that grant has to be added here before
 anyone starts.
 
 No new dependencies.
 
 ---
 
-## PM decision — 2026-08-24: grant added
+## CHIEF decision — 2026-08-24: grant added
 
-**Scope exception granted to Builder-A.** This task authorises editing exactly:
+**Scope exception granted to CORE.** This task authorises editing exactly:
 
 - `package.json` (repo root) — the `format:fix` script only.
 

@@ -12,7 +12,7 @@ status: backlog
 ## Goal
 
 LAI-053 enriched `GET /api/v1/projects`; §6.4 still describes the old six-field
-shape. **`docs/` is PM's**, so it travels.
+shape. **`docs/` is CHIEF's**, so it travels.
 
 No exemption is needed and master is green — the drift check compares §4 to
 `schema.ts`, and nothing here is stored. Every added field is derived at read

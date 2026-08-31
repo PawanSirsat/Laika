@@ -16,7 +16,7 @@ status: backlog
 
 **It is mine and I am sorry for it.** It is a Playwright screenshot from
 verifying LAI-083: I passed a `filename` to the MCP screenshot tool, which wrote
-it relative to the MCP server's working directory — PM's `Laika/` worktree, not
+it relative to the MCP server's working directory — CHIEF's `Laika/` worktree, not
 mine — where it was swept up by a later merge. Nothing references it and nothing
 should.
 
@@ -33,7 +33,7 @@ should.
 
 ## Notes / context
 
-Repo-root config is PM's (CLAUDE.md §1, LAI-001), which is why this is a task
+Repo-root config is CHIEF's (CLAUDE.md §1, LAI-001), which is why this is a task
 rather than a deletion.
 
 The lesson for me, recorded so I do not repeat it: **the MCP screenshot tool

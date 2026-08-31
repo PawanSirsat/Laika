@@ -1,6 +1,6 @@
 ---
 name: laika-workflow
-description: Use when working in the Laika repo - before claiming, starting, finishing, or discovering work. Covers the task-file protocol (claim by git mv, one task at a time, review handoff), ownership boundaries between PM/Builder-A/Builder-B, and what to do when you find work you were not asked to do.
+description: Use when working in the Laika repo - before claiming, starting, finishing, or discovering work. Covers the task-file protocol (claim by git mv, one task at a time, review handoff), ownership boundaries between CHIEF/CORE/SHELL, and what to do when you find work you were not asked to do.
 ---
 
 # Laika workflow
@@ -11,10 +11,10 @@ what stops two sessions from writing the same file.
 ## Before anything
 
 0. **Confirm where you are.** `git worktree list && git branch --show-current`.
-   PM works in `Laika/` on `master`; Builder-A in `Laika-builder-a/` on
-   `builder-a`; Builder-B in `Laika-builder-b/` on `builder-b`. Wrong directory
+   CHIEF works in `Laika/` on `master`; CORE in `Laika-core/` on
+   `core`; SHELL in `Laika-shell/` on `shell`. Wrong directory
    or wrong branch — stop and fix that first.
-1. `git merge master` (builders never merge *out*; PM integrates)
+1. `git merge master` (builders never merge *out*; CHIEF integrates)
 2. Read `docs/SPEC.md` (skim if you have read it this session; re-read the
    sections your task names).
 3. Read `.sessions/<you>.md`. If you do not know which session you are, **stop
@@ -24,9 +24,9 @@ what stops two sessions from writing the same file.
 
 | You are | You may edit | Never |
 | --- | --- | --- |
-| PM | `docs/`, `.tasks/`, `.claude/`, `CLAUDE.md`, `logs/pm-*.md` | any application code |
-| Builder-A | `server/` | `plugin/`, `cli/`, `docker/`, `docs/` |
-| Builder-B | `plugin/`, `cli/`, `docker/` | `server/`, `docs/` |
+| CHIEF | `docs/`, `.tasks/`, `.claude/`, `CLAUDE.md`, `logs/chief-*.md` | any application code |
+| CORE | `server/` | `plugin/`, `cli/`, `docker/`, `docs/` |
+| SHELL | `plugin/`, `cli/`, `docker/` | `server/`, `docs/` |
 
 Plus your own log file and your own claimed task file. Nothing else.
 
@@ -78,10 +78,10 @@ say why in your log.
 - Commit small, in your own area only: `<type>(<area>): <summary> [<task-id>]`
 - **Stage explicit paths. Never `git add -A` from the repo root.** Your worktree
   makes this survivable rather than catastrophic — it is still wrong.
-- `git merge master` when master moves. Never rebase your branch: PM reads it
+- `git merge master` when master moves. Never rebase your branch: CHIEF reads it
   during review, and rewriting shared commits breaks that.
 - If a criterion turns out to be wrong or impossible, do **not** silently drop
-  it. Note it in the task file, say so in your log, and flag it for PM at review.
+  it. Note it in the task file, say so in your log, and flag it for CHIEF at review.
 
 ## Discovering work mid-task
 
@@ -92,7 +92,7 @@ Write a new task file in `.tasks/backlog/` from `.tasks/TEMPLATE.md`:
 
 ```yaml
 id: LAI-0NN                 # lowest unused number IN YOUR OWN RANGE (D-017):
-                            # PM 001-099 · Builder-A 100-199 · Builder-B 200-299
+                            # CHIEF 001-099 · CORE 100-199 · SHELL 200-299
                             # check across branches, not just your tree:
                             #   git log --all --name-only --format= -- .tasks/ \
                             #     | grep -o 'LAI-[0-9]*' | sort -u
@@ -114,12 +114,12 @@ six weeks from now it is the only record of why that task exists.
 2. Run lint, typecheck and tests. If they do not pass, you are not finished.
 3. Set `status: review` and `finished: <ISO-8601>`.
 4. `git mv .tasks/in-progress/LAI-00X-slug.md .tasks/review/`
-5. Commit. Leave it on your branch — **PM merges it into `master`** when
+5. Commit. Leave it on your branch — **CHIEF merges it into `master`** when
    accepting (CLAUDE.md §4.2). Never merge into `master` yourself.
 6. **Write your log entry** — see the `laika-logging` skill.
 
-**Builders never move anything to `.tasks/done/`.** Only PM does, after checking
-the criteria against the actual diff. If PM sends it back, it returns to
+**Builders never move anything to `.tasks/done/`.** Only CHIEF does, after checking
+the criteria against the actual diff. If CHIEF sends it back, it returns to
 `.tasks/in-progress/` with review notes appended — read them, fix, move to review
 again.
 
@@ -131,8 +131,8 @@ again.
 | "I'll claim it after I start" | The claim commit *is* the start. |
 | "I'll batch the log at the end" | You will forget the decisions. Log per task. |
 | "No task file, but it's obviously needed" | Then write the task file. Takes two minutes. |
-| "I'll mark my own task done" | Only PM moves to done. |
+| "I'll mark my own task done" | Only CHIEF moves to done. |
 | "Force-push will fix this rebase" | It will destroy someone's commit. Stop and ask. |
 | "My tree is clean, so the task is free" | Your tree can't see their branch. Run the `--all` check. |
-| "I'll merge my branch into master myself" | PM integrates. Your branch waits in review. |
+| "I'll merge my branch into master myself" | CHIEF integrates. Your branch waits in review. |
 | "I'll take the next free id" | Take the next free id **in your range**. Free-for-all collided twice. |

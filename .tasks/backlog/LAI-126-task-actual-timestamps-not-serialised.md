@@ -23,7 +23,7 @@ different fact wearing the same shape.
 
 - [ ] `TaskView` gains `started_at` and `completed_at` as nullable unix-ms,
       alongside the existing timestamps.
-- [ ] SPEC §6.4's task shape lists them. **`docs/` is PM's** — file that half.
+- [ ] SPEC §6.4's task shape lists them. **`docs/` is CHIEF's** — file that half.
 - [ ] A test that a task moved `todo → in_progress → done` reports both, and that
       a task still in `backlog` reports `null` for both.
 - [ ] The client `Task` type gains them too. That is `server/web/src/api/tasks.ts`

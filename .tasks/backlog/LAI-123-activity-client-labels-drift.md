@@ -55,4 +55,4 @@ must say *"created a task"*, because every row in a feed names a different task.
 Two sentences, one vocabulary — the vocabulary is what should be shared, and the
 test is what would share it.
 
-`api/activity.ts` is Builder-B's, which is why this is a task and not a fix.
+`api/activity.ts` is SHELL's, which is why this is a task and not a fix.
