@@ -6,8 +6,9 @@ assignee: shell
 priority: p2
 depends-on: [LAI-404]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-08-31T19:55:12Z
+finished: 2026-09-01T02:45:00Z
 ---
 
 ## Goal
@@ -20,27 +21,27 @@ Project settings, `lead`+ to edit, everyone with project read access can view.
 
 ## Acceptance criteria
 
-- [ ] Reads `GET /api/v1/projects/:slug/context` and writes
+- [x] Reads `GET /api/v1/projects/:slug/context` and writes
       `PATCH …/context`. Not the general project `PATCH`.
-- [ ] A `viewer` and a `member` see the document read-only, with no edit affordance
+- [x] A `viewer` and a `member` see the document read-only, with no edit affordance
       that will fail — not a disabled button with no explanation, and not a
       control that produces a `403`.
-- [ ] Editing is plain markdown in a monospace field. **No rich-text editor and
+- [x] Editing is plain markdown in a monospace field. **No rich-text editor and
       no new dependency** — the value is served verbatim to agents, so what is
       typed is what ships.
-- [ ] The **100,000 character limit is visible before it is hit**: a live count
+- [x] The **100,000 character limit is visible before it is hit**: a live count
       that becomes prominent as it approaches, and a save error that names the
       limit and the actual length. SPEC §7.3 is explicit that a context document
       must not silently blow an agent's context window.
-- [ ] Unsaved changes are not lost silently on navigation.
-- [ ] Shows when it was last edited and by whom, from the endpoint.
-- [ ] An empty document gets an empty state that says what the file is **for** —
+- [x] Unsaved changes are not lost silently on navigation.
+- [x] Shows when it was last edited and by whom, from the endpoint.
+- [x] An empty document gets an empty state that says what the file is **for** —
       architecture and conventions, closed decisions, glossary, things
       deliberately not done — and what does not belong in it: task-specific
       detail, anything secret, anything per-session. Take the wording from
       SPEC §7.3. This is the screen's whole job; a blank textarea teaches nobody.
-- [ ] Both themes. Rendered in a real browser.
-- [ ] Full gate green.
+- [x] Both themes. Rendered in a real browser.
+- [x] Full gate green.
 
 ## Notes
 
@@ -93,3 +94,76 @@ not a nav item"). It needs no route-table or sidebar change.
 id, and the project members map does not contain org Admins, who hold implicit
 `lead` without a membership row. So "last edited by" will hit **LAI-416**'s case.
 Do not invent a fallback name — see that task.
+
+---
+
+## Build note — SHELL, 2026-09-01
+
+### The client half was already done
+
+Built before this task was released for the two p1s, and it survived the round
+trip: `api/project-context.ts` and `routes/screens/projects/context-copy.ts`
+with 18 green tests. Only the panel was left. That is the argument for releasing
+a task cleanly rather than abandoning it.
+
+### A defect the criteria depend on, found by rendering
+
+**AC4 could not be met as the server stands.** SPEC §7.3 requires the size
+refusal to name "both the limit *and the actual length*", and
+`updateProjectContext` raises exactly that — **but it is unreachable over REST**.
+The route's schema carries `.max(CONTEXT_MD_LIMIT)` as well, so zod refuses
+first. Measured:
+
+```
+PATCH /projects/laika-core/context      (100,400 characters)
+422 {"message":"Invalid request body","details":{"issues":[
+     {"path":"context_md","message":"Too big: expected string to have <=100000 characters"}]}}
+```
+
+The limit is there in prose; **the length — the half §7.3 singles out — is not**.
+On screen that read as *"Invalid request body"*, which tells a writer nothing.
+
+Filed as **LAI-228** against `server`. Meanwhile the client reads *both* shapes
+and supplies the length itself, since it knows what was just typed. The
+workaround is marked with that task id so it is removed rather than inherited.
+
+The schema's own comment says *"The size bound is the service's, not this
+schema's"* — and the schema enforces it anyway. **A bound enforced in two layers
+is enforced by whichever runs first, and here that is the less informative one.**
+
+### The unsaved-changes guard proved itself by getting in my way
+
+Navigation started timing out mid-verification. The cause was my own
+`beforeunload` handler: the textarea held 100,400 unsaved characters and the
+browser was waiting on a confirm dialog. AC5 verified by being blocked by it.
+
+### A viewer gets no Save button at all
+
+Not a disabled one. Measured as `grace@example.com`, a project viewer: document
+loads (785 chars), textarea `readOnly`, **no `.ctx-save` in the DOM**, and a line
+saying editing needs the lead role. Her `PATCH` returns `403`, so the display
+decision and the server agree.
+
+### Where it lives, and why that is not arbitrary
+
+A slide-over on the **Projects** screen. SPEC §11.4.2 maps
+`get_project_context` to Projects, and the task detail is the precedent for a
+panel that is deliberately not a route. No route-table or sidebar change, so no
+nav entry for a screen that is not a screen.
+
+### Measured in a browser
+
+| | result |
+| --- | --- |
+| load | 741 chars from the real endpoint, no demo module |
+| save | 741 → 785, "Saved", dirty cleared, timestamp and author updated |
+| budget at 50% | `50,000 / 100,000 characters`, quiet |
+| budget at 92% | `92,000 / 100,000 · 8,000 left`, amber |
+| over | `100,400 / 100,000 · 400 over`, red |
+| refusal | *"Too long by 400 characters — 100,400 of 100,000 allowed."* |
+| viewer | read-only, no Save, reason given |
+| empty project | the §7.3 guide, `Never edited.`, Save disabled |
+| both themes | panel, editor and monospace face all correct |
+
+Empty state wording is held against `docs/SPEC.md` §7.3 by a test that reads the
+spec, so it cannot drift from the section it claims to quote.

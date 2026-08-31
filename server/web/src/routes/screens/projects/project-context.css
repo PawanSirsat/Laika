@@ -1,0 +1,211 @@
+/* The shared project context document (SPEC §7.3, LAI-412).
+
+   A slide-over on the Projects screen. Existing tokens only — no new colour
+   (D-020); the budget's three tones reuse the palette the rest of the app
+   already gives to "fine", "attention" and "wrong". */
+
+.ctx {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  width: min(46rem, 100vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--card);
+  border-left: 1px solid var(--bd);
+  box-shadow: var(--shadow);
+  overflow-y: auto;
+}
+
+.ctx-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.ctx-title {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-heavy);
+  letter-spacing: -0.018em;
+  color: var(--tx);
+}
+
+.ctx-project {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--tx3);
+}
+
+.ctx-close {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ctx-close:hover {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+
+/* The empty state. This is the screen's whole job: a blank textarea labelled
+   "Context" teaches nobody what to write. */
+.ctx-guide {
+  padding: var(--space-3);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+}
+
+.ctx-guide-lead {
+  margin: 0 0 var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+}
+
+.ctx-guide-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--space-3);
+}
+
+.ctx-guide-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.ctx-guide-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+}
+
+.ctx-guide-list li {
+  margin-bottom: 0.125rem;
+}
+
+.ctx-guide-why {
+  color: var(--tx3);
+}
+
+/* Monospace and plain. The value is served verbatim to every agent session, so
+   what is typed is what ships — no rich-text layer between the two. */
+.ctx-editor {
+  flex: 1 1 auto;
+  min-height: 22rem;
+  padding: var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--tx);
+  background: var(--page);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  resize: vertical;
+}
+
+.ctx-editor:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.ctx-editor[readonly] {
+  background: var(--tub);
+  color: var(--tx2);
+}
+
+.ctx-foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+/* The budget. §7.3 requires the limit be visible before it is hit, so this is
+   always on screen and changes tone rather than appearing late. */
+.ctx-count {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.ctx-count-near {
+  color: var(--amb);
+  font-weight: var(--weight-bold);
+}
+
+.ctx-count-over {
+  color: var(--red);
+  font-weight: var(--weight-bold);
+}
+
+.ctx-edited {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.ctx-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ctx-dirty {
+  font-size: var(--text-xs);
+  color: var(--amb);
+}
+
+.ctx-saved {
+  font-size: var(--text-xs);
+  color: var(--grn);
+}
+
+.ctx-save {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: #fff;
+  background: var(--acc);
+  border: 1px solid var(--acc);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.ctx-save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ctx-readonly {
+  margin: 0 0 0 auto;
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.ctx-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+  border-radius: var(--radius-sm);
+}

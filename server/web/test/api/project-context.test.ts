@@ -72,6 +72,33 @@ void describe('a refusal names both numbers', () => {
     assert.match(message, /\b400\b|^400/, `did not say how much to cut: ${message}`);
   });
 
+  void test("zod's refusal is read too, and gains the length it omits", () => {
+    // The shape REST actually returns: the route's schema refuses before the
+    // service's clear error can, so the limit is in prose and the length is
+    // absent. Measured against the running server, not assumed. LAI-228.
+    const cause = new ApiError('unprocessable', 'Invalid request body', 422, {
+      issues: [
+        { path: 'context_md', message: 'Too big: expected string to have <=100000 characters' },
+      ],
+    });
+    const message = readableContextError(cause, 100_400);
+    const digits = message.replace(/[^0-9]/g, '');
+    assert.ok(digits.includes('100400'), `did not say the actual length: ${message}`);
+    assert.ok(digits.includes('100000'), `did not say the limit: ${message}`);
+    assert.ok(!message.includes('Invalid request body'), 'passed the envelope through unread');
+  });
+
+  void test('without a length to add, zod’s own words beat the envelope', () => {
+    // Better the specific issue than "Invalid request body", which describes
+    // nothing the reader can act on.
+    const cause = new ApiError('unprocessable', 'Invalid request body', 422, {
+      issues: [
+        { path: 'context_md', message: 'Too big: expected string to have <=100000 characters' },
+      ],
+    });
+    assert.match(readableContextError(cause), /Too big/);
+  });
+
   void test('a refusal without details still says something true', () => {
     const cause = new ApiError('unprocessable', 'That context document is too long', 422, null);
     assert.equal(readableContextError(cause), 'That context document is too long');
