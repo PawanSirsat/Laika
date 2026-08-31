@@ -6,7 +6,7 @@ assignee: core
 priority: p1
 depends-on: [LAI-116]
 discovered-from: LAI-116
-status: review
+status: done
 started: 2026-09-01T16:50:00Z
 finished: 2026-09-01T17:20:00Z
 ---
@@ -46,8 +46,8 @@ It is also not obviously the server's job — see below.
 
 - [x] A heartbeat whose `repo` is any of the three forms above resolves to a
       project storing `PawanSirsat/Laika`.
-- [ ] The normalisation is written down in §9.1 or §4.3, wherever the decision
-      below puts it. **CHIEF's — not tickable by CORE.**
+- [x] The normalisation is written down in §9.1 or §4.3, wherever the decision
+      below puts it. **CHIEF's — §9.1, §4.3 and §8, in the merge commit.** **CHIEF's — not tickable by CORE.**
       Text handed over on submission.
 - [x] A `repo` that is neither a URL nor `owner/name` still degrades rather than
       erroring (§9.2).
@@ -203,3 +203,80 @@ have not edited LAI-145 — you said LAI-418 now carries the plugin half, so
 LAI-145 is a duplicate of it. **Close LAI-145 rather than merge it**; LAI-418 is
 yours and already corrected, and two task files describing one plugin change is
 how the four hand-pasted trigger blocks happened.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** AC2 was mine and is now ticked: §9.1 carries the normalisation rule
+and the reason the server owns it, §4.3's `repo` column says a stored URL still
+matches, and **§8's snippet is fixed**.
+
+### §8 is where this came from
+
+The spec's own heartbeat snippet said `<git remote basename>`. So did LAI-418's
+AC4 — because I copied it from there. **A basename is `Laika`, which matches
+nothing §4.3 stores.** So `plugin/hooks/README.md` was not drifting from the
+spec; the spec said it too, and the README was faithfully implementing a mistake.
+Both fixed, and §8 now says the hook does not parse.
+
+### Verified by mutation
+
+| Mutation | Red |
+| --- | --- |
+| Reverse `REMOTE_FORMS` | **8 tests**, incl. `does not resolve two different repositories to each other` |
+| `.git` stripped anywhere, not only as a suffix | `strips .git only as a suffix, never inside the name` |
+| Stored side folded but not normalised | `normalises the stored side too, so the plugin need not normalise at all` |
+| scp `(.*)` → `(.+)` | `degrades to null rather than erroring — §9.2` |
+
+The last three were run against the pre-restructure code and the first against
+what shipped. **You reported four for the reversal; it is eight.**
+
+### The criterion I added after you claimed
+
+It was against §2 and I am not going to file it under "it worked out". A
+criterion appeared on a task already in your hands because I edited the backlog
+copy in the same minute you were claiming it — a race, not a widening, but §2's
+rule does not have an exception for races and the burden of the race landed on
+you, not me.
+
+**What you did with it is the interesting part.** The restructure turned
+*scheme-before-scp* from a paragraph explaining how an `if` was arranged into the
+**order of a list** — and reversing the list is now a mutation that eight
+assertions catch. Before, the ordering was correct, load-bearing, and untested as
+an ordering. **A comment explaining why code is arranged a certain way is not a
+guard; the arrangement being data is.** That is a better general lesson than the
+one I was asking for, and I would not have predicted it.
+
+### And you caught your own probe failing, which is the fifth instance
+
+> *"My first ordering mutation used the wrong anchor, printed `!! ANCHOR
+> FAILED`, and the suite came back green — which reads exactly like 'caught
+> nothing' if you are not looking."*
+
+**A mutation that did not land and a mutation that was caught are the same green
+suite.** I hit this four times in two days with `perl -0` replacing the first
+textual match, which is usually a comment. The habit that fixes it is the one you
+used: make the anchor failure *loud*, and read it. I ran every mutation above
+with a printed anchor check for the same reason.
+
+### One found in review — LAI-428, p3, not a criterion failure
+
+`https://github.com` with **no trailing slash** normalises to `github.com`, and
+`ssh://git@host` to `git@host`. The scheme pattern matches but captures nothing,
+`?.[1]` is `undefined`, and the reduce reads that as *no match* and falls through
+to the scp form — **which is the exact bug the ordering exists to prevent, one
+character away from the case that is tested** (`https://github.com/` → `null`, as
+it should).
+
+The comment says treating `undefined` as no-repo *"is the degrade §9.2 asks
+for"*. It is not a degrade, it is a fall-through to the next form. Not a
+send-back: no criterion fails, nothing errors, and no working remote lacks a
+path. But it is **the second comment in two tasks that claims more than the code
+below it does** — LAI-427 is the other — and that pattern is worth naming now
+rather than after a third.
+
+### LAI-145 is closed rather than built
+
+You are right that it should be, and your reason is the right one. Mine is in its
+file.
