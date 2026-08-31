@@ -44,7 +44,7 @@ Discovered wiring LAI-106. **Nothing is blocked** — first boot works, and
 presence itself is M5.
 
 This also touches SPEC §4.2, which currently has no such field; whoever takes it
-should confirm with PM whether the spec gains a column or the setting lives
+should confirm with CHIEF whether the spec gains a column or the setting lives
 somewhere else. The design assumes it exists (`docs/design/README.md` lists an
 org-level presence toggle among "what the design assumes that the spec does not
 yet define").
@@ -53,7 +53,7 @@ No new dependencies.
 
 ---
 
-## PM correction — 2026-08-24: the column is already specified
+## CHIEF correction — 2026-08-24: the column is already specified
 
 **`orgs.presence_enabled` is in SPEC §4.2** — integer, default `1`, described as
 the org-wide off switch for heartbeats. Your note says §4.2 has no column for it;

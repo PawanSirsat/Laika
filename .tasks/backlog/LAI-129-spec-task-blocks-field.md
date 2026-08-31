@@ -11,7 +11,7 @@ status: backlog
 
 ## Goal
 
-LAI-091 AC5 asks for §4.5 and §6.4 (D-011). **`docs/` is PM's**, so it travels.
+LAI-091 AC5 asks for §4.5 and §6.4 (D-011). **`docs/` is CHIEF's**, so it travels.
 
 `TaskView` now returns both directions of §4.6:
 
@@ -38,7 +38,7 @@ rename it because it is the wire contract the web client already reads and a
 rename is a breaking change that deserves its own task rather than riding along
 with a new field.
 
-If PM wants the rename, it needs: the server field, `server/web/src/api/tasks.ts`'s
-`Task` type (Builder-B's, and already the subject of LAI-121 and LAI-126), and a
-release note. If PM does not, §6.4 should say plainly that `dependencies` means
+If CHIEF wants the rename, it needs: the server field, `server/web/src/api/tasks.ts`'s
+`Task` type (SHELL's, and already the subject of LAI-121 and LAI-126), and a
+release note. If CHIEF does not, §6.4 should say plainly that `dependencies` means
 blocked-by, because the name alone does not.

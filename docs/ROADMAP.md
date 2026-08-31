@@ -1,6 +1,6 @@
 # Laika — Roadmap
 
-Owner: PM session. Last updated: 2026-08-24.
+Owner: CHIEF session. Last updated: 2026-08-24.
 
 Milestones are sequential and each one ends in something demonstrable. A
 milestone is complete when every task carrying its label sits in `.tasks/done/`
@@ -90,7 +90,7 @@ claims it, comments, and moves it to review — visible live in a human's browse
 
 **Exit:** a new repo goes from nothing to an agent working the board in one
 command, **and a heartbeat from that agent is visible in the database**. Seeded early: **LAI-012** (plugin skeleton — no dependencies, so
-Builder-B can build it during M1).
+SHELL can build it during M1).
 
 ---
 
@@ -143,9 +143,9 @@ answer to "are we building X" is a date, never "no". The guard against that
 becoming a wish list is that each milestone has an exit test — work that does not
 serve the current exit test waits, however scheduled it is.
 
-- M1 is the only milestone where Builder-A and Builder-B are near-independent —
-  Builder-B has LAI-008 (docker) and LAI-012 (plugin skeleton) to work while
-  Builder-A builds the server.
+- M1 is the only milestone where CORE and SHELL are near-independent —
+  SHELL has LAI-008 (docker) and LAI-012 (plugin skeleton) to work while
+  CORE builds the server.
 - M3 depends on the whole of M2's task model; do not start MCP tools against a
   schema that is still moving.
 - M6 is the only milestone with an external LLM dependency and can slip without

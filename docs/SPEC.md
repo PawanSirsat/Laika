@@ -1,11 +1,11 @@
 # Laika — v1 Specification
 
-Status: **authoritative for M1–M7** · Owner: PM session · Last updated: 2026-08-24
+Status: **authoritative for M1–M7** · Owner: CHIEF session · Last updated: 2026-08-24
 
 This document is the source of truth. Builders implement exactly this; a
-deviation requires a PM-approved task that updates this file **first**. If the
+deviation requires a CHIEF-approved task that updates this file **first**. If the
 code and this document disagree, that is a bug in one of them — raise it in your
-log and PM resolves it in `DECISIONS.md`. Do not silently diverge.
+log and CHIEF resolves it in `DECISIONS.md`. Do not silently diverge.
 
 ---
 
@@ -29,7 +29,7 @@ The design commitments that follow from that:
   token it holds cannot see or do.
 - **Everything is an event.** The `activity` table is append-only and is the
   single feed behind audit, presence, the dashboard, and SSE.
-- **Agents do not self-certify.** `finish_task` stops at `review`. A human or PM
+- **Agents do not self-certify.** `finish_task` stops at `review`. A human or CHIEF
   closes work.
 - **Your data stays yours.** Self-hosted, one SQLite file on a volume you own,
   **no telemetry of any kind** (§13.4).
@@ -475,7 +475,7 @@ The join between §4.5 and §4.16.
         create              claim / start_working          finish_task
 backlog ──▶ todo ──────────────────────────▶ in_progress ──────────────▶ review
            (ready when unassigned                                          │
-            and deps all done)                                            │ human/PM approves
+            and deps all done)                                            │ human/CHIEF approves
                                                                           ▼
                                                                         done
 ```
@@ -755,7 +755,7 @@ anything that changes per-session.
 
 ## 8. Plugin and hooks
 
-The shipped Claude Code plugin (`plugin/`, Builder-B) is thin on purpose: it
+The shipped Claude Code plugin (`plugin/`, SHELL) is thin on purpose: it
 carries no business logic, only wiring.
 
 **Environment**: `LAIKA_URL`, `LAIKA_TOKEN`, written by `/laika:setup` into user

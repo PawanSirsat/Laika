@@ -11,8 +11,8 @@ status: backlog
 
 ## Goal
 
-**This one is the owner's call, not PM's (D-020).** PM measured it, PM
-recommended, PM was reverted for deciding it. The numbers are below so the
+**This one is the owner's call, not CHIEF's (D-020).** CHIEF measured it, CHIEF
+recommended, CHIEF was reverted for deciding it. The numbers are below so the
 decision can be made from evidence rather than re-derived.
 
 ## The measurements
@@ -63,7 +63,7 @@ passes with zero margin.
 
 ## Notes / context
 
-**PM's recommendation, offered and not acted on:** option 2. The reasoning is in
+**CHIEF's recommendation, offered and not acted on:** option 2. The reasoning is in
 D-020. It was rejected on process, not on the numbers, and the numbers should not
 be taken as settling the question — an accessibility ratio is one input to a
 design decision, not the whole of it.

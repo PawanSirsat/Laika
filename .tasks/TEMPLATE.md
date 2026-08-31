@@ -2,7 +2,7 @@
 id: LAI-000
 title:
 area: server | web | plugin | cli | docker | docs
-assignee: unclaimed | builder-a | builder-b
+assignee: unclaimed | core | shell
 priority: p1 | p2 | p3
 depends-on: []
 discovered-from:

@@ -1454,3 +1454,97 @@ someone else's file.** That boundary is the one that matters, and it is unchange
 Builder-A found this by being transparent about doing something the rule did not
 strictly permit, rather than either not doing it or not mentioning it. A rule
 tested honestly is worth more than a rule obeyed silently.
+
+---
+
+## D-035 — The three sessions are CHIEF, CORE and SHELL
+
+**Date:** 2026-08-31 · **Decided by:** the owner · **Status:** accepted
+
+`PM`, `Builder-A` and `Builder-B` were bootstrap labels. They described a
+hierarchy that does not exist — there is no first and second builder, and "PM"
+suggests a role that reports upward rather than one that holds the plan. Worse,
+`Builder-A` and `Builder-B` are not memorable: which one owns the UI has to be
+looked up every time, and it has been looked up wrong.
+
+**Decision: rename them for what they own.**
+
+| Was | Is | Command | Branch | Directory |
+| --- | --- | --- | --- | --- |
+| PM | **CHIEF** | `/chief` | `master` | `Laika/` |
+| Builder-A | **CORE** | `/core` | `core` | `Laika-core/` |
+| Builder-B | **SHELL** | `/shell` | `shell` | `Laika-shell/` |
+
+CORE is the engine — API, database, policy, MCP. SHELL is everything wrapped
+around it — the SPA, the plugin, the CLI, the container. The names carry the
+D-016 boundary in themselves: nobody has to remember which letter got the
+frontend.
+
+Each name is also a command that boots the identity, takes the latest `master`,
+reports the board, and starts that session's next job. `/<name> status` reports
+without acting. `/claim`, `/review` and `/standup` remain and are unchanged in
+behaviour.
+
+**Consequences**
+
+- Branches `builder-a` and `builder-b` are renamed `core` and `shell`; the
+  worktree directories follow. Any session that was open under an old path must
+  be restarted from the new one.
+- **Nothing already written is rewritten.** `.tasks/done/`, `logs/`, and every
+  DECISIONS entry above this one keep the names they were authored with, by the
+  same append-only rule that governs decisions. `.sessions/README.md` and
+  `CLAUDE.md` carry the mapping so an old name is always resolvable.
+- Files that name a session inside `server/`, `server/web/`, `plugin/`, `cli/`
+  and `docker/` are the builders’ to update, not CHIEF’s. Filed as LAI-400 and
+  LAI-401 rather than crossed into — the rename is not a licence to edit
+  someone else's area.
+- Session ranges are unchanged: CHIEF `LAI-001`–`LAI-099`, CORE
+  `LAI-100`–`LAI-199`, SHELL `LAI-200`–`LAI-299`. Renumbering ids remains
+  forbidden (D-017).
+
+**Revisit if** a fourth session is added, at which point the naming needs to
+extend rather than be re-chosen.
+
+---
+
+## D-036 — CHIEF's id range is exhausted; ranges continue in a second block
+
+**Date:** 2026-08-31 · **Decided by:** CHIEF · **Status:** accepted
+
+Filing the two follow-up tasks for D-035 turned up something the board has been
+one task away from for a while: **`LAI-001`–`LAI-099` is completely full.** All
+99 ids are issued. CORE has used 36 of its 100, SHELL 25.
+
+D-017 gave each session a block precisely so that "next unused number" could
+never be a race. That property depends on there always *being* a free number in
+your own block, and for CHIEF there is not. The failure mode if this is not
+fixed is exactly the one D-017 was written to prevent: a session reaches outside
+its block, two sessions pick the same id, and `depends-on` starts pointing at
+the wrong work.
+
+**Decision: each session gets a second block, taken when its first fills.**
+
+`LAI-300`–`LAI-399` is **not** available for this: D-017 reserved it for a
+fourth session, and that reservation stands. Second blocks start above it.
+
+| Session | First block | Second block |
+| --- | --- | --- |
+| CHIEF | `LAI-001`–`LAI-099` (full) | **`LAI-400`–`LAI-499`** |
+| CORE | `LAI-100`–`LAI-199` | `LAI-500`–`LAI-599` |
+| SHELL | `LAI-200`–`LAI-299` | `LAI-600`–`LAI-699` |
+| *(a fourth session)* | `LAI-300`–`LAI-399` — reserved, D-017 | — |
+
+CHIEF's next id is **`LAI-400`**. A session moves to its second block only when
+its first has no free number left, and the rule for picking is unchanged: lowest
+unused number in your own block, checked across every branch.
+
+This is the revisit D-017 asked for in its own closing line — *"Revisit when:
+a session exhausts its range"* — and it is answered the way D-017 said it would
+be: another range, not a renumber.
+
+**Renumbering remains forbidden.** Nothing above `LAI-099` is reassigned and no
+existing id moves — ids are referenced by `depends-on`, `discovered-from` and
+commit messages, which is what LAI-015 had to clean up.
+
+**Revisit if** a second block fills, which on current velocity is far enough out
+that inventing a scheme for it now would be guessing.

@@ -1,8 +1,8 @@
 ---
-description: PM only — review every task in .tasks/review/ against its acceptance criteria
+description: CHIEF only — review every task in .tasks/review/ against its acceptance criteria
 ---
 
-**PM session only.** If you are a builder, stop: you cannot move tasks to done.
+**CHIEF session only.** If you are a builder, stop: you cannot move tasks to done.
 
 For **each** file in `.tasks/review/`, oldest first:
 
@@ -25,8 +25,8 @@ branch, not on `master`:
 
 ```bash
 git log --all --oneline --grep="<TASK-ID>"
-git log master..builder-a --oneline          # or builder-b
-git diff master...builder-a -- <the area that task owns>
+git log master..core --oneline          # or shell
+git diff master...core -- <the area that task owns>
 ```
 
 Also read the builder's log entry for that task in `logs/<session>-*.md`.
@@ -89,13 +89,13 @@ task, **file it — do not widen the task**.
 
 **5. Decide.**
 
-*Accept* — every criterion is met and the boundaries hold. **PM is the sole
+*Accept* — every criterion is met and the boundaries hold. **CHIEF is the sole
 integrator** (CLAUDE.md §4.2): merge the builder's branch, then close the task.
 ```bash
-git merge --no-ff builder-a        # or builder-b — whichever owns the task
+git merge --no-ff core        # or shell — whichever owns the task
 git mv .tasks/review/<file> .tasks/done/
 ```
-If the merge conflicts, resolve it in PM's favour for `docs/`, `.tasks/`,
+If the merge conflicts, resolve it in CHIEF's favour for `docs/`, `.tasks/`,
 `.claude/` and `CLAUDE.md`, and in the builder's favour inside their own area.
 A conflict outside those bounds means a boundary was crossed — send it back.
 Set `status: done` and `reviewed: <ISO-8601>` in the frontmatter. Append a short
@@ -121,6 +121,6 @@ different approach, that is a new task.
 **6. File what you found.** Anything real but out of scope becomes a new backlog
 task with `discovered-from: <TASK-ID>`. Never widen a task during review.
 
-**7. Log it.** Append one entry per reviewed task to `logs/pm-<today>.md`: task
+**7. Log it.** Append one entry per reviewed task to `logs/chief-<today>.md`: task
 id, accepted or returned, what you verified, what you filed. Then print a summary
 of accepted / returned / newly filed.

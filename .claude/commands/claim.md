@@ -6,8 +6,8 @@ Claim exactly one task for **this session**, following the protocol in
 `.claude/skills/laika-workflow/SKILL.md` and `CLAUDE.md` §2.
 
 **1. Establish who you are and where you are.** Read `.sessions/` and identify
-your session and its area (`server` for Builder-A; `plugin`, `cli`, `docker` for
-Builder-B). If you cannot tell which session you are, **stop and ask** — do not
+your session and its area (`server` for CORE; `plugin`, `cli`, `docker` for
+SHELL). If you cannot tell which session you are, **stop and ask** — do not
 guess.
 
 Then confirm you are in your **own worktree** on your **own branch**
@@ -17,8 +17,8 @@ Then confirm you are in your **own worktree** on your **own branch**
 git worktree list && git branch --show-current
 ```
 
-Builder-A works in `Laika-builder-a/` on `builder-a`; Builder-B in
-`Laika-builder-b/` on `builder-b`. If you are on `master` or in another session's
+CORE works in `Laika-core/` on `core`; SHELL in
+`Laika-shell/` on `shell`. If you are on `master` or in another session's
 directory, **stop** — do not claim anything from there.
 
 **2. Refuse to double-claim.** If a file in `.tasks/in-progress/` is already

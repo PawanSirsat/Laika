@@ -40,7 +40,7 @@ twenty lines is one bad afternoon from being gone.
       are history and editing them changes a file whose hash drizzle records; the
       new mechanism only has to make future ones unnecessary.
 - [ ] A note in `docs/CONVENTIONS.md` or the migration folder saying the block is no
-      longer needed — otherwise the next person copies it anyway. **`docs/` is PM's**,
+      longer needed — otherwise the next person copies it anyway. **`docs/` is CHIEF's**,
       so file that half rather than editing it.
 
 ## Notes / context

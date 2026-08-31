@@ -53,8 +53,8 @@ tinted band, the month span and "which sprint is active" all come from the API.
 therefore demo data under D-032: `demo/due-dates.ts`, guarded by `DEMO_ENABLED`,
 naming the endpoint that retires it, and the screen carries a `DemoNotice`.
 
-Do not add a `due_date` from this task — that is a schema change in Builder-A's
-area and needs its own task (§1). If PM would rather wait for a real column than
+Do not add a `due_date` from this task — that is a schema change in CORE's
+area and needs its own task (§1). If CHIEF would rather wait for a real column than
 ship a demo grid, this task should be rejected rather than half-built.
 
 ## Acceptance criteria

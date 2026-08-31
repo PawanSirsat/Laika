@@ -1,14 +1,29 @@
 # Laika — working agreement for all sessions
 
 Laika is a self-hosted project board where humans and Claude Code agents share one
-source of truth. Three sessions build it in parallel: **PM**, **Builder-A**,
-**Builder-B**. These rules exist so we never collide. They are not advisory.
+source of truth. Three sessions build it in parallel: **CHIEF**, **CORE**,
+**SHELL**. These rules exist so we never collide. They are not advisory.
+
+| Session | Command | Branch | Directory | In one line |
+| --- | --- | --- | --- | --- |
+| **CHIEF** | `/chief` | `master` | `Laika/` | Holds the plan. Writes tasks, reviews, merges. No code. |
+| **CORE** | `/core` | `core` | `Laika-core/` | The engine — API, database, policy, MCP. |
+| **SHELL** | `/shell` | `shell` | `Laika-shell/` | Everything wrapped around it — UI, plugin, CLI, container. |
+
+Each command boots that identity, takes the latest `master`, reports where things
+stand, and starts the session's next job. `/<name> status` reports without acting.
+
+**These sessions were renamed on 2026-08-31 (D-035)** — CHIEF was PM, CORE was
+Builder-A, SHELL was Builder-B. The old names remain correct **wherever they were
+already written**: `.tasks/done/`, `logs/`, and existing `DECISIONS.md` entries
+are records of what happened and are not rewritten, by the same append-only rule
+that governs decisions. Read an old name as its new one.
 
 ## 0. Before any work
 
 1. Read `docs/SPEC.md`.
-2. Read your own identity file in `.sessions/` (`pm.md`, `builder-a.md`, or
-   `builder-b.md`). It tells you who you are and what you own.
+2. Read your own identity file in `.sessions/` (`chief.md`, `core.md`, or
+   `shell.md`). It tells you who you are and what you own.
 3. Read the task file you are about to work on, top to bottom, including
    `depends-on`.
 
@@ -18,43 +33,43 @@ If you do not know which session you are, stop and ask. Do not guess.
 
 | Session | Owns (may edit) | Must never edit |
 | --- | --- | --- |
-| **PM** | `docs/`, `.tasks/`, `logs/pm-*.md`, `.sessions/pm.md`, `.claude/`, `CLAUDE.md` | any application code |
-| **Builder-A** | `server/` **except `server/web/`** | `server/web/`, `plugin/`, `cli/`, `docker/`, `docs/`, other sessions' logs |
-| **Builder-B** | `server/web/`, `plugin/`, `cli/`, `docker/` | the rest of `server/`, `docs/`, other sessions' logs |
+| **CHIEF** | `docs/`, `.tasks/`, `logs/chief-*.md`, `.sessions/chief.md`, `.claude/`, `CLAUDE.md` | any application code |
+| **CORE** | `server/` **except `server/web/`** | `server/web/`, `plugin/`, `cli/`, `docker/`, `docs/`, other sessions' logs |
+| **SHELL** | `server/web/`, `plugin/`, `cli/`, `docker/` | the rest of `server/`, `docs/`, other sessions' logs |
 
-**`server/web/` is the frontend and belongs to Builder-B** (D-016). Everything
-else under `server/` — API, database, policy, MCP — is Builder-A's. The split is
-API versus UI, not directory depth: Builder-B never touches `server/src/`, and
-Builder-A never touches `server/web/`. `server/public/` is build output and
+**`server/web/` is the frontend and belongs to SHELL** (D-016). Everything
+else under `server/` — API, database, policy, MCP — is CORE's. The split is
+API versus UI, not directory depth: SHELL never touches `server/src/`, and
+CORE never touches `server/web/`. `server/public/` is build output and
 belongs to nobody; it is gitignored (LAI-016).
 
-**D-031 retires the D-028 split: Builder-B owns all of `server/web/` again**,
-including `api/sprints.ts`, and Builder-A is back to `server/**`. The paragraph
+**D-031 retires the D-028 split: SHELL owns all of `server/web/` again**,
+including `api/sprints.ts`, and CORE is back to `server/**`. The paragraph
 below is kept as the record of what D-028 did and is no longer in force.
 
 ~~**Temporary, D-028 — both builders are on the UI.**~~ `server/web/` splits by
 screen: `routes/screens/sprints/`, `timeline/` and `dashboard/` **and
-`api/sprints.ts`** are **Builder-A's**;
+`api/sprints.ts`** are **CORE's**;
 everything else under `server/web/` — the shell, sidebar, `route-table.ts`,
-theme, shared components, the board and the auth screens — stays **Builder-B's**.
-Builder-A adds files inside its own screen folders and edits no shared file.
+theme, shared components, the board and the auth screens — stays **SHELL's**.
+CORE adds files inside its own screen folders and edits no shared file.
 Reverts when the UI has caught up with the API.
 
 One file is shared. The **`WEB_*` maps** in
-`server/test/tooling/structure.test.ts` are **Builder-B's** (D-026); the rest of
-that file is Builder-A's. Ownership there follows what a section *describes*, not
+`server/test/tooling/structure.test.ts` are **SHELL's** (D-026); the rest of
+that file is CORE's. Ownership there follows what a section *describes*, not
 the directory the file sits in — the same principle D-016 settled for
 `server/web/`.
 
 Every session may edit its own log file and move its own task files, and nothing
 else outside the table.
 
-**PM writes no application code, ever.** If PM identifies code that needs
-writing, PM writes a task file instead.
+**CHIEF writes no application code, ever.** If CHIEF identifies code that needs
+writing, CHIEF writes a task file instead.
 
-**PM never changes a design token, a colour, or any value in `docs/design/`**
-(D-020). That directory is the owner's imported visual reference. PM may measure
-it, report a failure, and recommend a fix — PM may not decide one. A measured
+**CHIEF never changes a design token, a colour, or any value in `docs/design/`**
+(D-020). That directory is the owner's imported visual reference. CHIEF may measure
+it, report a failure, and recommend a fix — CHIEF may not decide one. A measured
 problem becomes a task for the owner, exactly as a builder files rather than
 crossing into another area.
 
@@ -81,9 +96,9 @@ log.
 
 Work **only** from task files. No task file, no work.
 
-Two narrow exceptions, both PM-only: repo maintenance the owner asks for
+Two narrow exceptions, both CHIEF-only: repo maintenance the owner asks for
 directly (workflow, docs, git config) and this bootstrap. Those carry `[ops]` or
-`[bootstrap]` in the commit's id slot and are recorded in `logs/pm-*.md` instead
+`[bootstrap]` in the commit's id slot and are recorded in `logs/chief-*.md` instead
 of a task file. Builders have no equivalent exception.
 
 **Claiming (the move is the lock).**
@@ -122,30 +137,30 @@ in its log. Do not negotiate, do not both continue.
 `status: review` and `finished: <timestamp>`, `git mv` it to `.tasks/review/`,
 and commit. Then write your log entry.
 
-**Only PM moves `.tasks/review/` → `.tasks/done/`.** Builders never mark their
-own work done. If PM sends a task back, it returns to `.tasks/in-progress/` with
+**Only CHIEF moves `.tasks/review/` → `.tasks/done/`.** Builders never mark their
+own work done. If CHIEF sends a task back, it returns to `.tasks/in-progress/` with
 review notes appended to the file — read them, fix, and move it to review again.
 
-**PM does not add criteria to work already submitted.** Once a task is in
-`.tasks/review/`, its acceptance criteria are frozen. If PM wants more, it is a
-**new task** — never an edit to the one in flight. This happened on LAI-059: PM
+**CHIEF does not add criteria to work already submitted.** Once a task is in
+`.tasks/review/`, its acceptance criteria are frozen. If CHIEF wants more, it is a
+**new task** — never an edit to the one in flight. This happened on LAI-059: CHIEF
 widened the backlog copy on `master` while the builder's copy sat in review, so
 the builder either failed a review against criteria that did not exist when they
 built it, or had to reopen their own finished task. Neither is theirs to absorb.
 
-The same holds for a task in `.tasks/in-progress/`: PM may append **review
+The same holds for a task in `.tasks/in-progress/`: CHIEF may append **review
 notes**, and nothing else (§6).
 
 **How a send-back travels between branches.** A task in review lives on the
-builder's branch; `master` has no copy, because PM merges only on accept. So PM
+builder's branch; `master` has no copy, because CHIEF merges only on accept. So CHIEF
 writes the send-back **on `master`**, at `.tasks/in-progress/`, with the notes
 appended and the failed criteria unticked. Git sees an added file, not a rename,
 so **the builder ends up with two copies** after their next `git merge master`.
 The builder resolves it: `git rm .tasks/review/LAI-0XX-*.md`, keep the
-`in-progress` copy, carry on. PM's copy is always the authoritative one —
-`.tasks/` resolves in PM's favour (§4.2).
+`in-progress` copy, carry on. CHIEF's copy is always the authoritative one —
+`.tasks/` resolves in CHIEF's favour (§4.2).
 
-Accepting is the other way round and needs no such step: PM merges the builder's
+Accepting is the other way round and needs no such step: CHIEF merges the builder's
 branch first, which brings the file to `master` at `.tasks/review/`, and the
 `git mv` to `.tasks/done/` is then an ordinary rename.
 
@@ -174,22 +189,26 @@ git log --all --name-only --format= -- .tasks/ | grep -i '<keyword>'
 ```
 
 If someone already filed it, add what you know to your log and move on. **If you
-are not sure, file it anyway** — PM closes duplicates in one review line, and a
+are not sure, file it anyway** — CHIEF closes duplicates in one review line, and a
 discovery nobody writes down costs whatever it breaks later. Duplicate filings
 are a cheap failure; lost discoveries are not.
 
-**PM dedupes at review time, and the first filing wins** — regardless of which
-session filed it, including PM's own.
+**CHIEF dedupes at review time, and the first filing wins** — regardless of which
+session filed it, including CHIEF's own.
 
 **Take the id from your own range** (D-017). "Next unused number" is not a lock —
 two sessions filing at the same time both pick it, and it collided twice on day
 one:
 
-| Session | Range |
-| --- | --- |
-| PM | `LAI-001` – `LAI-099` |
-| Builder-A | `LAI-100` – `LAI-199` |
-| Builder-B | `LAI-200` – `LAI-299` |
+| Session | Range | Second block (D-036) |
+| --- | --- | --- |
+| CHIEF | `LAI-001` – `LAI-099` — **full** | `LAI-400` – `LAI-499` |
+| CORE | `LAI-100` – `LAI-199` | `LAI-500` – `LAI-599` |
+| SHELL | `LAI-200` – `LAI-299` | `LAI-600` – `LAI-699` |
+
+`LAI-300` – `LAI-399` is reserved for a fourth session (D-017) and is not
+anyone's to take. Move to your second block only when your first has no free
+number left — CHIEF's has none, so CHIEF files from `LAI-400`.
 
 Use the lowest unused number **in your own range**, checked across every branch:
 
@@ -263,9 +282,9 @@ the file-move claim lock was not a lock at all.
 
 | Session | Directory | Branch |
 | --- | --- | --- |
-| PM | `Laika/` | `master` |
-| Builder-A | `Laika-builder-a/` | `builder-a` |
-| Builder-B | `Laika-builder-b/` | `builder-b` |
+| CHIEF | `Laika/` | `master` |
+| CORE | `Laika-core/` | `core` |
+| SHELL | `Laika-shell/` | `shell` |
 
 All three are worktrees of **one repository** — one `.git`, one object database,
 one set of refs. That is what makes the cross-branch claim check in §2 instant and
@@ -281,19 +300,19 @@ stop and change directory. `git worktree list` tells you where you are.
 git merge master          # from your own worktree, on your own branch
 ```
 
-Prefer `merge` over `rebase` here — your branch is shared state that PM reads
+Prefer `merge` over `rebase` here — your branch is shared state that CHIEF reads
 during review, and rebasing it rewrites commits another session may already have
 looked at.
 
-**Integration is PM's job.** Builders never merge into `master` and never check
-out `master`. PM merges a builder branch when accepting the task:
+**Integration is CHIEF's job.** Builders never merge into `master` and never check
+out `master`. CHIEF merges a builder branch when accepting the task:
 
 ```bash
-git merge --no-ff builder-a
+git merge --no-ff core
 ```
 
 **Never** create a worktree, delete one, or check out another session's branch.
-If you think you need one, say so — that is a PM decision.
+If you think you need one, say so — that is a CHIEF decision.
 
 ## 5. Code rules
 
@@ -369,5 +388,5 @@ file. The rules below are the ones that are true of every line of code.
 - Never edit another session's log file.
 - Never edit another session's identity file in `.sessions/`.
 - Never edit a task file that is in another session's `.tasks/in-progress/`
-  claim, except PM appending review notes.
-- Never move a task to `.tasks/done/` unless you are PM.
+  claim, except CHIEF appending review notes.
+- Never move a task to `.tasks/done/` unless you are CHIEF.
