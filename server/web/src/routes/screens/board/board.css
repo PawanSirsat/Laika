@@ -898,6 +898,15 @@
   color: var(--amb);
 }
 
+/* Neutral, not amber. Amber reads as "working on it", which is true of a
+   reconnect and false of a refusal — that one is settled, and the board's own
+   permission message is the thing worth the reader's attention. */
+.live-refused {
+  background: var(--tub);
+  border-color: var(--bd);
+  color: var(--tx3);
+}
+
 .live-dot {
   width: 5px;
   height: 5px;
