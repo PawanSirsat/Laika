@@ -49,6 +49,10 @@ const ORG_MATRIX: OrgRow[] = [
   // any project. The Viewer ✓ is the role's answer — their credential is what
   // stops them, not the matrix (see `can.test.ts`).
   ['unlisted.log_own', true, true, true, true],
+  // | Send own heartbeat | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+  // Same shape and same reason as the row above: your own record about your own
+  // work. §9.1 makes it token-only, so a Viewer is stopped by the credential.
+  ['heartbeat.send_own', true, true, true, true],
   // | Export audit log | ✓ | ✓ | — | — |
   ['audit_log.export', true, true, false, false],
   // | Configure webhooks | ✓ | ✓ | — | — |

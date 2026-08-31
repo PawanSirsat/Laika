@@ -216,8 +216,11 @@ describe('the cases LAI-004 calls out by name', () => {
       const selfToken = action === 'token.create_own' || action === 'token.revoke_own';
       const joining = action === 'project.join_public';
       const ownUnlisted = action === 'unlisted.log_own';
+      const ownHeartbeat = action === 'heartbeat.send_own';
 
-      expect(allowed, `${action} allowed for viewer`).toBe(selfToken || joining || ownUnlisted);
+      expect(allowed, `${action} allowed for viewer`).toBe(
+        selfToken || joining || ownUnlisted || ownHeartbeat,
+      );
     }
   });
 

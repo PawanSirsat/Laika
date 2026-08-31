@@ -27,6 +27,7 @@ export const ORG_ACTIONS = [
   'token.list_any',
   'token.revoke_any',
   'unlisted.log_own',
+  'heartbeat.send_own',
   'audit_log.export',
   'webhook.configure',
 ] as const;
