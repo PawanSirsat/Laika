@@ -2,11 +2,12 @@
 id: LAI-138
 title: The per-token rate limit has a policy and no way to reach it
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-403]
 discovered-from: LAI-402
-status: backlog
+status: in-progress
+started: 2026-08-31T09:30:00Z
 ---
 
 ## Goal
