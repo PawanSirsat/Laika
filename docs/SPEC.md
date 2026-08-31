@@ -98,7 +98,27 @@ role `viewer` — no escalation via project assignment, enforced in code.
 | Join a `public` project | ✓ | ✓ | ✓ (as member) | ✓ (as viewer) |
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
 | List / revoke **anyone's** token | ✓ | ✓ | — | — |
+| Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Export audit log | ✓ | ✓ | — | — |
+
+**Logging unlisted work is deliberately asymmetric with reading it** (added
+2026-08-31, LAI-408). `log_unlisted_work` (§7.1) is the one MCP tool with no REST
+twin (D-024): an agent noticing something outside any project has nowhere else to
+put it. Anyone may add to that pile — it is **their own record about their own
+work**, creating nothing in any project and visible to nobody who could not
+already read the audit log. Triaging it is the restricted half, and follows
+*Export audit log* like every other `project_id IS NULL` row.
+
+The Viewer cell is `✓` for the same reason the token row's is, and with the same
+consequence: a Viewer's token is forced `read_only`, and logging is not a read
+action, **so a Viewer is refused in practice.** The `✓` records that the
+restriction comes from the credential rather than from the role — which matters,
+because if `read_only` forcing were ever relaxed, this cell would already say
+what should happen rather than needing to be re-decided. It is not an oversight
+and a `—` here would be a different claim.
+
+There is no cell for *writing* to the pile from the REST API because there is no
+such endpoint; §6.4 exposes only `GET /unlisted`, promote and dismiss.
 
 **Reading the org-wide activity feed follows *Export audit log*.** Rows with
 `project_id IS NULL` — `token.created`, `member.role_changed`, `unlisted.logged`,

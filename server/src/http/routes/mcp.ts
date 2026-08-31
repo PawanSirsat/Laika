@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type Database from 'better-sqlite3';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { handleMcpRequest } from '../../mcp/server.ts';
@@ -35,6 +36,7 @@ import { type AppEnv } from '../context.ts';
 export interface McpRouteOptions {
   version: string;
   db: Db;
+  sqlite: Database.Database;
 }
 
 export function mcpRoutes(options: McpRouteOptions): Hono<AppEnv> {
@@ -51,7 +53,12 @@ export function mcpRoutes(options: McpRouteOptions): Hono<AppEnv> {
       throw new ApiError('unauthorized', 'That endpoint needs a personal access token');
     }
 
-    return handleMcpRequest(c.req.raw, { actor, version: options.version, db: options.db });
+    return handleMcpRequest(c.req.raw, {
+      actor,
+      version: options.version,
+      db: options.db,
+      sqlite: options.sqlite,
+    });
   });
 
   return app;

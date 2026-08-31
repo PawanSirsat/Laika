@@ -1,3 +1,5 @@
+import { ApiError } from '../errors.ts';
+
 /**
  * How a tool answers (SPEC §7.2, LAI-407).
  *
@@ -14,6 +16,8 @@
  */
 
 export interface ToolAnswer {
+  /** Set only on a refusal — see {@link toolError}. */
+  isError?: boolean;
   // The SDK's `CallToolResult` carries an index signature for `_meta` and
   // future fields, so an exact interface is not assignable to it. Matching the
   // shape here rather than casting at four call sites.
@@ -24,6 +28,35 @@ export interface ToolAnswer {
 
 export function answer(markdown: string, payload: Record<string, unknown>): ToolAnswer {
   return { content: [{ type: 'text', text: markdown }], structuredContent: payload };
+}
+
+/**
+ * A failure an agent can branch on (SPEC §7.2).
+ *
+ * *"Errors are MCP tool errors carrying the §6.3 `code`, so an agent can branch
+ * on `conflict` versus `forbidden` rather than parse prose."*
+ *
+ * Without this the SDK turns a thrown `ApiError` into its `message` alone —
+ * "That task is already claimed" — and the code, the details and the assignee id
+ * are all lost. An agent would have to regex the sentence, and the sentence is
+ * the part we are free to reword.
+ *
+ * So the whole §6.3 envelope is returned as the error body, exactly as the REST
+ * API would have sent it. `isError` is what makes it a tool error rather than a
+ * result that happens to describe a failure.
+ *
+ * Anything that is not an `ApiError` is re-thrown: a `TypeError` is a bug in
+ * Laika, not a refusal, and dressing it as one would tell an agent to handle
+ * something it cannot.
+ */
+export function toolError(error: unknown): ToolAnswer {
+  if (!(error instanceof ApiError)) throw error;
+
+  return {
+    content: [{ type: 'text', text: JSON.stringify(error.toBody()) }],
+    structuredContent: error.toBody() as unknown as Record<string, unknown>,
+    isError: true,
+  };
 }
 
 /** `2026-08-31` — dates a person reads, from the unix-ms the API speaks. */
