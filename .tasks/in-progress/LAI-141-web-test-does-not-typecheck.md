@@ -2,11 +2,12 @@
 id: LAI-141
 title: pnpm test in @laika/web cannot catch a type error either
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-136
-status: backlog
+status: in-progress
+started: 2026-08-31T22:23:52Z
 ---
 
 ## Goal
