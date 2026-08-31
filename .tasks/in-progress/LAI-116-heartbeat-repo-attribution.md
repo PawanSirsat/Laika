@@ -2,11 +2,12 @@
 id: LAI-116
 title: Presence attribution must handle a repo tracked by several projects
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-108]
 discovered-from: LAI-108
-status: backlog
+status: in-progress
+started: 2026-09-01T15:20:00Z
 ---
 
 ## Goal
