@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm';
 import { hashToken, newTokenSecret, tokenDisplayPrefix } from '../auth/tokens.ts';
-import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { activityActor, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type TokenScope } from '../db/enums.ts';
@@ -178,8 +178,7 @@ export function createToken(
       // Org-scoped: a token is not a project's business, and §3.1 puts reading
       // these rows behind the audit-log cell (`visibleTo` in services/events).
       projectId: null,
-      actorId: actor.userId,
-      actorKind: actorKindOf(actor),
+      ...activityActor(actor),
       type: 'token.created',
       payload: { token_id: row.id, name: row.name, scope: row.scope, prefix: row.prefix },
       now,
@@ -317,26 +316,12 @@ function revoke(
     appendActivity(db, {
       orgId: currentOrgId(db),
       projectId: null,
-      actorId: actor.userId,
-      actorKind: actorKindOf(actor),
+      ...activityActor(actor),
       type: 'token.revoked',
       payload: { token_id: row.id, name: row.name, prefix: row.prefix, owner_id: row.userId },
       now,
     });
   });
-}
-
-/**
- * The actor is the **person**, never the token.
- *
- * `actor_kind` says how the request arrived; `actor_id` says who is answerable
- * for it, and revoking your own token through an agent is still your action.
- * `actor_token_id` — which token was used — needs an id on `TokenContext` that
- * it does not carry yet; LAI-403 adds it along with everything else that has to
- * know which row a presented token came from.
- */
-function actorKindOf(actor: ResolvedActor): 'user' | 'agent' {
-  return actor.token === null || actor.token === undefined ? 'user' : 'agent';
 }
 
 /** Single-org deployment (§4.2), so there is exactly one row to find. */

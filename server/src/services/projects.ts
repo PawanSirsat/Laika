@@ -7,7 +7,7 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { activity, projectMemberships, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
 
 /**
@@ -349,8 +349,7 @@ export function createProject(
     appendActivity(db, {
       orgId,
       projectId: id,
-      actorId: actor.userId,
-      actorKind: 'user',
+      ...activityActor(actor),
       type: 'project.created',
       payload: { name: input.name, slug, prefix },
       now,
@@ -517,8 +516,7 @@ export function updateProject(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     // Archiving is its own event: it is what removes a project from every
     // active view, and an audit reader should not have to diff a payload to
     // discover that is what happened.
@@ -600,8 +598,7 @@ export function addMember(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'member.added',
     payload: { user_id: userId, role },
     now,
@@ -633,8 +630,7 @@ export function changeMemberRole(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'member.role_changed',
     payload: { user_id: userId, from: existing.role, to: role },
     now,
@@ -664,8 +660,7 @@ export function removeMember(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'member.removed',
     payload: { user_id: userId, role: existing.role },
     now,
@@ -747,8 +742,7 @@ export function joinPublicProject(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'member.added',
     payload: { user_id: actor.userId, role, via: 'join' },
     now,

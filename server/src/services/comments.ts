@@ -1,5 +1,5 @@
 import { and, asc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
-import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type CreatedVia } from '../db/enums.ts';
@@ -199,8 +199,7 @@ export function addComment(
     orgId: project.orgId,
     projectId: project.id,
     taskId: task.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'comment.added',
     // `action` is redundant with `type` for rows written from LAI-110 onward, and
     // load-bearing for every row written before it. See the module comment.
@@ -240,8 +239,7 @@ export function editComment(
     orgId: project.orgId,
     projectId: project.id,
     taskId: task.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'comment.edited',
     payload: { action: 'edited', comment_id: commentId },
     now,
@@ -284,8 +282,7 @@ export function deleteComment(
     orgId: project.orgId,
     projectId: project.id,
     taskId: task.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'comment.deleted',
     payload: { action: 'deleted', comment_id: commentId },
     now,
