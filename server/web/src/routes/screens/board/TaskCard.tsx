@@ -153,20 +153,23 @@ export function TaskCard({
           </span>
         )}
         {task.ready && (
-          <span className="marker marker-ready" title="Unassigned, unblocked, ready to pick up">
+          <span
+            className="marker marker-ready card-above"
+            title="Unassigned, unblocked, ready to pick up"
+          >
             ready
           </span>
         )}
         {blocked === undefined && (
           <span
-            className="marker marker-unknown"
+            className="marker marker-unknown card-above"
             title="A dependency is outside the tasks loaded here, so this cannot be judged"
           >
             deps ?
           </span>
         )}
         {task.dependencies.length > 0 && (
-          <span className="card-deps" title="Dependencies">
+          <span className="card-deps card-above" title="Dependencies">
             <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
               <path d="M9 15 15 9M10 6l1-1a4 4 0 1 1 6 6l-1 1M14 18l-1 1a4 4 0 1 1-6-6l1-1" />
             </svg>
@@ -177,11 +180,11 @@ export function TaskCard({
         <span className="card-spacer" />
 
         {assignee === undefined ? (
-          <span className="card-unassigned" title="Unassigned" aria-label="Unassigned">
+          <span className="card-unassigned card-above" title="Unassigned" aria-label="Unassigned">
             +
           </span>
         ) : (
-          <span className="card-who">
+          <span className="card-who card-above">
             <span
               className="card-avatar"
               style={

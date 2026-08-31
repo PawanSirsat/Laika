@@ -223,17 +223,61 @@
 
 /* ----------------------------------------------------------------- card */
 
+/* `relative` is load-bearing, not tidiness: `.card-open::after` covers the card
+   with `inset: 0`, which resolves against the nearest *positioned* ancestor.
+   Leave the card `static` and the overlay sizes itself to the column instead
+   and swallows the whole board. */
 .card {
+  position: relative;
   background: var(--card);
   border: 1px solid var(--bd);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow);
   padding: var(--space-3);
-  cursor: grab;
+  /* `pointer`, not `grab`. The card was `grab` — honest about dragging and
+     silent about the thing people actually do, which is open it. The design
+     file uses `cursor:pointer` 46 times and `grab` never; dragging still works
+     and is discovered by trying, the way it is on every other board. */
+  cursor: pointer;
+}
+
+/* Existing tokens only (D-020). No shadow lift: there is one elevation token,
+   `--shadow`, and a hover shadow would mean inventing a second — not mine to
+   decide. Border and surface both change, so the state is legible without it.
+   Not a border-*width* change, which would reflow the column on every hover. */
+.card:hover {
+  border-color: var(--bd2);
+  background: var(--tub);
 }
 
 .card:active {
   cursor: grabbing;
+}
+
+/* The whole card is the hit area (LAI-424).
+   Measured before this: the only control was `button.card-key`, 545px² of the
+   card's 15,062px² — **3.6%**. The title did nothing, the card did nothing.
+
+   Stretching the existing button rather than adding a handler to the article
+   keeps it **one** control: one thing in the accessibility tree, one Tab stop,
+   one Enter/Space activation, and no button nested inside a button. */
+.card-open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* Above the card's own content so it catches the click, below anything
+     explicitly lifted with `.card-above`. */
+  z-index: 0;
+  border-radius: inherit;
+}
+
+/* Lifted above the overlay so their `title` tooltips still appear on hover.
+   These are display, not controls — the avatar, the unassigned `+`, the blocker
+   and the dependency count — and an overlay across them would quietly remove
+   information without removing anything visible. */
+.card-above {
+  position: relative;
+  z-index: 1;
 }
 
 /* In flight. The card has NOT moved — the server has not answered yet. */
@@ -250,6 +294,11 @@
   gap: var(--space-2);
 }
 
+/* Deliberately **not** positioned. `.card-open::after` uses `inset: 0`, which
+   resolves against the nearest positioned ancestor — making the key `relative`
+   sizes the overlay to the key itself, which is the 3.6% hit area this task
+   exists to remove. Caught by clicking, not by the rule-shape test: every
+   declaration was present and the geometry was still wrong. */
 .card-key {
   font-family: var(--font-mono);
   font-size: var(--text-xs);

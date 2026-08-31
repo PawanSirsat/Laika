@@ -57,7 +57,14 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
-  const [openTaskId, setOpenTaskId] = useState<string | undefined>(undefined);
+  /**
+   * Which task's panel is open — **from the URL, not from state** (LAI-424).
+   *
+   * Held in `useState` the panel could not be linked to, a refresh lost it, and
+   * Back did not close it. That is the same shape as LAI-423: something the
+   * reader can plainly see that the address bar does not carry.
+   */
+  const openTaskId = params.get('task') ?? undefined;
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
   const [projectTags, setProjectTags] = useState<readonly ProjectTag[]>([]);
@@ -335,6 +342,10 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   // Read from the board's own list so the panel re-renders after a move —
   // holding a copy would show a stale status the moment the drag succeeded.
   const openTask = openTaskId === undefined ? undefined : board.byId.get(openTaskId);
+
+  const openTaskInUrl = (taskId: string): void => {
+    setParam('task', taskId);
+  };
 
   const setParam = (key: string, value: string | undefined): void => {
     const next = new URLSearchParams(params);
@@ -614,7 +625,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
               byId={board.byId}
               members={members}
               filtered={filtered}
-              onOpen={setOpenTaskId}
+              onOpen={openTaskInUrl}
             />
           ) : (
             <KanbanView
@@ -627,7 +638,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
                 void board.move(id, to);
               }}
               filtered={filtered}
-              onOpen={setOpenTaskId}
+              onOpen={openTaskInUrl}
               onAdd={() => {
                 setCreating(true);
               }}
@@ -673,7 +684,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
             void board.move(id, to);
           }}
           onClose={() => {
-            setOpenTaskId(undefined);
+            setParam('task', undefined);
           }}
         />
       )}
