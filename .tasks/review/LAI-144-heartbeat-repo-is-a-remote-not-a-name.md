@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-116]
 discovered-from: LAI-116
-status: in-progress
+status: review
 started: 2026-09-01T16:50:00Z
+finished: 2026-09-01T17:20:00Z
 ---
 
 ## Goal
@@ -43,13 +44,14 @@ It is also not obviously the server's job — see below.
 
 ## Acceptance criteria
 
-- [ ] A heartbeat whose `repo` is any of the three forms above resolves to a
+- [x] A heartbeat whose `repo` is any of the three forms above resolves to a
       project storing `PawanSirsat/Laika`.
 - [ ] The normalisation is written down in §9.1 or §4.3, wherever the decision
-      below puts it.
-- [ ] A `repo` that is neither a URL nor `owner/name` still degrades rather than
+      below puts it. **CHIEF's — not tickable by CORE.**
+      Text handed over on submission.
+- [x] A `repo` that is neither a URL nor `owner/name` still degrades rather than
       erroring (§9.2).
-- [ ] Whichever side normalises, the **other** side has a test proving it does
+- [x] Whichever side normalises, the **other** side has a test proving it does
       not need to.
 
 ## Notes / context
@@ -75,3 +77,55 @@ the direction that matters for something self-hosted.
 
 **Check `.git` stripping and a trailing slash** — both appear in real remotes and
 neither is exotic.
+
+
+---
+
+## Submitted — CORE, 2026-09-01
+
+**The server normalises, both sides, per CHIEF's ruling.** 10 new tests; suite
+1429 green, lint and format clean. M4's exit criterion is reachable again.
+
+### What it accepts
+
+`owner/name` · `git@host:owner/name[.git]` · `https://host/owner/name[.git][/]` ·
+`http://…` · `ssh://git@host/…` · `git://host/…` · a `user@` in the URL ·
+surrounding whitespace. All normalise to `owner/name`.
+
+Nested paths are kept whole — GitLab subgroups are real, and truncating to two
+segments would merge two different repositories. Anything with nothing left after
+stripping is `null`, which the caller treats as "matches nothing" (§9.2 degrades,
+it never errors).
+
+### Both sides, not just the incoming one
+
+§4.3 asks for `owner/name` and nothing enforces it, so a project row holding a
+URL is exactly as likely as a heartbeat carrying one. Normalising one side only
+is a comparison that disagrees with itself depending on where the URL landed —
+the same fault as folding case on one side. That is AC4's point and it is tested
+directly, from both directions.
+
+### Two edges, each of which took a test
+
+**A scheme must be detected before the scp form.** `https://github.com/` has no
+path, so a URL pattern requiring one falls through, and the scp pattern then
+reads `https` as the host and returns **`github.com`** as the repository name.
+
+**`.git` is stripped only as a suffix.** A global replace turns
+`PawanSirsat/PawanSirsat.github.io` into `PawanSirsat/PawanSirsathub.io`, and
+every GitHub account has that repository.
+
+That second one is the finding worth reporting. My first version of that test
+used `kvell/gitignore` and `kvell/legit`. **Neither contains `.git`**, so the
+mutation that strips `.git` anywhere passed it — the test named the right
+property and could not fail for it. Only the mutation showed that; reading it, it
+looks correct.
+
+### The plugin half is filed, not done — LAI-145
+
+`plugin/` is SHELL's. It is **p3 and tidying, not a fix**: presence works today
+with a hook sending a raw remote. Its criteria say explicitly that the
+server-side normalisation is not to be removed if it ever lands — the server
+normalises because an old plugin has to keep working against a new one.
+
+Six mutations, all caught once the `.github.io` case existed.
