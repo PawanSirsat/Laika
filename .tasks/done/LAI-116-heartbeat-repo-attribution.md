@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-108]
 discovered-from: LAI-108
-status: review
+status: done
 started: 2026-09-01T15:20:00Z
 finished: 2026-09-01T16:05:00Z
 ---
@@ -34,7 +34,7 @@ return.
       case-insensitively, so this is the established precedent, not a new one.
 - [x] A repo that matches no project is not an error — §9.2's rule that unparseable
       input "degrades, it never errors" applies here too.
-- [ ] Whatever is decided for the many case is written into §11 or §9, because it
+- [x] Whatever is decided for the many case is written into §11 or §9, because it
       is product behaviour a UI has to render. **CHIEF's — not tickable by CORE.**
       Text handed over on submission; see below.
 
@@ -137,3 +137,65 @@ distinguishable, which is the property D-005 actually cares about.
 Six mutations, all caught: case-sensitivity, no branch narrowing, ambiguity
 picking the first silently, an anchored parse, an unmatched repo erroring, and
 the route going quiet.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted**, with §9.1 and §9.3 written in the merge commit — AC4 was mine and
+is now ticked.
+
+I took the text nearly verbatim and **left the log events out, as recommended**:
+`heartbeat.repo_unmatched` and `heartbeat.repo_ambiguous` are operational, not
+product behaviour a UI renders, and AC4's stated reason for existing was the
+latter. Declining to have your own work written into the spec because it does not
+belong there is the right instinct.
+
+**Verified by mutation:** removing `.toLowerCase()` goes red on *"matches
+case-insensitively, because §4.3 stores what it was given"* and *"carries the
+resolution on the recorded heartbeat"*.
+
+### Two decisions made against the obvious answer
+
+**Nothing stored.** §9.3 already promised presence is computed at request time
+with *"no separate presence store to fall out of sync"* — a `project_id` column
+would have been that store, and could hold only one id for a result that is
+legitimately many. Adding it would have contradicted a rule already written.
+
+**The `202` keeps its empty body.** *"A §9.1 response-contract change riding
+along inside an ambiguity task — the ride-along LAI-091 refused and LAI-099
+credits it for. I am not going to refuse it there and take it here."*
+**Consistency with your own past refusal is the strongest form of that
+argument**, and it is the second time today you have declined to widen in flight
+when widening was convenient for you.
+
+**Case folding in JavaScript rather than SQLite** is right and I would not have
+caught it: `lower()` folds ASCII only, `toLowerCase` is Unicode-aware, and a
+comparison that disagrees with itself depending on which side ran it only shows
+up on somebody else's repo name.
+
+**Using §9.2's own regex rather than a stricter one**: anchoring would drop
+`feature/lai-42-x`, and a resolver stricter than the convention it implements is
+a second convention.
+
+### The test that earned its keep
+
+`writes §4.10's columns and nothing else` is an exhaustive `toEqual` and went red
+the moment the view gained two fields. **Extended, not loosened** — it now also
+asserts the stored row's column list, so the row and the resolution stay
+distinguishable, which is the property D-005 actually cares about. *"That test
+was written to be annoying and it was annoying at the right moment."*
+
+### But LAI-144 matters more than this task did, and they said so
+
+`plugin/hooks/README.md` documents sending a **git remote**. A remote is a URL;
+§4.3 stores `owner/name`. None of the three real forms matches by any comparison,
+folded or not — so **on a correctly configured instance with the plugin sending
+exactly what it documents, every heartbeat resolves to nothing and §9.3 presence
+is permanently empty.** LAI-116's case-insensitivity does nothing about it,
+because case was never the problem.
+
+Filing it rather than fixing it was right: it is a different rule about a
+different failure from the one these criteria name. **Sequenced ahead of the p2
+list** — it makes M4's exit criterion unreachable, and M4's exit is *"a heartbeat
+from that agent is visible in the database"* attributed to something.
