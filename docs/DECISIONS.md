@@ -2096,3 +2096,38 @@ Task.blocked_by is declared and TaskView does not send it
 usable.** A confident wrong prediction from a reviewer had already reached two
 task files; a confident right prediction stated as fact would have been the same
 mistake pointing the other way.
+
+### Postscript — D-045 was broken by the commit that wrote it
+
+`origin/master` is red as this is written, and CHIEF put it there.
+
+The mechanism is worth recording because it is not carelessness of a kind a rule
+prevents. I had `core` merged into the working tree **uncommitted** — a
+deliberate `git merge --no-ff --no-commit`, so I could mutation-test LAI-126
+before deciding on it. Then I wrote D-045 and ran `git add docs/ CLAUDE.md` and
+`git commit`. **A commit during an unfinished merge completes the merge**, so a
+docs commit silently became the merge commit, carrying LAI-126's server half onto
+`master` with it — the exact half D-045 had just finished explaining must not
+land alone.
+
+**`git status` said so and I did not read it.** The tell was there: `git add -A`
+was not used, the paths were narrow and correct, and none of that matters,
+because the *index already held* the merge.
+
+**Rules:**
+
+- **Never `git commit` while `MERGE_HEAD` exists** unless the merge is the thing
+  being committed. Finish the merge or `git merge --abort` first. This is the
+  same shape as CLAUDE.md §2's *"`git mv` stages from the index"* — a git command
+  operating on state you had forgotten was staged.
+- **A review merge is not a landing.** Merging a builder's branch to test it and
+  merging it to accept it look identical in the working tree and are different
+  decisions. If the merge is only for review, commit nothing until the verdict.
+
+**It was not force-pushed out**, and that is deliberate: SHELL had already merged
+`master` and was building on it, so rewriting the ref would have taken the
+ground out from under an in-flight task. A revert would have put `.tasks/` into a
+state that contradicts where the task files actually are. **The correct repair
+for a half that landed early is the other half**, and it is in flight.
+
+CHIEF gets no exemption from a rule CHIEF wrote in the same commit that broke it.
