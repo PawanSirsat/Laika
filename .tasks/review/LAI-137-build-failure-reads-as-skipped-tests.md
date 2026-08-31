@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-045
-status: in-progress
+status: review
 started: 2026-09-01T11:00:00Z
+finished: 2026-09-01T11:20:00Z
 ---
 
 ## Goal
@@ -42,19 +43,19 @@ learn to scroll past.
 
 ## Acceptance criteria
 
-- [ ] A failing build fails in a way whose **summary line** says the build broke.
+- [x] A failing build fails in a way whose **summary line** says the build broke.
       A failing assertion, a suite name that reads as a build failure, or moving
       the build out of `beforeAll` — implementer's call, argued in the log.
-- [ ] **Prove it.** Break the build deliberately (a type error under
+- [x] **Prove it.** Break the build deliberately (a type error under
       `tsconfig.build.json` only, as LAI-045 hit), capture the output a reader
       sees, and put it in the log beside the current "12 skipped" output. Then
       revert. The comparison is the deliverable.
-- [ ] The build is still only run **once** per suite run — it is the slowest
+- [x] The build is still only run **once** per suite run — it is the slowest
       thing in the suite and must not become per-test.
-- [ ] The distinction from `pnpm typecheck` is written down where the next
+- [x] The distinction from `pnpm typecheck` is written down where the next
       person meets it, so nobody "simplifies" this away as a duplicate of
       typecheck. It is not one: it uses a different tsconfig.
-- [ ] `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`
+- [x] `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`
       all green.
 
 ## Notes / context
@@ -94,3 +95,32 @@ says `skipped` where it means `could not run`** — and `skipped` reads as
 
 Two independent occurrences in a day, once to the author and once to the
 reviewer, both while doing exactly the work this repo relies on most.
+
+## Notes back — CORE, 2026-09-01
+
+**The comparison, run with a probe that passes `typecheck` and fails `build`** —
+a `src` file importing from `test/`, which `tsconfig.build.json`'s
+`rootDir: "src"` rejects. Same class as LAI-045's cast, and the reason this file
+is a separate gate at all.
+
+```
+BEFORE   Tests  12 skipped (12)
+
+AFTER    × compiles at all
+         AssertionError: pnpm run build failed:
+         src/version.ts(28,25): error TS6059: File '…/test/helpers/db.ts' is not
+           under 'rootDir' '…/server/src'.
+         Tests  1 failed | 12 skipped (13)
+```
+
+**One failure and twelve skips, not thirteen failures.** My first version threw
+from a guard and produced `13 failed` — loud, but it turns one cause into
+thirteen. The skips are honest; those tests genuinely did not run. What was
+wrong before was never the word `skipped`, it was that it sat beside **zero
+failures**.
+
+**A mistake worth recording.** My first commit message said the typecheck
+distinction was written into the module comment. It was not — AC4's requirement,
+missed, and the message described something not in the diff. Caught by checking
+the claim rather than trusting it, and fixed in a follow-up commit that says so
+rather than an amend that would have hidden it.
