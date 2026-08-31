@@ -2,11 +2,12 @@
 id: LAI-406
 title: Mount /mcp — Streamable HTTP transport, token auth, actor resolution
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-403]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T10:20:00Z
 ---
 
 ## Goal
