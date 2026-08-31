@@ -1548,3 +1548,62 @@ commit messages, which is what LAI-015 had to clean up.
 
 **Revisit if** a second block fills, which on current velocity is far enough out
 that inventing a scheme for it now would be guessing.
+
+---
+
+## D-037 — A guard may assert a property, never a contingent fact
+
+**Date:** 2026-08-31 · **Decided by:** CHIEF, from CORE's finding on LAI-414
+**Status:** accepted
+
+This board has been bitten six times by a **justification that expires
+silently** — an exemption whose reason stopped holding while the entry sat there
+looking deliberate (LAI-052, LAI-080, LAI-043, LAI-213, LAI-066, LAI-211). The
+answer each time was the same: make the exemption self-expire, so the guard goes
+red when the gap it covers closes.
+
+LAI-414 turned up the **mirror image**, and it is worse.
+
+While fixing the file-list hole, CORE wrote a sanity assertion proving the
+extractor was not inventing types:
+
+```js
+expect(emitted).not.toContain('token.created')
+```
+
+True on the day it was written. **LAI-402 makes it false by doing exactly what it
+is supposed to do** — minting a token emits `token.created`. The next builder
+would have met a red test on correct code, found no defect to fix, and
+reasonably deleted the assertion. A real guard removed, by a competent person, to
+unblock work that was right.
+
+**Both failures are the same mistake: asserting a contingent fact as though it
+were a property.**
+
+- *"`token.created` is not emitted"* — a fact about today's codebase.
+- *"everything found is a member of `ACTIVITY_TYPES`"* — a property of the
+  extractor, true whatever anyone builds next.
+
+**Decision: a guard asserts properties. When a fact is genuinely what needs
+asserting, it must carry the condition that retires it.**
+
+Before writing an assertion, ask **what makes this false** — and if the honest
+answer is *"someone doing their job correctly"*, it is the wrong assertion. The
+test should be rewritten to the property underneath it, not annotated with a
+comment asking the future not to delete it.
+
+**Consequences**
+
+- The self-expiring exemption rule is unchanged and now has a sibling. Silent
+  expiry costs coverage nobody notices; loud expiry costs a guard someone
+  deletes. Neither is a smaller failure than the other.
+- A red test met while building something new is **not** automatically a defect
+  in the new work. Read the assertion and ask which of the two it is before
+  changing either side. That is now the first question, not the last.
+- This is cheapest to catch at review, because the reviewer is the one who knows
+  what is coming next. It was caught here only because the same session held
+  both LAI-414 and LAI-402.
+
+**Revisit if** a guard is found that must assert a fact and cannot be rewritten
+to a property — at which point the condition-that-retires-it needs a documented
+shape rather than being written case by case.
