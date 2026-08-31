@@ -410,8 +410,37 @@ file. The rules below are the ones that are true of every line of code.
 - **Every API endpoint calls the `can()` policy module** before it reads or
   writes anything. `can(actor, action, resource)`. An endpoint without a `can()`
   call is a bug, not a shortcut — including internal, admin, and MCP paths.
+
+  **The one exception is a pure dispatcher, and it is narrow.** A handler that
+  reads and writes *nothing* — whose entire job is to hand the request to
+  something that does — calls no `can()`, because there is no resource to name
+  and the question would have to be asked again downstream with the right one in
+  hand. `/mcp` is the case: it is a transport, and each tool calls the service
+  that calls `can()` exactly as a route does (LAI-406).
+
+  Three conditions, all required:
+
+  1. It touches no data at all — not a read, not a count, not an existence check.
+  2. **It still enforces that an actor exists.** An unauthenticated caller must
+     not reach whatever it dispatches to.
+  3. Every path it dispatches to calls `can()` itself. If any does not, the
+     exception does not apply and the dispatcher is not the place to fix it.
+
+  If satisfying the rule would mean **inventing an action §3.1 does not have**,
+  that is the signal you are looking at a dispatcher. If instead you are reaching
+  for a plausible-sounding existing action, you are not — write the `can()` call.
 - **No new dependencies without a task that says so.** If a task's Notes do not
   name the package, it does not get added. Write a task instead.
+- **An assertion must be specific enough that a broken setup cannot satisfy it.**
+  A bare `rejects.toThrow()` asserts only that *something* went wrong, and
+  something always goes wrong. LAI-406 had three auth tests passing while proving
+  nothing: `serve()` returned before the socket was bound, every client failed
+  `EADDRNOTAVAIL`, and *"refuses a client with no token"* was being satisfied by a
+  connection that never reached Laika. Assert the **`code`** (§6.3), the message,
+  the status — something only the real path can produce. Same family as the
+  `mint(body, undefined)` default-parameter bug in LAI-402: an assertion loose
+  enough that the setup being broken satisfies it.
+
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
 - **`pnpm format` checks the whole repo; `pnpm format:fix` writes only what your
