@@ -292,7 +292,13 @@ this repo start reading the API, which is the last moment the rename is cheap.
 | `branch` | nullable, last branch seen working on it |
 | `external_ref` | nullable, e.g. a GitHub PR |
 | `stale_flagged_at` | nullable, set by cron (§11.6) |
-| `started_at`, `completed_at` | nullable |
+| `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in, and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
+
+**`started_at` and `completed_at` are actuals, not a plan.** D-014 gives tasks no
+dates so the timeline stays a rendering pass over sprint boundaries rather than a
+scheduling engine. These record what *happened*; a Gantt bar asserts what is
+*planned*. Serialising them does not reverse D-014, and **drawing task bars from
+them is a separate decision** that needs the owner rather than a UI change.
 
 **`ready` is derived, not stored.** A task is ready when
 `status IN ('backlog','todo') AND assignee_id IS NULL AND every dependency is

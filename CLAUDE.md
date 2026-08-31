@@ -412,11 +412,20 @@ reaches for an exemption instead.
 **The procedure.**
 
 1. **Each owner builds their own half and submits normally.** Nobody edits
-   another area, and nobody submits a branch they know is red — a builder whose
-   half cannot be green alone says so and waits.
+   another area. A builder whose half **cannot** be green alone — see step 2 —
+   submits red, **quotes the exact failing assertion in the task file**, and names
+   the task that turns it green. The reviewer confirms it is that failure and no
+   other. `origin/master` never sees the red because of steps 3–5; the colour of a
+   builder's branch was never the property worth protecting (D-045).
 2. **A self-expiring exemption carries the gap**, named for the other half and
    the merge that retires it — the `ACTIONS_WITHOUT_A_ROW` and
    `TABLES_NOT_IN_SPEC` shape. **It must be proved to expire**, not assumed.
+
+   **Unless the exemption list lives in the other owner's area** — `clientOmits`
+   in `server/web/` is the case that came up. Then there is no exemption to take
+   that is not a crossing, and step 1's red-with-a-named-failure is the whole
+   mechanism. **Never reach across to take one**, and never disable the check:
+   a drift check refusing a half-landed contract is the check working.
 3. **CHIEF merges the first half into `master` locally and does not push.** All
    three worktrees share one object database (§4.2), so the other session can
    merge CHIEF's *unpushed* local `master` immediately.
@@ -524,6 +533,14 @@ file. The rules below are the ones that are true of every line of code.
   builder an instrument that fails silently. **A task file is a claim by someone
   who was also guessing.** Verify the instrument before using it, whoever handed
   it to you.
+
+- **The gate is the repo-root `pnpm test`, not your workspace's.** A filtered run
+  cannot see a check your change breaks in somebody else's directory, and several
+  of them read across: LAI-213's client/server drift check lives in
+  `server/web/test/` and reads `server/src`, so a purely server-side field
+  addition turns a *web* test red (D-045). **Own a directory, gate the repo** —
+  "I verified the thing I owned rather than the thing my change affected" is how
+  a green branch gets submitted red.
 
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
