@@ -90,19 +90,13 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
-  // One entry for one merge, the same shape LAI-408 used and retired.
+  // Empty, and it should stay that way: an action `can()` allows and §3 never
+  // grants is a permission with no written source.
   //
-  // LAI-417 needs `POST /api/v1/heartbeats` to call `can()` and §3.1 has no
-  // cell for sending presence. CHIEF writes the row — "Send own heartbeat" —
-  // and applies it to `docs/SPEC.md` in the merge commit, because `docs/` is
-  // CHIEF's and `server/` is CORE's and neither half is useful alone.
-  //
-  // The staleness test below deletes this the moment §3.1 carries the row,
-  // which is the merge itself.
-  [
-    'heartbeat.send_own',
-    'Awaiting §3.1\'s "Send own heartbeat" row, written by CHIEF and applied in the merge commit for LAI-417. Same shape as `unlisted.log_own`: your own record about your own work, ✓ for every role, refused in practice to a Viewer because §9.1 is token-only and a Viewer\'s token is forced `read_only`. The staleness test removes this entry the moment the row lands.',
-  ],
+  // Emptied twice now — LAI-408's `unlisted.log_own` and LAI-417's
+  // `heartbeat.send_own` — both by the staleness test below, on the merge each
+  // entry named as its retirement. The map is the mechanism for a two-owner
+  // change in flight, not a place to park one.
 ]);
 
 /**
