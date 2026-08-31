@@ -2,11 +2,12 @@
 id: LAI-424
 title: A task card is not clickable — only the small key inside it is
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T18:54:18Z
 ---
 
 ## Goal
