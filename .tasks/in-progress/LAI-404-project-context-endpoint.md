@@ -2,11 +2,12 @@
 id: LAI-404
 title: GET and PATCH the project context document
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T11:05:00Z
 ---
 
 ## Goal
