@@ -15,7 +15,7 @@ import { type Db } from './client.ts';
 import { type ActivityType, type ActorKind } from './enums.ts';
 import { newId } from './ids.ts';
 import * as schema from './schema.ts';
-import { activity, type Activity } from './schema.ts';
+import { activity, tokens, type Activity } from './schema.ts';
 
 /**
  * The only way into `activity` (SPEC §4.8).
@@ -352,6 +352,42 @@ export function latestFieldEdit(
     .get();
 
   return row;
+}
+
+/**
+ * Which named client created each of these tasks (SPEC §4.5, §4.9, LAI-093).
+ *
+ * **Derived, never stored.** `activity` already records `actor_token_id` on
+ * every row (§4.8) and `tokens.name` is what the person typed when they minted
+ * it — so "which agent" is a join, not a column. A copy on `tasks` would be a
+ * second name for one token, and it would drift the moment somebody renames the
+ * token or revokes it.
+ *
+ * Absent for anything created before tokens existed, by a browser session, or by
+ * a token since deleted — `tokens.id` is `ON DELETE set null` on `activity`, so
+ * the row survives and the name does not. All three are the same answer to a
+ * reader: the channel is known and the client is not, which is `created via api`
+ * rather than a blank or an invented "unknown".
+ *
+ * Batched because `listTasks` returns up to 200 and a per-task lookup is the
+ * N+1 that `commentCounts` and `tagsForTasks` already exist to avoid.
+ */
+export function creatingClientNames(db: Db, taskIds: readonly string[]): Map<string, string> {
+  const names = new Map<string, string>();
+  if (taskIds.length === 0) return names;
+
+  const rows = db
+    .select({ taskId: activity.taskId, name: tokens.name })
+    .from(activity)
+    .innerJoin(tokens, eq(tokens.id, activity.actorTokenId))
+    .where(and(eq(activity.type, 'task.created'), inArray(activity.taskId, [...taskIds])))
+    .all();
+
+  for (const row of rows) {
+    if (row.taskId !== null) names.set(row.taskId, row.name);
+  }
+
+  return names;
 }
 
 /** The highest sequence written so far, or 0 for an empty table. */
