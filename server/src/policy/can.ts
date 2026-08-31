@@ -29,6 +29,8 @@ export { type Action, type OrgAction, type ProjectAction } from './actions.ts';
 
 /** The credential a token-authenticated request carries (SPEC §4.9, §6.2). */
 export interface TokenContext {
+  /** The `tokens` row this request arrived on — the audit trail's `token_id`. */
+  id: string;
   scope: TokenScope;
   /** `null` = every project the user can reach. Otherwise a whitelist. */
   projectIds: readonly string[] | null;

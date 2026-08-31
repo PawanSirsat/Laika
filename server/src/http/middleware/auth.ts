@@ -2,6 +2,7 @@ import { createMiddleware } from 'hono/factory';
 import { type Db } from '../../db/client.ts';
 import { type Auth } from '../../auth/auth.ts';
 import { resolveActor, type ResolvedActor } from '../../auth/resolve-actor.ts';
+import { TokenAuthError } from '../../auth/tokens.ts';
 import { type AppEnv } from '../context.ts';
 
 /**
@@ -19,6 +20,21 @@ export function authMiddleware(options: { auth: Auth; db: Db }) {
     try {
       actor = await resolveActor(c.req.raw, options);
     } catch (err) {
+      // A **presented token** that is refused is a 401, not an anonymous
+      // request. Falling through to `actor: null` would turn "your token is
+      // revoked" into "you are not signed in", and — where a cookie is also
+      // attached — into a silent escalation to that session's full authority.
+      //
+      // The reason is logged here and nowhere else: it is on the error rather
+      // than in `details`, so it never reaches the response body (§6.1).
+      if (err instanceof TokenAuthError) {
+        c.get('log').warn('auth.token_rejected', {
+          request_id: c.get('requestId'),
+          reason: err.reason,
+        });
+        throw err;
+      }
+
       // A malformed or expired cookie is an anonymous request, not a 500.
       c.get('log').warn('auth.resolve_failed', {
         request_id: c.get('requestId'),
