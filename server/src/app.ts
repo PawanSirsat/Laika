@@ -28,6 +28,7 @@ import { inviteRoutes } from './http/routes/invites.ts';
 import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts';
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
+import { tokenRoutes, userTokenRoutes } from './http/routes/tokens.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
@@ -173,7 +174,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/projects`, projectSprintRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/projects`, projectActivityRoutes({ db }));
     app.route(`${API_BASE}/activity`, activityRoutes({ db }));
+    // Before `userRoutes`, which registers `GET /` on the same prefix. They do
+    // not collide today — `/:id/tokens` is a different path — but Hono resolves
+    // a same-method match in registration order, so the more specific router
+    // going first is what keeps that true if `/users/:id` is ever added.
+    app.route(`${API_BASE}/users`, userTokenRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
+    app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     app.route(
       `${API_BASE}/invites`,
       inviteRoutes({ db, auth: options.auth, publicUrl: options.publicUrl }),
