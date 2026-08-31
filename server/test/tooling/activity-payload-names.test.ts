@@ -17,6 +17,7 @@ import {
   createProject,
   removeMember,
   updateProject,
+  updateProjectContext,
 } from '../../src/services/projects.ts';
 import { createFirstOrg } from '../../src/services/setup.ts';
 import {
@@ -443,10 +444,10 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       // --- projects.ts: project.created, project.updated, project.archived,
       //     member.added, member.role_changed, member.removed --------------
       createProject(t.sqlite, t.db, owner(), { name: 'Laika Core', slug: 'core', prefix: 'LAI' });
-      updateProject(t.db, owner(), 'core', {
-        description: 'A board',
-        context_md: 'Some context',
-      });
+      updateProject(t.db, owner(), 'core', { description: 'A board' });
+      // Its own writer since LAI-404, and still a `project.updated` row — so the
+      // sweep must reach it here rather than through the general update path.
+      updateProjectContext(t.db, owner(), 'core', { context_md: 'Some context' });
       addMember(t.db, owner(), 'core', memberId, 'member');
       changeMemberRole(t.db, owner(), 'core', memberId, 'lead');
 
