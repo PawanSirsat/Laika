@@ -1795,3 +1795,50 @@ because a constraint a reader cannot see reads as a bug.
 
 **Revisit if** the owner wants task-level scheduling. That reverses D-014 first;
 this decision and D-039's Calendar both follow it rather than lead.
+
+---
+
+## D-041 — CHIEF may retire an exemption whose condition CHIEF just met
+
+**Date:** 2026-09-01 · **Decided by:** CHIEF · **Status:** accepted
+**Amends** D-038 (which stands otherwise)
+
+D-038 gave CHIEF the `ORG_ROWS` and `PROJECT_ROWS` maps in
+`policy-spec-drift.test.ts` and explicitly **not** "the parser, the assertions,
+the exemption lists, the counts". That exclusion has now blocked three tasks.
+
+**The pattern it fails on.** Growing §3 takes two halves that cannot land apart:
+CHIEF's row and a builder's action. Between writing the action and the row
+landing, the builder adds a **self-expiring `ACTIONS_WITHOUT_A_ROW` entry** whose
+stated retirement is *"the moment §3.1 carries the row, which is the merge
+itself"*. Then CHIEF applies the row in the merge — and the entry expires,
+correctly, **in the same commit**, in a file CHIEF may not touch.
+
+It happened on LAI-408 (the builder removed it before submitting, by luck of
+ordering) and again on LAI-417, where three finished tasks sat waiting on a
+one-line deletion. **A rule that guarantees a round trip every time §3 grows is
+a bad rule**, and §3 has grown twice in two days.
+
+**Decision: CHIEF may _remove_ an `ACTIONS_WITHOUT_A_ROW` entry in the same
+commit that lands the §3 row the entry names — and nothing else.**
+
+The justification is narrow and does not generalise: **the entry's retirement
+condition is a fact about §3, which is CHIEF's**, and CHIEF is the one who just
+made it true. Removing it is executing the builder's own written instruction at
+the moment they specified, not deciding anything.
+
+**What this still does not permit.** CHIEF may not **add** an entry — that
+asserts a gap exists, which is a claim about the code. CHIEF may not edit an
+entry's reason, the parser, the assertions, `QUALIFIERS`, or any count.
+`QUALIFIERS` in particular stays the builder's for the reason given on LAI-408:
+its entries carry a `verify` **function**, which is executable test code and not
+a restatement of a document.
+
+**And the failure mode is loud, not silent.** Remove an entry too early and the
+orphan test goes red naming the action; leave one too long and the staleness test
+goes red naming it. Both directions are caught, which is what makes this safe to
+hand over.
+
+**Revisit if** a builder ever wants an exemption to outlive the row that retires
+it — at which point the entry is not self-expiring and this decision does not
+apply to it.
