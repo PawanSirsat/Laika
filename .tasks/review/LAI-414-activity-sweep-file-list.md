@@ -7,8 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-045
 status: review
-finished: 2026-08-31T07:45:12Z
 started: 2026-08-31T07:31:05Z
+finished: 2026-08-31T07:45:12Z
 ---
 
 ## Goal
