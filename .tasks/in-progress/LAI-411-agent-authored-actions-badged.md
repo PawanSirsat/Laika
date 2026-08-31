@@ -2,11 +2,12 @@
 id: LAI-411
 title: Badge agent-authored actions in the UI
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T07:35:23Z
 ---
 
 ## Goal
