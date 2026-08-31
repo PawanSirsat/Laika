@@ -1,6 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { type Db } from '../db/client.ts';
+import { registerReadTools } from './read-tools.ts';
 
 /**
  * The MCP endpoint (SPEC §7, LAI-406).
@@ -43,6 +45,9 @@ export interface McpRequestContext {
   /** The token's user, with roles and token narrowing already applied (§6.1). */
   actor: ResolvedActor;
   version: string;
+  db: Db;
+  /** Injectable so "3 days ago" in a response is not at the mercy of the clock. */
+  now?: () => number;
 }
 
 /**
@@ -52,10 +57,10 @@ export interface McpRequestContext {
  * a shared instance would need the actor threaded through every call instead,
  * which is the shape that lets one request's permissions serve another's.
  *
- * Tools are **deliberately absent** — LAI-406 mounts the transport, LAI-407 and
- * LAI-408 add the ten tools. `laika.whoami` exists only to prove the wiring
- * carries an authenticated identity end to end; it reads nothing and writes
- * nothing.
+ * The four read tools are LAI-407's (`read-tools.ts`); the six write tools are
+ * LAI-408. Each is a thin wrapper over the same service a REST route calls, so
+ * `can()` runs inside the service against the token's user and a tool cannot
+ * answer differently from the endpoint beside it.
  */
 export function createMcpServer(context: McpRequestContext): McpServer {
   const server = new McpServer(
@@ -63,6 +68,8 @@ export function createMcpServer(context: McpRequestContext): McpServer {
     { capabilities: { tools: {} } },
   );
 
+  // `laika_whoami` stays: it is the cheapest way for an operator to confirm a
+  // token acts as the person they expect, and it reads nothing.
   server.registerTool(
     'laika_whoami',
     {
@@ -83,9 +90,6 @@ export function createMcpServer(context: McpRequestContext): McpServer {
               name: actor.name,
               email: actor.email,
               org_role: actor.orgRole,
-              // Present only on a token-authenticated call, which is the only
-              // way to reach `/mcp` — so this is never null in practice and is
-              // typed honestly rather than asserted.
               token_scope: actor.token?.scope ?? null,
             }),
           },
@@ -93,6 +97,12 @@ export function createMcpServer(context: McpRequestContext): McpServer {
       };
     },
   );
+
+  registerReadTools(server, {
+    db: context.db,
+    actor: context.actor,
+    ...(context.now === undefined ? {} : { now: context.now }),
+  });
 
   return server;
 }
