@@ -15,7 +15,7 @@ import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
 import { projects, taskDependencies, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
-import { commentCounts } from './comments.ts';
+import { addComment, commentCounts } from './comments.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import { requireProjectBySlug } from './projects.ts';
 import { assertTransition, isReady } from './task-lifecycle.ts';
@@ -28,6 +28,17 @@ import { assertTransition, isReady } from './task-lifecycle.ts';
  * and writes exactly one `activity` row per mutation. Routes are transport only
  * (CONVENTIONS §2), so the M3 MCP tools reuse these unchanged (SPEC §7).
  */
+
+/**
+ * Re-exported so callers can validate a status or priority without importing
+ * `db/`, which CONVENTIONS §2 forbids for `http/routes/` and `mcp/` alike.
+ *
+ * The same line, for the same reason, as `ORG_ROLES` on `services/invites.ts`:
+ * a route or a tool that retypes a closed vocabulary makes a copy nothing
+ * checks against the original. LAI-119 converges the two route files that
+ * still do.
+ */
+export { TASK_PRIORITIES, TASK_STATUSES } from '../db/enums.ts';
 
 export interface TaskView {
   id: string;
@@ -585,6 +596,64 @@ export function changeStatus(
   });
 
   return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+}
+
+export interface FinishTaskInput {
+  /** What was done. Posted as a comment by the same actor, in the same write. */
+  summary: string;
+  /** Optional acceptance walk-through, appended under the summary. */
+  checklist?: readonly string[] | undefined;
+  now?: number;
+}
+
+/**
+ * Hand finished work back for review (SPEC §7.1 `finish_task`, §5).
+ *
+ * **Stops at `review`, never `done`.** §7.2: agents do not close their own work.
+ * That is not enforced by hoping the caller passes `review` — this function has
+ * no status parameter, so `done` is unreachable through it.
+ *
+ * ## Why this is a service and not two calls from the tool
+ *
+ * It is `changeStatus` plus `addComment`, and doing that from the MCP layer
+ * would leave a task sitting in `review` with no summary whenever the second
+ * write failed — a reviewer opening it would find nothing saying what was done.
+ * One transaction, so either both land or neither does.
+ *
+ * Both halves keep their own `can()`: `changeStatus` checks the transition,
+ * `addComment` checks `comment.create`. Neither is re-checked here, for the same
+ * reason `promoteUnlisted` does not re-check `task.write` — a second opinion
+ * about the same question is a second thing to keep in step.
+ */
+export function finishTask(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  input: FinishTaskInput,
+): TaskView {
+  const now = input.now ?? Date.now();
+
+  return immediateTransaction(sqlite, () => {
+    // The transition is validated by §5's own table, so finishing a task that
+    // was never started fails here rather than being quietly allowed.
+    const task = changeStatus(db, actor, taskId, 'review', now);
+
+    addComment(db, actor, taskId, finishSummary(input), now);
+
+    // Read back: the comment moved `updated_at` and added to `comment_count`,
+    // and returning the pre-comment view would show a task that does not match
+    // what the next read gives.
+    return getTask(db, actor, task.id);
+  });
+}
+
+/** The summary, with the checklist under it when there is one. */
+function finishSummary(input: FinishTaskInput): string {
+  const checklist = input.checklist ?? [];
+  if (checklist.length === 0) return input.summary;
+
+  return [input.summary, '', ...checklist.map((line) => `- [x] ${line}`)].join('\n');
 }
 
 export function addTaskDependency(

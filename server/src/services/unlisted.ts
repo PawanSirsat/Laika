@@ -5,6 +5,7 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type TaskPriority } from '../db/enums.ts';
+import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { unlistedWork } from '../db/schema.ts';
@@ -69,6 +70,76 @@ function toView(row: UnlistedRow): UnlistedView {
     dismissed_at: row.dismissedAt,
     created_at: row.createdAt,
   };
+}
+
+export interface LogUnlistedWorkInput {
+  /** A repository name, not a path and not a URL (§4.14). */
+  repo: string;
+  /** Agent-authored prose. No file contents, no diffs, no prompt text (D-005). */
+  note: string;
+  now?: number;
+}
+
+/**
+ * Record work that belongs to no project (SPEC §4.14, §7.1 `log_unlisted_work`).
+ *
+ * **The one write with no REST twin** (D-024): a human at the board would file a
+ * task, so there is no human path to mirror. That is why §13.3's parity tests
+ * exempt this tool, and the exemption is named rather than inferred.
+ *
+ * `unlisted.log_own` is ✓ for every org role — it is your own record about your
+ * own work, creating nothing in any project. A `read_only` token is still
+ * refused, because the action is not in `READ_ACTIONS` and `tokenAllows` denies
+ * every non-read action to such a token. That is the whole of §3.1's new row.
+ *
+ * The token id is recorded beside the user id so triage can tell *which* agent
+ * session noticed it — §4.14 has the column and nothing was filling it.
+ */
+export function logUnlistedWork(
+  db: Db,
+  actor: ResolvedActor,
+  input: LogUnlistedWorkInput,
+): UnlistedView {
+  assertCan(actor, 'unlisted.log_own');
+
+  const now = input.now ?? Date.now();
+  const repo = input.repo.trim();
+  const note = input.note.trim();
+
+  if (repo === '' || note === '') {
+    throw new ApiError('unprocessable', 'Unlisted work needs a repo and a note', {
+      repo: input.repo,
+      note_length: input.note.length,
+    });
+  }
+
+  const row: typeof unlistedWork.$inferInsert = {
+    id: newId(),
+    userId: actor.userId,
+    // Null on a cookie-authenticated call, which is possible today and will be
+    // the normal case if a human ever gets a way to log one.
+    tokenId: actor.token?.id ?? null,
+    repo,
+    note,
+    promotedTaskId: null,
+    dismissedAt: null,
+    createdAt: now,
+  };
+
+  db.insert(unlistedWork).values(row).run();
+
+  appendActivity(db, {
+    orgId: requireOrgId(db),
+    // `project_id IS NULL` — §3.1 names `unlisted.logged` as one of the
+    // org-scoped audit rows, which is what routes reading it to the audit cell.
+    projectId: null,
+    ...activityActor(actor),
+    type: 'unlisted.logged',
+    payload: { entity: 'unlisted', action: 'logged', unlisted_id: row.id, repo },
+    now,
+  });
+
+  return toView(readBack(db, row.id));
 }
 
 export interface ListUnlistedOptions {
