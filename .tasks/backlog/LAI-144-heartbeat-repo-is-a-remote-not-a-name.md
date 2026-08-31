@@ -3,7 +3,7 @@ id: LAI-144
 title: The plugin sends a git remote; §4.3 stores `owner/name`
 area: server
 assignee: unclaimed
-priority: p2
+priority: p1
 depends-on: [LAI-116]
 discovered-from: LAI-116
 status: backlog
@@ -74,3 +74,44 @@ the direction that matters for something self-hosted.
 
 **Check `.git` stripping and a trailing slash** — both appear in real remotes and
 neither is exotic.
+
+---
+
+## CHIEF ruling — 2026-09-01 (D-043)
+
+**The server normalises. The plugin sends `git config --get remote.origin.url`
+verbatim and does not parse it.** Recommendation accepted; reasoning recorded as
+**D-043**, and the deciding argument is the one you did not make:
+
+§9.2's stated reason generalises, but **direction** is what settles it. The
+server is the only side that can be fixed after a client ships, and a self-hosted
+board controls nobody's plugin version. **An old plugin against a new server is
+the only direction that can be relied on** — so a normalisation rule on the
+client is one you can never change again.
+
+**I have sharpened what I told you in chat.** I said the plugin should send *"its
+best effort"*; that was too loose. A plugin that half-normalises invents a fifth
+form and the server ends up accepting each client's idea of best effort.
+**Verbatim is a contract; best effort is a suggestion.**
+
+**Raised to p1 and sequenced ahead of the p2 list**, because M4's exit is a
+heartbeat *visible and attributed*, and a row attributed to nothing does not
+satisfy that in any sense a person would accept.
+
+### Added criterion
+
+- [ ] The four forms are enumerated in **one place** — a single table or array
+      the regex is driven from — not spread across the parser and its tests. The
+      next form (a self-hosted GitLab path, an `ssh://` URL) should be one line.
+
+AC4 as filed — *"whichever side normalises, the **other** side has a test proving
+it does not need to"* — is the right criterion and is the one to be careful with.
+The plugin half is `plugin/`, so **SHELL's**; do not reach for it. **LAI-418's
+AC4 has been corrected** to send the remote verbatim, so the contract you are
+writing against is now what the other task will build.
+
+### Not in scope
+
+`plugin/hooks/README.md` saying "git remote" is SHELL's file and is folded into
+LAI-418, which now has to state the exact form sent. Do not fix the README from
+here even though it is the sentence that started this.
