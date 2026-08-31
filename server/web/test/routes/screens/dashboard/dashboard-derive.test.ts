@@ -41,7 +41,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_by_client: null,
     discovered_from: null,
     ready: true,
-    dependencies: [],
+    blocked_by: [],
     tags: [],
     acceptance_md: null,
     blocks: [],
@@ -116,7 +116,7 @@ void describe('statusBreakdown', () => {
 void describe('blockedTasks', () => {
   void test('lists a task whose dependency is not done, and names it', () => {
     const dep = task({ id: 'dep', status: 'in_progress' });
-    const blocked = task({ id: 'b', dependencies: ['dep'], ready: false });
+    const blocked = task({ id: 'b', blocked_by: ['dep'], ready: false });
 
     const rows = blockedTasks([dep, blocked]);
     assert.equal(rows.length, 1);
@@ -129,7 +129,7 @@ void describe('blockedTasks', () => {
 
   void test('a done dependency does not block', () => {
     const dep = task({ id: 'dep', status: 'done' });
-    assert.deepEqual(blockedTasks([dep, task({ id: 'b', dependencies: ['dep'] })]), []);
+    assert.deepEqual(blockedTasks([dep, task({ id: 'b', blocked_by: ['dep'] })]), []);
   });
 
   void test('a cancelled dependency still blocks — the server says so', () => {
@@ -138,7 +138,7 @@ void describe('blockedTasks', () => {
     // would make the dashboard disagree with the `ready` flag on the board, and
     // the board is the one the server computes.
     const dep = task({ id: 'dep', status: 'cancelled' });
-    const rows = blockedTasks([dep, task({ id: 'b', dependencies: ['dep'] })]);
+    const rows = blockedTasks([dep, task({ id: 'b', blocked_by: ['dep'] })]);
 
     assert.equal(rows.length, 1);
     assert.deepEqual(
@@ -159,8 +159,8 @@ void describe('blockedTasks', () => {
 
   void test('a finished or cancelled task is never listed', () => {
     const dep = task({ id: 'dep', status: 'todo' });
-    const done = task({ id: 'd', status: 'done', dependencies: ['dep'] });
-    const cancelled = task({ id: 'c', status: 'cancelled', dependencies: ['dep'] });
+    const done = task({ id: 'd', status: 'done', blocked_by: ['dep'] });
+    const cancelled = task({ id: 'c', status: 'cancelled', blocked_by: ['dep'] });
 
     assert.deepEqual(blockedTasks([dep, done, cancelled]), []);
   });
@@ -168,7 +168,7 @@ void describe('blockedTasks', () => {
   void test('a dependency outside the loaded page is reported, not assumed met', () => {
     // Assuming it satisfied would understate the count silently, which is the
     // wrong direction to be wrong in on a screen someone makes decisions from.
-    const rows = blockedTasks([task({ id: 'b', dependencies: ['elsewhere'] })]);
+    const rows = blockedTasks([task({ id: 'b', blocked_by: ['elsewhere'] })]);
 
     assert.equal(rows.length, 1);
     assert.deepEqual(rows[0]?.unknown, ['elsewhere']);

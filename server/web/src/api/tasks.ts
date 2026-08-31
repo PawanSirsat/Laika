@@ -56,9 +56,9 @@ export interface Task {
   readonly ready: boolean;
   /** Acceptance criteria, as written. Markdown source, not rendered. */
   readonly acceptance_md: string | null;
-  readonly dependencies: readonly string[];
+  readonly blocked_by: readonly string[];
   /**
-   * Ids this task **blocks** — the reverse edge of `dependencies`.
+   * Ids this task **blocks** — the reverse edge of `blocked_by`.
    *
    * Declared because it is served (LAI-213). Nothing renders it yet; a card
    * saying what it is holding up, rather than only what holds it, is LAI-223's

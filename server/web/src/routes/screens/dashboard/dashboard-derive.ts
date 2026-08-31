@@ -59,7 +59,7 @@ export function statusBreakdown(tasks: readonly Task[]): StatusBreakdown {
 
 export interface BlockedTask {
   readonly task: Task;
-  /** The dependencies that are not done yet — what is actually holding it. */
+  /** The entries in `blocked_by` that are not done yet — what actually holds it. */
   readonly blockedBy: readonly Task[];
   /** Dependency ids the task list did not contain. */
   readonly unknown: readonly string[];
@@ -82,7 +82,7 @@ export interface BlockedTask {
  * Most unready tasks are unready because they are assigned or already moving,
  * which is not "stuck" — it is "being worked on". Only an unmet dependency makes
  * a task something nobody can pick up, which is the thing worth surfacing.
- * A `done` or `cancelled` task is never listed however many dependencies it has.
+ * A `done` or `cancelled` task is never listed however much blocks it.
  */
 export function blockedTasks(tasks: readonly Task[]): BlockedTask[] {
   const byId = new Map(tasks.map((t) => [t.id, t]));
@@ -93,7 +93,7 @@ export function blockedTasks(tasks: readonly Task[]): BlockedTask[] {
       const blockedBy: Task[] = [];
       const unknown: string[] = [];
 
-      for (const id of task.dependencies) {
+      for (const id of task.blocked_by) {
         const dep = byId.get(id);
         // Not in the page we loaded — reported rather than assumed satisfied,
         // which would understate the count and is the silent direction to be

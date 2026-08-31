@@ -34,7 +34,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_by_client: null,
     discovered_from: null,
     ready: false,
-    dependencies: [],
+    blocked_by: [],
     tags: [],
     acceptance_md: null,
     blocks: [],
@@ -46,28 +46,28 @@ function task(over: Partial<Task> & { id: string }): Task {
 }
 
 void describe('blockedState', () => {
-  void test('no dependencies is never blocked', () => {
+  void test('no blocked_by is never blocked', () => {
     const t = task({ id: '1' });
     assert.equal(blockedState(t, byIdIndex([t])), false);
   });
 
   void test('an unfinished dependency blocks', () => {
     const dep = task({ id: '2', status: 'in_progress' });
-    const t = task({ id: '1', dependencies: ['2'] });
+    const t = task({ id: '1', blocked_by: ['2'] });
     assert.equal(blockedState(t, byIdIndex([t, dep])), true);
   });
 
-  void test('done and cancelled dependencies do not block', () => {
+  void test('done and cancelled blocked_by do not block', () => {
     const done = task({ id: '2', status: 'done' });
     const cancelled = task({ id: '3', status: 'cancelled' });
-    const t = task({ id: '1', dependencies: ['2', '3'] });
+    const t = task({ id: '1', blocked_by: ['2', '3'] });
     assert.equal(blockedState(t, byIdIndex([t, done, cancelled])), false);
   });
 
   void test('one unfinished dependency among finished ones still blocks', () => {
     const done = task({ id: '2', status: 'done' });
     const open = task({ id: '3', status: 'backlog' });
-    const t = task({ id: '1', dependencies: ['2', '3'] });
+    const t = task({ id: '1', blocked_by: ['2', '3'] });
     assert.equal(blockedState(t, byIdIndex([t, done, open])), true);
   });
 
@@ -75,7 +75,7 @@ void describe('blockedState', () => {
     // Guessing `false` would draw an unblocked card over a blocked task and
     // invite someone to start work that cannot proceed. Saying "unknown" is the
     // honest answer and the UI renders it as such.
-    const t = task({ id: '1', dependencies: ['missing'] });
+    const t = task({ id: '1', blocked_by: ['missing'] });
     assert.equal(blockedState(t, byIdIndex([t])), undefined);
   });
 
@@ -83,7 +83,7 @@ void describe('blockedState', () => {
     // If anything is definitely unfinished, the task is definitely blocked —
     // no need to hedge.
     const open = task({ id: '2', status: 'todo' });
-    const t = task({ id: '1', dependencies: ['2', 'missing'] });
+    const t = task({ id: '1', blocked_by: ['2', 'missing'] });
     assert.equal(blockedState(t, byIdIndex([t, open])), true);
   });
 });
@@ -140,7 +140,7 @@ void describe('blockers — which dependency is holding this up (LAI-066)', () =
     // has to name the blocker. A done dependency is not holding anything up.
     const done = task({ id: '1', status: 'done' });
     const open = task({ id: '2', status: 'todo' });
-    const t = task({ id: '3', dependencies: ['1', '2'] });
+    const t = task({ id: '3', blocked_by: ['1', '2'] });
 
     const held = blockers(t, byIdIndex([done, open, t]));
     assert.deepEqual(
@@ -154,7 +154,7 @@ void describe('blockers — which dependency is holding this up (LAI-066)', () =
     // nothing, the card renders a blocked banner naming nobody — which is the
     // vague message this task exists to remove.
     const cancelled = task({ id: '1', status: 'cancelled' });
-    const t = task({ id: '2', dependencies: ['1'] });
+    const t = task({ id: '2', blocked_by: ['1'] });
     const index = byIdIndex([cancelled, t]);
 
     assert.deepEqual(blockers(t, index), []);
@@ -165,7 +165,7 @@ void describe('blockers — which dependency is holding this up (LAI-066)', () =
     // It cannot be named, so it is not returned. `blockedState` reports the
     // same case as `undefined`, and the card says the count is unknown rather
     // than naming a subset and implying it is the whole story.
-    const t = task({ id: '2', dependencies: ['missing'] });
+    const t = task({ id: '2', blocked_by: ['missing'] });
     const index = byIdIndex([t]);
 
     assert.deepEqual(blockers(t, index), []);
@@ -177,14 +177,14 @@ void describe('blockers — which dependency is holding this up (LAI-066)', () =
     // for every dependency the board can see.
     const a = task({ id: '1', status: 'in_progress' });
     const b = task({ id: '2', status: 'done' });
-    const t = task({ id: '3', dependencies: ['1', '2'] });
+    const t = task({ id: '3', blocked_by: ['1', '2'] });
     const index = byIdIndex([a, b, t]);
 
     assert.equal(blockedState(t, index), true);
     assert.ok(blockers(t, index).length > 0, 'blocked, but nothing to name');
   });
 
-  void test('no dependencies means nothing to name', () => {
+  void test('no blocked_by means nothing to name', () => {
     const t = task({ id: '1' });
     assert.deepEqual(blockers(t, byIdIndex([t])), []);
   });

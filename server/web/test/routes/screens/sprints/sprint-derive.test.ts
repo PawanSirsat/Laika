@@ -49,7 +49,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_by_client: null,
     discovered_from: null,
     ready: true,
-    dependencies: [],
+    blocked_by: [],
     tags: [],
     acceptance_md: null,
     blocks: [],

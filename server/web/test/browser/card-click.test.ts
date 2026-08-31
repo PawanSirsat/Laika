@@ -34,7 +34,7 @@ const TASK = {
   discovered_from: null,
   ready: true,
   blocked: false,
-  dependencies: [],
+  blocked_by: [],
   blocks: [],
   tags: [],
   comment_count: 0,
@@ -45,6 +45,17 @@ const TASK = {
   created_at: 1,
   updated_at: 1,
 };
+
+/** The blocker: not done, so it genuinely holds the other task up. */
+const BLOCKER = {
+  ...TASK,
+  id: 't2',
+  key: 'LAI-2',
+  number: 2,
+  title: 'The blocker',
+  blocked_by: [],
+};
+const BLOCKED = { ...TASK, id: 't1', blocked_by: ['t2'], ready: false };
 
 const STUB: ApiStub = {
   '/api/v1/me': {
@@ -90,7 +101,7 @@ const STUB: ApiStub = {
     members: [{ user_id: 'u1', name: 'Ada' }],
     last_activity_at: 2,
   },
-  '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
+  '/api/v1/projects/laika-core/tasks': { data: [BLOCKED, BLOCKER], next_cursor: null },
   '/api/v1/projects/laika-core/members': {
     members: [{ user_id: 'u1', name: 'Ada', role: 'lead' }],
   },
@@ -133,6 +144,36 @@ void describe('the whole card opens the task', () => {
       await card.click();
       await h.page.waitForURL(/task=/, { timeout: 10_000 });
       assert.match(h.page.url(), /task=t1/, 'clicking the card did not open the task');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a blocked task still shows as blocked after the rename', () => {
+  void test('the card names what is holding it up, in both themes', async () => {
+    // LAI-429 AC4. **A rename that compiles is not a rename that works**: the
+    // field feeds `blockedState` and `blockers`, and a card that silently
+    // stopped showing "blocked by" would typecheck perfectly.
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      const blocked = h.page.locator('.card-blocked').first();
+      await blocked.waitFor({ timeout: 15_000 });
+
+      const text = await blocked.innerText();
+      assert.match(text, /LAI-2|blocker/i, `the card does not name its blocker: ${text}`);
+
+      // Both themes, driven through the real control rather than a class
+      // toggle — a JS-computed colour bug hides from the shortcut.
+      for (const theme of ['Dark', 'Light']) {
+        await h.page.getByRole('radio', { name: theme }).click();
+        await h.page.waitForTimeout(300);
+        assert.equal(
+          await h.page.locator('.card-blocked').count(),
+          1,
+          `the blocked marker vanished in ${theme}`,
+        );
+      }
     } finally {
       await h.close();
     }
