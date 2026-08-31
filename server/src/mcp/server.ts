@@ -1,8 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { registerReadTools } from './read-tools.ts';
+import { registerWriteTools } from './write-tools.ts';
 
 /**
  * The MCP endpoint (SPEC §7, LAI-406).
@@ -46,6 +48,7 @@ export interface McpRequestContext {
   actor: ResolvedActor;
   version: string;
   db: Db;
+  sqlite: Database.Database;
   /** Injectable so "3 days ago" in a response is not at the mercy of the clock. */
   now?: () => number;
 }
@@ -57,8 +60,8 @@ export interface McpRequestContext {
  * a shared instance would need the actor threaded through every call instead,
  * which is the shape that lets one request's permissions serve another's.
  *
- * The four read tools are LAI-407's (`read-tools.ts`); the six write tools are
- * LAI-408. Each is a thin wrapper over the same service a REST route calls, so
+ * The four read tools are LAI-407's (`read-tools.ts`) and the write tools are
+ * LAI-408's (`write-tools.ts`). Each wraps the same service a REST route calls, so
  * `can()` runs inside the service against the token's user and a tool cannot
  * answer differently from the endpoint beside it.
  */
@@ -98,10 +101,14 @@ export function createMcpServer(context: McpRequestContext): McpServer {
     },
   );
 
-  registerReadTools(server, {
+  const clock = context.now === undefined ? {} : { now: context.now };
+
+  registerReadTools(server, { db: context.db, actor: context.actor, ...clock });
+  registerWriteTools(server, {
     db: context.db,
+    sqlite: context.sqlite,
     actor: context.actor,
-    ...(context.now === undefined ? {} : { now: context.now }),
+    ...clock,
   });
 
   return server;

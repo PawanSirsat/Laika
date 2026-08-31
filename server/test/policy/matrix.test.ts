@@ -44,6 +44,11 @@ const ORG_MATRIX: OrgRow[] = [
   // | List / revoke anyone's token | ✓ | ✓ | — | — |
   ['token.list_any', true, true, false, false],
   ['token.revoke_any', true, true, false, false],
+  // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+  // Every role: it is your own record about your own work, creating nothing in
+  // any project. The Viewer ✓ is the role's answer — their credential is what
+  // stops them, not the matrix (see `can.test.ts`).
+  ['unlisted.log_own', true, true, true, true],
   // | Export audit log | ✓ | ✓ | — | — |
   ['audit_log.export', true, true, false, false],
   // | Configure webhooks | ✓ | ✓ | — | — |

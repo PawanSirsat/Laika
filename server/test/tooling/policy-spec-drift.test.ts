@@ -59,6 +59,7 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
     ['token.create_own', 'token.read_own', 'token.revoke_own'],
   ],
   ["List / revoke anyone's token", ['token.list_any', 'token.revoke_any']],
+  ['Log own unlisted work', ['unlisted.log_own']],
   ['Export audit log', ['audit_log.export']],
   ['Configure webhooks', ['webhook.configure']],
 ]);
@@ -89,10 +90,11 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
-  // Empty since LAI-134, and it should stay that way: an action `can()` allows
-  // and §3 never grants is a permission with no written source. The map remains
-  // as the mechanism, with the staleness test below forcing an entry back out
-  // once §3 catches up.
+  // Empty since LAI-134, and empty again since LAI-408. It should stay that
+  // way: an action `can()` allows and §3 never grants is a permission with no
+  // written source. The map remains as the mechanism, with the staleness test
+  // below forcing an entry back out once §3 catches up — which is exactly what
+  // it did to LAI-408's entry, on the merge that entry named.
 ]);
 
 /**
@@ -203,6 +205,44 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
     },
   ],
   [
+    'read_only forced, so never in practice',
+    {
+      why: "The role permits it and the credential does not. A Viewer holds this permission and can never exercise it: their token is forced `read_only` (§4.9, LAI-402) and `unlisted.log_own` is not a read action, so `tokenAllows` refuses it. The cell says ✓ rather than — because the restriction is not the role's, and if `read_only` forcing were ever relaxed the matrix already says what should happen.",
+      verify: (action: Action) => {
+        const viewer = orgActor('viewer');
+
+        // Both halves, because either alone is misleading. The ✓ on its own
+        // reads as a Viewer gaining a write; the refusal on its own reads as
+        // the role denying it, which is not what §3.1 says.
+        expect(can(viewer, action, {}), 'the role permits it').toBe(true);
+
+        expect(
+          can(
+            { ...viewer, token: { id: 'tok', scope: 'read_only', projectIds: null } },
+            action,
+            {},
+          ),
+          'the credential refuses it',
+        ).toBe(false);
+
+        // And the forcing is what makes a Viewer's token `read_only` in the
+        // first place — without this the pair above would hold for a Viewer who
+        // simply happened to ask for a read-only token.
+        expect(forcedTokenScope('viewer', 'full')).toBe('read_only');
+
+        // The refusal is the scope's, not the action's: a member's `full` token
+        // may do it, so this is not an action nobody can ever perform.
+        expect(
+          can(
+            { ...orgActor('member'), token: { id: 'tok', scope: 'full', projectIds: null } },
+            action,
+            {},
+          ),
+        ).toBe(true);
+      },
+    },
+  ],
+  [
     'read_only forced',
     {
       why: 'A Viewer may hold a token; its scope is forced regardless of what was asked for.',
@@ -276,8 +316,29 @@ describe('the parser reads §3, prose and all', () => {
     // `Export audit log` and `Configure webhooks`. A parser that stopped at the
     // first non-table line would drop a permission and report success.
     expect(org.rows.map((row) => row.label)).toContain('Configure webhooks');
-    expect(org.rows).toHaveLength(11);
-    expect(project.rows).toHaveLength(15);
+  });
+
+  it('does not read past §3.1 into §3.2’s table', () => {
+    // The other half of the same property, and the one `toContain` cannot
+    // carry: a parser that recovered from the prose by swallowing everything to
+    // the end of §3 would also find `Configure webhooks`, and would silently
+    // grant every project permission at org level.
+    //
+    // **This was `expect(org.rows).toHaveLength(11)` and
+    // `expect(project.rows).toHaveLength(15)` until LAI-408.** Counts are
+    // contingent facts, not the property: §3.1 legitimately grew a twelfth row
+    // ("Log own unlisted work") and the assertion fired on correct work —
+    // D-037, and not the first time. The overlap below says the same thing
+    // about the parser and stays true however many rows §3 grows.
+    const orgLabels = new Set(org.rows.map((row) => row.label));
+    const leaked = project.rows.map((row) => row.label).filter((label) => orgLabels.has(label));
+
+    expect(leaked, '§3.2 rows appearing in the §3.1 matrix — the parser over-read').toEqual([]);
+
+    // And both tables were genuinely read, so an empty overlap is evidence
+    // rather than an accident of one of them being empty.
+    expect(org.rows.length).toBeGreaterThan(5);
+    expect(project.rows.length).toBeGreaterThan(5);
   });
 
   it('keeps qualifiers instead of flattening them to a tick', () => {

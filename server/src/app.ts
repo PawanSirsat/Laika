@@ -199,7 +199,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // already excludes `/mcp` from the SPA fallback while `rate-limit.ts`
     // already counts it as a reserved API prefix — the routing hole was
     // pre-cut for this.
-    app.route('/mcp', mcpRoutes({ version: options.version, db }));
+    app.route('/mcp', mcpRoutes({ version: options.version, db, sqlite: options.sqlite }));
   }
 
   // better-auth owns everything under /api/v1/auth (§6.4). Mounted with `on`

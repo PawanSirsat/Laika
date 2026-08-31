@@ -136,7 +136,7 @@ afterEach(async () => {
 });
 
 describe('the four tools are registered', () => {
-  it('lists exactly the §7.1 read tools, and no write tools yet', async () => {
+  it('lists the §7.1 read tools', async () => {
     const client = await connect(await mint());
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
@@ -150,10 +150,37 @@ describe('the four tools are registered', () => {
       expect(names, name).toContain(name);
     }
 
-    // LAI-408's, deliberately absent — a half-built write surface is worse
-    // than none, because an agent cannot tell which half it has.
-    for (const name of ['create_task', 'start_working', 'update_status', 'add_comment']) {
-      expect(names, name).not.toContain(name);
+    await client.close();
+  });
+
+  it('the read tools take no arguments that could change anything', async () => {
+    // What the "no write tools yet" assertion here was reaching for, stated as
+    // a property rather than a moment.
+    //
+    // The original said `expect(names).not.toContain('create_task')`, which was
+    // true when LAI-407 shipped and which **LAI-408 made false by doing exactly
+    // what it was supposed to do**. A guard that fires on correct work is a bug
+    // in the guard (D-037) — and this one was mine, one task after I argued the
+    // same point to CHIEF about `not.toContain('token.created')`.
+    //
+    // The durable property is that these four accept nothing that names a
+    // mutation: a status, a body, a title. That stays true however many write
+    // tools land beside them.
+    const client = await connect(await mint());
+    const { tools } = await client.listTools();
+
+    const readTools = tools.filter((t) =>
+      ['list_projects', 'list_ready_tasks', 'get_task_context', 'get_project_context'].includes(
+        t.name,
+      ),
+    );
+    expect(readTools).toHaveLength(4);
+
+    for (const tool of readTools) {
+      const schema = JSON.stringify(tool.inputSchema);
+      for (const mutating of ['status', 'body', 'title', 'summary', 'note']) {
+        expect(schema, `${tool.name} accepts ${mutating}`).not.toContain(`"${mutating}"`);
+      }
     }
 
     await client.close();
