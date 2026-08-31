@@ -149,7 +149,6 @@ const NO_MIRROR_REQUIRED = new Map<string, string>([
   ['db/client.ts', 'connection + PRAGMAs; asserted in db/schema.test.ts against a real database'],
   ['db/enums.ts', 'const tuples, no behaviour; asserted as CHECK constraints in db/schema.test.ts'],
   ['db/ids.ts', 'a one-line ULID wrapper'],
-  ['db/migrate.ts', 'migration runner; asserted by every db test, which applies migrations'],
 
   ['http/context.ts', 'type declarations only, no runtime code'],
   [
