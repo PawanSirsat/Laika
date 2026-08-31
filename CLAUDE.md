@@ -361,6 +361,42 @@ git merge --no-ff core
 **Never** create a worktree, delete one, or check out another session's branch.
 If you think you need one, say so — that is a CHIEF decision.
 
+### 4.3 Running instances — three sessions, one machine, one set of ports
+
+Worktrees keep our **files** apart. Nothing keeps our **ports** apart, and a
+process another session started will answer you exactly as if it were yours.
+
+**A health check answering does not mean *your* server is answering.** CORE hit
+this on LAI-402: they started a verification server on `3370`, it failed
+`EADDRINUSE` and exited 1, and `GET /health` still returned `200` — because
+SHELL held that port. The tell was `uptime_ms: 1115605`: eighteen minutes, on a
+process started one second earlier. Without that field they would have run
+first-boot setup against another session's instance and created an org in
+someone else's database.
+
+So, before trusting a single measurement against a local instance:
+
+```bash
+lsof -ti tcp:<port>            # is anything already there?
+# start the server, then:
+curl -s localhost:<port>/api/v1/health   # uptime_ms must match how long ago you started it
+```
+
+**Read `uptime_ms` and confirm it is seconds, not minutes.** A wrong answer here
+does not look like an error — it looks like success, which is why it is worth a
+rule rather than care.
+
+**Kill by port, and only your own.** `lsof -ti tcp:<port>` then `kill` that pid.
+**Never `pkill -f node`, never a broad pattern** — it takes out the other two
+sessions' servers and whatever the owner is running, and the failure surfaces to
+them as unrelated flakiness minutes later.
+
+**Pick a port nobody else is on** and say which one in your log. Do not touch the
+shared demo instance on `localhost:3000`; if you need a seeded instance, start
+your own on your own port with its own database file, and remove it afterwards.
+
+---
+
 ## 5. Code rules
 
 **Structure, naming and layering live in `docs/CONVENTIONS.md`** — where files go,
