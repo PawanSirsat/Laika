@@ -2,11 +2,12 @@
 id: LAI-118
 title: The append-only triggers are hand-copied into every activity migration
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-110
-status: backlog
+status: in-progress
+started: 2026-09-01T16:15:00Z
 ---
 
 ## Goal
