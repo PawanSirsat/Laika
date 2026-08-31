@@ -93,7 +93,11 @@ void describe('the sidebar offers nothing that does not exist', () => {
       navRoutes().map((r) => r.label),
       // `Organisation` returns with LAI-086. A deliberate edit to this line,
       // which is what it is here for.
-      ['Board', 'Sprints', 'Timeline', 'Projects', 'Dashboard', 'Organisation'],
+      //
+      // **Timeline before Sprints** since LAI-425 — the prototype's WORK order.
+      // This assertion is `deepEqual` on purpose: it caught the reorder before
+      // the change was finished, which is the only reason it is worth having.
+      ['Board', 'Timeline', 'Sprints', 'Projects', 'Dashboard', 'Organisation'],
     );
   });
 

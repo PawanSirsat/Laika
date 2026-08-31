@@ -46,7 +46,11 @@ void describe('sidebar groups (AC1)', () => {
     // pins the resulting order.
     assert.deepEqual(
       routesInGroup('WORK').map((r) => r.label),
-      ['Board', 'Sprints', 'Timeline', 'Projects'],
+      // **Timeline before Sprints** since LAI-425 — the prototype's WORK order.
+      // `Projects` is under WORK rather than the prototype's `SYSTEM` group
+      // because that group is deliberately not shipped (CLAUDE.md §5.1); a
+      // consequence of an existing decision, not drift.
+      ['Board', 'Timeline', 'Sprints', 'Projects'],
     );
     assert.deepEqual(
       routesInGroup('REVIEW').map((r) => r.label),

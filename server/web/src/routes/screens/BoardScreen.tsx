@@ -375,6 +375,26 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
 
   return (
     <div className="board">
+      {/*
+        The sprint strip comes **first**, before the header (LAI-425).
+
+        The prototype opens with it and we opened with search and filters. That
+        one inversion changes what the screen appears to be about: *which sprint
+        am I in* versus *what am I filtering*. Measured against
+        `docs/design/Laika Prototype.dc.html` at 1600×1100, not from memory.
+      */}
+      <SprintStrip
+        sprints={sprints}
+        tasks={allTasks}
+        selected={sprintScope}
+        onSelect={(id) => {
+          setParam('sprint', id);
+        }}
+        onOpenSprints={() => {
+          window.location.assign('/sprints');
+        }}
+      />
+
       <ScreenHeader
         title="Board"
         context={
@@ -564,18 +584,6 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
             : { retryInSeconds: stream.retryInSeconds })}
         />
       )}
-
-      <SprintStrip
-        sprints={sprints}
-        tasks={allTasks}
-        selected={sprintScope}
-        onSelect={(id) => {
-          setParam('sprint', id);
-        }}
-        onOpenSprints={() => {
-          window.location.assign('/sprints');
-        }}
-      />
 
       <PresenceStrip
         members={members}
