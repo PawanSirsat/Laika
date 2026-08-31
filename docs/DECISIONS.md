@@ -1734,3 +1734,64 @@ been.
 **Revisit if** the owner reverses D-014 (which reopens 1), SMTP lands before
 LAI-094 is built (which changes 2's sequencing), or an SBOM review rejects the
 SDK's surface (which forces 3).
+
+---
+
+## D-040 — The design's timeline is not reachable, and we keep ours
+
+**Date:** 2026-09-01 · **Decided by:** CHIEF, from SHELL's measurement on
+LAI-426 · **Status:** accepted · **Depends on** D-014
+
+The owner asked for the UI to match `Laika Prototype.dc.html`. LAI-426 built the
+timeline exactly as the design draws it — one row per task, sprints as columns —
+and it was measured against the prototype at the same viewport rather than
+judged by eye.
+
+| | prototype | ours, built to the design's shape |
+| --- | --- | --- |
+| rows | 13 | 17 |
+| **distinct bar geometries** | **13** | **2** |
+
+**Every task in a sprint occupies the same pixels**, so the horizontal axis
+carries one bit per row — which of two sprints — spread over seventeen rows.
+
+**Three things make this unreachable rather than merely imprecise.**
+
+1. **The stagger is the content.** The design's bars start and end on thirteen
+   different dates (`LAI-131` 27 Jul–5 Aug, `LAI-139` 10–16 Aug, `LAI-152`
+   15–24 Aug…). Remove the stagger and the chart is a legend with extra rows.
+2. **Tasks cross sprint boundaries.** `LAI-152` runs 15–24 Aug, beginning in S3
+   and ending inside S4. A task belongs to **exactly one** sprint, so a
+   sprint-derived bar **cannot express this at all.** This is the load-bearing
+   point: it is not precision we are declining to render, it is a relationship
+   the data cannot hold.
+3. **Each bar carries a progress fill** — a second per-task quantity we also do
+   not have.
+
+**And the built version is actively worse than what it replaces.** It is 2.5
+screens of scrolling at the owner's 41 tasks to read two sprint dates, and it
+**asserts a precision the data does not have**: a reader sees seventeen bars with
+crisp edges on specific dates and reasonably believes those dates mean something
+about the task. Ours said the same thing in three rows and implied nothing.
+
+**Decision: keep the sprint-per-row timeline. LAI-426 is closed as not building.**
+
+**What it would take to have the design's version**, stated plainly so the choice
+stays open: `tasks.starts_on` and `tasks.ends_on`, a way to set them, and
+something to keep them consistent with the sprint they sit in and with their
+dependencies. That is a scheduling engine, and refusing it is the whole content
+of D-014 — *"draw it from sprint boundaries and it costs a view; draw it from
+task dates and it costs a scheduling engine."*
+
+**This is the second time the design has asked for per-task dates** (the first
+was §14 q10's Calendar, closed in D-039 for the same reason). That is not the
+prototype being wrong — it was drawn before D-014 existed. It means **D-014 is
+load-bearing for two screens**, and reversing it is a larger decision than either
+screen.
+
+**Kept from the attempt:** the subtitle no longer reads *"One bar per sprint"*.
+It says the bar spans the sprint and that tasks have no dates of their own —
+because a constraint a reader cannot see reads as a bug.
+
+**Revisit if** the owner wants task-level scheduling. That reverses D-014 first;
+this decision and D-039's Calendar both follow it rather than lead.
