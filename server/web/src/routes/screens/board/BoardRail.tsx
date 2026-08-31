@@ -4,6 +4,7 @@ import { demoAgentSessions } from '../../../demo/agent-sessions.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { streamEmptyNote } from './stream-presentation.ts';
+import { describeActor } from './actor-presentation.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import type { ActivityEvent } from '../../../api/activity.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
@@ -73,8 +74,10 @@ export function BoardRail({ status, events, gapped, tasks, members }: BoardRailP
             {events.map((event) => {
               // `actor_id` is on every row precisely so this needs no second
               // lookup; the members map turns it into a name we can show.
-              const actor = event.actor_id === null ? undefined : members.get(event.actor_id);
-              const name = actor?.name ?? (event.actor_kind === 'system' ? 'Laika' : 'Someone');
+              // One place decides who acted and how it is marked, because this
+              // and the task detail render the same rows and disagreed about
+              // them — see `actor-presentation.ts`.
+              const actor = describeActor(event, members);
               const ink = avatarColor(event.actor_id ?? event.id, theme);
 
               return (
@@ -87,22 +90,28 @@ export function BoardRail({ status, events, gapped, tasks, members }: BoardRailP
                       className="rail-feed-avatar"
                       style={{ background: ink.background, color: ink.foreground }}
                     >
-                      {initials(name)}
+                      {initials(actor.name)}
                     </span>
-                    {/* The design marks an agent with a corner dot on the
-                        avatar rather than a word, so the row stays scannable
-                        at 8.5px. The name carries the meaning for a reader
-                        who cannot see the dot. */}
-                    {event.actor_kind === 'agent' && (
-                      <span className="rail-feed-bot" aria-hidden="true" />
+                    {/* The design marks a non-human actor with a corner dot on
+                        the avatar rather than a word, so the row stays scannable
+                        at 8.5px. Agent and system differ by **shape** as well as
+                        colour — two dots that differ only in hue are not a
+                        distinction for every reader (AC3). */}
+                    {actor.badge !== undefined && (
+                      <span
+                        className={`rail-feed-bot rail-feed-bot-${actor.badge}`}
+                        aria-hidden="true"
+                      />
                     )}
                   </span>
                   <span className="rail-feed-what">
-                    <b>{name}</b>
+                    <b>{actor.name}</b>
                     {/* Only the qualifier is hidden text — the name is already
-                        rendered, and repeating it here reads it twice aloud. */}
-                    {event.actor_kind === 'agent' && (
-                      <span className="visually-hidden"> (agent)</span>
+                        rendered, and repeating it here reads it twice aloud.
+                        This is what carries the badge for a reader who cannot
+                        see the dot at all. */}
+                    {actor.badge !== undefined && (
+                      <span className="visually-hidden"> ({actor.badge})</span>
                     )}{' '}
                     {describeEvent(event)}
                   </span>

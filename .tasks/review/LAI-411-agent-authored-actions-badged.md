@@ -6,8 +6,9 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-08-31T07:35:23Z
+finished: 2026-08-31T15:10:00Z
 ---
 
 ## Goal
@@ -22,27 +23,27 @@ carries `actor_kind: 'user' | 'agent' | 'system'`
 
 ## Acceptance criteria
 
-- [ ] Wherever activity is rendered — the feed, the task detail, the dashboard —
+- [x] Wherever activity is rendered — the feed, the task detail, the dashboard —
       an `actor_kind: 'agent'` row is visually distinguishable from a `'user'`
       row, and `'system'` from both.
-- [ ] The badge is built from **design tokens in `docs/design/README.md`**,
+- [x] The badge is built from **design tokens in `docs/design/README.md`**,
       verbatim. Do not introduce a new colour. If no existing token fits, stop
       and file a task for the owner — you may not decide a token, and neither
       may CHIEF (D-020).
-- [ ] The distinction survives in **both themes** and is not carried by colour
+- [x] The distinction survives in **both themes** and is not carried by colour
       alone — a shape, an icon or a label as well, so it is legible to someone
       who cannot separate the two hues.
-- [ ] The badge says **which** agent where the data allows it. `actor_id` is the
+- [x] The badge says **which** agent where the data allows it. `actor_id` is the
       person the token belongs to; the token is what distinguishes the agent.
       If `ActivityView` does not carry enough to name it, **do not guess and do
       not invent a label** — render the honest "agent" and file a task against
       `server` for the field. LAI-093 (backlog) is the closely related one; check
       it before filing a duplicate.
-- [ ] `CommentView` carries no `actor_kind` — `server/web/src/api/comments.ts:48`
+- [x] `CommentView` carries no `actor_kind` — `server/web/src/api/comments.ts:48`
       records this and LAI-056 AC4 names it. **Comments are out of scope here**;
       say so on the task rather than half-solving it.
-- [ ] Rendered in a real browser, both themes, against seeded agent rows.
-- [ ] Full gate green.
+- [x] Rendered in a real browser, both themes, against seeded agent rows.
+- [x] Full gate green.
 
 ## Notes
 
@@ -116,3 +117,90 @@ caveat worth carrying** — that holds only because your baseline was green. Wit
 pre-existing failure, a non-zero count proves nothing. Re-running the anchors and
 confirming each matches exactly once is the check that does not depend on the
 baseline.
+
+---
+
+## Build note — SHELL, 2026-08-31
+
+### What was actually missing
+
+Agent badging largely existed. **`system` did not**, and in the task detail it was
+not merely unbadged — `personName(null)` returned **"someone"**, so a cron action
+read as an unidentified human. The rail called the same row "Laika". Two sites,
+one row, two answers, one wrong.
+
+The schema settles it: `activity_system_actor_check` is
+`(actor_id IS NULL) = (actor_kind = 'system')`, so a null actor on an activity
+row *cannot* be a person. `personName` stays as it is for `created_by` and
+`comment.author_id`, where a null really is a departed user — which is why this
+is a new function rather than an edit to that one.
+
+### One place decides it now
+
+`routes/screens/board/actor-presentation.ts` — `describeActor(event, members)`
+returns the name and the badge. The rail and the task detail both call it, so
+they cannot drift apart again. The dashboard was already correct and was left
+alone rather than churned.
+
+### AC3 needed different treatment at two sites
+
+The task detail and dashboard render the badge as a **word** (`agent`, `system`),
+so colour is reinforcement and nothing depends on it. The rail cannot — a row is
+8.5px — so there the marker is a **shape**: an agent is a rounded square
+(`--radius-sm`), the system is a circle (`--radius-pill`). Two dots differing
+only in hue would have failed this criterion while looking like it passed.
+Measured: `border-radius` `4px` vs `999px`, not just `--pur` vs `--tx3`.
+
+### Which agent — not guessed, not filed
+
+`ActivityView` carries `actor_token_id` but no token *name*, so the honest label
+is "agent". **LAI-093 already covers naming it**, so nothing was filed. `actor_id`
+is deliberately kept as the person the token belongs to — that is who is
+accountable (D-007).
+
+### Verified against a real agent, not only a seeded one
+
+A seeded row proves the rendering; it does not prove the pipeline. So a token was
+minted and used:
+
+```
+PATCH /api/v1/tasks/... with `Authorization: Bearer lai_…`  -> 200
+activity row written:  kind=agent  actor=yes  token=yes
+```
+
+It renders identically to the seeded rows — `rail-feed-bot-agent`, "(agent)".
+The two agree, so LAI-403's writer and this renderer meet correctly.
+
+### Measured, both themes, all three sites
+
+| site | user | agent | system |
+| --- | --- | --- | --- |
+| rail | no marker | rounded square `--pur` + "(agent)" | circle `--tx3` + "(system)" |
+| task detail | no marker | word `agent` | word `system`, named **Laika** |
+| dashboard | word `user` | word `agent` | word `system` |
+
+Driven through the real theme control, not `classList`. No new colour values —
+`--pur` is assigned to "agent" in `docs/design/README.md:60` and `--tx3` is what
+the dashboard already gave the system (D-020 not in play).
+
+### Out of scope, said rather than half-solved
+
+- **Comments carry no `actor_kind`** (`api/comments.ts:48`, LAI-056 AC4). An
+  agent-authored comment cannot be badged from the client. Not touched.
+- **LAI-225 filed** — `describeEvent` has no case for `project.created` /
+  `project.updated`, so the rail prints the raw enum name. A vocabulary gap, not
+  a badging one.
+
+### One behaviour change worth a reviewer's eye
+
+An actor whose id is not in the members map used to render as the **raw ULID** in
+the task detail. It now renders "Someone". A ULID is not a name and the panel is
+read by people — but it is a change beyond badging, made because unifying the two
+sites forced a single answer. Say if you would rather keep the id.
+
+### Four mutations, four reds
+
+System renamed "someone" (1 fail), system unbadged (2), agent unbadged (3),
+unresolved id leaked (1). Each anchor asserted to match exactly once **before**
+mutating, and the baseline confirmed green first — a non-zero failure count only
+proves a mutation landed if the baseline was zero.

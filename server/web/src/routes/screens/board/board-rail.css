@@ -154,15 +154,31 @@
  * merged into it — which means it tracks the panel it sits on in both themes,
  * where a fixed white would only work in one.
  */
+/* The corner marker on a non-human actor's avatar.
+   A rail row is 8.5px, so the badge cannot be a word here the way it is in the
+   task detail — the geometry is shared and the *shape* carries the distinction,
+   because a violet dot beside a grey dot differs only by hue and that is not a
+   distinction every reader can make (LAI-411 AC3). The word itself is still
+   there for a screen reader, as visually-hidden text on the row. */
 .rail-feed-bot {
   position: absolute;
   right: -0.1875rem;
   bottom: -0.1875rem;
   width: 0.6875rem;
   height: 0.6875rem;
+  border: 1.5px solid var(--card);
+}
+
+/* An agent: a rounded square, the design's `--pur`. */
+.rail-feed-bot-agent {
   border-radius: var(--radius-sm);
   background: var(--pur);
-  border: 1.5px solid var(--card);
+}
+
+/* The system: a circle, and the same quiet `--tx3` the dashboard gives it. */
+.rail-feed-bot-system {
+  border-radius: var(--radius-pill);
+  background: var(--tx3);
 }
 
 .rail-feed-what {

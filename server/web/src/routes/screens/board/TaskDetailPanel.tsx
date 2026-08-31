@@ -14,6 +14,7 @@ import {
   blockedState,
   type BoardColumn,
 } from '../../../api/board-derive.ts';
+import { describeActor } from './actor-presentation.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import './task-detail.css';
 
@@ -350,13 +351,18 @@ export function TaskDetailPanel({
                   <ol className="panel-activity">
                     {detail.activity.map((event) => {
                       const move = statusTransition(event);
+                      // Not `personName`: on an activity row a null actor is the
+                      // system by CHECK constraint, and "someone edited this
+                      // task" reads as an unidentified human (LAI-411).
+                      const actor = describeActor(event, members);
                       return (
                         <li key={event.id} className="panel-event">
-                          <span className="panel-event-who">
-                            {personName(event.actor_id, members)}
-                          </span>
-                          {event.actor_kind === 'agent' && (
-                            <span className="marker marker-agent">agent</span>
+                          <span className="panel-event-who">{actor.name}</span>
+                          {/* The word itself, not a colour — an `agent` and a
+                              `system` marker must be told apart by someone who
+                              cannot separate violet from grey (AC3). */}
+                          {actor.badge !== undefined && (
+                            <span className={`marker marker-${actor.badge}`}>{actor.badge}</span>
                           )}
                           <span className="panel-event-what">
                             {describeEvent(event)}
