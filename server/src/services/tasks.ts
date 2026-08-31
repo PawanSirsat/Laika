@@ -80,6 +80,24 @@ export interface TaskView {
   /** Project-scoped labels, sorted (§4.16). Empty when none are applied. */
   tags: string[];
   /**
+   * When work actually began and ended — unix ms, null until it happens
+   * (§4.5, LAI-126).
+   *
+   * **These are actuals, not a plan, and the distinction is load-bearing.**
+   * D-014 gives tasks no dates on purpose, so the timeline stays a rendering
+   * pass over sprint boundaries rather than a scheduling engine. These record
+   * what *happened*, where a Gantt bar asserts what is *planned* to happen —
+   * exposing them does not reverse D-014, and drawing task bars from them is a
+   * separate decision that needs the owner, not a UI change.
+   *
+   * `started_at` is set the **first** time a task enters `in_progress` and is
+   * not moved again by a later re-entry: a task that goes back for rework
+   * started when it started, and overwriting it would silently shorten every
+   * cycle time computed from it (LAI-124).
+   */
+  started_at: number | null;
+  completed_at: number | null;
+  /**
    * Ids this task is **blocked by** — the forward edge of §4.6.
    *
    * Named `dependencies` rather than `blocked_by` because that is the wire
@@ -192,6 +210,8 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     blocks: context.edges.blocks.get(row.id) ?? [],
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
+    started_at: row.startedAt,
+    completed_at: row.completedAt,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -602,6 +622,14 @@ export function changeStatus(
     .set({
       status: to,
       updatedAt: now,
+      // `claimTask` already stamps this, but claiming is not the only way into
+      // `in_progress` — a lead moving somebody else's task gets here instead,
+      // and before LAI-126 that task started work with `started_at` still null.
+      //
+      // `=== null` and not an unconditional set: the first entry is the start.
+      // A task sent back from review and picked up again did not start twice,
+      // and overwriting would silently shorten every cycle time (LAI-124).
+      ...(to === 'in_progress' && task.startedAt === null ? { startedAt: now } : {}),
       ...(to === 'done' ? { completedAt: now } : {}),
     })
     .where(eq(tasks.id, taskId))

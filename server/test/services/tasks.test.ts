@@ -808,3 +808,98 @@ describe('created_by_client — which agent, not just which channel (LAI-093)', 
     expect(byTitle.get('Three')).toBeNull();
   });
 });
+
+/**
+ * When work actually began and ended (§4.5, LAI-126).
+ *
+ * The columns have existed since 0000 and nothing serialised them, so no client
+ * could tell when a task started — only when its row was last written.
+ */
+describe('started_at and completed_at', () => {
+  function newTask(title = 'A task') {
+    return createTask(t.sqlite, t.db, actor(adminId), 'laika', { title });
+  }
+
+  it('is null on a task nothing has happened to', () => {
+    const task = newTask();
+
+    expect(task.started_at).toBeNull();
+    expect(task.completed_at).toBeNull();
+  });
+
+  it('reports both after todo → in_progress → done', () => {
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+    const started = changeStatus(t.db, actor(adminId), task.id, 'in_progress');
+    changeStatus(t.db, actor(adminId), task.id, 'review');
+    const done = changeStatus(t.db, actor(adminId), task.id, 'done');
+
+    // `claimTask` already stamped `started_at`; a lead moving somebody else's
+    // task is the other way into `in_progress`, and before LAI-126 that route
+    // left it null while the task was genuinely under way.
+    expect(started.started_at).not.toBeNull();
+    expect(done.started_at).toBe(started.started_at);
+    expect(done.completed_at).not.toBeNull();
+    expect(done.completed_at!).toBeGreaterThanOrEqual(done.started_at!);
+  });
+
+  it('keeps the first start when a task comes back for rework', () => {
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+    const first = changeStatus(t.db, actor(adminId), task.id, 'in_progress', 1_000);
+    changeStatus(t.db, actor(adminId), task.id, 'review', 2_000);
+    const again = changeStatus(t.db, actor(adminId), task.id, 'in_progress', 3_000);
+
+    // A task sent back and picked up again did not start twice. Overwriting
+    // would silently shorten every cycle time computed from it (LAI-124).
+    expect(first.started_at).toBe(1_000);
+    expect(again.started_at).toBe(1_000);
+  });
+
+  it('still stamps a start when the task is claimed rather than moved', () => {
+    const memberId = makeUser('member');
+    addMember(t.db, actor(adminId), 'laika', memberId, 'member');
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+
+    const claimed = claimTask(t.sqlite, t.db, actor(memberId), task.id);
+
+    expect(claimed.started_at).not.toBeNull();
+  });
+
+  it('serialises them on the wire shape, not only in the row', () => {
+    // §6.4's task shape, named in full. A new field reaching clients without a
+    // spec line is how `dependencies` came to need a footnote — this turns any
+    // addition into a deliberate act rather than a diff nobody reads.
+    const task = newTask();
+
+    expect(Object.keys(task).sort()).toEqual(
+      [
+        'acceptance_md',
+        'assignee_id',
+        'blocks',
+        'comment_count',
+        'completed_at',
+        'created_at',
+        'created_by',
+        'created_by_client',
+        'created_via',
+        'dependencies',
+        'description_md',
+        'discovered_from',
+        'id',
+        'key',
+        'number',
+        'priority',
+        'project_id',
+        'ready',
+        'sprint_id',
+        'started_at',
+        'status',
+        'tags',
+        'title',
+        'updated_at',
+      ].sort(),
+    );
+  });
+});
