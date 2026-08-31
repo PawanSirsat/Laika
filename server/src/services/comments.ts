@@ -7,6 +7,7 @@ import { newId } from '../db/ids.ts';
 import { comments, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { syncMentions } from './mentions.ts';
 
 /**
  * Comments on tasks (SPEC §4.7, §6.4, §3.2).
@@ -195,6 +196,9 @@ export function addComment(
     })
     .run();
 
+  // After the insert, because `comment_mentions.comment_id` is a foreign key.
+  syncMentions(db, id, project.id, bodyMd, now);
+
   appendActivity(db, {
     orgId: project.orgId,
     projectId: project.id,
@@ -234,6 +238,9 @@ export function editComment(
     .set({ bodyMd, editedAt: now, updatedAt: now })
     .where(eq(comments.id, commentId))
     .run();
+
+  // Re-derived, not merged: a name the edit removed is no longer a mention (§4.19).
+  syncMentions(db, commentId, project.id, bodyMd, now);
 
   appendActivity(db, {
     orgId: project.orgId,

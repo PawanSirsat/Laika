@@ -528,6 +528,64 @@ The join between §4.5 and §4.16.
 **Non-goal: hierarchy.** Tags are flat. `priority`, `sprint_id` and
 `discovered_from` already carry the structured groupings.
 
+### 4.18 `task_watchers`
+
+Who wants to hear about a task (§6.4, LAI-094).
+
+| field | notes |
+| --- | --- |
+| `id` | |
+| `task_id` | FK `tasks` `ON DELETE cascade` |
+| `user_id` | FK `users` `ON DELETE cascade` |
+| `watching` | integer boolean — **not** row-presence; see below |
+| `created_at`, `updated_at` | |
+
+Unique on (`task_id`, `user_id`).
+
+**Rules.**
+
+- **`watching` is a column, not the existence of a row, and that is the whole
+  design.** Assigning a task, commenting on it, or being mentioned in it makes a
+  person a watcher **unless they have explicitly unwatched it**. Three states
+  have to be distinguishable: *no row* (the implicit rules apply), `watching = 1`
+  (explicitly in), `watching = 0` (explicitly out). Row-presence can express two
+  of the three, and the one it loses is the one that matters — **a person who
+  unwatches would be re-subscribed by their own next comment**, which is the
+  behaviour most likely to make someone turn notifications off entirely.
+- A watcher who loses read access to the project stops receiving anything: the
+  stream answers to `project.read` (§11.5), and this table never widens it.
+
+### 4.19 `comment_mentions`
+
+Who was named in a comment (§4.7, LAI-094).
+
+| field | notes |
+| --- | --- |
+| `id` | |
+| `comment_id` | FK `comments` `ON DELETE cascade` |
+| `user_id` | FK `users` `ON DELETE cascade` |
+| `created_at` | |
+
+Unique on (`comment_id`, `user_id`).
+
+**Rules.**
+
+- **`@name` matches the local part of a user's email**, case-insensitively —
+  `@ada` for `ada@kvelld.co.za`. There is no handle column, and adding one is a
+  §4.1 change with a uniqueness rule, a backfill and a collision story; it is not
+  this feature's to make. Email is already unique per instance (§4.2 — one org)
+  and is stable in a way `name` is not.
+- **An ambiguous `@name` resolves to nobody.** Two accounts can share a local
+  part across domains, and picking one silently is worse than not linking: the
+  writer believes they notified somebody and the wrong person may be notified
+  instead. It renders as plain text.
+- **A mention never widens who can see anything.** A row is written only if the
+  mentioned person passes `project.read` on that task's project — otherwise the
+  text stands and no row exists. A mention is not an invitation.
+- **Rows are the record of what was written**, so editing a comment
+  re-derives them and deleting it cascades. A name that no longer appears in the
+  body is not a mention.
+
 ## 5. Task lifecycle
 
 ```

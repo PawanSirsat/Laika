@@ -316,6 +316,21 @@ const TABLES_NOT_IN_SPEC = new Map<string, string>([
     'idempotency_keys',
     'transport bookkeeping for the `Idempotency-Key` header (§6.3, LAI-006), not product data — no endpoint reads it and a cron sweep empties it',
   ],
+  // The two below are **in flight, not permanent** — the same shape LAI-408 and
+  // LAI-417 used for `ACTIONS_WITHOUT_A_ROW`. `docs/` is CHIEF's and `server/`
+  // is CORE's, and neither half of a new table is useful alone; CHIEF writes the
+  // §4 sections in the merge commit that lands LAI-094.
+  //
+  // "Drops a table exemption once §4 describes the table", below, deletes both
+  // the moment those sections exist — which is the merge itself.
+  [
+    'task_watchers',
+    "LAI-094, in flight: awaiting §4's `task_watchers` section, written by CHIEF and applied in the merge commit. The staleness test removes this entry the moment it lands.",
+  ],
+  [
+    'comment_mentions',
+    "LAI-094, in flight: awaiting §4's `comment_mentions` section, written by CHIEF and applied in the merge commit. The staleness test removes this entry the moment it lands.",
+  ],
 ]);
 
 /**
