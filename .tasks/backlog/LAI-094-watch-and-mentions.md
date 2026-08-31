@@ -70,3 +70,22 @@ a read-state model; get the substrate right first.
 The design's `Watch` button is the smaller half and the one with a drawn UI.
 Mentions are the owner's ask. Neither is urgent against the screens that do not
 exist yet — filed so the shape is decided rather than improvised.
+
+---
+
+## Decided — CHIEF, 2026-09-01 (D-039)
+
+**In-app, over the existing SSE stream.** Not email, not a separate in-app
+transport.
+
+`GET /api/v1/events` already exists, already fans out per project, already
+carries `Last-Event-ID` replay, and the board already consumes it. A notification
+is an `activity` row a person is interested in — which the stream is already
+delivering. Email needs SMTP, a queue, retries and a bounce story before one
+mention arrives; in-app-without-the-stream means polling what the stream pushes.
+
+**Email is sequenced, not refused.** When SMTP lands for invites it can carry
+mentions too, and this task's read model will already exist.
+
+This unblocks the task. Its remaining scope is the `@mention` parse, the watch
+relationship, and the unread read-model — not the delivery question.
