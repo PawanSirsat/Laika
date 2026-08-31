@@ -147,11 +147,19 @@ export function TimelineScreen() {
       />
 
       {/* Kept out of the header band rather than deleted with it: a Gantt
-          normally implies task bars, and their absence here is a decision
-          (D-014) rather than an omission. It belongs with the chart it
-          explains, not in a header that has to stay one line. */}
+          normally implies per-task bars, and their absence here is a decision
+          (D-014, D-040) rather than an omission. It belongs with the chart it
+          explains, not in a header that has to stay one line.
+
+          The second sentence is the part that earns its place. LAI-426 built
+          the design's row-per-task version and it had to be reverted: a task
+          belongs to exactly one sprint, so every bar in a sprint came out the
+          same length — 17 bars, 2 distinct geometries. **A constraint a reader
+          cannot see reads as a bug**, so the screen says outright why there is
+          no bar per task rather than leaving them to infer one is missing. */}
       <p className="timeline-sub">
-        One bar per sprint. Tasks have no dates of their own — open a sprint to see what is in it.
+        One bar per sprint. Tasks have no dates of their own, so they are listed inside their sprint
+        rather than placed on the axis — open a sprint to see what is in it.
       </p>
 
       <div className="timeline-chart">
