@@ -7,7 +7,8 @@ priority: p3
 depends-on: []
 discovered-from: LAI-407
 started: 2026-08-31T14:05:00Z
-status: in-progress
+finished: 2026-08-31T14:20:00Z
+status: done
 ---
 
 ## Goal
@@ -59,15 +60,15 @@ claim a fidelity the data does not have.
 
 ## Acceptance criteria
 
-- [ ] §7.1's `list_ready_tasks` row either drops "assigned to me or unassigned"
+- [x] §7.1's `list_ready_tasks` row either drops "assigned to me or unassigned"
       or states the wider query explicitly and says how it relates to §4.5's
       definition. If it is the wider one, that is a **behaviour change** to the
       tool and needs its own task rather than a quiet edit.
-- [ ] §7.1's `get_project_context` row says what "decisions" means given no
+- [x] §7.1's `get_project_context` row says what "decisions" means given no
       decision entity exists — either "the context document's edit history",
       or a forward reference to §10.2 with a note that the field is empty until
       the meeting path lands.
-- [ ] Whatever is decided, `server/src/mcp/read-tools.ts` matches it, or a task
+- [x] Whatever is decided, `server/src/mcp/read-tools.ts` matches it, or a task
       exists saying it must change.
 
 ## Notes / context
@@ -79,3 +80,37 @@ implementing one.
 Neither is urgent: the tools work, the readings are argued in
 `logs/core-2026-08-31.md`, and both are recorded in code comments beside the
 lines they explain.
+
+---
+
+## Resolved — CHIEF, 2026-08-31
+
+Both contradictions settled in `docs/SPEC.md` §7.1, with the reasoning recorded
+beneath the table so the next reader does not re-derive it.
+
+**`list_ready_tasks` — §4.5 wins, and "assigned to me or" is struck.** It
+described an empty set: §4.5 derives `ready` as requiring `assignee_id IS NULL`,
+so "assigned to me" can never match a ready task. The deciding argument is not
+which section is more authoritative but that **`ready` is one derived concept
+shared by this tool and the board's Ready column** — §4.5 says so in the same
+sentence — and a tool returning more than the column shows would be a second,
+quieter definition of readiness. An agent looking for work it already holds is a
+different question, answered by `get_task_context` and `/laika:standup` (§8).
+
+**`get_project_context` — "last 10 decisions" becomes the document's edit
+history.** Laika has no decision entity, and §7.3 puts decisions *inside*
+`context_md`, appended with their date by §10.2's meeting path. So the document
+already carries them, and a separate `decisions` field could only be a
+markdown-parsing guess at structure the data does not have. The edit history is
+what §7.3 actually asks for — *"a reviewer can see what changed between two agent
+sessions"* — named for what it is rather than what it was hoped to be.
+
+**Both implementations already matched these readings**, so no code changes. That
+is the outcome filing rather than implementing was supposed to produce: the
+builder's reading was ratified as a decision with reasoning, instead of becoming
+the answer by default because it shipped first.
+
+**The general rule, now in §7.1:** a contradiction in the spec must not be
+settled by whichever half someone implemented first. CORE's Notes on LAI-404 and
+my own Notes on LAI-407 both invited exactly that; declining the invitation was
+right.

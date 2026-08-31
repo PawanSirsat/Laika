@@ -686,9 +686,9 @@ read them.
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `list_projects` | `{}` | projects the user can read |
-| `list_ready_tasks` | `{ project?, limit? }` | ready tasks (§4.5), assigned to me or unassigned, sorted p1→p3 then age |
+| `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
 | `get_task_context` | `{ task }` | task, description, dependencies + their statuses, comments, recent activity, branch, `discovered_from` chain |
-| `get_project_context` | `{ project }` | `context_md`, last 10 decisions, open-task summary, members + roles |
+| `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
 | `create_task` | `{ project, title, description?, priority?, depends_on?, discovered_from? }` | created task, `created_via: 'mcp'` |
 | `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
 | `update_status` | `{ task, status, note? }` | task; validated transition |
@@ -699,6 +699,31 @@ read them.
 `get_task_context` and `get_project_context` are deliberately **fat** — one call
 returns everything needed to start, because round-trips are expensive for an
 agent.
+
+**Two corrections to this table, 2026-08-31 (LAI-139), found by building it.**
+
+**`list_ready_tasks` said "assigned to me or unassigned".** That describes an
+empty set: §4.5 derives `ready` as `status IN ('backlog','todo') AND assignee_id
+IS NULL AND every dependency is 'done'`, so a ready task is *by definition*
+unassigned and "assigned to me" can never match one. §4.5 wins, because **`ready`
+is one derived concept shared by this tool and the board's Ready column** — §4.5
+says so in the same breath — and a tool that returned more than the column shows
+would be a second, quieter definition of readiness. An agent looking for work it
+already holds is a different question, answered by `get_task_context` and by the
+plugin's `/laika:standup` (§8), not by widening this.
+
+**`get_project_context` said "last 10 decisions".** Laika has **no decision
+entity** — no table, no verb, no endpoint — and §7.3 is explicit that decisions
+live *inside* `context_md`, appended with their date by §10.2's meeting path. So
+`context_md` already carries them, and a separate `decisions` field could only be
+a markdown-parsing guess at structure the data does not have. The tool returns
+the document's own **edit history** instead, which is what §7.3 actually asks for
+— *"a reviewer can see what changed between two agent sessions"* — named for what
+it is rather than for what it was hoped to be.
+
+**Both were found by a builder who filed them instead of picking a side.** A
+contradiction in this document must not be settled by whichever half someone
+implemented first.
 
 ### 7.2 Tool contract
 
