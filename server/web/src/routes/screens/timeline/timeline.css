@@ -372,3 +372,194 @@
   border-radius: var(--radius-sm);
   padding: 2px var(--space-2);
 }
+
+/* ------------------------------------------------- LAI-426: task rows
+
+   One row per scheduled task, sprints as columns. The left column is a fixed
+   width and the track fills the rest, so the labels stay put while the axis
+   carries the proportional day counts — the same flex-grow mechanism the
+   sprint track already used, applied per row.
+
+   Every bar spans its **sprint's** range. D-014 refuses task dates, so tasks in
+   one sprint share an extent and differ by row and status colour. */
+
+.timeline-grid {
+  --timeline-label: 17.5rem;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  overflow: hidden;
+}
+
+.timeline-head {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--bd);
+  background: var(--tub);
+}
+
+.timeline-head-label {
+  flex: 0 0 var(--timeline-label);
+  display: flex;
+  align-items: flex-end;
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.06em;
+  color: var(--tx3);
+  border-right: 1px solid var(--bd);
+}
+
+.timeline-head-cols {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The sprint columns, carrying name, done/total and range. */
+.timeline-cols {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--bd);
+}
+
+.timeline-col,
+.timeline-col-gap {
+  min-width: 0;
+  padding: var(--space-2);
+}
+
+.timeline-col {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-left: 1px solid var(--bd);
+  overflow: hidden;
+}
+
+.timeline-col-now {
+  background: var(--accs);
+}
+
+.timeline-col-past {
+  opacity: 0.7;
+}
+
+.timeline-col-name {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-col-meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+.timeline-col-dates {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The rows. `relative` so the TODAY rule can be absolutely placed over them. */
+.timeline-body {
+  position: relative;
+}
+
+.timeline-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--bd);
+}
+
+.timeline-row:last-child {
+  border-bottom: 0;
+}
+
+.timeline-row:hover {
+  background: var(--tub);
+}
+
+.timeline-row-label {
+  flex: 0 0 var(--timeline-label);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border-right: 1px solid var(--bd);
+}
+
+.timeline-row-avatar {
+  flex: none;
+  width: 1.25rem;
+  height: 1.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  font-size: 0.5rem;
+  font-weight: var(--weight-bold);
+}
+
+.timeline-row-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.timeline-row-key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.timeline-row-track {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 2rem;
+}
+
+/* The bar. Status colours are the lane colours already in the board's palette —
+   no new token (D-020). */
+.timeline-task-bar {
+  height: 0.625rem;
+  border-radius: var(--radius-pill);
+  background: var(--tx3);
+  min-width: 2px;
+}
+
+.timeline-task-bar-done {
+  background: var(--grn);
+}
+
+.timeline-task-bar-in_progress {
+  background: var(--acc);
+}
+
+.timeline-task-bar-review {
+  background: var(--pur);
+}
+
+.timeline-task-bar-blocked,
+.timeline-task-bar-cancelled {
+  background: var(--red);
+}
+
+.timeline-task-bar-todo,
+.timeline-task-bar-backlog {
+  background: var(--bd2);
+}

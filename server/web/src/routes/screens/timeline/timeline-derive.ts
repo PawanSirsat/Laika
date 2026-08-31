@@ -193,3 +193,37 @@ export function isCurrent(sprint: Sprint, now: number): boolean {
   const today = startOfDay(now);
   return today >= startOfDay(sprint.starts_on) && today <= startOfDay(sprint.ends_on);
 }
+
+/** One drawn row: a task, and the sprint whose range its bar spans. */
+export interface TimelineTaskRow<T> {
+  readonly sprint: Sprint;
+  readonly task: T;
+}
+
+/**
+ * One row per scheduled task, in sprint order and then the board's own order
+ * (LAI-426).
+ *
+ * ## The bar spans the *sprint*, not the task
+ *
+ * The design draws `LAI-131 DONE 27 Jul – 5 Aug` — a per-task range. **D-014
+ * refuses that**: "the timeline is sprint-based; tasks never get dates", because
+ * drawing it from sprint boundaries costs a view and drawing it from task dates
+ * costs a scheduling engine. There is no `starts_on` on a task and there must
+ * not be one.
+ *
+ * So every task in a sprint gets that sprint's extent. They differ by row and by
+ * status colour, not by where the bar begins. That is the honest reading: what
+ * the data knows is *which sprint holds this task*, and that is what is drawn.
+ *
+ * Order within a sprint is the order the board returned, deliberately — the
+ * screen should not invent a second ranking of tasks that disagrees with the one
+ * the reader just saw on the board.
+ */
+export function taskRows<T>(
+  rows: readonly { readonly sprint: Sprint; readonly tasks: readonly T[] }[],
+): TimelineTaskRow<T>[] {
+  // `rows` arrives in calendar order from `useSprints`; flattening preserves it,
+  // and preserves the board's order inside each sprint.
+  return rows.flatMap((row) => row.tasks.map((task) => ({ sprint: row.sprint, task })));
+}
