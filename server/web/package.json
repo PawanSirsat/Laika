@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "The Laika SPA \u2014 React + Vite, built into server/public/.",
+  "description": "The Laika SPA — React + Vite, built into server/public/.",
   "engines": {
     "node": ">=22"
   },
@@ -24,6 +24,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.0",
+    "playwright": "1.62.1",
     "typescript": "~6.0.3",
     "vite": "^8.2.2"
   }
