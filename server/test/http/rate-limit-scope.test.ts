@@ -95,8 +95,44 @@ describe('anonymous callers share one bucket, by decision', () => {
   });
 
   it('keys authenticated callers separately from each other and from anonymous', () => {
-    expect(classify('/api/v1/tasks', 'u1').key).toBe('session:u1');
-    expect(classify('/api/v1/tasks', 'u2').key).toBe('session:u2');
+    expect(classify('/api/v1/tasks', { userId: 'u1', tokenId: null }).key).toBe('session:u1');
+    expect(classify('/api/v1/tasks', { userId: 'u2', tokenId: null }).key).toBe('session:u2');
     expect(classify('/api/v1/tasks', null).key).toBe('session:anonymous');
+  });
+});
+
+describe('a token is limited as itself, not as its owner (LAI-138)', () => {
+  it('keys on the token id, so §6.3’s tighter budget actually applies', () => {
+    const byToken = classify('/api/v1/tasks', { userId: 'u1', tokenId: 'tok1' });
+
+    expect(byToken.key).toBe('token:tok1');
+    expect(byToken.policy).toBe(LIMITS.token);
+    // The point of the task: keyed by user it would have drawn on this.
+    expect(byToken.policy).not.toBe(LIMITS.session);
+  });
+
+  it('gives two tokens held by one person separate buckets', () => {
+    const a = classify('/api/v1/tasks', { userId: 'u1', tokenId: 'tok1' });
+    const b = classify('/api/v1/tasks', { userId: 'u1', tokenId: 'tok2' });
+
+    expect(a.key).not.toBe(b.key);
+  });
+
+  it('keeps a token’s bucket out of its owner’s session bucket', () => {
+    const token = classify('/api/v1/tasks', { userId: 'u1', tokenId: 'tok1' });
+    const session = classify('/api/v1/tasks', { userId: 'u1', tokenId: null });
+
+    expect(token.key).not.toBe(session.key);
+    // Prefixed namespaces, so the two cannot collide whatever the ids are —
+    // including the pathological case of a token id equal to a user id.
+    expect(classify('/api/v1/tasks', { userId: 'x', tokenId: 'x' }).key).toBe('token:x');
+    expect(classify('/api/v1/tasks', { userId: 'x', tokenId: null }).key).toBe('session:x');
+  });
+
+  it('still gives heartbeats their own budget, keyed the same way', () => {
+    const h = classify('/api/v1/heartbeats', { userId: 'u1', tokenId: 'tok1' });
+
+    expect(h.policy).toBe(LIMITS.heartbeat);
+    expect(h.key).toBe('heartbeat:tok1');
   });
 });
