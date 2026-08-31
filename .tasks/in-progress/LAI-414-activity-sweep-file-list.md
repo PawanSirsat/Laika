@@ -2,11 +2,12 @@
 id: LAI-414
 title: The activity sweep reads six service files by name, and there are thirteen
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-045
-status: backlog
+status: in-progress
+started: 2026-08-31T07:31:05Z
 ---
 
 ## Goal
