@@ -661,7 +661,11 @@ describe('acceptance criteria (SPEC §4.5)', () => {
       .filter((row) => row.type === 'task.updated');
 
     expect(rows).toHaveLength(1);
-    expect(JSON.parse(rows[0]?.payloadJson ?? '{}')).toMatchObject({ changed: ['acceptanceMd'] });
+    // `acceptance_md`, not `acceptanceMd` — LAI-045 made the audit trail speak
+    // the same names as the API. This assertion pinned the old spelling.
+    expect(JSON.parse(rows[0]?.payloadJson ?? '{}')).toMatchObject({
+      changed: ['acceptance_md'],
+    });
 
     // And nothing invented a new type.
     const types = new Set(
