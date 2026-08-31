@@ -88,15 +88,102 @@ export interface RepoProjects {
 }
 
 /**
- * Compared in JavaScript rather than with SQLite's `lower()`.
+ * A git remote in any form somebody's tooling might produce → `owner/name`
+ * (SPEC §4.3, LAI-144).
  *
- * `lower()` folds ASCII only, while `String.prototype.toLowerCase` is
- * Unicode-aware, and a comparison that disagrees with itself depending on which
- * side ran it is the kind of bug that only shows up on somebody else's repo
- * name. A self-hosted board has few projects, so reading them costs nothing.
+ * ## Why the server does this and not the plugin
+ *
+ * `plugin/hooks/README.md` says the hooks send *"metadata only — git remote"*,
+ * and a git remote is a URL. §4.3 stores `owner/name`. **None** of
+ * `git@github.com:PawanSirsat/Laika.git`, the two `https://` forms, or any of
+ * them with `.git` matches `PawanSirsat/Laika` by any comparison, folded or
+ * otherwise — so before this existed, a correctly configured instance sending
+ * exactly what the plugin documents resolved every heartbeat to no project, and
+ * §9.3 presence was permanently empty.
+ *
+ * §9.2 already puts resolution on the server because *"the plugin cannot know a
+ * deployment's project prefixes"*, and the same reasoning applies here. The
+ * direction is what settles it: **an old plugin has to keep working against a
+ * new server**, which is the only direction that can be relied on for something
+ * self-hosted, where nobody controls when the plugin updates.
+ *
+ * ## Both sides are normalised, not just the incoming one
+ *
+ * §4.3 asks for `owner/name`, but nothing enforces it, and a project row holding
+ * a URL is exactly as likely as a heartbeat carrying one. Normalising one side
+ * only would be a comparison that disagrees with itself depending on which side
+ * the URL happened to land on — the same fault as folding case on one side.
+ *
+ * Returns `null` for anything with nothing left after stripping. §9.2's rule is
+ * that unrecognisable input **degrades, it never errors**, so a caller treats
+ * `null` as "matches nothing" rather than as a fault.
  */
-function fold(value: string): string {
-  return value.trim().toLowerCase();
+/**
+ * Every remote form Laika accepts, **in the order they are tried**, and the
+ * capture that holds the path.
+ *
+ * One table rather than a chain of `if`s, so adding a form — a self-hosted
+ * GitLab path, some other scheme — is one line here instead of a new branch and
+ * a new test that has to find where the branch went.
+ *
+ * **The order is load-bearing and is why this is a list and not a set.**
+ * `https://github.com/` has no path, so the URL form does not capture one; if
+ * the scp form were tried first it would read `https` as the host and return
+ * `github.com` as the repository name. Scheme before scp, always.
+ */
+const REMOTE_FORMS: { readonly form: string; readonly pattern: RegExp }[] = [
+  {
+    form: 'scheme://[user@]host/owner/name',
+    pattern: /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/]*(?:\/(.*))?$/,
+  },
+  {
+    // What `git remote -v` prints for an SSH remote, and the form least likely
+    // to have been normalised by whoever sent it.
+    form: '[user@]host:owner/name',
+    pattern: /^(?:[^@/:]+@)?[^/:]+:(.*)$/,
+  },
+  {
+    form: 'owner/name',
+    pattern: /^(.*)$/,
+  },
+];
+
+export function normaliseRepo(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
+
+  const matched = REMOTE_FORMS.reduce<string | null>(
+    (found, { pattern }) => found ?? pattern.exec(trimmed)?.[1] ?? null,
+    null,
+  );
+
+  // The last form matches anything, so this is unreachable in practice — but
+  // `?.[1]` is `undefined` for a pattern that matches without capturing, and
+  // treating that as "no repo" is the degrade §9.2 asks for.
+  if (matched === null) return null;
+
+  const repo = matched
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    // Only as a suffix. A global replace turns `PawanSirsat/PawanSirsat.github.io`
+    // into `PawanSirsat/PawanSirsathub.io`, and every GitHub account has that one.
+    .replace(/\.git$/i, '')
+    .replace(/\/+$/, '');
+
+  return repo === '' ? null : repo;
+}
+
+/**
+ * The comparable form: normalised, then lowercased.
+ *
+ * Folded in JavaScript rather than with SQLite's `lower()`. `lower()` folds
+ * ASCII only, while `String.prototype.toLowerCase` is Unicode-aware, and a
+ * comparison that disagrees with itself depending on which side ran it is the
+ * kind of bug that only shows up on somebody else's repo name. A self-hosted
+ * board has few projects, so reading them costs nothing.
+ */
+function fold(value: string): string | null {
+  return normaliseRepo(value)?.toLowerCase() ?? null;
 }
 
 /**
@@ -125,7 +212,7 @@ export function branchProjectPrefix(branch: string): string | null {
 
 export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoProjects {
   const wanted = fold(repo);
-  if (wanted === '') return { projectIds: [], attribution: 'none' };
+  if (wanted === null) return { projectIds: [], attribution: 'none' };
 
   const matches = db
     .select({ id: projects.id, repo: projects.repo, prefix: projects.prefix })

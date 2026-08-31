@@ -2,11 +2,12 @@
 id: LAI-427
 title: The trigger idempotence test cannot see a drop-and-recreate
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-118]
 discovered-from: LAI-118
-status: backlog
+status: in-progress
+started: 2026-09-01T17:45:00Z
 ---
 
 ## Goal

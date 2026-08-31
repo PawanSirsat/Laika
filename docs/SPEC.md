@@ -250,7 +250,7 @@ future multi-org becomes a migration rather than a rewrite.
 | `slug` | unique, lowercase |
 | `prefix` | short uppercase display key (`LAI`), unique per org |
 | `description` | |
-| `repo` | nullable — `owner/name` of the git repository this project tracks. Maps an incoming heartbeat's `repo` (§9.1) to a project; without it presence cannot be attributed. |
+| `repo` | nullable — `owner/name` of the git repository this project tracks. Maps an incoming heartbeat's `repo` (§9.1) to a project; without it presence cannot be attributed. A full remote URL stored here still matches: §9.1 normalises both sides. |
 | `visibility` | `public` (org members may self-join) \| `private` |
 | `context_md` | text — the shared project brief served to agents (§7.1) |
 | `archived_at` | nullable |
@@ -917,8 +917,12 @@ while active (throttled `PostToolUse`):
 curl -s -X POST "$LAIKA_URL/api/v1/heartbeats" \
   -H "Authorization: Bearer $LAIKA_TOKEN" \
   -H "Content-Type: application/json" \
-  -d "{\"repo\":\"<git remote basename>\",\"branch\":\"<git branch>\"}" || true
+  -d "{\"repo\":\"<git remote get-url origin, verbatim>\",\"branch\":\"<git branch>\"}" || true
 ```
+
+**The hook does not parse the remote.** It sends what git printed; §9.1
+normalises it. This line said *"git remote basename"* until LAI-144 — a basename
+(`Laika`) matches nothing §4.3 stores, and it is where the defect came from.
 
 **`|| true` is mandatory.** A board that is down, slow, or unreachable must never
 break a coding session. Every hook fails silent.
@@ -950,6 +954,19 @@ one repository is a real arrangement (LAI-108) — so the mapping is **resolved,
 not looked up**. Comparison is case-insensitive: §4.3 stores what it was given,
 so a project holding `PawanSirsat/Laika` matches a plugin reporting
 `pawansirsat/laika`.
+
+**A `repo` is normalised before it is compared, on both sides** (LAI-144,
+D-043). `owner/name`, `git@host:owner/name.git`, `https://host/owner/name`,
+`ssh://` and `git://`, with or without `.git` and a trailing slash, all mean the
+same repository and all resolve to `owner/name`. **The server does this, and the
+plugin sends what git gave it** — the server is the only side that can be fixed
+after a client ships, and a self-hosted board controls nobody's plugin version.
+
+Both sides are normalised, not only the incoming one: §4.3 asks for `owner/name`
+and nothing enforces it, so a project row holding a URL is exactly as likely as a
+heartbeat carrying one. A nested path is kept whole — GitLab subgroups are real,
+and truncating to two segments would merge two different repositories. Anything
+with nothing left after stripping matches nothing, per §9.2.
 
 Several matches are narrowed by the branch, using **§9.2's project-prefix
 convention** — `api-42-add-crud` on a repo tracked by `WEB` and `API` resolves to
