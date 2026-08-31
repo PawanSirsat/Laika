@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-403]
 discovered-from: LAI-402
-status: in-progress
+status: review
 started: 2026-08-31T09:30:00Z
+finished: 2026-08-31T10:05:00Z
 ---
 
 ## Goal
@@ -43,18 +44,18 @@ either.
 
 ## Acceptance criteria
 
-- [ ] A request authenticated by a personal access token is limited by
+- [x] A request authenticated by a personal access token is limited by
       `LIMITS.token`, not `LIMITS.session`.
-- [ ] The bucket key is **per token**, not per user. Two tokens held by one
+- [x] The bucket key is **per token**, not per user. Two tokens held by one
       person do not share a budget, and a token's budget is not spent by that
       person's browser session.
-- [ ] **Prove the split.** A test that exhausts a token's budget and then shows
+- [x] **Prove the split.** A test that exhausts a token's budget and then shows
       the same user's cookie session still answering, and the reverse. Both
       directions, because one of them passing is consistent with the buckets
       being merged.
-- [ ] `classify`'s comment stops describing this as future work, or the next
+- [x] `classify`'s comment stops describing this as future work, or the next
       reader is told something false.
-- [ ] `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test` all green.
+- [x] `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test` all green.
 
 ## Notes / context
 
@@ -67,3 +68,17 @@ Worth checking while here: `classify` keys on `actorId ?? 'anonymous'`, so every
 unauthenticated caller shares one bucket. That is a separate question from this
 task and may well be intended (the alternative needs a trusted-proxy config
 Laika does not have). Do not change it here — file it if it looks wrong.
+
+## The Notes' aside, checked — CORE, 2026-08-31
+
+The Notes asked me to look at `classify` keying every unauthenticated caller
+into one bucket, and to file it if it looked wrong. **It does not, and nothing
+is filed.**
+
+The module comment already argues it: per-IP needs `X-Forwarded-For`, the
+documented deployment (§11.7) is behind a reverse proxy, and trusting that
+header without knowing which hop set it lets any client invent its own identity
+and defeat the limiter entirely — strictly worse than one shared bucket. It is a
+deliberate default with the condition for revisiting it already written down
+("until Laika has a trusted-proxy configuration, and until an expensive
+unauthenticated endpoint exists to protect").
