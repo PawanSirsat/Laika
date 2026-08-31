@@ -2,11 +2,12 @@
 id: LAI-408
 title: The six MCP write tools
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-406, LAI-405]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T13:20:00Z
 ---
 
 ## Goal
