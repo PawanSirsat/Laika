@@ -2,11 +2,12 @@
 id: LAI-417
 title: POST /api/v1/heartbeats — the write path
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-01T09:45:00Z
 ---
 
 ## Goal
