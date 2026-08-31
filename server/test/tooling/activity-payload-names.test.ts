@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -81,25 +81,54 @@ function stringsIn(value: unknown, found: string[] = []): string[] {
   return found;
 }
 
-const SERVICES = join(dirname(fileURLToPath(import.meta.url)), '../../src/services');
+const SRC = join(dirname(fileURLToPath(import.meta.url)), '../../src');
+
+/**
+ * Every `.ts` file under `server/src`, **found rather than listed** (LAI-414).
+ *
+ * The first version of this guard read six file names written into the test.
+ * `services/` had thirteen files even then, and the next task was about to add a
+ * fourteenth — `services/tokens.ts`, LAI-402 — so the coverage assertion below
+ * would have gone on passing while covering less than it claimed. That is the
+ * same defect LAI-045 existed to fix, reappearing one level up inside the fix.
+ *
+ * Walking the whole of `src/` rather than just `services/` is deliberate: it also
+ * covers an emitter added under `http/routes/`, or in the `mcp/` directory M3 is
+ * about to create. Today every call site is in `services/`; the guard should not
+ * need editing for that to stop being true.
+ */
+function sourceFiles(dir: string, found: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) sourceFiles(path, found);
+    else if (entry.name.endsWith('.ts')) found.push(path);
+  }
+  return found;
+}
 
 /**
  * The activity types the services can actually emit, read from their source.
  *
  * **This is what stops the sweep below from quietly covering less than it
- * claims.** It is a list of every §4.8 type that appears inside an
- * `appendActivity(...)` call in `services/`, so adding an emitter — M3's
- * `token.created`, say — makes the coverage assertion fail until the sweep
- * exercises the new path too. A hand-listed set would just go stale, which is
- * the failure LAI-052, LAI-080, LAI-043, LAI-066, LAI-211 and LAI-213 all were.
+ * claims.** It is every §4.8 type named inside an `appendActivity(...)` call
+ * anywhere in `src/`, so adding an emitter — M3's `token.created`, say — makes
+ * the coverage assertion fail until the sweep exercises the new path too.
+ *
+ * Both halves of that have to be discovered, and LAI-414 is what happens when
+ * only one of them is: the *type* list was derived and the *file* list was
+ * hand-written, so the guard read only where it had been told to look. A
+ * hand-listed set goes stale, which is the failure LAI-052, LAI-080, LAI-043,
+ * LAI-066, LAI-211 and LAI-213 all were. Neither list is written down now.
+ *
+ * `db/activity.ts` is scanned along with everything else and contributes
+ * nothing — it *defines* `appendActivity`, and a definition names no type.
  */
 function emittedActivityTypes(): Set<string> {
-  const files = ['tasks.ts', 'projects.ts', 'comments.ts', 'sprints.ts', 'setup.ts', 'invites.ts'];
   const known = new Set<string>(ACTIVITY_TYPES);
   const emitted = new Set<string>();
 
-  for (const file of files) {
-    const source = readFileSync(join(SERVICES, file), 'utf8');
+  for (const file of sourceFiles(SRC)) {
+    const source = readFileSync(file, 'utf8');
 
     // Walk each `appendActivity(` call to its closing paren and take the §4.8
     // types named on its `type:` line — which is a ternary at two call sites,
@@ -116,13 +145,22 @@ function emittedActivityTypes(): Set<string> {
         }
       }
 
+      // Every §4.8 type named anywhere in the call, rather than only on a line
+      // that *starts* with `type:`.
+      //
+      // The line-anchored version missed a call written on one line — measured,
+      // not imagined: a single-line probe emitter in `services/users.ts` left
+      // this guard green. Tying a coverage check to how the source happens to be
+      // wrapped is the same silent under-coverage this task exists to remove.
+      //
+      // The cost is a payload *value* that is itself an activity type would be
+      // read as an emission. Nothing writes one today, and that failure is loud
+      // and local — it demands coverage of a type — where the one it replaces
+      // was silent.
       const call = source.slice(from, end);
-      for (const line of call.split('\n')) {
-        if (!/^\s*type:/.test(line)) continue;
-        for (const match of line.matchAll(/'([a-z_]+\.[a-z_]+)'/g)) {
-          const literal = match[1];
-          if (literal !== undefined && known.has(literal)) emitted.add(literal);
-        }
+      for (const match of call.matchAll(/'([a-z_]+\.[a-z_]+)'/g)) {
+        const literal = match[1];
+        if (literal !== undefined && known.has(literal)) emitted.add(literal);
       }
 
       from = source.indexOf('appendActivity(', end);
@@ -200,6 +238,57 @@ describe('the derived list of names that must not appear', () => {
       .map(([key, names]) => `${key} → ${[...names].join(' | ')}`);
 
     expect(ambiguous, 'these properties mean different columns in different tables').toEqual([]);
+  });
+});
+
+describe('the sweep finds its own files', () => {
+  it('discovers every service file, including the seven the old list never named', () => {
+    const found = sourceFiles(SRC).map((path) => path.replace(/^.*\/src\//, ''));
+
+    // The six the hand-written list did name...
+    for (const file of [
+      'services/tasks.ts',
+      'services/projects.ts',
+      'services/comments.ts',
+      'services/sprints.ts',
+      'services/setup.ts',
+      'services/invites.ts',
+    ]) {
+      expect(found, `lost a file the old list did name: ${file}`).toContain(file);
+    }
+
+    // ...and the ones it did not. `services/users.ts` is the specific case
+    // LAI-414 was filed for: an emitter added there was invisible.
+    for (const file of ['services/users.ts', 'services/tags.ts', 'services/me.ts']) {
+      expect(found, `not scanned, so an emitter here would be invisible: ${file}`).toContain(file);
+    }
+
+    // And it reaches beyond `services/`, which is where M3 adds `mcp/`.
+    expect(found.some((file) => file.startsWith('http/routes/'))).toBe(true);
+  });
+
+  it('does not come back empty, which would make the coverage check vacuous', () => {
+    // The failure this whole task is about is a guard that passes while
+    // checking nothing. A wrong path here would do exactly that silently: no
+    // files → no emitted types → nothing "missed" → green.
+    expect(sourceFiles(SRC).length).toBeGreaterThan(20);
+
+    const emitted = emittedActivityTypes();
+    expect(emitted.size).toBeGreaterThan(10);
+    expect(emitted).toContain('task.updated');
+    expect(emitted).toContain('comment.added');
+
+    // Everything found is a real §4.8 type, so the extractor is reading
+    // `type:` lines and not sweeping up arbitrary dotted strings.
+    //
+    // Deliberately *not* asserting that some particular type is absent. The
+    // first draft said `expect(emitted).not.toContain('token.created')`, which
+    // is true today and which LAI-402 will legitimately make false — a guard
+    // that fires on correct work is a bug in the guard, and that one would have
+    // gone off on the very next task.
+    const known = new Set<string>(ACTIVITY_TYPES);
+    expect([...emitted].filter((type) => !known.has(type))).toEqual([]);
+    expect(emitted.size).toBeLessThanOrEqual(ACTIVITY_TYPES.length);
   });
 });
 
