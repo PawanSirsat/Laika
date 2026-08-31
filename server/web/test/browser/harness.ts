@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium, type Browser, type Page } from 'playwright';
@@ -33,7 +34,23 @@ import { chromium, type Browser, type Page } from 'playwright';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const WEB_ROOT = join(HERE, '..', '..');
-const BUILT = join(WEB_ROOT, '..', 'public');
+
+/**
+ * Where the SPA under test is built. **A fresh directory per run, never
+ * `server/public/`.**
+ *
+ * The first version served `server/public/` and rebuilt it only when missing.
+ * CHIEF's copy was a week stale, so the harness silently tested week-old code —
+ * and the dangerous direction of that is **green on broken code**, which is
+ * exactly what it would do to someone iterating on a fix.
+ *
+ * Two ways out: assert the bundle is newer than `src/`, or build every time.
+ * Building wins on measurement rather than principle — it is **0.42s**, against
+ * a suite that is 1.5s, and it needs no mtime heuristic that can be wrong in
+ * either direction. Building into a temp directory also means a test run cannot
+ * disturb a dev server serving `server/public/`.
+ */
+let BUILT: string | undefined;
 
 const TYPES: Readonly<Record<string, string>> = {
   '.html': 'text/html; charset=utf-8',
@@ -54,18 +71,38 @@ export interface Harness {
 }
 
 /**
- * Build the SPA if it is not there.
+ * Build the SPA from the source in front of you, once per process.
  *
- * `server/public/` is build output and gitignored, so a fresh checkout has none.
- * Building takes ~150ms; requiring the caller to remember is how a suite starts
- * failing for reasons that are nothing to do with the code.
+ * Unconditional on purpose — see {@link BUILT}. A cached build is the one thing
+ * that can make these tests report on code nobody is looking at.
  */
-function ensureBuilt(): void {
-  if (existsSync(join(BUILT, 'index.html'))) return;
-  execFileSync('npx', ['vite', 'build'], { cwd: WEB_ROOT, stdio: 'inherit' });
+function ensureBuilt(): string {
+  if (BUILT !== undefined) return BUILT;
+
+  const out = mkdtempSync(join(tmpdir(), 'laika-web-'));
+  execFileSync('npx', ['vite', 'build', '--outDir', out, '--emptyOutDir'], {
+    cwd: WEB_ROOT,
+    stdio: 'inherit',
+  });
+
+  // Prove the build produced something before any test trusts it. A missing
+  // `index.html` here would otherwise surface as every test failing to find an
+  // element, which reads as a product defect.
+  const index = join(out, 'index.html');
+  if (!existsSync(index)) throw new Error(`the SPA build produced no index.html in ${out}`);
+
+  BUILT = out;
+  return out;
 }
 
-function serve(stub: ApiStub): Promise<{ server: Server; origin: string }> {
+/** Remove the built copy. Called alongside `closeBrowser`. */
+export function cleanBuild(): void {
+  if (BUILT === undefined) return;
+  rmSync(BUILT, { recursive: true, force: true });
+  BUILT = undefined;
+}
+
+function serve(built: string, stub: ApiStub): Promise<{ server: Server; origin: string }> {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
@@ -85,10 +122,10 @@ function serve(stub: ApiStub): Promise<{ server: Server; origin: string }> {
     }
 
     const file = path === '/' ? '/index.html' : path;
-    const onDisk = join(BUILT, file);
+    const onDisk = join(built, file);
     // The SPA owns its own routing, so anything without an extension is a route
     // and gets the document — the same fallback the real server applies.
-    const target = existsSync(onDisk) && extname(file) !== '' ? onDisk : join(BUILT, 'index.html');
+    const target = existsSync(onDisk) && extname(file) !== '' ? onDisk : join(built, 'index.html');
 
     res.writeHead(200, { 'content-type': TYPES[extname(target)] ?? 'application/octet-stream' });
     res.end(readFileSync(target));
@@ -115,12 +152,12 @@ async function browser(): Promise<Browser> {
 export async function closeBrowser(): Promise<void> {
   await shared?.close();
   shared = undefined;
+  cleanBuild();
 }
 
 /** Open `path` in a real browser, against the built SPA and a stubbed API. */
 export async function open(path: string, stub: ApiStub): Promise<Harness> {
-  ensureBuilt();
-  const { server, origin } = await serve(stub);
+  const { server, origin } = await serve(ensureBuilt(), stub);
   const page = await (await browser()).newPage();
   await page.goto(`${origin}${path}`);
 

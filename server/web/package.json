@@ -12,7 +12,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test \"test/**/*.test.ts\""
+    "test": "pnpm run typecheck && node --test \"test/**/*.test.ts\"",
+    "test:watch": "node --test --watch \"test/**/*.test.ts\""
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
