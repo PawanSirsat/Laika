@@ -74,7 +74,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         title: z.string().trim().min(1).max(200),
         description: z.string().max(50_000).optional(),
         priority: z.enum(TASK_PRIORITIES).optional(),
-        depends_on: z
+        blocked_by: z
           .array(TASK_REF)
           .max(20)
           .optional()
@@ -82,7 +82,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         discovered_from: TASK_REF.optional(),
       }),
     },
-    ({ project, title, description, priority, depends_on, discovered_from }) => {
+    ({ project, title, description, priority, blocked_by, discovered_from }) => {
       try {
         const task = createTask(sqlite, db, actor, project, {
           title,
@@ -99,7 +99,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // Dependencies are a separate service call, as they are over REST — the
         // create endpoint does not take them either, and inventing a combined
         // write here would be the second path AC1 forbids.
-        const blockers = (depends_on ?? []).map((ref) => resolveTaskRef(db, ref));
+        const blockers = (blocked_by ?? []).map((ref) => resolveTaskRef(db, ref));
         for (const blocker of blockers) {
           addTaskDependencySafely(sqlite, db, actor, task.id, blocker);
         }

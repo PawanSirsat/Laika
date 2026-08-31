@@ -139,7 +139,7 @@ describe('discovered_from is provenance, not a blocker (AC6)', () => {
     // The parent is still `backlog`, and the child is ready anyway.
     expect(getTask(t.db, actor(adminId), parent.id).status).toBe('backlog');
     expect(child.ready).toBe(true);
-    expect(child.dependencies).toEqual([]);
+    expect(child.blocked_by).toEqual([]);
   });
 });
 
@@ -279,10 +279,10 @@ describe('dependencies (AC5)', () => {
     const b = newTask('b');
 
     addTaskDependency(t.sqlite, t.db, actor(adminId), a.id, b.id);
-    expect(getTask(t.db, actor(adminId), a.id).dependencies).toEqual([b.id]);
+    expect(getTask(t.db, actor(adminId), a.id).blocked_by).toEqual([b.id]);
 
     removeTaskDependency(t.db, actor(adminId), a.id, b.id);
-    expect(getTask(t.db, actor(adminId), a.id).dependencies).toEqual([]);
+    expect(getTask(t.db, actor(adminId), a.id).blocked_by).toEqual([]);
 
     const types = t.db
       .select()
@@ -442,13 +442,13 @@ describe('what a task blocks (SPEC §4.6, §4.13)', () => {
 
     // The head of the chain blocks something and is blocked by nothing — the
     // exact case that used to render as no dependency information at all.
-    expect(getTask(t.db, actor(adminId), a).dependencies).toEqual([]);
+    expect(getTask(t.db, actor(adminId), a).blocked_by).toEqual([]);
     expect(getTask(t.db, actor(adminId), a).blocks).toEqual([b]);
 
-    expect(getTask(t.db, actor(adminId), b).dependencies).toEqual([a]);
+    expect(getTask(t.db, actor(adminId), b).blocked_by).toEqual([a]);
     expect(getTask(t.db, actor(adminId), b).blocks).toEqual([c]);
 
-    expect(getTask(t.db, actor(adminId), c).dependencies).toEqual([b]);
+    expect(getTask(t.db, actor(adminId), c).blocked_by).toEqual([b]);
     expect(getTask(t.db, actor(adminId), c).blocks).toEqual([]);
   });
 
@@ -459,9 +459,9 @@ describe('what a task blocks (SPEC §4.6, §4.13)', () => {
 
     // Merged into one list, the head and the tail would look identical: each has
     // exactly one edge. The direction is the entire content.
-    expect(head.dependencies).toHaveLength(0);
+    expect(head.blocked_by).toHaveLength(0);
     expect(head.blocks).toHaveLength(1);
-    expect(tail.dependencies).toHaveLength(1);
+    expect(tail.blocked_by).toHaveLength(1);
     expect(tail.blocks).toHaveLength(0);
   });
 
@@ -499,7 +499,7 @@ describe('what a task blocks (SPEC §4.6, §4.13)', () => {
 
     expect(page).toHaveLength(20);
     // Every row carries real edges, so this is not passing on an empty graph.
-    expect(page.every((task) => task.blocks.length + task.dependencies.length > 0)).toBe(true);
+    expect(page.every((task) => task.blocks.length + task.blocked_by.length > 0)).toBe(true);
 
     const dependencyQueries = statements.filter((sql) => sql.includes('task_dependencies'));
 
@@ -884,7 +884,7 @@ describe('started_at and completed_at', () => {
         'created_by',
         'created_by_client',
         'created_via',
-        'dependencies',
+        'blocked_by',
         'description_md',
         'discovered_from',
         'id',

@@ -181,7 +181,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         const nameOf = nameLookup(members);
 
         const related = new Map<string, TaskView>();
-        for (const id of [...view.dependencies, ...view.blocks]) {
+        for (const id of [...view.blocked_by, ...view.blocks]) {
           related.set(id, getTask(db, actor, id));
         }
 
@@ -213,7 +213,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           '',
           '### Blocked by',
           bullets(
-            view.dependencies.map((id) => describeRelated(related.get(id), id)),
+            view.blocked_by.map((id) => describeRelated(related.get(id), id)),
             'Nothing — this is unblocked.',
           ),
           '',
@@ -244,7 +244,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
 
         return answer(markdown, {
           task: view,
-          depends_on: view.dependencies.map((id) => summarise(related.get(id), id)),
+          blocked_by: view.blocked_by.map((id) => summarise(related.get(id), id)),
           blocks: view.blocks.map((id) => summarise(related.get(id), id)),
           discovered_from_chain: chain.map((t) => ({ key: t.key, title: t.title, id: t.id })),
           comments,

@@ -86,8 +86,9 @@ function payload(result: ToolResult): Record<string, unknown> {
  * A setup call that must succeed.
  *
  * Bare `await api(...)` in setup is how this file's dependency fixture silently
- * did nothing: the body used `depends_on` where the route wants
- * `depends_on_task_id`, the route correctly answered `422`, and nothing looked.
+ * did nothing: the body used `depends_on` where the route wanted
+ * `depends_on_task_id` — now `blocked_by_task_id` (LAI-099) — the route
+ * correctly answered `422`, and nothing looked.
  * Two tests then asserted against a graph that had never been built. CLAUDE.md
  * §5: an assertion must be specific enough that a broken setup cannot satisfy it
  * — and a setup step with no assertion at all is the extreme case.
@@ -245,7 +246,7 @@ describe('list_ready_tasks', () => {
     const blocked = await task('core', { title: 'Blocked' });
     await must(`/api/v1/tasks/${blocked.id}/dependencies`, {
       method: 'POST',
-      body: JSON.stringify({ depends_on_task_id: blocker.id }),
+      body: JSON.stringify({ blocked_by_task_id: blocker.id }),
     });
 
     const rest = (await (await api('/api/v1/projects/core/tasks?ready=true')).json()) as {
@@ -317,7 +318,7 @@ describe('get_task_context', () => {
     const blocked = await task('core', { title: 'Blocked' });
     await must(`/api/v1/tasks/${blocked.id}/dependencies`, {
       method: 'POST',
-      body: JSON.stringify({ depends_on_task_id: blocker.id }),
+      body: JSON.stringify({ blocked_by_task_id: blocker.id }),
     });
 
     const client = await connect(await mint());
@@ -328,7 +329,7 @@ describe('get_task_context', () => {
 
     expect(text(result)).toContain(blocker.key);
     expect(text(result)).toContain('backlog');
-    expect(payload(result).depends_on).toHaveLength(1);
+    expect(payload(result).blocked_by).toHaveLength(1);
 
     await client.close();
   });

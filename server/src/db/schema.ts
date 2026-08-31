@@ -324,6 +324,12 @@ export const taskDependencies = sqliteTable(
     taskId: text('task_id')
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
+    /**
+     * **Deliberately not renamed** when the wire field became `blocked_by`
+     * (LAI-099, D-044). This is internal — nothing outside the server reads a
+     * column name — and renaming a table's columns to match a field name is the
+     * tail wagging the dog. §4.5 already says which direction it means.
+     */
     dependsOnTaskId: text('depends_on_task_id')
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
