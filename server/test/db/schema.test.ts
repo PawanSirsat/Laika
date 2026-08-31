@@ -69,6 +69,7 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
+    'comment_mentions',
     'comments',
     'heartbeats',
     'idempotency_keys',
@@ -82,6 +83,7 @@ describe('migrations', () => {
     'tags',
     'task_dependencies',
     'task_tags',
+    'task_watchers',
     'tasks',
     'tokens',
     'unlisted_work',

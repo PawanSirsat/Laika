@@ -730,6 +730,70 @@ export const idempotencyKeys = sqliteTable(
   ],
 );
 
+/**
+ * Who is interested in a task (SPEC §4.x, LAI-094).
+ *
+ * **`watching` is a column, not row-presence, and that is the whole design.**
+ * §4.x says assigning, commenting on, or being mentioned in a task implies
+ * watching it *unless the person has explicitly unwatched* — so three states
+ * have to be distinguishable:
+ *
+ *  - **no row** — nothing has happened; the implicit rules decide.
+ *  - **`watching = 1`** — watching, implicitly or by choice.
+ *  - **`watching = 0`** — explicitly unwatched, and the implicit rules must not
+ *    put them back. Deleting the row would lose exactly this, and the person who
+ *    unwatched would be re-subscribed by their own next comment.
+ */
+export const taskWatchers = sqliteTable(
+  'task_watchers',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** 1 watching, 0 explicitly unwatched. See the note above. */
+    watching: integer('watching').notNull().default(1),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    uniqueIndex('task_watchers_task_user_unique').on(t.taskId, t.userId),
+    // "What am I watching?" — the reverse of the row above, and the query a
+    // notification list runs.
+    index('task_watchers_user_id_idx').on(t.userId),
+  ],
+);
+
+/**
+ * Who was mentioned in a comment (SPEC §4.y, LAI-094).
+ *
+ * **Resolved to a user id at write time**, never stored as the typed text: a
+ * person renaming themselves would otherwise silently break every past mention,
+ * and two clients re-parsing the body would be free to disagree about who was
+ * meant with no single place to fix it.
+ */
+export const commentMentions = sqliteTable(
+  'comment_mentions',
+  {
+    id: text('id').primaryKey(),
+    commentId: text('comment_id')
+      .notNull()
+      .references(() => comments.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    createdAt,
+  },
+  (t) => [
+    // One mention per person per comment: `@ada @ada` is one notification.
+    uniqueIndex('comment_mentions_comment_user_unique').on(t.commentId, t.userId),
+    index('comment_mentions_user_id_idx').on(t.userId),
+  ],
+);
+
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
@@ -748,3 +812,5 @@ export type MeetingReview = typeof meetingReviews.$inferSelect;
 export type UnlistedWork = typeof unlistedWork.$inferSelect;
 export type Tag = typeof tags.$inferSelect;
 export type TaskTag = typeof taskTags.$inferSelect;
+export type TaskWatcher = typeof taskWatchers.$inferSelect;
+export type CommentMention = typeof commentMentions.$inferSelect;
