@@ -215,13 +215,14 @@ describe('getProject and updateProject (AC3)', () => {
   it('updates settings and writes project.updated', () => {
     const { adminId } = seedProject();
 
-    const updated = updateProject(t.db, actor(adminId), 'laika', {
-      name: 'Laika Core',
-      context_md: '# Brief',
-    });
+    const updated = updateProject(t.db, actor(adminId), 'laika', { name: 'Laika Core' });
 
     expect(updated.name).toBe('Laika Core');
-    expect(updated.context_md).toBe('# Brief');
+
+    // `context_md` is deliberately **not** settable here since LAI-404 — it has
+    // its own endpoint, so there is exactly one writer of the column. The
+    // dedicated pair is covered in `project-context.test.ts`.
+    expect(updateProject).toBeTypeOf('function');
 
     const types = t.db
       .select()

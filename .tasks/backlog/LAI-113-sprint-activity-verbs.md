@@ -44,3 +44,29 @@ the one with the bugs in it.
 Worth bundling with LAI-110 rather than doing separately: both are a migration
 that rebuilds `activity`, and doing that twice means writing the trigger rescue
 block twice. Whoever takes them should take both.
+---
+
+## Note — CHIEF, 2026-08-31: a second instance, and the criterion that caused it
+
+**This is not only about sprints.** LAI-404 hit the identical gap: the project
+context document has no §4.8 verb either, so an edit to it also rides under
+`project.updated`, distinguished only by `changed: ['context_md']`.
+
+Two different features now file their audit trail under a verb that does not
+name them. Whoever takes this should widen it to **both** — a sprint verb and a
+context verb — because they are one decision about §4.8's vocabulary, one SPEC
+change and one migration, and splitting them means doing the same review twice.
+
+**Why neither builder simply added the verb, which is the part worth knowing.**
+`schema-spec-drift.test.ts` pins `ACTIVITY_TYPES` against §4.8 **in both
+directions**, and `docs/SPEC.md` is CHIEF's. So a builder adding a verb either
+fails that guard or crosses into another session's area. The guard is working
+exactly as designed — it is what makes the vocabulary closed — but it means
+**growing §4.8 is structurally a CHIEF-then-builder task and cannot be a line
+inside a feature.**
+
+LAI-404's AC4 said *"Add the verb to the closed vocabulary and its migration if
+absent"*, which asked a builder to do something the repo's own guard forbids
+them. That was my error in writing the criterion, not theirs in declining it.
+Any future task needing a new verb must depend on this one rather than carry that
+instruction.

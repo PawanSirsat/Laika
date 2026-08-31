@@ -316,6 +316,44 @@ export function apiPayload(row: Activity): unknown {
   };
 }
 
+/**
+ * The most recent row for a project whose payload names a given field.
+ *
+ * Exists so the context document can report **when it was last edited and by
+ * whom** without a denormalised column on `projects`. The `activity` row is
+ * already the history §7.3 asks for; a second copy of the same fact on the
+ * project row is a copy that can drift, and `projects.updated_at` answers a
+ * different question — it moves when the project is renamed.
+ *
+ * Matched on the payload rather than on a dedicated verb because §4.8's
+ * vocabulary is closed and growing it is a spec change (the same reason
+ * `services/sprints.ts` rides under `project.updated`).
+ */
+export function latestFieldEdit(
+  db: Db,
+  projectId: string,
+  field: string,
+): { actorId: string | null; createdAt: number } | undefined {
+  const row = db
+    .select({ actorId: activity.actorId, createdAt: activity.createdAt })
+    .from(activity)
+    .where(
+      and(
+        eq(activity.projectId, projectId),
+        eq(activity.type, 'project.updated'),
+        // The payload is JSON text; `changed` is an array of API field names
+        // (LAI-045). `LIKE` on the serialised form is enough to pick the rows
+        // worth looking at and costs no extra column.
+        sql`${activity.payloadJson} LIKE ${`%"${field}"%`}`,
+      ),
+    )
+    .orderBy(desc(activity.createdAt), sql`rowid desc`)
+    .limit(1)
+    .get();
+
+  return row;
+}
+
 /** The highest sequence written so far, or 0 for an empty table. */
 export function latestActivitySeq(db: Db): number {
   const row = db

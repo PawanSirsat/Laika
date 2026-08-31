@@ -749,7 +749,14 @@ anything that changes per-session.
   document is *fed* by the meeting path rather than maintained by discipline.
 - Size is bounded and the bound is enforced at write time with a clear error;
   a context document that silently blows an agent's context window is worse than
-  no document. **Exact limit is an open question (§14, question 7).**
+  no document. **The limit is 100,000 characters**, enforced in the service so
+  that every entry point — REST and MCP alike — shares one rule, and exceeded
+  with a `422` naming both the limit and the actual length (LAI-404; this closes
+  §14 q7).
+- `updated_at` and `updated_by` are read from the document's own `activity`
+  history, **not from `projects.updated_at`** — renaming a project must not look
+  like editing its brief. A document never edited reports `null`, which is the
+  honest answer rather than a convenient one.
 
 ---
 
@@ -1232,9 +1239,13 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
 5. Task attachments / uploads — deferred; the `/data` volume anticipates them.
 6. Multiple LLM providers configured at once (one for transcripts, one for
    summaries) — deferred past v1.
-7. **Size limit for `projects.context_md`** (§7.3). It is injected into every
-   agent session on the project, so an unbounded document quietly eats the
-   context window it was meant to fill usefully. Needs a real number before M3.
+7. ~~**Size limit for `projects.context_md`** (§7.3).~~ **Answered
+   2026-08-31: 100,000 characters** (LAI-404). Not a new number — it is what the
+   zod schema had enforced since LAI-006, promoted into the service so both entry
+   points share one rule. That promotion is the substance of the answer: an MCP
+   tool reaches `updateProjectContext` without passing through zod, and **a bound
+   only one entry point applies is not a bound**. Exceeding it is `422` naming
+   the limit and the actual length.
 8. **Manager dashboard metrics** — which numbers actually answer "where are we"?
    Throughput and cycle time are the obvious ones and may be the wrong ones.
    `GET /projects/:slug/metrics` (§6.4) reserves the surface; the payload is not
