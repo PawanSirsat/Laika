@@ -66,6 +66,16 @@ export interface Route {
    */
   readonly orgLevel?: true;
   /**
+   * A permission the reader must hold for this entry to appear at all.
+   *
+   * **Absent, not disabled** (LAI-082): a disabled entry still advertises a
+   * screen that cannot open, and every endpoint behind one answers `403`. The
+   * value names a policy action rather than a role, so the client mirrors
+   * `policy/can.ts` at one remove instead of hard-coding "admin" beside a rule
+   * that could change.
+   */
+  readonly requires?: 'audit_log.export';
+  /**
    * How far this route actually is, which is what decides whether it appears in
    * the nav (LAI-082).
    *
@@ -92,6 +102,16 @@ export const ROUTES: readonly Route[] = [
 
   // REVIEW
   { path: '/dashboard', label: 'Dashboard', group: 'REVIEW', status: 'building', phase: 'Phase 5' },
+  // A queue a human works through, and audit-shaped: admin-up only (§4.14).
+  {
+    orgLevel: true,
+    requires: 'audit_log.export',
+    path: '/unlisted',
+    label: 'Unlisted work',
+    group: 'REVIEW',
+    status: 'ready',
+    phase: 'Phase 3',
+  },
 
   // SETTINGS
   // SETTINGS order follows the prototype: Tokens, then Organisation.
@@ -163,12 +183,27 @@ export function isShipped(route: Route): boolean {
   return route.status !== undefined;
 }
 
-/** Nav entries for a group — shipped routes only. */
-export function routesInGroup(group: NavGroup): readonly Route[] {
-  return ROUTES.filter((r) => r.group === group && isShipped(r));
+/**
+ * Does the reader hold what this entry requires?
+ *
+ * An entry with no `requires` is open to anyone signed in. `holds` is supplied
+ * by the caller — the shell knows the actor, this table does not — and omitting
+ * it means "unrestricted", which is what the tests and the pre-auth render want.
+ */
+function permitted(route: Route, holds?: (permission: string) => boolean): boolean {
+  if (route.requires === undefined) return true;
+  return holds?.(route.requires) === true;
+}
+
+/** Nav entries for a group — shipped routes the reader may actually open. */
+export function routesInGroup(
+  group: NavGroup,
+  holds?: (permission: string) => boolean,
+): readonly Route[] {
+  return ROUTES.filter((r) => r.group === group && isShipped(r) && permitted(r, holds));
 }
 
 /** Every route offered in the nav, in table order. */
-export function navRoutes(): readonly Route[] {
-  return ROUTES.filter((r) => r.group !== null && isShipped(r));
+export function navRoutes(holds?: (permission: string) => boolean): readonly Route[] {
+  return ROUTES.filter((r) => r.group !== null && isShipped(r) && permitted(r, holds));
 }

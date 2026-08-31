@@ -112,9 +112,13 @@ void describe('the sidebar offers nothing that does not exist', () => {
     const sidebar = code(
       await readFile(new URL('../../src/components/Sidebar.tsx', import.meta.url), 'utf8'),
     );
+    // Matches the **property**, not one spelling of it. This previously pinned
+    // `routesInGroup(group)` exactly, so adding the permission argument in
+    // LAI-413 failed it while the behaviour was unchanged — the same
+    // over-specific shape as `href={route.path}` in LAI-423.
     assert.match(
       sidebar,
-      /NAV_GROUPS\.filter\([\s\S]*?routesInGroup\(group\)\.length > 0/,
+      /NAV_GROUPS\.filter\([\s\S]*?routesInGroup\(group[^)]*\)\.length > 0/,
       'the sidebar must skip groups with no shipped routes',
     );
 
@@ -134,5 +138,60 @@ void describe('the sidebar offers nothing that does not exist', () => {
       const route = ROUTES.find((r) => r.path === path);
       assert.equal(route?.status, 'building', `${path} must be registered as building`);
     }
+  });
+});
+
+/**
+ * Entries that require a permission (LAI-413).
+ *
+ * `absent, not disabled` is LAI-082's rule for the whole sidebar. A gated entry
+ * has a second way to get it wrong: **defaulting to visible**. If a caller
+ * forgets to say who is asking, the safe answer is to hide it — the endpoints
+ * behind it answer `403` regardless, so showing it can only mislead.
+ */
+void describe('a gated nav entry is hidden unless the reader holds it', () => {
+  const holdsAll = (): boolean => true;
+  const holdsNone = (): boolean => false;
+
+  void test('there is at least one gated entry, or this proves nothing', () => {
+    const gated = ROUTES.filter((r) => r.requires !== undefined);
+    assert.ok(gated.length > 0, 'no route requires a permission — this file is checking air');
+  });
+
+  void test('unlisted work appears for someone who holds the permission', () => {
+    const labels = navRoutes(holdsAll).map((r) => r.label);
+    assert.ok(labels.includes('Unlisted work'), 'an admin cannot reach the triage queue');
+  });
+
+  void test('and is absent — not disabled — for someone who does not', () => {
+    const labels = navRoutes(holdsNone).map((r) => r.label);
+    assert.ok(
+      !labels.includes('Unlisted work'),
+      'the queue is offered to someone who cannot open it',
+    );
+  });
+
+  void test('omitting the predicate hides it, rather than revealing it', () => {
+    // The dangerous default. A caller that forgets to pass permissions must not
+    // thereby publish every gated screen.
+    const labels = navRoutes().map((r) => r.label);
+    assert.ok(!labels.includes('Unlisted work'), 'gated entries default to visible');
+  });
+
+  void test('ungated entries are unaffected by the predicate', () => {
+    const withNone = navRoutes(holdsNone).map((r) => r.label);
+    for (const label of ['Board', 'Projects', 'Dashboard']) {
+      assert.ok(withNone.includes(label), `${label} was hidden by an unrelated permission check`);
+    }
+  });
+
+  void test('the group filter honours it too, or the heading appears empty', () => {
+    const review = routesInGroup('REVIEW', holdsNone).map((r) => r.label);
+    assert.ok(!review.includes('Unlisted work'));
+    assert.ok(
+      routesInGroup('REVIEW', holdsAll)
+        .map((r) => r.label)
+        .includes('Unlisted work'),
+    );
   });
 });

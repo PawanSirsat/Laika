@@ -212,7 +212,7 @@ export function TokensScreen({ me }: TokensScreenProps) {
             <input
               className="tok-input"
               value={name}
-              placeholder="mira-cli"
+              placeholder="my-laptop"
               onChange={(event) => {
                 setName(event.target.value);
               }}

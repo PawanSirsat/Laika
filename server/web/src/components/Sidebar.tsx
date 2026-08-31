@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Brand } from './Brand.tsx';
 import { NAV_GROUPS, routesInGroup } from '../routes/route-table.ts';
+import { mayTriageUnlisted } from '../api/unlisted.ts';
 import { navHref } from '../routes/nav-url.ts';
 
 export interface SidebarProps {
@@ -11,6 +12,13 @@ export interface SidebarProps {
   readonly onClose: () => void;
   /** Slug of the project in the URL, when there is one. */
   readonly projectSlug?: string | undefined;
+  /**
+   * The reader's org role, for entries that require a permission.
+   *
+   * Absent means "unrestricted" — the pre-auth render and the tests pass
+   * nothing, and gated entries then stay hidden rather than leaking.
+   */
+  readonly orgRole?: string | undefined;
   /** Laika's version, from `/health`. Not a project version — none exists. */
   readonly version?: string | undefined;
   /**
@@ -44,10 +52,21 @@ export function Sidebar({
   open,
   onClose,
   projectSlug,
+  orgRole,
   version,
   counts,
   footer,
 }: SidebarProps) {
+  /**
+   * The reader's permissions, mirrored from `policy/can.ts` at one remove.
+   *
+   * The table names an action; this turns it into a yes or no for this person.
+   * `audit_log.export` is admin-up, and `mayTriageUnlisted` is the same
+   * predicate the unlisted screen uses — one mirror, not two.
+   */
+  const holds = (permission: string): boolean =>
+    permission === 'audit_log.export' ? mayTriageUnlisted(orgRole ?? '') : false;
+
   return (
     <nav id="sidebar" className={open ? 'sidebar sidebar-open' : 'sidebar'} aria-label="Primary">
       <div className="sidebar-head">
@@ -83,13 +102,13 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-nav">
-        {NAV_GROUPS.filter((group) => routesInGroup(group).length > 0).map((group) => (
+        {NAV_GROUPS.filter((group) => routesInGroup(group, holds).length > 0).map((group) => (
           <div key={group} className="sidebar-group">
             <h2 className="sidebar-group-title" id={`nav-${group}`}>
               {group}
             </h2>
             <ul className="sidebar-list" aria-labelledby={`nav-${group}`}>
-              {routesInGroup(group).map((route) => {
+              {routesInGroup(group, holds).map((route) => {
                 const active = route.path === currentPath;
                 const count = counts?.[route.path];
                 // The project travels with the link, not beside it — a bare

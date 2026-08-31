@@ -1,0 +1,174 @@
+/* Unlisted work triage (SPEC §4.14, LAI-413). Existing tokens only (D-020). */
+
+.unl {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.unl-sub,
+.unl-error {
+  margin: 0 var(--space-4);
+  font-size: var(--text-sm);
+}
+
+.unl-sub {
+  color: var(--tx2);
+}
+
+.unl-error {
+  color: var(--red);
+}
+
+.unl-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  cursor: pointer;
+}
+
+.unl-list {
+  margin: 0 var(--space-4) var(--space-4);
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.unl-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+}
+
+/* Triaged rows stay visible and step back. Dismissing is not deleting, and a
+   promoted row still has a task worth opening. */
+.unl-row-dismissed {
+  opacity: 0.6;
+}
+
+.unl-row-promoted {
+  border-color: var(--grnb);
+}
+
+.unl-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.unl-repo {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-2);
+}
+
+.unl-when,
+.unl-who,
+.unl-state {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.unl-who {
+  margin-left: auto;
+}
+
+.unl-note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--tx);
+}
+
+.unl-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.unl-promote,
+.unl-dismiss,
+.unl-link {
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.unl-promote {
+  color: #fff;
+  background: var(--acc);
+  border: 1px solid var(--acc);
+}
+
+.unl-dismiss {
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+}
+
+/* The way back to what a promotion produced. */
+.unl-link {
+  color: var(--grn);
+  background: var(--grns);
+  border: 1px solid var(--grnb);
+}
+
+.unl-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--bd);
+}
+
+.unl-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 0 0 12rem;
+}
+
+.unl-field-wide {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.unl-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+}
+
+.unl-input {
+  padding: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--tx);
+  background: var(--page);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+}
+
+.unl-input:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.unl-form-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}

@@ -41,6 +41,14 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No meetings waiting on review',
     body: 'A transcript becomes proposed task changes here. Nothing applies until a human accepts it, line by line.',
   },
+  /*
+   * The normal state until agents are running, which is why the copy says what
+   * the queue is *for* rather than only that it is empty (LAI-413).
+   */
+  '/unlisted': {
+    headline: 'Nothing unlisted',
+    body: 'Agents log work here when they notice something outside any project — a stale dependency, a broken script. Promote what matters into a task; dismiss the rest.',
+  },
   '/tokens': {
     headline: 'No tokens yet',
     body: 'A personal access token lets an agent read and write this board as you. It is shown once when created.',
