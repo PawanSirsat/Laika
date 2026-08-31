@@ -86,8 +86,8 @@ export interface Route {
 export const ROUTES: readonly Route[] = [
   // WORK
   { path: '/board', label: 'Board', group: 'WORK', status: 'ready', phase: 'Phase 2' },
-  { path: '/sprints', label: 'Sprints', group: 'WORK', status: 'building', phase: 'Phase 2' },
   { path: '/timeline', label: 'Timeline', group: 'WORK', status: 'building', phase: 'Phase 2.5' },
+  { path: '/sprints', label: 'Sprints', group: 'WORK', status: 'building', phase: 'Phase 2' },
   { path: '/projects', label: 'Projects', group: 'WORK', status: 'ready', phase: 'Phase 2' },
 
   // REVIEW
