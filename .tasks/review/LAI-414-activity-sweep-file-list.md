@@ -6,7 +6,8 @@ assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-045
-status: in-progress
+status: review
+finished: 2026-08-31T07:45:12Z
 started: 2026-08-31T07:31:05Z
 ---
 
@@ -44,24 +45,24 @@ because it reads as proof.
 
 ## Acceptance criteria
 
-- [ ] `emittedActivityTypes()` **discovers** the files it scans rather than
+- [x] `emittedActivityTypes()` **discovers** the files it scans rather than
       naming them: read the directory, or derive the set from what actually
       imports `appendActivity`. No literal list of file names survives.
-- [ ] **Prove it fires from a file that was not in the old six.** Add an emitter
+- [x] **Prove it fires from a file that was not in the old six.** Add an emitter
       of an unexercised type to `services/users.ts`, confirm the sweep goes red
       naming that type, then remove it. Put the failure message in your log —
       that specific case is the whole point of this task, and it is currently
       green.
-- [ ] The sweep still passes on unmodified `master` with all thirteen files in
+- [x] The sweep still passes on unmodified `master` with all thirteen files in
       scope. If widening it turns up an emitter the sweep never produced, that
       is a real finding: **do not add it to an ignore list.** Exercise it, or
       stop and file it.
-- [ ] If some file genuinely must be excluded, it is excluded **by name with a
+- [x] If some file genuinely must be excluded, it is excluded **by name with a
       reason, and the exclusion self-expires** — if the reason stops holding, the
       test fails and says so. This repo has been bitten six times by a
       justification that expired silently: LAI-052, LAI-080, LAI-043, LAI-213,
       LAI-066, LAI-211.
-- [ ] `pnpm format`, `pnpm format:fix`, `pnpm lint`, `pnpm typecheck`,
+- [x] `pnpm format`, `pnpm format:fix`, `pnpm lint`, `pnpm typecheck`,
       `pnpm test` all green.
 
 ## Notes
