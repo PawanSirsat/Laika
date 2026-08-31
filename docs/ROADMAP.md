@@ -87,14 +87,29 @@ claims it, comments, and moves it to review — visible live in a human's browse
 ## M4 — Claude Code plugin
 **Goal: zero-config for the agent side.**
 
-- Plugin manifest, `.mcp.json` pointing at a deployment
 - **`POST /api/v1/heartbeats`** — the write path only: accept `{repo, branch}`,
-  token auth, `202`, store the row. Moved here from M5 (D-023) so the hooks have
-  something to talk to and M4 can be verified end to end
-- Hooks: heartbeat on session start and on a timer, branch detection
-- Skills teaching the claim/log/discovered-from protocol
-- Slash commands: standup, claim, task context
+  token auth, `202`, store the row (**LAI-417**). Moved here from M5 (D-023) so
+  the hooks have something to talk to and M4 can be verified end to end.
+  **Branch → task resolution (§9.2) and retention pruning stay in M5** — this
+  line said "branch detection" until 2026-08-31, which read as M4 scope and is
+  not
+- Hooks: heartbeat on session start, on stop, and on a 5-minute throttle
+  (**LAI-418**). Every hook fails silent — §8's `|| true` is mandatory
+- Plugin manifest and `.mcp.json` pointing at a deployment, loading cleanly when
+  unconfigured (**LAI-419**)
+- Slash commands `/laika:setup`, `/laika:status`, `/laika:tasks`,
+  `/laika:standup` (**LAI-420**). `/laika:status` shows "own capacity", which is
+  an M5 endpoint — the task says to ship honestly against what exists or defer it
+- The skill teaching claim-before-code, `finish_task` → `review`,
+  `discovered_from` and `log_unlisted_work` (**LAI-421**)
 - `npx laika init` CLI: authenticate, mint a token, write local config
+  (**LAI-422**)
+
+**One open question inside M4**: `/laika:setup` (§8) and `npx laika init`
+(this list) both "write local config", and the spec does not say whether they are
+one mechanism with two front doors. Named in both tasks as CHIEF's to settle;
+whichever builder reaches it first raises it rather than implementing a reading
+(the LAI-139 rule).
 
 **Exit:** a new repo goes from nothing to an agent working the board in one
 command, **and a heartbeat from that agent is visible in the database**. Seeded early: **LAI-012** (plugin skeleton — no dependencies, so
