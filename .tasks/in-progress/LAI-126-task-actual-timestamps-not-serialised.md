@@ -2,11 +2,12 @@
 id: LAI-126
 title: tasks.started_at and completed_at exist but nothing serialises them
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-090
-status: backlog
+status: in-progress
+started: 2026-09-01T18:15:00Z
 ---
 
 ## Goal
