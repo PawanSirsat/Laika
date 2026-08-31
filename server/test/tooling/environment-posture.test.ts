@@ -113,6 +113,22 @@ export const DIFFERENCES: readonly Difference[] = [
     verdict: 'safe',
     reason: 'Logging only. No behaviour depends on it.',
   },
+  {
+    what: "express's `env` application setting",
+    where: "express@5 lib/application.js — `process.env.NODE_ENV || 'development'`",
+    trigger: 'anything other than NODE_ENV=production',
+    verdict: 'safe',
+    reason:
+      "Decides express's `env` setting, which drives its default error handler's stack-trace exposure. Laika serves with Hono and never constructs an express app. Measured, not assumed: after importing the two SDK modules Laika actually uses (server/mcp.js, server/webStandardStreamableHttp.js) express is absent from the CJS module cache. It arrives only as a declared dependency of @modelcontextprotocol/sdk (LAI-406), whose express adapter and OAuth router we do not import. It becomes load-bearing the day anything imports @modelcontextprotocol/sdk/server/express.js or its server/auth/* router.",
+  },
+  {
+    what: "finalhandler's error-response detail",
+    where: "finalhandler@2 index.js — `opts.env || process.env.NODE_ENV || 'development'`",
+    trigger: 'anything other than NODE_ENV=production',
+    verdict: 'safe',
+    reason:
+      "Outside production it puts the error stack into the response body. Reachable only through express, which Laika never constructs — same measurement as the entry above, and absent from the module cache for the same reason. Transitive of @modelcontextprotocol/sdk (LAI-406), not of anything Laika calls. Laika's own errors go through http/error-handler.ts, which never leaks a stack in any environment.",
+  },
 ];
 
 describe('the security-relevant switches are on, whatever NODE_ENV says', () => {
@@ -344,6 +360,10 @@ describe('the list of differences stays honest', () => {
       '@better-auth/core',
       '@better-auth/telemetry',
       'nanostores',
+      // Both transitive of @modelcontextprotocol/sdk and neither ever loaded —
+      // see their DIFFERENCES entries, which name what would change that.
+      'express',
+      'finalhandler',
     ]);
     const found = packagesBranchingOnEnvironment();
 
