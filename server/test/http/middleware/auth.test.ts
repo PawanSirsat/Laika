@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LAST_USED_THROTTLE_MS } from '../../../src/auth/tokens.ts';
 import { activity, tokens, users } from '../../../src/db/schema.ts';
+import { LIMITS, RateLimiter } from '../../../src/http/rate-limit.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 /**
@@ -19,6 +20,8 @@ const PASSWORD = 'correct-horse-battery-staple';
 let h: AuthHarness;
 let ownerCookie: string;
 let ownerId: string;
+/** Frozen clock, so a bucket drained in a test stays drained. */
+let limiter: RateLimiter;
 
 async function setUp(): Promise<string> {
   const res = await h.app.request('/api/v1/setup', {
@@ -73,7 +76,8 @@ async function makeProject(slug: string): Promise<string> {
 }
 
 beforeEach(async () => {
-  h = authHarness();
+  limiter = new RateLimiter(() => 0);
+  h = authHarness({ rateLimiter: limiter });
   ownerCookie = await setUp();
   ownerId = h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()?.id ?? '';
 });
@@ -337,5 +341,73 @@ describe('the audit trail says an agent did it (§4.8)', () => {
       taskId: row?.taskId,
     });
     expect(shape(tokenRow)).toEqual(shape(cookieRow));
+  });
+});
+
+describe('a token spends its own budget, not its owner’s (§6.3, LAI-138)', () => {
+  /**
+   * Both directions, deliberately.
+   *
+   * One direction passing is consistent with the buckets being **merged**: if
+   * token and session shared a key, draining either would refuse both, and a
+   * test that only checked "the drained one is refused" would go green on the
+   * defect. The pair only passes when the two are genuinely separate.
+   */
+  it('exhausting the token leaves the cookie answering', async () => {
+    const secret = await mint({});
+    const tokenId = h.db.select().from(tokens).get()?.id ?? '';
+
+    for (let i = 0; i < LIMITS.token.perMinute; i += 1) {
+      limiter.take(`token:${tokenId}`, LIMITS.token);
+    }
+
+    expect((await withToken('/api/v1/me', secret)).status).toBe(429);
+    expect((await withCookie('/api/v1/me', ownerCookie)).status).toBe(200);
+  });
+
+  it('exhausting the cookie leaves the token answering', async () => {
+    const secret = await mint({});
+
+    for (let i = 0; i < LIMITS.session.perMinute; i += 1) {
+      limiter.take(`session:${ownerId}`, LIMITS.session);
+    }
+
+    expect((await withCookie('/api/v1/me', ownerCookie)).status).toBe(429);
+    expect((await withToken('/api/v1/me', secret)).status).toBe(200);
+  });
+
+  it('gives two tokens of one person separate budgets', async () => {
+    const first = await mint({ name: 'first' });
+    const second = await mint({ name: 'second' });
+
+    const ids = h.db
+      .select()
+      .from(tokens)
+      .all()
+      .map((row) => row.id);
+    expect(ids).toHaveLength(2);
+
+    // Drain whichever bucket the first token uses.
+    await withToken('/api/v1/me', first);
+    const firstId =
+      h.db
+        .select()
+        .from(tokens)
+        .all()
+        .find((r) => r.lastUsedAt !== null)?.id ?? '';
+    for (let i = 0; i < LIMITS.token.perMinute; i += 1) {
+      limiter.take(`token:${firstId}`, LIMITS.token);
+    }
+
+    expect((await withToken('/api/v1/me', first)).status).toBe(429);
+    expect((await withToken('/api/v1/me', second)).status).toBe(200);
+  });
+
+  it('reports the token’s limit in the header, not the session’s', async () => {
+    const secret = await mint({});
+    const res = await withToken('/api/v1/me', secret);
+
+    expect(res.headers.get('X-RateLimit-Limit')).toBe(String(LIMITS.token.perMinute));
+    expect(res.headers.get('X-RateLimit-Limit')).not.toBe(String(LIMITS.session.perMinute));
   });
 });

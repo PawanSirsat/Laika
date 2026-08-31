@@ -34,7 +34,7 @@ export interface RateLimitDecision {
 
 /** SPEC §6.3, verbatim. */
 export const LIMITS = {
-  /** Per personal access token. */
+  /** Per personal access token — keyed on the token, not its owner (LAI-138). */
   token: { perMinute: 120 },
   /** Per cookie session. */
   session: { perMinute: 600 },

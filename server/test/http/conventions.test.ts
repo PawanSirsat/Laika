@@ -206,11 +206,14 @@ describe('rate limiting over HTTP', () => {
   it('gives heartbeats their own budget so presence cannot starve the API', async () => {
     const { classify } = await import('../../src/http/middleware/rate-limit.ts');
 
-    expect(classify('/api/v1/heartbeats', 'u1')).toEqual({
+    expect(classify('/api/v1/heartbeats', { userId: 'u1', tokenId: null })).toEqual({
       key: 'heartbeat:u1',
       policy: LIMITS.heartbeat,
     });
-    expect(classify('/api/v1/tasks', 'u1')).toEqual({ key: 'session:u1', policy: LIMITS.session });
+    expect(classify('/api/v1/tasks', { userId: 'u1', tokenId: null })).toEqual({
+      key: 'session:u1',
+      policy: LIMITS.session,
+    });
   });
 });
 
