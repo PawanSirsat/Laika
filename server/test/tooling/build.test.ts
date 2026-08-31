@@ -22,21 +22,80 @@ const PORT = 3187;
 
 let dataDir: string;
 
+/**
+ * The build's failure, if it had one — **captured, not thrown** (LAI-137).
+ *
+ * A `beforeAll` that throws makes vitest report the suite as *skipped*, so the
+ * summary line reads `12 passed | 12 skipped` with **zero failures**. That is
+ * the one thing it is not: `skipped` means somebody chose to exclude these, and
+ * a reader scanning the line concludes nothing is wrong. It happened twice in
+ * one day — once to the author mid-task, once to a reviewer who read "0 failed"
+ * and drew the wrong conclusion about the change under review.
+ *
+ * So the outcome is data, and the first test below asserts on it. A broken build
+ * now fails, loudly, in the count people actually read.
+ */
+let buildError: string | null = null;
+
 beforeAll(() => {
-  execFileSync('pnpm', ['run', 'build'], { cwd: SERVER_ROOT, stdio: 'pipe' });
+  try {
+    execFileSync('pnpm', ['run', 'build'], { cwd: SERVER_ROOT, stdio: 'pipe' });
+  } catch (error) {
+    // `stdio: 'pipe'` puts the compiler's own output on the error, which is the
+    // part worth reading — "Command failed" alone sends someone to re-run it by
+    // hand to find out what happened.
+    const detail = error as { stdout?: Buffer; stderr?: Buffer; message?: string };
+    buildError = [
+      detail.stdout?.toString() ?? '',
+      detail.stderr?.toString() ?? '',
+      detail.message ?? '',
+    ]
+      .filter((part) => part.trim() !== '')
+      .join('\n')
+      .trim();
+  }
+
   dataDir = mkdtempSync(join(tmpdir(), 'laika-built-'));
 }, 120_000);
+
+/**
+ * Every test after the first calls this.
+ *
+ * These genuinely **did not run**, so they are skipped rather than failed — and
+ * that is honest here in a way it was not before, because the summary now reads
+ * `1 failed | 12 skipped`. One failure names the cause; the skips are downstream
+ * of it and say so.
+ *
+ * The old shape reported `0 failed | 12 skipped`, which is the same word meaning
+ * the opposite thing: nothing failed, so a reader concluded somebody had chosen
+ * to exclude them. Twelve failures would be loud but would over-report one
+ * cause as thirteen; a skip with a reason beside a failure is both louder and
+ * truer.
+ */
+function skipIfBuildFailed(ctx: { skip: (note?: string) => void }): void {
+  if (buildError !== null) {
+    ctx.skip('the build failed — see "compiles at all" for the reason');
+  }
+}
 
 afterAll(() => {
   if (dataDir !== undefined) rmSync(dataDir, { recursive: true, force: true });
 });
 
 describe('build output', () => {
-  it('emits the entry point as plain JavaScript', () => {
+  it('compiles at all', () => {
+    // First, and deliberately so: it is the failure every other test in this
+    // file is downstream of, and the one whose message carries the reason.
+    expect(buildError, `pnpm run build failed:\n${buildError ?? ''}`).toBeNull();
+  });
+
+  it('emits the entry point as plain JavaScript', (ctx) => {
+    skipIfBuildFailed(ctx);
     expect(existsSync(join(DIST, 'index.js'))).toBe(true);
   });
 
-  it('rewrites .ts import specifiers to .js so Node can resolve them', () => {
+  it('rewrites .ts import specifiers to .js so Node can resolve them', (ctx) => {
+    skipIfBuildFailed(ctx);
     // `moduleResolution: bundler` lets the source say `./app.ts`; without
     // `rewriteRelativeImportExtensions` the emit keeps that and Node throws
     // ERR_MODULE_NOT_FOUND at startup.
@@ -46,12 +105,14 @@ describe('build output', () => {
     expect(entry).not.toMatch(/from ["']\.\/app\.ts["']/);
   });
 
-  it('carries the SPA fallback document', () => {
+  it('carries the SPA fallback document', (ctx) => {
+    skipIfBuildFailed(ctx);
     // Resolved relative to the running module, so it must exist inside dist/.
     expect(existsSync(join(DIST, 'static', 'fallback.html'))).toBe(true);
   });
 
-  it('carries every generated migration', () => {
+  it('carries every generated migration', (ctx) => {
+    skipIfBuildFailed(ctx);
     const src = readdirSync(join(SERVER_ROOT, 'src', 'db', 'migrations')).filter((f) =>
       f.endsWith('.sql'),
     );
@@ -61,7 +122,8 @@ describe('build output', () => {
     expect(built.sort()).toEqual(src.sort());
   });
 
-  it('ships no test files', () => {
+  it('ships no test files', (ctx) => {
+    skipIfBuildFailed(ctx);
     const strays = readdirSync(DIST, { recursive: true }) as string[];
     expect(strays.filter((f) => f.endsWith('.test.js'))).toEqual([]);
   });
@@ -79,7 +141,8 @@ describe('the build is idempotent (LAI-028)', () => {
     return (readdirSync(DIST, { recursive: true }) as string[]).sort();
   }
 
-  it('produces an identical tree on a second run with no clean between', () => {
+  it('produces an identical tree on a second run with no clean between', (ctx) => {
+    skipIfBuildFailed(ctx);
     const first = tree();
 
     execFileSync('pnpm', ['run', 'build'], { cwd: SERVER_ROOT, stdio: 'pipe' });
@@ -92,12 +155,14 @@ describe('the build is idempotent (LAI-028)', () => {
     expect(third).toEqual(first);
   }, 120_000);
 
-  it('never nests the copied asset directories', () => {
+  it('never nests the copied asset directories', (ctx) => {
+    skipIfBuildFailed(ctx);
     expect(existsSync(join(DIST, 'static', 'static'))).toBe(false);
     expect(existsSync(join(DIST, 'db', 'migrations', 'migrations'))).toBe(false);
   });
 
-  it('leaves exactly one migration journal where the migrator looks', () => {
+  it('leaves exactly one migration journal where the migrator looks', (ctx) => {
+    skipIfBuildFailed(ctx);
     // A nested copy carried a second journal. Drizzle reads only the folder it
     // resolves, so the duplicate was never applied — but a second journal in the
     // tree is the kind of thing that is true right up until it is not.
@@ -108,7 +173,8 @@ describe('the build is idempotent (LAI-028)', () => {
     expect(journals).toHaveLength(1);
   });
 
-  it('drops output that a later build no longer produces', () => {
+  it('drops output that a later build no longer produces', (ctx) => {
+    skipIfBuildFailed(ctx);
     // The other half of `clean`: stale files from a previous build must not
     // survive into the next one.
     const stray = join(DIST, 'stale-from-a-previous-build.js');
@@ -170,7 +236,8 @@ async function withBuiltServer<T>(
 }
 
 describe('the built server, run the way the container runs it', () => {
-  it('boots, migrates, serves health, and exits 0 on SIGTERM', async () => {
+  it('boots, migrates, serves health, and exits 0 on SIGTERM', async (ctx) => {
+    skipIfBuildFailed(ctx);
     const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
 
     const { result, exitCode } = await withBuiltServer(PORT, emptyPublic, async (baseUrl) => {
@@ -185,7 +252,8 @@ describe('the built server, run the way the container runs it', () => {
     rmSync(emptyPublic, { recursive: true, force: true });
   }, 60_000);
 
-  it('serves the committed fallback when no SPA has been built', async () => {
+  it('serves the committed fallback when no SPA has been built', async (ctx) => {
+    skipIfBuildFailed(ctx);
     // An empty directory *is* the "no build yet" condition, stated rather than
     // assumed — and it proves dist/static/fallback.html shipped, which is the
     // asset `tsc` does not copy.
@@ -202,7 +270,8 @@ describe('the built server, run the way the container runs it', () => {
     rmSync(emptyPublic, { recursive: true, force: true });
   }, 60_000);
 
-  it('serves the built SPA instead when one is present', async () => {
+  it('serves the built SPA instead when one is present', async (ctx) => {
+    skipIfBuildFailed(ctx);
     // The other behaviour, as its own case. Collapsing the two into one
     // assertion is what made this test state-dependent in the first place.
     const builtPublic = mkdtempSync(join(tmpdir(), 'laika-public-built-'));
