@@ -2,11 +2,12 @@
 id: LAI-423
 title: Every nav click drops the selected project and lands you on a different one
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T18:39:04Z
 ---
 
 ## Goal
