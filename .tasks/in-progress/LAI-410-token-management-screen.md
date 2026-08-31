@@ -2,11 +2,12 @@
 id: LAI-410
 title: Token management — mint, see once, revoke
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-402]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T20:55:58Z
 ---
 
 ## Goal
