@@ -2,11 +2,12 @@
 id: LAI-094
 title: Watch a task, and mention a person in a comment — the notification substrate
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-060, LAI-047]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-01T13:10:00Z
 ---
 
 ## Goal
