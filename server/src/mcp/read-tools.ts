@@ -6,7 +6,7 @@ import { listProjectActivity } from '../services/activity.ts';
 import { commentView, listComments } from '../services/comments.ts';
 import { getProjectContext, listMembers, listProjects, projectView } from '../services/projects.ts';
 import { getTask, listTasks, resolveTaskRef, type TaskView } from '../services/tasks.ts';
-import { ago, answer, bullets, isoDate, nameLookup } from './present.ts';
+import { ago, answer, bullets, isoDate, nameLookup, toolError } from './present.ts';
 
 /**
  * The four tools an agent calls before it does anything (SPEC §7.1, LAI-407).
@@ -76,33 +76,37 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
       inputSchema: NO_INPUT,
     },
     () => {
-      // Through the service's own view, so a tool cannot expose a field the
-      // REST API does not — then **`context_md` is dropped**.
-      //
-      // Not a permission difference: `GET /projects` returns it and this tool
-      // may see everything that endpoint does. It is a size decision. A
-      // ten-project org would put up to a megabyte of briefs into a response
-      // whose job is to answer "which project?" — exactly the failure §7.3
-      // warns about, a document that silently blows an agent's context window.
-      // `get_project_context` is how you ask for one, deliberately.
-      const rows = listProjects(db, actor, { ...PAGE, updatedSince: null })
-        .map(projectView)
-        .map(({ context_md, ...rest }) => ({ ...rest, context_length: context_md.length }));
-      const now = clock();
+      try {
+        // Through the service's own view, so a tool cannot expose a field the
+        // REST API does not — then **`context_md` is dropped**.
+        //
+        // Not a permission difference: `GET /projects` returns it and this tool
+        // may see everything that endpoint does. It is a size decision. A
+        // ten-project org would put up to a megabyte of briefs into a response
+        // whose job is to answer "which project?" — exactly the failure §7.3
+        // warns about, a document that silently blows an agent's context window.
+        // `get_project_context` is how you ask for one, deliberately.
+        const rows = listProjects(db, actor, { ...PAGE, updatedSince: null })
+          .map(projectView)
+          .map(({ context_md, ...rest }) => ({ ...rest, context_length: context_md.length }));
+        const now = clock();
 
-      const markdown = [
-        `## Projects (${String(rows.length)})`,
-        '',
-        bullets(
-          rows.map(
-            (p) =>
-              `**${p.slug}** — ${p.name}${p.archived_at === null ? '' : ' _(archived)_'}, updated ${ago(p.updated_at, now)}`,
+        const markdown = [
+          `## Projects (${String(rows.length)})`,
+          '',
+          bullets(
+            rows.map(
+              (p) =>
+                `**${p.slug}** — ${p.name}${p.archived_at === null ? '' : ' _(archived)_'}, updated ${ago(p.updated_at, now)}`,
+            ),
+            'You can read no projects yet.',
           ),
-          'You can read no projects yet.',
-        ),
-      ].join('\n');
+        ].join('\n');
 
-      return answer(markdown, { projects: rows });
+        return answer(markdown, { projects: rows });
+      } catch (error) {
+        return toolError(error);
+      }
     },
   );
 
@@ -122,35 +126,39 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
       }),
     },
     ({ project, limit }) => {
-      const slugs =
-        project === undefined
-          ? listProjects(db, actor, { ...PAGE, updatedSince: null }).map((p) => p.slug)
-          : [project];
+      try {
+        const slugs =
+          project === undefined
+            ? listProjects(db, actor, { ...PAGE, updatedSince: null }).map((p) => p.slug)
+            : [project];
 
-      // `ready: true` is the **same filter the REST `?ready=` query uses**, which
-      // is the same derived `isReady` the board's Ready column shows. A second
-      // definition here would not fail a test — it would quietly send an agent
-      // to a different task than the board says is next.
-      const found = slugs.flatMap((slug) =>
-        listTasks(db, actor, slug, { ...PAGE, ready: true, updatedSince: null }),
-      );
+        // `ready: true` is the **same filter the REST `?ready=` query uses**, which
+        // is the same derived `isReady` the board's Ready column shows. A second
+        // definition here would not fail a test — it would quietly send an agent
+        // to a different task than the board says is next.
+        const found = slugs.flatMap((slug) =>
+          listTasks(db, actor, slug, { ...PAGE, ready: true, updatedSince: null }),
+        );
 
-      const ordered = found.sort(byPriorityThenAge).slice(0, limit ?? 25);
-      const now = clock();
+        const ordered = found.sort(byPriorityThenAge).slice(0, limit ?? 25);
+        const now = clock();
 
-      const markdown = [
-        `## Ready tasks (${String(ordered.length)})`,
-        '',
-        bullets(
-          ordered.map(
-            (t) =>
-              `\`${t.key}\` **${t.title}** — ${t.priority}, ${t.status}, opened ${ago(t.created_at, now)}`,
+        const markdown = [
+          `## Ready tasks (${String(ordered.length)})`,
+          '',
+          bullets(
+            ordered.map(
+              (t) =>
+                `\`${t.key}\` **${t.title}** — ${t.priority}, ${t.status}, opened ${ago(t.created_at, now)}`,
+            ),
+            'Nothing is ready. Everything is either assigned, blocked, or already moving.',
           ),
-          'Nothing is ready. Everything is either assigned, blocked, or already moving.',
-        ),
-      ].join('\n');
+        ].join('\n');
 
-      return answer(markdown, { tasks: ordered });
+        return answer(markdown, { tasks: ordered });
+      } catch (error) {
+        return toolError(error);
+      }
     },
   );
 
@@ -165,82 +173,86 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
       inputSchema: z.strictObject({ task: TASK_REF }),
     },
     ({ task }) => {
-      const view = getTask(db, actor, resolveTaskRef(db, task));
-      const now = clock();
+      try {
+        const view = getTask(db, actor, resolveTaskRef(db, task));
+        const now = clock();
 
-      const members = listMembers(db, actor, slugOf(db, actor, view.project_id));
-      const nameOf = nameLookup(members);
+        const members = listMembers(db, actor, slugOf(db, actor, view.project_id));
+        const nameOf = nameLookup(members);
 
-      const related = new Map<string, TaskView>();
-      for (const id of [...view.dependencies, ...view.blocks]) {
-        related.set(id, getTask(db, actor, id));
+        const related = new Map<string, TaskView>();
+        for (const id of [...view.dependencies, ...view.blocks]) {
+          related.set(id, getTask(db, actor, id));
+        }
+
+        // Soft-deleted comments are dropped, not tombstoned. A tombstone exists so
+        // a client syncing with `updated_since` learns a row went away; an agent
+        // reading a task for the first time should simply not see it.
+        const comments = listComments(db, actor, view.id, { ...PAGE, updatedSince: null })
+          .filter((row) => row.deletedAt === null)
+          .map(commentView);
+
+        const activity = listProjectActivity(db, actor, slugOf(db, actor, view.project_id), {
+          taskId: view.id,
+          limit: 10,
+          cursor: null,
+        });
+
+        const chain = discoveredFromChain(db, actor, view);
+
+        const markdown = [
+          `## \`${view.key}\` ${view.title}`,
+          '',
+          `${view.priority} · ${view.status} · assigned to ${nameOf(view.assignee_id)} · ${view.ready ? 'ready' : 'not ready'}`,
+          '',
+          '### Description',
+          view.description_md ?? '_None._',
+          '',
+          '### Done means',
+          view.acceptance_md ?? '_Not stated._',
+          '',
+          '### Blocked by',
+          bullets(
+            view.dependencies.map((id) => describeRelated(related.get(id), id)),
+            'Nothing — this is unblocked.',
+          ),
+          '',
+          '### Blocks',
+          bullets(
+            view.blocks.map((id) => describeRelated(related.get(id), id)),
+            'Nothing else is waiting on this.',
+          ),
+          '',
+          '### Discovered from',
+          bullets(
+            chain.map((t) => `\`${t.key}\` ${t.title}`),
+            'Not discovered from another task.',
+          ),
+          '',
+          `### Comments (${String(comments.length)})`,
+          bullets(
+            comments.map((c) => `${nameOf(c.author_id)}, ${ago(c.created_at, now)}: ${c.body_md}`),
+            'No comments.',
+          ),
+          '',
+          '### Recent activity',
+          bullets(
+            activity.map((e) => `${e.type} by ${nameOf(e.actor_id)}, ${ago(e.created_at, now)}`),
+            'Nothing recorded.',
+          ),
+        ].join('\n');
+
+        return answer(markdown, {
+          task: view,
+          depends_on: view.dependencies.map((id) => summarise(related.get(id), id)),
+          blocks: view.blocks.map((id) => summarise(related.get(id), id)),
+          discovered_from_chain: chain.map((t) => ({ key: t.key, title: t.title, id: t.id })),
+          comments,
+          recent_activity: activity,
+        });
+      } catch (error) {
+        return toolError(error);
       }
-
-      // Soft-deleted comments are dropped, not tombstoned. A tombstone exists so
-      // a client syncing with `updated_since` learns a row went away; an agent
-      // reading a task for the first time should simply not see it.
-      const comments = listComments(db, actor, view.id, { ...PAGE, updatedSince: null })
-        .filter((row) => row.deletedAt === null)
-        .map(commentView);
-
-      const activity = listProjectActivity(db, actor, slugOf(db, actor, view.project_id), {
-        taskId: view.id,
-        limit: 10,
-        cursor: null,
-      });
-
-      const chain = discoveredFromChain(db, actor, view);
-
-      const markdown = [
-        `## \`${view.key}\` ${view.title}`,
-        '',
-        `${view.priority} · ${view.status} · assigned to ${nameOf(view.assignee_id)} · ${view.ready ? 'ready' : 'not ready'}`,
-        '',
-        '### Description',
-        view.description_md ?? '_None._',
-        '',
-        '### Done means',
-        view.acceptance_md ?? '_Not stated._',
-        '',
-        '### Blocked by',
-        bullets(
-          view.dependencies.map((id) => describeRelated(related.get(id), id)),
-          'Nothing — this is unblocked.',
-        ),
-        '',
-        '### Blocks',
-        bullets(
-          view.blocks.map((id) => describeRelated(related.get(id), id)),
-          'Nothing else is waiting on this.',
-        ),
-        '',
-        '### Discovered from',
-        bullets(
-          chain.map((t) => `\`${t.key}\` ${t.title}`),
-          'Not discovered from another task.',
-        ),
-        '',
-        `### Comments (${String(comments.length)})`,
-        bullets(
-          comments.map((c) => `${nameOf(c.author_id)}, ${ago(c.created_at, now)}: ${c.body_md}`),
-          'No comments.',
-        ),
-        '',
-        '### Recent activity',
-        bullets(
-          activity.map((e) => `${e.type} by ${nameOf(e.actor_id)}, ${ago(e.created_at, now)}`),
-          'Nothing recorded.',
-        ),
-      ].join('\n');
-
-      return answer(markdown, {
-        task: view,
-        depends_on: view.dependencies.map((id) => summarise(related.get(id), id)),
-        blocks: view.blocks.map((id) => summarise(related.get(id), id)),
-        discovered_from_chain: chain.map((t) => ({ key: t.key, title: t.title, id: t.id })),
-        comments,
-        recent_activity: activity,
-      });
     },
   );
 
@@ -255,62 +267,66 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
       inputSchema: z.strictObject({ project: PROJECT_REF }),
     },
     ({ project }) => {
-      const doc = getProjectContext(db, actor, project);
-      const members = listMembers(db, actor, project);
-      const nameOf = nameLookup(members);
-      const open = listTasks(db, actor, project, { ...PAGE, updatedSince: null });
-      const now = clock();
+      try {
+        const doc = getProjectContext(db, actor, project);
+        const members = listMembers(db, actor, project);
+        const nameOf = nameLookup(members);
+        const open = listTasks(db, actor, project, { ...PAGE, updatedSince: null });
+        const now = clock();
 
-      // §7.1 says "last 10 decisions". Laika has **no decision entity**: §7.3
-      // puts decisions *inside* `context_md`, appended by the meeting path of
-      // §10.2, which is unbuilt. The nearest true thing is the document's own
-      // edit history, and that is what this returns — named for what it is
-      // rather than dressed up as something the data model does not hold.
-      const edits = listProjectActivity(db, actor, project, { limit: 10, cursor: null }).filter(
-        (e) => JSON.stringify(e.payload).includes('"context_md"'),
-      );
+        // §7.1 says "last 10 decisions". Laika has **no decision entity**: §7.3
+        // puts decisions *inside* `context_md`, appended by the meeting path of
+        // §10.2, which is unbuilt. The nearest true thing is the document's own
+        // edit history, and that is what this returns — named for what it is
+        // rather than dressed up as something the data model does not hold.
+        const edits = listProjectActivity(db, actor, project, { limit: 10, cursor: null }).filter(
+          (e) => JSON.stringify(e.payload).includes('"context_md"'),
+        );
 
-      const byStatus = new Map<string, number>();
-      for (const t of open) byStatus.set(t.status, (byStatus.get(t.status) ?? 0) + 1);
+        const byStatus = new Map<string, number>();
+        for (const t of open) byStatus.set(t.status, (byStatus.get(t.status) ?? 0) + 1);
 
-      const markdown = [
-        `## ${project}`,
-        '',
-        '### Context document',
-        doc.context_md === ''
-          ? '_Empty. Nobody has written the project brief yet._'
-          : doc.context_md,
-        '',
-        doc.updated_at === null
-          ? '_Never edited._'
-          : `_Last edited by ${nameOf(doc.updated_by)}, ${ago(doc.updated_at, now)} — ${String(doc.length)} of ${String(doc.limit)} characters._`,
-        '',
-        '### Recent edits to this document',
-        bullets(
-          edits.map((e) => `${nameOf(e.actor_id)} on ${isoDate(e.created_at)}`),
-          'No recorded edits.',
-        ),
-        '',
-        '### Open work',
-        bullets(
-          [...byStatus.entries()].map(([status, count]) => `${status}: ${String(count)}`),
-          'No tasks.',
-        ),
-        '',
-        '### Team',
-        bullets(
-          members.map((m) => `${m.name} — ${m.role}`),
-          'No members.',
-        ),
-      ].join('\n');
+        const markdown = [
+          `## ${project}`,
+          '',
+          '### Context document',
+          doc.context_md === ''
+            ? '_Empty. Nobody has written the project brief yet._'
+            : doc.context_md,
+          '',
+          doc.updated_at === null
+            ? '_Never edited._'
+            : `_Last edited by ${nameOf(doc.updated_by)}, ${ago(doc.updated_at, now)} — ${String(doc.length)} of ${String(doc.limit)} characters._`,
+          '',
+          '### Recent edits to this document',
+          bullets(
+            edits.map((e) => `${nameOf(e.actor_id)} on ${isoDate(e.created_at)}`),
+            'No recorded edits.',
+          ),
+          '',
+          '### Open work',
+          bullets(
+            [...byStatus.entries()].map(([status, count]) => `${status}: ${String(count)}`),
+            'No tasks.',
+          ),
+          '',
+          '### Team',
+          bullets(
+            members.map((m) => `${m.name} — ${m.role}`),
+            'No members.',
+          ),
+        ].join('\n');
 
-      return answer(markdown, {
-        context: doc,
-        context_edits: edits,
-        task_counts: Object.fromEntries(byStatus),
-        open_task_count: open.length,
-        members,
-      });
+        return answer(markdown, {
+          context: doc,
+          context_edits: edits,
+          task_counts: Object.fromEntries(byStatus),
+          open_task_count: open.length,
+          members,
+        });
+      } catch (error) {
+        return toolError(error);
+      }
     },
   );
 }
