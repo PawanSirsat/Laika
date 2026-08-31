@@ -1607,3 +1607,55 @@ comment asking the future not to delete it.
 **Revisit if** a guard is found that must assert a fact and cannot be rewritten
 to a property — at which point the condition-that-retires-it needs a documented
 shape rather than being written case by case.
+
+---
+
+## D-038 — A row→action mapping belongs to the document it mirrors
+
+**Date:** 2026-08-31 · **Decided by:** CHIEF · **Status:** accepted
+
+`server/test/tooling/policy-spec-drift.test.ts` holds `ORG_ROWS` and
+`PROJECT_ROWS` — maps from a **SPEC §3 table row's label** to the `can()` actions
+that implement it. They are what makes §3 ↔ `can()` a closed loop.
+
+LAI-408 exposed that they have no owner. Growing §3.1 by one row needs three
+things in one commit: the row (`docs/`, CHIEF), the action (`server/src/`, a
+builder), and the **mapping** (`server/test/`, unowned in practice). CORE could
+not add the mapping before the row existed — the staleness check fires on a
+mapping whose row is absent — and CHIEF could not add the row before the mapping
+existed without turning `master` red. Neither half is committable alone.
+
+**Decision: a row→action mapping follows the document it mirrors. `ORG_ROWS` and
+`PROJECT_ROWS` are CHIEF's**, in a file that is otherwise CORE's.
+
+This is **D-026's principle, not a new one**: ownership inside a shared test file
+follows what a section *describes*, not the directory the file sits in. D-026
+settled it for the `WEB_*` maps in `structure.test.ts` — SHELL's, in CORE's file
+— for exactly this reason. A mapping of §3's rows describes §3.
+
+It is also the crossing D-034 already contemplates: *"a SPEC section by number, a
+single exemption entry, **a specific mapping**; never a file, never a
+directory."*
+
+**What this does not grant.** CHIEF may add, remove or correct **entries in those
+two maps** and nothing else in that file — not the parser, not the assertions,
+not the exemption lists, not the counts. The `toHaveLength` assertion that broke
+in the same commit is about how the **parser** behaves and stayed CORE's, and was
+fixed by CORE. If a mapping change turns out to need reshaping how the test
+works, it stops being a mapping change and goes back to them (CLAUDE.md §1: *"a
+named edit is not a design change to someone else's file"*).
+
+**Consequences**
+
+- Growing §3 is now a **single atomic commit** by CHIEF over a builder's merge:
+  the row, the mapping, and the builder's action arriving together. No red
+  window, and no builder holding a red branch waiting.
+- The same shape applies to any future mirror-of-a-CHIEF-document map. It does
+  **not** generalise to test data that merely mentions a spec section.
+- **PM still writes no application code.** A mapping entry is a restatement of a
+  document CHIEF owns, in the form a test can read — the same category as the
+  spec table itself. If that reading ever has to stretch, it has stopped being
+  true and this decision should be superseded rather than widened.
+
+**Revisit if** a third session needs entries in the same maps, or if a mapping
+change ever requires touching the parser to land.
