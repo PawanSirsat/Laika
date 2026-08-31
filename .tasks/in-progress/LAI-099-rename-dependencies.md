@@ -2,11 +2,12 @@
 id: LAI-099
 title: 'Rename `dependencies` to `blocked_by` — before M3, or never'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-091]
 discovered-from: LAI-091
-status: backlog
+status: in-progress
+started: 2026-09-01T18:50:00Z
 ---
 
 ## Goal
