@@ -6,7 +6,16 @@ import type { ActivityEvent } from './activity.ts';
 
 export { STREAM_TYPES };
 
-export type StreamStatus = 'connecting' | 'live' | 'dropped';
+/**
+ * What the stream is doing.
+ *
+ * `dropped` and `refused` are both failures and are deliberately **not** one
+ * state: `dropped` is on its way back and the reader need do nothing, while
+ * `refused` is settled and no amount of waiting changes it. Collapsing them is
+ * the LAI-224 defect — a `403` rendered as "can't reach the instance", beside a
+ * message correctly explaining it was a permission problem.
+ */
+export type StreamStatus = 'connecting' | 'live' | 'dropped' | 'refused';
 
 /** One `gap` frame, in the form a consumer can act on. */
 export interface GapSignal {
@@ -195,6 +204,19 @@ export function useEvents(slug: string | undefined): UseEvents {
         }
 
         case 'error': {
+          if (frame.permanent) {
+            // The server answered and refused, so there is nothing to count
+            // down to and no attempt pending. Clearing both matters: a stream
+            // that dropped and was then refused would otherwise keep the
+            // failure count from the drop, and "attempt 3" on something that
+            // will never be attempted again is the same lie in a smaller font.
+            setStatus('refused');
+            setAttempt(0);
+            setRetry(undefined);
+            lastErrorAt.current = undefined;
+            return;
+          }
+
           // EventSource retries on its own; `dropped` is the honest label while
           // it does, rather than claiming to be live.
           setStatus('dropped');

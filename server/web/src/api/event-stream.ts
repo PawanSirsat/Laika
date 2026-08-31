@@ -25,7 +25,15 @@ import { STREAM_TYPES } from './stream-types.ts';
 /** A frame, in the form a consumer can act on without knowing about SSE. */
 export type StreamFrame =
   | { readonly kind: 'open' }
-  | { readonly kind: 'error' }
+  /**
+   * The connection failed.
+   *
+   * `permanent` is the difference between a stream that is coming back and one
+   * that is not — see {@link isPermanentFailure}. A consumer that ignores it
+   * tells the reader the instance is unreachable when the server in fact
+   * answered and refused (LAI-224).
+   */
+  | { readonly kind: 'error'; readonly permanent: boolean }
   /** A named activity frame (§4.8). `id` is the resume position. */
   | { readonly kind: 'activity'; readonly type: string; readonly data: string; readonly id: string }
   /** Control frames. They carry no `id:` and must not move the resume position. */
@@ -41,6 +49,58 @@ interface Shared {
 }
 
 const streams = new Map<string, Shared>();
+
+/**
+ * `EventSource.CLOSED`, spelled out rather than read off the global.
+ *
+ * The value is fixed by the HTML standard, and writing it here keeps the module
+ * from depending on a DOM constant existing — `node --test` has no
+ * `EventSource` at all, and the test substitutes its own.
+ */
+const CLOSED = 2;
+
+/**
+ * Will the browser try this connection again?
+ *
+ * **`EventSource` reports every failure through the same `onerror` with no
+ * status attached**, which is why LAI-078 mapped all of them to "dropped". But
+ * it does expose the one thing that actually matters: whether it has given up.
+ * The standard says a response that is not `200 text/event-stream` *fails the
+ * connection* — one `error`, `readyState` `CLOSED`, no reconnection — while a
+ * network fault *reestablishes* it, leaving `readyState` at `CONNECTING`.
+ *
+ * Measured in a real browser against this server (LAI-224), because the task
+ * that found the bug asserted the opposite and reasoning from either the spec
+ * or the symptom alone would have picked the wrong fix:
+ *
+ * | | `error` events | `readyState` | retries |
+ * | --- | --- | --- | --- |
+ * | `403` on the stream | 1 | `2` CLOSED | never |
+ * | server killed mid-stream | one per attempt, ~3s apart | `0` CONNECTING | yes |
+ *
+ * The server log agrees: the refused stream made **one** request, not a loop.
+ * So the retry loop the task describes does not exist — the browser stops on
+ * its own — and the defect is purely that a settled refusal was rendered as an
+ * unreachable host. That also rules out the task's suggested fixes: a pre-flight
+ * `fetch` buys a status we do not need, and threading the board's `403` down
+ * into the stream would leave every other subscriber (the shell's counts) still
+ * believing the instance is down.
+ */
+export function isPermanentFailure(readyState: number): boolean {
+  return readyState === CLOSED;
+}
+
+/**
+ * Drop a stream from the registry — but only if it is still the current one.
+ *
+ * Guarded on identity, not on the key: a permanent failure forgets the entry
+ * immediately, so a later subscriber may already have opened a replacement
+ * under the same slug. An unguarded `delete` would then evict a live stream on
+ * behalf of a dead one.
+ */
+function forget(slug: string, shared: Shared): void {
+  if (streams.get(slug) === shared) streams.delete(slug);
+}
 
 function open(slug: string): Shared {
   const source = new EventSource(`${API_BASE}/events?project=${encodeURIComponent(slug)}`);
@@ -76,7 +136,14 @@ function open(slug: string): Shared {
     emit({ kind: 'open' });
   };
   source.onerror = () => {
-    emit({ kind: 'error' });
+    const permanent = isPermanentFailure(source.readyState);
+    // Forget it before announcing it. The browser has already closed this
+    // source, so leaving it in the registry would hand a dead connection to the
+    // next subscriber, which then waits for frames that cannot arrive. Dropping
+    // it means a later mount opens a fresh one — a single attempt that succeeds
+    // if access has since been granted, not a retry loop.
+    if (permanent) forget(slug, shared);
+    emit({ kind: 'error', permanent });
   };
 
   return shared;
@@ -100,9 +167,11 @@ export function subscribeToEvents(slug: string, listener: StreamListener): () =>
     shared.listeners.delete(listener);
     if (shared.listeners.size > 0) return;
 
-    // Last one out. Delete before closing so a subscriber arriving during the
-    // close gets a fresh connection rather than a dead one.
-    streams.delete(slug);
+    // Last one out. Forget before closing so a subscriber arriving during the
+    // close gets a fresh connection rather than a dead one — and by identity,
+    // so an unsubscribe that arrives after a permanent failure cannot evict the
+    // replacement that was opened in the meantime.
+    forget(slug, shared);
     shared.source.close();
   };
 }

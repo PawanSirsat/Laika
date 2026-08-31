@@ -3,6 +3,7 @@ import { describeEvent } from '../../../api/activity.ts';
 import { demoAgentSessions } from '../../../demo/agent-sessions.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
+import { streamEmptyNote } from './stream-presentation.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import type { ActivityEvent } from '../../../api/activity.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
@@ -66,9 +67,7 @@ export function BoardRail({ status, events, gapped, tasks, members }: BoardRailP
         )}
 
         {events.length === 0 ? (
-          <p className="rail-empty">
-            {status === 'live' ? 'Connected. Nothing has happened yet.' : 'Waiting for the stream…'}
-          </p>
+          <p className="rail-empty">{streamEmptyNote(status)}</p>
         ) : (
           <ol className="rail-feed">
             {events.map((event) => {

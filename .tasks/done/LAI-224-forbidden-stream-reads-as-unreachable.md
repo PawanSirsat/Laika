@@ -6,9 +6,9 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-081
-status: in-progress
+status: done
 started: 2026-08-25T09:12:33Z
-finished:
+finished: 2026-08-31T07:32:00Z
 ---
 
 ## Goal
@@ -49,12 +49,12 @@ drop and wrong for a refusal.
 
 ## Acceptance criteria
 
-- [ ] A `403` on the stream does not render as an unreachable instance.
-- [ ] It stops retrying. A permission does not change because you asked four
+- [x] A `403` on the stream does not render as an unreachable instance.
+- [~] **STRUCK** — see the review note. It stops retrying. A permission does not change because you asked four
       hundred times, and the retry loop is visible in the server log.
-- [ ] A genuine network drop still shows the banner and still retries —
+- [x] A genuine network drop still shows the banner and still retries —
       LAI-078's behaviour must not regress. Verify both, do not assume.
-- [ ] A test covers the two cases separately and fails if they collapse into
+- [x] A test covers the two cases separately and fails if they collapse into
       one, the way `isCredentialRejection` guards `401` against `429` (LAI-220).
 
 ## Notes
@@ -145,3 +145,76 @@ collapse into one state.
 Criterion 3 in particular — a genuine network drop **must** still show the banner
 and still retry. CORE's table says that path reports `CONNECTING`, so the
 discriminator has something real to discriminate on. Verify it, do not assume it.
+
+---
+
+## Accepted — CHIEF, 2026-08-31
+
+**Accepted.** Verified independently, not read off the summary.
+
+### What I ran
+
+**Three mutations, three reds**, each naming the test that caught it:
+
+| mutation | result |
+| --- | --- |
+| `isPermanentFailure` → always `false` (collapse at the transport) | 5 failures, incl. *"a refusal is not a drop"* |
+| `showsUnreachableBanner('refused')` → `true` (restore the original defect) | 3 failures, incl. *"exactly one state claims the instance is unreachable"* |
+| refused pill → `'RECONNECTING'` | 2 failures, incl. *"the pill never promises a reconnection that is not coming"* |
+
+**End-to-end in a real browser.** Built this branch's SPA, served it from its own
+server on a fresh database at `:3399` so the origin matched, signed in, and drove
+the two paths with request interception:
+
+| | pill | banner | requests |
+| --- | --- | --- | --- |
+| baseline | `LIVE · SSE` | none | streaming |
+| **403 on the stream** | **`NOT LIVE`** (`live-refused`) | **none** | **1 in 10s** |
+| **network drop** | **`RECONNECTING`** (`live-dropped`) | **`Can’t reach localhost:3399` · `retrying in 3s · attempt 4`** | **4 in 10s** |
+
+Criterion 1 holds, criterion 3 has not regressed, and the struck criterion 2 is
+confirmed struck — the browser makes one request on a `403` and stops by itself.
+
+**Wiring checked, not assumed.** A pure presentation module can be perfect and
+unused. `BoardScreen.tsx` calls `showsUnreachableBanner(stream.status)` and
+`streamPillLabel(...)`; `BoardRail.tsx` calls `streamEmptyNote(...)`. The only
+surviving `RECONNECTING` outside the module is inside a comment about history.
+
+**`use-shell-context.ts` needed no change** — I checked, because the argument for
+choosing `readyState` rested on it. It listens for `activity` frames and bumps a
+counter; it makes no claim about reachability, so there was nothing there to be
+wrong. The reasoning still holds: board-knows-it would have had to thread state
+into a subscriber that renders nothing.
+
+### On the new module
+
+Keep it. The three sentences the board says about the stream were decided in
+three places inside JSX, were wrong together, and no test could reach them. The
+exhaustive `switch` on `StreamStatus` means adding a state is a type error at
+every place that has to describe it — which is a stronger guarantee than the test
+that replaced it.
+
+### Two things that were not asked for and are worth more than the fix
+
+- **The `dropped → refused` transition clears `attempt` and `retry`.** *"attempt 3
+  on something that will never be attempted again is the same lie in a smaller
+  font"* is the right instinct, and nothing in the criteria required it.
+- **`forget()` is guarded on identity, not on the key.** An unguarded `delete`
+  would evict a *live* replacement stream on behalf of a dead one. That is a
+  latent bug in code this task did not have to touch.
+
+### Two process notes, neither affecting the accept
+
+1. **The criteria were not ticked, `status` stayed `in-progress`, and `finished:`
+   was empty.** `b39ac70` was a pure rename — `similarity index 100%`. I resolved
+   it myself rather than send verified work back for checkboxes, and I ticked
+   against **my** verification above, not against an attestation you made. Do the
+   finishing steps next time (CLAUDE.md §2); a reviewer should not have to
+   reconstruct what you claim to have done.
+
+2. **My review note caused a merge *conflict*, not a duplicate** — and that is my
+   defect, not yours. CLAUDE.md §2 describes a send-back as producing two copies
+   at two paths. A note on an *in-progress* task lands at the **same path**, so
+   git conflicts, and "resolve in CHIEF's favour" would silently discard any
+   edits you had already made to that file. You had made none, so nothing was
+   lost. I am amending §2 so the next builder is not relying on luck.

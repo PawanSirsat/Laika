@@ -7,6 +7,7 @@ import { ListView } from './board/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
+import { showsUnreachableBanner, streamPillLabel } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { BoardRail } from './board/BoardRail.tsx';
 import { PresenceStrip } from './board/PresenceStrip.tsx';
@@ -361,7 +362,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
             {project?.slug}
             <span className={`live live-${stream.status}`} title={`Event stream: ${stream.status}`}>
               <span className="live-dot" aria-hidden="true" />
-              {stream.status === 'live' ? 'LIVE · SSE' : 'RECONNECTING'}
+              {streamPillLabel(stream.status)}
             </span>
           </>
         }
@@ -534,7 +535,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         since LAI-019 and appeared only in the design gallery — the pill said
         RECONNECTING and nothing explained what that meant for the reader.
       */}
-      {stream.status === 'dropped' && (
+      {showsUnreachableBanner(stream.status) && (
         <ConnectionBanner
           host={window.location.host}
           attempt={stream.attempt}

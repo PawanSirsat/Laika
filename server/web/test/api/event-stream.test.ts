@@ -21,42 +21,72 @@ interface FakeSource {
   readonly url: string;
   readonly handlers: Map<string, (event: unknown) => void>;
   closed: boolean;
+  /**
+   * `0` CONNECTING, `1` OPEN, `2` CLOSED — the browser's own numbers.
+   *
+   * The real `EventSource` sets this before it calls `onerror`, and it is the
+   * only thing distinguishing a refusal from a drop (LAI-224). A fake without
+   * it cannot tell the two apart, which is the whole point of these tests.
+   */
+  readyState: number;
   onopen: (() => void) | null;
   onerror: (() => void) | null;
 }
 
 let built: FakeSource[] = [];
 
+/**
+ * A stand-in for the browser's `EventSource`.
+ *
+ * **Real accessors, not `Object.assign`.** The previous version assembled the
+ * instance with `Object.assign(this, { get onerror() {...} })`, which copies a
+ * getter's *value* rather than the accessor — so `onopen` and `onerror` became
+ * plain `null` data properties, the module's assignments to them went into the
+ * instance instead of the record behind it, and firing them from a test did
+ * nothing. No test had exercised those two, so it looked correct for as long as
+ * nobody needed it (found while writing the LAI-224 tests).
+ */
 class FakeEventSource {
+  readonly #self: FakeSource;
+
   constructor(url: string) {
-    const self: FakeSource = {
+    this.#self = {
       url,
       handlers: new Map(),
       closed: false,
+      readyState: 0,
       onopen: null,
       onerror: null,
     };
-    built.push(self);
-    Object.assign(this, {
-      addEventListener: (type: string, fn: (event: unknown) => void) => {
-        self.handlers.set(type, fn);
-      },
-      close: () => {
-        self.closed = true;
-      },
-      get onopen() {
-        return self.onopen;
-      },
-      set onopen(fn: (() => void) | null) {
-        self.onopen = fn;
-      },
-      get onerror() {
-        return self.onerror;
-      },
-      set onerror(fn: (() => void) | null) {
-        self.onerror = fn;
-      },
-    });
+    built.push(this.#self);
+  }
+
+  get readyState(): number {
+    return this.#self.readyState;
+  }
+
+  addEventListener(type: string, fn: (event: unknown) => void): void {
+    this.#self.handlers.set(type, fn);
+  }
+
+  close(): void {
+    this.#self.closed = true;
+  }
+
+  get onopen(): (() => void) | null {
+    return this.#self.onopen;
+  }
+
+  set onopen(fn: (() => void) | null) {
+    this.#self.onopen = fn;
+  }
+
+  get onerror(): (() => void) | null {
+    return this.#self.onerror;
+  }
+
+  set onerror(fn: (() => void) | null) {
+    this.#self.onerror = fn;
   }
 }
 
@@ -188,5 +218,108 @@ void describe('frames reach every consumer', () => {
     }
     assert.ok(!names.includes('message'), 'listening for unnamed frames, which never arrive');
     off();
+  });
+});
+
+/**
+ * A refusal and a drop are not the same failure (LAI-224).
+ *
+ * `EventSource` funnels both through one `onerror` with no status, which is why
+ * LAI-078 called every failure "dropped" and a `403` rendered as *"Can't reach
+ * localhost:3370"* beside a message correctly explaining it was a permission
+ * problem. `readyState` is the difference, and it is measured in a real browser
+ * against this server — see `isPermanentFailure` for the table.
+ *
+ * These tests exist to fail if the two ever collapse back into one state.
+ */
+void describe('a refusal is not a drop', () => {
+  /** Fail `built[i]` the way the browser would, and report what was emitted. */
+  function fail(index: number, readyState: number, seen: StreamFrame[]): StreamFrame | undefined {
+    const source = built[index];
+    assert.ok(source, `no connection at ${String(index)}`);
+    source.readyState = readyState;
+    source.onerror?.();
+    return seen.at(-1);
+  }
+
+  void test('CONNECTING means the browser is coming back — a drop', () => {
+    const seen: StreamFrame[] = [];
+    const off = subscribeToEvents('laika-core', (f) => seen.push(f));
+
+    const frame = fail(0, 0, seen);
+    assert.deepEqual(frame, { kind: 'error', permanent: false });
+    off();
+  });
+
+  void test('CLOSED means the browser has given up — a refusal', () => {
+    const seen: StreamFrame[] = [];
+    const off = subscribeToEvents('laika-core', (f) => seen.push(f));
+
+    const frame = fail(0, 2, seen);
+    assert.deepEqual(frame, { kind: 'error', permanent: true });
+    off();
+  });
+
+  void test('the two produce different frames from the same handler', () => {
+    // The one assertion that fails if a future change maps both to the same
+    // thing — each test above would still pass against a constant.
+    const a: StreamFrame[] = [];
+    const offA = subscribeToEvents('drop', (f) => a.push(f));
+    const b: StreamFrame[] = [];
+    const offB = subscribeToEvents('refuse', (f) => b.push(f));
+
+    const dropped = fail(0, 0, a);
+    const refused = fail(1, 2, b);
+
+    assert.notDeepEqual(dropped, refused, 'a drop and a refusal are reported identically');
+    offA();
+    offB();
+  });
+
+  void test('a refused connection is forgotten, so it is not handed to the next subscriber', () => {
+    // The browser has already closed it. Left in the registry, the next
+    // subscriber joins a dead source and waits for frames that cannot arrive —
+    // and never sees the refusal, because it fired before they arrived.
+    const off = subscribeToEvents('laika-core', () => undefined);
+    fail(0, 2, []);
+    assert.equal(openStreamCount(), 0, 'a dead connection stayed in the registry');
+
+    const seen: StreamFrame[] = [];
+    const again = subscribeToEvents('laika-core', (f) => seen.push(f));
+    assert.equal(built.length, 2, 'the next subscriber reused the closed connection');
+
+    // One fresh attempt, not a loop: it succeeds if access has since been
+    // granted, and refuses once more if it has not.
+    fail(1, 2, seen);
+    assert.deepEqual(seen.at(-1), { kind: 'error', permanent: true });
+    again();
+    off();
+  });
+
+  void test('a drop is kept, because it is the same connection coming back', () => {
+    const off = subscribeToEvents('laika-core', () => undefined);
+    fail(0, 0, []);
+    assert.equal(openStreamCount(), 1, 'a recoverable drop was thrown away');
+    assert.equal(built.length, 1);
+    off();
+  });
+
+  void test('a late unsubscribe cannot evict the replacement stream', () => {
+    // `forget` is guarded on identity, not on the key. Without that guard the
+    // first subscriber's unsubscribe — which runs whenever its own listener set
+    // empties — deletes whatever now sits under the slug, and the replacement
+    // is silently orphaned while its subscriber waits for frames.
+    const first = subscribeToEvents('laika-core', () => undefined);
+    fail(0, 2, []);
+
+    const second = subscribeToEvents('laika-core', () => undefined);
+    assert.equal(openStreamCount(), 1, 'the replacement did not register');
+
+    first();
+    assert.equal(openStreamCount(), 1, 'unsubscribing the refused stream evicted the replacement');
+    assert.equal(built[1]?.closed, false, 'the replacement was closed by the wrong owner');
+
+    second();
+    assert.equal(openStreamCount(), 0);
   });
 });
