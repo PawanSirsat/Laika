@@ -32,6 +32,11 @@ describe('activity is append-only (SPEC §4.8)', () => {
 
     expect(exported).toEqual([
       'activityAtSeq',
+      // `apiFieldNames` and `apiPayload` are LAI-045's two halves: the write side
+      // translates a Drizzle property to the API's name, the read side does the
+      // same for rows written before it. Neither reads or writes the table.
+      'apiFieldNames',
+      'apiPayload',
       'appendActivity',
       'countActivityAfter',
       'latestActivitySeq',

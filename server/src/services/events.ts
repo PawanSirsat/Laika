@@ -1,8 +1,8 @@
 import {
   activityAtSeq,
+  apiPayload,
   countActivityAfter,
   latestActivitySeq,
-  readPayload,
 } from '../db/activity.ts';
 import { type ActivityEvent } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
@@ -48,7 +48,9 @@ export function eventView(row: ActivityEvent): EventView {
     actor_id: row.actorId,
     actor_kind: row.actorKind,
     actor_token_id: row.actorTokenId,
-    payload: readPayload(row),
+    // `apiPayload`, not `readPayload`: rows written before LAI-045 name Drizzle
+    // properties, and this is the one boundary every client passes through.
+    payload: apiPayload(row),
     created_at: row.createdAt,
   };
 }

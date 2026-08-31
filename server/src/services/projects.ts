@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, gte, inArray, or, sql } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
-import { appendActivity } from '../db/activity.ts';
+import { apiFieldNames, appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type ProjectRole, TASK_STATUSES, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
@@ -523,7 +523,7 @@ export function updateProject(
     // active view, and an audit reader should not have to diff a payload to
     // discover that is what happened.
     type: archiving ? 'project.archived' : 'project.updated',
-    payload: { changed: Object.keys(changes) },
+    payload: { changed: apiFieldNames(projects, Object.keys(changes)) },
     now,
   });
 
