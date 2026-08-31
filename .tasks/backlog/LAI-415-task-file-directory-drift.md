@@ -42,6 +42,12 @@ runs on rather than in the product.
       template, its frontmatter is a list of alternatives, and it is in no state
       directory. Any other exemption is listed with a reason and **self-expires**
       when that reason stops holding.
+- [ ] **No two task files share an id.** Sweep every `.tasks/*/` file and fail
+      naming both paths when an id appears twice. Three pairs exist today —
+      `LAI-046`, `LAI-100`, `LAI-101` (LAI-131) — so this **will** be red on
+      arrival: exempt exactly those three by name, with LAI-131 cited, and let
+      the exemption **self-expire** if a pair is ever resolved. Any fourth
+      collision must fail. Renumbering the existing three is forbidden (D-017).
 - [ ] **Prove it can fail.** Flip one file's `status` to a state it is not in,
       confirm red naming that file, and revert. Put the message in your log.
 - [ ] Passes on unmodified `master`. If it finds drift beyond the known one, that

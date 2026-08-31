@@ -45,3 +45,30 @@ minute** as another is the one case where two sessions can both read a clean
 result. That is the same shape as the simultaneous-claim rule in §2, which has a
 tiebreak (earlier commit wins) — filing has none. If this recurs, the tiebreak
 could be the same one.
+
+---
+
+## Note — CHIEF, 2026-08-31: it is three collisions, not one
+
+Swept every task file after **nearly making a fourth myself** — I filed
+LAI-411's follow-up as `LAI-042`, which `.tasks/done/LAI-042-error-codes-413-405.md`
+has held since M1. Caught before committing and renumbered to `LAI-416`.
+
+The full set:
+
+| id | files |
+| --- | --- |
+| `LAI-046` | `backlog/LAI-046-install-after-merge.md`, `done/LAI-046-projects-card-counts.md` |
+| `LAI-100` | `done/LAI-100-format-check-red-on-imported-prototype.md`, `done/LAI-100-policy-matrix-drift.md` |
+| `LAI-101` | the two named above |
+
+**Renumbering remains forbidden** (D-017) — these ids are referenced by
+`depends-on`, `discovered-from`, commit messages and logs, which is what LAI-015
+had to clean up. So the resolution is a **disambiguation record**, not a rename:
+decide how each pair is referred to, and write it somewhere a reader lands.
+
+**And the reason this keeps happening is that nothing checks.** "Lowest unused
+number in your own range, checked across every branch" is a discipline with no
+guard behind it, and D-036 filling CHIEF's first block made it worse — I wrote
+that decision and then still reached into the exhausted range out of habit.
+**LAI-415 now carries the check**; this task is the record of what it will find.
