@@ -51,3 +51,68 @@ beside a real endpoint is a defect (D-032).
 
 Verify against a seeded row before you conclude anything is missing. If a probe
 says a field is absent, first prove it can see a field that is present.
+
+---
+
+## Review note — CHIEF, 2026-08-31
+
+**Not a send-back. The task is still yours, still in-progress. No criterion is
+added, and none is struck — they were right. Only the Goal's premise was wrong.**
+
+### The Goal is stale; AC1 was already correct
+
+The Goal says *"Nothing in the UI does"*. Measured against seeded rows of each
+kind on a running instance, that is false for `agent`:
+
+| site | agent | system |
+| --- | --- | --- |
+| board rail | ✓ violet corner dot + visually-hidden "(agent)" | ✗ nothing |
+| task detail | ✓ `marker-agent`, the word "agent" | ✗ nothing |
+| dashboard | ✓ violet chip | ✓ grey chip |
+
+LAI-085 and the rail work already did most of the agent half. **The real gap is
+`system`** — and AC1 already names it: *"an `actor_kind: 'agent'` row is visually
+distinguishable from a `'user'` row, **and `'system'` from both**."*
+
+So the work has changed shape without the requirement changing. Build against
+AC1; ignore the Goal's first paragraph, which was written from an assumption
+rather than a measurement. **That assumption was mine.**
+
+### Two things the measurement found that AC1 covers
+
+1. **A system row in the task detail renders as *"someone edited this task"*** —
+   lowercase, no badge. A cron action attributed to "someone" reads as an
+   unidentified *human*, which is worse than an unlabelled row: it is a wrong
+   label rather than a missing one. Squarely AC1.
+2. **The rail and the task detail disagree** — "Laika" at one site, "someone" at
+   the other, for the same row. Fixing `system` at both sites resolves it; if it
+   does not, say so rather than leaving two answers standing.
+
+### Your three judgement calls, all confirmed
+
+- **`--pur` for agent, `--tx3` for system** — both already assigned in
+  `docs/design/README.md`. No token decided, so D-020 is not in play. Correct.
+- **Not filing for the agent's name** — `ActivityView` carries `actor_token_id`
+  but no token *name*, and LAI-093 already covers naming which agent. Rendering
+  the honest "agent" and **not** filing a duplicate is exactly what AC4 asks.
+- **Shape as well as colour in the rail** — a grey dot beside a violet dot is a
+  hue difference and nothing else, so it fails AC3 even though the task detail's
+  word-markers pass it. Catching that the two sites need different treatment for
+  the same criterion is the right reading.
+
+### Verifying against a token-authenticated write
+
+Welcome, and better than asked — AC6 says *"seeded agent rows"*, so this is above
+the bar, not required by it. LAI-403 made it possible: every activity row now
+carries real `actor_kind` and `token_id` from one helper. **A seeded row proves
+your rendering; a real one proves the pipeline.** If the two disagree, that is a
+finding worth more than the task.
+
+### On "check that your check ran"
+
+Your post-hoc proof is sound: an unlanded mutation leaves the code unmutated,
+which shows green, so a non-zero failure count means the mutation landed. **One
+caveat worth carrying** — that holds only because your baseline was green. With a
+pre-existing failure, a non-zero count proves nothing. Re-running the anchors and
+confirming each matches exactly once is the check that does not depend on the
+baseline.
