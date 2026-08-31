@@ -210,12 +210,35 @@ describe('the cases LAI-004 calls out by name', () => {
         createdBy: 'u1',
         visibility: 'public',
       });
-      // The only writes a Viewer keeps are over their own tokens (§3.1).
+      // The only writes a Viewer keeps are over their **own** records (§3.1):
+      // their tokens, joining a public project, and logging their own unlisted
+      // work. None of them touch anyone else's data.
       const selfToken = action === 'token.create_own' || action === 'token.revoke_own';
       const joining = action === 'project.join_public';
+      const ownUnlisted = action === 'unlisted.log_own';
 
-      expect(allowed, `${action} allowed for viewer`).toBe(selfToken || joining);
+      expect(allowed, `${action} allowed for viewer`).toBe(selfToken || joining || ownUnlisted);
     }
+  });
+
+  it('a Viewer’s token cannot log unlisted work, even though their role can', () => {
+    // §3.1 marks the cell ✓ for Viewer and the restriction comes from the
+    // **credential**, not the role: a Viewer's token is forced to `read_only`
+    // (§4.9) and `tokenAllows` refuses every non-read action.
+    //
+    // Asserted because the role-level ✓ above looks, on its own, like a Viewer
+    // gaining a write — and the reason it is not is a rule enforced somewhere
+    // else entirely. If `read_only` forcing were ever relaxed, this is the test
+    // that would go red and say what actually changed.
+    const withToken: Actor = {
+      ...actor('viewer', 'viewer'),
+      token: { id: 'tok', scope: 'read_only', projectIds: null },
+    };
+
+    expect(can(withToken, 'unlisted.log_own', {})).toBe(false);
+
+    // And the same person on a cookie session may.
+    expect(can(actor('viewer', 'viewer'), 'unlisted.log_own', {})).toBe(true);
   });
 });
 

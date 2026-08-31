@@ -26,6 +26,7 @@ export const ORG_ACTIONS = [
   'token.revoke_own',
   'token.list_any',
   'token.revoke_any',
+  'unlisted.log_own',
   'audit_log.export',
   'webhook.configure',
 ] as const;

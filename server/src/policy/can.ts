@@ -160,6 +160,21 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'token.revoke_any':
       return isAdminUp;
 
+    // | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+    //
+    // Every role, because it is **your own record about your own work**: it
+    // creates nothing in any project and is visible to nobody who could not
+    // already read the audit log. Triage is the restricted half and follows
+    // *Export audit log* below — anyone may add to the pile, few may act on it.
+    //
+    // The Viewer cell is ✓ rather than —, and that is deliberate: the
+    // restriction on a Viewer comes from the **credential**, not the role.
+    // Their token is forced to `read_only` (§4.9), and `tokenAllows` refuses
+    // every non-read action — so a Viewer cannot reach this in practice while
+    // the matrix still says what should happen if that forcing were relaxed.
+    case 'unlisted.log_own':
+      return true;
+
     // | Export audit log | ✓ | ✓ | — | — |
     case 'audit_log.export':
       return isAdminUp;

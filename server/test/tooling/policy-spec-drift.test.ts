@@ -89,10 +89,23 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
-  // Empty since LAI-134, and it should stay that way: an action `can()` allows
-  // and §3 never grants is a permission with no written source. The map remains
-  // as the mechanism, with the staleness test below forcing an entry back out
-  // once §3 catches up.
+  // Was empty since LAI-134 and should return to empty. This entry exists for
+  // **one merge**, not as a design decision.
+  //
+  // LAI-408 needs `log_unlisted_work` to call `can()`, and §3.1 had no cell for
+  // it. CHIEF wrote the row — "Log own unlisted work | ✓ | ✓ | ✓ | ✓" — and is
+  // applying it to `docs/SPEC.md` in the merge commit that lands this branch,
+  // because `docs/` is CHIEF's and `server/` is CORE's and neither half is
+  // useful alone. Until those two halves meet, the action exists here and the
+  // row does not exist there.
+  //
+  // **The staleness test below deletes this entry the moment §3.1 carries the
+  // row**, which is the merge itself — so this cannot outlive the situation
+  // that justifies it.
+  [
+    'unlisted.log_own',
+    'Awaiting §3.1\'s "Log own unlisted work" row, written by CHIEF and applied in the merge commit for LAI-408. The staleness test removes this entry the moment it lands.',
+  ],
 ]);
 
 /**
