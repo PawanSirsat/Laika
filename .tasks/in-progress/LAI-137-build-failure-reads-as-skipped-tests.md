@@ -2,11 +2,12 @@
 id: LAI-137
 title: A failing build reports as "12 skipped", which reads like nothing went wrong
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-045
-status: backlog
+status: in-progress
+started: 2026-09-01T11:00:00Z
 ---
 
 ## Goal
