@@ -164,6 +164,21 @@ Accepting is the other way round and needs no such step: CHIEF merges the builde
 branch first, which brings the file to `master` at `.tasks/review/`, and the
 `git mv` to `.tasks/done/` is then an ordinary rename.
 
+**A note on an `in-progress` task conflicts instead — and that is more dangerous.**
+A send-back writes to a *different* path from the builder's copy, so git sees an
+added file and both survive. A review note on a task still in `.tasks/in-progress/`
+lands at the **same path**, so git reports a **conflict**, and "resolve `.tasks/`
+in CHIEF's favour" then means *discard the builder's edits to that file* —
+silently, including ticked criteria and `finished:`.
+
+So: **CHIEF says in the note what the builder must re-apply.** The builder
+resolves the conflict by taking CHIEF's copy and then re-doing their own
+frontmatter and ticks on top. Neither side should assume the merge preserved
+both.
+
+This happened on LAI-224. Nothing was lost, only because the builder had not yet
+ticked anything when the note arrived.
+
 ## 3. Logging
 
 After **every** task and at the end of **every** session, append to
