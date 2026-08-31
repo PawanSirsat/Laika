@@ -133,9 +133,41 @@ in its log. Do not negotiate, do not both continue.
 
 **One task in progress per session.** Finish or release before claiming another.
 
-**Finishing.** Tick every acceptance criterion in the file (`- [x]`), set
-`status: review` and `finished: <timestamp>`, `git mv` it to `.tasks/review/`,
-and commit. Then write your log entry.
+**Finishing. Move it first, then edit it.** The order matters and this
+instruction had it backwards until 2026-08-31:
+
+```bash
+git mv .tasks/in-progress/LAI-00X-*.md .tasks/review/   # 1. move
+# 2. now edit: tick every criterion `- [x]`, status: review, finished: <ts>
+git add .tasks/review/LAI-00X-*.md                      # 3. stage the edits
+git commit -m "..."
+git show --stat HEAD                                    # 4. read it back
+```
+
+**`git mv` stages the rename from the *index*, not from your working tree.** Edit
+the file first and `git mv` commits the **pre-edit** blob, leaving your ticks
+behind as an unstaged modification. Measured, not assumed:
+
+| | committed blob | worktree | `--stat` |
+| --- | --- | --- | --- |
+| edit → `git mv` → commit | **pre-edit** | edited | `1 file changed, **0 insertions(+), 0 deletions(-)**` |
+| `git mv` → edit → `git add` → commit | edited | edited | `1 file changed, 3 insertions(+), 2 deletions(-)` |
+
+**`0 insertions(+), 0 deletions(-)` on a task-file commit is the tell.** It means
+a pure rename landed and every edit you made is still sitting unstaged.
+
+**Verify from `git show`, never from the file on disk.** `grep`-ing the working
+tree cannot tell *edited and committed* from *edited and not staged* — it shows
+what you just typed either way. Read the field back out of the commit:
+
+```bash
+git show HEAD:.tasks/review/LAI-00X-*.md | grep -E '^status:|^finished:|^- \['
+```
+
+Then write your log entry.
+
+This has now cost two tasks (LAI-070, LAI-224). The same trap applies to the
+**claim** commit above, which is why step 4 there moves before step 5 edits.
 
 **Only CHIEF moves `.tasks/review/` → `.tasks/done/`.** Builders never mark their
 own work done. If CHIEF sends a task back, it returns to `.tasks/in-progress/` with
