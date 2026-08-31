@@ -38,7 +38,7 @@ export function ListView({ tasks, byId, members, filtered, onOpen }: ListViewPro
       case 'priority':
         return task.priority;
       case 'deps':
-        return task.dependencies.length;
+        return task.blocked_by.length;
       case 'updated':
         return task.updated_at;
     }
@@ -118,7 +118,7 @@ export function ListView({ tasks, byId, members, filtered, onOpen }: ListViewPro
                 )}
               </td>
               <td className={`list-priority list-priority-${task.priority}`}>{task.priority}</td>
-              <td>{task.dependencies.length}</td>
+              <td>{task.blocked_by.length}</td>
               <td className="list-updated">
                 <time dateTime={new Date(task.updated_at).toISOString()}>
                   {new Date(task.updated_at).toLocaleDateString()}

@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-090
-status: review
+status: done
 started: 2026-09-01T18:15:00Z
 finished: 2026-09-01T18:40:00Z
 ---
@@ -25,8 +25,9 @@ different fact wearing the same shape.
 
 - [x] `TaskView` gains `started_at` and `completed_at` as nullable unix-ms,
       alongside the existing timestamps.
-- [ ] SPEC §6.4's task shape lists them. **`docs/` is CHIEF's** — file that half.
-- [x] A test that a task moved `todo → in_progress → done` reports both, and that **CHIEF's — not tickable by CORE.**
+- [x] ~~SPEC §6.4's task shape lists them.~~ **§4.5 — §6.4 has no task shape.**
+      **CHIEF's, applied in the landing; not tickable by CORE.**
+- [x] A test that a task moved `todo → in_progress → done` reports both, and that
       a task still in `backlog` reports `null` for both.
 - [x] The client `Task` type gains them too. That is `server/web/src/api/tasks.ts`
       and is **not** this task's to edit — file it, or fold it into LAI-121,
@@ -103,3 +104,41 @@ these criteria direct. It was already open against the same file for `sprint_id`
 so SHELL gets one pass instead of two.
 
 Five mutations, all caught, including an extra field reaching the wire.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** AC2 was mine — **§4.5**, not §6.4, which has no task shape; my
+criterion named a section that does not contain what I said it contained.
+
+**Verified by mutation:** dropping the `changeStatus` stamp goes red on two
+tests; making it unconditional goes red on `keeps the first start when a task
+comes back for rework`; an extra field on the wire goes red on the new exhaustive
+shape assertion.
+
+### The criterion described behaviour that did not exist
+
+`started_at` was stamped only by `claimTask`. A lead moving somebody else's task
+goes through `changeStatus`, which handled `done` and nothing else — so a task
+could be under way for a week with `started_at` null. **AC3 could not have passed
+against the code as it stood**, which is how it was found. That is a better find
+than the field.
+
+**Stamped on first entry only.** A task sent back for rework did not start twice,
+and overwriting would silently shorten every cycle time derived from it.
+
+### The guard is kept
+
+`TaskView` had no exhaustive shape assertion, which is why adding two fields to
+the most-consumed contract in the product turned nothing red. The new one names
+all 24 keys. **A guard arriving with the change it guards is not scope creep** —
+and it went red on LAI-099's rename in the same landing, which is where it was
+wanted.
+
+### And this is the half that landed early
+
+Its server code reached `master` in a commit of **mine**, hours before its client
+half existed — the D-045 postscript records how. **The task was correct; the
+merge was not.** Nothing here is being accepted retroactively to cover that: the
+criteria were met before the mistake and the mutations were run before it too.

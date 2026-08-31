@@ -277,15 +277,29 @@ project role `viewer`.
 | `sprint_id` | nullable FK `sprints` (§4.15) — unassigned means backlog, not "no sprint yet" |
 | `acceptance_md` | nullable — what *done* means for this task, in prose (LAI-092) |
 
-**`dependencies` means *blocked by*, and `blocks` is the reverse.** Both are on
-`TaskView`; they are never merged, because a task blocking three others and one
-blocked by three are the same shape with opposite meanings. **Readiness depends
-only on `dependencies`** — never on what a task blocks (§4.5).
+**`blocked_by` is what a task waits on, and `blocks` is the reverse.** Both are
+on `TaskView`; they are never merged, because a task blocking three others and
+one blocked by three are the same shape with opposite meanings. **Readiness
+depends only on `blocked_by`** — never on what a task blocks.
 
-The name `dependencies` predates `blocks` and no longer says which direction it
-is. Renaming it to `blocked_by` is a breaking wire change and is filed as
-**LAI-099**, to land **before M3** — that is when tokens ship and agents outside
-this repo start reading the API, which is the last moment the rename is cheap.
+The field was called `dependencies` until 2026-09-01 (LAI-099, **D-044**), which
+said nothing about direction once `blocks` existed beside it. **Three surfaces
+deliberately keep the old word**, each for a reason recorded where the name is:
+
+- **`POST /tasks/:id/dependencies`** — a path segment names a **collection**, not
+  a direction, and has no sibling to be confused with. Its body is
+  `{ blocked_by_task_id }`.
+- **`activity` payload keys** — `activity` is append-only, so renaming new rows
+  would split the audit trail into two vocabularies by date: the defect LAI-045
+  existed to remove, reshaped.
+- **`task_dependencies.depends_on_task_id`** — internal; nothing outside the
+  server reads it.
+
+**A table inside §4 is a schema declaration, not a formatting choice.**
+`schema-spec-drift.test.ts` reads every §4 table as `field | notes` and compares
+it against `schema.ts`, so prose set in a table becomes a column the code is
+missing. This paragraph was a table for ten minutes and the check caught it —
+which is the check working on the document it exists to pin.
 | `created_by` | FK `users` |
 | `created_via` | `web` \| `mcp` \| `api` \| `webhook` \| `meeting` |
 | `discovered_from` | nullable self-FK |
@@ -763,7 +777,9 @@ GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date r
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
-POST   /api/v1/tasks/:id/dependencies        DELETE /api/v1/tasks/:id/dependencies/:depId
+POST   /api/v1/tasks/:id/dependencies        body { blocked_by_task_id }  — the path keeps the
+                                             collection noun on purpose (§4.5, D-044)
+DELETE /api/v1/tasks/:id/dependencies/:depId
 GET    /api/v1/tasks/:id/comments            POST /api/v1/tasks/:id/comments
 PATCH  /api/v1/comments/:id                  DELETE /api/v1/comments/:id
 GET    /api/v1/projects/:slug/activity       GET /api/v1/activity    (org-wide, viewer+)
@@ -810,9 +826,9 @@ read them.
 | --- | --- | --- |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
-| `get_task_context` | `{ task }` | task, description, dependencies + their statuses, comments, recent activity, branch, `discovered_from` chain |
+| `get_task_context` | `{ task }` | task, description, `blocked_by` + their statuses, comments, recent activity, branch, `discovered_from` chain |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
-| `create_task` | `{ project, title, description?, priority?, depends_on?, discovered_from? }` | created task, `created_via: 'mcp'` |
+| `create_task` | `{ project, title, description?, priority?, blocked_by?, discovered_from? }` | created task, `created_via: 'mcp'` |
 | `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
 | `update_status` | `{ task, status, note? }` | task; validated transition |
 | `add_comment` | `{ task, body }` | comment |
