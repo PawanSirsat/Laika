@@ -2,11 +2,12 @@
 id: LAI-413
 title: Triage unlisted work — promote or dismiss
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-405]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T21:51:33Z
 ---
 
 ## Goal
