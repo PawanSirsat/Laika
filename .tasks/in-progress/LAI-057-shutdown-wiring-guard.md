@@ -2,11 +2,12 @@
 id: LAI-057
 title: Guard the shutdown wiring — onStopping must close the activity feed
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-048]
 discovered-from: LAI-048
-status: backlog
+status: in-progress
+started: 2026-09-01T11:45:00Z
 started:
 finished:
 ---
