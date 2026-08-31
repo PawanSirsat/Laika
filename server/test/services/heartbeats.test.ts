@@ -10,6 +10,7 @@ import {
   branchProjectPrefix,
   recordHeartbeat,
   REPO_MAX_LENGTH,
+  normaliseRepo,
   resolveRepoProjects,
 } from '../../src/services/heartbeats.ts';
 import { createProject } from '../../src/services/projects.ts';
@@ -413,5 +414,123 @@ describe('reading a project prefix off a branch (§9.2)', () => {
     for (const branch of ['main', 'develop', '', '   ', 'no-numbers', '42-leading-number']) {
       expect(branchProjectPrefix(branch)).toBeNull();
     }
+  });
+});
+
+/**
+ * A git remote in any form → `owner/name` (§4.3, LAI-144).
+ *
+ * The plugin documents that it sends "git remote", which is a URL, while §4.3
+ * stores `owner/name`. Before this, a correctly configured instance sending
+ * exactly what the plugin documents matched nothing at all.
+ */
+describe('normalising a repo (LAI-144)', () => {
+  const CANONICAL = 'PawanSirsat/Laika';
+
+  it('accepts every form git prints for the same repository', () => {
+    for (const form of [
+      'PawanSirsat/Laika',
+      'git@github.com:PawanSirsat/Laika.git',
+      'git@github.com:PawanSirsat/Laika',
+      'https://github.com/PawanSirsat/Laika.git',
+      'https://github.com/PawanSirsat/Laika',
+      'https://github.com/PawanSirsat/Laika/',
+      'http://github.com/PawanSirsat/Laika',
+      'ssh://git@github.com/PawanSirsat/Laika.git',
+      'git://github.com/PawanSirsat/Laika.git',
+      'https://PawanSirsat@github.com/PawanSirsat/Laika.git',
+      '  https://github.com/PawanSirsat/Laika.git  ',
+    ]) {
+      expect(normaliseRepo(form), form).toBe(CANONICAL);
+    }
+  });
+
+  it('keeps a nested path, because not every host is owner/name', () => {
+    // GitLab subgroups. §4.3 says `owner/name`, but truncating to two segments
+    // would merge two genuinely different repositories.
+    expect(normaliseRepo('https://gitlab.com/group/subgroup/laika.git')).toBe(
+      'group/subgroup/laika',
+    );
+  });
+
+  it('strips .git only as a suffix, never inside the name', () => {
+    expect(normaliseRepo('kvell/gitignore')).toBe('kvell/gitignore');
+    expect(normaliseRepo('kvell/legit')).toBe('kvell/legit');
+
+    // The case that matters, and the one every GitHub account has: a global
+    // replace turns this into `PawanSirsat/PawanSirsathub.io`.
+    expect(normaliseRepo('PawanSirsat/PawanSirsat.github.io')).toBe(
+      'PawanSirsat/PawanSirsat.github.io',
+    );
+    expect(normaliseRepo('git@github.com:PawanSirsat/PawanSirsat.github.io.git')).toBe(
+      'PawanSirsat/PawanSirsat.github.io',
+    );
+  });
+
+  it('degrades to null rather than erroring — §9.2', () => {
+    for (const junk of ['', '   ', 'https://github.com/', 'git@github.com:', '/', '///', '.git']) {
+      expect(normaliseRepo(junk), junk).toBeNull();
+    }
+  });
+
+  it('leaves something unrecognisable alone rather than inventing structure', () => {
+    // Not a URL and not `owner/name`. It still compares equal to an identical
+    // stored value, which is the only thing that could reasonably be wanted.
+    expect(normaliseRepo('laika')).toBe('laika');
+  });
+});
+
+describe('a heartbeat sending what the plugin documents (LAI-144)', () => {
+  function projectTracking(slug: string, prefix: string, repo: string | null): string {
+    const project = createProject(t.sqlite, t.db, actor(ownerId), { name: slug, slug, prefix });
+    t.db.update(projects).set({ repo }).where(eq(projects.id, project.id)).run();
+
+    return project.id;
+  }
+
+  it('resolves a raw git remote against a project storing owner/name', () => {
+    const id = projectTracking('laika', 'LAI', 'PawanSirsat/Laika');
+
+    // This is the case that made §9.3 presence permanently empty.
+    for (const remote of [
+      'git@github.com:PawanSirsat/Laika.git',
+      'https://github.com/PawanSirsat/Laika.git',
+      'https://github.com/PawanSirsat/Laika',
+    ]) {
+      expect(resolveRepoProjects(t.db, remote, 'main').projectIds, remote).toEqual([id]);
+    }
+  });
+
+  it('normalises the stored side too, so the plugin need not normalise at all', () => {
+    // AC4: whichever side normalises, the other has a test proving it does not
+    // need to. A project row holding a URL is exactly as likely as a heartbeat
+    // carrying one, and normalising one side only is a comparison that
+    // disagrees with itself depending on where the URL landed.
+    const id = projectTracking('laika', 'LAI', 'https://github.com/PawanSirsat/Laika.git');
+
+    expect(resolveRepoProjects(t.db, 'PawanSirsat/Laika', 'main').projectIds).toEqual([id]);
+    expect(
+      resolveRepoProjects(t.db, 'git@github.com:pawansirsat/laika', 'main').projectIds,
+    ).toEqual([id]);
+  });
+
+  it('still narrows a monorepo by branch when both sides are remotes', () => {
+    const webId = projectTracking('web', 'WEB', 'git@github.com:kvell/mono.git');
+    projectTracking('api', 'API', 'https://github.com/kvell/mono');
+
+    expect(resolveRepoProjects(t.db, 'https://github.com/kvell/mono.git', 'web-7-x')).toEqual({
+      projectIds: [webId],
+      attribution: 'branch',
+    });
+  });
+
+  it('does not resolve two different repositories to each other', () => {
+    projectTracking('laika', 'LAI', 'PawanSirsat/Laika');
+    projectTracking('other', 'OTH', 'someone/Laika');
+
+    // Same name, different owner. Stripping too eagerly would merge them.
+    expect(
+      resolveRepoProjects(t.db, 'git@github.com:PawanSirsat/Laika.git', 'main').projectIds,
+    ).toHaveLength(1);
   });
 });

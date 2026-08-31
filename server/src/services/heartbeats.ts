@@ -88,15 +88,78 @@ export interface RepoProjects {
 }
 
 /**
- * Compared in JavaScript rather than with SQLite's `lower()`.
+ * A git remote in any form somebody's tooling might produce → `owner/name`
+ * (SPEC §4.3, LAI-144).
  *
- * `lower()` folds ASCII only, while `String.prototype.toLowerCase` is
- * Unicode-aware, and a comparison that disagrees with itself depending on which
- * side ran it is the kind of bug that only shows up on somebody else's repo
- * name. A self-hosted board has few projects, so reading them costs nothing.
+ * ## Why the server does this and not the plugin
+ *
+ * `plugin/hooks/README.md` says the hooks send *"metadata only — git remote"*,
+ * and a git remote is a URL. §4.3 stores `owner/name`. **None** of
+ * `git@github.com:PawanSirsat/Laika.git`, the two `https://` forms, or any of
+ * them with `.git` matches `PawanSirsat/Laika` by any comparison, folded or
+ * otherwise — so before this existed, a correctly configured instance sending
+ * exactly what the plugin documents resolved every heartbeat to no project, and
+ * §9.3 presence was permanently empty.
+ *
+ * §9.2 already puts resolution on the server because *"the plugin cannot know a
+ * deployment's project prefixes"*, and the same reasoning applies here. The
+ * direction is what settles it: **an old plugin has to keep working against a
+ * new server**, which is the only direction that can be relied on for something
+ * self-hosted, where nobody controls when the plugin updates.
+ *
+ * ## Both sides are normalised, not just the incoming one
+ *
+ * §4.3 asks for `owner/name`, but nothing enforces it, and a project row holding
+ * a URL is exactly as likely as a heartbeat carrying one. Normalising one side
+ * only would be a comparison that disagrees with itself depending on which side
+ * the URL happened to land on — the same fault as folding case on one side.
+ *
+ * Returns `null` for anything with nothing left after stripping. §9.2's rule is
+ * that unrecognisable input **degrades, it never errors**, so a caller treats
+ * `null` as "matches nothing" rather than as a fault.
  */
-function fold(value: string): string {
-  return value.trim().toLowerCase();
+export function normaliseRepo(value: string): string | null {
+  let repo = value.trim();
+  if (repo === '') return null;
+
+  // A scheme and the scp form are **mutually exclusive**, and testing them in
+  // that order matters: `https://github.com/` has no path, so a URL pattern
+  // requiring one falls through, and the scp pattern below then reads `https`
+  // as the host and returns `github.com` as the repository name. Deciding on
+  // `://` first means the scp branch never sees a URL.
+  const scheme = repo.indexOf('://');
+
+  if (scheme !== -1) {
+    const afterHost = repo.slice(scheme + 3);
+    const firstSlash = afterHost.indexOf('/');
+    repo = firstSlash === -1 ? '' : afterHost.slice(firstSlash + 1);
+  } else {
+    // scp-style `[user@]host:path`, which is what `git remote -v` prints for an
+    // SSH remote and the form least likely to be normalised by whoever sends it.
+    // `(.*)` and not `(.+)`: `git@github.com:` is a remote with no path, and
+    // requiring one would leave it untouched and treat the whole string as a
+    // repository name.
+    const scp = /^(?:[^@/:]+@)?[^/:]+:(.*)$/.exec(repo);
+    if (scp !== null) repo = scp[1]!;
+  }
+
+  repo = repo.replace(/^\/+/, '').replace(/\/+$/, '');
+  repo = repo.replace(/\.git$/i, '').replace(/\/+$/, '');
+
+  return repo === '' ? null : repo;
+}
+
+/**
+ * The comparable form: normalised, then lowercased.
+ *
+ * Folded in JavaScript rather than with SQLite's `lower()`. `lower()` folds
+ * ASCII only, while `String.prototype.toLowerCase` is Unicode-aware, and a
+ * comparison that disagrees with itself depending on which side ran it is the
+ * kind of bug that only shows up on somebody else's repo name. A self-hosted
+ * board has few projects, so reading them costs nothing.
+ */
+function fold(value: string): string | null {
+  return normaliseRepo(value)?.toLowerCase() ?? null;
 }
 
 /**
@@ -125,7 +188,7 @@ export function branchProjectPrefix(branch: string): string | null {
 
 export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoProjects {
   const wanted = fold(repo);
-  if (wanted === '') return { projectIds: [], attribution: 'none' };
+  if (wanted === null) return { projectIds: [], attribution: 'none' };
 
   const matches = db
     .select({ id: projects.id, repo: projects.repo, prefix: projects.prefix })
