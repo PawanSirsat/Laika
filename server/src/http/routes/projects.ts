@@ -6,8 +6,10 @@ import {
   addMember,
   archivedTombstones,
   changeMemberRole,
+  CONTEXT_MD_LIMIT,
   createProject,
   getProject,
+  getProjectContext,
   joinPublicProject,
   listMembers,
   listProjects,
@@ -16,6 +18,7 @@ import {
   removeMember,
   REPO_MAX_LENGTH,
   updateProject,
+  updateProjectContext,
   type ProjectSummary,
 } from '../../services/projects.ts';
 import { deleteTag, listProjectTags, renameTag } from '../../services/tags.ts';
@@ -58,8 +61,22 @@ const UpdateBody = strictObject({
   // rather than guessing at one, and `null` clears the field.
   repo: z.string().trim().min(1).max(REPO_MAX_LENGTH).nullable().optional(),
   visibility: z.enum(['public', 'private']).optional(),
-  context_md: z.string().max(100_000).optional(),
+  // `context_md` is **not** here since LAI-404. It has its own pair below, so
+  // there is one writer of the column, one place enforcing the size bound, and
+  // one shape of audit row. `.strict()` means a client still sending it here
+  // gets a 422 naming the field rather than having it silently ignored.
   archived: z.boolean().optional(),
+});
+
+/**
+ * The size bound is the service's (`CONTEXT_MD_LIMIT`), not this schema's.
+ *
+ * Declared from the same constant rather than repeated as a literal: an MCP tool
+ * reaches the service without passing through zod, so the service has to own the
+ * rule, and two copies of a number are two numbers.
+ */
+const ContextBody = strictObject({
+  context_md: z.string().max(CONTEXT_MD_LIMIT),
 });
 
 const MemberBody = strictObject({
@@ -139,6 +156,23 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     const body = parseBody(UpdateBody, await c.req.json().catch(() => null));
 
     return c.json(updateProject(db, actor, c.req.param('slug'), body));
+  });
+
+  // §6.4's dedicated pair. `GET` follows project read — a viewer sees it (§7.3);
+  // `PATCH` is lead+ via `project.settings.edit`. Both `can()` calls are in the
+  // service, where an MCP tool reaching the same function gets them too.
+  app.get('/:slug/context', (c) =>
+    c.json(getProjectContext(db, requireActor(c), c.req.param('slug'))),
+  );
+
+  app.patch('/:slug/context', async (c) => {
+    const body = parseBody(ContextBody, await c.req.json().catch(() => null));
+
+    return c.json(
+      updateProjectContext(db, requireActor(c), c.req.param('slug'), {
+        context_md: body.context_md,
+      }),
+    );
   });
 
   app.post('/:slug/join', (c) =>
