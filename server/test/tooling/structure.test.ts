@@ -509,11 +509,26 @@ describe('CONVENTIONS §4 — web test/ mirrors web src/', () => {
     expect(empty).toEqual([]);
   });
 
-  it('places every web test in a directory that exists under web/src/, or in helpers/', () => {
+  /**
+   * `test/` mirrors `src/` so a test's location says what it covers.
+   *
+   * Two directories are organised by **how** they test rather than what, and
+   * they are named here rather than left to drift:
+   *
+   * - `helpers/` — shared fixtures, no `src/` counterpart by definition.
+   * - `browser/` — the Playwright harness and the tests that need a real
+   *   browser (LAI-227). They cover the same `src/` as the unit tests beside
+   *   them; what separates them is that they need layout, which `node --test`
+   *   cannot provide. Mirroring `src/` would scatter three files across the
+   *   tree and hide the one thing worth knowing about them — that they are the
+   *   slow ones that launch Chromium.
+   */
+  it('places every web test in a directory that exists under web/src/, or in helpers/ or browser/', () => {
+    const byHowTheyTest = ['helpers', 'browser'];
     const offenders = walk(WEB_TEST)
       .filter((f) => f.endsWith('.test.ts'))
       .map((f) => relative(WEB_TEST, f))
-      .filter((rel) => !rel.startsWith(`helpers${sep}`))
+      .filter((rel) => !byHowTheyTest.some((dir) => rel.startsWith(`${dir}${sep}`)))
       .filter((rel) => {
         const dir = dirname(rel);
         return dir !== '.' && !directoryExists(join(WEB_SRC, dir));

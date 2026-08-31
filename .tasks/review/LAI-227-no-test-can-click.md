@@ -6,8 +6,9 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-424
-status: in-progress
+status: review
 started: 2026-08-31T22:03:48Z
+finished: 2026-09-01T05:10:00Z
 ---
 
 ## Goal
@@ -41,18 +42,18 @@ twice in one sitting:
 
 ## Acceptance criteria
 
-- [ ] A web test can mount a component and click it. **Name the dependency in
+- [x] A web test can mount a component and click it. **Name the dependency in
       this task before adding it** — CLAUDE.md §5 forbids adding one otherwise,
       and this task is where that decision gets made and recorded.
-- [ ] A regression test for **LAI-424**: click the card *body* — not the key —
+- [x] A regression test for **LAI-424**: click the card *body* — not the key —
       and assert the panel opens. This is the test LAI-424's AC7 asked for and
       could not have.
-- [ ] A regression test for **LAI-423**: from a project's board, click each nav
+- [x] A regression test for **LAI-423**: from a project's board, click each nav
       entry and assert the project is unchanged.
-- [ ] Both must **fail** against the pre-fix code. Check out the parent of each
+- [x] Both must **fail** against the pre-fix code. Check out the parent of each
       fix commit and show them red; a regression test that has never seen the
       regression is a guess.
-- [ ] The runner is part of `pnpm test`, not a separate command someone
+- [x] The runner is part of `pnpm test`, not a separate command someone
       remembers to run.
 
 ## Notes
@@ -138,3 +139,84 @@ timeline rendered perfectly and was still the wrong answer.
 
 **This does not retire browser verification by hand.** It retires *re-verifying
 by hand what has already been established once*.
+
+---
+
+## Build note — SHELL, 2026-09-01
+
+### Both tests shown red against the real pre-fix code
+
+Not against a mutation — against the commits themselves, files restored from
+`git show`, SPA rebuilt, run, restored.
+
+| test | pre-fix commit | result |
+| --- | --- | --- |
+| card body opens the task | `e14f246` (parent of the LAI-424 merge) | **red** — *"the pixels over the card title do not belong to the open control"* |
+| nav keeps the project | `e1b6192` (before LAI-423) | **red** — *"the href drops the project: /sprints"* |
+
+Both green again after restoring. **The dependency is earned**: these reproduce
+the two defects that justified it, in the terms the defects actually took.
+
+### I got the cost wrong, and in the generous direction
+
+I told CHIEF "seconds to tens of seconds". Measured:
+
+| | before | after |
+| --- | --- | --- |
+| web suite | 1.07s / 559 tests | **1.48s / 562 tests** |
+| from a fresh checkout (no build output) | — | **2.42s** |
+
+**+0.41s**, not an order of magnitude. One browser is shared per file, the SPA
+is already built in the normal case, and headless Chromium launches in about
+300ms. I would rather have overstated it than understated it, but the estimate
+was wrong and the number is what should be quoted.
+
+The CI cost is unchanged and still real: `playwright` downloads a browser on
+install (~150MB). No CI exists in this repo yet, so whoever adds one meets that
+as a known price.
+
+### Two shell mistakes while proving the reds, both caught
+
+Worth recording because both produced a **result that looked valid**:
+
+1. `$PRE:server/web/...` — zsh read `:s` as a substitution modifier, `git show`
+   failed, the build failed, and the test went red **for the wrong reason**. A
+   red that proves nothing looks exactly like a red that proves everything.
+2. `for f in $FILES` — **zsh does not word-split unquoted variables**, so the
+   loop body never ran, the pre-fix files were never installed, and the test
+   passed. **A green that proved nothing.**
+
+Both redone with the iteration in Python. This is the week's lesson in its
+sharpest form: the second failure would have let me report "shown red" on a run
+that never touched the pre-fix code.
+
+### What the harness is, and is not
+
+`test/browser/harness.ts` serves the **built** SPA over a loopback server on an
+ephemeral port, with a **stubbed API**. It does not boot `@laika/server`: these
+tests are about what the client renders and how it responds to a click, the
+server has its own 1360 tests, and booting it would make this suite own a
+database. The risk of the stub drifting from the real API is what
+`view-type-drift.test.ts` already covers, in both directions.
+
+An unstubbed route **404s loudly** rather than returning an empty body, so a
+missing fixture cannot look like an empty screen.
+
+**It cannot judge whether a colour is right in dark mode** — only read the
+computed value. And it cannot judge layout *quality*: LAI-426's timeline
+rendered perfectly and was still the wrong answer. **This retires re-verifying
+by hand what was already established once. It does not retire looking.**
+
+### `test/browser/` is named in the structure rule, not exempted from it
+
+`test/` mirrors `src/` so a test's location says what it covers. `browser/` is
+organised by **how** it tests instead — the same exception `helpers/` already
+had — so both are now named in `structure.test.ts` with the reason. Mirroring
+`src/` would scatter three files and hide the one thing worth knowing about
+them: that they are the slow ones that launch Chromium.
+
+### The dependency
+
+`playwright@1.62.1`, pinned exactly. It pulled **`playwright` and
+`playwright-core` only**, plus `fsevents` (an optional macOS file-watcher that
+comes with it). Nothing unexpected, so nothing to stop for.
