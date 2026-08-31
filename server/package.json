@@ -9,7 +9,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
+    "test": "pnpm run typecheck && vitest run",
     "test:watch": "vitest",
     "dev": "tsx watch src/index.ts",
     "db:generate": "drizzle-kit generate",

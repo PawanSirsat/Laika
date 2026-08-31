@@ -175,6 +175,18 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'unlisted.log_own':
       return true;
 
+    // | Send own heartbeat | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+    //
+    // The same shape as the row above, and for the same reason: presence is
+    // **your own record about your own work**. It creates nothing in any
+    // project, and §9.1 restricts it to token auth, so the Viewer cell is the
+    // role's answer while the credential is what actually stops them.
+    //
+    // Metadata only (D-005, §9.1) — repo, branch, timestamp. The permission is
+    // not what keeps that true; the schema and the request validation are.
+    case 'heartbeat.send_own':
+      return true;
+
     // | Export audit log | ✓ | ✓ | — | — |
     case 'audit_log.export':
       return isAdminUp;

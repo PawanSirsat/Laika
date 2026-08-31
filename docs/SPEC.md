@@ -99,6 +99,7 @@ role `viewer` — no escalation via project assignment, enforced in code.
 | Generate, read and revoke own tokens | ✓ | ✓ | ✓ | ✓ (`read_only` forced) |
 | List / revoke **anyone's** token | ✓ | ✓ | — | — |
 | Log own unlisted work | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+| Send own heartbeat | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
 | Export audit log | ✓ | ✓ | — | — |
 
 **Logging unlisted work is deliberately asymmetric with reading it** (added
@@ -119,6 +120,26 @@ and a `—` here would be a different claim.
 
 There is no cell for *writing* to the pile from the REST API because there is no
 such endpoint; §6.4 exposes only `GET /unlisted`, promote and dismiss.
+
+**Sending a heartbeat follows the same shape, and for the same reason** (added
+2026-09-01, LAI-417). `POST /api/v1/heartbeats` (§9.1) is token-authenticated
+only and records `repo`, `branch` and a timestamp — **your own record about your
+own work**, creating nothing in any project. Anyone may send one; reading the
+pile back as presence or capacity is the restricted half and follows *Export
+audit log* like every other `project_id IS NULL` view.
+
+The Viewer cell is `✓` for the reason the two rows above it are: the restriction
+comes from the **credential**, not the role. §9.1 is token-only, a Viewer's token
+is forced `read_only`, and sending is not a read action — so a Viewer is refused
+in practice while the matrix records what should happen if forcing were ever
+relaxed.
+
+**A heartbeat writes no `activity` row.** §4.8's `heartbeat.session` is a
+**session** verb, not a per-ping one — one row every five minutes per agent would
+drown the feed that §4.8 says serves audit, presence, the dashboard and the SSE
+stream. What writes `heartbeat.session`, and when, belongs with the session
+lifecycle in M4's plugin work or M5's presence view; `POST /heartbeats` is not
+it.
 
 **Reading the org-wide activity feed follows *Export audit log*.** Rows with
 `project_id IS NULL` — `token.created`, `member.role_changed`, `unlisted.logged`,

@@ -60,6 +60,7 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ],
   ["List / revoke anyone's token", ['token.list_any', 'token.revoke_any']],
   ['Log own unlisted work', ['unlisted.log_own']],
+  ['Send own heartbeat', ['heartbeat.send_own']],
   ['Export audit log', ['audit_log.export']],
   ['Configure webhooks', ['webhook.configure']],
 ]);
@@ -90,11 +91,13 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
-  // Empty since LAI-134, and empty again since LAI-408. It should stay that
-  // way: an action `can()` allows and §3 never grants is a permission with no
-  // written source. The map remains as the mechanism, with the staleness test
-  // below forcing an entry back out once §3 catches up — which is exactly what
-  // it did to LAI-408's entry, on the merge that entry named.
+  // Empty, and it should stay that way: an action `can()` allows and §3 never
+  // grants is a permission with no written source.
+  //
+  // Emptied twice now — LAI-408's `unlisted.log_own` and LAI-417's
+  // `heartbeat.send_own` — both by the staleness test below, on the merge each
+  // entry named as its retirement. The map is the mechanism for a two-owner
+  // change in flight, not a place to park one.
 ]);
 
 /**

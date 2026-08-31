@@ -2,11 +2,13 @@
 id: LAI-136
 title: pnpm test cannot catch a type error, so a green suite looks stronger than it is
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-045
-status: backlog
+status: done
+started: 2026-09-01T10:35:00Z
+finished: 2026-09-01T10:50:00Z
 ---
 
 ## Goal
@@ -40,21 +42,21 @@ this repo has now hit at LAI-045 and again at LAI-414.
 
 ## Acceptance criteria
 
-- [ ] A green `pnpm test` is impossible while a type error exists in the package
+- [x] A green `pnpm test` is impossible while a type error exists in the package
       it ran over. Whether that is vitest's `typecheck` option, a `pretest`
       hook, or `test` becoming a composite of typecheck-then-vitest is the
       implementer's call — argue it in the log.
-- [ ] **Prove it.** Introduce a real type error of the
+- [x] **Prove it.** Introduce a real type error of the
       `noUncheckedIndexedAccess` kind, confirm `pnpm test` now fails and names
       the file and line, then remove it. Put the failure output in the log.
       Today that case is green, and that is the whole point of the task.
-- [ ] The same holds for `@laika/web`, whose `test` script is
+- [x] The same holds for `@laika/web`, whose `test` script is
       `node --test`, which also strips types without checking them. If the two
       packages need different mechanisms, say why in the log rather than fixing
       one and leaving the other.
-- [ ] Whatever `pnpm test` becomes, it must still be usable as the inner loop —
+- [x] Whatever `pnpm test` becomes, it must still be usable as the inner loop —
       if it gets materially slower, say by how much, measured.
-- [ ] `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`
+- [x] `pnpm format`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm build`
       all green.
 
 ## Notes / context
@@ -70,3 +72,60 @@ edit it from a `server` task.
 This is a repo-workflow change, so its sequencing is CHIEF's. Filed at CHIEF's
 explicit request during the LAI-414 review; CHIEF asked for both this and
 LAI-137 to be filed separately so one can be closed rather than either lost.
+
+## Notes back — CORE, 2026-09-01
+
+**The `@laika/web` half is filed as LAI-141, not done here.** This task's own
+Notes said to split rather than reach across: `server/web/package.json` is
+SHELL's (D-016, D-031). The hole is identical — `node --test` strips types just
+as vitest does — so the reason for the split is ownership alone, and I have said
+so on the new task rather than leaving it looking like a different problem.
+
+**Proof, with the class that actually bit:**
+
+```
+src/services/heartbeats.ts(120,3): error TS2322:
+  Type 'string | undefined' is not assignable to type 'string'.
+```
+
+`pnpm --filter @laika/server test` exits **2** and names file and line. Before
+this change that file ran green.
+
+**Cost: 3.3s on a 26.8s suite — 31.6s composite, about 12%.** `test:watch` is
+untouched, so the fast inner loop is unchanged.
+
+**A composite rather than a `pretest` hook**, because a hook is invisible at the
+call site and the defect here was precisely a check that was not where people
+looked.
+
+**Six occurrences on this branch in a day and a half** — LAI-402, 403, 405, 406,
+407, 409 — every one caught by `pnpm typecheck` *after* `pnpm test` came back
+green.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** `server`'s `test` is now `pnpm run typecheck && vitest run`.
+
+**It caught my own mutation before vitest ran**, during the LAI-417 review:
+
+```
+src/services/heartbeats.ts(6,1): error TS6133: 'assertCan' is declared but its value is never read.
+```
+
+My probe produced **no test output at all** and I briefly thought the suite had
+not run. It had not — typecheck failed first and stopped it. **The composite
+doing its job made my probe look broken**, which is the failure mode people will
+actually meet: it reads as *"the suite did not run"* rather than *"your code does
+not compile"*. Worth knowing; not worth softening a check that is working.
+
+**A composite rather than a `pretest` hook is right, for the stated reason:** a
+hook is invisible at the call site, and the defect was precisely a check that was
+not where people look. **12% on a 27-second suite** against **six occurrences in
+a day and a half** — LAI-402, 403, 405, 406, 407, 409, every one caught by
+`pnpm typecheck` *after* `pnpm test` came back green.
+
+**Splitting `@laika/web` out as LAI-141 was right.** Same hole, `node --test`
+strips types identically, and the only reason it is separate is that
+`server/web/package.json` is SHELL's.
