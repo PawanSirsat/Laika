@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-425
-status: in-progress
+status: review
 started: 2026-08-31T19:43:12Z
+finished: 2026-09-01T02:20:00Z
 ---
 
 ## Goal
@@ -81,3 +82,69 @@ that last one is the whole point of the task.
 
 `useSprints` already walks both sprints and tasks, so the data is in hand; this
 is a rendering change, not a data one.
+
+---
+
+## Outcome — SHELL, 2026-09-01: **not building**, and why
+
+**Built exactly as specified, measured against the prototype, and reverted.**
+CHIEF chose option 1 and recorded it as **D-040**. The implementation is
+`6d3e1ed`, reverted in the commit that follows it — kept in history rather than
+squashed, because the next person who opens the prototype's timeline will
+propose this again and the measurements are the answer.
+
+**Criteria are deliberately left unticked.** Every one of them was met by the
+reverted commit, and ticking them would say the screen was delivered. It was
+not. The task is closed as *not building*, the same shape as LAI-217.
+
+### The measurement
+
+| | prototype | built under D-014 |
+| --- | --- | --- |
+| rows | 13 | 17 |
+| **distinct bar geometries** | **13** | **2** |
+| bars per sprint | all different | all identical |
+
+Read off the rendered pages at 1600×1100, not estimated. Two distinct
+geometries across seventeen bars means the horizontal axis carries **one bit per
+row** — which of two sprints — spread over seventeen rows. The sprint-per-row
+timeline said the same thing in three.
+
+### The finding that settled it
+
+**A task belongs to exactly one sprint, so a sprint-derived bar cannot express
+a task that crosses a sprint boundary.** The design draws several:
+
+- `LAI-152` — 15–24 Aug, beginning in S3 and ending inside S4.
+- `LAI-131` — 27 Jul – 5 Aug, spanning the gap between S1 and S2.
+
+That is not precision we chose to decline. It is **a relationship the data
+cannot hold**. Two further per-task quantities are also absent: the staggered
+starts, and the progress fill inside each bar.
+
+### Why the result is worse than what it replaced, not merely equal
+
+- **It asserts precision that does not exist.** Seventeen bars with crisp edges
+  on specific dates; a reader will believe those dates say something about the
+  task. They say something about its sprint.
+- **It costs the reader more to learn less.** At the owner's 41 tasks it is
+  roughly 2.5 screens of scrolling to read two sprint dates, with the
+  unscheduled tray pushed below the fold. The prototype's 13 rows never had to
+  answer this because a real Gantt earns its rows.
+
+### What was kept
+
+The subtitle. It read *"One bar per sprint"*, which was true and said nothing
+about why. It now says tasks have no dates of their own and are listed inside
+their sprint rather than placed on the axis.
+
+**A constraint a reader cannot see reads as a bug** — which is precisely what
+this exercise demonstrated at full scale, and the one-line version of the same
+lesson is cheap to keep.
+
+### Note on the handoff
+
+CHIEF asked for this to be moved to `.tasks/done/`. **It is in `.tasks/review/`
+instead**: CLAUDE.md §6 says a builder never moves a task to `done/`, and that
+is not a boundary a request can waive. Everything else in the instruction is
+carried out — the record is here for CHIEF to close.
