@@ -2,11 +2,12 @@
 id: LAI-412
 title: Edit the project context document
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-404]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T19:55:12Z
 ---
 
 ## Goal
