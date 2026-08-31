@@ -441,6 +441,14 @@ file. The rules below are the ones that are true of every line of code.
   `mint(body, undefined)` default-parameter bug in LAI-402: an assertion loose
   enough that the setup being broken satisfies it.
 
+  **The corollary: a setup step with no assertion cannot fail at all.** LAI-407's
+  dependency fixture `POST`ed `depends_on` where the route wants
+  `depends_on_task_id`. The route correctly answered `422` and **nothing looked**,
+  because the call was a bare `await api(...)` — so two tests then asserted
+  against a dependency graph that had never been built. Route every setup write
+  through a helper that asserts its status. The same defect one layer earlier,
+  and the third time in one week a green test was testing nothing.
+
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
 - **`pnpm format` checks the whole repo; `pnpm format:fix` writes only what your
