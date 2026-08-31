@@ -31,6 +31,11 @@ function seedOneActivityRow(): void {
   appendActivity(t.db, { orgId: s.orgId, actorKind: 'system', type: 'webhook.commit' });
 }
 
+/** SQLite bumps this on any schema edit, and not on a no-op DDL statement. */
+function schemaVersion(): number {
+  return t.sqlite.pragma('schema_version', { simple: true }) as number;
+}
+
 function triggerNames(): string[] {
   return t.db
     .all<{ name: string }>(
@@ -85,21 +90,34 @@ describe('booting an already-migrated database', () => {
   });
 
   it('re-establishes nothing and changes nothing', () => {
-    const before = t.db.all<{ name: string; sql: string }>(
-      sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'activity' ORDER BY name`,
-    );
-
-    ensureActivityTriggers(t.db);
-    ensureActivityTriggers(t.db);
-
-    // Byte-identical, not merely two of them: a step that dropped and recreated
-    // on every boot would also "pass" a count, while churning `sqlite_master`
-    // and changing the triggers' identity for no reason.
-    expect(
+    const definitions = () =>
       t.db.all<{ name: string; sql: string }>(
         sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'activity' ORDER BY name`,
-      ),
-    ).toEqual(before);
+      );
+
+    const before = definitions();
+    const beforeVersion = schemaVersion();
+
+    ensureActivityTriggers(t.db);
+    ensureActivityTriggers(t.db);
+
+    // Two separate properties, and the first one is the one that is easy to
+    // claim without checking (LAI-427).
+    //
+    // **The schema did not change at all.** SQLite bumps `schema_version` on
+    // any schema edit and leaves it alone for a `CREATE TRIGGER IF NOT EXISTS`
+    // that does nothing — so this is what distinguishes "no-op" from "dropped
+    // and recreated with the same text".
+    //
+    // Comparing the stored SQL cannot do that on its own: a recreated trigger
+    // is byte-identical because it is built from the same string constant.
+    // `sqlite_master.rowid` cannot either — SQLite reuses the freed slot, so
+    // the row comes back with the same rowid. Both were checked.
+    expect(schemaVersion()).toBe(beforeVersion);
+
+    // **And the bodies are unchanged**, which is a different property worth
+    // keeping: it catches a future edit that alters what the triggers do.
+    expect(definitions()).toEqual(before);
   });
 });
 
