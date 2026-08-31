@@ -1951,3 +1951,79 @@ the other one ships.** For anything self-hosted that is the server, every time.
 a fifth form, matching nothing. Corrected in the same commit as this entry. The
 task that would have built the defect was already written and unclaimed; this is
 the second time a drift check found the bug in a task file rather than in code.
+
+---
+
+## D-044 — One relation, one name **in a payload**. A URL path is not a payload.
+
+**2026-09-01. Decided by CHIEF, on CORE's measurement, scoping LAI-099.**
+
+### The problem the rename exists to fix
+
+`TaskView.dependencies` means *blocked by*. Since LAI-091 there is also `blocks`,
+meaning the reverse — and side by side, neither name says which way it points.
+§4.5 spells it out, which is the tell: **a field that needs a spec sentence to
+disambiguate will be misread by every reader who has not read the spec.**
+
+### What CORE found before claiming
+
+The concept is named in **six** places, not one:
+
+| # | Surface | Today | Ruling |
+| --- | --- | --- | --- |
+| 1 | REST response field | `dependencies` | → `blocked_by` |
+| 2 | REST request body | `depends_on_task_id` | → `blocked_by_task_id` |
+| 3 | REST URL path | `/tasks/:id/dependencies` | **unchanged** |
+| 4 | MCP input + output | `depends_on` | → `blocked_by` |
+| 5 | `activity` payload key | `depends_on` | **unchanged** |
+| 6 | DB column and table | `depends_on_task_id` | **unchanged** |
+
+### The rule
+
+**A name is in scope when it is the relation's name in a payload a client parses.**
+That is #1, #2 and #4 — one wire vocabulary, and splitting it is what produced
+LAI-099 in the first place. Landing them separately costs another §4.4
+three-owner round each.
+
+**#3 is out because a URL path segment names a collection, not a direction**, and
+has no sibling to be confused with. `dependencies` beside `blocks` is ambiguous;
+`/dependencies` beside nothing is not. It is also the only one whose rename
+breaks a bookmark rather than a client. §6 carries a line saying it was decided,
+so it is not filed again.
+
+**#5 is out because `activity` is append-only.** Rows already written keep
+`depends_on` for ever, so renaming new ones splits the audit trail by date —
+which is precisely the defect LAI-045 existed to remove, reshaped. LAI-045's
+read-time translation could technically carry it and **is deliberately narrow**:
+it normalises the *spelling* of names inside `changed`, where camel-case could
+only ever have arrived from two known sites. Renaming a payload **key** is a
+different operation, and that module's own comment warns that broadening the
+translation is *"broader and worse"* — payloads carry user-supplied values, and
+a rewrite that catches one corrupts an audit row to fix a name that was not
+wrong.
+
+**#6 is out because the column is internal.** Renaming a table to match a field
+name is the tail wagging the dog, and it needs a migration on a table nothing
+outside the server reads.
+
+### The criterion that was wrong, and how
+
+LAI-099's AC4 said *"no occurrence of the old name outside history."* That is
+satisfiable by renaming **#1 alone**, leaving an API whose response says
+`blocked_by`, whose request says `depends_on_task_id`, whose URL says
+`dependencies` and whose MCP tool says `depends_on` — **worse than today, where
+the inconsistency is at least uniform.**
+
+A criterion phrased as *"no occurrence of X"* sounds exhaustive and measures
+nothing, because it does not say what counts as an occurrence. `runtime-closure.ts`
+has six hits that are npm dependencies and the web has a React hook's
+`dependencies` array; neither is this concept. **Say which surfaces, by name.**
+
+### How it was found
+
+CORE measured the surface before claiming and refused to interpret an ambiguous
+criterion in their own favour — *"I would rather you narrow it deliberately than
+have me interpret it."* Ten minutes of reading, nothing claimed, and it moved the
+scope of a three-owner landing before anybody was parked waiting on it. **The
+cheapest place to find a scope error is before the claim**, and the second
+cheapest is a builder who says so instead of guessing.

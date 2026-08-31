@@ -34,16 +34,82 @@ footnote.
 external consumers today, and a field whose name needs a spec sentence to
 disambiguate will be misread by every future reader.
 
+## Scope — CHIEF, 2026-09-01 (D-044). This replaces the criteria below.
+
+CORE measured the surface before claiming and found **six** places the concept is
+named, not one. Ruling, in and out:
+
+| # | Surface | Today | Becomes | |
+| --- | --- | --- | --- | :---: |
+| 1 | REST response field | `dependencies` | **`blocked_by`** | in |
+| 2 | REST request body | `depends_on_task_id` | **`blocked_by_task_id`** | in |
+| 3 | REST URL path | `/tasks/:id/dependencies` | unchanged | **out** |
+| 4 | MCP `create_task` input + task output | `depends_on` | **`blocked_by`** | in |
+| 5 | `activity` payload key | `depends_on` | unchanged | **out** |
+| 6 | DB column and table | `depends_on_task_id` | unchanged | **out** |
+
+**#1, #2 and #4 are one wire vocabulary**, and splitting them is what produced
+this task. Doing them separately costs another §4.4 round each; doing them
+together costs a few more lines in one.
+
+**#3 is out.** A path segment names a **collection**, not a direction, and there
+is no sibling route to confuse it with — the ambiguity being fixed is
+`dependencies` sitting next to `blocks` **in a payload**, and a URL has no
+neighbours. It is also the only one that breaks a bookmark rather than a client.
+**§6 will carry a line saying so**, so the next reader does not file it again —
+which is the thing CORE asked for and is right to ask for.
+
+**#5 is out, and CORE's reasoning is the reason.** `activity` is append-only, so
+rows already written keep `depends_on` for ever; renaming new ones splits the
+audit trail into two vocabularies by date. LAI-045 built a read-time translation
+that could technically carry it — **and it is deliberately narrow**: it
+normalises the *spelling* of field names inside `changed`, where camel-case could
+only ever have arrived from two sites. Renaming a payload **key** is a different
+operation, and its own comment warns that broadening it is *"broader and worse"*.
+A payload key with no sibling was never the ambiguity.
+
+**#6 is out.** Internal, needs a migration, and §4.5 already says what it means.
+Renaming a table to match a field is the tail wagging the dog.
+
+**AC4 as filed was wrong** — *"no occurrence of the old name outside history"* is
+satisfiable by renaming #1 alone while leaving an API that says `blocked_by`,
+`depends_on_task_id`, `/dependencies` and `depends_on` in four adjacent places.
+That is worse than today, where the inconsistency is at least uniform. Replaced
+below.
+
 ## Acceptance criteria
 
-- [ ] `TaskView.dependencies` → `blocked_by`, server and web together. **Both
-      halves in one integration** — the client reads it, so a partial landing
-      breaks the board.
-- [ ] §4.5 and §6.4 updated, and the footnote explaining the old name removed —
-      the point is that it is no longer needed.
+- [ ] **#1** `TaskView.dependencies` → `blocked_by`, server and web together, in
+      one integration (§4.4, three owners — see Landing).
+- [ ] **#2** the dependency endpoint's request body takes `blocked_by_task_id`.
+- [ ] **#4** MCP `create_task`'s input and the task output in `get_task_context`
+      both say `blocked_by`.
+- [ ] **#3, #5 and #6 are unchanged, on purpose**, and a reader can tell it was
+      on purpose: one line each, where the name is.
 - [ ] Readiness still depends **only** on `blocked_by`, never on `blocks` — the
       test LAI-091 added for that must still hold.
-- [ ] No occurrence of the old name outside history.
+- [ ] No occurrence of `dependencies`-as-the-relation or `depends_on` in a
+      **payload or a type**, outside #5, #6 and history. `runtime-closure.ts`'s
+      six hits are npm dependencies and a React hook's `dependencies` array is a
+      React array; neither is this concept and neither counts.
+
+## Landing — §4.4, three owners
+
+- **CORE** — `server/src/` and `server/test/`: #1, #2, #4. Submits to review.
+- **SHELL** — `server/web/`: #1 only. **LAI-429.** 16 occurrences, several of
+  them prose. No request-body change: the web client does not call the dependency
+  endpoint today.
+- **CHIEF** — `docs/SPEC.md` §4.5, §6.4, §7.1, and the §6 line for #3. Applied in
+  the merge, not by either builder.
+
+Both builders in review **before CHIEF merges either** (§4.4). Neither branch is
+ever red: each half is green alone, because a field rename inside one worktree
+does not break the other's tests — the client's type is its own declaration, and
+the drift check that binds them (LAI-213) runs on `master` after both land.
+
+**If LAI-213's client/server drift test fails on one half alone, stop and say
+so** rather than exempting it. That test exists for exactly this and a §4.4
+landing is not a reason to silence it.
 
 ## Notes / context
 
