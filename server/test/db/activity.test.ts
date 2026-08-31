@@ -39,6 +39,9 @@ describe('activity is append-only (SPEC §4.8)', () => {
       'apiPayload',
       'appendActivity',
       'countActivityAfter',
+      // A reader: which named client created a task, joined from the
+      // `task.created` row's token rather than copied onto `tasks` (LAI-093).
+      'creatingClientNames',
       'latestActivitySeq',
       // A reader, not a writer: it answers "when was this field last edited and
       // by whom" so the context document can report its history without a

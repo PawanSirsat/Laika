@@ -3,7 +3,7 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { eq } from 'drizzle-orm';
-import { activity, orgs, tasks, users } from '../../src/db/schema.ts';
+import { activity, orgs, tasks, tokens, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import {
@@ -690,5 +690,121 @@ describe('acceptance criteria (SPEC §4.5)', () => {
     expect(task.description_md).toBe('Why this matters.');
     expect(task.acceptance_md).toBe('What done looks like.');
     expect(task.description_md).not.toContain('What done looks like.');
+  });
+});
+
+describe('created_by_client — which agent, not just which channel (LAI-093)', () => {
+  /**
+   * §4.5's `created_via` is a closed enum, so the most a reader could see was
+   * `created via api` — a token-created task and a curl were indistinguishable.
+   * The name is **derived** from the `task.created` row's `actor_token_id`, so
+   * there is no second copy to drift from `tokens.name`.
+   */
+
+  function tokenFor(userId: string, name: string): string {
+    const id = newId();
+    t.db
+      .insert(tokens)
+      .values({
+        id,
+        userId,
+        name,
+        prefix: 'lai_test',
+        tokenHash: `${id}-hash`,
+        scope: 'full',
+        projectIdsJson: null,
+        lastUsedAt: null,
+        expiresAt: null,
+        revokedAt: null,
+        createdAt: Date.now(),
+      })
+      .run();
+    return id;
+  }
+
+  /** The same person, acting through a named token. */
+  function asAgent(userId: string, tokenName: string): ResolvedActor {
+    return {
+      ...actor(userId),
+      token: { id: tokenFor(userId, tokenName), scope: 'full', projectIds: null },
+    };
+  }
+
+  it('names the client that created it', () => {
+    const created = createTask(t.sqlite, t.db, asAgent(adminId, 'mira-cli'), 'laika', {
+      title: 'By an agent',
+    });
+
+    expect(created.created_by_client).toBe('mira-cli');
+    expect(getTask(t.db, actor(adminId), created.id).created_by_client).toBe('mira-cli');
+  });
+
+  it('is null for a browser session, not "unknown"', () => {
+    // The channel is known and the client is not. Inventing a name would be
+    // worse than saying nothing, and a blank string would render as a gap.
+    const created = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'By a person' });
+
+    expect(created.created_by_client).toBeNull();
+  });
+
+  it('is null for a task created before the token existed', () => {
+    // Old rows. `activity` is append-only, so a task created before tokens
+    // simply has no `actor_token_id` — the same answer as a browser session,
+    // which is why both render as `created via …` alone.
+    const created = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'Historic' });
+    tokenFor(adminId, 'later-token');
+
+    expect(getTask(t.db, actor(adminId), created.id).created_by_client).toBeNull();
+  });
+
+  it('survives the token being deleted, without inventing a name', () => {
+    // `activity.actor_token_id` is ON DELETE set null, so the audit row outlives
+    // the token and the name goes. A stored copy would still be claiming a
+    // client that no longer exists.
+    const agent = asAgent(adminId, 'doomed-cli');
+    const created = createTask(t.sqlite, t.db, agent, 'laika', { title: 'Orphaned' });
+
+    expect(created.created_by_client).toBe('doomed-cli');
+
+    t.db
+      .delete(tokens)
+      .where(eq(tokens.id, agent.token?.id ?? ''))
+      .run();
+
+    expect(getTask(t.db, actor(adminId), created.id).created_by_client).toBeNull();
+  });
+
+  it('follows a rename rather than keeping the old name', () => {
+    // The reason this is a join. A copy on `tasks` would still say `mira-cli`
+    // after the token was renamed, and nothing would ever reconcile them.
+    const agent = asAgent(adminId, 'old-name');
+    const created = createTask(t.sqlite, t.db, agent, 'laika', { title: 'Renamed client' });
+
+    t.db
+      .update(tokens)
+      .set({ name: 'new-name' })
+      .where(eq(tokens.id, agent.token?.id ?? ''))
+      .run();
+
+    expect(getTask(t.db, actor(adminId), created.id).created_by_client).toBe('new-name');
+  });
+
+  it('names each task’s own client in a list', () => {
+    // Batched, so this is also the assertion that the join keys per task rather
+    // than smearing one name across the page.
+    createTask(t.sqlite, t.db, asAgent(adminId, 'agent-one'), 'laika', { title: 'One' });
+    createTask(t.sqlite, t.db, asAgent(adminId, 'agent-two'), 'laika', { title: 'Two' });
+    createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'Three' });
+
+    const listed = listTasks(t.db, actor(adminId), 'laika', {
+      limit: 50,
+      cursor: null,
+      updatedSince: null,
+    });
+
+    const byTitle = new Map(listed.map((task) => [task.title, task.created_by_client]));
+    expect(byTitle.get('One')).toBe('agent-one');
+    expect(byTitle.get('Two')).toBe('agent-two');
+    expect(byTitle.get('Three')).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
 import { and, asc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
-import { apiFieldNames, appendActivity } from '../db/activity.ts';
+import { apiFieldNames, appendActivity, creatingClientNames } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import {
   addDependency,
@@ -56,6 +56,19 @@ export interface TaskView {
   sprint_id: string | null;
   created_by: string;
   created_via: string;
+  /**
+   * The **named client** that created it — `mira-cli`, not `api` (§4.9, LAI-093).
+   *
+   * Derived from the `task.created` activity row's `actor_token_id`, never
+   * stored: `tokens.name` is the one place that name lives, and a copy here
+   * would drift the moment somebody renamed or revoked the token.
+   *
+   * `null` when there is no client to name — a browser session, a task created
+   * before tokens existed, or a token since deleted. All three mean the same
+   * thing to a reader, and none of them is "unknown": the channel is known and
+   * the client is not, so `created_via` alone is the honest rendering.
+   */
+  created_by_client: string | null;
   discovered_from: string | null;
   ready: boolean;
   /**
@@ -107,6 +120,8 @@ interface ViewContext {
   readonly comments: ReadonlyMap<string, number>;
   /** Tags per task (§4.16, LAI-079). */
   readonly tags: ReadonlyMap<string, string[]>;
+  /** Named client per task, joined from `activity` → `tokens` (LAI-093). */
+  readonly clients: ReadonlyMap<string, string>;
 }
 
 function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
@@ -133,7 +148,13 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
 
   const ids = rows.map((row) => row.id);
 
-  return { edges, statuses, comments: commentCounts(db, ids), tags: tagsForTasks(db, ids) };
+  return {
+    edges,
+    statuses,
+    comments: commentCounts(db, ids),
+    tags: tagsForTasks(db, ids),
+    clients: creatingClientNames(db, ids),
+  };
 }
 
 function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
@@ -157,6 +178,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     sprint_id: row.sprintId,
     created_by: row.createdBy,
     created_via: row.createdVia,
+    created_by_client: context.clients.get(row.id) ?? null,
     discovered_from: row.discoveredFrom,
     // §4.5's rule, unchanged by LAI-091: readiness is a function of what blocks
     // this task. `blocks` is deliberately not an input — a task holding up ten
