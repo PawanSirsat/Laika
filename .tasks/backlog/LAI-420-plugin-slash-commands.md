@@ -4,7 +4,7 @@ title: The four /laika: slash commands
 area: plugin
 assignee: unclaimed
 priority: p2
-depends-on: [LAI-419]
+depends-on: [LAI-419, LAI-422]
 discovered-from:
 status: backlog
 ---
@@ -27,12 +27,20 @@ detail), and say plainly on the command that capacity arrives in M5 — **or**, 
 that is not honest enough to ship, leave `/laika:status` out and file it with
 `depends-on` the M5 capacity endpoint. **Do not invent a capacity number.**
 
-**`/laika:setup` overlaps `npx laika init` (LAI-422).** §8 says `/laika:setup`
-writes `LAIKA_URL` and `LAIKA_TOKEN` into user settings; the ROADMAP says the CLI
-does "authenticate, mint a token, write local config". Those may be one mechanism
-with two front doors, or two different things. **The spec does not say, and this
-is not yours to settle by implementing** — LAI-139's rule. Raise it and CHIEF
-will decide. Build the other commands meanwhile.
+**`/laika:setup` is settled — D-046.** **One mechanism, and `npx laika init`
+(LAI-422) owns it.** This command invokes the CLI and adds nothing but the
+invocation. If a slash command cannot drive an interactive prompt, its job
+shrinks to **detecting whether configuration exists and printing the exact
+command to run** — still one mechanism, and still useful.
+
+**Do not write a second minting path, and do not write to a second config
+location.** Two homes make LAI-422's idempotence criterion unprovable, which is
+the argument that decided it.
+
+**Filing it beats faking it.** If invoking an interactive CLI from a slash command
+turns out to be hostile, leave `/laika:setup` out and file it — a command that
+half-configures is worse than one that tells you what to run. Reasoning in your
+log either way, exactly as with `/laika:status`.
 
 ## Acceptance criteria
 
@@ -43,8 +51,9 @@ will decide. Build the other commands meanwhile.
       closest one and say what it actually shows rather than implying more.
 - [ ] `/laika:status` either ships honestly against today's endpoints **or** is
       filed for M5 — with the choice and its reasoning in your log.
-- [ ] `/laika:setup` is **not implemented until CHIEF resolves the overlap.**
-      Filing beats guessing.
+- [ ] `/laika:setup` **invokes `npx laika init` and implements nothing itself**
+      (D-046) — or is filed for later, if driving it from a slash command is
+      hostile. **Never a second minting path and never a second config file.**
 - [ ] Every command **degrades clearly when unconfigured or refused** — names the
       missing variable, or says the token was refused. Never a stack trace.
 - [ ] No command invents, caches or derives a number the API did not return.
