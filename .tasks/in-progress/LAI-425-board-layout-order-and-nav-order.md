@@ -2,11 +2,12 @@
 id: LAI-425
 title: The board's bands are in the wrong order, and so is the sidebar
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T19:33:30Z
 ---
 
 ## Goal
