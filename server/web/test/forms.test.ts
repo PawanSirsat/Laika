@@ -199,7 +199,10 @@ void describe('accessibility of the primitives (AC2)', () => {
     // them. Both halves have to be checked, or a control can quietly ship
     // without the attribute while Field still computes it.
     const field = code(await readFile(FORMS + 'Field.tsx', 'utf8'));
-    assert.ok(field.includes('htmlFor={inputId}'), 'label must be linked to the control');
+    // The **property**, not one spelling of it: renaming the local would fail
+    // this while the label stayed correctly linked. Widened in the LAI-227
+    // sweep, after two nav guards failed the same way.
+    assert.match(field, /htmlFor=\{/, 'label must be linked to the control');
     assert.ok(field.includes('describedBy'), 'Field must compute the described-by ids');
     assert.ok(field.includes('helpId') && field.includes('errorId'), 'both ids must exist');
 
@@ -221,7 +224,7 @@ void describe('accessibility of the primitives (AC2)', () => {
 
   void test('show/hide reports its state', async () => {
     const pw = code(await readFile(FORMS + 'PasswordInput.tsx', 'utf8'));
-    assert.ok(pw.includes('aria-pressed={revealed}'));
+    assert.match(pw, /aria-pressed=\{/, 'the toggle must report its state');
     assert.ok(pw.includes('type="button"'), 'must not submit the form');
   });
 
