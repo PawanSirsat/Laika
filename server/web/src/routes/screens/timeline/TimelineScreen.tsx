@@ -7,10 +7,6 @@ import { useRoute } from '../../use-route.ts';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { useSprints } from '../sprints/use-sprints.ts';
-import { listMembers, type Member } from '../../../api/tasks.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
-import { initials } from '../../../theme/initials.ts';
-import { useTheme } from '../../../theme/use-theme.ts';
 import {
   isCurrent,
   isPast,
@@ -18,7 +14,6 @@ import {
   timelineRange,
   todayPosition,
   toSegments,
-  taskRows,
 } from './timeline-derive.ts';
 import './timeline.css';
 import { pickProject } from '../../../api/pick-project.ts';
@@ -43,23 +38,17 @@ import { withProjectParam } from '../../nav-url.ts';
  *
  * ## Tasks are contents, never bars
  *
- * The prototype draws a row per task with its own start and length. Since
- * LAI-426 the rows are here — one per scheduled task, as the design has it —
- * but **the bar spans the task's sprint, not the task**. `tasks` has no
- * planned-start and no due-date column and D-014 keeps it that way: "draw it
- * from sprint boundaries and it costs a view; draw it from task dates and it
- * costs a scheduling engine".
- *
- * So tasks in one sprint share a horizontal extent and differ by row and by
- * status colour. The design's per-task ranges are not reachable without a
- * capability this product has deliberately refused, and inventing them is the
- * artifact class `docs/design/README.md` says not to reproduce.
+ * The prototype draws a row per task with its own start and length. `tasks` has
+ * no planned-start and no due-date column and D-014 keeps it that way, so those
+ * rows are invented dates — the artifact class `docs/design/README.md` says not
+ * to reproduce. Tasks here appear inside their sprint's bar when it is expanded,
+ * or in the unscheduled tray, and nowhere on the axis.
  */
 export function TimelineScreen() {
   const { params, setParams } = useRoute();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
-  const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
+  const [expanded, setExpanded] = useState<string | undefined>(undefined);
 
   // Fixed at mount rather than read per render: every position on the axis is
   // derived from it, and a clock that moved mid-render would shift the marker
@@ -90,26 +79,6 @@ export function TimelineScreen() {
     };
   }, [slug]);
 
-  // Names and avatar colours for the left column. A failure here costs the
-  // initials, not the timeline, so it degrades to "?" rather than erroring.
-  useEffect(() => {
-    if (slug === undefined) return;
-    const controller = new AbortController();
-
-    listMembers(slug, controller.signal)
-      .then((page) => {
-        setMembers(new Map(page.members.map((m) => [m.user_id, m])));
-      })
-      .catch(() => {
-        setMembers(new Map());
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [slug]);
-
-  const { theme } = useTheme();
   const sprints = useSprints(slug);
 
   if (projectError !== null) {
@@ -165,7 +134,6 @@ export function TimelineScreen() {
   const bands = monthBands(range);
   const today = todayPosition(range, now);
   const byId = new Map(rows.map((r) => [r.sprint.id, r]));
-  const drawnRows = taskRows(rows);
 
   return (
     <div className="timeline">
@@ -179,159 +147,142 @@ export function TimelineScreen() {
       />
 
       {/* Kept out of the header band rather than deleted with it: a Gantt
-          normally implies per-task ranges, and their absence is a decision
-          (D-014) rather than an omission. It belongs with the chart it
+          normally implies per-task bars, and their absence here is a decision
+          (D-014, D-040) rather than an omission. It belongs with the chart it
           explains, not in a header that has to stay one line.
 
-          It has to say this, because the chart otherwise looks like it is
-          claiming task-level scheduling: every bar in a sprint has the same
-          extent, and a reader who does not know why will read that as a bug. */}
+          The second sentence is the part that earns its place. LAI-426 built
+          the design's row-per-task version and it had to be reverted: a task
+          belongs to exactly one sprint, so every bar in a sprint came out the
+          same length — 17 bars, 2 distinct geometries. **A constraint a reader
+          cannot see reads as a bug**, so the screen says outright why there is
+          no bar per task rather than leaving them to infer one is missing. */}
       <p className="timeline-sub">
-        One row per task. A bar spans the <strong>sprint</strong> that holds the task — tasks have
-        no dates of their own, so every task in a sprint covers the same span.
+        One bar per sprint. Tasks have no dates of their own, so they are listed inside their sprint
+        rather than placed on the axis — open a sprint to see what is in it.
       </p>
 
-      {/*
-        One row per task, sprints as columns (LAI-426).
-
-        **Every bar spans its sprint's range, not the task's own.** D-014 refuses
-        task dates — "draw it from sprint boundaries and it costs a view; draw it
-        from task dates and it costs a scheduling engine" — so what the data
-        knows is which sprint holds a task, and that is what is drawn. Tasks in
-        one sprint therefore share an extent and differ by row and status colour.
-        The design's per-task ranges are not reachable without a capability this
-        product has deliberately refused.
-      */}
-      <div className="timeline-grid">
-        <div className="timeline-head">
-          <div className="timeline-head-label">TASK</div>
-          <div className="timeline-head-cols">
-            <div className="timeline-months" aria-hidden="true">
-              {bands.map((band) => (
-                <div key={band.key} className="timeline-month" style={{ flexGrow: band.days }}>
-                  <span className="timeline-month-label">{band.label}</span>
-                </div>
-              ))}
+      <div className="timeline-chart">
+        <div className="timeline-months" aria-hidden="true">
+          {bands.map((band) => (
+            <div key={band.key} className="timeline-month" style={{ flexGrow: band.days }}>
+              <span className="timeline-month-label">{band.label}</span>
             </div>
-
-            {/* Sprint columns: name, done/total and range, read from the sprints
-                endpoint. `progress` is the server's count, never re-derived from
-                whatever tasks happen to be loaded. */}
-            <div className="timeline-cols">
-              {segments.map((segment, i) =>
-                segment.kind === 'gap' ? (
-                  <div
-                    key={`colgap-${String(i)}`}
-                    className="timeline-col-gap"
-                    style={{ flexGrow: segment.days }}
-                  />
-                ) : (
-                  <div
-                    key={segment.sprint.id}
-                    className={[
-                      'timeline-col',
-                      isCurrent(segment.sprint, now) ? 'timeline-col-now' : '',
-                      isPast(segment.sprint, now) ? 'timeline-col-past' : '',
-                    ]
-                      .filter((c) => c !== '')
-                      .join(' ')}
-                    style={{ flexGrow: segment.days }}
-                  >
-                    <span className="timeline-col-name">{segment.sprint.name}</span>
-                    <span className="timeline-col-meta">
-                      {(() => {
-                        const row = byId.get(segment.sprint.id);
-                        return row === undefined || row.progress.total === 0
-                          ? 'no tasks'
-                          : `${String(row.progress.done)}/${String(row.progress.total)}`;
-                      })()}
-                    </span>
-                    <span className="timeline-col-dates">
-                      {formatRange(segment.sprint.starts_on, segment.sprint.ends_on)}
-                    </span>
-                  </div>
-                ),
-              )}
-            </div>
-          </div>
+          ))}
         </div>
 
-        <div className="timeline-body">
-          {drawnRows.length === 0 && (
-            <p className="timeline-task-empty">
-              No task is in a sprint yet, so there is nothing to place on the axis.
-            </p>
-          )}
-
-          {drawnRows.map(({ sprint, task }) => {
-            const who = task.assignee_id === null ? undefined : members.get(task.assignee_id);
-            const ink = avatarColor(task.assignee_id ?? task.id, theme);
-
-            return (
-              <div key={task.id} className="timeline-row">
-                <div className="timeline-row-label">
+        <div className="timeline-track-wrap">
+          <div className="timeline-track">
+            {segments.map((segment, i) =>
+              segment.kind === 'gap' ? (
+                <div
+                  key={`gap-${String(i)}`}
+                  className="timeline-gap"
+                  style={{ flexGrow: segment.days }}
+                />
+              ) : (
+                <button
+                  key={segment.sprint.id}
+                  type="button"
+                  className={[
+                    'timeline-bar',
+                    `timeline-bar-${segment.sprint.status}`,
+                    isPast(segment.sprint, now) ? 'timeline-bar-past' : '',
+                    isCurrent(segment.sprint, now) ? 'timeline-bar-now' : '',
+                    expanded === segment.sprint.id ? 'timeline-bar-open' : '',
+                  ]
+                    .filter((c) => c !== '')
+                    .join(' ')}
+                  style={{ flexGrow: segment.days }}
+                  aria-expanded={expanded === segment.sprint.id}
+                  onClick={() => {
+                    setExpanded(expanded === segment.sprint.id ? undefined : segment.sprint.id);
+                  }}
+                >
+                  <span className="timeline-bar-name">{segment.sprint.name}</span>
+                  <span className="timeline-bar-meta">
+                    {(() => {
+                      const row = byId.get(segment.sprint.id);
+                      return row === undefined || row.progress.total === 0
+                        ? 'no tasks'
+                        : `${String(row.progress.done)}/${String(row.progress.total)}`;
+                    })()}
+                  </span>
                   <span
-                    className="timeline-row-avatar"
-                    style={{ background: ink.background, color: ink.foreground }}
-                    title={who?.name ?? 'Unassigned'}
-                  >
-                    {who === undefined ? '?' : initials(who.name)}
-                  </span>
-                  <span className="timeline-row-title">{task.title}</span>
-                  <span className="timeline-row-key">{task.key}</span>
-                  <span className={`timeline-task-status timeline-task-${task.status}`}>
-                    {task.status}
-                  </span>
-                </div>
-
-                <div className="timeline-row-track">
-                  {segments.map((segment, i) =>
-                    segment.kind === 'sprint' && segment.sprint.id === sprint.id ? (
-                      <div
-                        key={`bar-${String(i)}`}
-                        className={`timeline-task-bar timeline-task-bar-${task.status}`}
-                        style={{ flexGrow: segment.days }}
-                        title={`${task.key} · ${sprint.name} · ${formatRange(
-                          sprint.starts_on,
-                          sprint.ends_on,
-                        )}`}
-                      />
-                    ) : (
-                      <div
-                        key={`empty-${String(i)}`}
-                        className="timeline-gap"
-                        style={{ flexGrow: segment.days }}
-                      />
-                    ),
-                  )}
-                </div>
-              </div>
-            );
-          })}
+                    className="timeline-bar-fill"
+                    style={{
+                      width: `${String(byId.get(segment.sprint.id)?.progress.percent ?? 0)}%`,
+                    }}
+                  />
+                </button>
+              ),
+            )}
+          </div>
 
           {today.on === 'axis' && (
             <div
               className="timeline-today"
-              style={{
-                left: `calc(var(--timeline-label) + (100% - var(--timeline-label)) * ${String(
-                  today.percent / 100,
-                )})`,
-              }}
+              style={{ left: `${String(today.percent)}%` }}
               role="presentation"
             >
-              <span className="timeline-today-label">TODAY</span>
+              <span className="timeline-today-label">Today</span>
             </div>
           )}
         </div>
+
+        {today.on !== 'axis' && (
+          <p className="timeline-note" role="status">
+            {/* The axis is not stretched to reach today — that would squash every
+                bar to accommodate empty months. Saying where today is instead. */}
+            Today is {today.on === 'before' ? 'before' : 'after'} every sprint on this timeline.
+          </p>
+        )}
       </div>
 
-      {today.on !== 'axis' && (
-        <p className="timeline-note" role="status">
-          {/* The axis is not stretched to reach today — that would squash every
-              bar to accommodate empty months. Saying where today is instead. */}
-          Today is {today.on === 'before' ? 'before' : 'after'} every sprint on this timeline.
-        </p>
-      )}
+      <ul className="timeline-legend">
+        {rows.map((row) => (
+          <li key={row.sprint.id} className="timeline-legend-item">
+            <button
+              type="button"
+              className="timeline-legend-button"
+              aria-expanded={expanded === row.sprint.id}
+              onClick={() => {
+                setExpanded(expanded === row.sprint.id ? undefined : row.sprint.id);
+              }}
+            >
+              <span className={`timeline-chip timeline-chip-${row.sprint.status}`}>
+                {row.sprint.status}
+              </span>
+              <span className="timeline-legend-name">{row.sprint.name}</span>
+              <span className="timeline-legend-dates">
+                {formatRange(row.sprint.starts_on, row.sprint.ends_on)}
+              </span>
+              <span className="timeline-legend-count">
+                {row.progress.total === 0
+                  ? 'no tasks'
+                  : `${String(row.progress.done)}/${String(row.progress.total)} done`}
+              </span>
+            </button>
+
+            {expanded === row.sprint.id && (
+              <ul className="timeline-tasks">
+                {row.tasks.length === 0 && (
+                  <li className="timeline-task-empty">Nothing assigned to this sprint.</li>
+                )}
+                {row.tasks.map((task) => (
+                  <li key={task.id} className="timeline-task">
+                    <span className="timeline-task-key">{task.key}</span>
+                    <span className="timeline-task-title">{task.title}</span>
+                    <span className={`timeline-task-status timeline-task-${task.status}`}>
+                      {task.status}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </li>
+        ))}
+      </ul>
 
       {/* §11.4.3's unscheduled tray. Read-only here: dragging into a sprint is
           the Sprints screen's "Add tasks", and duplicating it is out of scope. */}

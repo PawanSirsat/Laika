@@ -18,7 +18,6 @@ import {
   timelineRange,
   todayPosition,
   toSegments,
-  taskRows,
 } from '../../../../src/routes/screens/timeline/timeline-derive.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -294,51 +293,5 @@ void describe('D-014 — tasks never get a position on the axis', () => {
     for (const banned of ['due_date', 'planned_start', 'starts_on', 'ends_on']) {
       assert.ok(!source.includes(banned), `api/tasks.ts declares ${banned} — see D-014`);
     }
-  });
-});
-
-/**
- * `taskRows` — one row per scheduled task (LAI-426).
- *
- * The ordering is the point: sprint order, then the order the board returned.
- * A timeline that ranks tasks differently from the board the reader just left
- * is a second opinion nobody asked for.
- */
-void describe('one row per task, in the board’s order', () => {
-  const early = { id: 's1', name: 'Sprint 12', starts_on: 1, ends_on: 2 } as unknown as Sprint;
-  const late = { id: 's2', name: 'Sprint 13', starts_on: 3, ends_on: 4 } as unknown as Sprint;
-
-  void test('tasks follow their sprint, and sprints keep the order given', () => {
-    const out = taskRows([
-      { sprint: early, tasks: ['a', 'b'] },
-      { sprint: late, tasks: ['c'] },
-    ]);
-    assert.deepEqual(
-      out.map((r) => `${r.sprint.id}:${r.task}`),
-      ['s1:a', 's1:b', 's2:c'],
-    );
-  });
-
-  void test('order within a sprint is not re-sorted', () => {
-    // The board returned `b` before `a`; the timeline must not disagree.
-    const out = taskRows([{ sprint: early, tasks: ['b', 'a'] }]);
-    assert.deepEqual(
-      out.map((r) => r.task),
-      ['b', 'a'],
-    );
-  });
-
-  void test('every row carries the sprint whose range its bar will span', () => {
-    // D-014: a task has no dates, so the bar can only come from the sprint.
-    const out = taskRows([{ sprint: late, tasks: ['x'] }]);
-    assert.equal(out[0]?.sprint, late);
-  });
-
-  void test('a sprint with no tasks contributes no rows', () => {
-    assert.deepEqual(taskRows([{ sprint: early, tasks: [] }]), []);
-  });
-
-  void test('no sprints is no rows, not a crash', () => {
-    assert.deepEqual(taskRows([]), []);
   });
 });
