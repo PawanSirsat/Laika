@@ -19,6 +19,7 @@ import { MembersScreen } from '../routes/screens/MembersScreen.tsx';
 import { OrganisationScreen } from '../routes/screens/organisation/OrganisationScreen.tsx';
 import { ProjectsScreen } from '../routes/screens/ProjectsScreen.tsx';
 import { TokensScreen } from '../routes/screens/tokens/TokensScreen.tsx';
+import { UnlistedScreen } from '../routes/screens/unlisted/UnlistedScreen.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
 import { TokenReference } from '../theme/TokenReference.tsx';
@@ -307,6 +308,7 @@ export function AppShell() {
             setNavOpen(false);
           }}
           projectSlug={projectSlug}
+          orgRole={session.status === 'authenticated' ? session.user.org_role : undefined}
           version={version}
           counts={{ '/sprints': sprintCount }}
           footer={
@@ -426,6 +428,15 @@ export function AppShell() {
                 }}
               />
             </>
+          ) : path === '/unlisted' ? (
+            <UnlistedScreen
+              members={new Map()}
+              onOpenTask={(taskKey) => {
+                // The board opens a task by id in `?task=` (LAI-424); a promoted
+                // note gives us the key, so the board's search finds it.
+                navigate(`/board?q=${encodeURIComponent(taskKey)}`);
+              }}
+            />
           ) : path === '/tokens' ? (
             <TokensScreen me={session.status === 'authenticated' ? session.user : undefined} />
           ) : path === '/organisation' && session.status === 'authenticated' ? (
