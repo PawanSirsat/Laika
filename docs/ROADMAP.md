@@ -66,10 +66,18 @@ sprints; **tasks never get their own dates** (D-014).
 **Goal: an agent is a first-class member of the board.**
 
 - Personal access tokens: mint, scope, hash, revoke, `last_used_at`, UI
-- `/mcp` Streamable HTTP transport, token auth, actor resolution
-- The eight tools of SPEC §7.1, each `can()`-checked and activity-writing
-- Agent-authored actions badged in the UI
-- Parity tests: MCP tool and REST twin produce identical activity rows
+  (LAI-402, LAI-403, LAI-410)
+- `/mcp` Streamable HTTP transport, token auth, actor resolution (LAI-406)
+- The **ten** tools of SPEC §7.1, each `can()`-checked and activity-writing —
+  four read (LAI-407), six write (LAI-408). This line said *eight* until
+  2026-08-31; §7.1 has listed ten since `log_unlisted_work` was added, and §7.2
+  says nine of them have REST twins. Ten is the number.
+- The two surfaces the tools read and write that had no REST route at all:
+  `GET`/`PATCH /projects/:slug/context` (LAI-404, feeding `get_project_context`)
+  and the unlisted-work queue (LAI-405, LAI-413, receiving `log_unlisted_work`)
+- Agent-authored actions badged in the UI (LAI-411)
+- The project context document gets somewhere to be written (LAI-412)
+- Parity tests: MCP tool and REST twin produce identical activity rows (LAI-409)
 
 **Exit:** Claude Code, pointed at `/mcp` with a token, picks up a ready task,
 claims it, comments, and moves it to review — visible live in a human's browser.
