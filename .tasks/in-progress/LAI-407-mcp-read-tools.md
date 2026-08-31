@@ -2,11 +2,12 @@
 id: LAI-407
 title: The four MCP read tools
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-406, LAI-404]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-08-31T11:50:00Z
 ---
 
 ## Goal
