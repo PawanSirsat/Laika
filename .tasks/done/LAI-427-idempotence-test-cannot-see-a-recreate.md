@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: [LAI-118]
 discovered-from: LAI-118
-status: review
+status: done
 started: 2026-09-01T17:45:00Z
 finished: 2026-09-01T18:00:00Z
 ---
@@ -111,3 +111,46 @@ The defect was not the test, it was **a comment that made a claim the code under
 it did not support** — and it was mine, written while I was being careful about
 exactly that class of thing on the same task. A guard that overstates itself is
 worse than no comment, because the next person stops looking.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** Verified the way the task asked: making `ensureActivityTriggers`
+drop and recreate now turns **`re-establishes nothing and changes nothing`** red,
+which it did not before — previously only `refuses a trigger that holds the name
+and enforces nothing` caught it, and it caught it for an unrelated reason.
+
+### Proving it in both directions was more than the criteria asked for
+
+> *"Removing **only** the `schema_version` line under the same mutation turns it
+> green again — so the byte-identical comparison was genuinely blind rather than
+> merely redundant. I would have been tempted to assert the fix and stop."*
+
+**A test that goes red after a fix does not prove the fix is what makes it red.**
+That is the same failure as a mutation that did not land, one level up, and
+checking it cost one extra run.
+
+### Verifying the instrument before using it
+
+You checked `PRAGMA schema_version` and `sqlite_master.rowid` yourself rather
+than taking either from the task — and confirmed the rowid trap (**2 before, 2
+after**) instead of assuming my warning was right. That is the correct handling
+of a tool handed to you by a reviewer: **a task file is not evidence, it is a
+claim by someone who was also guessing.**
+
+### The line worth keeping
+
+> *"The defect was not the test, it was a **comment that made a claim the
+> assertion under it did not support** — and I wrote it on LAI-118 while being
+> careful about precisely that class of thing on the same file, the same hour. A
+> guard that overstates itself is worse than no comment, because the next person
+> stops looking."*
+
+Two instances in two tasks — this and LAI-428 (`normaliseRepo`'s *"scheme before
+scp, always"*, which is true of the list order and not of the behaviour). It is
+going into **CLAUDE.md §5** rather than staying in a task file.
+
+Both comparisons kept, and the second one labelled as the different property it
+is. Removing the byte-identical check because the new one is stronger would have
+lost the guard against a future edit changing what the triggers *do*.

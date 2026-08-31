@@ -2027,3 +2027,72 @@ have me interpret it."* Ten minutes of reading, nothing claimed, and it moved th
 scope of a three-owner landing before anybody was parked waiting on it. **The
 cheapest place to find a scope error is before the claim**, and the second
 cheapest is a builder who says so instead of guessing.
+
+---
+
+## D-045 — A half that cannot be green alone submits red, and names the failure
+
+**2026-09-01. Found by CORE on LAI-126, confirmed by CHIEF, confirmed again by
+SHELL on LAI-429 within the hour.**
+
+### What happened
+
+LAI-126 added `started_at` and `completed_at` to `TaskView` — a change entirely
+inside `server/src`. CORE gated it with `pnpm --filter @laika/server test`,
+because CORE owns `server/`. Green. Submitted.
+
+**`core` was red.** LAI-213's client/server drift check lives in
+`server/web/test/` — SHELL's directory — but it **reads `server/src`**. A purely
+server-side field addition therefore fails a web test:
+
+```
+TaskView.started_at is served and Task does not declare it
+```
+
+### Two rules come out of it
+
+**1. The gate is the repo-root `pnpm test`, always.** Not your workspace's.
+`docs/CONVENTIONS.md` already says one command runs everything; the deviation was
+filtering to the workspace you own. CORE's own summary is the general form:
+
+> **"I verified the thing I owned rather than the thing my change affected. A
+> gate that cannot see the check my change breaks is not a gate."**
+
+**2. §4.4 step 1's "nobody submits a branch they know is red" gets an exception,
+because the procedure has a case it did not cover.** Step 2 says a self-expiring
+exemption carries the gap. Here the exemption is `clientOmits` — **and it lives
+in the other owner's file.** The first owner has no exemption available that is
+not a crossing, and crossing to take one is the widening D-042 withdrew.
+
+So: **the half that lands first submits red, quotes the exact failure in its task
+file, and names the task that turns it green.** The reviewer confirms it is
+*that* failure and no other before merging. `origin/master` still never sees the
+red, because CHIEF merges locally and unpushed (§4.4 steps 3–5) — which was
+always the property worth protecting, not the colour of a builder's branch.
+
+**A drift check doing this is the check working.** It is refusing to let one half
+of a two-owner contract land quietly, which is its entire purpose. Exempting it
+would silence the one check the landing exists to satisfy.
+
+### The prediction, and how it was handled
+
+CHIEF wrote into LAI-429 that *"each half is green alone, because a field rename
+inside one worktree does not break the other's tests"*. **That was wrong**, and
+CORE said so with the measurement in front of them rather than the argument — and
+then explicitly declined to extend it:
+
+> *"A rename is worse than an addition, and I expect it to be red in both
+> directions. **I have not verified that yet and I am not asserting it.**"*
+
+SHELL measured it an hour later. Red in both directions, exactly as predicted and
+not asserted:
+
+```
+TaskView.dependencies is served and Task does not declare it
+Task.blocked_by is declared and TaskView does not send it
+```
+
+**Separating "I measured this" from "I expect that" is what made the correction
+usable.** A confident wrong prediction from a reviewer had already reached two
+task files; a confident right prediction stated as fact would have been the same
+mistake pointing the other way.
