@@ -2,11 +2,12 @@
 id: LAI-429
 title: 'The web half of the `blocked_by` rename'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-091]
 discovered-from: LAI-099
-status: backlog
+status: in-progress
+started: 2026-08-31T23:04:58Z
 ---
 
 ## Goal
