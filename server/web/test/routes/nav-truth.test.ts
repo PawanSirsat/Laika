@@ -79,7 +79,10 @@ void describe('the sidebar offers nothing that does not exist', () => {
   void test('the placeholder screens are hidden, not deleted', () => {
     // AC1: a direct URL still resolves and renders the placeholder — hiding is
     // a nav decision, not a routing one.
-    for (const path of ['/tokens', '/capacity', '/meeting-review']) {
+    // `/tokens` left this list when LAI-410 built the screen — it now has an
+    // API and a screen, so by this file's own rule it is offered rather than
+    // hidden. That is the rule working, not an exception to it.
+    for (const path of ['/capacity', '/meeting-review']) {
       const route = ROUTES.find((r) => r.path === path);
       assert.notEqual(route, undefined, `${path} must still be routed`);
       assert.equal(isShipped(route!), false, `${path} has no API and must not be offered`);
@@ -97,7 +100,8 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // **Timeline before Sprints** since LAI-425 — the prototype's WORK order.
       // This assertion is `deepEqual` on purpose: it caught the reorder before
       // the change was finished, which is the only reason it is worth having.
-      ['Board', 'Timeline', 'Sprints', 'Projects', 'Dashboard', 'Organisation'],
+      // `Tokens` joins with LAI-410: the screen exists, so it is offered.
+      ['Board', 'Timeline', 'Sprints', 'Projects', 'Dashboard', 'Tokens', 'Organisation'],
     );
   });
 

@@ -94,6 +94,15 @@ export const ROUTES: readonly Route[] = [
   { path: '/dashboard', label: 'Dashboard', group: 'REVIEW', status: 'building', phase: 'Phase 5' },
 
   // SETTINGS
+  // SETTINGS order follows the prototype: Tokens, then Organisation.
+  {
+    orgLevel: true,
+    path: '/tokens',
+    label: 'Tokens',
+    group: 'SETTINGS',
+    status: 'ready',
+    phase: 'Phase 3',
+  },
   {
     orgLevel: true,
     path: '/organisation',
@@ -109,7 +118,6 @@ export const ROUTES: readonly Route[] = [
   // Capacity is read across every project at once, not within one.
   { orgLevel: true, path: '/capacity', label: 'Capacity', group: 'WORK', phase: 'Phase 5' },
   { path: '/meeting-review', label: 'Meeting review', group: 'REVIEW', phase: 'Phase 6' },
-  { orgLevel: true, path: '/tokens', label: 'Tokens', group: 'SETTINGS', phase: 'Phase 3' },
 
   // Reached from a project rather than the nav.
   { path: '/members', label: 'Members', group: null, status: 'ready', phase: 'Phase 2' },
