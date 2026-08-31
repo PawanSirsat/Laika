@@ -65,8 +65,11 @@ void describe('the shell actually applies the rule', () => {
       await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
     );
 
-    assert.ok(src.includes('showsAppNav(session)'), 'AppShell must ask the rule');
-    assert.match(src, /\{signedIn && \(\s*<Sidebar/, 'the sidebar must be behind the rule');
+    // Both widened in the LAI-227 sweep. What matters is that the shell **asks
+    // the rule** and renders the sidebar behind it — not which argument the
+    // call takes or what the local holding the answer is named.
+    assert.match(src, /showsAppNav\(/, 'AppShell must ask the rule');
+    assert.match(src, /&&\s*\(?\s*<Sidebar/, 'the sidebar must be behind the rule');
 
     // Gating on the route is the mistake being fixed: a list of pre-auth paths
     // has to be maintained by hand, so the next route added inherits whatever
