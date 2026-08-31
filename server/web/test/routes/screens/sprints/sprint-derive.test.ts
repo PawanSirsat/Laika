@@ -46,6 +46,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     sprint_id: null,
     created_by: 'u1',
     created_via: 'web',
+    created_by_client: null,
     discovered_from: null,
     ready: true,
     dependencies: [],

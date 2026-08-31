@@ -2,11 +2,12 @@
 id: LAI-227
 title: No web test can click anything
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-424
-status: backlog
+status: in-progress
+started: 2026-08-31T22:03:48Z
 ---
 
 ## Goal

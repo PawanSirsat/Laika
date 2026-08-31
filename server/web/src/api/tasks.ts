@@ -37,6 +37,16 @@ export interface Task {
   readonly sprint_id: string | null;
   readonly created_by: string;
   readonly created_via: string;
+  /**
+   * Which client created it — the agent's name where a token was used, `null`
+   * otherwise (§4.9, LAI-093).
+   *
+   * `created_via` is the channel (`web`, `mcp`, `api`); this is the *client*.
+   * Together they answer "an agent did this, and which one" — the attribution
+   * LAI-411 could only render as the honest "agent", and the name LAI-416 needs
+   * so an org Admin stops rendering as "Someone".
+   */
+  readonly created_by_client: string | null;
   readonly discovered_from: string | null;
   /**
    * **Derived by the server** (§4.5): backlog or todo, unassigned, and every
