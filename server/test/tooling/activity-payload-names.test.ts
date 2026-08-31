@@ -34,6 +34,7 @@ import {
   removeTaskDependency,
   updateTask,
 } from '../../src/services/tasks.ts';
+import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -487,6 +488,13 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       addTasksToSprint(t.sqlite, t.db, owner(), sprint.id, [task.id]);
       removeTaskFromSprint(t.sqlite, t.db, owner(), sprint.id, task.id);
       deleteSprint(t.sqlite, t.db, owner(), sprint.id);
+
+      // --- tokens.ts: token.created, token.revoked (LAI-402) ---------------
+      // Org-scoped rows, so they carry `project_id IS NULL` — the sweep reads
+      // every row regardless of scope, which is why they belong here rather
+      // than in a second sweep of their own.
+      const minted = createToken(t.sqlite, t.db, owner(), { name: 'ci', scope: 'full' });
+      revokeOwnToken(t.sqlite, t.db, owner(), minted.token.id);
 
       // Archiving last: it is the one that takes a project out of active views.
       removeMember(t.db, owner(), 'core', memberId);
