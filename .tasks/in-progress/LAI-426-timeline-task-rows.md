@@ -2,11 +2,12 @@
 id: LAI-426
 title: The timeline is one row per sprint; the design is one row per task
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-425
-status: backlog
+status: in-progress
+started: 2026-08-31T19:43:12Z
 ---
 
 ## Goal
