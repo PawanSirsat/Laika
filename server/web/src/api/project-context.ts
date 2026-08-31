@@ -98,19 +98,55 @@ export function contextBudget(used: number, limit: number): ContextBudget {
 /**
  * The server's refusal, in words that say what to do about it.
  *
- * The `422` carries `{ limit, length }` precisely so a writer is not left
- * guessing how much to cut (LAI-404) — so this uses both numbers rather than
- * repeating the generic message.
+ * ## Two different `422`s mean the same thing
+ *
+ * SPEC §7.3 says exceeding the bound is "a `422` naming both the limit **and
+ * the actual length**", and `updateProjectContext` in the service raises exactly
+ * that — `{ limit, length }`. **It is unreachable over REST**: the route's zod
+ * schema carries `.max(CONTEXT_MD_LIMIT)` too, so validation refuses first and
+ * the reply is the generic envelope with a `too_big` issue that names the limit
+ * and not the length. Measured, not assumed:
+ *
+ * ```
+ * PATCH /projects/laika-core/context   (100,400 characters)
+ * 422 {"message":"Invalid request body","details":{"issues":[
+ *      {"path":"context_md","message":"Too big: expected string to have <=100000 characters"}]}}
+ * ```
+ *
+ * That is filed against the server as LAI-228. Until it lands both shapes are
+ * read here, because the reader's problem is the same either way and "Invalid
+ * request body" tells them nothing about it.
+ *
+ * `actualLength` is passed in because the client already knows it — it is what
+ * was just typed — and the zod shape does not carry it.
  */
-export function readableContextError(cause: unknown): string {
+export function readableContextError(cause: unknown, actualLength?: number): string {
   if (!(cause instanceof ApiError)) return 'Could not save the context document.';
 
-  const details = cause.details as { readonly limit?: unknown; readonly length?: unknown } | null;
+  const details = cause.details as {
+    readonly limit?: unknown;
+    readonly length?: unknown;
+    readonly issues?: readonly { readonly message?: unknown }[];
+  } | null;
+
+  // The service's shape: both numbers, exactly as §7.3 asks.
   const { limit, length } = details ?? {};
-  if (typeof limit === 'number' && typeof length === 'number') {
-    const over = length - limit;
-    return `Too long by ${over.toLocaleString()} characters — ${length.toLocaleString()} of ${limit.toLocaleString()} allowed.`;
+  if (typeof limit === 'number' && typeof length === 'number') return tooLong(length, limit);
+
+  // Zod's shape: the limit is in the message, the length is not.
+  const issue = details?.issues?.[0]?.message;
+  if (typeof issue === 'string') {
+    const cap = /<=\s*(\d+)\s*characters/.exec(issue)?.[1];
+    if (cap !== undefined && actualLength !== undefined) {
+      return tooLong(actualLength, Number(cap));
+    }
+    return issue;
   }
 
   return cause.message;
+}
+
+function tooLong(length: number, limit: number): string {
+  const over = length - limit;
+  return `Too long by ${over.toLocaleString()} characters — ${length.toLocaleString()} of ${limit.toLocaleString()} allowed.`;
 }

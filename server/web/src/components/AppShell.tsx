@@ -416,6 +416,7 @@ export function AppShell() {
           ) : path === '/projects' ? (
             <>
               <ProjectsScreen
+                me={session.status === 'authenticated' ? session.user : undefined}
                 onOpen={(slug) => {
                   navigate(`/board?project=${encodeURIComponent(slug)}`);
                 }}

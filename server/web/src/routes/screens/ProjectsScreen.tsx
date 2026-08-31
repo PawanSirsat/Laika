@@ -9,7 +9,11 @@ import { Button } from '../../components/forms/Button.tsx';
 import { Select } from '../../components/forms/Select.tsx';
 import { TextInput } from '../../components/forms/TextInput.tsx';
 import { useProjects } from '../../api/use-projects.ts';
-import { createProject, slugify, suggestPrefix } from '../../api/projects.ts';
+import { createProject, slugify, suggestPrefix, type Project } from '../../api/projects.ts';
+import { canEditProjectContext } from '../../api/project-context.ts';
+import { ProjectContextPanel } from './projects/ProjectContextPanel.tsx';
+import type { MeProfile } from '../../api/me.ts';
+import type { Member } from '../../api/tasks.ts';
 import { ApiError } from '../../api/errors.ts';
 import { fieldErrors } from '../../api/setup.ts';
 import { required } from '../../components/forms/validation.ts';
@@ -20,6 +24,8 @@ export interface ProjectsScreenProps {
   readonly onOpen: (slug: string) => void;
   /** Open its member list — the same `?project=` mechanism (LAI-059). */
   readonly onOpenMembers: (slug: string) => void;
+  /** Who is asking — decides whether the context document is editable. */
+  readonly me: MeProfile | undefined;
 }
 
 /**
@@ -30,7 +36,9 @@ export interface ProjectsScreenProps {
  * reads it, and it survives a reload for free. A second mechanism would be a
  * second thing to keep in sync.
  */
-export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
+export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProps) {
+  /** Which project's context document is open, if any (LAI-412). */
+  const [contextFor, setContextFor] = useState<Project | undefined>(undefined);
   const { theme } = useTheme();
   const list = useProjects();
   const [creating, setCreating] = useState(false);
@@ -267,6 +275,15 @@ export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
                       type="button"
                       className="project-members"
                       onClick={() => {
+                        setContextFor(project);
+                      }}
+                    >
+                      Context
+                    </button>
+                    <button
+                      type="button"
+                      className="project-members"
+                      onClick={() => {
                         onOpenMembers(project.slug);
                       }}
                     >
@@ -286,6 +303,27 @@ export function ProjectsScreen({ onOpen, onOpenMembers }: ProjectsScreenProps) {
               </li>
             ))}
           </ul>
+
+          {contextFor !== undefined && (
+            <ProjectContextPanel
+              slug={contextFor.slug}
+              projectName={contextFor.name}
+              /* Decided here, where the actor's memberships are known. The panel
+                 renders read-only rather than offering a Save that answers 403. */
+              mayEdit={
+                me !== undefined &&
+                canEditProjectContext(me.org_role, contextFor.id, me.memberships)
+              }
+              /* The project summary already carries its members, so naming who
+                 last edited the document costs no second request. */
+              members={
+                new Map(contextFor.members.map((m) => [m.user_id, { name: m.name } as Member]))
+              }
+              onClose={() => {
+                setContextFor(undefined);
+              }}
+            />
+          )}
 
           {list.nextCursor !== null && (
             <div className="projects-more">
