@@ -2,11 +2,12 @@
 id: LAI-093
 title: '`created_via` says "agent" but never which agent'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-011]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-01T12:30:00Z
 ---
 
 ## Goal
