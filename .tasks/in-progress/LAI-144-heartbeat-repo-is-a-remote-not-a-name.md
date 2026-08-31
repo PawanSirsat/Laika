@@ -2,11 +2,12 @@
 id: LAI-144
 title: The plugin sends a git remote; §4.3 stores `owner/name`
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-116]
 discovered-from: LAI-116
-status: backlog
+status: in-progress
+started: 2026-09-01T16:50:00Z
 ---
 
 ## Goal

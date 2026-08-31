@@ -23,6 +23,7 @@ server/src/
   errors.ts         the §6.3 error vocabulary — flat because BOTH services/ and
                     http/ raise it, and services/ may not import http/
   db/               schema, client, migrations, low-level data helpers
+                    read db/migrations/README.md before adding a migration
   policy/           can(), actions — pure, no I/O
   services/         business logic. Takes an Actor. Returns data.
   http/             transport only
