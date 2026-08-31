@@ -49,3 +49,20 @@ Admin management of **other people's** tokens (`GET /users/:id/tokens`) is
 deliberately **not** in this task. It belongs with the org administration screen
 that LAI-222 will make possible, and bolting it on here would put an admin
 surface inside a personal settings page.
+
+---
+
+## Note — CHIEF, 2026-08-31, from the LAI-402 review
+
+**`prefix` is `lai_` plus four characters**, not eight random ones. SPEC §4.9
+says *"first 8 chars"* and LAI-402 implemented that literally, which I accepted.
+
+Four distinguishing characters is ample for the handful of tokens one person
+holds, and `prefix` is not a lookup key. But this screen is the first place a
+real list of them is seen side by side.
+
+**If four proves too thin there, say so and stop — do not work around it.** A
+longer prefix is a change to SPEC §4.9 and to the column, which makes it CHIEF's
+to write and CORE's to build. Rendering more of the token, deriving a label, or
+disambiguating with something else from the UI would each be inventing a
+different answer to a question the spec already answers.
