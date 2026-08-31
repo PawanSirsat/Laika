@@ -189,7 +189,14 @@ void describe('accessibility scaffolding (AC8)', () => {
 
   void test('nav items are real links', () => {
     // Middle-click, copy-link and focus handling come free with <a href>.
-    assert.ok(/<a\s[^>]*href=\{route\.path\}/.test(sidebar), 'nav items must be anchors with href');
+    //
+    // Asserts an `href` **expression**, not one particular expression. This
+    // previously pinned `href={route.path}` verbatim — which was the LAI-423
+    // defect itself, so the test asserted the presence of the bug and would
+    // have blocked its fix while never having caught it. What matters here is
+    // that the element is an anchor carrying an href, not what computes it.
+    assert.ok(/<a\s[^>]*href=\{/.test(sidebar), 'nav items must be anchors with href');
+    assert.ok(!/<div[^>]*onClick[^>]*sidebar-link/.test(sidebar), 'nav items must not be divs');
   });
 
   void test('modified clicks are left to the browser', () => {

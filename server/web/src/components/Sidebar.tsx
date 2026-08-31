@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Brand } from './Brand.tsx';
 import { NAV_GROUPS, routesInGroup } from '../routes/route-table.ts';
+import { navHref } from '../routes/nav-url.ts';
 
 export interface SidebarProps {
   readonly currentPath: string;
@@ -91,11 +92,15 @@ export function Sidebar({
               {routesInGroup(group).map((route) => {
                 const active = route.path === currentPath;
                 const count = counts?.[route.path];
+                // The project travels with the link, not beside it — a bare
+                // path drops `?project=` and the destination then falls back to
+                // a different project entirely (LAI-423).
+                const href = navHref(route.path, projectSlug);
 
                 return (
                   <li key={route.path}>
                     <a
-                      href={route.path}
+                      href={href}
                       className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
                       // `page`, not `true` — this link *is* the current page.
                       aria-current={active ? 'page' : undefined}
@@ -106,7 +111,10 @@ export function Sidebar({
                         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
                           return;
                         event.preventDefault();
-                        onNavigate(route.path);
+                        // The same URL the href advertises. Navigating to
+                        // `route.path` here would make copy-link and left-click
+                        // disagree, which is worse than either being wrong.
+                        onNavigate(href);
                         onClose();
                       }}
                     >

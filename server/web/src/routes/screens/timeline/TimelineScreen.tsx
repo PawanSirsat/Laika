@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { isProject, listProjects } from '../../../api/projects.ts';
+import { listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
@@ -16,6 +16,8 @@ import {
   toSegments,
 } from './timeline-derive.ts';
 import './timeline.css';
+import { pickProject } from '../../../api/pick-project.ts';
+import { withProjectParam } from '../../nav-url.ts';
 
 /**
  * Timeline (SPEC §11.4.3, D-014 — LAI-084).
@@ -43,7 +45,7 @@ import './timeline.css';
  * or in the unscheduled tray, and nowhere on the axis.
  */
 export function TimelineScreen() {
-  const { params } = useRoute();
+  const { params, setParams } = useRoute();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
   const [expanded, setExpanded] = useState<string | undefined>(undefined);
@@ -58,8 +60,14 @@ export function TimelineScreen() {
 
     listProjects({}, controller.signal)
       .then((page) => {
-        const live = page.data.filter(isProject);
-        setSlug((slug === undefined ? live[0] : live.find((p) => p.slug === slug))?.slug);
+        // One rule on every screen (LAI-423): the most recently active
+        // project, never the alphabetically first, and written into the URL so
+        // the address bar names what is on screen.
+        const wanted = pickProject(page.data, slug);
+        setSlug(wanted?.slug);
+        if (wanted !== undefined && slug === undefined) {
+          setParams(new URLSearchParams(withProjectParam(params.toString(), wanted.slug)));
+        }
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;

@@ -3,7 +3,7 @@ import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { isProject, listProjects } from '../../../api/projects.ts';
+import { listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
 import {
   blockedTasks,
@@ -19,6 +19,8 @@ import {
 } from './dashboard-derive.ts';
 import { useDashboard } from './use-dashboard.ts';
 import './dashboard.css';
+import { pickProject } from '../../../api/pick-project.ts';
+import { withProjectParam } from '../../nav-url.ts';
 
 /**
  * Dashboard (SPEC §4.8, §11.4 — LAI-085).
@@ -59,8 +61,14 @@ export function DashboardScreen() {
 
     listProjects({}, controller.signal)
       .then((page) => {
-        const live = page.data.filter(isProject);
-        setSlug((slug === undefined ? live[0] : live.find((p) => p.slug === slug))?.slug);
+        // One rule on every screen (LAI-423): the most recently active
+        // project, never the alphabetically first, and written into the URL so
+        // the address bar names what is on screen.
+        const wanted = pickProject(page.data, slug);
+        setSlug(wanted?.slug);
+        if (wanted !== undefined && slug === undefined) {
+          setParams(new URLSearchParams(withProjectParam(params.toString(), wanted.slug)));
+        }
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
