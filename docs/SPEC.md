@@ -385,6 +385,24 @@ where the instance itself was created.
 Token format `lai_<40 base62>`. **The secret is never stored and is shown exactly
 once, at creation.**
 
+**`name` is wire-visible, and that constrains what renaming means** (added
+2026-09-01, LAI-093). `TaskView.created_by_client` reports the name of the token
+that created a task, **derived by joining `activity.actor_token_id` to this
+column** rather than copied onto `tasks`. So:
+
+- **Renaming a token renames it everywhere, retroactively.** A person reading a
+  task created six months ago sees the token's *current* name. That is deliberate
+  — a stored copy would still say the old one and nothing would reconcile them —
+  but it means a name is not a historical record of what the client was called at
+  the time.
+- **A name is visible to anyone who can read the task.** It is not private
+  metadata. Do not put anything in it you would not show a project member.
+- **Deleting a token removes the name, not the attribution.** `actor_token_id` is
+  `ON DELETE set null`, so the audit row outlives the token and
+  `created_by_client` becomes `null` — never `"unknown"`, which would be a claim
+  where the truth is an absence. `null` also covers a browser session and a task
+  older than tokens; all three mean the same thing to a reader.
+
 ### 4.10 `heartbeats`
 
 `id`, `user_id`, `token_id`, `repo`, `branch`, `matched_task_id` (nullable,
