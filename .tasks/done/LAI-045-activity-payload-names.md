@@ -7,7 +7,7 @@ priority: p2
 depends-on: []
 discovered-from: LAI-092
 started: 2026-08-25T03:45:43Z
-status: review
+status: done
 finished: 2026-08-31T07:20:24Z
 ---
 
