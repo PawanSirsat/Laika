@@ -1,14 +1,18 @@
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, heartbeats, orgs, tokens, users } from '../../src/db/schema.ts';
+import { activity, heartbeats, orgs, projects, tokens, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import {
   BRANCH_MAX_LENGTH,
+  branchProjectPrefix,
   recordHeartbeat,
   REPO_MAX_LENGTH,
+  resolveRepoProjects,
 } from '../../src/services/heartbeats.ts';
+import { createProject } from '../../src/services/projects.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -92,7 +96,14 @@ afterEach(() => {
 });
 
 describe('what it records', () => {
-  it('writes §4.10’s columns and nothing else', () => {
+  /**
+   * Exhaustive on purpose, and it earned its keep: adding `project_ids` and
+   * `attribution` in LAI-116 turned it red immediately. Those two are **not**
+   * §4.10 columns and are not serialised by §9.1 — they are resolved (§4.3) and
+   * ride the view so the route can warn about a repo nobody tracks. Asserted
+   * here so the row and the resolution stay distinguishable.
+   */
+  it('writes §4.10’s columns, plus the resolution it does not store', () => {
     const view = recordHeartbeat(t.db, withToken(actor(ownerId), 'full'), {
       repo: 'kvell/laika',
       branch: 'main',
@@ -107,7 +118,20 @@ describe('what it records', () => {
       branch: 'main',
       matched_task_id: null,
       created_at: 1000,
+      project_ids: [],
+      attribution: 'none',
     });
+
+    // The stored row still has nowhere to put either of them (D-005, §9.3).
+    expect(Object.keys(t.db.select().from(heartbeats).get()!).sort()).toEqual([
+      'branch',
+      'createdAt',
+      'id',
+      'matchedTaskId',
+      'repo',
+      'tokenId',
+      'userId',
+    ]);
   });
 
   it('trims but does not otherwise touch the branch', () => {
@@ -228,5 +252,166 @@ describe('can() (§3.1’s "Send own heartbeat")', () => {
     }
 
     expect(t.db.select().from(heartbeats).all()).toHaveLength(0);
+  });
+});
+
+/**
+ * Which project a heartbeat belongs to (§4.3, §9.2, LAI-116).
+ *
+ * LAI-108 chose to let two projects share one repo, so the mapping is
+ * one-to-many and every case below is a real arrangement rather than a
+ * pathological one.
+ */
+describe('resolving a repo to projects (LAI-116)', () => {
+  /** A project tracking `repo`, created then pointed at it — §4.3's column. */
+  function projectTracking(slug: string, prefix: string, repo: string | null): string {
+    const project = createProject(t.sqlite, t.db, actor(ownerId), {
+      name: slug,
+      slug,
+      prefix,
+    });
+    t.db.update(projects).set({ repo }).where(eq(projects.id, project.id)).run();
+
+    return project.id;
+  }
+
+  it('resolves nothing when no project tracks the repo', () => {
+    projectTracking('laika', 'LAI', 'kvell/laika');
+
+    expect(resolveRepoProjects(t.db, 'someone/else', 'main')).toEqual({
+      projectIds: [],
+      attribution: 'none',
+    });
+  });
+
+  it('resolves the one project that tracks it', () => {
+    const id = projectTracking('laika', 'LAI', 'kvell/laika');
+    projectTracking('other', 'OTH', 'kvell/other');
+
+    expect(resolveRepoProjects(t.db, 'kvell/laika', 'main')).toEqual({
+      projectIds: [id],
+      attribution: 'repo',
+    });
+  });
+
+  it('matches case-insensitively, because §4.3 stores what it was given', () => {
+    // LAI-108 stores `repo` verbatim, so a project holding `PawanSirsat/Laika`
+    // must match a plugin reporting `pawansirsat/laika`. §9.2 already matches
+    // branch prefixes case-insensitively — this is that precedent, not a new one.
+    const id = projectTracking('laika', 'LAI', 'PawanSirsat/Laika');
+
+    expect(resolveRepoProjects(t.db, 'pawansirsat/laika', 'main').projectIds).toEqual([id]);
+    expect(resolveRepoProjects(t.db, '  PAWANSIRSAT/LAIKA  ', 'main').projectIds).toEqual([id]);
+  });
+
+  it('ignores a project that tracks no repo at all', () => {
+    projectTracking('untracked', 'UNT', null);
+    const id = projectTracking('laika', 'LAI', 'kvell/laika');
+
+    expect(resolveRepoProjects(t.db, 'kvell/laika', 'main').projectIds).toEqual([id]);
+  });
+
+  it('resolves an empty repo to nothing rather than to everything', () => {
+    projectTracking('untracked', 'UNT', null);
+
+    expect(resolveRepoProjects(t.db, '   ', 'main')).toEqual({
+      projectIds: [],
+      attribution: 'none',
+    });
+  });
+
+  describe('a monorepo tracked by two projects', () => {
+    let frontendId: string;
+    let backendId: string;
+
+    beforeEach(() => {
+      frontendId = projectTracking('web', 'WEB', 'kvell/mono');
+      backendId = projectTracking('api', 'API', 'kvell/mono');
+    });
+
+    it('narrows to one when the branch names a project prefix', () => {
+      expect(resolveRepoProjects(t.db, 'kvell/mono', 'api-42-add-crud')).toEqual({
+        projectIds: [backendId],
+        attribution: 'branch',
+      });
+      expect(resolveRepoProjects(t.db, 'kvell/mono', 'WEB-7-fix-the-header')).toEqual({
+        projectIds: [frontendId],
+        attribution: 'branch',
+      });
+    });
+
+    it('narrows through a path-prefixed branch', () => {
+      // Half of real branch names look like this; anchoring the parse would
+      // silently drop them and fall back to both projects.
+      expect(resolveRepoProjects(t.db, 'kvell/mono', 'feature/api-42-add-crud').projectIds).toEqual(
+        [backendId],
+      );
+    });
+
+    it('attributes to both when the branch says nothing', () => {
+      // The honest answer: somebody working in a monorepo is present on both,
+      // and attributing to nobody would make presence empty for exactly the
+      // arrangement LAI-108 went out of its way to permit.
+      const result = resolveRepoProjects(t.db, 'kvell/mono', 'main');
+
+      expect(result.projectIds.sort()).toEqual([backendId, frontendId].sort());
+      expect(result.attribution).toBe('repo');
+    });
+
+    it('attributes to both when the branch names a prefix nobody has', () => {
+      const result = resolveRepoProjects(t.db, 'kvell/mono', 'zzz-9-something');
+
+      expect(result.projectIds.sort()).toEqual([backendId, frontendId].sort());
+      expect(result.attribution).toBe('repo');
+    });
+
+    it('does not error on an unparseable branch — §9.2 degrades', () => {
+      for (const branch of ['main', '', '   ', 'no-numbers-here', '///']) {
+        expect(() => resolveRepoProjects(t.db, 'kvell/mono', branch)).not.toThrow();
+      }
+    });
+  });
+
+  it('carries the resolution on the recorded heartbeat', () => {
+    const id = projectTracking('laika', 'LAI', 'kvell/laika');
+
+    const view = recordHeartbeat(t.db, withToken(actor(ownerId), 'full'), {
+      repo: 'KVELL/LAIKA',
+      branch: 'lai-42-x',
+      now: 1000,
+    });
+
+    expect(view.project_ids).toEqual([id]);
+    expect(view.attribution).toBe('repo');
+    // Still stored verbatim — resolution reads §4.3, it does not rewrite §4.10.
+    expect(view.repo).toBe('KVELL/LAIKA');
+  });
+
+  it('still accepts a heartbeat for a repo nobody tracks', () => {
+    // §9.2: unmatched input degrades, it never errors.
+    const view = recordHeartbeat(t.db, withToken(actor(ownerId), 'full'), {
+      repo: 'someone/else',
+      branch: 'main',
+      now: 1000,
+    });
+
+    expect(view.attribution).toBe('none');
+    expect(view.project_ids).toEqual([]);
+    expect(t.db.select().from(heartbeats).all()).toHaveLength(1);
+  });
+});
+
+describe('reading a project prefix off a branch (§9.2)', () => {
+  it('reads the convention', () => {
+    expect(branchProjectPrefix('lai-42-add-task-crud')).toBe('lai');
+    expect(branchProjectPrefix('LAI-42-Add-Task-CRUD')).toBe('lai');
+    expect(branchProjectPrefix('lai-42')).toBe('lai');
+    expect(branchProjectPrefix('feature/lai-42-x')).toBe('lai');
+  });
+
+  it('returns null rather than erroring on anything else', () => {
+    for (const branch of ['main', 'develop', '', '   ', 'no-numbers', '42-leading-number']) {
+      expect(branchProjectPrefix(branch)).toBeNull();
+    }
   });
 });

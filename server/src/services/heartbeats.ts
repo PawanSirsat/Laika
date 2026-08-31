@@ -1,7 +1,7 @@
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
-import { heartbeats } from '../db/schema.ts';
+import { heartbeats, projects } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 
@@ -39,6 +39,115 @@ import { assertCan } from '../policy/can.ts';
  * Retention pruning is M5's cron for the same reason.
  */
 
+/**
+ * Which project a heartbeat belongs to (SPEC §4.3, §9.2, LAI-116).
+ *
+ * ## The ambiguity is real and was chosen deliberately
+ *
+ * LAI-108 decided `projects.repo` is **not unique**: a monorepo tracked by a
+ * frontend project and a backend project over one repository is a real
+ * arrangement, and a unique index would forbid it to buy an unambiguous match
+ * here. So `repo` maps one-to-many, and this is where that is answered.
+ *
+ * ## The branch is the second signal, and §9.2 already defined it
+ *
+ * §9.2 matches `[a-z]+-(\d+)` against **project prefixes** to find a task. The
+ * same prefix says which project, and an agent working in a monorepo is almost
+ * always on a branch named for the task it is doing. So a `repo` that matches
+ * several projects is narrowed by the branch before anything else happens —
+ * this reuses §9.2's convention rather than inventing a second one that could
+ * disagree with it.
+ *
+ * Falling back to **every** match rather than to none is the honest answer when
+ * the branch says nothing: a person working in a monorepo genuinely is present
+ * on both projects, and §9.3 counting them twice is a fair description of a
+ * shared repository. Attributing to nobody would make presence silently empty
+ * for exactly the setup LAI-108 went out of its way to permit.
+ *
+ * ## Nothing is stored
+ *
+ * §9.3: *"Both are computed from `heartbeats` + `tasks` at request time. No
+ * separate presence store to fall out of sync."* A `project_id` column on
+ * `heartbeats` would be that store, and it could hold only one id for a result
+ * that is legitimately many. So this resolves at read time and the row keeps
+ * only what the agent actually said.
+ */
+
+/** Where the answer came from, so a caller can say why. */
+export type RepoAttribution =
+  /** The branch named a project prefix, narrowing several repo matches to one. */
+  | 'branch'
+  /** The repo matched, and either it was unambiguous or the branch did not help. */
+  | 'repo'
+  /** No project tracks this repo. */
+  | 'none';
+
+export interface RepoProjects {
+  projectIds: string[];
+  attribution: RepoAttribution;
+}
+
+/**
+ * Compared in JavaScript rather than with SQLite's `lower()`.
+ *
+ * `lower()` folds ASCII only, while `String.prototype.toLowerCase` is
+ * Unicode-aware, and a comparison that disagrees with itself depending on which
+ * side ran it is the kind of bug that only shows up on somebody else's repo
+ * name. A self-hosted board has few projects, so reading them costs nothing.
+ */
+function fold(value: string): string {
+  return value.trim().toLowerCase();
+}
+
+/**
+ * §9.2's convention, read for the prefix rather than the number.
+ *
+ * `lai-42-add-task-crud` → `lai`. Anything else → `null`, and the caller
+ * degrades rather than erroring (§9.2).
+ *
+ * **Deliberately §9.2's regex and not a stricter one.** Unanchored, so
+ * `feature/lai-42-x` resolves like `lai-42-x` does — the two commonest branch
+ * shapes, and anchoring would silently drop one of them. The cost is that a
+ * branch like `add-2fa-support` yields `add`, which narrows nothing unless a
+ * project actually carries that prefix and shares the repo; the fallback is
+ * every match, so a wrong read costs precision, never correctness.
+ *
+ * When §9.2's task resolution lands it must call **this** function for the
+ * prefix. Two parsers for one convention will disagree, and the disagreement
+ * would show up as a heartbeat attributed to one project and a task resolved
+ * from another.
+ */
+export function branchProjectPrefix(branch: string): string | null {
+  const match = /([A-Za-z]+)-\d+/.exec(branch.trim());
+
+  return match === null ? null : match[1]!.toLowerCase();
+}
+
+export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoProjects {
+  const wanted = fold(repo);
+  if (wanted === '') return { projectIds: [], attribution: 'none' };
+
+  const matches = db
+    .select({ id: projects.id, repo: projects.repo, prefix: projects.prefix })
+    .from(projects)
+    .all()
+    .filter((row) => row.repo !== null && fold(row.repo) === wanted);
+
+  if (matches.length === 0) return { projectIds: [], attribution: 'none' };
+  if (matches.length === 1) return { projectIds: [matches[0]!.id], attribution: 'repo' };
+
+  const prefix = branchProjectPrefix(branch);
+  if (prefix !== null) {
+    // At most one within an org — `projects_org_prefix_unique` (§4.13) — but the
+    // check is on the result rather than on that index, so a second org could
+    // never make this quietly pick one of two.
+    const narrowed = matches.filter((row) => row.prefix.toLowerCase() === prefix);
+    if (narrowed.length === 1) return { projectIds: [narrowed[0]!.id], attribution: 'branch' };
+  }
+
+  return { projectIds: matches.map((row) => row.id).sort(), attribution: 'repo' };
+}
+
 /** §4.10's columns are names, not paths. Long enough for a real branch. */
 export const REPO_MAX_LENGTH = 200;
 export const BRANCH_MAX_LENGTH = 255;
@@ -59,6 +168,16 @@ export interface HeartbeatView {
   /** Always null until §9.2 lands in M5. */
   matched_task_id: string | null;
   created_at: number;
+  /**
+   * Which projects track this repo — empty, one, or several (§4.3, LAI-116).
+   *
+   * **Not serialised.** §9.1 answers `202` with no body, and widening that is a
+   * contract change that belongs in its own task rather than riding along in
+   * this one. It is here so the write path can say what it resolved — today,
+   * so the route can warn about a repo nobody tracks.
+   */
+  project_ids: string[];
+  attribution: RepoAttribution;
 }
 
 export function recordHeartbeat(
@@ -103,6 +222,11 @@ export function recordHeartbeat(
 
   db.insert(heartbeats).values(row).run();
 
+  // After the insert: a repo nobody tracks is **not** an error (§9.2 degrades,
+  // it never errors), so the row is written either way and the resolution is
+  // something the caller may report, never something that refuses the beat.
+  const resolved = resolveRepoProjects(db, repo, branch);
+
   return {
     id: row.id,
     user_id: row.userId,
@@ -111,5 +235,7 @@ export function recordHeartbeat(
     branch: row.branch,
     matched_task_id: null,
     created_at: row.createdAt,
+    project_ids: resolved.projectIds,
+    attribution: resolved.attribution,
   };
 }

@@ -944,6 +944,21 @@ message, never fail to load.
 **Metadata only** (D-005). This is the one place where a tempting feature would
 cost the trust the product is built on.
 
+**A `repo` may match zero, one or several projects** (LAI-116). §4.3's `repo` is
+not unique — a monorepo tracked by a frontend project and a backend project over
+one repository is a real arrangement (LAI-108) — so the mapping is **resolved,
+not looked up**. Comparison is case-insensitive: §4.3 stores what it was given,
+so a project holding `PawanSirsat/Laika` matches a plugin reporting
+`pawansirsat/laika`.
+
+Several matches are narrowed by the branch, using **§9.2's project-prefix
+convention** — `api-42-add-crud` on a repo tracked by `WEB` and `API` resolves to
+`API`. When the branch says nothing, the heartbeat is attributed to **every**
+match: a person working in a monorepo genuinely is present on both projects, and
+attributing to nobody would make presence empty for exactly the arrangement §4.3
+permits. A repo no project tracks is accepted and attributed to none — §9.2's
+rule that unmatched input degrades and never errors applies here too.
+
 ### 9.2 Branch names carry task ids
 
 Convention **`lai-<number>-<slug>`** — `lai-42-add-task-crud`. The server matches
@@ -955,6 +970,11 @@ project prefixes. Anything unparseable is kept as a plain branch string — it
 degrades, it never errors.
 
 ### 9.3 Derived views
+
+Presence and capacity attribute a heartbeat to a project by **§9.1's rule, at
+request time**. Nothing is stored on the heartbeat — consistent with there being
+no separate presence store to fall out of sync, and a single column could not
+hold a result that is legitimately many.
 
 - **Presence** (`GET /api/v1/presence`) — users with a heartbeat in the last 5
   minutes, with repo, branch, and resolved task. "Who is working right now."
