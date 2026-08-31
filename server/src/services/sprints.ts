@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, gte, inArray, lte, ne, or, type SQL } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
-import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type SprintStatus } from '../db/enums.ts';
@@ -520,8 +520,7 @@ function recordSprintChange(
   appendActivity(db, {
     orgId: project.orgId,
     projectId: project.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     // See the module comment: §4.8 has no sprint verb, and growing it is LAI-113.
     type: 'project.updated',
     payload: { entity: 'sprint', action, sprint_id: id, ...rest },
@@ -542,8 +541,7 @@ function recordTaskMove(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'task.updated',
     payload: { field: 'sprint_id', from, to },
     now,

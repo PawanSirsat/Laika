@@ -1,6 +1,6 @@
 import { and, asc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
-import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { apiFieldNames, appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import {
@@ -183,6 +183,48 @@ function requireTask(
   return { task, project };
 }
 
+/**
+ * A task named the way a person names one — `LAI-42` — or by its id.
+ *
+ * §7 asks MCP responses to use **display keys, not raw ULIDs**, wherever a human
+ * will read them. That has to run both ways: a tool that prints `LAI-42` and
+ * then refuses to accept `LAI-42` back has taught the agent a name it cannot
+ * use. Ids stay valid because that is what the REST API hands out.
+ *
+ * Lives here rather than in `mcp/` because the write tools take the same
+ * reference (LAI-408: `start_working({ task })`), and a second parser is a
+ * second set of rules about what `LAI-42` means.
+ */
+const TASK_KEY = /^([A-Za-z][A-Za-z0-9]*)-(\d+)$/;
+
+export function resolveTaskRef(db: Db, ref: string): string {
+  const match = TASK_KEY.exec(ref.trim());
+  if (match === null) return ref;
+
+  const [, prefix, number] = match;
+  if (prefix === undefined || number === undefined) return ref;
+
+  const project = db
+    .select({ id: projects.id })
+    .from(projects)
+    // Prefixes are stored upper-case (§4.3), and a person typing `lai-42` means
+    // the same task as one typing `LAI-42`.
+    .where(eq(projects.prefix, prefix.toUpperCase()))
+    .get();
+
+  if (project === undefined) return ref;
+
+  const row = db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.projectId, project.id), eq(tasks.number, Number(number))))
+    .get();
+
+  // Falls through to the original string when nothing matches, so the caller
+  // raises its own "no such task" rather than this inventing one.
+  return row?.id ?? ref;
+}
+
 export function getTask(db: Db, actor: ResolvedActor, taskId: string): TaskView {
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
@@ -257,8 +299,7 @@ export function createTask(
       orgId: project.orgId,
       projectId: project.id,
       taskId: id,
-      actorId: actor.userId,
-      actorKind: 'user',
+      ...activityActor(actor),
       type: 'task.created',
       payload: { key: `${project.prefix}-${String(number)}`, title: input.title },
       now,
@@ -409,8 +450,7 @@ export function updateTask(
       orgId: project.orgId,
       projectId: project.id,
       taskId,
-      actorId: actor.userId,
-      actorKind: 'user',
+      ...activityActor(actor),
       // `task.updated` with the field named — the shape `sprint_id` uses, and
       // deliberately not a seventh §4.8 verb (D-027).
       type: 'task.updated',
@@ -432,8 +472,7 @@ export function updateTask(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     // §5: "A task may be reassigned while in_progress — that is `task.assigned`,
     // not a status change."
     type: reassigning ? 'task.assigned' : 'task.updated',
@@ -487,8 +526,7 @@ export function claimTask(
       orgId: project.orgId,
       projectId: project.id,
       taskId,
-      actorId: actor.userId,
-      actorKind: 'user',
+      ...activityActor(actor),
       type: 'task.status_changed',
       payload: { from: 'todo', to: 'in_progress', assignee_id: actor.userId, via: 'claim' },
       now,
@@ -540,8 +578,7 @@ export function changeStatus(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'task.status_changed',
     payload: { from: task.status, to },
     now,
@@ -579,8 +616,7 @@ export function addTaskDependency(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'task.dependency_added',
     payload: { depends_on: dependsOnTaskId },
     now,
@@ -615,8 +651,7 @@ export function removeTaskDependency(
     orgId: project.orgId,
     projectId: project.id,
     taskId,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'task.dependency_removed',
     payload: { depends_on: dependsOnTaskId },
     now,

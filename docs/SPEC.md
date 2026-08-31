@@ -686,9 +686,9 @@ read them.
 | Tool | Input | Returns |
 | --- | --- | --- |
 | `list_projects` | `{}` | projects the user can read |
-| `list_ready_tasks` | `{ project?, limit? }` | ready tasks (§4.5), assigned to me or unassigned, sorted p1→p3 then age |
+| `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
 | `get_task_context` | `{ task }` | task, description, dependencies + their statuses, comments, recent activity, branch, `discovered_from` chain |
-| `get_project_context` | `{ project }` | `context_md`, last 10 decisions, open-task summary, members + roles |
+| `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
 | `create_task` | `{ project, title, description?, priority?, depends_on?, discovered_from? }` | created task, `created_via: 'mcp'` |
 | `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
 | `update_status` | `{ task, status, note? }` | task; validated transition |
@@ -699,6 +699,31 @@ read them.
 `get_task_context` and `get_project_context` are deliberately **fat** — one call
 returns everything needed to start, because round-trips are expensive for an
 agent.
+
+**Two corrections to this table, 2026-08-31 (LAI-139), found by building it.**
+
+**`list_ready_tasks` said "assigned to me or unassigned".** That describes an
+empty set: §4.5 derives `ready` as `status IN ('backlog','todo') AND assignee_id
+IS NULL AND every dependency is 'done'`, so a ready task is *by definition*
+unassigned and "assigned to me" can never match one. §4.5 wins, because **`ready`
+is one derived concept shared by this tool and the board's Ready column** — §4.5
+says so in the same breath — and a tool that returned more than the column shows
+would be a second, quieter definition of readiness. An agent looking for work it
+already holds is a different question, answered by `get_task_context` and by the
+plugin's `/laika:standup` (§8), not by widening this.
+
+**`get_project_context` said "last 10 decisions".** Laika has **no decision
+entity** — no table, no verb, no endpoint — and §7.3 is explicit that decisions
+live *inside* `context_md`, appended with their date by §10.2's meeting path. So
+`context_md` already carries them, and a separate `decisions` field could only be
+a markdown-parsing guess at structure the data does not have. The tool returns
+the document's own **edit history** instead, which is what §7.3 actually asks for
+— *"a reviewer can see what changed between two agent sessions"* — named for what
+it is rather than for what it was hoped to be.
+
+**Both were found by a builder who filed them instead of picking a side.** A
+contradiction in this document must not be settled by whichever half someone
+implemented first.
 
 ### 7.2 Tool contract
 
@@ -749,7 +774,14 @@ anything that changes per-session.
   document is *fed* by the meeting path rather than maintained by discipline.
 - Size is bounded and the bound is enforced at write time with a clear error;
   a context document that silently blows an agent's context window is worse than
-  no document. **Exact limit is an open question (§14, question 7).**
+  no document. **The limit is 100,000 characters**, enforced in the service so
+  that every entry point — REST and MCP alike — shares one rule, and exceeded
+  with a `422` naming both the limit and the actual length (LAI-404; this closes
+  §14 q7).
+- `updated_at` and `updated_by` are read from the document's own `activity`
+  history, **not from `projects.updated_at`** — renaming a project must not look
+  like editing its brief. A document never edited reports `null`, which is the
+  honest answer rather than a convenient one.
 
 ---
 
@@ -1232,9 +1264,13 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
 5. Task attachments / uploads — deferred; the `/data` volume anticipates them.
 6. Multiple LLM providers configured at once (one for transcripts, one for
    summaries) — deferred past v1.
-7. **Size limit for `projects.context_md`** (§7.3). It is injected into every
-   agent session on the project, so an unbounded document quietly eats the
-   context window it was meant to fill usefully. Needs a real number before M3.
+7. ~~**Size limit for `projects.context_md`** (§7.3).~~ **Answered
+   2026-08-31: 100,000 characters** (LAI-404). Not a new number — it is what the
+   zod schema had enforced since LAI-006, promoted into the service so both entry
+   points share one rule. That promotion is the substance of the answer: an MCP
+   tool reaches `updateProjectContext` without passing through zod, and **a bound
+   only one entry point applies is not a bound**. Exceeding it is `422` naming
+   the limit and the actual length.
 8. **Manager dashboard metrics** — which numbers actually answer "where are we"?
    Throughput and cycle time are the obvious ones and may be the wrong ones.
    `GET /projects/:slug/metrics` (§6.4) reserves the surface; the payload is not

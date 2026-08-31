@@ -1,13 +1,13 @@
 import { and, asc, eq, gt, gte, inArray, or, sql } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
-import { apiFieldNames, appendActivity } from '../db/activity.ts';
+import { apiFieldNames, appendActivity, latestFieldEdit } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type ProjectRole, TASK_STATUSES, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { activity, projectMemberships, projects, tasks, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
+import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
 
 /**
@@ -349,8 +349,7 @@ export function createProject(
     appendActivity(db, {
       orgId,
       projectId: id,
-      actorId: actor.userId,
-      actorKind: 'user',
+      ...activityActor(actor),
       type: 'project.created',
       payload: { name: input.name, slug, prefix },
       now,
@@ -467,7 +466,6 @@ export interface UpdateProjectInput {
   /** `owner/name`; `null` clears it. Absent leaves it alone. */
   repo?: string | null | undefined;
   visibility?: 'public' | 'private' | undefined;
-  context_md?: string | undefined;
   /** `true` archives, `false` restores. Absent leaves it alone. */
   archived?: boolean | undefined;
   now?: number;
@@ -493,7 +491,6 @@ export function updateProject(
     changes.repo = input.repo;
   }
   if (input.visibility !== undefined) changes.visibility = input.visibility;
-  if (input.context_md !== undefined) changes.contextMd = input.context_md;
 
   const archiving = input.archived === true && row.archivedAt === null;
   const restoring = input.archived === false && row.archivedAt !== null;
@@ -517,8 +514,7 @@ export function updateProject(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     // Archiving is its own event: it is what removes a project from every
     // active view, and an audit reader should not have to diff a payload to
     // discover that is what happened.
@@ -528,6 +524,131 @@ export function updateProject(
   });
 
   return projectView(db.select().from(projects).where(eq(projects.id, row.id)).get()!);
+}
+
+// ------------------------------------------- the shared context document (§7.3)
+
+/**
+ * The one document per project that stops every teammate re-explaining the same
+ * architecture to their own agent (SPEC §7.3).
+ *
+ * ## Why this is not `PATCH /projects/:slug` with one more field
+ *
+ * It was, until LAI-404, and `context_md` has been **removed from that path**
+ * rather than left beside this one. Two writers of one column is two places to
+ * enforce the size bound and two shapes of audit row, and the task asked for
+ * exactly one. Nothing was using the general path for it: §6.4 specifies this
+ * pair, and the SPA only ever reads the field.
+ *
+ * The permission is unchanged — §3.1's cell is "Edit project settings **and
+ * `context_md`**", one row governing both, so this is `project.settings.edit`
+ * like every other setting. Reading follows project read, so a viewer sees it.
+ */
+export interface ProjectContextView {
+  context_md: string;
+  /**
+   * How long it is, so a client can show the budget before it truncates an
+   * agent's context window rather than after (§7.3).
+   */
+  length: number;
+  limit: number;
+  /**
+   * When the document was last edited and by whom — **`null` when no edit has
+   * been recorded**, which is the honest answer for a project whose context has
+   * never been written through this endpoint.
+   *
+   * Read from `activity` rather than a column on `projects`:
+   * `projects.updated_at` moves when the project is renamed and would answer a
+   * different question, and a denormalised copy is a copy that can drift.
+   */
+  updated_at: number | null;
+  updated_by: string | null;
+}
+
+/**
+ * §7.3's bound, and §14 question 7's answer.
+ *
+ * 100,000 characters — not invented here: it is the limit the `PATCH
+ * /projects/:slug` zod schema has enforced since LAI-006, now made the service's
+ * rule so both entry points cannot disagree about it. §7.3 says a context
+ * document that silently blows an agent's context window is worse than no
+ * document, so exceeding it is a `422` naming the limit **and the actual
+ * length** — a caller that has to guess how much to cut will guess wrong.
+ */
+export const CONTEXT_MD_LIMIT = 100_000;
+
+export function getProjectContext(db: Db, actor: ResolvedActor, slug: string): ProjectContextView {
+  const row = requireProjectBySlug(db, slug);
+  assertCan(withProject(actor, row.id), 'project.read', { projectId: row.id });
+
+  return contextView(db, row);
+}
+
+export interface UpdateProjectContextInput {
+  context_md: string;
+  now?: number;
+}
+
+export function updateProjectContext(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  input: UpdateProjectContextInput,
+): ProjectContextView {
+  const row = requireProjectBySlug(db, slug);
+  assertCan(withProject(actor, row.id), 'project.settings.edit', { projectId: row.id });
+
+  // Enforced here rather than only in the route's schema: an MCP tool reaches
+  // this function without passing through zod, and a bound that only one entry
+  // point applies is not a bound.
+  if (input.context_md.length > CONTEXT_MD_LIMIT) {
+    throw new ApiError('unprocessable', 'That context document is too long', {
+      limit: CONTEXT_MD_LIMIT,
+      length: input.context_md.length,
+    });
+  }
+
+  const now = input.now ?? Date.now();
+  const previous = row.contextMd;
+
+  db.update(projects)
+    .set({ contextMd: input.context_md, updatedAt: now })
+    .where(eq(projects.id, row.id))
+    .run();
+
+  appendActivity(db, {
+    orgId: row.orgId,
+    projectId: row.id,
+    ...activityActor(actor),
+    // `project.updated`, not a verb of its own: §4.8's vocabulary is closed and
+    // growing it is a change to `docs/SPEC.md`, which is not this session's to
+    // make (`schema-spec-drift.test.ts` enforces the pair in both directions).
+    // Same reason `services/sprints.ts` rides under this verb.
+    type: 'project.updated',
+    // The lengths are what make this a *history* rather than a bare marker:
+    // §7.3 wants a reviewer to see what changed between two agent sessions, and
+    // "grew from 4k to 40k" is the version of that which costs no extra storage.
+    payload: {
+      changed: ['context_md'],
+      length: input.context_md.length,
+      previous_length: previous.length,
+    },
+    now,
+  });
+
+  return contextView(db, db.select().from(projects).where(eq(projects.id, row.id)).get()!);
+}
+
+function contextView(db: Db, row: typeof projects.$inferSelect): ProjectContextView {
+  const edit = latestFieldEdit(db, row.id, 'context_md');
+
+  return {
+    context_md: row.contextMd,
+    length: row.contextMd.length,
+    limit: CONTEXT_MD_LIMIT,
+    updated_at: edit?.createdAt ?? null,
+    updated_by: edit?.actorId ?? null,
+  };
 }
 
 export function listMembers(db: Db, actor: ResolvedActor, slug: string): MemberView[] {
@@ -600,8 +721,7 @@ export function addMember(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'member.added',
     payload: { user_id: userId, role },
     now,
@@ -633,8 +753,7 @@ export function changeMemberRole(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'member.role_changed',
     payload: { user_id: userId, from: existing.role, to: role },
     now,
@@ -664,8 +783,7 @@ export function removeMember(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'member.removed',
     payload: { user_id: userId, role: existing.role },
     now,
@@ -747,8 +865,7 @@ export function joinPublicProject(
   appendActivity(db, {
     orgId: row.orgId,
     projectId: row.id,
-    actorId: actor.userId,
-    actorKind: 'user',
+    ...activityActor(actor),
     type: 'member.added',
     payload: { user_id: actor.userId, role, via: 'join' },
     now,

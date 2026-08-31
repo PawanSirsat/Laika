@@ -22,6 +22,14 @@ import { isReservedPath } from '../static.ts';
  * measures the wrong thing. Serving a file from disk is also not the cost this
  * limiter exists to protect.
  *
+ * ## A token is limited as itself, not as its owner (LAI-138)
+ *
+ * §6.3 gives a token 120/min and a cookie session 600/min. Keyed by user, a
+ * token would spend the session budget — five times what the spec allows — and
+ * two tokens held by one person would contend with each other and with that
+ * person's browser. So the bucket is the **token id**, and a session's bucket is
+ * the **user id**; they are different keys and neither drains the other.
+ *
  * ## Anonymous requests share one bucket
  *
  * Everything unauthenticated that *is* limited shares a single bucket. The
@@ -40,7 +48,13 @@ export function rateLimitMiddleware(limiter: RateLimiter) {
       return;
     }
 
-    const { key, policy } = classify(c.req.path, c.get('actor')?.userId ?? null);
+    const actor = c.get('actor');
+    const { key, policy } = classify(
+      c.req.path,
+      actor === null || actor === undefined
+        ? null
+        : { userId: actor.userId, tokenId: actor.token?.id ?? null },
+    );
     const decision = limiter.take(key, policy);
 
     c.header('X-RateLimit-Limit', String(policy.perMinute));
@@ -71,11 +85,27 @@ export function isLimited(path: string): boolean {
   return isReservedPath(path);
 }
 
+/**
+ * Who a request is being counted as.
+ *
+ * A record rather than two positional `string | null`s: the two are adjacent,
+ * mean opposite things, and transposing them would silently key every token by
+ * its owner — which is the exact defect LAI-138 exists to remove, reintroduced
+ * by a call site instead of by the classifier.
+ */
+export interface RequestCredential {
+  userId: string;
+  /** The token the request arrived on, or `null` for a cookie session. */
+  tokenId: string | null;
+}
+
 export function classify(
   path: string,
-  actorId: string | null,
+  credential: RequestCredential | null,
 ): { key: string; policy: LimitPolicy } {
-  const who = actorId ?? 'anonymous';
+  // A token is its own identity; a cookie session is its user's. Anonymous
+  // callers share one, for the reason in the module comment.
+  const who = credential === null ? 'anonymous' : (credential.tokenId ?? credential.userId);
 
   // Heartbeats are frequent, cheap and get their own budget (§6.3, §9.1) so a
   // busy agent cannot spend its whole session allowance on presence pings.
@@ -83,7 +113,12 @@ export function classify(
     return { key: `heartbeat:${who}`, policy: LIMITS.heartbeat };
   }
 
-  // Token-authenticated requests get the tighter budget once tokens land (M3);
-  // until then every authenticated request is a cookie session.
+  // §6.3's tighter budget, keyed on the token rather than on its owner. The
+  // prefixes keep the two namespaces apart, so `token:X` and `session:X` are
+  // different buckets whatever the ids happen to be.
+  if (credential?.tokenId != null) {
+    return { key: `token:${credential.tokenId}`, policy: LIMITS.token };
+  }
+
   return { key: `session:${who}`, policy: LIMITS.session };
 }

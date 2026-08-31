@@ -372,3 +372,82 @@ describe('GET /api/v1/projects does not query per card', () => {
     expect(Object.keys(project ?? {})).not.toContain('live_agents');
   });
 });
+
+describe('GET/PATCH /api/v1/projects/:slug/context (§6.4, LAI-404)', () => {
+  beforeEach(async () => {
+    expect((await createProject({ name: 'Laika', slug: 'laika', prefix: 'LAI' })).status).toBe(201);
+  });
+
+  it('reads the document, empty and with no recorded edit to begin with', async () => {
+    const res = await req('/api/v1/projects/laika/context');
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      context_md: '',
+      length: 0,
+      limit: 100_000,
+      updated_at: null,
+      updated_by: null,
+    });
+  });
+
+  it('writes and reads back verbatim', async () => {
+    const raw = '  # Architecture\n\n\ttabbed\n\n';
+    const patched = await req('/api/v1/projects/laika/context', {
+      method: 'PATCH',
+      body: JSON.stringify({ context_md: raw }),
+    });
+
+    expect(patched.status).toBe(200);
+    expect((await patched.json()) as { context_md: string }).toMatchObject({ context_md: raw });
+
+    const read = await req('/api/v1/projects/laika/context');
+    expect((await read.json()) as { context_md: string }).toMatchObject({ context_md: raw });
+  });
+
+  it('422s an oversize document, naming the limit and the length', async () => {
+    const res = await req('/api/v1/projects/laika/context', {
+      method: 'PATCH',
+      body: JSON.stringify({ context_md: 'x'.repeat(100_001) }),
+    });
+
+    expect(res.status).toBe(422);
+    // Whether zod or the service refuses it, the caller must learn how much to
+    // cut — an error that only says "too long" makes them guess.
+    expect(await res.text()).toMatch(/100000|100,000|100_000/);
+  });
+
+  it('401s an anonymous caller on both', async () => {
+    const anon = { headers: { 'Content-Type': 'application/json' } };
+    expect((await h.app.request('/api/v1/projects/laika/context', anon)).status).toBe(401);
+    expect(
+      (
+        await h.app.request('/api/v1/projects/laika/context', {
+          ...anon,
+          method: 'PATCH',
+          body: JSON.stringify({ context_md: 'x' }),
+        })
+      ).status,
+    ).toBe(401);
+  });
+
+  it('404s a project that does not exist', async () => {
+    expect((await req('/api/v1/projects/nope/context')).status).toBe(404);
+  });
+
+  it('refuses `context_md` on the general project PATCH rather than ignoring it', async () => {
+    // The half of AC6 that matters: `.strict()` means a client still sending it
+    // to the old path is told, instead of watching the field silently vanish.
+    const res = await req('/api/v1/projects/laika', {
+      method: 'PATCH',
+      body: JSON.stringify({ context_md: 'through the old path' }),
+    });
+
+    expect(res.status).toBe(422);
+    expect((await req('/api/v1/projects/laika/context')).status).toBe(200);
+    expect(
+      ((await (await req('/api/v1/projects/laika/context')).json()) as { context_md: string })
+        .context_md,
+    ).toBe('');
+  });
+});

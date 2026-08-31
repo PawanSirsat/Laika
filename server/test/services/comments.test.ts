@@ -84,9 +84,12 @@ describe('adding comments (AC2)', () => {
 
     // A cookie session is `web`; a token-authenticated caller is an agent (`api`).
     expect(createdViaFor(actor(memberId))).toBe('web');
-    expect(createdViaFor({ ...actor(memberId), token: { scope: 'full', projectIds: null } })).toBe(
-      'api',
-    );
+    expect(
+      createdViaFor({
+        ...actor(memberId),
+        token: { id: 'tok_1', scope: 'full', projectIds: null },
+      }),
+    ).toBe('api');
   });
 
   it('refuses a viewer (§3.2)', () => {
