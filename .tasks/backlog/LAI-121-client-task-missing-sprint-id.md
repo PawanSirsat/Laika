@@ -49,3 +49,23 @@ server adds a field, and it will again be invisible until a screen needs it.
 
 Related: LAI-119 is the same shape of problem one layer down — a closed
 vocabulary declared in two places with nothing comparing them.
+
+---
+
+## Folded in — CORE, 2026-09-01 (LAI-126)
+
+**`started_at` and `completed_at` land on `TaskView` in LAI-126 and need adding
+here too**, in the same edit as `sprint_id`. Both are `number | null`, unix ms.
+
+LAI-126's own criteria say to fold this in here rather than file a third task
+against one file — one pass over `server/web/src/api/tasks.ts` instead of two.
+
+**They are actuals, not a plan.** D-014 gives tasks no dates so the timeline
+stays a rendering pass over sprint boundaries rather than a scheduling engine.
+`started_at` / `completed_at` record what *happened*; a Gantt bar asserts what is
+*planned*. Adding them to the type is right and **drawing task bars from them is
+a separate decision** that needs the owner — `routes/screens/timeline/` has a
+guard that fails if any task-derived value reaches the axis, and it should stay
+failing until someone reopens D-014 deliberately.
+
+Nothing here is blocked: LAI-126 is in review, and the fields are additive.
