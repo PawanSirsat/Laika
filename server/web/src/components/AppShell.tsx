@@ -18,6 +18,7 @@ import { NotFound } from '../routes/screens/NotFound.tsx';
 import { MembersScreen } from '../routes/screens/MembersScreen.tsx';
 import { OrganisationScreen } from '../routes/screens/organisation/OrganisationScreen.tsx';
 import { ProjectsScreen } from '../routes/screens/ProjectsScreen.tsx';
+import { TokensScreen } from '../routes/screens/tokens/TokensScreen.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
 import { TokenReference } from '../theme/TokenReference.tsx';
@@ -425,6 +426,8 @@ export function AppShell() {
                 }}
               />
             </>
+          ) : path === '/tokens' ? (
+            <TokensScreen me={session.status === 'authenticated' ? session.user : undefined} />
           ) : path === '/organisation' && session.status === 'authenticated' ? (
             <OrganisationScreen me={session.user} />
           ) : path === '/members' ? (

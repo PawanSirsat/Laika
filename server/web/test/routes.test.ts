@@ -61,7 +61,7 @@ void describe('sidebar groups (AC1)', () => {
     // offered once there is a screen behind it.
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
-      ['Organisation'],
+      ['Tokens', 'Organisation'],
     );
   });
 });
