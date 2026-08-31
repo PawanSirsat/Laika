@@ -501,6 +501,30 @@ file. The rules below are the ones that are true of every line of code.
   pass**. Confirm the edit landed — checksum the file, grep for the new text,
   print `ANCHOR FAILED` loudly — before believing a red or a green.
 
+- **A comment may not claim more than the assertion under it proves.** This is
+  D-037 pointed at prose: a guard may assert a property, never a contingent fact,
+  and a comment saying a test catches something it does not catch is worse than
+  no comment, **because the next reader stops looking.**
+
+  Two on one day. LAI-118: *"a step that dropped and recreated on every boot
+  would also 'pass' a count"* — sitting above a byte-for-byte comparison of
+  `sqlite_master.sql`, which cannot see a recreate, because the recreated SQL
+  comes from the same string constant. LAI-144: *"scheme before scp, always"* —
+  true of the list's order and not of the behaviour, because a pattern that
+  matches while capturing nothing falls through to the next form anyway.
+
+  Both were written by someone being careful about exactly this class of thing in
+  the same file, in the same hour. **The check is mechanical: read the comment,
+  then break the thing it names, and watch that assertion — not the suite — go
+  red.** If a different test catches it, the comment belongs on that test.
+
+  It applies to review notes and task files too. `sqlite_master.rowid` looks like
+  it distinguishes a recreate and does not — SQLite reuses the freed slot — so a
+  reviewer who had written it into a task without checking would have handed a
+  builder an instrument that fails silently. **A task file is a claim by someone
+  who was also guessing.** Verify the instrument before using it, whoever handed
+  it to you.
+
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
 - **`pnpm format` checks the whole repo; `pnpm format:fix` writes only what your
