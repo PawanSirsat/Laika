@@ -2,11 +2,12 @@
 id: LAI-139
 title: SPEC §7.1's tool table describes two things the rest of the spec does not
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-407
-status: backlog
+started: 2026-08-31T14:05:00Z
+status: in-progress
 ---
 
 ## Goal
