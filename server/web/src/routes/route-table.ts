@@ -56,6 +56,16 @@ export interface Route {
    */
   readonly ownsChrome?: true;
   /**
+   * The destination is not about one project, so a nav link to it drops
+   * `?project=` (LAI-423).
+   *
+   * **Marked as the exception, because carrying the project is the default.**
+   * A new route that forgets this keeps the reader's context and ignores a
+   * param it does not read — harmless. The opposite default loses the context
+   * silently, which is the defect this flag exists because of.
+   */
+  readonly orgLevel?: true;
+  /**
    * How far this route actually is, which is what decides whether it appears in
    * the nav (LAI-082).
    *
@@ -85,6 +95,7 @@ export const ROUTES: readonly Route[] = [
 
   // SETTINGS
   {
+    orgLevel: true,
     path: '/organisation',
     label: 'Organisation',
     group: 'SETTINGS',
@@ -95,9 +106,10 @@ export const ROUTES: readonly Route[] = [
   // Routed and reachable by URL, but not offered in the nav: no screen behind
   // them yet, so an entry would be a dead link. They come back the moment they
   // have a `status`.
-  { path: '/capacity', label: 'Capacity', group: 'WORK', phase: 'Phase 5' },
+  // Capacity is read across every project at once, not within one.
+  { orgLevel: true, path: '/capacity', label: 'Capacity', group: 'WORK', phase: 'Phase 5' },
   { path: '/meeting-review', label: 'Meeting review', group: 'REVIEW', phase: 'Phase 6' },
-  { path: '/tokens', label: 'Tokens', group: 'SETTINGS', phase: 'Phase 3' },
+  { orgLevel: true, path: '/tokens', label: 'Tokens', group: 'SETTINGS', phase: 'Phase 3' },
 
   // Reached from a project rather than the nav.
   { path: '/members', label: 'Members', group: null, status: 'ready', phase: 'Phase 2' },

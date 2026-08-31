@@ -4,7 +4,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { canAssignToSprints, canManageSprints, type Sprint } from '../../../api/sprints.ts';
-import { isProject, listProjects } from '../../../api/projects.ts';
+import { listProjects } from '../../../api/projects.ts';
 import { useSession } from '../../../api/use-session.ts';
 import { useRoute } from '../../use-route.ts';
 import { AssignTasksPanel } from './AssignTasksPanel.tsx';
@@ -12,6 +12,8 @@ import { SprintCard } from './SprintCard.tsx';
 import { SprintForm } from './SprintForm.tsx';
 import { useSprints } from './use-sprints.ts';
 import './sprints.css';
+import { pickProject } from '../../../api/pick-project.ts';
+import { withProjectParam } from '../../nav-url.ts';
 
 /**
  * Sprints (SPEC §4.15, §11.4 — LAI-083).
@@ -36,7 +38,7 @@ import './sprints.css';
  * threaded through a prop change in a file this task may not touch.
  */
 export function SprintsScreen() {
-  const { params } = useRoute();
+  const { params, setParams } = useRoute();
   const session = useSession();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
@@ -55,12 +57,15 @@ export function SprintsScreen() {
 
     listProjects({}, controller.signal)
       .then((page) => {
-        // `isProject`, not `!isTombstone`: a negated guard does not narrow, and
-        // a tombstone carries no slug (see `api/projects.ts`).
-        const live = page.data.filter(isProject);
-        const wanted = slug === undefined ? live[0] : live.find((p) => p.slug === slug);
+        // One rule on every screen (LAI-423): the most recently active
+        // project, never the alphabetically first, and written into the URL so
+        // the address bar names what is on screen.
+        const wanted = pickProject(page.data, slug);
         setSlug(wanted?.slug);
         setProjectId(wanted?.id);
+        if (wanted !== undefined && slug === undefined) {
+          setParams(new URLSearchParams(withProjectParam(params.toString(), wanted.slug)));
+        }
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;

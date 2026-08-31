@@ -21,16 +21,17 @@ import type { BoardColumn } from '../../api/board-derive.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
   listMembers,
-  listProjects,
   canCreateTask,
   type Member,
   type Task,
   type TaskFilter,
   type TaskPriority,
 } from '../../api/tasks.ts';
-import { getProject, type Project } from '../../api/projects.ts';
+import { getProject, listProjects, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
 import './board/board.css';
+import { pickProject } from '../../api/pick-project.ts';
+import { withProjectParam } from '../nav-url.ts';
 
 export type BoardViewMode = 'kanban' | 'list';
 
@@ -99,14 +100,22 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   /** `mcp` is what an agent writes through — see `created_via` on every task. */
   const AGENT_VIA = 'mcp';
 
-  // No project in the URL: fall back to the first one this actor can read.
+  // No project in the URL: resolve one and say so in the address bar.
   useEffect(() => {
     if (slug !== undefined) return;
     const controller = new AbortController();
 
-    listProjects(controller.signal)
+    listProjects({}, controller.signal)
       .then((page) => {
-        setSlug(page.data[0]?.slug);
+        // The most recently active project, not the alphabetically first —
+        // and written **into the URL**, so the address bar names what is on
+        // screen. Holding it only in state is how someone ends up reading
+        // project A under a header they never look at, believing it is B
+        // (LAI-423).
+        const picked = pickProject(page.data, undefined);
+        if (picked === undefined) return;
+        setSlug(picked.slug);
+        onParamsChange(new URLSearchParams(withProjectParam(params.toString(), picked.slug)));
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
