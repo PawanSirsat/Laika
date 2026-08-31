@@ -8,6 +8,25 @@ For **each** file in `.tasks/review/`, oldest first:
 
 **1. Read the task.** Goal, every acceptance criterion, notes, `depends-on`.
 
+**Read it out of the commit, not off the disk, and check `--stat` first.**
+
+```bash
+git show <builder-branch>:.tasks/review/LAI-00X-*.md | grep -E '^status:|^finished:|^- \['
+git log -1 --stat <builder-branch> -- '.tasks/review/LAI-00X*'
+```
+
+`1 file changed, 0 insertions(+), 0 deletions(-)` on the move commit means the
+builder edited the file **before** `git mv`, so the rename carried the pre-edit
+blob and their ticks never left the working tree (CLAUDE.md §2). The file will
+say `status: in-progress` with nothing ticked, and the builder will sincerely
+believe they filled it in — grepping their own disk showed them what they typed.
+
+**Say which it is before deciding.** An unfinished task file is a bookkeeping
+miss, not a claim that the work is unfinished. Do not send verified work back for
+checkboxes; resolve it, tick against **your own** verification, and say plainly
+in the accept note that the ticks are yours and not an attestation the builder
+made. It has cost two tasks (LAI-070, LAI-224).
+
 **Check what each `depends-on` actually delivers, not that it is in `done/`.**
 LAI-086 depended on LAI-059 — *"Project members — list, change role, remove"* —
 which built `/projects/:slug/members`, **project-level (§3.2)**. The org-level
