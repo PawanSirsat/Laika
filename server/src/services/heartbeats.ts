@@ -118,33 +118,57 @@ export interface RepoProjects {
  * that unrecognisable input **degrades, it never errors**, so a caller treats
  * `null` as "matches nothing" rather than as a fault.
  */
+/**
+ * Every remote form Laika accepts, **in the order they are tried**, and the
+ * capture that holds the path.
+ *
+ * One table rather than a chain of `if`s, so adding a form — a self-hosted
+ * GitLab path, some other scheme — is one line here instead of a new branch and
+ * a new test that has to find where the branch went.
+ *
+ * **The order is load-bearing and is why this is a list and not a set.**
+ * `https://github.com/` has no path, so the URL form does not capture one; if
+ * the scp form were tried first it would read `https` as the host and return
+ * `github.com` as the repository name. Scheme before scp, always.
+ */
+const REMOTE_FORMS: { readonly form: string; readonly pattern: RegExp }[] = [
+  {
+    form: 'scheme://[user@]host/owner/name',
+    pattern: /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/]*(?:\/(.*))?$/,
+  },
+  {
+    // What `git remote -v` prints for an SSH remote, and the form least likely
+    // to have been normalised by whoever sent it.
+    form: '[user@]host:owner/name',
+    pattern: /^(?:[^@/:]+@)?[^/:]+:(.*)$/,
+  },
+  {
+    form: 'owner/name',
+    pattern: /^(.*)$/,
+  },
+];
+
 export function normaliseRepo(value: string): string | null {
-  let repo = value.trim();
-  if (repo === '') return null;
+  const trimmed = value.trim();
+  if (trimmed === '') return null;
 
-  // A scheme and the scp form are **mutually exclusive**, and testing them in
-  // that order matters: `https://github.com/` has no path, so a URL pattern
-  // requiring one falls through, and the scp pattern below then reads `https`
-  // as the host and returns `github.com` as the repository name. Deciding on
-  // `://` first means the scp branch never sees a URL.
-  const scheme = repo.indexOf('://');
+  const matched = REMOTE_FORMS.reduce<string | null>(
+    (found, { pattern }) => found ?? pattern.exec(trimmed)?.[1] ?? null,
+    null,
+  );
 
-  if (scheme !== -1) {
-    const afterHost = repo.slice(scheme + 3);
-    const firstSlash = afterHost.indexOf('/');
-    repo = firstSlash === -1 ? '' : afterHost.slice(firstSlash + 1);
-  } else {
-    // scp-style `[user@]host:path`, which is what `git remote -v` prints for an
-    // SSH remote and the form least likely to be normalised by whoever sends it.
-    // `(.*)` and not `(.+)`: `git@github.com:` is a remote with no path, and
-    // requiring one would leave it untouched and treat the whole string as a
-    // repository name.
-    const scp = /^(?:[^@/:]+@)?[^/:]+:(.*)$/.exec(repo);
-    if (scp !== null) repo = scp[1]!;
-  }
+  // The last form matches anything, so this is unreachable in practice — but
+  // `?.[1]` is `undefined` for a pattern that matches without capturing, and
+  // treating that as "no repo" is the degrade §9.2 asks for.
+  if (matched === null) return null;
 
-  repo = repo.replace(/^\/+/, '').replace(/\/+$/, '');
-  repo = repo.replace(/\.git$/i, '').replace(/\/+$/, '');
+  const repo = matched
+    .replace(/^\/+/, '')
+    .replace(/\/+$/, '')
+    // Only as a suffix. A global replace turns `PawanSirsat/PawanSirsat.github.io`
+    // into `PawanSirsat/PawanSirsathub.io`, and every GitHub account has that one.
+    .replace(/\.git$/i, '')
+    .replace(/\/+$/, '');
 
   return repo === '' ? null : repo;
 }

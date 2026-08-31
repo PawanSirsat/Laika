@@ -1889,3 +1889,65 @@ it.
 **Revisit if** the round trip ever actually blocks work — meaning a builder is
 unavailable and a merge is held for longer than it takes to ask. That has not
 happened. Twice now the builder has handled it, once before being asked.
+
+---
+
+## D-043 — The server normalises a heartbeat's `repo`; the plugin sends it verbatim
+
+**2026-09-01. Decided by CHIEF on CORE's recommendation, filed as LAI-144.**
+
+### The problem
+
+`plugin/hooks/README.md` documents posting a **git remote**. A git remote is a
+URL. §4.3 and `projects.repo` store **`owner/name`**:
+
+```
+git@github.com:PawanSirsat/Laika.git      ← what the plugin sends
+https://github.com/PawanSirsat/Laika.git
+https://github.com/PawanSirsat/Laika
+PawanSirsat/Laika                          ← what the server matches against
+```
+
+None of the three forms matches by any comparison. So **on a correctly
+configured instance, with the plugin sending exactly what it documents, every
+heartbeat resolves to no project and §9.3 presence is permanently empty.**
+LAI-116's case folding does nothing about it, because case was never the problem.
+
+### The decision
+
+**`resolveRepoProjects` accepts all four forms and normalises to `owner/name`.
+The plugin sends `git config --get remote.origin.url` verbatim and does not
+parse it.**
+
+### Why the server
+
+§9.2 already put resolution on the server, for a stated reason that generalises
+exactly: *"the plugin cannot know a deployment's project prefixes."* A hook
+running in someone's editor is not the place a mapping rule lives.
+
+But the reason that decides it is **direction**. The server is the only side that
+can be fixed after a client ships. A self-hosted board has no control over when
+anybody updates their plugin, so **an old plugin against a new server is the
+only direction that can be relied on** — and a normalisation rule on the client
+is a rule you can never change again.
+
+The cost is real and worth naming: the server gains a parser for URL shapes it
+has no other reason to know about. Three shapes, one regex, no dependency.
+
+### Why verbatim, and not "best effort"
+
+I first told CORE the plugin should send *"its best effort"*. That was too loose
+and I am sharpening it here rather than leaving it in a message: **a plugin that
+half-normalises invents a fifth form**, and the server then has to accept
+whatever each client's idea of best effort turned out to be. Verbatim is a
+contract; best effort is a suggestion.
+
+### The general rule
+
+**When two sides could normalise, it goes on the side that can be fixed after
+the other one ships.** For anything self-hosted that is the server, every time.
+
+**Consequence for LAI-418:** its AC4 said `repo` is the *"git remote basename"* —
+a fifth form, matching nothing. Corrected in the same commit as this entry. The
+task that would have built the defect was already written and unclaimed; this is
+the second time a drift check found the bug in a task file rather than in code.

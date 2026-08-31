@@ -125,3 +125,75 @@ The four hand-pasted blocks are untouched (`git status` on
 `src/db/migrations/` is empty).
 
 Seven mutations, all caught, including the two that initially were not.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** All six criteria met, and AC6 was rightly not filed as a
+cross-area task: the criterion offered *"`docs/CONVENTIONS.md` **or** the
+migration folder"*, and the folder is `server/`. It is also the better of the two
+— it is where somebody about to add a migration is already looking. I have added
+a one-line pointer to it from `CONVENTIONS.md`'s layout block so the other half
+of the criterion's "or" is reachable too. **A pointer, not a copy** — two
+descriptions of the same rule is how the four hand-pasted blocks happened.
+
+### Verified by mutation
+
+| Mutation | Result |
+| --- | --- |
+| Remove `ensureActivityTriggers(db)` from `runMigrations` | red — `re-establishes the triggers on a boot with no pending migrations`, and **only** that test |
+| Body check → name check (`bodies.has`) | red — `refuses a trigger that holds the name and enforces nothing` |
+| `IF NOT EXISTS` → drop-then-recreate | red — the same refusal test, because repairing is what it forbids |
+
+The first confirms your own claim exactly: **that one test is the whole wiring
+guarantee**, and the other eight would pass if nothing ever called the function.
+Naming the test that carries the weight, rather than counting nine, is the part
+worth repeating.
+
+The third is a good accident. `throws rather than repairing` reads like a
+posture choice; it turns out to be **load-bearing** — the only reason a
+drop-and-recreate implementation is caught at all is that it would silently fix
+the inert trigger the refusal test plants.
+
+### The one thing that does not prove what its comment says
+
+`re-establishes nothing and changes nothing` compares `name, sql` byte-for-byte
+and comments that this distinguishes it from *"a step that dropped and recreated
+on every boot"*. **It does not** — under the drop-then-recreate mutation that
+test still passed. The recreated trigger's stored SQL is identical, because it is
+created from the same string.
+
+I checked `sqlite_master.rowid` before reporting this and **it does not
+distinguish them either** — SQLite reuses the freed slot, so the rowid was 3
+before and 3 after. `PRAGMA schema_version` does: unchanged by a no-op
+`IF NOT EXISTS`, `+2` by a drop and a create.
+
+Not a send-back — the code has the property, and the suite catches the mutation
+elsewhere. It is D-037's shape though: the assertion is weaker than the comment
+above it claims, which is how a guard stops being one. **Filed as LAI-427.**
+
+### The two test bugs are the finding
+
+Both are the harness lesson in its purest form — *the check ran, but not against
+what it named*:
+
+- **the rebuild helper rebuilt nothing**, because `ALTER TABLE … RENAME` makes
+  SQLite rewrite stored DDL in **double quotes** and the replace matched
+  backticks. Every rebuild since 0000 has been through one, so the helper had
+  never worked;
+- **the append-only assertions passed on an empty table**, because a
+  `BEFORE UPDATE` trigger fires per row and no rows means nothing to fire on.
+
+The fix that matters is not either replacement — it is **`if (renamed === ddl)
+throw`**. A helper that silently does nothing is worse than one that fails,
+and this is the fourth time in two days that a probe was wrong before the code
+was. That line is the general answer to it.
+
+### And the post-condition that changed during the work
+
+Checking the triggers *exist* was unreachable — `CREATE TRIGGER` either succeeds
+or throws. Checking they *abort* is reachable, because a hand-pasted block that
+lost its `RAISE` leaves a trigger that is present, correctly named, and enforces
+nothing, which `IF NOT EXISTS` will never replace. **Discovering the first check
+could not fail, by trying to make it fail, is why the second one exists.**
