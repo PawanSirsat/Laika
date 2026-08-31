@@ -152,11 +152,11 @@ describe('create_task', () => {
 
     const result = await client.callTool({
       name: 'create_task',
-      arguments: { project: 'core', title: 'Blocked', depends_on: ['COR-1'] },
+      arguments: { project: 'core', title: 'Blocked', blocked_by: ['COR-1'] },
     });
 
-    const task = payload(result).task as { dependencies: string[]; ready: boolean };
-    expect(task.dependencies).toHaveLength(1);
+    const task = payload(result).task as { blocked_by: string[]; ready: boolean };
+    expect(task.blocked_by).toHaveLength(1);
     // Derived, not stored: a task with an unfinished blocker is not ready.
     expect(task.ready).toBe(false);
 

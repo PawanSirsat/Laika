@@ -63,7 +63,11 @@ const UpdateBody = strictObject({
 });
 
 const StatusBody = strictObject({ status: z.enum(STATUSES) });
-const DependencyBody = strictObject({ depends_on_task_id: z.string().min(1) });
+// `blocked_by_task_id`, matching `TaskView.blocked_by` (LAI-099). The **path**
+// keeps `/dependencies`: a path segment names a collection, not a direction, and
+// has no sibling to be confused with — `blocked_by` beside `blocks` was ambiguous,
+// `/dependencies` beside nothing is not (D-044).
+const DependencyBody = strictObject({ blocked_by_task_id: z.string().min(1) });
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
@@ -165,7 +169,7 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     const body = parseBody(DependencyBody, await c.req.json().catch(() => null));
 
     return c.json(
-      addTaskDependency(sqlite, db, actor, c.req.param('id'), body.depends_on_task_id),
+      addTaskDependency(sqlite, db, actor, c.req.param('id'), body.blocked_by_task_id),
       201,
     );
   });

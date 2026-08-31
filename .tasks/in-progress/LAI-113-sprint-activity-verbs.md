@@ -2,11 +2,12 @@
 id: LAI-113
 title: A sprint's audit trail is filed under `project.updated`
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-050]
 discovered-from: LAI-050
-status: backlog
+status: in-progress
+started: 2026-09-01T19:25:00Z
 ---
 
 ## Goal

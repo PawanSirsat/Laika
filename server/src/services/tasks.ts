@@ -100,17 +100,16 @@ export interface TaskView {
   /**
    * Ids this task is **blocked by** — the forward edge of §4.6.
    *
-   * Named `dependencies` rather than `blocked_by` because that is the wire
-   * contract clients already read; renaming it is a breaking change and belongs
-   * in its own task, not smuggled in beside a new field. `blocks` below is the
-   * other direction and they are deliberately not merged.
+   * Was `dependencies` until LAI-099. Next to `blocks`, that name did not say
+   * which direction it meant and needed a spec sentence to disambiguate; this
+   * one says it. The two are deliberately not merged.
    */
-  dependencies: string[];
+  blocked_by: string[];
   /**
    * Ids this task **blocks** — the reverse edge, read through §4.13's
    * `task_dependencies(depends_on_task_id)` index (LAI-091).
    *
-   * The opposite meaning to `dependencies`, and the question that makes someone
+   * The opposite meaning to `blocked_by`, and the question that makes someone
    * go and unblock other people. A task holding up three others used to show
    * nothing at all.
    */
@@ -206,7 +205,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
       assigneeId: row.assigneeId,
       dependencyStatuses: statuses,
     }),
-    dependencies: deps,
+    blocked_by: deps,
     blocks: context.edges.blocks.get(row.id) ?? [],
     comment_count: context.comments.get(row.id) ?? 0,
     tags: context.tags.get(row.id) ?? [],
@@ -737,6 +736,14 @@ export function addTaskDependency(
     taskId,
     ...activityActor(actor),
     type: 'task.dependency_added',
+    // **Deliberately still `depends_on`** after LAI-099 renamed the wire field
+    // to `blocked_by` (D-044). `activity` is append-only in both directions, so
+    // every row already written keeps this key for ever; renaming it here would
+    // give the table two vocabularies for one fact and make old history readable
+    // only by someone who knows the cut-over date. LAI-045's read-time
+    // translation is not a way round it — that normalises the *spelling* of
+    // names inside `changed`, and its own comment says broadening it is worse.
+    // Still `depends_on`, for the append-only reason given above (D-044).
     payload: { depends_on: dependsOnTaskId },
     now,
   });

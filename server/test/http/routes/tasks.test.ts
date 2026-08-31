@@ -173,7 +173,7 @@ describe('dependencies (AC5)', () => {
     const blocked = await newTask('blocked');
 
     const added = await post(`/api/v1/tasks/${blocked.id}/dependencies`, {
-      depends_on_task_id: blocker.id,
+      blocked_by_task_id: blocker.id,
     });
     expect(added.status).toBe(201);
     expect(((await added.json()) as { ready: boolean }).ready).toBe(false);
@@ -189,8 +189,8 @@ describe('dependencies (AC5)', () => {
     const a = await newTask('a');
     const b = await newTask('b');
 
-    await post(`/api/v1/tasks/${a.id}/dependencies`, { depends_on_task_id: b.id });
-    const cycle = await post(`/api/v1/tasks/${b.id}/dependencies`, { depends_on_task_id: a.id });
+    await post(`/api/v1/tasks/${a.id}/dependencies`, { blocked_by_task_id: b.id });
+    const cycle = await post(`/api/v1/tasks/${b.id}/dependencies`, { blocked_by_task_id: a.id });
 
     expect(cycle.status).toBe(422);
   });
