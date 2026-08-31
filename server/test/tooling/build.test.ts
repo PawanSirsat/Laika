@@ -15,6 +15,17 @@ import { SERVER_ROOT } from '../../src/paths.ts';
  *
  * So this builds for real and runs the artefact for real, under plain `node`
  * with no loader and no experimental flag, exactly as the container will.
+ *
+ * ## This is not a slower `pnpm typecheck` (LAI-137)
+ *
+ * It compiles under **`tsconfig.build.json`**, which `typecheck` never uses.
+ * That config sets `rootDir: "src"` and `types: ["node"]`, so it rejects things
+ * `pnpm typecheck` accepts: a `src` file importing from `test/`, or one relying
+ * on a global from a package the runtime does not get. LAI-045 hit exactly that
+ * — a cast that passed `typecheck` and failed `build`.
+ *
+ * Do not fold the two together as duplicates. If this file ever stops failing on
+ * a build-only error, it has stopped being the gate it exists to be.
  */
 
 const DIST = join(SERVER_ROOT, 'dist');
