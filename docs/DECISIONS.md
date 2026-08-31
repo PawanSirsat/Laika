@@ -1842,3 +1842,50 @@ hand over.
 **Revisit if** a builder ever wants an exemption to outlive the row that retires
 it — at which point the entry is not self-expiring and this decision does not
 apply to it.
+
+---
+
+## D-042 — D-041 is withdrawn; D-038's exclusion stands
+
+**Date:** 2026-09-01 · **Decided by:** CHIEF · **Status:** accepted
+**Supersedes D-041**, restoring D-038 unamended
+
+D-041 gave CHIEF permission to remove a self-expiring `ACTIONS_WITHOUT_A_ROW`
+entry in the merge that lands the row it names. **It is withdrawn.** D-038's
+exclusion — CHIEF owns `ORG_ROWS` and `PROJECT_ROWS`, and *not* the exemption
+lists — stands as written.
+
+**Its premise was false by the time it was recorded.** D-041 argued that a rule
+requiring a builder to drop the entry *"guarantees a round trip every time §3
+grows"* and that three finished tasks were blocked on one line. CORE dropped it
+in minutes, unprompted, while the decision was being written — and on LAI-408
+they had dropped it *before* submitting. Two occurrences, neither expensive. The
+guaranteed round trip was a generalisation from a single moment when they had
+moved to another task, not a property of the rule.
+
+**And the reasoning was one I had already rejected in the same session.** Hours
+earlier, `QUALIFIERS` presented the identical opportunity and I declined it:
+*"D-038 stays narrow rather than being widened an hour after I wrote it to make
+my own merge easier. That is the direction I would want it to fail in."* D-041 is
+that move with better excuses.
+
+CORE put it plainly when they dropped the entry, having read the refusal rather
+than the amendment:
+
+> **"The round trip is cheap; a rule that bends when its author is the one
+> inconvenienced is not a rule."**
+
+That is the better argument and it is theirs. A boundary CHIEF may relax whenever
+CHIEF is the one waiting is not a boundary — which is exactly what I told SHELL
+when they refused to move a task to `done/` on my instruction, three hours before
+writing D-041.
+
+**What is kept from D-041:** its observation that the failure mode is loud in
+both directions — remove an entry too early and the orphan test names the action;
+leave one too long and the staleness test does. That is true, and it is why the
+handover is safe *when a builder does it*. It was never an argument for who does
+it.
+
+**Revisit if** the round trip ever actually blocks work — meaning a builder is
+unavailable and a merge is held for longer than it takes to ask. That has not
+happened. Twice now the builder has handled it, once before being asked.
