@@ -7,7 +7,7 @@ import { apiFieldNames, apiPayload, appendActivity, readPayload } from '../../sr
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { ACTIVITY_TYPES, type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, users } from '../../src/db/schema.ts';
+import { activity, unlistedWork, users } from '../../src/db/schema.ts';
 import { eventView } from '../../src/services/events.ts';
 import { addComment, deleteComment, editComment } from '../../src/services/comments.ts';
 import { createInvite, consumeInvite } from '../../src/services/invites.ts';
@@ -36,6 +36,7 @@ import {
   updateTask,
 } from '../../src/services/tasks.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
+import { dismissUnlisted, promoteUnlisted } from '../../src/services/unlisted.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -496,6 +497,41 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       // than in a second sweep of their own.
       const minted = createToken(t.sqlite, t.db, owner(), { name: 'ci', scope: 'full' });
       revokeOwnToken(t.sqlite, t.db, owner(), minted.token.id);
+
+      // --- unlisted.ts: unlisted.logged, for both actions (LAI-405) ----------
+      // The row is inserted directly because writing one is LAI-408's tool; what
+      // this sweep needs is the *payload* of promote and dismiss.
+      const noteId = newId();
+      t.db
+        .insert(unlistedWork)
+        .values({
+          id: noteId,
+          userId: ownerId,
+          tokenId: null,
+          repo: 'kvell/laika',
+          note: 'Noticed in passing',
+          promotedTaskId: null,
+          dismissedAt: null,
+          createdAt: Date.now(),
+        })
+        .run();
+      promoteUnlisted(t.sqlite, t.db, owner(), noteId, { projectSlug: 'core', title: 'Promoted' });
+
+      const dismissedId = newId();
+      t.db
+        .insert(unlistedWork)
+        .values({
+          id: dismissedId,
+          userId: ownerId,
+          tokenId: null,
+          repo: 'kvell/laika',
+          note: 'Not worth doing',
+          promotedTaskId: null,
+          dismissedAt: null,
+          createdAt: Date.now(),
+        })
+        .run();
+      dismissUnlisted(t.db, owner(), dismissedId);
 
       // Archiving last: it is the one that takes a project out of active views.
       removeMember(t.db, owner(), 'core', memberId);

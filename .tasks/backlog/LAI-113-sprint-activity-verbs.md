@@ -70,3 +70,8 @@ absent"*, which asked a builder to do something the repo's own guard forbids
 them. That was my error in writing the criterion, not theirs in declining it.
 Any future task needing a new verb must depend on this one rather than carry that
 instruction.
+
+**Third instance, 2026-08-31 (LAI-405):** unlisted-work promotion and dismissal
+also file under a verb that does not name them — `unlisted.logged`, with the real
+action in `payload.action`. Sprints, the context document, and now this. Three
+features, one missing-vocabulary decision.

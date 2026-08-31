@@ -449,6 +449,15 @@ file. The rules below are the ones that are true of every line of code.
   through a helper that asserts its status. The same defect one layer earlier,
   and the third time in one week a green test was testing nothing.
 
+  **And the tool you verify with needs verifying too — check that your check
+  ran.** A mutation harness whose anchor matched nothing ran the suite against
+  **unmutated** code and printed `red` anyway (LAI-405); two of CHIEF's review
+  mutations did the same thing the same day. A harness that cannot tell *"did not
+  fail"* from *"did not run"* is not evidence, and it is the worst place for this
+  defect to live, because a mutation run is the thing you trust **when the tests
+  pass**. Confirm the edit landed — checksum the file, grep for the new text,
+  print `ANCHOR FAILED` loudly — before believing a red or a green.
+
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
 - **`pnpm format` checks the whole repo; `pnpm format:fix` writes only what your
