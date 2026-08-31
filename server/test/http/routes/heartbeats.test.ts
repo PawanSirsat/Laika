@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { activity, heartbeats, tokens, users } from '../../../src/db/schema.ts';
+import { activity, heartbeats, projects, tokens, users } from '../../../src/db/schema.ts';
 import { LIMITS, RateLimiter } from '../../../src/http/rate-limit.ts';
 import { BRANCH_MAX_LENGTH, REPO_MAX_LENGTH } from '../../../src/services/heartbeats.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
@@ -244,5 +244,88 @@ describe('the heartbeat rate limit applies (§6.3, §9.1)', () => {
       headers: jsonHeaders({ Authorization: `Bearer ${secret}` }),
     });
     expect(still.status).toBe(200);
+  });
+});
+
+/**
+ * Repo → project attribution at the transport edge (§4.3, §9.2, LAI-116).
+ *
+ * The rule itself is tested in `test/services/heartbeats.test.ts`. What is left
+ * here is the part only the route decides: the resolution changes **nothing**
+ * about the response, and an operator can still find out about it.
+ */
+describe('attributing a heartbeat to a project (LAI-116)', () => {
+  async function projectTracking(slug: string, prefix: string, repo: string): Promise<string> {
+    const res = await h.app.request('/api/v1/projects', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: ownerCookie }),
+      body: JSON.stringify({ name: slug, slug, prefix }),
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+
+    const { id } = (await res.json()) as { id: string };
+    h.db.update(projects).set({ repo }).where(eq(projects.id, id)).run();
+
+    return id;
+  }
+
+  it('does not widen the response — §9.1 still answers 202 with no body', async () => {
+    await projectTracking('laika', 'LAI', 'kvell/laika');
+
+    const res = await beat({ repo: 'kvell/laika', branch: 'lai-42-x' });
+
+    // The resolution is deliberately not serialised. Widening §9.1's response is
+    // a contract change and belongs in its own task, not as a ride-along here.
+    expect(res.status).toBe(202);
+    expect(await res.text()).toBe('');
+  });
+
+  it('accepts a repo no project tracks, and says so in the log', async () => {
+    await projectTracking('laika', 'LAI', 'kvell/laika');
+
+    const res = await beat({ repo: 'someone/else', branch: 'main' });
+    expect(res.status).toBe(202);
+
+    // §9.2 degrades and never errors, so the row is written — but a heartbeat
+    // naming a repo nobody tracks is almost always a misconfigured plugin, and
+    // silently accepting it is how presence is empty for weeks with no clue why.
+    const warned = h.log.find('heartbeat.repo_unmatched');
+    expect(warned).toBeDefined();
+    expect(warned?.repo).toBe('someone/else');
+    expect(warned?.level).toBe('warn');
+
+    expect(h.db.select().from(heartbeats).all()).toHaveLength(1);
+  });
+
+  it('says nothing when the repo resolves', async () => {
+    await projectTracking('laika', 'LAI', 'kvell/laika');
+
+    await beat({ repo: 'kvell/laika', branch: 'main' });
+
+    expect(h.log.find('heartbeat.repo_unmatched')).toBeUndefined();
+    expect(h.log.find('heartbeat.repo_ambiguous')).toBeUndefined();
+  });
+
+  it('records a monorepo as information, not as a warning', async () => {
+    await projectTracking('web', 'WEB', 'kvell/mono');
+    await projectTracking('api', 'API', 'kvell/mono');
+
+    await beat({ repo: 'kvell/mono', branch: 'main' });
+
+    // LAI-108 permits this deliberately, so it is not a warning — but an
+    // operator still needs to tell "present on two projects" from a bug.
+    const noted = h.log.find('heartbeat.repo_ambiguous');
+    expect(noted).toBeDefined();
+    expect(noted?.level).toBe('info');
+    expect(noted?.project_count).toBe(2);
+  });
+
+  it('says nothing when the branch narrows a monorepo to one project', async () => {
+    await projectTracking('web', 'WEB', 'kvell/mono');
+    await projectTracking('api', 'API', 'kvell/mono');
+
+    await beat({ repo: 'kvell/mono', branch: 'api-42-add-crud' });
+
+    expect(h.log.find('heartbeat.repo_ambiguous')).toBeUndefined();
   });
 });

@@ -52,11 +52,30 @@ export function heartbeatRoutes(options: HeartbeatRouteOptions): Hono<AppEnv> {
     }
 
     const body = parseBody(HeartbeatBody, await c.req.json().catch(() => null));
-    recordHeartbeat(db, actor, body);
+    const beat = recordHeartbeat(db, actor, body);
+
+    // A heartbeat naming a repo no project tracks is accepted — §9.2's rule is
+    // that unmatched input degrades and never errors — but it is almost always a
+    // misconfigured plugin, and silently accepting it is how somebody finds out
+    // weeks later that presence was empty the whole time. So it is said once,
+    // here, where an operator reading logs will see it.
+    if (beat.attribution === 'none') {
+      c.get('log').warn('heartbeat.repo_unmatched', { repo: beat.repo });
+    } else if (beat.project_ids.length > 1) {
+      // Not a warning: LAI-108 permits this deliberately. Recorded so an
+      // operator can tell "present on two projects" from a bug.
+      c.get('log').info('heartbeat.repo_ambiguous', {
+        repo: beat.repo,
+        branch: beat.branch,
+        project_count: beat.project_ids.length,
+      });
+    }
 
     // Nothing in the body: there is nothing useful to say, and returning the row
     // would invite a client to depend on `matched_task_id`, which is null until
-    // §9.2 lands in M5.
+    // §9.2 lands in M5. The resolution above is deliberately not serialised
+    // either — widening §9.1's response is a contract change and belongs in its
+    // own task, not as a ride-along here (LAI-116).
     return c.body(null, 202);
   });
 
