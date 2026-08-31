@@ -2,11 +2,12 @@
 id: LAI-121
 title: The client Task type is missing sprint_id, which the API returns
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p3
 depends-on: []
 discovered-from: LAI-083
-status: backlog
+status: in-progress
+started: 2026-08-31T23:11:13Z
 ---
 
 ## Goal
