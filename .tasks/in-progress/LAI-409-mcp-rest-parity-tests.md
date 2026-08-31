@@ -2,11 +2,12 @@
 id: LAI-409
 title: Parity tests — an MCP tool and its REST twin write identical activity
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: [LAI-407, LAI-408]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-01T09:00:00Z
 ---
 
 ## Goal
