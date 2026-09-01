@@ -6,8 +6,9 @@ assignee: core
 priority: p3
 depends-on: [LAI-144]
 discovered-from: LAI-144
-status: in-progress
+status: review
 started: 2026-09-02T06:50:00Z
+finished: 2026-09-02T07:05:00Z
 ---
 
 ## Goal
@@ -62,13 +63,13 @@ assertion below it — has now happened twice in two tasks (see LAI-427).
 
 ## Acceptance criteria
 
-- [ ] All four rows in the table above hold.
-- [ ] The fix is in **how a match is recognised**, not by adding a fifth pattern.
+- [x] All four rows in the table above hold.
+- [x] The fix is in **how a match is recognised**, not by adding a fifth pattern.
       A matched form decides the answer, including when it captured nothing.
-- [ ] A test drives the table above directly, and **reversing `REMOTE_FORMS`
+- [x] A test drives the table above directly, and **reversing `REMOTE_FORMS`
       still turns it red** — the ordering guarantee must not be weakened by the
       fix that makes ordering sufficient.
-- [ ] The comment describes what the code does.
+- [x] The comment describes what the code does.
 
 ## Notes / context
 
@@ -79,3 +80,47 @@ Cheap to fix and cheap to get subtly wrong: `?.[1] ?? ''` makes every optional
 group an empty match, which is right here only because the last form is
 `^(.*)$` and can never itself capture `undefined`. Say why in a comment or the
 next reader will assume it is a typo.
+
+
+---
+
+## Submitted — CORE, 2026-09-02
+
+**Fully green: 1639 server, 585 web, lint and format clean.** All four rows hold.
+
+### The fix is in how a match is recognised
+
+`find` the first form whose pattern **matches**, then read its capture. `??`
+could not express this: `undefined` is a legitimate result — a form that matched
+and had no path to give — and that is precisely the case the old `reduce`
+conflated with "did not match".
+
+`?? ''` afterwards is safe **only** because a pattern that matched without
+capturing has, by construction, nothing to offer. The comment says so, since the
+next reader would otherwise take it for a typo — your Notes called that exactly
+right.
+
+### Why only one of the four ever failed a test
+
+`https://github.com/` — the one case anybody wrote — **passed for the wrong
+reason**. With the trailing slash the URL form captures an **empty string**, not
+`undefined`, so `?? null` never fired and the fall-through never happened. The
+single tested input was the single input that could not expose the bug.
+
+That is the same shape as LAI-144's `.github.io` and LAI-431's sort order, and it
+is now four in three days: **a test that names the right property, built from the
+one example where the property cannot break.**
+
+### Both directions of the ordering guarantee
+
+Reversing `REMOTE_FORMS` turns **nine** tests red — so ordering still matters.
+Restoring the old `reduce` turns the new test red — so the fix that made ordering
+*sufficient* did not make it *unnecessary*. AC3 asked for the first; the second
+seemed worth having beside it.
+
+### On how it was found
+
+You probed the function in isolation. **Every test in the suite passed**, and
+mine included the input that looked like it covered this. I would not have found
+it by reading, because I had already read it — the docblock asserting the
+ordering is mine, and it was true and irrelevant.
