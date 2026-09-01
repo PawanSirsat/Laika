@@ -116,10 +116,25 @@ of a task file. Builders have no equivalent exception.
    different task.** This check is instant and exact — all worktrees share one
    object database (§4.2), so there is nothing to fetch and no excuse to skip it.
 4. `git mv .tasks/backlog/LAI-00X-*.md .tasks/in-progress/`
-5. Edit its frontmatter: `assignee: <your-session>`, `status: in-progress`,
-   `started: <ISO-8601 timestamp>`.
-6. Commit that move **before writing any code**:
-   `chore(tasks): claim LAI-00X [LAI-00X]`
+5. **Then** edit its frontmatter: `assignee: <your-session>`,
+   `status: in-progress`, `started: <ISO-8601 timestamp>`. Move first — `git mv`
+   stages from the *index*, so editing first commits the pre-edit blob.
+6. `git add` the edit and commit **the move and the frontmatter together**,
+   before writing any code: `chore(tasks): claim LAI-00X [LAI-00X]`
+
+   **One commit, not two.** The move is still the lock, it is still visible to
+   every worktree the instant it exists, and the file is **never** in a state
+   where its `status` disagrees with its directory — which is a real drift shape
+   that `task-file-state.test.ts` checks for, and which a two-commit claim
+   manufactures on every claim.
+
+   Two further reasons, both CORE's, after they did the LAI-206 claim wrong:
+   **finishing is already one commit**, so claiming in two means two orderings
+   for the same operation on the same file and *"I have to think about which I am
+   doing every time"*. And **it repairs a check that currently cannot work**: the
+   `0 insertions(+), 0 deletions(-)` tell below is the *normal, correct* output
+   of a two-commit claim, so it is dead exactly where it would have caught an
+   edit that never ran.
    The commit is the claim. It is visible to every other session the instant it
    exists — no push, no merge required.
 7. If the move fails, the file is gone, or step 3 turns up a rival claim —

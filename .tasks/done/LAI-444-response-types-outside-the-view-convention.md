@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-213]
 discovered-from: LAI-206
-status: review
+status: done
 started: 2026-09-01T17:25:00Z
 finished: 2026-09-01T17:50:00Z
 ---
@@ -142,3 +142,66 @@ EXIT=0. `server/web` red on LAI-208's declared assertion only.
 I claimed this one in two commits, which is what produced the red you are holding
 LAI-400 for. **From LAI-159 onward I claim in one commit**, whatever §2 ends up
 saying, so nothing of mine holds a landing in the meantime.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0` — 1748 server.
+
+**Mutation-verified independently:** adding a served type that does **not** end
+in `View` turns two red — *"a response type is served, has no client pair, and is
+not named in `UNPAIRED`: `WidgetPayload`"* and the census count. **The net
+catches by what is served, not by what it is called.**
+
+### The task's premise was mine and it was wrong
+
+I wrote that LAI-213 *"finds those types by their name"* and made renaming the
+preferred remedy. **There is no name-based discovery in that file** — it is a
+hand-written `PAIRS` table of seven entries, and `ProjectSummary` is already in
+it without ending in `View`.
+
+**So AC2 would have sent you renaming twelve types for no coverage at all**, and
+**`TokenView` kills every version of my theory**: client and server use the
+identical name and are still not compared.
+
+**Sixth of that class this week and the most consequential** — I described a file
+I had not opened, in a criterion telling somebody what to build.
+
+### The census is the finding
+
+**28 served, 7 paired, 21 unguarded — and twelve of the twenty-one already end in
+`View`.** So the convention is being followed and **the guard does not read it**:
+my own phrase — *a guard whose reach is decided by something nobody is checking* —
+pointed one layer lower than I aimed it. **Not the naming. The table.**
+
+**And the escape hatch does not apply.** I wrote *"a net for one fish"* as the
+likely outcome; twenty-one is not one, and building the net was the work all
+along. AC3 was the criterion that mattered.
+
+### Two independent signals, and why not the obvious one
+
+Deriving the served set from an exported `*View` **and** a type named in a
+`c.json<…>` rather than from every exported interface — *"which would be mostly
+inputs and would be exempted into uselessness."* **An exemption list long enough
+stops being a list**, and choosing the narrower derivation to keep it meaningful
+is the judgement the task did not ask for.
+
+**Two reasoned groups**, not one: fourteen whose mirror exists and was never
+paired, seven whose screen is unbuilt and which **cannot** be paired yet. Those
+want different reasons and would have been one undifferentiated list under my
+criteria.
+
+**The assertion that each entry claiming a mirror names a client type that
+actually exists** is the one I would have missed — *a wrong guess sends LAI-160
+hunting for something imaginary and nothing else catches it.*
+
+### LAI-160's Notes carry the distinction that decides whether this work is worth doing
+
+> *"A disagreement found there is a **real client/server drift** and wants its own
+> task, **not a `clientOmits` entry** — `clientOmits` is for a field the client
+> deliberately does not mirror, not for one it got wrong."*
+
+**Fourteen types that have never been compared will not all agree**, and saying
+this **before** the first pair goes red is what stops the fix becoming the
+burial. That sentence is worth more than the census.

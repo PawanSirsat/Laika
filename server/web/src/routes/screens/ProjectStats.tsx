@@ -1,3 +1,4 @@
+import { LockIcon } from '../../components/LockIcon.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import type { Project } from '../../api/projects.ts';
 import type { Theme } from '../../theme/theme.ts';
@@ -76,10 +77,7 @@ export function ProjectStats({ project, theme }: ProjectStatsProps) {
             {counts.in_progress > 0 && <span>· {counts.in_progress} active</span>}
             {project.blocked_count > 0 && (
               <span className="project-blocked">
-                <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.2" aria-hidden="true">
-                  <rect x="4" y="11" width="16" height="9" rx="2" />
-                  <path d="M8 11V7a4 4 0 0 1 8 0v4" />
-                </svg>
+                <LockIcon />
                 {project.blocked_count} blocked
               </span>
             )}
