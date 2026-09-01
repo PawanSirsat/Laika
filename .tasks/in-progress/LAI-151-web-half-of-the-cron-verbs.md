@@ -2,11 +2,12 @@
 id: LAI-151
 title: The client vocabulary mirror has not seen LAI-431's four cron verbs
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-431]
 discovered-from: LAI-431
-status: backlog
+status: in-progress
+started: 2026-09-01T06:39:03Z
 ---
 
 ## Goal
