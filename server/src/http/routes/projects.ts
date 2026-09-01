@@ -6,7 +6,6 @@ import {
   addMember,
   archivedTombstones,
   changeMemberRole,
-  CONTEXT_MD_LIMIT,
   createProject,
   getProject,
   getProjectContext,
@@ -72,14 +71,30 @@ const UpdateBody = strictObject({
 });
 
 /**
- * The size bound is the service's (`CONTEXT_MD_LIMIT`), not this schema's.
+ * The size bound is the service's (`CONTEXT_MD_LIMIT`), and **only** the
+ * service's (LAI-228).
  *
- * Declared from the same constant rather than repeated as a literal: an MCP tool
- * reaches the service without passing through zod, so the service has to own the
- * rule, and two copies of a number are two numbers.
+ * This schema said the same thing with `.max(CONTEXT_MD_LIMIT)`, and the comment
+ * above it already claimed the service owned the rule. Both were true and the
+ * combination was not: **zod runs first**, so its refusal is the one a REST
+ * caller got —
+ *
+ * ```
+ * "Too big: expected string to have <=100000 characters"
+ * ```
+ *
+ * — which names the limit and **not the actual length**. §7.3 asks for both, and
+ * singles out the length as the half that matters: *"a caller that has to guess
+ * how much to cut will guess wrong"*. Two layers enforcing one bound are enforced
+ * by whichever runs first, and here that silently discarded the more informative
+ * error. MCP, which does not pass through zod, had the better message all along.
+ *
+ * **The type check stays.** Dropping `.max` must not drop `z.string()`: a number
+ * or a missing field is a malformed request, which is this schema's job, where
+ * the size is the service's.
  */
 const ContextBody = strictObject({
-  context_md: z.string().max(CONTEXT_MD_LIMIT),
+  context_md: z.string(),
 });
 
 const MemberBody = strictObject({
