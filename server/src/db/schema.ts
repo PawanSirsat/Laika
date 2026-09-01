@@ -411,10 +411,35 @@ export const activity = sqliteTable(
       .notNull()
       .references(() => orgs.id, { onDelete: 'cascade' }),
     /** Null for org-scoped events. Nulled rather than deleted if a project goes. */
-    projectId: text('project_id').references(() => projects.id, { onDelete: 'set null' }),
-    taskId: text('task_id').references(() => tasks.id, { onDelete: 'set null' }),
+    /**
+     * **`restrict`, not `set null` (LAI-135).**
+     *
+     * A `SET NULL` cascade is an **UPDATE**, and §4.8's append-only trigger
+     * refuses every UPDATE on this table — so deleting a project, task or user
+     * that had any activity failed at runtime with
+     * `activity is append-only: UPDATE is not permitted`, pointing at the audit
+     * log rather than at the thing being deleted.
+     *
+     * The cascades were the wrong half. **A row in an append-only log must not
+     * lose its subject**: "somebody did something to something" becoming
+     * "somebody did something to null" is an edit, which is precisely what the
+     * table forbids. `restrict` says that in the schema, refuses early, and
+     * names the constraint that refused.
+     *
+     * It costs nothing today and encodes what is already true: tasks are
+     * cancelled (§5), projects archived, users deactivated (§4.1). The two paths
+     * that *do* delete a user — `removeOrphanedOwner`, `removeOrphanedInvitee` —
+     * run on accounts that have written no activity, and `createFirstOrg` is
+     * transactional so a failed setup rolls its `org.created` row back. Verified
+     * rather than assumed.
+     *
+     * `heartbeats`, `unlisted_work` and `meeting_reviews` keep their `set null`:
+     * same shape, different consequence, because none of them is append-only and
+     * an UPDATE there is legitimate.
+     */ projectId: text('project_id').references(() => projects.id, { onDelete: 'restrict' }),
+    taskId: text('task_id').references(() => tasks.id, { onDelete: 'restrict' }),
     /** Null for system actors — webhooks (§6.1) and cron (§11.6). */
-    actorId: text('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    actorId: text('actor_id').references(() => users.id, { onDelete: 'restrict' }),
     actorKind: text('actor_kind', { enum: ACTOR_KINDS }).notNull(),
     /** *Which* token, for audit (§4.8). */
     actorTokenId: text('actor_token_id'),
