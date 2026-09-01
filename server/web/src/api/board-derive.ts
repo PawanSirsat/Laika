@@ -32,10 +32,10 @@ export const COLUMN_LABELS: Readonly<Record<BoardColumn, string>> = {
  * error: it invites someone to start work that cannot proceed.
  */
 export function blockedState(task: Task, byId: ReadonlyMap<string, Task>): boolean | undefined {
-  if (task.dependencies.length === 0) return false;
+  if (task.blocked_by.length === 0) return false;
 
   let unknown = false;
-  for (const id of task.dependencies) {
+  for (const id of task.blocked_by) {
     const dependency = byId.get(id);
     if (dependency === undefined) {
       unknown = true;
@@ -48,7 +48,7 @@ export function blockedState(task: Task, byId: ReadonlyMap<string, Task>): boole
 }
 
 /**
- * The dependencies that are actually holding a task up.
+ * The entries in `blocked_by` that are actually holding a task up.
  *
  * `blockedState` answers *whether* — this answers *which*, because LAI-066 asks
  * the card to **name the blocker**: a bare "blocked" badge tells someone they
@@ -61,7 +61,7 @@ export function blockedState(task: Task, byId: ReadonlyMap<string, Task>): boole
  */
 export function blockers(task: Task, byId: ReadonlyMap<string, Task>): readonly Task[] {
   const found: Task[] = [];
-  for (const id of task.dependencies) {
+  for (const id of task.blocked_by) {
     const dependency = byId.get(id);
     if (dependency === undefined) continue;
     if (dependency.status !== 'done' && dependency.status !== 'cancelled') found.push(dependency);

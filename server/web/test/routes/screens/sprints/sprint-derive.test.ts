@@ -20,12 +20,10 @@ import {
   MIN_SPRINT_DAYS,
   msToDateInput,
   progressFor,
-  readSprintId,
   sprintDays,
   toFormValues,
   toSprintInput,
   validateSprintForm,
-  withSprintIds,
   type SprintFormValues,
   daysLeft,
 } from '../../../../src/routes/screens/sprints/sprint-derive.ts';
@@ -49,11 +47,13 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_by_client: null,
     discovered_from: null,
     ready: true,
-    dependencies: [],
+    blocked_by: [],
     tags: [],
     acceptance_md: null,
     blocks: [],
     comment_count: 0,
+    started_at: null,
+    completed_at: null,
     created_at: 0,
     updated_at: 0,
     ...over,
@@ -219,35 +219,15 @@ void describe('progressFor', () => {
   });
 });
 
-void describe('sprint_id, which the client Task type does not declare', () => {
-  void test('reads it when the server sends it', () => {
-    assert.equal(readSprintId({ ...task({ id: '1' }), sprint_id: 's1' }), 's1');
-  });
-
-  void test('degrades to null rather than leaking undefined through a cast', () => {
-    // LAI-121 moves the field into `api/tasks.ts`. Until then this is a checked
-    // read, not an assertion — a server that stopped sending it must read as
-    // "no sprint", never as `undefined` typed to `string`.
-    assert.equal(readSprintId(task({ id: '1' })), null);
-    assert.equal(readSprintId({ ...task({ id: '1' }), sprint_id: 42 } as unknown as Task), null);
-  });
-
-  void test('withSprintIds gives every task the field', () => {
-    const rows = withSprintIds([task({ id: '1' }), { ...task({ id: '2' }), sprint_id: 's1' }]);
-    assert.deepEqual(
-      rows.map((r) => r.sprint_id),
-      [null, 's1'],
-    );
-  });
-});
-
 void describe('groupBySprint', () => {
   void test('buckets by sprint, with unassigned under null', () => {
-    const rows = withSprintIds([
+    // No `withSprintIds` boundary any more: `sprint_id` is on `Task` itself
+    // since LAI-121, so a task is already the shape this groups.
+    const rows = [
       { ...task({ id: '1' }), sprint_id: 's1' },
       { ...task({ id: '2' }), sprint_id: 's1' },
       task({ id: '3' }),
-    ]);
+    ];
     const grouped = groupBySprint(rows);
 
     assert.equal(grouped.get('s1')?.length, 2);

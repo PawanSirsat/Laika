@@ -168,12 +168,12 @@ export function TaskCard({
             deps ?
           </span>
         )}
-        {task.dependencies.length > 0 && (
+        {task.blocked_by.length > 0 && (
           <span className="card-deps card-above" title="Dependencies">
             <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
               <path d="M9 15 15 9M10 6l1-1a4 4 0 1 1 6 6l-1 1M14 18l-1 1a4 4 0 1 1-6-6l1-1" />
             </svg>
-            {task.dependencies.length}
+            {task.blocked_by.length}
           </span>
         )}
 

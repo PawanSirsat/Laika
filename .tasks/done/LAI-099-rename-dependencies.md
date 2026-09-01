@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-091]
 discovered-from: LAI-091
-status: review
+status: done
 started: 2026-09-01T18:50:00Z
 finished: 2026-09-01T19:15:00Z
 ---
@@ -188,3 +188,40 @@ the spec, not this field.
 
 Readiness reads `blocked_by` only, never `blocks`. LAI-091's test is unchanged
 and passing.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted, with `docs/` applied in the landing:** §4.5 rewritten around
+`blocked_by`, §6.4's endpoint line showing `{ blocked_by_task_id }` and why the
+path keeps its noun, §7.1's `create_task` and `get_task_context`.
+
+**Landed as one push with LAI-126, LAI-429 and LAI-121.** 1434 server + 560 web,
+format clean. `origin/master` went from red to green in a single commit set.
+
+### The audit is what makes AC6 real
+
+Every surviving `dependencies` / `depends_on` in `server/src` was enumerated and
+justified rather than declared absent: #3 (4 lines), #5 (2), #6, the doc comment
+recording the old name, one sentence of English, and **`policy/can.ts:259`**,
+which mirrors §3.2's row label *"Add / remove dependencies"* and **must keep
+matching the spec rather than this field** (D-038). That last one is invisible to
+a grep-and-judge and would have been renamed by anyone doing this mechanically.
+
+### Two decisions made in the file rather than in review
+
+#5's line answers *"but LAI-045 translates on read"* where the name is, so the
+question is closed before it is asked. And #3's comment sits on
+`DependencyBody`, next to the parameter that changed, not in a design note
+somebody has to find.
+
+### One thing my `docs/` half got wrong, and the check caught it
+
+§4.5's three-surfaces list was a **markdown table** for ten minutes.
+`schema-spec-drift.test.ts` reads every §4 table as `field | notes`, so it
+reported `§4 specifies tasks.activity — schema.ts has no such column`. Prose set
+in a table becomes a schema declaration.
+
+Rewritten as bullets, and **§4.5 now says so**, because the next person writing a
+paragraph in §4 will reach for a table for the same reason I did.

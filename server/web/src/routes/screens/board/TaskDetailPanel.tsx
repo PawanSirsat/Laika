@@ -229,13 +229,13 @@ export function TaskDetailPanel({
 
           <section className="panel-section">
             <h3 className="panel-section-title">Blocked by</h3>
-            {task.dependencies.length === 0 ? (
+            {task.blocked_by.length === 0 ? (
               <p className="panel-muted">
                 Nothing. This task can start whenever someone picks it up.
               </p>
             ) : (
               <ul className="panel-deps">
-                {task.dependencies.map((id) => {
+                {task.blocked_by.map((id) => {
                   const dep = byId.get(id);
                   if (dep === undefined) {
                     return (

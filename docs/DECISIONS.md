@@ -2131,3 +2131,125 @@ state that contradicts where the task files actually are. **The correct repair
 for a half that landed early is the other half**, and it is in flight.
 
 CHIEF gets no exemption from a rule CHIEF wrote in the same commit that broke it.
+
+---
+
+## D-046 — `npx laika init` owns configuration; `/laika:setup` is a front door onto it
+
+**2026-09-01. Decided by CHIEF, unblocking LAI-420 and LAI-422.**
+
+Both task files said *"raise it, CHIEF decides"* and neither builder could start
+the overlapping half. Deciding it before either is claimed rather than after.
+
+### The ambiguity
+
+§8 says `/laika:setup` writes `LAIKA_URL` and `LAIKA_TOKEN` **into user
+settings**. The ROADMAP says `npx laika init` does *"authenticate, mint a token,
+write local config"*. Two descriptions of the same three steps, with two
+different destinations, and nothing saying whether they are one mechanism.
+
+### The decision
+
+**The CLI owns the mechanism: authenticating, minting, and choosing where the
+configuration lives are decided once, in `cli/`. `/laika:setup` invokes it and
+adds nothing but the invocation.** If a slash command cannot drive an
+interactive prompt, its job shrinks to detecting whether configuration exists and
+printing the exact command to run — **still one mechanism**.
+
+**One config location**, named by the CLI. §8's "user settings" and the ROADMAP's
+"local config" are the same file.
+
+### Why the CLI is the one that owns it
+
+**It is the only one that works before the other exists.** Somebody with no
+plugin installed still needs a token — that is the whole of `npx`. A mechanism
+that only runs inside an already-configured Claude Code session cannot be the one
+that configures Claude Code.
+
+**And two locations make idempotence unprovable.** LAI-422's criterion is that a
+second run does not silently mint a second token. If the two doors write
+different files, a user who has run one and then the other has two tokens, one of
+which they cannot see, and neither door can honestly report on the other. **The
+criterion is not satisfiable by a design with two homes** — which is what makes
+this a decision rather than a preference.
+
+### The general rule
+
+**When two entry points do the same job, the one that works in the fewest
+preconditions owns the implementation.** The other calls it. This is the same
+shape as D-043 — the side that can still be fixed later owns the rule — and both
+come out of asking which side you would rather be wrong on.
+
+### What this does not decide
+
+Whether `/laika:setup` ships at all in M4. If invoking an interactive CLI from a
+slash command turns out to be hostile, **filing it beats faking it** — a command
+that half-configures is worse than one that tells you what to run. That is
+LAI-420's call with the reasoning in its log, exactly as `/laika:status`'s
+capacity gap is.
+
+---
+
+## D-047 — Watching is a write. Who is mentionable is the server's answer.
+
+**2026-09-01. Decided by CHIEF, unblocking LAI-143.** Both questions were flagged
+by CORE in LAI-094 and deliberately left, because neither is a service's call.
+
+### 1. A `read_only` token may not watch a task
+
+**§6.2 already answers it and I am not writing an exception into it.** A
+`read_only` token permits *"every `GET` the user's role allows and nothing
+else"*. `PUT /tasks/:id/watch` is not a `GET`. Watching would be the **only**
+non-`GET` a read-only credential performs, and "it only writes a little" is not a
+distinction the scope makes.
+
+The argument for allowing it was that a subscription is about the holder rather
+than the project. **`GET /tasks/:id/watchers` is what defeats it**: a watch is
+readable by other people, so it is shared state, and a credential that cannot
+change anything must not be able to insert its holder into a list somebody else
+sees.
+
+**How, and this is the part that matters:** not by tightening `project.read`, but
+by giving watching **its own action**, `task.watch`, granted to `lead`, `member`
+*and* `viewer` — anyone who may read may watch — and **left out of
+`READ_ACTIONS`**, which is what refuses the token.
+
+`project.read` conflates the two questions. **The role layer answers *who* may
+watch; the scope layer answers *which credential* may do it**, and the whole
+reason §3.3 rule 4 applies scope after the role decision is so those can differ.
+`actions.ts` already says a new action landing in the write set by default is
+*"the safe direction to be wrong in"*; this is that default being correct.
+
+**Consequence, stated rather than discovered:** an org Viewer's token is forced
+`read_only` (§4.9), so a Viewer can watch through the UI and never through a
+token. §3.1 already has two rows of exactly that shape — `Log own unlisted work`
+and `Send own heartbeat`, both annotated *"(`read_only` forced, so never in
+practice)"*. This is the third, and it is a footnote, not a special case.
+
+### 2. A server endpoint says who is mentionable, not the picker
+
+**`GET /api/v1/projects/:slug/mentionable`**, and the **mention resolver and this
+endpoint must be the same function**, with a test that a name it returns always
+resolves and a name it omits never does.
+
+`resolveMentions` filters on `can(mentioned, 'project.read', { projectId })`
+using **the mentioned person's own authority**. A client cannot compute that:
+
+- **`GET /projects/:slug/members` is a subset, not the answer.** Org owners and
+  admins hold **implicit `lead` everywhere and never have a membership row**
+  (D-006), so they are mentionable and absent from `/members`.
+- A deactivated user fails `can()` and may still appear in a directory.
+- The predicate is `can()`, which changes when §3 changes.
+
+**The failure mode decides it.** A picker built on the wrong set offers a name,
+the mention resolves to nobody, and **nothing happens at all** — no error, no
+notification, no trace. A silently dropped mention is worse than a refused one,
+and it would be read as the mention feature being broken rather than as a picker
+listing the wrong people.
+
+### The rule under both
+
+**Two implementations of one predicate is one implementation and one bug.** The
+server already owns `project.read`; a client rule that agrees with it today
+agrees by coincidence, and nothing tests the coincidence. Same shape as D-043 —
+put the rule where it can still be changed — and D-046 — one job, one owner.

@@ -15,9 +15,7 @@ import {
   groupBySprint,
   inCalendarOrder,
   progressFor,
-  withSprintIds,
   type SprintProgress,
-  type SprintTask,
 } from './sprint-derive.ts';
 
 /**
@@ -52,7 +50,7 @@ const MAX_PAGES = 20;
 
 export interface SprintRow {
   readonly sprint: Sprint;
-  readonly tasks: readonly SprintTask[];
+  readonly tasks: readonly Task[];
   readonly progress: SprintProgress;
 }
 
@@ -62,7 +60,7 @@ export type SprintsState =
   | {
       readonly status: 'ready';
       readonly rows: readonly SprintRow[];
-      readonly unassigned: readonly SprintTask[];
+      readonly unassigned: readonly Task[];
       /** True when a list hit `MAX_PAGES` — the counts below are a floor. */
       readonly truncated: boolean;
     };
@@ -129,8 +127,9 @@ export function useSprints(slug: string | undefined): UseSprints {
 
     Promise.all([allSprints(slug, controller.signal), allTasks(slug, controller.signal)])
       .then(([[sprints, sprintsCut], [tasks, tasksCut]]) => {
-        const withIds = withSprintIds(tasks);
-        const bySprint = groupBySprint(withIds);
+        // `sprint_id` is on the client `Task` since LAI-121, so there is no
+        // longer a boundary where tasks gain the field.
+        const bySprint = groupBySprint(tasks);
 
         setState({
           status: 'ready',
