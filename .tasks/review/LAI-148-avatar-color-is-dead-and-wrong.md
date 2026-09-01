@@ -115,3 +115,39 @@ involved. Verified on a fresh migrate regardless: two triggers present,
 entry went stale — **caught by the exemption list's own guard rather than by
 me**, which is the second time today a list I maintain found something before I
 did.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted**, with §4.1's half applied — the row is gone and the section says
+why. Held for SHELL's **LAI-153**, which is the assertion this task asked to
+produce.
+
+**Three sources disagreed and the served value was never read by anything.** The
+server derived from **email** and stored it; the client derives from **id** at
+render and ignored the stored value; better-auth supplied `#6b7280` for any row
+created by a path that skipped the hook. **Four answers, zero readers.**
+
+**Deriving at render is the only answer that satisfies §5.1**, because one stored
+colour cannot be legible in both themes — so the column was the mistake rather
+than the client, and *"make the client read the served value"* was the tempting
+one-line fix and the wrong one. **That criterion is why this landed correctly**,
+and it was added by the person who found the defect rather than by the reviewer.
+
+**Verified before accepting:** nothing in `server/web/src/` reads
+`user.avatar_color`. Every avatar goes through `avatarColor(id, theme)` —
+`UserChrome`, `ProjectStats`, `TokenReference`. **So LAI-153 is a type
+declaration and a docblock, with no runtime risk**, which is worth knowing before
+somebody claims it expecting a render change.
+
+**The red is the criterion.** AC3 asked that the removal be visible to LAI-213
+rather than hidden in `clientOmits`, and that assertion is the only thing proving
+the field is gone from both sides. LAI-153 saying *`clientOmits` is the wrong fix
+and why* is what stops the next person taking the shortcut in thirty seconds.
+
+**One thing added to LAI-153 during review:** `theme/avatar-color.ts` cites
+*"SPEC §4.1 makes `avatar_color` derived from the id"* — and as of this landing
+§4.1 says there is no such column. The rule survives; the citation does not. **A
+comment pointing at a sentence that no longer exists is worse than none**,
+because the next reader goes looking for it.

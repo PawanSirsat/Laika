@@ -142,3 +142,66 @@ locked out with no way to tell why.
 Treating a missing user row as active survives mutation, and is unreachable:
 reaching that line requires better-auth to have just verified a password against
 a row. Documented as defence in depth. **Five mutations, four caught.**
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted**, held for SHELL's LAI-153, which is the only remaining red.
+
+**Mutation-verified:** removing the middleware's `ApiError` rethrow turns **five**
+red, including `answers the same way everywhere, not only on /me` and
+`401s a deactivated user's token, where a cookie gets 403`.
+
+### The fix would have reintroduced the bug one layer up
+
+> *"`authMiddleware` swallows non-`TokenAuthError` exceptions into `actor: null`.
+> So throwing from the resolver — **the obvious two-line change your Notes
+> predicted** — would have answered "you are not signed in" instead of "your
+> account is switched off"."*
+
+**The same wrong-shape defect this task exists to remove, reintroduced by its own
+fix, one layer up and with a different empty answer.** My Notes said *"this may
+be two lines plus its tests"* and would have been wrong in the way that matters:
+the two lines were right and insufficient, and nothing about the criteria would
+have caught it — the tests I asked for would all have passed against
+`401 unauthorized`.
+
+**Found by reading the middleware before writing the throw.** That is the only
+reason it is not in the diff as a bug, and it is worth naming as a habit: *the
+layer that catches your exception decides what your exception means.*
+
+### Both decisions I asked for, both argued
+
+**Sign-in refuses *after* the password is verified.** Before would answer `403`
+to anyone who typed the address — **an account-existence oracle**, which LAI-219
+spent a whole task keeping shut. Asserting that a *wrong* password on a
+deactivated account answers exactly as a wrong password on an unknown one is the
+test that pins it, and mutating the check earlier turns three red. **That
+connection to LAI-219 is the part I would not have made.**
+
+**Reactivation restores an unexpired session.** And the reason is structural
+rather than chosen: `loadActor` reads `is_active` from the row on every request
+rather than trusting the session payload — **which is why deactivation is
+immediate — so reactivation is immediate by the same mechanism.** The alternative
+needs session invalidation, which nothing here does, and would leave a
+reactivated person locked out with no way to tell why.
+
+### The tension in my own criteria, resolved rather than reported
+
+AC2 wanted `403`; AC4 wanted the token path unchanged at `401`. **I wrote both
+without noticing they looked contradictory.**
+
+> *"What converges is **the place**, not the status — a refused token is a bad
+> credential; a valid cookie for a deactivated person is a **good credential
+> whose holder may do nothing**."*
+
+That is exactly right, and **one test asserting both statuses from a single
+deactivation** is the way to keep it from collapsing later into "make them the
+same".
+
+### One guard reported rather than counted
+
+Treating a missing user row as active survives mutation and is **unreachable** —
+reaching that line requires better-auth to have just verified a password against
+a row. **Five mutations, four caught**, reported that way. Third time today.
