@@ -1,0 +1,26 @@
+{
+  "name": "laika",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Laika CLI — point an agent at your board in one command.",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "laika": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "pnpm run clean && tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "pnpm run typecheck && node --test \"test/**/*.test.ts\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.1",
+    "typescript": "~6.0.3"
+  }
+}
