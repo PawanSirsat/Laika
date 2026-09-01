@@ -2,11 +2,12 @@
 id: LAI-143
 title: Endpoints for watching a task and reading your mentions
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-094]
 discovered-from: LAI-094
-status: backlog
+status: in-progress
+started: 2026-09-01T21:25:00Z
 ---
 
 ## Goal
