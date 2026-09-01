@@ -38,7 +38,7 @@ import { assertTransition, isReady } from './task-lifecycle.ts';
  * checks against the original. LAI-119 converges the two route files that
  * still do.
  */
-export { TASK_PRIORITIES, TASK_STATUSES } from '../db/enums.ts';
+export { CREATED_VIA, TASK_PRIORITIES, TASK_STATUSES } from '../db/enums.ts';
 
 export interface TaskView {
   id: string;
