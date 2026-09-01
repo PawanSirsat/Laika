@@ -2,11 +2,12 @@
 id: LAI-443
 title: '`auth.session_refused` is unasserted — the same hole LAI-437 just closed, one branch over'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-437]
 discovered-from: LAI-437
-status: backlog
+status: in-progress
+started: 2026-09-01T14:30:00Z
 ---
 
 ## Goal
