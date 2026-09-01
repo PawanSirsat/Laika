@@ -43,6 +43,11 @@ const ORG_MATRIX: OrgRow[] = [
   // `org.settings.edit`, and a borrowed row would have handed the next field
   // added to it a grant nobody reviewed.
   ['org.read', true, true, true, true],
+  // | Presence and capacity | ✓ | ✓ | ✓ | ✓ |
+  // The row grants asking; §9.1's per-project filter decides what comes back,
+  // and capacity's `unlisted` narrows again on `audit_log.export` (LAI-432).
+  ['presence.read', true, true, true, true],
+  ['capacity.read', true, true, true, true],
   // | View member list | ✓ | ✓ | ✓ | ✓ |
   ['member_list.read', true, true, true, true],
   // | Generate own tokens | ✓ | ✓ | ✓ | ✓ (read_only forced) |

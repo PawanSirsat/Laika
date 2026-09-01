@@ -33,6 +33,7 @@ import { tokenRoutes, userTokenRoutes } from './http/routes/tokens.ts';
 import { mcpRoutes } from './http/routes/mcp.ts';
 import { unlistedRoutes } from './http/routes/unlisted.ts';
 import { heartbeatRoutes } from './http/routes/heartbeats.ts';
+import { capacityRoutes, presenceRoutes } from './http/routes/presence.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
@@ -225,6 +226,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/sprints`, sprintRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/unlisted`, unlistedRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/heartbeats`, heartbeatRoutes({ db }));
+    app.route(`${API_BASE}/presence`, presenceRoutes({ db }));
+    app.route(`${API_BASE}/capacity`, capacityRoutes({ db }));
 
     // §7's endpoint, on the same process and the same auth as the REST API.
     // Not under `${API_BASE}`: §6.4 places it at the root, and `static.ts`

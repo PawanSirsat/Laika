@@ -93,6 +93,12 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
+  // In flight. §3.1 gains a "Presence and capacity" row (✓ ✓ ✓ ✓), written by
+  // CHIEF and applied at merge; the staleness test below drops both the moment
+  // it lands. Re-checked after every merge of `master`, which is when they
+  // expire (LAI-219).
+  ['presence.read', 'LAI-432, in flight: awaiting §3.1\'s "Presence and capacity" row.'],
+  ['capacity.read', 'LAI-432, in flight: awaiting §3.1\'s "Presence and capacity" row.'],
   // Empty, and it should stay that way: an action `can()` allows and §3 never
   // grants is a permission with no written source.
   //
