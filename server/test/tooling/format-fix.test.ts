@@ -212,3 +212,84 @@ describe('third-party artefacts are never formatted (LAI-026, PM addition)', () 
     expect(() => runFormatFix()).not.toThrow();
   });
 });
+
+/**
+ * The window reaches work this branch has already committed (LAI-101).
+ *
+ * LAI-026 scoped `format:fix` to `git diff HEAD`, which is right for "fix what I
+ * am working on" and empty the moment you commit — so `pnpm format` could be red
+ * with no command that fixed it. The window is now the branch's **merge-base
+ * with `master`**, which still cannot reach a file this worktree never touched.
+ */
+describe('format:fix reaches committed work on this branch (LAI-101)', () => {
+  /** A `master` to fork from, so `merge-base` has something to find. */
+  function branchFromMaster(): void {
+    git('branch', '-M', 'master');
+    git('checkout', '-qb', 'work');
+  }
+
+  it('formats a file this branch committed, which `git diff HEAD` cannot see', () => {
+    branchFromMaster();
+    write('server/src/mine.ts', UNFORMATTED_TS);
+    git('add', '-A');
+    git('commit', '-qm', 'my work');
+
+    // The whole gap: with the file committed, `git diff HEAD` is empty and the
+    // old script had nothing to hand Prettier.
+    expect(read('server/src/mine.ts')).toBe(UNFORMATTED_TS);
+    runFormatFix();
+    expect(read('server/src/mine.ts')).not.toBe(UNFORMATTED_TS);
+  });
+
+  it('still leaves a file only `master` touched alone', () => {
+    branchFromMaster();
+    write('server/src/mine.ts', UNFORMATTED_TS);
+    git('add', '-A');
+    git('commit', '-qm', 'my work');
+
+    runFormatFix();
+
+    // LAI-026's property, unchanged: `keep.ts` was committed before the fork, so
+    // it is not this branch's work and the formatter must not reach it. Widening
+    // the window must not widen the ownership.
+    expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
+    expect(read('plugin/plugin.json')).toBe(UNFORMATTED_JSON);
+  });
+
+  it('on a freshly branched worktree, behaves exactly as before', () => {
+    branchFromMaster();
+
+    // No commits of its own, so the merge-base *is* `HEAD` and the diff is
+    // empty — today's behaviour, and the uncommitted half still works.
+    write('server/src/uncommitted.ts', UNFORMATTED_TS);
+    runFormatFix();
+
+    expect(read('server/src/uncommitted.ts')).not.toBe(UNFORMATTED_TS);
+    expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
+  });
+
+  it('on `master` itself, formats nothing already committed', () => {
+    git('branch', '-M', 'master');
+    write('server/src/late.ts', UNFORMATTED_TS);
+    git('add', '-A');
+    git('commit', '-qm', 'committed on master');
+
+    runFormatFix();
+
+    // `merge-base master HEAD` is `HEAD` here, so the diff is empty — which is
+    // the safe outcome and the one AC4 asks to be confirmed rather than assumed.
+    // A `master` that formatted its own history would rewrite the whole repo.
+    expect(read('server/src/late.ts')).toBe(UNFORMATTED_TS);
+  });
+
+  it('falls back to HEAD when there is no `master` at all', () => {
+    // Every test above this block runs in exactly this state — `git init` with
+    // no `master` — so the fallback is what has kept LAI-026's suite passing.
+    // Asserted directly rather than relied on.
+    write('server/src/uncommitted.ts', UNFORMATTED_TS);
+    runFormatFix();
+
+    expect(read('server/src/uncommitted.ts')).not.toBe(UNFORMATTED_TS);
+    expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
+  });
+});

@@ -17,7 +17,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --check --ignore-path .gitignore --ignore-path .prettierignore \"**/*.{ts,tsx,mts,cts,js,jsx,mjs,cjs,json,yaml,yml,css,scss,html}\"",
-    "format:fix": "{ git diff --name-only --diff-filter=d -z HEAD -- '*.ts' '*.tsx' '*.mts' '*.cts' '*.js' '*.jsx' '*.mjs' '*.cjs' '*.json' '*.yaml' '*.yml' '*.css' '*.scss' '*.html'; git ls-files --others --exclude-standard -z -- '*.ts' '*.tsx' '*.mts' '*.cts' '*.js' '*.jsx' '*.mjs' '*.cjs' '*.json' '*.yaml' '*.yml' '*.css' '*.scss' '*.html'; } | xargs -0 -r prettier --write --ignore-unknown --ignore-path .gitignore --ignore-path .prettierignore"
+    "format:fix": "{ git diff --name-only --diff-filter=d -z \"$(git merge-base master HEAD 2>/dev/null || echo HEAD)\" -- '*.ts' '*.tsx' '*.mts' '*.cts' '*.js' '*.jsx' '*.mjs' '*.cjs' '*.json' '*.yaml' '*.yml' '*.css' '*.scss' '*.html'; git ls-files --others --exclude-standard -z -- '*.ts' '*.tsx' '*.mts' '*.cts' '*.js' '*.jsx' '*.mjs' '*.cjs' '*.json' '*.yaml' '*.yml' '*.css' '*.scss' '*.html'; } | xargs -0 -r prettier --write --ignore-unknown --ignore-path .gitignore --ignore-path .prettierignore"
   },
   "devDependencies": {
     "@types/node": "^22.20.1",
