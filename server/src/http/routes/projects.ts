@@ -13,6 +13,8 @@ import {
   joinPublicProject,
   listMembers,
   listProjects,
+  PROJECT_ROLES,
+  PROJECT_VISIBILITIES,
   projectSummaries,
   projectSummaryView,
   removeMember,
@@ -52,7 +54,7 @@ const CreateBody = strictObject({
   slug: Slug,
   prefix: Prefix,
   description: z.string().trim().max(2000).optional(),
-  visibility: z.enum(['public', 'private']).optional(),
+  visibility: z.enum(PROJECT_VISIBILITIES).optional(),
 });
 
 const UpdateBody = strictObject({
@@ -61,7 +63,7 @@ const UpdateBody = strictObject({
   // `owner/name` (§4.3). Trimmed but not rewritten — the service refuses a URL
   // rather than guessing at one, and `null` clears the field.
   repo: z.string().trim().min(1).max(REPO_MAX_LENGTH).nullable().optional(),
-  visibility: z.enum(['public', 'private']).optional(),
+  visibility: z.enum(PROJECT_VISIBILITIES).optional(),
   // `context_md` is **not** here since LAI-404. It has its own pair below, so
   // there is one writer of the column, one place enforcing the size bound, and
   // one shape of audit row. `.strict()` means a client still sending it here
@@ -82,10 +84,10 @@ const ContextBody = strictObject({
 
 const MemberBody = strictObject({
   user_id: z.string().min(1),
-  role: z.enum(['lead', 'member', 'viewer']),
+  role: z.enum(PROJECT_ROLES),
 });
 
-const RoleBody = strictObject({ role: z.enum(['lead', 'member', 'viewer']) });
+const RoleBody = strictObject({ role: z.enum(PROJECT_ROLES) });
 
 // The shape is validated in `services/tags.ts` beside the CHECK it mirrors, so
 // this only bounds the length — two regexes for one rule is how they drift.

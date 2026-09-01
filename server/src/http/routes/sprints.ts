@@ -9,6 +9,7 @@ import {
   getSprint,
   listSprints,
   removeTaskFromSprint,
+  SPRINT_STATUSES,
   updateSprint,
   type SprintView,
 } from '../../services/sprints.ts';
@@ -24,7 +25,8 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * functions (CONVENTIONS §2).
  */
 
-const STATUSES = ['planned', 'active', 'completed'] as const;
+// From `db/enums.ts` via `services/`, not retyped here — see LAI-119 and the
+// re-export's comment in `services/sprints.ts`.
 
 /**
  * Unix-ms, and required to be an integer.
@@ -43,7 +45,7 @@ const CreateBody = strictObject({
   goal: Goal.nullable().optional(),
   starts_on: Timestamp,
   ends_on: Timestamp,
-  status: z.enum(STATUSES).optional(),
+  status: z.enum(SPRINT_STATUSES).optional(),
 });
 
 const UpdateBody = strictObject({
@@ -52,7 +54,7 @@ const UpdateBody = strictObject({
   goal: Goal.nullable().optional(),
   starts_on: Timestamp.optional(),
   ends_on: Timestamp.optional(),
-  status: z.enum(STATUSES).optional(),
+  status: z.enum(SPRINT_STATUSES).optional(),
 });
 
 const AssignBody = strictObject({
@@ -83,9 +85,9 @@ export function projectSprintRoutes(options: SprintRouteOptions): Hono<AppEnv> {
     if (
       status !== undefined &&
       status !== '' &&
-      !(STATUSES as readonly string[]).includes(status)
+      !(SPRINT_STATUSES as readonly string[]).includes(status)
     ) {
-      throw ApiError.badRequest(`status must be one of ${STATUSES.join(', ')}`, { status });
+      throw ApiError.badRequest(`status must be one of ${SPRINT_STATUSES.join(', ')}`, { status });
     }
 
     const rows = listSprints(db, actor, c.req.param('slug'), {

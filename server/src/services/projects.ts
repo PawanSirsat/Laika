@@ -11,6 +11,18 @@ import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
 
 /**
+ * Re-exported so `routes/projects.ts` can validate a role or a visibility
+ * without importing `db/`, which CONVENTIONS §2 forbids for `http/routes/` and
+ * `mcp/` alike.
+ *
+ * The same line, for the same reason, as `TASK_STATUSES` on `services/tasks.ts`
+ * and `ORG_ROLES` on `services/invites.ts` (LAI-071, LAI-119). This file had
+ * **four** retyped literals across two vocabularies — more than LAI-119 listed,
+ * and found by the structural check rather than by reading the task.
+ */
+export { PROJECT_ROLES, PROJECT_VISIBILITIES } from '../db/enums.ts';
+
+/**
  * Projects and their memberships (SPEC §4.3, §4.4, §6.4).
  *
  * Every function here takes an `Actor`, calls `assertCan` before it touches

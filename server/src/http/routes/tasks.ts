@@ -5,11 +5,14 @@ import { ApiError } from '../../errors.ts';
 import {
   addTaskDependency,
   changeStatus,
+  CREATED_VIA,
   claimTask,
   createTask,
   getTask,
   listTasks,
   removeTaskDependency,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
   updateTask,
   type TaskView,
 } from '../../services/tasks.ts';
@@ -26,8 +29,10 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * calling the same functions (CONVENTIONS §2).
  */
 
-const STATUSES = ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled'] as const;
-const PRIORITIES = ['p1', 'p2', 'p3'] as const;
+// The vocabularies come from `db/enums.ts` through `services/`, which this file
+// may import — CONVENTIONS §2 forbids `http/routes/` reaching into `db/`, and
+// these are values, so `allowTypeImports` does not help. Retyping them here made
+// a fourth copy of a list `db/enums.ts` exists to declare once (LAI-119).
 
 /**
  * Acceptance is prose, and shorter than a description on purpose: it answers
@@ -41,11 +46,11 @@ const CreateBody = strictObject({
   description_md: z.string().max(100_000).optional(),
   acceptance_md: z.string().max(ACCEPTANCE_MAX).optional(),
   tags: z.array(z.string().trim().min(1).max(64)).max(MAX_TAGS_PER_TASK).optional(),
-  priority: z.enum(PRIORITIES).optional(),
-  status: z.enum(STATUSES).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
+  status: z.enum(TASK_STATUSES).optional(),
   assignee_id: z.string().min(1).optional(),
   discovered_from: z.string().min(1).optional(),
-  created_via: z.enum(['web', 'mcp', 'api', 'webhook', 'meeting']).optional(),
+  created_via: z.enum(CREATED_VIA).optional(),
 });
 
 const UpdateBody = strictObject({
@@ -58,12 +63,12 @@ const UpdateBody = strictObject({
   // regex, the lowercasing and the duplicate rule live with the CHECK they
   // mirror, not in two places.
   tags: z.array(z.string().trim().min(1).max(64)).max(MAX_TAGS_PER_TASK).optional(),
-  priority: z.enum(PRIORITIES).optional(),
+  priority: z.enum(TASK_PRIORITIES).optional(),
   // `null` unassigns; absent leaves it alone. They are different requests.
   assignee_id: z.string().min(1).nullable().optional(),
 });
 
-const StatusBody = strictObject({ status: z.enum(STATUSES) });
+const StatusBody = strictObject({ status: z.enum(TASK_STATUSES) });
 // `blocked_by_task_id`, matching `TaskView.blocked_by` (LAI-099). The **path**
 // keeps `/dependencies`: a path segment names a collection, not a direction, and
 // has no sibling to be confused with — `blocked_by` beside `blocks` was ambiguous,
@@ -117,8 +122,8 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       ...(c.req.query('tag') === undefined || c.req.query('tag') === ''
         ? {}
         : { tag: c.req.query('tag') }),
-      status: parseEnum(c.req.query('status'), STATUSES, 'status'),
-      priority: parseEnum(c.req.query('priority'), PRIORITIES, 'priority'),
+      status: parseEnum(c.req.query('status'), TASK_STATUSES, 'status'),
+      priority: parseEnum(c.req.query('priority'), TASK_PRIORITIES, 'priority'),
       assignee: c.req.query('assignee'),
       sprint: c.req.query('sprint'),
       ready: parseReady(c.req.query('ready')),

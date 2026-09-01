@@ -13,6 +13,16 @@ import { requireProjectBySlug } from './projects.ts';
 import { getTask, type TaskView } from './tasks.ts';
 
 /**
+ * Re-exported so `routes/sprints.ts` can validate a status without importing
+ * `db/`, which CONVENTIONS §2 forbids for `http/routes/` and `mcp/` alike.
+ *
+ * The same line, for the same reason, as `TASK_STATUSES` on `services/tasks.ts`
+ * and `ORG_ROLES` on `services/invites.ts` (LAI-071, LAI-119): a route that
+ * retypes a closed vocabulary makes a copy nothing checks against the original.
+ */
+export { SPRINT_STATUSES } from '../db/enums.ts';
+
+/**
  * Sprints (SPEC §4.15, §6.4, §3.2, D-013) — dates and a goal, nothing else.
  *
  * **Story points are still a non-goal** (§1.1, D-013). Nothing here estimates,
