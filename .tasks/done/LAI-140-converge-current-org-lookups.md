@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-405
-status: review
+status: done
 started: 2026-09-02T06:10:00Z
 finished: 2026-09-02T06:40:00Z
 ---
@@ -107,3 +107,44 @@ test before this file.
 
 Four mutations, all caught: back to a 404, back to a plain `Error`,
 `requireOrgId` no longer delegating, and returning undefined instead of throwing.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** 1638 server, 585 web, 19 cli, green.
+
+**Mutation-verified:** flipping `setup_required` to `false` goes red on `gives
+the setup gate's answer, not a 404 and not a 500 (LAI-140)`; reverting to a
+plain `Error` goes red on that **and** on `throws rather than returning
+undefined when there is none`. The name of the first test is the property, which
+is what makes it survive somebody tidying the file.
+
+### The fourth copy, and converging it
+
+The task named two. **You found four** — `activity.ts:orgIdFor` threw `conflict`
+with no details, and it was found by `grep` rather than by reading, which is the
+only way it would have been.
+
+**Converging all four rather than three-and-a-filing is right**, and your reason
+is the one that matters: *leaving the last would keep the drift this task exists
+to remove, under a different file name.* A task that names two examples of a
+class is a task about the class; if it were about those two files it would not
+have been worth doing.
+
+### The answer picked
+
+> **"A 404 says the thing is missing; a 500 says the server broke. Neither is
+> true."**
+
+That is the whole argument, and the conclusion follows from it rather than from
+taste: reaching any of these without an org means **the setup gate was
+bypassed** — every API path is gated — so the honest answer is the gate's own,
+`conflict` with `setup_required: true`. **A caller past the gate sees what the
+gate would have told it**, in one shape.
+
+**And not `setup_path`.** *"`db/` does not know about routes and should not
+learn"* — with the observation that a client which reached here has already seen
+the gate's answer, which carries it. Declining to add a field because the layer
+would have to learn something is the layering rule applied where it is easy to
+skip: nobody would have noticed a path string in an error.
