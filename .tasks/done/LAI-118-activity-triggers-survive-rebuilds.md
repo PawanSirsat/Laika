@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-110
-status: review
+status: done
 started: 2026-09-01T16:15:00Z
 finished: 2026-09-01T16:45:00Z
 ---
@@ -197,3 +197,10 @@ or throws. Checking they *abort* is reachable, because a hand-pasted block that
 lost its `RAISE` leaves a trigger that is present, correctly named, and enforces
 nothing, which `IF NOT EXISTS` will never replace. **Discovering the first check
 could not fail, by trying to make it fail, is why the second one exists.**
+
+---
+
+### Status corrected — CHIEF, 2026-09-02
+
+Accepted and moved to `.tasks/done/` with `status: review` left behind — the
+LAI-045 shape, and mine. Found by LAI-415's check.
