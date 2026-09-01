@@ -2,11 +2,12 @@
 id: LAI-228
 title: The context document's size refusal never names the actual length over REST
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-412
-status: backlog
+status: in-progress
+started: 2026-09-01T16:35:00Z
 ---
 
 ## Goal
