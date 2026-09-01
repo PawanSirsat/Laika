@@ -3,6 +3,7 @@ import { type Db } from '../db/client.ts';
 import { type ActorKind, type ProjectRole } from '../db/enums.ts';
 import { projectMemberships, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { type Logger } from '../log.ts';
 import { type Actor } from '../policy/can.ts';
 import { type Auth } from './auth.ts';
 import { findTokenBySecret, TokenAuthError, touchTokenUsage, tokenProjectIds } from './tokens.ts';
@@ -26,6 +27,12 @@ export interface ResolvedActor extends Actor {
 export interface ResolveActorOptions {
   auth: Auth;
   db: Db;
+  /**
+   * Optional so the LAI-002 tests can resolve without one. Threaded because
+   * `touchTokenUsage` has one thing to say and no other way to say it: a
+   * database it cannot write (LAI-156).
+   */
+  log?: Logger;
 }
 
 /**
@@ -66,7 +73,7 @@ export async function resolveActor(
   // back would mean an expired or revoked token silently acting with the full
   // authority of whatever session was also attached, which is precisely the
   // escalation the previous paragraph rules out.
-  if (bearer !== null) return resolveTokenActor(options.db, bearer, now);
+  if (bearer !== null) return resolveTokenActor(options.db, bearer, now, options.log);
 
   const session = await options.auth.api.getSession({ headers: request.headers });
   if (session === null) return null;
@@ -111,7 +118,12 @@ export async function resolveActor(
  * from "this token existed" — free information about other people's tokens, on
  * an unauthenticated endpoint.
  */
-export function resolveTokenActor(db: Db, presented: string, now: number): ResolvedActor {
+export function resolveTokenActor(
+  db: Db,
+  presented: string,
+  now: number,
+  log?: Logger,
+): ResolvedActor {
   const found = findTokenBySecret(db, presented, now);
   if (!found.ok) throw new TokenAuthError(found.reason);
 
@@ -119,7 +131,7 @@ export function resolveTokenActor(db: Db, presented: string, now: number): Resol
   if (actor === null) throw new TokenAuthError('unknown');
   if (!actor.isActive) throw new TokenAuthError('inactive_user');
 
-  touchTokenUsage(db, found.row, now);
+  touchTokenUsage(db, found.row, now, log);
 
   return {
     ...actor,

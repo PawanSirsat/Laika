@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LAST_USED_THROTTLE_MS } from '../../../src/auth/tokens.ts';
+import { LAST_USED_THROTTLE_MS, resetReadOnlyWarning } from '../../../src/auth/tokens.ts';
 import { activity, tokens, users } from '../../../src/db/schema.ts';
 import { LIMITS, RateLimiter } from '../../../src/http/rate-limit.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
@@ -102,20 +102,24 @@ afterEach(() => {
  * `SQLITE_READONLY` from the same driver, deterministically, on any machine and
  * whatever user the suite runs as.
  */
-describe('an unwritable database', () => {
+
+describe('a read-only database still serves reads (LAI-156)', () => {
   /**
-   * The condition the operator actually hit. `touchTokenUsage` is throttled to
-   * one write a minute, so a token used seconds ago writes nothing and would
-   * have served this request happily — which is why the first version of this
-   * test passed against the bug. Clearing the stamp is what makes the write run.
+   * The condition an operator actually hits — a restored file with the wrong
+   * owner, a full volume, a read-only mount.
+   *
+   * The stale stamp is the whole fixture. `touchTokenUsage` is throttled to one
+   * write a minute, so a token used seconds ago writes nothing and would serve
+   * this request whatever the disk was doing. **That was the old failure mode:**
+   * a read-only instance worked for sixty seconds after each token's last use
+   * and then stopped, so a total outage looked intermittent.
    */
   async function readOnlyWithStaleStamp(): Promise<string> {
     const secret = await mint({});
-
-    // Working first, so a later 500 cannot be a token that was never valid.
     expect((await withToken('/api/v1/me', secret)).status).toBe(200);
 
     h.db.update(tokens).set({ lastUsedAt: null }).run();
+    resetReadOnlyWarning();
     h.t.sqlite.pragma('query_only = ON');
     return secret;
   }
@@ -123,10 +127,110 @@ describe('an unwritable database', () => {
   afterEach(() => {
     // Before `h.close()`, which needs to write.
     h.t.sqlite.pragma('query_only = OFF');
+    resetReadOnlyWarning();
   });
 
-  it('answers internal, not unauthorized, when the resolver cannot write', async () => {
+  it('serves a GET with a valid token whose stamp is stale', async () => {
     const secret = await readOnlyWithStaleStamp();
+
+    const res = await withToken('/api/v1/me', secret);
+
+    expect(res.status, await res.clone().text()).toBe(200);
+  });
+
+  it('still refuses a write', async () => {
+    // The relaxation is the auth layer's own bookkeeping and nothing else. A
+    // POST that reported success while storing nothing would be far worse than
+    // the outage this replaces.
+    const secret = await readOnlyWithStaleStamp();
+
+    const res = await withToken('/api/v1/projects', secret, {
+      method: 'POST',
+      body: JSON.stringify({ name: 'New', slug: 'new', prefix: 'NEW' }),
+    });
+
+    expect(res.status).not.toBe(201);
+    expect(res.status).toBeGreaterThanOrEqual(400);
+  });
+
+  it('says so in the log, once, not once per request', async () => {
+    const secret = await readOnlyWithStaleStamp();
+
+    for (let i = 0; i < 4; i++) expect((await withToken('/api/v1/me', secret)).status).toBe(200);
+
+    const lines = h.log.records.filter((r) => r.event === 'token.last_used_unwritable');
+    expect(lines, 'the degradation was never reported').toHaveLength(1);
+    expect(String((lines[0] as { effect?: unknown }).effect)).toMatch(/reads continue/i);
+  });
+
+  it('reports it again if the database goes read-only a second time', async () => {
+    // "Once per process" would announce the first outage and stay silent through
+    // every later one — the version of this that looks identical and is worse.
+    const secret = await readOnlyWithStaleStamp();
+    expect((await withToken('/api/v1/me', secret)).status).toBe(200);
+
+    // Recover: the next successful stamp clears the flag.
+    h.t.sqlite.pragma('query_only = OFF');
+    h.db.update(tokens).set({ lastUsedAt: null }).run();
+    expect((await withToken('/api/v1/me', secret)).status).toBe(200);
+
+    // And fail again.
+    h.db.update(tokens).set({ lastUsedAt: null }).run();
+    h.t.sqlite.pragma('query_only = ON');
+    expect((await withToken('/api/v1/me', secret)).status).toBe(200);
+
+    expect(h.log.records.filter((r) => r.event === 'token.last_used_unwritable')).toHaveLength(2);
+  });
+
+  it('does not swallow a write failure that is not read-only', async () => {
+    // **The narrow catch, asserted against the write itself.**
+    //
+    // The first version of this dropped a table and got its 500 from
+    // `loadActor`'s *read* failing — so it passed whether the catch was narrow
+    // or caught everything, which a mutation proved. A trigger that aborts the
+    // UPDATE leaves every read working and fails exactly the statement the catch
+    // wraps, with `SQLITE_CONSTRAINT_TRIGGER` rather than `SQLITE_READONLY`.
+    const secret = await mint({});
+    expect((await withToken('/api/v1/me', secret)).status).toBe(200);
+
+    h.db.update(tokens).set({ lastUsedAt: null }).run();
+    h.t.sqlite.exec(
+      "CREATE TRIGGER no_stamp BEFORE UPDATE ON tokens BEGIN SELECT RAISE(ABORT, 'nope'); END",
+    );
+
+    const res = await withToken('/api/v1/me', secret);
+
+    expect(res.status, await res.clone().text()).toBe(500);
+    h.t.sqlite.exec('DROP TRIGGER no_stamp');
+  });
+});
+
+describe('a resolver failure that is not a credential problem', () => {
+  /**
+   * **Re-based by LAI-156.** These originally used a read-only database, because
+   * `touchTokenUsage`'s stamp was the resolver's only write and it threw. That
+   * write is now survivable on purpose — a read-only instance serves reads — so
+   * using it here would test the opposite of what LAI-437 established.
+   *
+   * The property LAI-437 pinned is unchanged and is the one that matters: **a
+   * resolver failure that is not a credential problem is `internal`, never
+   * `unauthorized`.** It just needs a failure that is still a failure. Dropping
+   * a table the resolver reads is one: `SQLITE_ERROR`, not `SQLITE_READONLY`, so
+   * LAI-156's narrow catch does not apply and it reaches the error handler.
+   */
+  async function breakTheResolver(): Promise<string> {
+    const secret = await mint({});
+
+    // Working first, so a later 500 cannot be a token that was never valid.
+    expect((await withToken('/api/v1/me', secret)).status).toBe(200);
+
+    // `loadActor` joins this to build the actor's memberships.
+    h.t.sqlite.exec('DROP TABLE project_memberships');
+    return secret;
+  }
+
+  it('answers internal, not unauthorized', async () => {
+    const secret = await breakTheResolver();
 
     const res = await withToken('/api/v1/me', secret);
 
@@ -139,7 +243,7 @@ describe('an unwritable database', () => {
     // to everything" satisfies the test above and is a worse bug than the one
     // being fixed — it would tell an operator the disk is broken every time
     // somebody mistypes a token.
-    await readOnlyWithStaleStamp();
+    await breakTheResolver();
 
     const res = await withToken('/api/v1/me', `lai_${'a'.repeat(43)}`);
 
@@ -148,26 +252,26 @@ describe('an unwritable database', () => {
   });
 
   it('does not leak the driver message to the caller', async () => {
-    const secret = await readOnlyWithStaleStamp();
+    const secret = await breakTheResolver();
 
     const body = await (await withToken('/api/v1/me', secret)).text();
 
-    // The operator needs `attempt to write a readonly database`; the caller gets
-    // a request id to quote (§13.2) and nothing about the disk.
-    expect(body).not.toContain('readonly');
+    // The operator needs the SQLite message; the caller gets a request id to
+    // quote (§13.2) and nothing about the schema.
+    expect(body).not.toContain('project_memberships');
     expect(body).toContain('request_id');
   });
 
   it('keeps the log line that made this diagnosable', async () => {
     // AC5. It names the layer — `http.unhandled` names only the request — and it
     // is the reason this took two minutes to find rather than twenty.
-    const secret = await readOnlyWithStaleStamp();
+    const secret = await breakTheResolver();
 
     await withToken('/api/v1/me', secret);
 
     const line = h.log.find('auth.resolve_failed');
     expect(line, 'auth.resolve_failed is no longer logged').toBeDefined();
-    expect(String((line as { message?: unknown }).message)).toMatch(/readonly/i);
+    expect(String((line as { message?: unknown }).message)).toMatch(/project_memberships/i);
   });
 
   it('refuses sign-in as internal rather than as wrong credentials', async () => {
@@ -175,6 +279,8 @@ describe('an unwritable database', () => {
     // `translateAuthResponse` maps 5xx to `internal` — accidental until
     // something asserts it. The failure this guards against is the LAI-090 one:
     // an infrastructure fault rendered as "Email or password is wrong."
+    // Sign-in writes a session row, so a read-only database genuinely stops it —
+    // unlike the resolver's stamp, which LAI-156 made survivable.
     h.t.sqlite.pragma('query_only = ON');
 
     const res = await h.app.request('/api/v1/auth/sign-in/email', {
@@ -187,6 +293,8 @@ describe('an unwritable database', () => {
     const body = await res.text();
     expect((JSON.parse(body) as { error: { code: string } }).error.code).toBe('internal');
     expect(body).not.toMatch(/password is wrong|not valid|Not signed in/i);
+
+    h.t.sqlite.pragma('query_only = OFF');
   });
 });
 

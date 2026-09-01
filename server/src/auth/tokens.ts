@@ -1,6 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
+import { type Logger } from '../log.ts';
 import { tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 
@@ -170,16 +171,84 @@ export function findTokenBySecret(
 }
 
 /**
+ * Has the read-only warning already been emitted for the current spell?
+ *
+ * Module scope on purpose. The AC is "logged, and **not once per request**" —
+ * an unwritable database is hit by every authenticated call, and a line per
+ * request buries the one that matters under thousands of copies.
+ *
+ * Reset by the next successful write, so a **recurrence** is reported again.
+ * "Once per process" would announce the first outage and stay silent through
+ * every later one, which is the version of this that looks the same and is
+ * worse.
+ */
+let readOnlyReported = false;
+
+/** Exposed so a test can assert the once-per-spell behaviour from a clean slate. */
+export function resetReadOnlyWarning(): void {
+  readOnlyReported = false;
+}
+
+/**
  * Stamp `last_used_at`, at most once per {@link LAST_USED_THROTTLE_MS}.
  *
  * Returns whether it wrote, so a test can assert the throttle rather than infer
  * it from a timestamp that happens not to have moved.
+ *
+ * ## A read-only database does not stop reads (LAI-156)
+ *
+ * This is the only write on the token read path, and `last_used_at` is
+ * observability (§4.9) — nothing decides access on it. When the database cannot
+ * be written, the stamp is skipped and the request continues.
+ *
+ * **This is the opposite of the call LAI-231 made for `ActivityFeed.poll()`, and
+ * the difference is which signal is lost.** Swallowing there would hide the
+ * *only* evidence that the feed had stopped delivering, and the feature would
+ * fail silently. Here the primary operation — the read — is unaffected, and an
+ * unwritable database is not a subtle condition: **every write request still
+ * fails loudly at its own write.** One signal of many is muffled, and it is
+ * muffled into a log line rather than into nothing.
+ *
+ * Before this, the failure mode was worse than either alternative: the throttle
+ * above means a token used within the last minute writes nothing and served
+ * fine, so a read-only instance **worked for sixty seconds after each token's
+ * last use and then stopped.** A total outage that looks intermittent.
+ *
+ * **Only `SQLITE_READONLY`.** Classified by the error's `code`, not its message
+ * and not "any failure here is fine" — LAI-437's lesson one file over. A
+ * constraint violation or a corrupt page is a bug and still throws.
  */
-export function touchTokenUsage(db: Db, row: typeof tokens.$inferSelect, now: number): boolean {
+export function touchTokenUsage(
+  db: Db,
+  row: typeof tokens.$inferSelect,
+  now: number,
+  log?: Logger,
+): boolean {
   if (row.lastUsedAt !== null && now - row.lastUsedAt < LAST_USED_THROTTLE_MS) return false;
 
-  db.update(tokens).set({ lastUsedAt: now }).where(eq(tokens.id, row.id)).run();
+  try {
+    db.update(tokens).set({ lastUsedAt: now }).where(eq(tokens.id, row.id)).run();
+  } catch (err) {
+    if (!isReadOnly(err)) throw err;
+
+    if (!readOnlyReported) {
+      readOnlyReported = true;
+      log?.warn('token.last_used_unwritable', {
+        message: err instanceof Error ? err.message : String(err),
+        effect: 'reads continue; last_used_at is not being recorded',
+      });
+    }
+    return false;
+  }
+
+  readOnlyReported = false;
   return true;
+}
+
+/** better-sqlite3 reports the reason in `code`; the message is prose. */
+function isReadOnly(err: unknown): boolean {
+  const code = (err as { code?: unknown }).code;
+  return typeof code === 'string' && code.startsWith('SQLITE_READONLY');
 }
 
 /** `project_ids_json` → the whitelist `can()` reads, or `null` for unscoped. */
