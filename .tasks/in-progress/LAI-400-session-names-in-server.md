@@ -2,11 +2,12 @@
 id: LAI-400
 title: Rename the old session names in server/ prose
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: D-035
-status: backlog
+status: in-progress
+started: 2026-09-01T17:05:00Z
 ---
 
 ## Goal

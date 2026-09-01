@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { CONTEXT_MD_LIMIT } from '../../../src/services/projects.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 let h: AuthHarness;
@@ -405,15 +406,52 @@ describe('GET/PATCH /api/v1/projects/:slug/context (§6.4, LAI-404)', () => {
   });
 
   it('422s an oversize document, naming the limit and the length', async () => {
+    // **This test used to pass against the bug** (LAI-228). It matched
+    // `/100000/` on the body — which the *limit* satisfies, and both errors
+    // carry the limit — and its comment said "whether zod or the service
+    // refuses it", tolerating the very difference §7.3 cares about. The zod
+    // refusal names the limit and not the length.
+    const length = CONTEXT_MD_LIMIT + 400;
     const res = await req('/api/v1/projects/laika/context', {
       method: 'PATCH',
-      body: JSON.stringify({ context_md: 'x'.repeat(100_001) }),
+      body: JSON.stringify({ context_md: 'x'.repeat(length) }),
     });
 
     expect(res.status).toBe(422);
-    // Whether zod or the service refuses it, the caller must learn how much to
-    // cut — an error that only says "too long" makes them guess.
-    expect(await res.text()).toMatch(/100000|100,000|100_000/);
+    const body = (await res.json()) as {
+      error: { details: { limit: number; length: number } };
+    };
+
+    // The **actual** length, not the limit. §7.3: "a caller that has to guess
+    // how much to cut will guess wrong" — and a `length` that echoed the limit
+    // would tell them to cut nothing.
+    expect(body.error.details).toEqual({ limit: CONTEXT_MD_LIMIT, length });
+    expect(body.error.details.length).not.toBe(body.error.details.limit);
+  });
+
+  it('accepts a document exactly at the limit', async () => {
+    // The boundary the refusal is measured from. Without it, a service that
+    // refused at `>= limit` would satisfy every assertion above.
+    const res = await req('/api/v1/projects/laika/context', {
+      method: 'PATCH',
+      body: JSON.stringify({ context_md: 'x'.repeat(CONTEXT_MD_LIMIT) }),
+    });
+
+    expect(res.status, await res.clone().text()).toBe(200);
+  });
+
+  it('still refuses a non-string and an absent field', async () => {
+    // AC4. Dropping `.max` must not drop `z.string()`: the *size* is the
+    // service's rule, the *type* is this schema's, and removing the whole line
+    // would have handed a number to `input.context_md.length` — `undefined`,
+    // which is not greater than the limit, so it would have been stored.
+    for (const body of [{ context_md: 42 }, { context_md: null }, {}]) {
+      const res = await req('/api/v1/projects/laika/context', {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      });
+      expect(res.status, JSON.stringify(body)).toBe(422);
+    }
   });
 
   it('401s an anonymous caller on both', async () => {
