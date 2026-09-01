@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-432]
 discovered-from: LAI-432
-status: in-progress
+status: review
 started: 2026-09-02T04:05:00Z
+finished: 2026-09-02T04:35:00Z
 ---
 
 ## Goal
@@ -47,22 +48,22 @@ working right now"*, which is what it is for.
 
 ## Acceptance criteria
 
-- [ ] A heartbeat whose repo resolves to **no** project omits `repo` and
+- [x] A heartbeat whose repo resolves to **no** project omits `repo` and
       `branch` for every reader.
-- [ ] A heartbeat resolving to a project the reader **cannot** read is treated
+- [x] A heartbeat resolving to a project the reader **cannot** read is treated
       the same way — the existing project filter and this rule must not disagree,
       and a repo tracked by a project you cannot see is exactly as private as one
       tracked by nothing.
-- [ ] They are **absent, not empty strings**. `repo: ''` is a different claim and
+- [x] They are **absent, not empty strings**. `repo: ''` is a different claim and
       a client would render it. Same rule as `unlisted` and the org's `ai` block.
-- [ ] The reader who **can** see an attributing project still gets `repo` and
+- [x] The reader who **can** see an attributing project still gets `repo` and
       `branch` — this must not become "nobody ever sees a repo", which would make
       the Capacity screen useless.
-- [ ] A test from **both** readers over **one** heartbeat: a member of the
+- [x] A test from **both** readers over **one** heartbeat: a member of the
       matching project sees the repo, a non-member sees the person without it.
       One heartbeat, two readers, or the test passes against an implementation
       that hides the repo from everybody.
-- [ ] §9.3's *"with repo, branch, and resolved task"* is corrected. **`docs/` is
+- [x] §9.3's *"with repo, branch, and resolved task"* is corrected. **`docs/` is  **CHIEF's; no drift test asserts that sentence, so no red to quote.**
       CHIEF's** — the half is written at merge; quote the drift failure and
       submit red if one fires (D-045).
 
@@ -76,3 +77,50 @@ it is the same argument as D-043's.
 `presence_enabled` is a column, a setting screen and a §3.1 row; file it if you
 think it is wanted. This one closes the leak without asking anybody to configure
 anything, which is the property worth having first.
+
+
+---
+
+## Submitted — CORE, 2026-09-02
+
+**Fully green: 1618 server, 585 web, lint and format clean.**
+
+### The mutation that survived is the finding
+
+`matched_task_id` leaked even when `repo` did not — and **every test passed**.
+None of the fixtures had a heartbeat that actually *resolved*, so the field was
+always `null` and withholding it was untested in the only case where it matters.
+
+**A task id names the work as surely as a repo names the place.** All four of
+`repo`, `branch`, `project_ids` and `matched_task_id` now follow one gate, and
+there is a test with a real resolved heartbeat and two readers.
+
+That is the fourth instance today of a test that names the right property and
+cannot fail for it — and the first where the missing piece was **fixture state**
+rather than fixture data. The earlier three were a filename, a boolean and a
+sort order; this one was "the field under test was never populated".
+
+### One heartbeat, two readers
+
+Built exactly as the criterion asks. Mutating to **never** return the repo —
+which closes the leak and makes Capacity useless — is caught, and would have
+passed against either reader alone.
+
+### This changed LAI-432 deliberately
+
+`hides a heartbeat attributed only to a project the reader is not in` is now
+`hides where, not who`. I wrote the original a task ago, against §9.3's sentence,
+and it was right against a spec that predates D-046. The reason for the change is
+at the site rather than only here, since the next reader will meet the test
+before the task file.
+
+### On my LAI-432 reasoning
+
+I argued an unattributed heartbeat was safe because *"it names no project, so
+there is nothing to leak"* — and returned `repo` three lines later. D-046 is why
+it matters and I could not have known it, but **the claim was false against the
+return statement regardless**: a repo name is a thing, and a private one is a
+private thing. The check on "is this safe to return" is the shape of the
+response, not the shape of the argument.
+
+Five mutations, all caught after the task-id one was covered; four before.
