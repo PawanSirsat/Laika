@@ -2,11 +2,12 @@
 id: LAI-447
 title: Setting the org's LLM provider, with the key encrypted at rest
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-222, LAI-161]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-01T20:50:00Z
 ---
 
 ## Goal
