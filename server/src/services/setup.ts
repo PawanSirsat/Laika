@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import { appendActivity } from '../db/activity.ts';
-import { type Db } from '../db/client.ts';
+import { readPragmas, type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { orgs, projectMemberships, projects, users } from '../db/schema.ts';
@@ -18,6 +18,83 @@ import { ApiError } from '../errors.ts';
 /** Is this instance still waiting to be set up? */
 export function setupRequired(db: Db): boolean {
   return countOrgs(db) === 0;
+}
+
+/**
+ * What the first-boot panel reports (SPEC §6.4, LAI-206).
+ *
+ * **Read, never asserted.** LAI-106 AC5 is the rule this exists under: hardcoded
+ * numbers on a status panel are worse than no panel, because a panel confidently
+ * saying `41/41 applied` is believed. Every field here comes from the running
+ * instance.
+ *
+ * **Reachable before anyone has authenticated**, which is the whole point — it is
+ * the screen shown when there is nobody to authenticate. That constrains what it
+ * may say: `smtp_configured` is a **boolean and nothing else**. Host, port and
+ * credentials on a pre-auth endpoint are a reconnaissance gift, and the panel
+ * only needs a dot.
+ */
+export interface SystemStatus {
+  /** Engine and journal mode, e.g. `SQLite · WAL`. */
+  database: string;
+  migrations_applied: number;
+  smtp_configured: boolean;
+}
+
+/**
+ * Drizzle's own journal. Named here rather than imported because the migrator
+ * does not export it; `schema-migration-drift.test.ts` excludes the same string
+ * for the same reason.
+ */
+const MIGRATIONS_TABLE = '__drizzle_migrations';
+
+export function systemStatus(db: Db, sqlite: Database.Database): SystemStatus {
+  return {
+    // From the live connection, not a constant. D-001 says Laika is SQLite, and
+    // a hardcoded string here would be `postgres 16 · connected` one step
+    // removed — the artifact `docs/design/README.md` lists.
+    database: `SQLite · ${String(readPragmas(sqlite).journal_mode).toUpperCase()}`,
+    migrations_applied: migrationsApplied(sqlite),
+    smtp_configured: smtpConfigured(db),
+  };
+}
+
+/**
+ * How many migrations the migrator has actually applied.
+ *
+ * **No total, and that is §6.4's shape rather than an omission.** LAI-206's AC1
+ * asked for "applied count and total"; the CHIEF decision appended to it dropped
+ * the total, and the endpoint list at §6.4 carries only `migrations_applied`.
+ * That is right, and it is checkable: `index.ts` runs `runMigrations(db)` at line
+ * 30 and `serve()` at line 60, and the migrator throws rather than continuing, so
+ * **a server that can answer this request has applied all of them.** The
+ * denominator is always the numerator. A `41/41` that can never read anything
+ * else is decoration with a chance of being wrong.
+ */
+function migrationsApplied(sqlite: Database.Database): number {
+  // The table does not exist until the first migration runs. It always has by
+  // the time a request arrives — see above — but a `freshDb`-less caller or a
+  // future in-memory path should get 0 rather than a `SqliteError`.
+  const present = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(MIGRATIONS_TABLE);
+  if (present === undefined) return 0;
+
+  const row = sqlite.prepare(`SELECT COUNT(*) AS n FROM "${MIGRATIONS_TABLE}"`).get() as
+    { n: number } | undefined;
+  return row?.n ?? 0;
+}
+
+/**
+ * Whether SMTP is configured — **the boolean, never the settings**.
+ *
+ * `orgs.smtp_json_enc` is encrypted at rest (§4.2), and this reports only
+ * whether it holds anything. Before setup there is no org row at all, so the
+ * honest answer is `false`: nothing is configured because nothing exists yet.
+ */
+function smtpConfigured(db: Db): boolean {
+  const row = db.select({ smtp: orgs.smtpJsonEnc }).from(orgs).limit(1).get();
+  return row?.smtp != null && row.smtp !== '';
 }
 
 function countOrgs(db: Db): number {
