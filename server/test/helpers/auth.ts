@@ -6,6 +6,7 @@ import { type Db } from '../../src/db/client.ts';
 import { newId } from '../../src/db/ids.ts';
 import { invites, orgs, users } from '../../src/db/schema.ts';
 import { type AppEnv } from '../../src/http/context.ts';
+import { ActivityFeed } from '../../src/services/activity-feed.ts';
 import { captureLog, type CapturedLog } from './app.ts';
 import { freshDb, type TestDb } from './db.ts';
 
@@ -18,6 +19,11 @@ export interface AuthHarness {
   db: Db;
   t: TestDb;
   log: CapturedLog;
+  /**
+   * The harness owns this so it can dispose of it (LAI-231). Exposed because a
+   * test that wants to prove nothing leaked needs something to ask.
+   */
+  activityFeed: ActivityFeed;
   close(): void;
 }
 
@@ -37,9 +43,28 @@ export interface AuthHarnessOptions extends Partial<CreateAppOptions> {
  * still: the rate limiter's clock, or the SSE feed's polling (LAI-048).
  */
 export function authHarness(overrides: AuthHarnessOptions = {}): AuthHarness {
-  const { now, ...appOverrides } = overrides;
+  const { now, activityFeed: injectedFeed, ...appOverrides } = overrides;
   const t = freshDb();
   const log = captureLog();
+
+  /**
+   * **The harness owns the feed, because production does** (LAI-231).
+   *
+   * `createApp` falls back to `new ActivityFeed({ db })` when none is passed —
+   * a poll timer the caller has no handle on and therefore cannot stop.
+   * `index.ts:43` never takes that path: it builds the feed itself and gives it
+   * to both `createApp` and `createRuntimeShutdown`, so shutdown can disarm it
+   * before `sqlite.close()`.
+   *
+   * This harness did take that path, and closed the database while an SSE
+   * subscriber was still registered — so a timer fired 250 ms later against a
+   * closed handle and threw out of a callback with nothing above it. Every
+   * assertion in the file still passed; the run exited 1.
+   *
+   * The fix is to stop diverging from the production lifecycle rather than to
+   * invent a test-only one.
+   */
+  const activityFeed = injectedFeed ?? new ActivityFeed({ db: t.db });
 
   const auth = createAuth({
     db: t.db,
@@ -57,6 +82,7 @@ export function authHarness(overrides: AuthHarnessOptions = {}): AuthHarness {
     db: t.db,
     sqlite: t.sqlite,
     publicUrl: TEST_ORIGIN,
+    activityFeed,
     ...appOverrides,
   });
 
@@ -66,7 +92,11 @@ export function authHarness(overrides: AuthHarnessOptions = {}): AuthHarness {
     db: t.db,
     t,
     log,
+    activityFeed,
     close: () => {
+      // Order as in `shutdown.ts` (§11.5): disarm the feed, then close the
+      // handle. Reversed, this is the bug it was written to fix.
+      activityFeed.closeAll();
       t.close();
     },
   };
