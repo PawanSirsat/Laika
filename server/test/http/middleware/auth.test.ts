@@ -291,6 +291,70 @@ describe('a refused token is a 401, never an anonymous request', () => {
   });
 });
 
+/**
+ * The two refusal logs, and the order they are tested in (LAI-443).
+ *
+ * **Placed next to the token case above on purpose.** `TokenAuthError extends
+ * ApiError`, so which branch runs is decided entirely by which `instanceof` is
+ * checked first — and that ordering is invisible from either test alone. LAI-442
+ * put the `ApiError` branch above the token branch and made the token branch
+ * unreachable for a day; `auth.token_rejected` stopped being written and **every
+ * test still passed**, because the status was `401` either way.
+ *
+ * §6.1 keeps the reason out of the response deliberately, so these lines are the
+ * *only* place the distinction survives. An operator asking "why was this
+ * refused" has nothing else to read.
+ */
+describe('the refusal logs say which refusal it was', () => {
+  function deactivate(): void {
+    // Directly: the API refuses to deactivate the last Owner (LAI-222), and that
+    // invariant is not what this is about.
+    h.db.update(users).set({ isActive: 0 }).where(eq(users.id, ownerId)).run();
+  }
+
+  it('logs session_refused, with its code, for a deactivated account', async () => {
+    // Working first, so this cannot pass against a cookie that was never valid.
+    expect((await withCookie('/api/v1/me', ownerCookie)).status).toBe(200);
+
+    deactivate();
+
+    expect((await withCookie('/api/v1/me', ownerCookie)).status).toBe(403);
+
+    const line = h.log.find('auth.session_refused');
+    expect(line, 'auth.session_refused is no longer reachable').toBeDefined();
+    // The **specific** code. "A line exists" is satisfied by a branch logging
+    // the wrong thing, which is the failure mode this whole pair is about.
+    expect((line as { code?: unknown }).code).toBe('forbidden');
+  });
+
+  it('logs token_rejected and not session_refused for a refused token', async () => {
+    // **The ordering, asserted as an ordering.** This is the assertion that was
+    // missing when LAI-442 landed: both branches were individually correct, and
+    // the one above swallowed the one below.
+    const secret = await mint({});
+    h.db.update(tokens).set({ revokedAt: 1 }).run();
+
+    expect((await withToken('/api/v1/me', secret)).status).toBe(401);
+
+    expect(h.log.find('auth.token_rejected'), 'the specific branch was skipped').toBeDefined();
+    expect(
+      h.log.find('auth.session_refused'),
+      'the ApiError branch caught a TokenAuthError — it is a subclass, so it must be checked second',
+    ).toBeUndefined();
+  });
+
+  it('logs session_refused and not token_rejected for a deactivated account', async () => {
+    // And the other direction, so "log both lines every time" does not satisfy
+    // the pair. A reader learns nothing from two lines that always appear.
+    deactivate();
+
+    expect((await withCookie('/api/v1/me', ownerCookie)).status).toBe(403);
+
+    expect(h.log.find('auth.session_refused')).toBeDefined();
+    expect(h.log.find('auth.token_rejected')).toBeUndefined();
+  });
+});
+
 describe('an agent sends no Origin, and that is fine (§6.1)', () => {
   it('accepts a bearer request carrying no Origin header at all', async () => {
     // The question LAI-406 rests on. §6.1 settles it already: "`/api/v1/auth/*`
