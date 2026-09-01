@@ -6,7 +6,7 @@ assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-418
-status: review
+status: done
 started: 2026-09-01T12:20:00Z
 finished: 2026-09-01T12:55:00Z
 ---
@@ -258,3 +258,83 @@ reported green six times while the root gate exited `1`.**
 
 `CLAUDE.md` §5 now says the gate is the **exit code**, with the command written
 out, because the fix is a different command rather than more care.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted. Root gate `EXIT 0`, zero unhandled errors** — 1695 server, 585 web,
+19 cli. **Verified with the command that can fail**, which is the point of the
+task.
+
+**Mutation-verified:** dropping `activityFeed.closeAll()` from `shutdown.ts`
+turns **six** red, including the new join test with the message *"the poll timer
+was still armed when the handle closed"*.
+
+### The fix is the harness no longer diverging from production
+
+> *"`createApp` falls back to `new ActivityFeed({ db })` — **a poll timer the
+> caller has no handle on and therefore cannot stop.** `index.ts` never takes
+> that path… `authHarness` did."*
+
+**Not a new mechanism — the harness adopting the lifecycle the server already
+has.** That is the right shape for a test-only defect, and it is why the fix is
+smaller than the bug looked.
+
+### Refusing the `catch` in `poll()` is the decision worth the task
+
+The criterion offered it and you declined:
+
+> *"It would have made the run green and is the worse fix: a genuine fault in
+> `readActivityAfter` would then stop every subscriber receiving activity while
+> every assertion in the repo still passed. **That is the same defect being
+> fixed — an error that reaches nobody — moved one layer down.**"*
+
+**Turning a red gate green by silencing the thing that made it red is the exact
+failure this task exists to end.** I would have accepted the `catch` if it had
+arrived with a plausible sentence, which is why it is worth saying that the
+criterion was wrong to offer it.
+
+### AC4 — both halves were tested and the join was not
+
+`activity-feed.test.ts` proves `closeAll()` disarms; `shutdown.test.ts` proves
+the sequence is `['feed','server','sqlite']`. **Nothing tested the join, and the
+test that comes closest *cannot* see it** — it injects
+`setTimer: () => ({ unref })`, a timer that never fires.
+
+**Asking `feed.isPolling()` from inside `sqlite.close()`** is the right
+instrument, and the reason is exact: *after `shutdown()` returns, "disarmed" and
+"disarmed too late" look identical.* Guarding it with `isPolling() === true`
+before the close, so a future harness that arms no timer **fails instead of
+passing vacuously**, is the fixture rule from `CONVENTIONS.md` §4 applied without
+being asked.
+
+### AC3, and the signature worth remembering
+
+> *"One fails by assertion; the other **passes as a test while the run exits 1**.
+> `Tests 1 failed | 1 passed`, `EXIT=1` is the signature. It waits three poll
+> intervals and asserts nothing, deliberately. **A leaked timer is invisible to
+> assertions — that is the property** — so the only instrument that sees it is
+> letting the clock run."*
+
+A test that deliberately asserts nothing, in a repo whose standing rule is that
+an assertion must be specific enough to fail, is the correct exception and it is
+argued rather than excused.
+
+### Three instruments in one task, and the fix is not care
+
+A bisect glob that missed the only directory containing the file; `echo $?`
+reporting a pipeline's `grep` rather than vitest; and `grep -c` counting **lines**
+where vitest prints each unhandled error twice — which is the whole of the
+one-versus-two discrepancy.
+
+> **"Print what the instrument covered, not only what it found. `27` was
+> available at the time."**
+
+**That is the general form of my own failure in the same hour** — a gate command
+that printed `Tests 1685 passed` and could not print `Failed`. Four instances
+today between three sessions, and this is the sharpest statement of the fix.
+
+**And retracting the bisect claim before it reached the file** meant the wrong
+measurement was never load-bearing. Recording in the Outcome that it existed and
+lost is what a reader of the message trail needs.

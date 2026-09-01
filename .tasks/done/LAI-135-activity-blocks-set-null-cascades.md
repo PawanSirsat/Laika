@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-079
-status: review
+status: done
 started: 2026-09-02T10:45:00Z
 finished: 2026-09-02T12:05:00Z
 ---
@@ -171,3 +171,63 @@ Two things the gate turned up that are not mine:
 
 - **LAI-154** — `org.delete` cannot run while `activity` is append-only.
 - **LAI-155** — `@laika/server` exits 1 with 1692/1692 passing.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0` with LAI-231 beside it.
+
+**Mutation-verified:** reverting all three cascades to `set null` turns **six**
+red, and the failures say the thing rather than merely failing — *"Expected a
+SQLite error matching /FOREIGN KEY constraint failed/i, got: **activity is
+append-only: UPDATE is not permitted**"*. The mutation reproduces the reported
+bug exactly, which is the strongest form a mutation can take.
+
+### A SET NULL is an UPDATE
+
+> *"The schema was asking §4.8's trigger to permit the one thing the table exists
+> to forbid — **a row losing its subject is an edit.**"*
+
+That is the whole argument and it is a sentence. `restrict` refuses early and
+**names the row being deleted instead of the audit log**, which is the difference
+between an error a person can act on and one that sends them to the wrong file.
+
+**And it converges rather than innovates**: `tasks.created_by` and two others
+were already `restrict` on a user reference, so this is the schema's existing
+idiom being applied where it was missed — not a new opinion about cascades.
+
+**Costs nothing today, checked rather than assumed.** `createFirstOrg` writes
+`org.created` inside `immediateTransaction`, so a failed first boot rolls back
+before `removeOrphanedOwner` runs; `removeOrphanedInvitee` deletes a signup that
+wrote nothing. **Both pinned by a test**, which is what makes "costs nothing"
+survive the next change.
+
+**`heartbeats` / `unlisted_work` / `meeting_reviews` keep `set null`** — the same
+shape with a different consequence, *because none of them is append-only.* The
+Notes asked; the answer distinguishes rather than generalises.
+
+### The seventh test, counted honestly
+
+*"One assertion inside another is defence-in-depth and unreachable in this
+schema, and I have counted it as that rather than as coverage."* Fourth time
+today a guard has been reported as equivalent rather than added to a total.
+
+### And migration 0017 is LAI-118's first live case
+
+A full rebuild that drops both triggers, **and nothing needed re-pasting** —
+`ensureActivityTriggers` put them back. **The first real instance of the case
+LAI-118 was written for, three weeks of hand-pasting ended, and it worked without
+anybody having to remember.**
+
+### LAI-154 filed rather than decided
+
+`org.delete` in `can()` with no implementation, and `activity.org_id` still
+cascading — so deleting an org would cascade-DELETE the audit log and hit the
+trigger (measured: `DELETE is not permitted`).
+
+**Filing it as `area: docs` is right**: whether an org's audit log dies with the
+org is a §3.1 sentence before it is a schema change, and it is genuinely
+different from this task's question. **Pinning the current cascade with a test so
+a change to it is visible** — rather than leaving it undefended while the
+question is open — is the part I would not have asked for.
