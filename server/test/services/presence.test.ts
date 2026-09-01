@@ -108,13 +108,15 @@ describe('the five-minute window, at its edges', () => {
 
   it('reports one row per person, the newest', () => {
     const ada = makeUser('member', 'Ada');
+    // Both on the tracked repo, so `repo` is visible to the admin and the
+    // assertion is about *which* heartbeat won rather than about the gate.
     beat(ada, NOW - 60_000, 'kvell/laika');
-    beat(ada, NOW - 1000, 'kvell/other');
+    beat(ada, NOW - 1000, 'kvell/laika');
 
     const present = presenceNow(t.db, actor(adminId), NOW).present;
 
     expect(present).toHaveLength(1);
-    expect(present[0]?.repo).toBe('kvell/other');
+    expect(present[0]?.last_seen).toBe(NOW - 1000);
   });
 });
 
@@ -155,25 +157,41 @@ describe('disabled is not empty (§4.2, §11.4.2)', () => {
 });
 
 describe('it leaks no project the caller cannot read', () => {
-  it('hides a heartbeat attributed only to a project the reader is not in', () => {
+  it('hides where, not who, from a reader outside the project', () => {
     const outsider = makeUser('member', 'Outsider');
     const insider = makeUser('member', 'Insider');
     addMember(t.db, actor(adminId), 'laika', insider, 'member');
     beat(insider, NOW - 1000, 'kvell/laika');
 
-    // From the **reader's** authority, the way `resolveMentions` does it.
-    expect(presenceNow(t.db, actor(outsider), NOW).present).toHaveLength(0);
-    expect(presenceNow(t.db, actor(insider), NOW).present).toHaveLength(1);
+    // **Changed by LAI-438.** This used to drop the entry entirely. Presence
+    // answers "who is working right now", which is org-level — dropping the
+    // person would make the headcount depend on who is asking. What is private
+    // is *where*, because D-046's hook fires in every repository somebody opens.
+    const [hidden] = presenceNow(t.db, actor(outsider), NOW).present;
+    expect(hidden?.name).toBe('Insider');
+    expect(hidden?.repo).toBeUndefined();
+    expect(hidden?.branch).toBeUndefined();
+    expect(hidden?.project_ids).toEqual([]);
+    expect(hidden?.matched_task_id).toBeNull();
+
+    const [seen] = presenceNow(t.db, actor(insider), NOW).present;
+    expect(seen?.repo).toBe('kvell/laika');
   });
 
-  it('shows a heartbeat that attributes to no project at all', () => {
-    const outsider = makeUser('member', 'Outsider');
+  it('names nobody’s untracked repo, to any reader including an admin', () => {
     const ada = makeUser('member', 'Ada');
-    beat(ada, NOW - 1000, 'someone/untracked');
+    beat(ada, NOW - 1000, 'someone/private-side-project');
 
-    // It names no project, so there is nothing to leak — it says only that
-    // somebody is working, which the member list already gives away.
-    expect(presenceNow(t.db, actor(outsider), NOW).present).toHaveLength(1);
+    // The leak LAI-438 exists for. `LAIKA_URL` lives in user settings (D-046),
+    // so the hook fires in **every** repository somebody opens — and an
+    // unrelated private repo is not the org's business, not even the owner's.
+    for (const reader of [adminId, makeUser('owner', 'Owner')]) {
+      const [entry] = presenceNow(t.db, actor(reader), NOW).present;
+
+      expect(entry?.name, reader).toBe('Ada');
+      expect(entry?.repo, reader).toBeUndefined();
+      expect('repo' in (entry ?? {}), reader).toBe(false);
+    }
   });
 
   it('shows it when the reader can see one of several attributed projects', () => {
@@ -319,5 +337,117 @@ describe('permissions', () => {
     for (const role of ['owner', 'admin', 'member', 'viewer'] as const) {
       expect(() => presenceNow(t.db, actor(makeUser(role)), NOW), role).not.toThrow();
     }
+  });
+});
+
+/**
+ * Where somebody is working is private; that they are working is not
+ * (§9.3, D-046, LAI-438).
+ *
+ * `LAIKA_URL` lives in `~/.claude/settings.json` — *user* settings — so the
+ * heartbeat hook fires in **every** repository that person opens. Consent to be
+ * seen working on the org's projects is not consent to publish the name of
+ * everything else you open.
+ */
+describe('one heartbeat, two readers', () => {
+  it('gives the repo to a member of the matching project and not to a non-member', () => {
+    const insider = makeUser('member', 'Insider');
+    const outsider = makeUser('member', 'Outsider');
+    addMember(t.db, actor(adminId), 'laika', insider, 'member');
+
+    const worker = makeUser('member', 'Worker');
+    addMember(t.db, actor(adminId), 'laika', worker, 'member');
+    beat(worker, NOW - 1000, 'kvell/laika');
+
+    // **One heartbeat, two readers.** Either reader alone passes against an
+    // implementation that hides the repo from everybody — which would close the
+    // leak and make the Capacity screen useless at the same time.
+    const [toInsider] = presenceNow(t.db, actor(insider), NOW).present;
+    const [toOutsider] = presenceNow(t.db, actor(outsider), NOW).present;
+
+    expect(toInsider?.repo).toBe('kvell/laika');
+    expect(toInsider?.branch).toBe('main');
+    expect(toInsider?.project_ids).toHaveLength(1);
+
+    expect(toOutsider?.name).toBe('Worker');
+    expect(toOutsider?.repo).toBeUndefined();
+    expect(toOutsider?.branch).toBeUndefined();
+  });
+
+  it('treats "no project" and "no project you can read" identically', () => {
+    const outsider = makeUser('member', 'Outsider');
+    const worker = makeUser('member', 'Worker');
+    addMember(t.db, actor(adminId), 'laika', worker, 'member');
+
+    beat(worker, NOW - 2000, 'kvell/laika');
+    const tracked = presenceNow(t.db, actor(outsider), NOW).present[0];
+
+    t.db.delete(heartbeats).run();
+    beat(worker, NOW - 2000, 'someone/untracked');
+    const untracked = presenceNow(t.db, actor(outsider), NOW).present[0];
+
+    // A repo tracked by a project you cannot see is exactly as private as one
+    // tracked by nothing, and there is one code path so they cannot drift.
+    expect({ ...tracked, last_seen: 0 }).toEqual({ ...untracked, last_seen: 0 });
+  });
+
+  it('withholds the resolved task too, not only the repo', () => {
+    const outsider = makeUser('member', 'Outsider');
+    const worker = makeUser('member', 'Worker');
+    addMember(t.db, actor(adminId), 'laika', worker, 'member');
+    const task = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'Secret work' });
+
+    // A heartbeat that **does** resolve, so `matched_task_id` is populated —
+    // none of the fixtures above had one, which is why a mutation leaking it
+    // survived until this test existed.
+    t.db
+      .insert(heartbeats)
+      .values({
+        id: newId(),
+        userId: worker,
+        tokenId: null,
+        repo: 'kvell/laika',
+        branch: `lai-${task.number}-x`,
+        matchedTaskId: task.id,
+        createdAt: NOW - 1000,
+      })
+      .run();
+
+    const [hidden] = presenceNow(t.db, actor(outsider), NOW).present;
+    const [seen] = presenceNow(t.db, actor(adminId), NOW).present;
+
+    // The task id names the work as surely as the repo names the place. All
+    // three of `repo`, `branch` and `matched_task_id` follow one gate, or the
+    // absence of the others is decorative.
+    expect(hidden?.matched_task_id).toBeNull();
+    expect(seen?.matched_task_id).toBe(task.id);
+  });
+
+  it('omits the keys rather than emptying them', () => {
+    const outsider = makeUser('member', 'Outsider');
+    const worker = makeUser('member', 'Worker');
+    beat(worker, NOW - 1000, 'someone/untracked');
+
+    const entry = presenceNow(t.db, actor(outsider), NOW).present[0];
+
+    // `repo: ''` is a different claim and a client would render it — the same
+    // rule as `unlisted` and the org's `ai` block.
+    expect('repo' in (entry ?? {})).toBe(false);
+    expect('branch' in (entry ?? {})).toBe(false);
+    expect(JSON.stringify(entry)).not.toContain('someone/untracked');
+  });
+
+  it('still tells the reader when the work was seen, and whether it is an agent', () => {
+    const outsider = makeUser('member', 'Outsider');
+    const worker = makeUser('member', 'Worker');
+    beat(worker, NOW - 1000, 'someone/untracked');
+
+    const entry = presenceNow(t.db, actor(outsider), NOW).present[0];
+
+    // Presence keeps answering "who is working right now". Hiding the location
+    // must not hollow out the view.
+    expect(entry?.last_seen).toBe(NOW - 1000);
+    expect(entry?.is_agent).toBe(false);
+    expect(entry?.user_id).toBe(worker);
   });
 });
