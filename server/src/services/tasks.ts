@@ -98,6 +98,18 @@ export interface TaskView {
   started_at: number | null;
   completed_at: number | null;
   /**
+   * When the nightly job last flagged this task as stale — unix ms, null when
+   * it has not (§11.7, LAI-208).
+   *
+   * **The stored timestamp, not a derived boolean**, and the difference is the
+   * point. `ready` is computed here because §4.5's rule must have one definition
+   * (a second one on the client would drift); staleness is not computed anywhere
+   * — a job wrote it down. Sending `stale: true` would throw away the only
+   * information the row actually holds, and the UI cannot invent a date it was
+   * never sent. §11.4.1's marker wants to say *how* stale.
+   */
+  stale_flagged_at: number | null;
+  /**
    * Ids this task is **blocked by** — the forward edge of §4.6.
    *
    * Was `dependencies` until LAI-099. Next to `blocks`, that name did not say
@@ -211,6 +223,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     tags: context.tags.get(row.id) ?? [],
     started_at: row.startedAt,
     completed_at: row.completedAt,
+    stale_flagged_at: row.staleFlaggedAt,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };

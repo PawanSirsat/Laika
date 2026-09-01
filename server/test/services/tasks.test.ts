@@ -893,6 +893,7 @@ describe('started_at and completed_at', () => {
         'project_id',
         'ready',
         'sprint_id',
+        'stale_flagged_at',
         'started_at',
         'status',
         'tags',
