@@ -618,7 +618,10 @@ file. The rules below are the ones that are true of every line of code.
   grep -E "Unhandled|Errors|Failed|not ok|✗" /tmp/gate.txt
   ```
 
-  **`EXIT 0` is the claim. A count is not.**
+  **`EXIT 0` is the claim. A count is not.** **And read it** — CHIEF pushed on an
+  `EXIT 1` run without looking, because the command after it was chained with
+  `&&` to the commit rather than to the result. A gate you do not read is a gate
+  you did not run.
 
   **And gate *after* the last edit, not before it.** CHIEF reddened `origin/master`
   a second time on 2026-09-01 by running the gate, then applying a SPEC row that
