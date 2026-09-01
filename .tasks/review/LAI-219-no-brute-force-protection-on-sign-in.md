@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-078
-status: in-progress
+status: review
 started: 2026-09-02T01:50:00Z
+finished: 2026-09-02T02:30:00Z
 started:
 finished:
 ---
@@ -58,16 +59,16 @@ existing owner having chosen something weaker before that rule existed.
 
 ## Acceptance criteria
 
-- [ ] Repeated failed sign-ins for one account are throttled or locked, and the
+- [x] Repeated failed sign-ins for one account are throttled or locked, and the  **The SPEC half is CHIEF's; text below.**
       policy is stated in the SPEC rather than only in code.
-- [ ] The response tells a **legitimate** user enough to understand what
+- [x] The response tells a **legitimate** user enough to understand what
       happened — a `Retry-After`, or a count — **without** telling an attacker
       whether the address exists. Today's answer is identical for a real account
       and an unknown one; whatever replaces it must keep that property.
       Verify it, do not assume it.
-- [ ] A test drives real repeated failures and asserts the throttle engages.
+- [x] A test drives real repeated failures and asserts the throttle engages.
       Prove it can fail by removing the limit.
-- [ ] Locking must not become a denial-of-service against the account owner —
+- [x] Locking must not become a denial-of-service against the account owner —
       an attacker who can lock any account at will has taken the board down.
       Say which trade was chosen and why.
 
@@ -85,3 +86,77 @@ existing owner having chosen something weaker before that rule existed.
 - Rate-limiting sign-in per-IP runs into the same trusted-proxy problem the
   middleware documents. Per-**account** throttling avoids it entirely, since the
   key is the submitted address rather than the caller.
+
+
+---
+
+## Submitted — CORE, 2026-09-02
+
+**Server 1581/1581 green**, lint and format clean. Web red on LAI-151's two
+(the cron vocabulary mirror), unrelated to this.
+
+### The trade, since AC4 asks for it in words
+
+**Five failures free, then 30s doubling to a 15-minute cap. Not a lockout.**
+
+An attacker *can* keep one account slowed by failing against it periodically.
+That is a denial of service and it is the chosen trade:
+
+- A **lockout** hands the same attacker a **permanent** outage for the price of
+  five requests, and D-004 makes Laika invite-only with a small known account
+  list — so they need not even discover an address first.
+- A **capped delay** bounds it: the owner's worst case is 15 minutes, it clears
+  itself, no administrator is needed. The attacker's guess rate drops to a
+  handful an hour, which is the thing that had to change.
+
+So: an attacker can slow the owner, temporarily, only while they keep paying for
+it. They cannot lock them out.
+
+### AC2's property, verified rather than assumed
+
+The counter is keyed on the **submitted** address and knows nothing about the
+`users` table, so an unknown address throttles exactly like a real one. Asserted
+on **status and body** — a difference in the message is the same oracle one layer
+down. Mutating it to count only real accounts turns three tests red.
+
+### The real work was a hole I opened and the existing tests found
+
+My first version counted **every** non-2xx as a failed attempt. That broke two
+`origin.test.ts` tests, and the breakage was right: a `403` is the origin check
+refusing **before any password is looked at**, so counting it would let an
+attacker throttle any account from a foreign origin **without ever submitting a
+guess** — a *cheaper* denial of service than the one this design accepts on
+purpose.
+
+Only `401` counts now. `400` and better-auth's own `429` are excluded for the
+same reason: no credential was evaluated, so no attempt was made against this
+account. There is a test for it, and mutating the condition back turns three red.
+
+**Two other sessions' tests caught this, not mine.** I would have shipped it.
+
+### Two policy bugs my own tests found
+
+- **The delay was armed one failure late** — `FREE_ATTEMPTS` failures left the
+  next attempt free, giving an attacker one extra guess per window for ever.
+- **`WINDOW_MS` equalled `MAX_DELAY_MS`**, so an attacker at the cap got a free
+  reset every time they waited it out: the delay stopped growing and the counter
+  never persisted. Found by a test that advanced the clock by the cap and watched
+  the delay fall to zero. The window is an hour now.
+
+### §6.1's text, for CHIEF
+
+> **Repeated failed sign-ins for one account are throttled.** Five consecutive
+> failures are free; the next attempt is refused with `429` and a
+> `retry_after_seconds`, starting at 30 seconds and doubling to a cap of 15
+> minutes. A success, or an hour of quiet, clears the count.
+>
+> **A delay rather than a lockout, deliberately.** A lockout would let anyone
+> close an account they cannot enter, and an invite-only instance has a small,
+> known list of addresses. The cap bounds the owner's worst case and clears
+> itself without an administrator.
+>
+> The counter is keyed on the **submitted address**, whether or not an account
+> has it, so the response never reveals which addresses exist. Only a rejected
+> credential counts — an origin refusal or a malformed body is not an attempt.
+
+Nine mutations, all caught.
