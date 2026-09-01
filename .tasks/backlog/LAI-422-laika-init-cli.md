@@ -58,6 +58,13 @@ in this task and say it in the CLI's own output.
 - [ ] Verified end to end against a real instance: fresh repo → `init` → an agent
       lists ready tasks through `/mcp`. **That, plus a heartbeat row, is M4's
       exit.**
+- [ ] **`cli`'s first test is one that fails if the CLI is absent.** The package's
+      `test` script currently prints `# tests 0` and **exits 0**, so the root gate
+      passes while covering nothing — found and reported by SHELL when they
+      released this task. Green by vacancy is the same defect as an assertion a
+      broken setup satisfies, one level up, and `cli` has been in
+      `pnpm-workspace.yaml` since before it had a `package.json`, so the hole
+      opens the moment the package lands. **CLAUDE.md §5 now says so.**
 - [ ] Full gate green.
 
 ## Notes
