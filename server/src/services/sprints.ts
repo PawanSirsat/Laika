@@ -521,8 +521,15 @@ function recordSprintChange(
     orgId: project.orgId,
     projectId: project.id,
     ...activityActor(actor),
-    // See the module comment: §4.8 has no sprint verb, and growing it is LAI-113.
-    type: 'project.updated',
+    // §4.8 gained `sprint.*` in LAI-113. Deleting a sprint releases every task
+    // in it and used to read in the audit trail as a project settings edit.
+    type: `sprint.${action}` as const,
+    // **The `entity` / `action` payload stays, and that is not redundancy.**
+    // `activity` is append-only in both directions, so every row written before
+    // LAI-113 carries the old verb and is distinguishable *only* by those two
+    // fields. Migrating them is not an option and not a shortcut declined — it
+    // is the property the table exists to have. New rows carry both, which costs
+    // a few bytes and means one payload shape across the whole table.
     payload: { entity: 'sprint', action, sprint_id: id, ...rest },
     now,
   });
@@ -542,7 +549,15 @@ function recordTaskMove(
     projectId: project.id,
     taskId,
     ...activityActor(actor),
-    type: 'task.updated',
+    // One verb for **both** directions (LAI-113): in and out both answer "what
+    // moved", and `from`/`to` already carry which. Two verbs no reader
+    // distinguishes is worse than one.
+    //
+    // It was `task.updated`, which passed the wrong test: a reader filtering on
+    // `type` — the obvious query — saw "a task changed" and had to open the
+    // payload to learn it was a sprint move. `taskId` is still set, so the row
+    // stays on the task's own timeline as well as the sprint's.
+    type: 'sprint.tasks_changed',
     payload: { field: 'sprint_id', from, to },
     now,
   });

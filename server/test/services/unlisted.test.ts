@@ -68,12 +68,15 @@ function note(overrides: Partial<typeof unlistedWork.$inferInsert> = {}): string
 }
 
 function unlistedActivity(): Record<string, unknown>[] {
-  return t.db
-    .select()
-    .from(activity)
-    .all()
-    .filter((r) => r.type === 'unlisted.logged')
-    .map((r) => readPayload(r) as Record<string, unknown>);
+  return (
+    t.db
+      .select()
+      .from(activity)
+      .all()
+      // Every `unlisted.*` verb — logged, promoted and dismissed since LAI-113.
+      .filter((r) => r.type.startsWith('unlisted.'))
+      .map((r) => readPayload(r) as Record<string, unknown>)
+  );
 }
 
 beforeEach(() => {
@@ -347,7 +350,7 @@ describe('the audit trail (§4.8)', () => {
       .select()
       .from(activity)
       .all()
-      .filter((r) => r.type === 'unlisted.logged');
+      .filter((r) => r.type === 'unlisted.promoted');
 
     expect(rows).toHaveLength(1);
     // The pile belongs to no project even when what it becomes does.

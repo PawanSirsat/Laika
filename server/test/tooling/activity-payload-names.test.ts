@@ -36,7 +36,7 @@ import {
   updateTask,
 } from '../../src/services/tasks.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
-import { dismissUnlisted, promoteUnlisted } from '../../src/services/unlisted.ts';
+import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -498,9 +498,16 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       const minted = createToken(t.sqlite, t.db, owner(), { name: 'ci', scope: 'full' });
       revokeOwnToken(t.sqlite, t.db, owner(), minted.token.id);
 
-      // --- unlisted.ts: unlisted.logged, for both actions (LAI-405) ----------
-      // The row is inserted directly because writing one is LAI-408's tool; what
-      // this sweep needs is the *payload* of promote and dismiss.
+      // --- unlisted.ts: three verbs since LAI-113 --------------------------
+      // `unlisted.logged` now means only what it says — a note was written —
+      // while promotion and dismissal have their own verbs. So the sweep calls
+      // the real logging path rather than reaching `unlisted.logged` as a
+      // side-effect of the other two, which is how it used to get there.
+      logUnlistedWork(t.db, owner(), { repo: 'kvell/laika', note: 'Saw something odd' });
+
+      // These two still insert the row directly: writing one is LAI-408's tool,
+      // and what the sweep needs from them is the *payload* of promote and
+      // dismiss.
       const noteId = newId();
       t.db
         .insert(unlistedWork)

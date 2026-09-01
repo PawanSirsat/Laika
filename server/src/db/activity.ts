@@ -325,9 +325,20 @@ export function apiPayload(row: Activity): unknown {
  * project row is a copy that can drift, and `projects.updated_at` answers a
  * different question — it moves when the project is renamed.
  *
- * Matched on the payload rather than on a dedicated verb because §4.8's
- * vocabulary is closed and growing it is a spec change (the same reason
- * `services/sprints.ts` rides under `project.updated`).
+ * ## It reads **two** vocabularies, and that is permanent
+ *
+ * LAI-113 gave the context document its own verb, `project.context_updated`.
+ * Rows written before that carry `project.updated` with `changed:
+ * ['context_md']`, and `activity` is append-only in both directions — so they
+ * keep it for ever and this reader has to accept both.
+ *
+ * **That is the cost of the rename, paid here rather than hidden by a backfill.**
+ * Dropping the old verb from this list would silently lose every context edit
+ * made before the rename, and the symptom — "the document says it was last
+ * edited by nobody" — would look nothing like its cause.
+ *
+ * The payload match stays for the same reason: it is what distinguishes an old
+ * context edit from any other `project.updated`.
  */
 export function latestFieldEdit(
   db: Db,
@@ -340,7 +351,7 @@ export function latestFieldEdit(
     .where(
       and(
         eq(activity.projectId, projectId),
-        eq(activity.type, 'project.updated'),
+        inArray(activity.type, ['project.context_updated', 'project.updated']),
         // The payload is JSON text; `changed` is an array of API field names
         // (LAI-045). `LIKE` on the serialised form is enough to pick the rows
         // worth looking at and costs no extra column.

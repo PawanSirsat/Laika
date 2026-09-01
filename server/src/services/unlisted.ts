@@ -272,7 +272,13 @@ export function promoteUnlisted(
       // to no project even when what it becomes does.
       projectId: null,
       ...activityActor(actor),
-      type: 'unlisted.logged',
+      type: 'unlisted.promoted',
+      // **The `entity` / `action` payload stays, and that is not redundancy.**
+      // `activity` is append-only in both directions, so every row written before
+      // LAI-113 carries the old verb and is distinguishable *only* by those two
+      // fields. Migrating them is not an option and not a shortcut declined — it
+      // is the property the table exists to have. New rows carry both, which costs
+      // a few bytes and means one payload shape across the whole table.
       payload: {
         entity: 'unlisted',
         action: 'promoted',
@@ -318,7 +324,13 @@ export function dismissUnlisted(
     orgId: requireOrgId(db),
     projectId: null,
     ...activityActor(actor),
-    type: 'unlisted.logged',
+    type: 'unlisted.dismissed',
+    // **The `entity` / `action` payload stays, and that is not redundancy.**
+    // `activity` is append-only in both directions, so every row written before
+    // LAI-113 carries the old verb and is distinguishable *only* by those two
+    // fields. Migrating them is not an option and not a shortcut declined — it
+    // is the property the table exists to have. New rows carry both, which costs
+    // a few bytes and means one payload shape across the whole table.
     payload: { entity: 'unlisted', action: 'dismissed', unlisted_id: row.id },
     now,
   });
