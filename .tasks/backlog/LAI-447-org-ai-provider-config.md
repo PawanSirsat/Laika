@@ -4,7 +4,7 @@ title: Setting the org's LLM provider, with the key encrypted at rest
 area: server
 assignee: unclaimed
 priority: p2
-depends-on: [LAI-222]
+depends-on: [LAI-222, LAI-161]
 discovered-from:
 status: backlog
 ---
