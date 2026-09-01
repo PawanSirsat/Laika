@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendActivity } from '../../src/db/activity.ts';
 import { ensureActivityTriggers, runMigrations } from '../../src/db/migrate.ts';
 import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts';
+import { eq } from 'drizzle-orm';
+import { newId } from '../../src/db/ids.ts';
+import { tasks } from '../../src/db/schema.ts';
 
 /**
  * The append-only guarantee survives a table rebuild (SPEC §4.8, LAI-118).
@@ -189,6 +192,45 @@ describe('the step is wired into boot, not just available', () => {
       () => t.db.run(sql`DELETE FROM activity`),
       /append-only.*DELETE is not permitted/i,
     );
+  });
+});
+
+describe('the backfill is wired into boot too (LAI-435)', () => {
+  it('recovers a task’s dates on a boot with no pending migrations', () => {
+    const s = seed(t.db);
+    const id = newId();
+    t.db
+      .insert(tasks)
+      .values({
+        id,
+        projectId: s.projectId,
+        number: 4242,
+        title: 'Finished long ago',
+        status: 'done',
+        priority: 'p2',
+        createdBy: s.userId,
+        createdVia: 'web',
+        createdAt: 1000,
+        updatedAt: 1000,
+      })
+      .run();
+    appendActivity(t.db, {
+      orgId: s.orgId,
+      projectId: s.projectId,
+      taskId: id,
+      actorId: s.userId,
+      actorKind: 'user',
+      type: 'task.status_changed',
+      payload: { from: 'todo', to: 'in_progress' },
+      now: 5000,
+    });
+
+    // Same shape as the trigger test above: `backfill.test.ts` calls the
+    // function directly and would pass just as well if **nothing ever called
+    // it**. This is the one that fails when the line in `runMigrations` goes.
+    runMigrations(t.db);
+
+    expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.startedAt).toBe(5000);
   });
 });
 
