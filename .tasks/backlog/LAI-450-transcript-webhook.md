@@ -53,6 +53,15 @@ part of it can mutate the board, the task is wrong however green it is.
       so decide what authorises a transcript submission and write it down. **If
       that turns out to be a §3 or §10 sentence, stop and file it** rather than
       inventing an answer (D-050's precedent).
+- [ ] **HMAC-SHA256 against the org's transcript secret, constant-time, before
+      the body is parsed** (D-052, closing AC7). Its **own** `SecretPurpose` —
+      not GitHub's — and a new §4.2 column, `transcript_webhook_secret_enc`.
+      **§4.2's row and §10.2's paragraph are written and held**; take an
+      in-flight `COLUMNS_NOT_IN_SPEC` entry naming the merge that retires it.
+- [ ] **A cap, not only a rate.** Each submission is a paid outbound call, so
+      §6.3's bucket is the wrong instrument even once the caller is known — **an
+      authenticated integration gone wrong spends money at a perfectly legal
+      rate.** Reaching the cap answers **distinctly**, not as a generic `429`.
 - [ ] Full gate green — **`EXIT 0`**.
 
 ## Notes / context

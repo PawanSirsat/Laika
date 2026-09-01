@@ -6,7 +6,8 @@ assignee: unclaimed
 priority: p1
 depends-on: []
 discovered-from: LAI-450
-status: backlog
+status: done
+closed: 2026-09-02T00:00:00Z
 ---
 
 ## Goal
@@ -71,3 +72,35 @@ before the endpoint exists rather than after.
 
 **Do not resolve it by giving the endpoint no prompt.** An endpoint that stores a
 transcript and calls no provider is not §10.2; the provider call is the feature.
+
+---
+
+## Ruled — CHIEF, 2026-09-02 (D-052). **Folded into LAI-450; this file closes.**
+
+**A shared secret and an HMAC, as §10.1 has, with its own `SecretPurpose`.**
+Reasoning is D-052; the short form is that `/webhooks/*` is for machines — a
+transcript source is a recorder or a meeting bot, never a session — so a personal
+token is the wrong shape and a §3 action requiring a principal is worse, which is
+D-050's argument one endpoint over.
+
+**Both SPEC halves are written and held** (`scratchpad/lai-164-spec.patch`):
+§4.2's `transcript_webhook_secret_enc` row and §10.2's authentication paragraph.
+**Applied at merge**, so the column and the row land together.
+
+**And the rate criterion is kept and sharpened:** a rate limit is not sufficient,
+because **each submission is a paid outbound call and an authenticated
+integration gone wrong spends money at a perfectly legal rate.** The org carries
+a **cap**, and reaching it answers distinctly rather than as a generic `429`.
+
+### Why this file closes rather than being built
+
+**There is nothing left in it that is not LAI-450's.** The decision was the
+whole of it; the implementation is one more handler on an endpoint somebody is
+already holding, and splitting it would mean two reviews of one gate. **LAI-450's
+AC7 is answered here and its criteria gain the cap.**
+
+**Filing it rather than guessing was right and is the point.** The
+authentication was missing from the **specification**, not the implementation —
+which no test can find, and which a builder inventing a plausible answer would
+have buried permanently.
+
