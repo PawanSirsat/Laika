@@ -203,6 +203,29 @@ reader finds the reason where they looked for the feature.
 it guards, watch it go red, put it back. A test never seen to fail has not been
 shown to work.
 
+**And the fixture is where that goes wrong.** Confirming a guard *can* fail is
+not enough on its own — the usual failure is a test that names the right property
+and is **built so the property cannot be violated** (CORE, after three of them in
+one day):
+
+- **A boolean: assert both values.** `enabled: false` when disabled passes
+  against a hard-coded `false`.
+- **A filter: include something it must exclude**, and choose it so it would be
+  caught. Foreign filenames that sort *after* the ones being deleted survive by
+  luck, not by the filter.
+- **A suffix or a boundary: include the near miss.** `gitignore` does not test a
+  `.git` suffix rule; `owner/owner.github.io` does.
+- **A field that is conditionally withheld: populate it.** A fixture where the
+  field is always `null` cannot tell *withheld* from *absent anyway* — LAI-438's
+  `matched_task_id` leaked past a gate `repo` was correctly behind, and every
+  test passed, because no fixture had a heartbeat that actually resolved.
+
+LAI-144, LAI-431, LAI-432 and LAI-438, all found by mutating and none by
+reading. The first three were fixture **data**; the fourth was fixture **state** —
+the field under test was never populated, so the assertion about it was vacuous. **The
+examples are the point** — the rule alone reads as obvious, and every one of
+these was written by someone being careful about exactly this.
+
 ---
 
 ## 5. Enforcement summary

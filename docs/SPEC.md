@@ -1120,7 +1120,23 @@ no separate presence store to fall out of sync, and a single column could not
 hold a result that is legitimately many.
 
 - **Presence** (`GET /api/v1/presence`) — users with a heartbeat in the last 5
-  minutes, with repo, branch, and resolved task. "Who is working right now."
+  minutes. "Who is working right now."
+
+  **Where is shown only to a reader who can see it** (LAI-438). `repo`, `branch`,
+  `project_ids` and `matched_task_id` are present when the heartbeat attributes
+  to a project that reader may read, and **absent otherwise** — including when it
+  attributes to no project at all. The entry still names the person, the time and
+  whether it is an agent: **it says somebody is working, without saying where.**
+
+  This is not caution for its own sake. **D-046 puts `LAIKA_URL` and
+  `LAIKA_TOKEN` in user settings, not per-repository**, so the hook fires in
+  *every* repository a person opens — not the org's. Publishing each one to the
+  whole org would make consent to be seen working on this board into consent to
+  broadcast the name of everything else. **A task id names the work as surely as
+  a repo names the place**, so all four fields follow one gate.
+
+  §4.2's `presence_enabled` remains the org-level switch and is a different
+  question: whether anything is recorded at all.
 - **Capacity** (`GET /api/v1/capacity`) — per user: `active_sessions`,
   `in_progress_tasks[]`, `last_seen`, oldest in-progress age, tasks in review
   awaiting them, and `unlisted[]` from `log_unlisted_work`. Answers "who takes

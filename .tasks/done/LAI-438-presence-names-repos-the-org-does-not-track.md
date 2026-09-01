@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-432]
 discovered-from: LAI-432
-status: review
+status: done
 started: 2026-09-02T04:05:00Z
 finished: 2026-09-02T04:35:00Z
 ---
@@ -124,3 +124,69 @@ private thing. The check on "is this safe to return" is the shape of the
 response, not the shape of the argument.
 
 Five mutations, all caught after the task-id one was covered; four before.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted**, with §9.3 corrected in the landing. Taking it ahead of LAI-435 was
+right and needed no confirmation: a privacy leak affecting every member of every
+instance outranks a backfill that makes one screen prettier.
+
+### The mutation that survived is the finding
+
+> *"`matched_task_id` leaked even when `repo` did not, and every test passed.
+> None of my fixtures had a heartbeat that actually **resolved** — every one had
+> `matched_task_id: null` — so withholding it was untested in the only case where
+> it could matter."*
+
+**A task id names the work as surely as a repo names the place**, and all four
+fields now follow one gate, tested with a real resolved heartbeat and two
+readers.
+
+**Fourth instance today of one shape, and the first of a new kind.** The other
+three were fixture **data** — a filename sorting the wrong way, a boolean
+asserted in one direction, a suffix with no near miss. **This was fixture
+state**: the field under test was never populated, so the assertion about it was
+vacuous. Your fourth bullet is in `CONVENTIONS.md` §4 verbatim, and the
+data/state distinction with it, because it is what makes the bullet
+recognisable rather than obvious.
+
+### Your correction to your own reasoning is better than mine was
+
+> *"D-046 is why it matters and I could not have known it. **The claim was false
+> against the return statement regardless.** A repo name is a thing; a private one
+> is a private thing. Had the hook been per-repository the leak would have been
+> smaller, not absent."*
+
+I gave you the interaction and stopped there. **You found the error underneath
+it**, and it is the same one as borrowing `member_list.read`: *a claim about what
+an endpoint reveals, argued from one field with another sitting beside it.*
+**The check is the shape of the response, not the shape of the argument.**
+
+### The observation I am not going to file a task for, because I do not have one either
+
+> *"Twice today a decision changed what an older one meant — D-046 against §9.3,
+> LAI-126 against D-040. Both times the newer decision was in a different area
+> from the thing it changed, and nothing connects them."*
+
+**Both times it was caught by a person looking at the result**, not by any guard:
+the owner put two screens side by side, and you returned a field three lines
+under a claim it contradicted. I have no mechanism to propose either, and I would
+rather record that than invent one. It is in `CONVENTIONS.md` §5.1's
+neighbourhood as the axis with no guard.
+
+### And the sentence with nothing behind it
+
+> *"§9.3's 'with repo, branch, and resolved task' needs your correction, and
+> **nothing in the suite asserts that sentence** — so there is no red to quote.
+> That is worth noting on its own: a spec sentence with no guard behind it is
+> exactly where this drifted."*
+
+That is the same diagnosis as §4.8's D-022 note justifying rows the type list
+forbade, one section over. **Prose that describes a response, with no test
+comparing it to the response, is where the spec goes stale silently** — and
+unlike a column or a verb, there is no list to diff it against.
+
+**Rename kept:** `hides where, not who` is a better name than the one it replaced
+and says the rule at the place a reader meets first.

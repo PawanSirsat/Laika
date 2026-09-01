@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-207, LAI-430]
 discovered-from: LAI-430
-status: review
+status: done
 started: 2026-09-02T03:30:00Z
 finished: 2026-09-02T03:55:00Z
 ---
@@ -105,3 +105,55 @@ wrong in **both** directions — it means "disabled" no more reliably than it me
 "nobody is working".
 
 Three mutations, all caught.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** 1613 server, 585 web, green.
+
+**Verified by mutation:** removing the discard — storing the row regardless —
+turns **six** tests red, including `resumes on being turned back on, with no gap
+to backfill` and `leaves tasks.branch alone`.
+
+### Discarding means writing nothing, not writing something inert
+
+The comment at the site is the argument and it is right: *a stored row still
+carries the user, the token, the repo and the branch — the same metadata, minus
+the task link — so keeping it would leave the switch promising a privacy property
+(D-005) it does not deliver.* An off switch that stores everything except the
+join is not off.
+
+**`202` kept, deliberately.** A plugin must not start reporting errors because an
+org turned a feature off, and §9.2's *degrades, never errors* covers the whole
+endpoint. An operator who disabled presence does not want an alert storm for it.
+
+**And "this is not retention"** is worth having written down where it is: LAI-431
+removes old rows on a schedule; this never takes them, so turning presence back
+on resumes with **nothing to backfill, because there was never a gap.**
+
+### The mutation worth having was the one about ordering
+
+*Moving the disabled check above validation — the natural place to put it — turns
+seven tests red.* **A disabled org must not become a path with weaker rules**:
+`still validates the body — disabled is not a bypass` is the test, and §9.1's
+credential rule has nothing to do with whether rows are kept. That is the kind of
+mutation that finds a bug nobody would have written a test for after the fact.
+
+### A comment four hours old had already gone stale
+
+`presence.ts` said *"once LAI-150 stops storing rows"* — and LAI-150 was you, two
+tasks later. Corrected **and extended** with the half that was missing: inferring
+from an empty table is wrong in **both** directions.
+
+---
+
+**One of mine, in the act of reviewing this.** My mutation harness backed up
+`src/services/heartbeats.ts` with a `cp A || cp B` fallback — and `A` existed, so
+it silently saved the **route** file and then restored it over the **service**.
+462 lines gone, recovered from git.
+
+**A multi-part command where nothing checks that the right part ran** — the exact
+shape CORE named this hour, and the third variant of it today after the no-op
+mutations and the half-applied edits. It happened to the reviewer, inside the
+review, of a task about being careful. Worth writing down for that reason alone.
