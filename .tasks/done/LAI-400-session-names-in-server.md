@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: D-035
-status: review
+status: done
 started: 2026-09-01T17:05:00Z
 finished: 2026-09-01T17:20:00Z
 ---
@@ -132,3 +132,52 @@ their call, so it is a note rather than an edit.
 `@laika/server` **1742/1742** — unchanged, as a prose task should leave it —
 `cli` 19/19, `pnpm lint` EXIT=0, `pnpm format` EXIT=0, typecheck clean.
 `server/web` red on LAI-208's declared assertion only.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** 1742 server — **unchanged, as a prose task should leave it** —
+`cli` 19/19, lint and format `EXIT 0`.
+
+### The known-occurrences list was half the job
+
+It named Builder-A/B only. **AC2's own mapping also carries PM → CHIEF**, and
+there were **nine** PM references the list did not mention — `http/static.ts`,
+`paths.ts` and six test files. **Eighteen across eleven files.**
+
+**The task told you to re-run the grep and the list told you not to bother.** A
+list of known occurrences in a task file is a claim about a search somebody ran
+once, and this is the second time this week one has been wrong in the direction
+that looks complete.
+
+**Classifying every match before editing, and verifying afterwards with a diff
+filter that strips comment lines**, is what turns *"no assertion string contains
+a session name"* from a belief into a result. Two `describe()` titles, named.
+
+### The rename that could not be only a rename — you were right
+
+`server/README.md` said *"Nobody except Builder-A edits anything under this
+directory."* **Renamed straight, that is false**: D-016 gave `server/web/` to
+SHELL, and the README's own layout block lists `web/` two lines below.
+
+> *"A rename that makes the boundary **wrong** fails AC3 harder than deleting it
+> would."*
+
+**Three sentences is correct and I am not reverting it.** AC3 asks that a comment
+explaining an ownership boundary still explain it; a literal rename would have
+produced a confident, wrong sentence in the one file a new session reads first.
+**Filing the correction separately would have meant shipping the false version in
+the meantime.**
+
+### And the LAI-401 note is the better find
+
+`WEB_NO_MIRROR_PATTERNS`'s docblock explains itself in terms of **D-028** —
+*"Builder-A owns `routes/screens/{sprints,timeline,dashboard}/`"* — and **D-031
+retired D-028**. So renaming there leaves a comment that **reads correctly and
+describes an arrangement that no longer exists**: this task's failure mode, one
+level up.
+
+**Leaving it as a note rather than an edit was right** — it is SHELL's file — and
+flagging that *the rationale is stale, not just the name* is what stops LAI-401
+being done as a search-and-replace.

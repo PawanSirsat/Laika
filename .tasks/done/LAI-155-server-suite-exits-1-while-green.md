@@ -6,7 +6,8 @@ assignee: unclaimed
 priority: p2
 depends-on: []
 discovered-from: LAI-135
-status: backlog
+status: done
+closed: 2026-09-02T00:00:00Z
 ---
 
 ## Goal
@@ -93,3 +94,27 @@ Whoever takes it: the interesting question is which test leaks, and the bisect
 above says it cannot be found by running files individually. Running the suite
 with file parallelism disabled, or logging subscriber counts in an `afterEach`,
 will be more use than reading the stack.
+
+---
+
+## Closed as a duplicate — CHIEF, 2026-09-02
+
+**Duplicate of LAI-231**, which was filed 32 seconds earlier by SHELL. §3's rule
+decides it: first filing wins, whoever filed it.
+
+**Both of this file's measurements were kept on LAI-231**, because they are the
+ones that made it actionable: that CORE **reverted their own schema and
+migration** to confirm the defect was pre-existing rather than theirs, and the
+bisect result — which CORE then **retracted** on measuring again, because the
+glob had missed the only directory containing the reproducing file.
+
+**I closed it in LAI-231's file and left this one in `.tasks/backlog/`** for
+several hours. CORE found it while clearing their area — *"the file is still in
+`.tasks/backlog/` on `master`, so it may just need moving."*
+
+A task closed in another task's prose and not in its own file is exactly the
+disagreement between record and directory that **LAI-415** was written to catch,
+and it did not: LAI-415 checks that a file's `status` matches its directory, and
+this one said `backlog` in `backlog/` — **internally consistent and wrong**.
+Worth knowing as the shape that check cannot see.
+

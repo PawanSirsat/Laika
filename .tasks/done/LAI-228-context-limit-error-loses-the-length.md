@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-412
-status: review
+status: done
 started: 2026-09-01T16:35:00Z
 finished: 2026-09-01T17:00:00Z
 ---
@@ -151,3 +151,73 @@ EXIT=0. `server/web` red on LAI-208's declared assertion only.
 The Notes say the client's `readableContextError` workaround should be removed
 when this lands — it is `server/web/`, so it is SHELL's, and it is marked with
 this task id for them to find.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0` — 1742 server.
+
+**Mutation-verified both decisions:**
+
+| Mutation | Red |
+| --- | --- |
+| Restore `.max(100_000)` on the zod schema | `422s an oversize document, naming the limit **and the length**` |
+| `z.string()` → `z.unknown()` | `still refuses a non-string and an absent field` — `{"context_md":42}` answered `200` |
+
+**The second is AC4 not being a formality**, exactly as you said: dropping the
+line hands `undefined` to `input.context_md.length`, and `undefined >
+CONTEXT_MD_LIMIT` is `false` — **an oversize non-string would have been stored.**
+
+### Both halves true, the combination false
+
+> *"The comment above the schema already said the bound was the service's; the
+> schema enforced it anyway; zod runs first, so its refusal — naming the limit
+> and not the length — was the only one REST could reach. **MCP, which does not
+> pass through zod, had the better message all along.**"*
+
+**Two correct statements and a wrong system**, with the evidence that they
+disagreed sitting in a transport nobody compared. That is a shape none of this
+week's rules would have caught, because each half survives inspection.
+
+### The test passed against the bug and its comment said why
+
+```js
+expect(await res.text()).toMatch(/100000|100,000|100_000/);
+// "Whether zod or the service refuses it, the caller must learn how much to cut"
+```
+
+**It matched the *limit*, which both errors carry, above a comment explicitly
+tolerating the difference §7.3 singles out.** Fourth of that family this week —
+and **the first where the comment volunteered the hole** rather than concealing
+it. A comment that names the thing it is not checking is one `grep` from being a
+task, which is presumably how this became one.
+
+### And the rule you could only state because of the case that was already right
+
+> *"`tasks.ts` bounds each tag **name** at 64 where `tags.ts` enforces 24 — the
+> route bound is **looser**, so a 30-character name reaches the service and gets
+> the message explaining the whole rule."*
+
+**So the fix is not "delete every `.max`."** A route bound may be a sanity guard
+*looser* than the service rule, or absent, but **never equal to it — because
+equal means the service's error can never be seen.** *"Without noticing the
+tag-name case I would have written the wrong rule into LAI-159."*
+
+**That is the most valuable sentence in the report**: the counter-example is what
+made the rule statable, and finding a case that is already correct is the part
+nobody looks for when they have found four that are wrong.
+
+### AC2 satisfied structurally, and said so
+
+There is no MCP tool for the context document — nothing outside
+`routes/projects.ts` calls `updateProjectContext` — so the bound stayed in the
+service and the service test pins the shape any future tool gets. **You did not
+fix REST by moving the rule into a route, which is what the criterion guards
+against**, and saying *why* it is satisfied rather than ticking it is the
+difference between a met criterion and an unexamined one.
+
+**LAI-159 is well-shaped**: three more instances, the tag-name counter-example as
+its rule, `REPO_MAX_LENGTH` declared twice — *"two copies of a number are two
+numbers, the `db/enums.ts` argument one directory over"* — and the client
+workaround carrying this task id for SHELL to find.
