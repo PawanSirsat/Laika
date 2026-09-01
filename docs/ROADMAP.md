@@ -145,7 +145,24 @@ SHELL can build it during M1).
 - Dashboard rollups from `activity`: throughput, cycle time, stuck work
 - Standup view: done since yesterday, in progress by whom, blocked, next up
 
-**Exit:** the capacity screen answers "who takes the next task" without asking.
+**Exit: met, 2026-09-02.** The Capacity screen renders from `GET /capacity` and
+`GET /presence` (LAI-439): who is active now with repo, branch and resolved task,
+agent sessions distinct from humans, in-progress work across projects, last seen,
+unlisted work with one-click promote, and a **disabled** state distinct from an
+empty one. Presence says *where* only to a reader who can see it (LAI-438) — an
+entry with no `repo` reads *working elsewhere*, which is a state rather than a
+gap.
+
+Server side: branch → task resolution (LAI-430), the in-process scheduler
+(LAI-431), presence and capacity computed at request time (LAI-432), the org's
+presence switch (LAI-207, LAI-150).
+
+**Two of M5's tasks remain open and neither gates the exit**: the Board's
+WORKING NOW strip and agent-sessions rail (LAI-440), and the Dashboard rollups
+now that LAI-124 has landed the aggregation.
+
+~~**Exit:** the capacity screen answers "who takes the next task" without
+asking.~~
 
 ---
 

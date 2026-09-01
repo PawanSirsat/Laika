@@ -2550,3 +2550,33 @@ handler**, and holding one of four handlers rather than guessing — *"that is a
 sentence and §5 is yours, and I have already been wrong once today about what a
 document said."* The other three were built meanwhile, so the ruling cost
 nothing.
+
+### Postscript 3 — and again, by the same two mistakes
+
+`origin/master` went red a second time on 2026-09-02, and both causes were
+already written down.
+
+**The gate ran before the last edit.** CHIEF gated a merge, then applied §4.2's
+`ai_key_last4` row — which made CORE's in-flight `COLUMNS_NOT_IN_SPEC` entry
+stale — then pushed. The run was real; the tree it described no longer existed.
+**CLAUDE.md §5 now says the gate is the last thing before `git push`, with
+nothing between them.**
+
+**And the commit was a stealth merge again.** `MERGE_HEAD` was open from an
+uncommitted merge of `core`, so `git add docs/ && git commit` completed it — the
+exact failure Postscript 1 records, by the reviewer who wrote it.
+
+**It could not be reverted**, because the commit was a merge carrying LAI-445's
+work; `git revert -m 1` would have taken that with it. **A stealth merge is
+harder to undo than an ordinary bad commit**, which is the part Postscript 1 did
+not say.
+
+**One thing worked.** Before this, CHIEF told CORE the §4.2 row existed and asked
+them to drop the exemption. **It did not exist** — the edit was in the worktree,
+unstaged, while the commit *title* named it. CORE checked `git show --stat`,
+`git log --all -S` across every branch, and the §4.2 table verbatim, then refused:
+*"I am not dropping an exemption whose reason is still true."*
+
+**That refusal is the mechanism doing what it is for.** An exemption's reason is
+a sentence somebody can check, and checking it caught a false claim from the
+person who wrote the rule.

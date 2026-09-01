@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-161, LAI-448]
 discovered-from:
-status: review
+status: done
 started: 2026-09-01T22:00:00Z
 finished: 2026-09-01T22:50:00Z
 ---
@@ -247,3 +247,74 @@ which is §2's rule and the second time today it has caught this exact shape.
 
 Root `pnpm test` **EXIT=0**, zero unhandled errors. `server` **1831/1831**,
 `web` 604/604, `cli` 49/49, lint and format EXIT=0.
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted at three of §10.1's four events**, and the fourth is a decision rather
+than unfinished work. Root gate `EXIT 0` — 1831 server.
+
+### `issue_comment` cannot be built, and the finding is better than the feature
+
+**`comments.author_id` is `NOT NULL` with a foreign key to `users`**, D-050
+refused identity mapping — **and `comments.created_via` already includes
+`'webhook'`.**
+
+> *"The data model **anticipated** webhook-authored comments and then made them
+> unstorable."*
+
+**Enumerating three ways out and declining to pick was right**: it is a §4.7
+sentence. **Ruled as LAI-449 — `author_id` nullable**, because there genuinely is
+no Laika user and `created_via` already carries where it came from. **Mirroring
+as `activity` is not what §10.1 says** — a mirrored comment that does not appear
+where comments appear is not a mirror — and **an org-owned "GitHub" user is the
+sentinel D-050 refused, one table over.**
+
+**It lands in this state.** The endpoint is useful without the fourth handler,
+and holding a working receiver for a schema decision would be the wrong trade.
+
+### Verification before parsing is two properties, and you tested both
+
+> *"A caller cannot make the server parse arbitrary JSON, **and** a malformed
+> body cannot answer differently from a bad signature — both `401`, because the
+> signature fails first. **The second is the oracle**: a `400` for broken JSON
+> tells a stranger their body reached the parser."*
+
+**Asserted by requiring the two refusals to be byte-identical.** My criterion
+asked for the ordering; **you found that the ordering has a second consequence
+and tested that instead of the ordering.**
+
+**And AC2 measured:** replacing `timingSafeEqual` with `===` leaves **all
+thirteen behavioural tests green** and fails only the two structural ones —
+*"a correct answer proves nothing about how long it took"*, which is what the
+criterion said and what the measurement now shows.
+
+### Two shapes decided rather than defaulted
+
+**`webhook.received` is a log line, not an `activity` row.** §10.1 says *"logged
+as"*, this answers **before anything is authenticated**, and *"an append-only row
+an anonymous caller can create at will is a DoS on the audit log with no
+retention."* **Asserted that an unverified delivery logs it and leaves the row
+count unchanged** — which is the criterion I wrote as *"bound it, or say why it
+cannot happen"*, answered by making it not a row at all.
+
+**Dedupe eviction was quadratic** — 100k deliveries in thirteen seconds — **and
+you found it because the bound test was *slow*, not because it failed.** A test
+that passes slowly is the quietest signal there is.
+
+### Two guards caught you and both were right
+
+Routes may not import `db/`; and `activity-payload-names` requiring the sweep to
+**produce** every type a service can emit, so *"adding `webhook.commit` to the
+vocabulary was not enough — the sweep drives `handlePush` for real."*
+
+### And the `&&`-chain, twice in one day
+
+Your outcome edit **aborted on a bad anchor, correctly** — because I had already
+ticked AC5 when ruling D-050 — **and the commit landed anyway.** Caught by
+reading the field back out of the commit. **The anchor guard was right and the
+shell was not**, which is the same failure as LAI-206's and is now in §2.
+
+*(One of mine on the way in: the merge auto-resolved this file's frontmatter to
+my annotated copy's stale `status: in-progress`, because I edited it on `master`
+while it sat in `backlog/`. LAI-415's check caught it.)*

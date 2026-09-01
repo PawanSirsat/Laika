@@ -82,7 +82,10 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // `/tokens` left this list when LAI-410 built the screen — it now has an
     // API and a screen, so by this file's own rule it is offered rather than
     // hidden. That is the rule working, not an exception to it.
-    for (const path of ['/capacity', '/meeting-review']) {
+    // `/capacity` left this list with LAI-439 for the same reason `/tokens` did:
+    // it has an API — `GET /capacity`, `GET /presence` — and now a screen. The
+    // rule working, again, rather than an exception to it.
+    for (const path of ['/meeting-review']) {
       const route = ROUTES.find((r) => r.path === path);
       assert.notEqual(route, undefined, `${path} must still be routed`);
       assert.equal(isShipped(route!), false, `${path} has no API and must not be offered`);
@@ -101,7 +104,18 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // This assertion is `deepEqual` on purpose: it caught the reorder before
       // the change was finished, which is the only reason it is worth having.
       // `Tokens` joins with LAI-410: the screen exists, so it is offered.
-      ['Board', 'Timeline', 'Sprints', 'Projects', 'Dashboard', 'Tokens', 'Organisation'],
+      // `Capacity` joins with LAI-439 — M5's exit criterion; the screen exists,
+      // so it is offered.
+      [
+        'Board',
+        'Timeline',
+        'Sprints',
+        'Projects',
+        'Dashboard',
+        'Capacity',
+        'Tokens',
+        'Organisation',
+      ],
     );
   });
 

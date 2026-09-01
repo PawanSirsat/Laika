@@ -54,7 +54,12 @@ void describe('sidebar groups (AC1)', () => {
     );
     assert.deepEqual(
       routesInGroup('REVIEW').map((r) => r.label),
-      ['Dashboard'],
+      // `Capacity` joins with LAI-439, by the same rule that took it away and
+      // gave `Tokens` and `Organisation` back: a route is offered once there is
+      // a screen behind it. It moved from `WORK` to `REVIEW` in that task —
+      // AC1 names the group, and it reads with Dashboard rather than with the
+      // screens you open to move a task.
+      ['Dashboard', 'Capacity'],
     );
     // `SETTINGS` is no longer empty: LAI-086 built the Organisation screen, so
     // it earned its place back by the same rule that took it away — a route is

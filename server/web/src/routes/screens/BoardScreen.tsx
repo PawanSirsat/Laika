@@ -11,6 +11,7 @@ import { showsUnreachableBanner, streamPillLabel } from './board/stream-presenta
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { BoardRail } from './board/BoardRail.tsx';
 import { PresenceStrip } from './board/PresenceStrip.tsx';
+import { getPresence, type PresenceView } from '../../api/presence.ts';
 import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
@@ -29,6 +30,7 @@ import {
 } from '../../api/tasks.ts';
 import { getProject, listProjects, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
+import '../../components/markers.css';
 import './board/board.css';
 import { pickProject } from '../../api/pick-project.ts';
 import { withProjectParam } from '../nav-url.ts';
@@ -54,6 +56,38 @@ export interface BoardScreenProps {
  */
 export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const { theme } = useTheme();
+
+  /**
+   * Presence for the strip and the rail (LAI-440).
+   *
+   * **Polled, not streamed.** `GET /events` carries activity; nothing on it
+   * fires when somebody's presence changes, so a strip driven by it would sit
+   * still while going stale. Twenty seconds against a five-minute window.
+   *
+   * A failure leaves `presence` as it was rather than clearing it: a board that
+   * blanks its strip on one bad poll is worse than one showing a reading twenty
+   * seconds old.
+   */
+  const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const read = (signal?: AbortSignal): void => {
+      getPresence(signal)
+        .then(setPresence)
+        .catch(() => {
+          // Presence is not why somebody opened the board.
+        });
+    };
+    read(controller.signal);
+    const timer = setInterval(() => {
+      read();
+    }, 20_000);
+    return () => {
+      controller.abort();
+      clearInterval(timer);
+    };
+  }, []);
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
@@ -586,7 +620,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
       )}
 
       <PresenceStrip
-        members={members}
+        presence={presence}
         theme={theme}
         assignee={assignee}
         onFilter={(id) => {
@@ -661,6 +695,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
             gapped={stream.gapped}
             tasks={allTasks}
             members={members}
+            presence={presence}
           />
         </div>
       )}

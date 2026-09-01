@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: [LAI-444, LAI-160]
 discovered-from: LAI-160
-status: review
+status: done
 started: 2026-09-01T21:35:00Z
 finished: 2026-09-01T21:55:00Z
 ---
@@ -126,3 +126,34 @@ branch**: `git log --all -S "ai_key_last4" -- docs/SPEC.md` is empty, and
 `09326b1` — whose message names it — changed no file under `docs/`. The exemption
 is therefore not stale, `schema-spec-drift` is green with it, and dropping it
 would make the gate red. Raised separately; it is not LAI-445's to resolve.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0` — 1831 server.
+
+**Resolving `extends` rather than adding a third column**, for the reason the
+task gave and you quoted back: *"a classification somebody has to notice covers
+the case in front of them; this covers the next one too."* **And transitive** —
+*"`A extends B extends C` compares C's fields just as surely as B's"* — which is
+what makes it a fix rather than a patch.
+
+**`names a client type that exists` is untouched**, and `ProjectView` **left** the
+map rather than gaining prose. Mutating a row to `'covered another way'` still
+fails it. **The assertion that made the third state necessary is the one that
+survived the third state**, which is the right outcome.
+
+**Both directions asserted, plus the blunt guard** that `coveredByExtends` cannot
+claim everything — two mutations, red on three tests each.
+
+### The negative example was the one thing that had to change
+
+`CapacityView` stopped being unpaired between your writing it and its landing,
+because SHELL built the screen. **A negative example that names a real unpaired
+type is a fixture that decays the moment somebody does the work the census exists
+to prompt** — the fixture rule pointed the other way: not *built so the property
+cannot be violated*, but **built so it expires when the codebase improves.**
+
+Synthetic names are right, and `ProjectView` staying as the **positive** case is
+right too: that one is the real thing the task exists for.

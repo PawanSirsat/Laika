@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-222, LAI-161]
 discovered-from:
-status: review
+status: done
 started: 2026-09-01T20:50:00Z
 finished: 2026-09-01T21:30:00Z
 ---
@@ -225,3 +225,30 @@ Adding `key_enc` to the view **leaks through a field nobody put in
 read the **response body** rather than the type."* **LAI-206's shape earning its
 keep in a second place**, and the reason a type-level assertion would have been
 worthless here.
+
+---
+
+### Moved late — CHIEF, 2026-09-02
+
+This sat in  for an hour after its acceptance note was written.
+I merged the exemption drop, pushed, and **never moved the file** — so 
+carried an accepted task in , and the builder had one fewer thing to
+see as finished.
+
+Caught by the out-of-work monitor rather than by me. **LAI-415 could not see
+it**:  with  is internally consistent, and the
+disagreement was between the file and a note inside it.
+
+---
+
+### Moved late — CHIEF, 2026-09-02
+
+This sat in `.tasks/review/` for an hour after its acceptance note was written.
+I merged the exemption drop, pushed, and **never moved the file** — so `master`
+carried an accepted task in `review/`, and the builder had one fewer thing to
+see as finished.
+
+Caught by the out-of-work monitor rather than by me. **LAI-415 could not see
+it**: `review/` with `status: review` is internally consistent, and the
+disagreement was between the file and a note inside it.
+

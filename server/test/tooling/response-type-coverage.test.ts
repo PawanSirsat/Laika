@@ -171,13 +171,13 @@ const UNPAIRED = new Map<string, string>([
   // summary derives.
 
   // No client type exists: the screens these feed are unbuilt.
+  // `CapacityView` and `PresenceView` left this group in LAI-439, which built the
+  // screen and therefore the mirror.
   ['AvatarView', 'no client type exists'],
-  ['CapacityView', 'no client type exists'],
   ['HeartbeatView', 'no client type exists'],
   ['MetricsView', 'no client type exists'],
   ['OrgAiView', 'no client type exists'],
   ['OrgView', 'no client type exists'],
-  ['PresenceView', 'no client type exists'],
 ]);
 
 const NO_MIRROR = 'no client type exists';

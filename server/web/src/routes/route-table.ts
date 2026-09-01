@@ -113,6 +113,19 @@ export const ROUTES: readonly Route[] = [
     phase: 'Phase 3',
   },
 
+  // **REVIEW, not WORK** (LAI-439 AC1). It sat in `WORK` while it was a stub;
+  // the criterion names the group, and it reads with Dashboard and Unlisted work
+  // — screens you open to see how things stand rather than to move a task.
+  // Capacity is read across every project at once, not within one.
+  {
+    orgLevel: true,
+    path: '/capacity',
+    label: 'Capacity',
+    group: 'REVIEW',
+    status: 'ready',
+    phase: 'Phase 5',
+  },
+
   // SETTINGS
   // SETTINGS order follows the prototype: Tokens, then Organisation.
   {
@@ -135,8 +148,6 @@ export const ROUTES: readonly Route[] = [
   // Routed and reachable by URL, but not offered in the nav: no screen behind
   // them yet, so an entry would be a dead link. They come back the moment they
   // have a `status`.
-  // Capacity is read across every project at once, not within one.
-  { orgLevel: true, path: '/capacity', label: 'Capacity', group: 'WORK', phase: 'Phase 5' },
   { path: '/meeting-review', label: 'Meeting review', group: 'REVIEW', phase: 'Phase 6' },
 
   // Reached from a project rather than the nav.
