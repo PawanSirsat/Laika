@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { orgs, users } from '../../../src/db/schema.ts';
+import { activity, orgs, users } from '../../../src/db/schema.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 /**
@@ -106,6 +106,133 @@ describe('GET /api/v1/org', () => {
     // would say "no such thing".
     expect(res.status).toBe(405);
     expect(res.headers.get('allow')).toContain('GET');
+  });
+});
+
+/**
+ * Setting the LLM provider (§4.2, §6.4, §12, LAI-447).
+ *
+ * The key is **write-only**: accepted here and returned by nothing. Every
+ * assertion about that is made against the whole response body rather than
+ * against the fields somebody remembered to exclude — LAI-206's shape, and the
+ * only version that survives a field being added later.
+ */
+describe('PATCH /api/v1/org — the AI provider', () => {
+  const KEY = 'sk-ant-secret-value-nobody-should-ever-see-9999';
+
+  async function patch(body: unknown, useCookie = cookie): Promise<Response> {
+    return h.app.request('/api/v1/org', {
+      method: 'PATCH',
+      headers: jsonHeaders({ Cookie: useCookie }),
+      body: JSON.stringify(body),
+    });
+  }
+
+  async function setAnthropicKey(): Promise<Response> {
+    const res = await patch({ ai_provider: 'anthropic', ai_api_key: KEY });
+    expect(res.status, await res.clone().text()).toBe(200);
+    return res;
+  }
+
+  it('stores the provider and reports it as configured', async () => {
+    const body = (await (await setAnthropicKey()).json()) as OrgBody;
+
+    expect(body.ai?.configured).toBe(true);
+    expect(body.ai?.provider).toBe('anthropic');
+  });
+
+  it('reports the last four, from the stored column rather than by decrypting', async () => {
+    await setAnthropicKey();
+
+    const body = (await (await getOrgAs()).json()) as OrgBody;
+
+    expect(body.ai?.key_last4).toBe('9999');
+    // Stored at write time: the row carries it, so no read path needs the key.
+    expect(h.db.select().from(orgs).get()?.aiKeyLast4).toBe('9999');
+  });
+
+  it('encrypts the key at rest — the row holds no plaintext', async () => {
+    await setAnthropicKey();
+
+    const row = h.db.select().from(orgs).get();
+
+    expect(row?.aiApiKeyEnc).not.toBeNull();
+    expect(row?.aiApiKeyEnc).not.toContain(KEY);
+    // §12's format, so a future scheme is distinguishable (LAI-161).
+    expect(row?.aiApiKeyEnc).toMatch(/^v1\./);
+  });
+
+  it('never returns the key, at any grade or on any response', async () => {
+    // **AC3 and AC8's first third.** Asserted of the whole body, on the write
+    // that sets it and on every later read, because the response that leaks a
+    // secret is usually the one nobody thought produced it.
+    const written = await (await setAnthropicKey()).text();
+    const read = await (await getOrgAs()).text();
+
+    for (const [label, body] of [
+      ['the PATCH response', written],
+      ['the GET response', read],
+    ] as const) {
+      expect(body, label).not.toContain(KEY);
+      expect(body, label).not.toContain('sk-ant');
+      // Nor the ciphertext: it is not a secret, and it is also not the org's
+      // business to hand out.
+      expect(body, label).not.toContain('v1.');
+      expect(body, label).not.toMatch(/ai_api_key|_enc/);
+    }
+  });
+
+  it('writes no activity row containing the key', async () => {
+    // **AC8's second third.** `updateOrg` writes no activity row today — §4.8
+    // has no verb for an org settings change — so this asserts the property
+    // rather than the absence: if one is ever added, it must not carry the key.
+    await setAnthropicKey();
+
+    const rows = h.db.select().from(activity).all();
+
+    for (const row of rows) {
+      expect(JSON.stringify(row)).not.toContain(KEY);
+    }
+  });
+
+  it('writes no log line containing the key', async () => {
+    // **AC8's last third.** §13.2 logs method, path and status for every
+    // request; a body-logging change would put this key in stdout.
+    await setAnthropicKey();
+
+    expect(JSON.stringify(h.log.records)).not.toContain(KEY);
+  });
+
+  it('refuses to encrypt under an empty server secret', async () => {
+    // `serverSecret` is optional on `createApp` so the LAI-002 HTTP tests can
+    // build an app without one. Storing ciphertext under `''` would "work" and
+    // be unrecoverable, so the route refuses instead — the guard the option's
+    // own comment promises.
+    const bare = authHarness({ serverSecret: '' });
+    try {
+      const setup = await bare.app.request('/api/v1/setup', {
+        method: 'POST',
+        headers: jsonHeaders(),
+        body: JSON.stringify({
+          org_name: 'Bare',
+          owner_name: 'Ada',
+          owner_email: 'ada@example.test',
+          owner_password: PASSWORD,
+        }),
+      });
+      const bareCookie = cookieFrom(setup);
+
+      const res = await bare.app.request('/api/v1/org', {
+        method: 'PATCH',
+        headers: jsonHeaders({ Cookie: bareCookie }),
+        body: JSON.stringify({ ai_provider: 'anthropic', ai_api_key: KEY }),
+      });
+
+      expect(res.status).toBe(500);
+      expect(bare.db.select().from(orgs).get()?.aiApiKeyEnc).toBeNull();
+    } finally {
+      bare.close();
+    }
   });
 });
 

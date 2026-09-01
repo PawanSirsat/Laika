@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readPayload } from '../../src/db/activity.ts';
@@ -136,6 +137,77 @@ describe('heartbeat retention (§11.6, 30 days)', () => {
     // and getting it backwards is the failure this file could cause that nothing
     // else can — the triggers would refuse it, loudly, which is the point.
     expect(activityTypes()).toContain('webhook.received');
+  });
+});
+
+describe('every job asks before it writes (§3.3 rule 1, LAI-448)', () => {
+  /**
+   * **Read from the source, because the behaviour cannot show it.**
+   *
+   * `assertCan(SYSTEM, …)` always passes here — the principal holds the action —
+   * so deleting the call changes nothing any other test in this file can see.
+   * Measured: removing it from `expireInvites` left every job and policy test
+   * green. That is how the rule came to be broken in eight places without
+   * anybody noticing, and a check that only exercises the happy path would let
+   * it happen again.
+   *
+   * Comments are stripped first. Both files *discuss* `assertCan` at length, and
+   * a check that reads prose as code reports its own documentation (LAI-159).
+   */
+  const RAW = readFileSync(new URL('../../src/jobs/jobs.ts', import.meta.url), 'utf8');
+  const source = RAW.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+  /** `vacuum` rewrites storage and touches no row — see its docblock. */
+  const TOUCHES_NO_DATA = new Set(['vacuum']);
+
+  function bodies(): Map<string, string> {
+    const found = new Map<string, string>();
+    const starts = [...source.matchAll(/export function ([a-zA-Z]+)\(/g)];
+
+    for (const [i, match] of starts.entries()) {
+      const from = match.index ?? 0;
+      const to = starts[i + 1]?.index ?? source.length;
+      found.set(match[1] ?? '', source.slice(from, to));
+    }
+    return found;
+  }
+
+  it('finds the job functions', () => {
+    // Without this the assertions below pass over an empty map — the vacuous
+    // pass this whole describe exists to prevent.
+    const found = bodies();
+
+    expect(found.size, 'no exported functions found in jobs.ts').toBeGreaterThanOrEqual(5);
+    expect([...found.keys()]).toContain('pruneHeartbeats');
+  });
+
+  it('calls assertCan in every job that touches a row', () => {
+    const silent = [...bodies()]
+      .filter(([name]) => !TOUCHES_NO_DATA.has(name))
+      .filter(([, body]) => !body.includes('assertCan('))
+      .map(([name]) => `${name} writes without asking — §3.3 rule 1 has no internal path`);
+
+    expect(silent).toEqual([]);
+  });
+
+  it('names a system action, not a human one', () => {
+    // The other direction. `assertCan(SYSTEM, 'task.write')` would pass and
+    // would mean the cron had quietly acquired a person's action.
+    const wrong = [...bodies()]
+      .filter(([name]) => !TOUCHES_NO_DATA.has(name))
+      .filter(([, body]) => body.includes('assertCan('))
+      .filter(([, body]) => !body.includes("assertCan(SYSTEM, 'system."))
+      .map(([name]) => `${name} asks for something outside §3.4`);
+
+    expect(wrong).toEqual([]);
+  });
+
+  it('leaves vacuum alone, and says why at the site', () => {
+    const vacuumBody = bodies().get('vacuum') ?? '';
+
+    expect(vacuumBody).not.toBe('');
+    expect(vacuumBody).not.toContain('assertCan(');
+    expect(RAW).toMatch(/No `assertCan`, and that is the one exception/);
   });
 });
 

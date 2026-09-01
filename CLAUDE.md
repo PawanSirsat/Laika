@@ -620,6 +620,12 @@ file. The rules below are the ones that are true of every line of code.
 
   **`EXIT 0` is the claim. A count is not.**
 
+  **And gate *after* the last edit, not before it.** CHIEF reddened `origin/master`
+  a second time on 2026-09-01 by running the gate, then applying a SPEC row that
+  made a builder's exemption stale, then pushing. The run was real and the tree
+  it described no longer existed. **The gate is the last thing before `git push`,
+  with nothing between them.**
+
 - **The gate is the repo-root `pnpm test`, not your workspace's.** A filtered run
   cannot see a check your change breaks in somebody else's directory, and several
   of them read across: LAI-213's client/server drift check lives in

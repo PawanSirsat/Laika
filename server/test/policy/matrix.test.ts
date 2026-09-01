@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { type OrgRole, type ProjectRole } from '../../src/db/enums.ts';
-import { ALL_ACTIONS, type OrgAction, type ProjectAction } from '../../src/policy/actions.ts';
-import { type Actor, can, type Resource } from '../../src/policy/can.ts';
+import {
+  type Action,
+  ALL_ACTIONS,
+  type OrgAction,
+  type ProjectAction,
+  SYSTEM_ACTIONS,
+} from '../../src/policy/actions.ts';
+import { type Actor, can, type Resource, systemPrincipal } from '../../src/policy/can.ts';
 
 /**
  * The executable version of SPEC §3.1 and §3.2 (§3.3 rule 5).
@@ -207,6 +213,85 @@ describe('SPEC §3.2 — the `own` cells', () => {
   });
 });
 
+/**
+ * SPEC §3.4 — the system principal (D-050, LAI-448).
+ *
+ * **Both directions, and the denied side is the one that matters.** A principal
+ * that passes everything and a principal that passes the right things look
+ * identical from the granted side — so the granted set is asserted by
+ * enumeration and *everything else in the closed union* is asserted denied. That
+ * is `CONVENTIONS.md` §4's fixture rule applied to a permission table.
+ */
+describe('SPEC §3.4 — the system principal', () => {
+  const PROJECT = 'prj_resolved';
+  const cron = systemPrincipal();
+  const delivery = systemPrincipal(PROJECT);
+
+  /** Exactly §3.4's grant. Anything not here must be denied. */
+  const GRANTED: readonly [Action, Resource][] = [
+    ['system.heartbeat.prune', {}],
+    ['system.task.flag_stale', {}],
+    ['system.invite.expire', {}],
+    ['system.meeting_review.expire', {}],
+    ['task.write', { projectId: PROJECT }],
+    ['comment.create', { projectId: PROJECT }],
+  ];
+
+  it('holds each of §3.4’s actions', () => {
+    for (const [action, resource] of GRANTED) {
+      const principal = resource.projectId === undefined ? cron : delivery;
+      expect(can(principal, action, resource), action).toBe(true);
+    }
+  });
+
+  it('holds nothing else in the closed union', () => {
+    // The half that makes the half above mean something. `org.delete`,
+    // `user.set_role` and `token.create_own` are in here by construction rather
+    // than by being listed, which is what stops the list drifting from the union.
+    const granted = new Set(GRANTED.map(([action]) => action as string));
+
+    const leaked = ALL_ACTIONS.filter(
+      (action) =>
+        !granted.has(action) &&
+        (can(delivery, action, { projectId: PROJECT }) || can(cron, action, {})),
+    );
+
+    expect(leaked, 'the system principal holds an action §3.4 does not grant').toEqual([]);
+  });
+
+  it('cannot do the things a person does — named, so the failure reads', () => {
+    // The three D-050 calls out. Redundant with the sweep above and worth the
+    // duplication: when this breaks, the message should say what was granted
+    // rather than print a list.
+    for (const action of ['org.delete', 'user.set_role', 'token.create_own'] as const) {
+      expect(can(delivery, action, { projectId: PROJECT }), action).toBe(false);
+    }
+  });
+
+  it('is scoped to the project the delivery resolved to', () => {
+    // §9.2 degrades rather than errors, so a push on `main` resolves to nothing.
+    // That must deny rather than widen — rule 3, not a special case.
+    expect(can(cron, 'task.write', { projectId: PROJECT })).toBe(false);
+    expect(can(delivery, 'task.write', { projectId: 'prj_somewhere_else' })).toBe(false);
+    expect(can(delivery, 'task.write', {})).toBe(false);
+  });
+
+  it('gives no human role a §3.4-only action', () => {
+    // The other direction of the same grant: these four have no §3.1 or §3.2
+    // row, so every role — Owner included — must be denied.
+    for (const orgRole of ['owner', 'admin', 'member', 'viewer'] as const) {
+      for (const action of SYSTEM_ACTIONS) {
+        expect(
+          can({ userId: 'u1', orgRole, isActive: true, projectRole: 'lead' }, action, {
+            projectId: PROJECT,
+          }),
+          `${orgRole} / ${action}`,
+        ).toBe(false);
+      }
+    }
+  });
+});
+
 describe('completeness', () => {
   it('asserts every action in the closed union', () => {
     const asserted = new Set<string>([
@@ -219,6 +304,8 @@ describe('completeness', () => {
       'comment.edit',
       'comment.delete',
       'task.delete',
+      // §3.4's own, asserted in full by the describe above.
+      ...SYSTEM_ACTIONS,
     ]);
 
     expect(ALL_ACTIONS.filter((a) => !asserted.has(a))).toEqual([]);

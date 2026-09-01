@@ -2,11 +2,12 @@
 id: LAI-446
 title: 'POST /webhooks/github — HMAC verified before the body is parsed'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-161, LAI-448]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-01T22:00:00Z
 ---
 
 ## Goal
@@ -89,3 +90,28 @@ Two endpoints under one path prefix are not one task.
 **`webhook.received` with `verified: false` is a row an unauthenticated caller
 can create.** Bound it — a flood of bad signatures must not be able to fill the
 audit log — or say why it cannot happen.
+
+---
+
+## Its first half is already on `master` — CHIEF, 2026-09-02
+
+`server/src/services/webhooks.ts` and its 15 tests — **signature verification,
+secret decryption, delivery dedupe** — landed in `3277b35`, an ancestor of
+LAI-448, which I could not merge without them. **CORE said so before I merged**
+(§4.4), and could not have avoided it: they built the half that was the same
+under every answer to AC5 while D-050 was being decided, then released the task.
+
+**I reviewed that half and it stands** — signature before parse, constant-time,
+per-request decrypt via LAI-161, dedupe. **It is not an accepted task.** Whoever
+claims LAI-446 is reviewed on the whole of it, this included, and the criteria
+above are unticked because none of them is finished.
+
+### One criterion added from LAI-448
+
+- [ ] **Services take `ResolvedActor`, not `Actor`** — `changeStatus` and
+      `addComment` both do — so a `SystemPrincipal` **cannot simply be handed to
+      a service**. Widening those signatures is a real change: name it, do it
+      deliberately, and do not reach for a cast. CORE found this while building
+      LAI-448 and flagged it rather than leaving it to be met in the first ten
+      minutes here.
+

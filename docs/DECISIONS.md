@@ -2491,3 +2491,92 @@ so the mechanism is proved against a real violation rather than against new code
 **Found by a builder reading §3.3 while claiming an unrelated task**, and
 reported as a decision rather than resolved by inventing an actor — which is what
 the rule about exhaustive exceptions is for.
+
+---
+
+## D-051 — §5's `review` restriction is about people, not about the system principal
+
+**2026-09-02. Decided by CHIEF on CORE's reading, while building LAI-446.**
+
+### The contradiction
+
+**§5:** *"Moving to `review` requires the assignee, a project `lead`, or org
+Admin/Owner."*
+**§10.1:** *"`pull_request` … merged → move to `review`."*
+
+**A webhook is none of the three**, and `changeStatus` enforces §5 with
+`actor.userId`, `actor.orgRole` and `scoped.projectRole` — none of which a
+`SystemPrincipal` has, by D-050's design.
+
+**This is not the `can()` question again.** §3.4 grants `task.write` and the
+principal holds it. **This is a second gate inside the service**, and the two
+sections disagree about whether it applies to a trigger with no human behind it.
+
+### The decision
+
+**§5's restriction constrains people. §10.1 is a distinct path, not an
+exception.**
+
+**The reason is §5's own neighbouring bullet:** *"`done` is never set by
+`finish_task`. **Agents do not self-certify.**"* That is what the restriction is
+for — **stopping an actor from declaring its own work complete.**
+
+**A merged pull request is external evidence.** Somebody else reviewed and
+merged it; the task's own agent did not decide anything. Refusing it would apply
+a rule against self-certification to a fact that is the opposite of
+self-certification.
+
+### Why not the alternatives
+
+**"The webhook acts as the PR author"** — refused by D-050 already: there is no
+identity mapping, so it is a schema feature §10.1 never mentions.
+
+**"§10.1 is wrong and a merged PR should do something else"** — possible, but it
+would mean the spec has described a behaviour nobody wanted since it was written,
+and the behaviour is the useful one: a merged PR is exactly when a task stops
+being in progress.
+
+### The narrowness that makes it safe
+
+A system principal reaching that line is **a verified webhook delivery, on a
+resolved project, holding `task.write` and nothing else** (§3.4). It is not a
+general "system may do anything" branch, and it cannot become one without §3.4
+changing — which is a document a reviewer reads.
+
+### How it was found
+
+**A builder reading two sections against each other while implementing the
+handler**, and holding one of four handlers rather than guessing — *"that is a §5
+sentence and §5 is yours, and I have already been wrong once today about what a
+document said."* The other three were built meanwhile, so the ruling cost
+nothing.
+
+### Postscript 3 — and again, by the same two mistakes
+
+`origin/master` went red a second time on 2026-09-02, and both causes were
+already written down.
+
+**The gate ran before the last edit.** CHIEF gated a merge, then applied §4.2's
+`ai_key_last4` row — which made CORE's in-flight `COLUMNS_NOT_IN_SPEC` entry
+stale — then pushed. The run was real; the tree it described no longer existed.
+**CLAUDE.md §5 now says the gate is the last thing before `git push`, with
+nothing between them.**
+
+**And the commit was a stealth merge again.** `MERGE_HEAD` was open from an
+uncommitted merge of `core`, so `git add docs/ && git commit` completed it — the
+exact failure Postscript 1 records, by the reviewer who wrote it.
+
+**It could not be reverted**, because the commit was a merge carrying LAI-445's
+work; `git revert -m 1` would have taken that with it. **A stealth merge is
+harder to undo than an ordinary bad commit**, which is the part Postscript 1 did
+not say.
+
+**One thing worked.** Before this, CHIEF told CORE the §4.2 row existed and asked
+them to drop the exemption. **It did not exist** — the edit was in the worktree,
+unstaged, while the commit *title* named it. CORE checked `git show --stat`,
+`git log --all -S` across every branch, and the §4.2 table verbatim, then refused:
+*"I am not dropping an exemption whose reason is still true."*
+
+**That refusal is the mechanism doing what it is for.** An exemption's reason is
+a sentence somebody can check, and checking it caught a false claim from the
+person who wrote the rule.

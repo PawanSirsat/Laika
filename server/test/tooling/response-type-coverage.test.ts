@@ -88,6 +88,56 @@ function servedTypes(): Map<string, string> {
   return found;
 }
 
+/**
+ * `X extends Y`, across `src/`.
+ *
+ * **The census used to count a literal name in `PAIRS` and stop there**, so a
+ * base type whose *derived* type is paired was reported as unguarded when every
+ * one of its fields had been compared all along. `ProjectSummary extends
+ * ProjectView` is the case, and LAI-213's `fieldsOf` resolves `extends` on the
+ * server side — so the comparison was already happening and only this file could
+ * not see it.
+ *
+ * Resolving it here rather than adding a third column to `UNPAIRED` is
+ * deliberate: a classification somebody has to notice and write down covers the
+ * case in front of them, and this covers the next one too.
+ */
+function extendsGraph(): Map<string, string> {
+  const graph = new Map<string, string>();
+
+  for (const file of tsFiles(SRC)) {
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(
+      /export interface ([A-Za-z][A-Za-z0-9]*) extends ([A-Za-z][A-Za-z0-9]*)/g,
+    )) {
+      graph.set(m[1] ?? '', m[2] ?? '');
+    }
+  }
+  return graph;
+}
+
+/**
+ * Types a paired type reaches through `extends`, transitively.
+ *
+ * Transitive because `A extends B extends C` compares C's fields just as surely
+ * as B's, and a two-level chain is not a different situation from a one-level
+ * one. Bounded by the number of interfaces, so a cycle — which TypeScript would
+ * reject anyway — cannot spin here.
+ */
+function coveredByExtends(paired: ReadonlySet<string>): Set<string> {
+  const graph = extendsGraph();
+  const covered = new Set<string>();
+
+  for (const start of paired) {
+    let current = graph.get(start);
+    while (current !== undefined && !covered.has(current)) {
+      covered.add(current);
+      current = graph.get(current);
+    }
+  }
+  return covered;
+}
+
 /** The server side of every pair in LAI-213's table. */
 function pairedTypes(): Set<string> {
   const text = readFileSync(DRIFT_CHECK, 'utf8');
@@ -109,26 +159,16 @@ function pairedTypes(): Set<string> {
  * below fails until this list is updated.
  */
 const UNPAIRED = new Map<string, string>([
-  // Thirteen of the fourteen were paired by LAI-160 and are gone from here.
+  // Thirteen of the fourteen were paired by LAI-160. **`ProjectView` was the
+  // fourteenth and was never really unpaired** — `PAIRS` has `ProjectSummary`,
+  // `ProjectSummary extends ProjectView`, and every one of its fields has been
+  // compared all along. It is gone from this map because `coveredByExtends`
+  // now sees that, rather than because anybody decided it was fine (LAI-445).
   //
-  // **`ProjectView` is the one that stayed, and it was never really unpaired.**
-  // `PAIRS` has `ProjectSummary` → `Project`, `ProjectSummary extends
-  // ProjectView`, and `fieldsOf` resolves `extends` — so every `ProjectView`
-  // field is already compared. Adding a second entry for it made the drift check
-  // **red**, correctly: it asserts the base type sends `task_counts`,
-  // `member_count`, `blocked_count`, `members` and `last_activity_at`, which are
-  // the five the summary derives.
-  //
-  // So this is not work waiting to be done. **The census counts a literal name
-  // in `PAIRS` and cannot see coverage inherited through `extends`** — worth
-  // knowing before reading its total as a to-do list.
-  //
-  // Its value stays `'Project'` because the map's second column is *the client
-  // type*, and `names a client type that exists` enforces that: a prose reason
-  // fails it. **There is no slot here for "covered another way"**, which is the
-  // finding rather than an inconvenience — and designing one is CORE's call, so
-  // SHELL left the row alone and said why (LAI-160).
-  ['ProjectView', 'Project'],
+  // Adding a `PAIRS` entry for it is still wrong and still goes red: the drift
+  // check would assert the base sends `task_counts`, `member_count`,
+  // `blocked_count`, `members` and `last_activity_at`, which are the five the
+  // summary derives.
 
   // No client type exists: the screens these feed are unbuilt.
   // `CapacityView` and `PresenceView` left this group in LAI-439, which built the
@@ -163,8 +203,9 @@ describe('the response-type census can fail', () => {
 describe('every served response type is paired or named', () => {
   it('has no unguarded type that is not on the list', () => {
     const paired = pairedTypes();
+    const inherited = coveredByExtends(paired);
     const loose = [...servedTypes().keys()]
-      .filter((name) => !paired.has(name) && !UNPAIRED.has(name))
+      .filter((name) => !paired.has(name) && !inherited.has(name) && !UNPAIRED.has(name))
       .sort();
 
     expect(
@@ -177,13 +218,16 @@ describe('every served response type is paired or named', () => {
     // Self-expiry, both directions.
     const paired = pairedTypes();
     const served = servedTypes();
+    const inherited = coveredByExtends(paired);
     const stale = [...UNPAIRED.keys()]
-      .filter((name) => paired.has(name) || !served.has(name))
-      .map((name) =>
-        paired.has(name)
-          ? `${name} is paired now — remove it from UNPAIRED`
-          : `${name} is no longer served — remove it from UNPAIRED`,
-      );
+      .filter((name) => paired.has(name) || inherited.has(name) || !served.has(name))
+      .map((name) => {
+        if (paired.has(name)) return `${name} is paired now — remove it from UNPAIRED`;
+        if (inherited.has(name)) {
+          return `${name} is covered through extends — remove it from UNPAIRED`;
+        }
+        return `${name} is no longer served — remove it from UNPAIRED`;
+      });
 
     expect(stale).toEqual([]);
   });
@@ -209,12 +253,44 @@ describe('every served response type is paired or named', () => {
     expect(wrong).toEqual([]);
   });
 
+  it('sees coverage through a base type, and only through a real one', () => {
+    // **Both directions of the new rule** (LAI-445 AC4).
+    //
+    // `ProjectView` is covered because `ProjectSummary` is paired and extends
+    // it. That is the case this task exists for, and asserting it alone would
+    // let `coveredByExtends` return everything and still pass.
+    const paired = pairedTypes();
+    const inherited = coveredByExtends(paired);
+
+    expect(inherited.has('ProjectView'), 'ProjectSummary extends ProjectView').toBe(true);
+
+    // And the other direction: a served type that nothing extends into is not
+    // covered by this and must still be accounted for. `CapacityView` has no
+    // derived type at all.
+    expect(inherited.has('CapacityView')).toBe(false);
+    expect(UNPAIRED.has('CapacityView')).toBe(true);
+  });
+
+  it('does not treat every type as covered', () => {
+    // The blunt version of the same guard, against the whole surface. A
+    // `coveredByExtends` that over-reached would empty `UNPAIRED`'s reason for
+    // existing and this file would report full coverage of nothing.
+    const inherited = coveredByExtends(pairedTypes());
+
+    expect(inherited.size).toBeLessThan(servedTypes().size);
+    for (const name of UNPAIRED.keys()) {
+      expect(inherited.has(name), `${name} is exempted and also claimed as covered`).toBe(false);
+    }
+  });
+
   it('reports how much of the surface is actually guarded', () => {
     // Not a threshold — a number a reader can see. 7 of 28 was the finding, and
     // a check that never says so lets it stay 7 of 28 quietly.
-    const served = servedTypes().size;
-    const paired = [...pairedTypes()].length;
+    const paired = pairedTypes();
+    const inherited = [...coveredByExtends(paired)].filter((name) => servedTypes().has(name));
 
-    expect(paired + UNPAIRED.size).toBe(served);
+    // **The total is read as a to-do list** (LAI-160), so it has to be one:
+    // paired directly, covered through a base type, or genuinely unguarded.
+    expect(paired.size + inherited.length + UNPAIRED.size).toBe(servedTypes().size);
   });
 });

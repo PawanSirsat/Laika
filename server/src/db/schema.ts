@@ -146,6 +146,20 @@ export const orgs = sqliteTable(
     aiBaseUrl: text('ai_base_url'),
     /** AES-256-GCM ciphertext under a key derived from `LAIKA_SECRET` (§12). */
     aiApiKeyEnc: text('ai_api_key_enc'),
+    /**
+     * The last four characters of the configured key, for display (§6.4, §12).
+     *
+     * **Stored, not derived** (LAI-447). The alternative is decrypting the key
+     * to build a response, and `services/orgs.ts` refuses that for a reason
+     * worth keeping: *"a serialiser that can reach plaintext is one refactor
+     * away from returning it"*. Setting the key is the one moment the tail is
+     * known without decrypting anything, so it is written down then.
+     *
+     * Not a secret. Four characters of a key identify **which** key is in place
+     * to somebody who already has it, and identify nothing to anybody else —
+     * which is the whole job §12 gives it: `{ configured, provider, key_last4 }`.
+     */
+    aiKeyLast4: text('ai_key_last4'),
     smtpJsonEnc: text('smtp_json_enc'),
     githubWebhookSecretEnc: text('github_webhook_secret_enc'),
     createdAt,

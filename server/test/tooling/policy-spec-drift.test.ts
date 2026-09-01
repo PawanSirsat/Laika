@@ -8,6 +8,7 @@ import {
   type Action,
   type OrgAction,
   type ProjectAction,
+  SYSTEM_ACTIONS,
 } from '../../src/policy/actions.ts';
 import { type Actor, can, forcedTokenScope, projectRoleOnJoin } from '../../src/policy/can.ts';
 import { parseMatrix, type Cell } from '../helpers/policy-matrix.ts';
@@ -362,6 +363,44 @@ describe('the parser reads §3, prose and all', () => {
   });
 });
 
+/**
+ * §3.4's actions, once the section exists (LAI-448).
+ *
+ * **Written before the section it reads**, deliberately. D-050 rules the system
+ * principal and CHIEF applies §3.4 at merge, so today this finds nothing and the
+ * four `system.*` entries in `ACTIONS_WITHOUT_A_ROW` carry the gap. The moment
+ * the section lands, these become granted, and *"removes an exemption once §3
+ * grants the action"* fails until the four entries are dropped.
+ *
+ * That is the whole point of writing it now: an exemption whose retirement
+ * depends on somebody remembering is not self-expiring, and the existing
+ * staleness test reads §3.1 and §3.2 only — **it would never have fired for a
+ * new section.**
+ *
+ * Scanned for the action names rather than parsed as a table, because the row
+ * labels are CHIEF's to choose and guessing them would make this fail for the
+ * wrong reason.
+ */
+function systemActionsInSpec(): Set<string> {
+  const spec = readFileSync(join(SERVER_ROOT, '..', 'docs', 'SPEC.md'), 'utf8');
+  const start = spec.indexOf('### 3.4');
+  if (start === -1) return new Set();
+
+  const after = spec.indexOf('\n### ', start + 1);
+  const section = spec.slice(start, after === -1 ? undefined : after);
+
+  const found = new Set(SYSTEM_ACTIONS.filter((action) => section.includes(action)));
+
+  // A section that exists and names none of them is a parse that found nothing,
+  // which must fail loudly rather than quietly leave the exemptions in place.
+  if (found.size === 0) {
+    throw new Error(
+      'SPEC §3.4 exists but names none of the system actions — has its format changed?',
+    );
+  }
+  return found;
+}
+
 describe('§3 and can() name the same things', () => {
   it('maps every §3.1 row to at least one action', () => {
     const unmapped = org.rows.filter((row) => !ORG_ROWS.has(row.label)).map((row) => row.label);
@@ -390,6 +429,7 @@ describe('§3 and can() name the same things', () => {
     const granted = new Set<string>([
       ...[...ORG_ROWS.values()].flat(),
       ...[...PROJECT_ROWS.values()].flat(),
+      ...systemActionsInSpec(),
     ]);
 
     const orphans = ALL_ACTIONS.filter(
@@ -403,6 +443,7 @@ describe('§3 and can() name the same things', () => {
     const granted = new Set<string>([
       ...[...ORG_ROWS.values()].flat(),
       ...[...PROJECT_ROWS.values()].flat(),
+      ...systemActionsInSpec(),
     ]);
 
     const stale = [...ACTIONS_WITHOUT_A_ROW.keys()].filter((action) => granted.has(action));

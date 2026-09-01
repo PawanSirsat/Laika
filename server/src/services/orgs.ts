@@ -2,8 +2,16 @@ import { eq } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type AiProvider } from '../db/enums.ts';
+
+/**
+ * Re-exported so `routes/orgs.ts` can validate a provider without importing
+ * `db/` (CONVENTIONS §2, LAI-119). The same line, for the same reason, as
+ * `TASK_STATUSES` on `services/tasks.ts`.
+ */
+export { AI_PROVIDERS } from '../db/enums.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { orgs } from '../db/schema.ts';
+import { encryptSecret } from '../secrets.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 
@@ -121,7 +129,7 @@ export function getOrg(db: Db, actor: ResolvedActor): OrgView {
     ai: {
       configured: row.aiProvider !== null,
       provider: row.aiProvider,
-      key_last4: keyLast4(row.aiApiKeyEnc),
+      key_last4: keyLast4(row.aiKeyLast4),
     },
   };
 }
@@ -136,8 +144,8 @@ export function getOrg(db: Db, actor: ResolvedActor): OrgView {
  * nothing honest to show, so this answers `null` and the screen says "a key is
  * set" from `configured` instead.
  */
-function keyLast4(_ciphertext: string | null): string | null {
-  return null;
+function keyLast4(last4: string | null): string | null {
+  return last4;
 }
 
 /**
@@ -153,14 +161,110 @@ function keyLast4(_ciphertext: string | null): string | null {
  * `ai_api_key_enc` without the key-derivation path is a hole waiting for a
  * caller.
  */
+/**
+ * `null` clears, absent leaves alone (§6.4, LAI-447).
+ *
+ * The distinction this repo has now drawn four times, and it matters most here:
+ * *"stop using a provider"* and *"I am editing something else"* are different
+ * requests, and a shape that cannot tell them apart makes the first one
+ * impossible to express.
+ */
 export interface UpdateOrgInput {
   presence_enabled?: boolean | undefined;
+  ai_provider?: AiProvider | null | undefined;
+  ai_base_url?: string | null | undefined;
+  /** Write-only. Never read back, at any grade (§12). */
+  ai_api_key?: string | null | undefined;
+}
+
+/**
+ * What the org's AI settings become, before anything is written.
+ *
+ * Computed as a whole rather than field by field so the invariant below is
+ * checked against the **resulting** state. Applying three independent updates
+ * and validating each one lets a caller reach a configuration that no single
+ * request would have been allowed to ask for.
+ */
+interface AiSettings {
+  provider: AiProvider | null;
+  baseUrl: string | null;
+  keyEnc: string | null;
+  keyLast4: string | null;
+}
+
+/** The tail §12 lets the UI show. Short keys keep whatever they have. */
+function lastFour(key: string): string {
+  return key.slice(-4);
+}
+
+function nextAiSettings(
+  current: AiSettings,
+  input: UpdateOrgInput,
+  serverSecret: string,
+): AiSettings {
+  // Clearing the provider clears the configuration. A base URL and a key
+  // belonging to no provider are not settings, they are residue — and residue
+  // that `configured` would still report as a working setup.
+  if (input.ai_provider === null) {
+    return { provider: null, baseUrl: null, keyEnc: null, keyLast4: null };
+  }
+
+  const next: AiSettings = {
+    provider: input.ai_provider ?? current.provider,
+    baseUrl: input.ai_base_url === undefined ? current.baseUrl : input.ai_base_url,
+    keyEnc: current.keyEnc,
+    keyLast4: current.keyLast4,
+  };
+
+  if (input.ai_api_key === null) {
+    next.keyEnc = null;
+    next.keyLast4 = null;
+  } else if (input.ai_api_key !== undefined) {
+    next.keyEnc = encryptSecret(input.ai_api_key, serverSecret, 'ai_api_key');
+    // **The one moment the tail is known without decrypting anything.**
+    next.keyLast4 = lastFour(input.ai_api_key);
+  }
+
+  assertUsable(next);
+  return next;
+}
+
+/**
+ * A configuration that cannot work is refused at the boundary.
+ *
+ * §12: `openai_compatible` is *"base URL + optional key, covering Ollama and
+ * vLLM"*. Without the URL there is nowhere to send anything, so the setting
+ * would sit there reporting `configured: true` and fail at the first use — in
+ * §10.2, a long way from the screen that set it.
+ */
+function assertUsable(next: AiSettings): void {
+  if (next.provider === 'openai_compatible' && (next.baseUrl === null || next.baseUrl === '')) {
+    throw new ApiError('unprocessable', 'openai_compatible needs a base URL', {
+      field: 'ai_base_url',
+    });
+  }
+
+  if (next.baseUrl !== null && next.baseUrl !== '' && !isHttpUrl(next.baseUrl)) {
+    throw new ApiError('unprocessable', 'ai_base_url must be an http or https URL', {
+      field: 'ai_base_url',
+    });
+  }
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 export function updateOrg(
   db: Db,
   actor: ResolvedActor,
   input: UpdateOrgInput,
+  serverSecret: string,
   now: number = Date.now(),
 ): OrgView {
   assertCan(actor, 'org.settings.edit');
@@ -170,6 +274,46 @@ export function updateOrg(
   if (input.presence_enabled !== undefined) {
     db.update(orgs)
       .set({ presenceEnabled: input.presence_enabled ? 1 : 0, updatedAt: now })
+      .where(eq(orgs.id, orgId))
+      .run();
+  }
+
+  const touchesAi =
+    input.ai_provider !== undefined ||
+    input.ai_base_url !== undefined ||
+    input.ai_api_key !== undefined;
+
+  if (touchesAi) {
+    const row = db
+      .select({
+        provider: orgs.aiProvider,
+        baseUrl: orgs.aiBaseUrl,
+        keyEnc: orgs.aiApiKeyEnc,
+        keyLast4: orgs.aiKeyLast4,
+      })
+      .from(orgs)
+      .where(eq(orgs.id, orgId))
+      .get();
+
+    const next = nextAiSettings(
+      {
+        provider: row?.provider ?? null,
+        baseUrl: row?.baseUrl ?? null,
+        keyEnc: row?.keyEnc ?? null,
+        keyLast4: row?.keyLast4 ?? null,
+      },
+      input,
+      serverSecret,
+    );
+
+    db.update(orgs)
+      .set({
+        aiProvider: next.provider,
+        aiBaseUrl: next.baseUrl,
+        aiApiKeyEnc: next.keyEnc,
+        aiKeyLast4: next.keyLast4,
+        updatedAt: now,
+      })
       .where(eq(orgs.id, orgId))
       .run();
   }

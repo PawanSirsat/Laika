@@ -92,6 +92,12 @@ export interface CreateAppOptions {
    * an app without standing up a database — those routes do not touch either.
    */
   auth?: Auth;
+  /**
+   * `LAIKA_SECRET`. Optional so the LAI-002 HTTP tests can build an app without
+   * one; a route that needs it and does not get it fails at the boundary rather
+   * than encrypting under an empty key.
+   */
+  serverSecret?: string;
   db?: Db;
   /** Needed for the setup transaction's `BEGIN IMMEDIATE` (LAI-009). */
   sqlite?: Database.Database;
@@ -253,7 +259,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // going first is what keeps that true if `/users/:id` is ever added.
     app.route(`${API_BASE}/users`, userTokenRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
-    app.route(`${API_BASE}/org`, orgRoutes({ db }));
+    app.route(`${API_BASE}/org`, orgRoutes({ db, serverSecret: options.serverSecret ?? '' }));
     app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     app.route(
       `${API_BASE}/invites`,
