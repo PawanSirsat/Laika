@@ -2,7 +2,8 @@ import { and, eq } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
-import { heartbeats, orgs, projects, tasks } from '../db/schema.ts';
+import { presenceEnabled } from '../db/orgs.ts';
+import { heartbeats, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 
@@ -276,11 +277,6 @@ export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoP
   }
 
   return { projectIds: matches.map((row) => row.id).sort(), attribution: 'repo' };
-}
-
-/** §4.2's org-wide presence switch. Absent org reads as on — nothing to disable. */
-function presenceEnabled(db: Db): boolean {
-  return (db.select({ on: orgs.presenceEnabled }).from(orgs).limit(1).get()?.on ?? 1) === 1;
 }
 
 /**
