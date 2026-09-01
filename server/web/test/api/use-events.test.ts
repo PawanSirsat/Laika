@@ -17,14 +17,15 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
 import { nextGap, STREAM_TYPES } from '../../src/api/use-events.ts';
+import { readVocabulary } from '../helpers/enums.ts';
 
 void describe('the stream subscribes to exactly what the server emits', () => {
   void test('STREAM_TYPES equals ACTIVITY_TYPES, in order', async () => {
+    // Parsed, not pattern-matched. The previous version took any single-quoted
+    // run, so an apostrophe in a comment inside the array — `§4.13's indexes` —
+    // captured prose as a type and failed as a drift that was not there.
     const enums = await readFile(new URL('../../../src/db/enums.ts', import.meta.url), 'utf8');
-    const block = /export const ACTIVITY_TYPES = \[([\s\S]*?)\] as const;/.exec(enums);
-    assert.notEqual(block, null, 'could not find ACTIVITY_TYPES in the server enums');
-
-    const server = [...(block?.[1] ?? '').matchAll(/'([^']+)'/g)].map((m) => m[1]);
+    const server = readVocabulary(enums, 'ACTIVITY_TYPES');
     assert.ok(server.length > 10, 'sanity: the server should define many activity types');
 
     assert.deepEqual([...STREAM_TYPES], server);

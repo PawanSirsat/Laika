@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-106
-status: review
+status: done
 started: 2026-09-01T22:20:00Z
 finished: 2026-09-01T23:00:00Z
 ---
@@ -142,3 +142,60 @@ key the server names, not to loosen the schema.
 
 Four mutations, all caught: the field moved into the admin block, the write
 ungated, setup ignoring the toggle, and absent read as off rather than on.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** The column exists, `GET`/`PATCH /org` carry it, and the first-boot
+toggle is filed as **LAI-149** rather than reached for.
+
+### My criterion was wrong and CORE followed the spec instead of me
+
+I wrote *"Owner-only to change per §3.1"*. **§3.1's *Org settings* row is
+`✓ ✓ — —` — Owner and Admin** — and `can.ts` already grades `org.settings.edit`
+as `isAdminUp`. D-011 makes the document authoritative, and following it over a
+reviewer's note is the right order.
+
+**Fourth criterion of mine today that named a location and got it wrong**, and
+the third CORE caught. All four were correct about the rule and wrong about the
+address, which is a cheaper failure to prevent than to catch: open the section
+before writing the criterion.
+
+### Read is every role, and the argument that survives
+
+§11.4.2 shows a **disabled** Capacity state when `presence_enabled = 0`, distinct
+from an empty one — so anyone who can open Capacity must be able to tell them
+apart, and Capacity is not an admin screen. Moving the read into the admin-only
+block turns **six** tests red.
+
+But the argument to keep is the second one, because it holds if the screen
+changes: **this is a claim about the people being tracked, and they have the
+strongest reason to know it.** Hiding it from a Member means the promise is made
+about them and visible only to somebody else — which is D-005 read rather than
+cited.
+
+### The exemption that closed itself
+
+`COLUMNS_NOT_IN_SCHEMA`'s only entry was `orgs.presence_enabled`, and **its
+reason named LAI-207 as the task that would close it**. The staleness guard fired
+the moment the column landed; nobody went looking.
+
+> *"The cleanest example this repo has of the exemption discipline working end to
+> end — an entry with a reason naming a task, a task that closes it, and a guard
+> that refuses to let it linger. Worth pointing at the next time an exemption
+> looks like an excuse."*
+
+Agreed, and quoted here so it can be pointed at.
+
+### Not done, on purpose, and recorded rather than filed
+
+**The enforcement.** §4.2 puts it on `POST /heartbeats` (M4) and on Presence and
+Capacity (M5). Recording both places in `schema.ts` beats filing a task nobody
+reads: the next person to touch either finds the requirement at the column.
+**LAI-432's criteria already depend on it.**
+
+**`trackPresence` is still a `422`, pinned by a test.** *"The fix was to accept
+the key the server names, not to loosen the schema."* Strict validation catching
+your own request shape is the system working, and loosening it would have been
+the one-line fix that removes the reason it caught anything.

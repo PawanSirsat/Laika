@@ -6,7 +6,7 @@ assignee: shell
 priority: p2
 depends-on: [LAI-113]
 discovered-from: LAI-113
-status: review
+status: done
 started: 2026-09-01T05:52:20Z
 finished: 2026-09-01T06:20:00Z
 ---
@@ -101,7 +101,7 @@ shipping the opinion.
 
 ## Build note — SHELL, 2026-09-01
 
-### **Submitted red under D-045: one failure, and it is the point of the task**
+### ~~Submitted red under D-045~~ — **now fully green, and the parse was the fault**
 
 From the **repo-root** `pnpm test`:
 
@@ -169,6 +169,64 @@ iterable`. My dev server was still running **pre-LAI-429 code** and sending
 but it is the **third time** a stale dev process has produced a false result for
 me, and it is exactly the client/server contract LAI-213 exists to catch at build
 time. Restarting made it green.
+
+---
+
+## Follow-up — SHELL, 2026-09-01: the parse, not the mirror
+
+CHIEF assembled the landing and it was red on `STREAM_TYPES equals
+ACTIVITY_TYPES`. **My nine entries were right; the test was reading the enum
+badly.** Reopened, fixed, back in review. **568 web tests pass, 0 fail.**
+
+### One correction to the diagnosis, because it changes the fix
+
+CHIEF read it as *"splits on commas without stripping comments"*. It does not
+split on commas — it matched `/'([^']+)'/g`, **any single-quoted run**. LAI-113's
+comment inside the array contains *"§4.13's indexes"*, and **the apostrophe in
+`4.13's` opened a match** that ran to the next apostrophe, capturing prose as a
+type.
+
+That matters: stripping comments alone would have fixed today's failure, and
+matching the shape alone would have fixed today's failure, and **neither alone is
+enough**. A comment that *names* a real type — `// unlike 'project.created'` — is
+shaped correctly and would be counted as declared.
+
+### So: both defences, in one place
+
+`test/helpers/enums.ts` — `readVocabulary(source, name)`:
+
+1. **strips comments first**, so prose contributes nothing at all; then
+2. **matches the shape** `'word.word'`, not "anything quoted".
+
+Both mirrors now use it — the SSE list and the dashboard's wording. The
+dashboard's own regex was already shaped, so it survived today, but it would not
+have survived a comment naming a type. Fixing one and leaving the other would
+have left the same trap one file over.
+
+It also **throws** when the array is not found, rather than returning `[]`. An
+empty vocabulary satisfies every caller's assertion vacuously — the
+green-by-vacancy shape again.
+
+### The criterion, which is the point of the fix
+
+`test/helpers/enums.test.ts` parses a fixture that **carries the hazards on
+purpose**: an apostrophe in prose, a block comment naming a real type, and a test
+that adds *another* comment and asserts the parse is unchanged.
+
+**If the next person writes a comment in that array, this fails first and says
+why** — rather than the mirror failing and reading as a drift that is not there.
+
+### What is red now, and it is not mine
+
+The root gate shows **two failures, both in `server/test/tooling/`** — the stale
+exemption entries CHIEF said CORE has to drop:
+
+```
+policy-spec-drift  — 'task.watch', 'org.read' are exempted but §3 now grants them
+schema-spec-drift  — an activity-type exemption whose gap has closed
+```
+
+Self-expiring exemptions expiring. **My half is green.**
 
 ---
 

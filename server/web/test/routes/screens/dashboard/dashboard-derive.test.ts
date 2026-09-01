@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
+import { readVocabulary } from '../../../helpers/enums.ts';
 import type { ActivityEvent } from '../../../../src/api/activity.ts';
 import type { Task } from '../../../../src/api/tasks.ts';
 import {
@@ -213,14 +214,14 @@ void describe('describeProjectEvent', () => {
     // §4.8's vocabulary is closed and enforced by a CHECK constraint, so this is
     // exact rather than aspirational. A verb added server-side fails here, which
     // is how the feed avoids rendering `sprint.created` raw at a reader.
+    // Same parser as the SSE mirror. This one matched the shape already, so an
+    // apostrophe could not fool it — but a comment *naming* a type could, and
+    // comments inside that array are normal now.
     const enums = await readFile(
       new URL('../../../../../src/db/enums.ts', import.meta.url),
       'utf8',
     );
-    const match = /ACTIVITY_TYPES = \[([\s\S]*?)\]/.exec(enums);
-    assert.notEqual(match, null, 'could not find ACTIVITY_TYPES');
-
-    const types = [...(match?.[1] ?? '').matchAll(/'([a-z_]+\.[a-z_]+)'/g)].map((m) => m[1]!);
+    const types = readVocabulary(enums, 'ACTIVITY_TYPES');
     assert.ok(types.length > 15, `expected the full vocabulary, got ${String(types.length)}`);
 
     const unlabelled = types.filter((t) => describeProjectEvent(event({ id: 'x', type: t })) === t);
