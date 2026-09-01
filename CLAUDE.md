@@ -459,6 +459,14 @@ reaches for an exemption instead.
 5. **CHIEF merges the second half, applies any `docs/` half, runs the full gate,
    and pushes everything to `origin` as one green state.**
 
+**A merge lands a branch, not a task.** `git diff --stat master...<branch>` before
+merging, and know what else is riding along. LAI-422's CLI reached `master` this
+way — SHELL had committed it before releasing the task to take an urgent mirror,
+and CHIEF merged `shell` for the mirror without looking at the rest. The code is
+good and tested; it arrived unreviewed, which is the part that is not allowed.
+**If a merge brings work whose task is not in review, say so and review it, or
+wait.**
+
 **`origin/master` never sees the red.** That is the property worth having, and it
 is why "co-ordinate the merge" beats every alternative that was tried first.
 

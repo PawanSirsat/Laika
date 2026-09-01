@@ -146,6 +146,20 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     //
     // The provider block is gated field-level on `org.settings.edit` instead;
     // see `services/orgs.ts`.
+    // | Presence and capacity | ✓ | ✓ | ✓ | ✓ |
+    //
+    // Every role may ask. **The row does not decide what comes back** — a
+    // heartbeat is only shown to somebody who can read one of the projects it
+    // attributes to (§9.1), so the answer narrows to the caller rather than the
+    // permission doing it. Capacity's `unlisted` narrows again, on
+    // `audit_log.export`, because that is what reading unlisted work already
+    // costs (LAI-432).
+    //
+    // Both are in `READ_ACTIONS`: they read and they are safe for a `read_only`
+    // token, which is what such a token is for.
+    case 'presence.read':
+    case 'capacity.read':
+
     case 'org.read':
 
     // | View member list | ✓ | ✓ | ✓ | ✓ |
