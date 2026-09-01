@@ -14,6 +14,7 @@ import {
   isPast,
   monthBands,
   startOfDay,
+  countdownFor,
   sprintSummary,
   taskActuals,
   taskBar,
@@ -413,9 +414,15 @@ void describe('the active sprint strip: DONE · BLOCKED · WIP · DAYS LEFT', ()
 
   void test('each count is itself, and no two are accidentally equal', () => {
     const summary = sprintSummary(TASKS, BLOCKED, SPRINT, d(3));
-    assert.deepEqual(summary, { done: 3, total: 9, blocked: 1, wip: 2, daysLeft: 6 });
+    assert.deepEqual(summary, {
+      done: 3,
+      total: 9,
+      blocked: 1,
+      wip: 2,
+      countdown: { kind: 'left', days: 7 },
+    });
 
-    const four = [summary.done, summary.blocked, summary.wip, summary.daysLeft];
+    const four = [summary.done, summary.blocked, summary.wip, summary.countdown.days];
     assert.equal(new Set(four).size, 4, 'the fixture must keep all four distinct');
   });
 
@@ -425,16 +432,36 @@ void describe('the active sprint strip: DONE · BLOCKED · WIP · DAYS LEFT', ()
     assert.equal(sprintSummary(TASKS, 7, SPRINT, d(3)).blocked, 7);
   });
 
-  void test('DAYS LEFT clamps at zero for a sprint that has ended', () => {
-    // A sprint that ended last week has not got minus seven days left. A
-    // negative reads as a countdown running the wrong way.
-    assert.equal(sprintSummary(TASKS, 0, SPRINT, d(20)).daysLeft, 0);
+  void test('a finished sprint says it ended, rather than having zero days left', () => {
+    // LAI-434 clamped this at zero, which stopped it reading minus seven — and
+    // left `DAYS LEFT 0` on a sprint that finished last week, which is
+    // indistinguishable from one ending tonight. Once a sprint can be selected
+    // (LAI-436) that difference is the whole point of selecting it.
+    assert.deepEqual(sprintSummary(TASKS, 0, SPRINT, d(20)).countdown, {
+      kind: 'ended',
+      days: 11,
+    });
   });
 
-  void test('the last day of the sprint is zero days left, not one', () => {
-    // `ends_on` is inclusive (§4.15): on the final day there is no day left
-    // after today.
-    assert.equal(sprintSummary(TASKS, 0, SPRINT, d(9)).daysLeft, 0);
+  void test('a sprint that has not begun counts to its start, not from its end', () => {
+    assert.deepEqual(sprintSummary(TASKS, 0, SPRINT, d(-3)).countdown, {
+      kind: 'starts_in',
+      days: 3,
+    });
+  });
+
+  void test('the last day of the sprint has one day left, not zero', () => {
+    // **This assertion is the opposite of the one it replaces, and the flip is
+    // the finding.** The old one said zero, citing §4.15 for *"on the final day
+    // there is no day left after today"* — §4.15 says only that the dates are
+    // date-only, and if `ends_on` is inclusive then the final day is a day left.
+    //
+    // `sprint-derive`'s `daysLeft` has always said one, with the better reason:
+    // *"the day you are standing in is still a day you can work"*. **The board's
+    // strip and the timeline's were showing different numbers for the same
+    // sprint on the same day.** `countdownFor` now calls `daysLeft` rather than
+    // counting again, so there is one answer.
+    assert.equal(sprintSummary(TASKS, 0, SPRINT, d(9)).countdown.days, 1);
   });
 
   void test('an empty sprint is zeroes, not a division by nothing', () => {
@@ -443,7 +470,33 @@ void describe('the active sprint strip: DONE · BLOCKED · WIP · DAYS LEFT', ()
       total: 0,
       blocked: 0,
       wip: 2 - 2,
-      daysLeft: 6,
+      countdown: { kind: 'left', days: 7 },
     });
+  });
+});
+
+void describe('countdownFor — the three sentences and their edges (LAI-436)', () => {
+  const SPRINT = sprint({ id: 'sc', starts_on: d(0), ends_on: d(9) });
+
+  void test('the day before it starts, and the first day', () => {
+    assert.deepEqual(countdownFor(SPRINT, d(-1)), { kind: 'starts_in', days: 1 });
+    // The first day is inside it, so it is already counting down rather than up.
+    assert.deepEqual(countdownFor(SPRINT, d(0)), { kind: 'left', days: 10 });
+  });
+
+  void test('the last day, and the day after', () => {
+    assert.deepEqual(countdownFor(SPRINT, d(9)), { kind: 'left', days: 1 });
+    assert.deepEqual(countdownFor(SPRINT, d(10)), { kind: 'ended', days: 1 });
+  });
+
+  void test('the stored status does not decide it — the dates do', () => {
+    // §11.4.3 already treats `status` as a label rather than the truth, because
+    // a sprint left `active` past its end date is ordinary. A countdown driven
+    // by the stored value would say "days left" for a sprint that is over.
+    const stale = { ...SPRINT, status: 'active' as const };
+    assert.equal(countdownFor(stale, d(30)).kind, 'ended');
+
+    const early = { ...SPRINT, status: 'completed' as const };
+    assert.equal(countdownFor(early, d(2)).kind, 'left');
   });
 });

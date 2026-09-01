@@ -8,12 +8,14 @@ import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { useSprints } from '../sprints/use-sprints.ts';
 import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
-import { listMembers, type Member } from '../../../api/tasks.ts';
+import { listMembers, type Member, type Task } from '../../../api/tasks.ts';
+import { LockIcon } from '../../../components/LockIcon.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import {
   isCurrent,
+  isPast,
   monthBands,
   sprintSummary,
   taskActuals,
@@ -109,6 +111,23 @@ export function TimelineScreen() {
   const { theme } = useTheme();
   const sprints = useSprints(slug);
 
+  /**
+   * Which sprint the strip is describing (LAI-436).
+   *
+   * `undefined` means "whichever is active", so the default survives the sprints
+   * arriving late without an effect to re-point it, and storing the id rather
+   * than the row keeps it valid across a refetch.
+   *
+   * **Declared here, above the early returns, and not beside the code that uses
+   * it.** It read better down there and it is a Rules of Hooks violation: this
+   * component returns early for loading, error and an empty range, so a hook
+   * after them is called a different number of times on different renders.
+   * React said so as `Minified React error #310` and a blank screen — no test
+   * asserted it, and every unit test still passed, because none of them mounts
+   * the component.
+   */
+  const [picked, setPicked] = useState<string | undefined>(undefined);
+
   if (projectError !== null) {
     return (
       <div className="timeline">
@@ -181,16 +200,17 @@ export function TimelineScreen() {
   );
 
   const active = rows.find((r) => isCurrent(r.sprint, now)) ?? rows[0];
+
+  const shown = rows.find((r) => r.sprint.id === picked) ?? active;
+
+  const blockedIn = (list: readonly Task[]): number =>
+    // `board-derive`'s rule, not a second one (LAI-215).
+    list.filter((task) => blockedState(task, byTaskId) === true).length;
+
   const summary =
-    active === undefined
+    shown === undefined
       ? undefined
-      : sprintSummary(
-          active.tasks,
-          // `board-derive`'s rule, not a second one (LAI-215).
-          active.tasks.filter((t) => blockedState(t, byTaskId) === true).length,
-          active.sprint,
-          now,
-        );
+      : sprintSummary(shown.tasks, blockedIn(shown.tasks), shown.sprint, now);
 
   return (
     <div className="timeline">
@@ -229,9 +249,74 @@ export function TimelineScreen() {
         colour alone: a colour-only difference disappears for a colour-blind
         reader and in a screenshot.
       */}
-      {summary !== undefined && active !== undefined && (
+      {/*
+        The sprint tabs (LAI-436).
+
+        **This is about selection, not information** — the counts also sit in the
+        band headers along the axis, where they are attached to the dates they
+        describe. What was missing is any way to look at a finished or a future
+        sprint: the strip only ever described the active one.
+
+        A tab is a real `button` with `aria-pressed`, not a styled `div`, so it
+        is reachable by keyboard on a screen whose whole point is scanning.
+      */}
+      {rows.length > 0 && (
+        <div className="tl-tabs" role="group" aria-label="Sprints">
+          {rows.map((row) => {
+            const stats = sprintSummary(row.tasks, blockedIn(row.tasks), row.sprint, now);
+            const current = isCurrent(row.sprint, now);
+            const done = stats.total === 0 ? 0 : (stats.done / stats.total) * 100;
+
+            return (
+              <button
+                key={row.sprint.id}
+                type="button"
+                className={[
+                  'tl-tab',
+                  row.sprint.id === shown?.sprint.id ? 'tl-tab-on' : '',
+                  current ? 'tl-tab-now' : '',
+                  isPast(row.sprint, now) ? 'tl-tab-past' : '',
+                ]
+                  .filter((c) => c !== '')
+                  .join(' ')}
+                aria-pressed={row.sprint.id === shown?.sprint.id}
+                onClick={() => {
+                  setPicked(row.sprint.id);
+                }}
+              >
+                <span className="tl-tab-head">
+                  <span className="tl-tab-name">{row.sprint.name}</span>
+                  {/* The active sprint is marked, not merely selected — AC6.
+                      Selection is a background; being current is a glyph, so the
+                      two are distinguishable when they coincide and when they
+                      do not. */}
+                  {current && (
+                    <span className="tl-tab-live" title="The sprint today falls in">
+                      ●
+                    </span>
+                  )}
+                  <span className="tl-tab-frac">
+                    {stats.done}/{stats.total}
+                  </span>
+                </span>
+                <span className="tl-tab-meter" aria-hidden="true">
+                  <span className="tl-tab-fill" style={{ width: `${String(done)}%` }} />
+                </span>
+                {stats.blocked > 0 && (
+                  <span className="tl-tab-blocked">
+                    <LockIcon />
+                    {stats.blocked}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {summary !== undefined && shown !== undefined && (
         <div className="tl-strip">
-          <span className="tl-strip-name">{active.sprint.name}</span>
+          <span className="tl-strip-name">{shown.sprint.name}</span>
           <span className="tl-stat">
             DONE <b>{summary.done}</b>/{summary.total}
           </span>
@@ -241,8 +326,23 @@ export function TimelineScreen() {
           <span className="tl-stat">
             WIP <b>{summary.wip}</b>
           </span>
+          {/* Three sentences, not one clamped number — see `SprintCountdown`. */}
           <span className="tl-stat">
-            DAYS LEFT <b>{summary.daysLeft}</b>
+            {summary.countdown.kind === 'left' && (
+              <>
+                DAYS LEFT <b>{summary.countdown.days}</b>
+              </>
+            )}
+            {summary.countdown.kind === 'starts_in' && (
+              <>
+                STARTS IN <b>{summary.countdown.days}</b>d
+              </>
+            )}
+            {summary.countdown.kind === 'ended' && (
+              <>
+                ENDED <b>{summary.countdown.days}</b>d ago
+              </>
+            )}
           </span>
         </div>
       )}
