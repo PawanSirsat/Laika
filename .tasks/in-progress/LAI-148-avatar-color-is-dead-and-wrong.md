@@ -2,11 +2,12 @@
 id: LAI-148
 title: avatar_color is served, ignored, and derived from the wrong seed
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-222
-status: backlog
+status: in-progress
+started: 2026-09-02T07:35:00Z
 ---
 
 ## Goal
