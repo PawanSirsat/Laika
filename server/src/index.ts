@@ -53,6 +53,7 @@ function main(): void {
     db,
     sqlite,
     activityFeed,
+    serverSecret: env.serverSecret,
     publicUrl: env.publicUrl,
     ...(env.publicDir === undefined ? {} : { publicDir: env.publicDir }),
   });

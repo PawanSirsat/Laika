@@ -333,6 +333,15 @@ const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
     'users.image',
     'required by better-auth’s user model; unused — §4.1 says avatars are derived, no uploads in v1',
   ],
+  // In flight (LAI-447). §4.2's `orgs` table gains an `ai_key_last4` row, written
+  // by CHIEF and applied at merge; the staleness test below drops this the
+  // moment it lands. Re-checked after every merge of `master`, which is when it
+  // expires (§4.4).
+  //
+  // Stored rather than derived because the alternative is decrypting the key to
+  // build a response, which `services/orgs.ts` refuses on the grounds that a
+  // serialiser able to reach plaintext is one refactor from returning it.
+  ['orgs.ai_key_last4', 'LAI-447, in flight: awaiting §4.2’s `ai_key_last4` row.'],
 ]);
 
 /**

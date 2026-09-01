@@ -1,0 +1,1 @@
+ALTER TABLE `orgs` ADD `ai_key_last4` text;

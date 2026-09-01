@@ -82,6 +82,7 @@ export function authHarness(overrides: AuthHarnessOptions = {}): AuthHarness {
     db: t.db,
     sqlite: t.sqlite,
     publicUrl: TEST_ORIGIN,
+    serverSecret: TEST_SECRET,
     activityFeed,
     ...appOverrides,
   });
