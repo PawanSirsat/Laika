@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as activityModule from '../../src/db/activity.ts';
 import {
@@ -10,6 +10,7 @@ import {
   readPayload,
 } from '../../src/db/activity.ts';
 import { MIGRATIONS_FOLDER } from '../../src/db/migrate.ts';
+import { activity, projects, tasks, users } from '../../src/db/schema.ts';
 import { newId } from '../../src/db/ids.ts';
 import { expectSqliteError, freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
@@ -22,6 +23,158 @@ beforeEach(() => {
 });
 afterEach(() => {
   t.close();
+});
+
+describe('an activity row cannot lose its subject (LAI-135)', () => {
+  // `project_id`, `task_id` and `actor_id` were `ON DELETE set null`. A SET NULL
+  // cascade is an **UPDATE**, and the §4.8 trigger above refuses every UPDATE on
+  // this table — so deleting a project, task or user that had ever appeared in
+  // the audit log failed with `activity is append-only`, blaming the log for a
+  // constraint the schema had got wrong.
+  //
+  // The cascades were the wrong half, and these tests pin that answer: the
+  // refusal must come from the **foreign key**, naming the thing being deleted,
+  // and never from the trigger.
+
+  /** A task, and one activity row about it, so every FK below has a referent. */
+  function taskWithActivity(): string {
+    const taskId = newId();
+    t.db
+      .insert(tasks)
+      .values({
+        id: taskId,
+        projectId: s.projectId,
+        number: 1,
+        title: 'A task with a history',
+        createdBy: s.userId,
+        createdVia: 'web',
+        createdAt: 1_000,
+        updatedAt: 1_000,
+      })
+      .run();
+
+    appendActivity(t.db, {
+      orgId: s.orgId,
+      projectId: s.projectId,
+      taskId,
+      actorId: s.userId,
+      actorKind: 'user',
+      type: 'task.created',
+      payload: {},
+      now: 1_000,
+    });
+
+    return taskId;
+  }
+
+  it('refuses to delete a task that appears in the log', () => {
+    const taskId = taskWithActivity();
+
+    expectSqliteError(
+      () => t.db.delete(tasks).where(eq(tasks.id, taskId)).run(),
+      /FOREIGN KEY constraint failed/i,
+    );
+  });
+
+  it('refuses to delete a project that appears in the log', () => {
+    taskWithActivity();
+
+    expectSqliteError(
+      () => t.db.delete(projects).where(eq(projects.id, s.projectId)).run(),
+      /FOREIGN KEY constraint failed/i,
+    );
+  });
+
+  it('refuses to delete a user that appears in the log', () => {
+    taskWithActivity();
+
+    expectSqliteError(
+      () => t.db.delete(users).where(eq(users.id, s.userId)).run(),
+      /FOREIGN KEY constraint failed/i,
+    );
+  });
+
+  it('blames the foreign key, not the audit log', () => {
+    // The point of the change. Before it, this same delete reported
+    // "activity is append-only: UPDATE is not permitted" — which sent the reader
+    // to §4.8 to argue about the trigger, when the trigger was right and the
+    // cascade was wrong. Asserting the *absence* of that message is what stops
+    // somebody restoring `set null` and calling the suite green.
+    const taskId = taskWithActivity();
+    let message = '';
+
+    try {
+      t.db.delete(tasks).where(eq(tasks.id, taskId)).run();
+    } catch (err) {
+      message = err instanceof Error ? err.message : String(err);
+    }
+
+    expect(message).toMatch(/FOREIGN KEY constraint failed/i);
+    expect(message).not.toMatch(/append-only/i);
+  });
+
+  it('leaves the row with its subject intact after the refusal', () => {
+    const taskId = taskWithActivity();
+
+    expectSqliteError(
+      () => t.db.delete(tasks).where(eq(tasks.id, taskId)).run(),
+      /FOREIGN KEY constraint failed/i,
+    );
+
+    const row = t.db.select().from(activity).where(eq(activity.taskId, taskId)).get();
+
+    // Not merely "the delete failed" — the three columns the cascade would have
+    // nulled are all still populated. A `restrict` that fired after nulling one
+    // of them would satisfy the assertions above and fail this one.
+    expect(row?.taskId).toBe(taskId);
+    expect(row?.projectId).toBe(s.projectId);
+    expect(row?.actorId).toBe(s.userId);
+  });
+
+  it('still deletes a user who has written nothing', () => {
+    // `restrict` costs nothing today, and this is why: both hard-delete paths in
+    // the codebase — `removeOrphanedOwner` (a failed first-boot, whose
+    // `org.created` row rolls back with its transaction) and
+    // `removeOrphanedInvitee` (a signup that never completed) — delete accounts
+    // that have no activity. If a future path deletes a user who does, it meets
+    // this constraint rather than a trigger error, which is the whole point.
+    const strangerId = newId();
+    t.db
+      .insert(users)
+      .values({
+        id: strangerId,
+        email: 'stranger@example.test',
+        name: 'Stranger',
+        orgRole: 'member',
+        isActive: 1,
+        createdAt: new Date(1_000),
+        updatedAt: new Date(1_000),
+      })
+      .run();
+
+    t.db.delete(users).where(eq(users.id, strangerId)).run();
+
+    expect(t.db.select().from(users).where(eq(users.id, strangerId)).get()).toBeUndefined();
+  });
+
+  it('keeps the org cascade, which is a DELETE and not this problem', () => {
+    // `org_id` is deliberately still `ON DELETE cascade`: deleting an org means
+    // deleting its audit log, not editing it. It is blocked today by the
+    // append-only DELETE trigger rather than by a foreign key, and nothing
+    // implements §3.1's `org.delete` yet — see LAI-154. This asserts only what
+    // the schema says, so that a later change to it is a visible decision.
+    const ddl = t.sqlite
+      .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'activity'")
+      .pluck()
+      .get() as string;
+
+    expect(ddl).toMatch(/REFERENCES `orgs`\(`id`\)[^,]*ON DELETE cascade/i);
+    for (const parent of ['projects', 'tasks', 'users']) {
+      expect(ddl).toMatch(
+        new RegExp(`REFERENCES \`${parent}\`\\(\`id\`\\)[^,]*ON DELETE restrict`, 'i'),
+      );
+    }
+  });
 });
 
 describe('activity is append-only (SPEC §4.8)', () => {

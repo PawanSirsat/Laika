@@ -331,6 +331,59 @@ describe('the runtime wiring (LAI-057)', () => {
       t.close();
     }
   });
+
+  it('has disarmed the poll timer by the moment the database handle closes', () => {
+    /**
+     * **The ordering, asserted as an ordering** (LAI-231).
+     *
+     * Two facts made production safe: `closeAll()` disarms the timer
+     * (`activity-feed.ts`), and `onStopping` runs before `onClosed`
+     * (`shutdown.ts`). Both were tested — separately. Nothing tested the join,
+     * so either file could have moved and every test would still have passed.
+     *
+     * The test above uses a timer double that never fires, so it cannot see
+     * this. **A real `ActivityFeed` with a real `setInterval`** can: if
+     * `sqlite.close()` were ever to run first, or `closeAll()` were to stop
+     * disarming, the timer would be live against a dead handle — which is
+     * exactly the state the harness reached, and it throws where nothing can
+     * catch it.
+     *
+     * Asking at the moment of `close()` rather than after `shutdown()` returns
+     * is deliberate: afterwards, "disarmed" and "disarmed too late" look the
+     * same.
+     */
+    const t = freshDb();
+    const feed = new ActivityFeed({ db: t.db });
+    try {
+      feed.subscribe({ from: 0, onEvents: () => undefined });
+
+      // A real interval, or this proves nothing. `isPolling()` false here would
+      // make the assertion below pass without any timer ever existing.
+      expect(feed.isPolling(), 'no real timer was armed, so nothing is being proved').toBe(true);
+
+      let armedAtClose: boolean | null = null;
+      const shutdown = createRuntimeShutdown({
+        server: recorder().server,
+        log: captureLog().logger,
+        activityFeed: feed,
+        sqlite: {
+          close: () => {
+            armedAtClose = feed.isPolling();
+          },
+        },
+        exit: () => undefined,
+        setTimer: () => ({ unref: () => undefined }),
+      });
+
+      shutdown('SIGTERM');
+
+      expect(armedAtClose, 'sqlite.close() was never reached').not.toBeNull();
+      expect(armedAtClose, 'the poll timer was still armed when the handle closed').toBe(false);
+    } finally {
+      feed.closeAll();
+      t.close();
+    }
+  });
 });
 
 /**

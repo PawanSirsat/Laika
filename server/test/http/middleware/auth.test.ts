@@ -86,6 +86,110 @@ afterEach(() => {
   h.close();
 });
 
+/**
+ * A broken database is not a bad credential (SPEC §6.3, LAI-437).
+ *
+ * Found by breaking a real instance: a database file restored with the wrong
+ * owner made **every** token request answer `401 — "Not signed in"`. The cause
+ * was in the log and not in the response:
+ *
+ * ```
+ * {"message":"attempt to write a readonly database","event":"auth.resolve_failed"}
+ * {"code":"unauthorized","status":401,"message":"Not signed in"}
+ * ```
+ *
+ * `PRAGMA query_only` rather than `chmod`: it produces the same
+ * `SQLITE_READONLY` from the same driver, deterministically, on any machine and
+ * whatever user the suite runs as.
+ */
+describe('an unwritable database', () => {
+  /**
+   * The condition the operator actually hit. `touchTokenUsage` is throttled to
+   * one write a minute, so a token used seconds ago writes nothing and would
+   * have served this request happily — which is why the first version of this
+   * test passed against the bug. Clearing the stamp is what makes the write run.
+   */
+  async function readOnlyWithStaleStamp(): Promise<string> {
+    const secret = await mint({});
+
+    // Working first, so a later 500 cannot be a token that was never valid.
+    expect((await withToken('/api/v1/me', secret)).status).toBe(200);
+
+    h.db.update(tokens).set({ lastUsedAt: null }).run();
+    h.t.sqlite.pragma('query_only = ON');
+    return secret;
+  }
+
+  afterEach(() => {
+    // Before `h.close()`, which needs to write.
+    h.t.sqlite.pragma('query_only = OFF');
+  });
+
+  it('answers internal, not unauthorized, when the resolver cannot write', async () => {
+    const secret = await readOnlyWithStaleStamp();
+
+    const res = await withToken('/api/v1/me', secret);
+
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('internal');
+  });
+
+  it('still says unauthorized for a token that is actually invalid', async () => {
+    // **The other direction, and the fix is not done without it.** "Answer 500
+    // to everything" satisfies the test above and is a worse bug than the one
+    // being fixed — it would tell an operator the disk is broken every time
+    // somebody mistypes a token.
+    await readOnlyWithStaleStamp();
+
+    const res = await withToken('/api/v1/me', `lai_${'a'.repeat(43)}`);
+
+    expect(res.status).toBe(401);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('unauthorized');
+  });
+
+  it('does not leak the driver message to the caller', async () => {
+    const secret = await readOnlyWithStaleStamp();
+
+    const body = await (await withToken('/api/v1/me', secret)).text();
+
+    // The operator needs `attempt to write a readonly database`; the caller gets
+    // a request id to quote (§13.2) and nothing about the disk.
+    expect(body).not.toContain('readonly');
+    expect(body).toContain('request_id');
+  });
+
+  it('keeps the log line that made this diagnosable', async () => {
+    // AC5. It names the layer — `http.unhandled` names only the request — and it
+    // is the reason this took two minutes to find rather than twenty.
+    const secret = await readOnlyWithStaleStamp();
+
+    await withToken('/api/v1/me', secret);
+
+    const line = h.log.find('auth.resolve_failed');
+    expect(line, 'auth.resolve_failed is no longer logged').toBeDefined();
+    expect(String((line as { message?: unknown }).message)).toMatch(/readonly/i);
+  });
+
+  it('refuses sign-in as internal rather than as wrong credentials', async () => {
+    // AC3. It already did, because better-auth surfaces its own 500 and
+    // `translateAuthResponse` maps 5xx to `internal` — accidental until
+    // something asserts it. The failure this guards against is the LAI-090 one:
+    // an infrastructure fault rendered as "Email or password is wrong."
+    h.t.sqlite.pragma('query_only = ON');
+
+    const res = await h.app.request('/api/v1/auth/sign-in/email', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ email: 'ada@example.test', password: PASSWORD }),
+    });
+
+    expect(res.status).toBe(500);
+    const body = await res.text();
+    expect((JSON.parse(body) as { error: { code: string } }).error.code).toBe('internal');
+    expect(body).not.toMatch(/password is wrong|not valid|Not signed in/i);
+  });
+});
+
 describe('a valid token authenticates as its user', () => {
   it('resolves the same actor a cookie does', async () => {
     const secret = await mint({});
@@ -140,6 +244,32 @@ describe('a refused token is a 401, never an anonymous request', () => {
       .run();
 
     expect((await withToken('/api/v1/me', secret)).status).toBe(401);
+  });
+
+  it('logs which of those it was, even though it does not say (LAI-437)', async () => {
+    // The other half of the test below: the caller learns nothing, **and the
+    // operator learns everything**, which is the whole design in `tokens.ts`.
+    //
+    // This was broken and silent. `TokenAuthError extends ApiError`, so LAI-442
+    // adding an `instanceof ApiError` branch above the token branch made the
+    // token branch unreachable: every rejection logged `auth.session_refused`
+    // with `code: 'unauthorized'` and no `reason`, so revoked, expired and
+    // never-existed became one line. The status was right throughout, which is
+    // why nothing noticed.
+    const secret = await mint({});
+    // Revoked straight in the table: the subject is the middleware's
+    // classification, and routing through the revoke endpoint would make this
+    // fail for reasons that have nothing to do with it.
+    h.db.update(tokens).set({ revokedAt: 1 }).run();
+
+    expect((await withToken('/api/v1/me', secret)).status).toBe(401);
+
+    const line = h.log.find('auth.token_rejected');
+    expect(line, 'auth.token_rejected is unreachable again').toBeDefined();
+    // The specific reason, not merely that something was logged: a branch that
+    // logs `unknown` for a revoked token satisfies "a line exists" and is the
+    // failure this is here to catch.
+    expect((line as { reason?: unknown }).reason).toBe('revoked');
   });
 
   it('never says which of those it was', async () => {
