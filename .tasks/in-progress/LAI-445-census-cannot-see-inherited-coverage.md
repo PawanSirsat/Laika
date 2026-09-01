@@ -2,11 +2,12 @@
 id: LAI-445
 title: The response-type census counts names, so it cannot see coverage through `extends`
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-444, LAI-160]
 discovered-from: LAI-160
-status: backlog
+status: in-progress
+started: 2026-09-01T21:35:00Z
 ---
 
 ## Goal
