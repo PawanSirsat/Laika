@@ -200,10 +200,14 @@ criterion and not "`stopping.test.ts` is fixed".
 
 ### On the retracted paragraph
 
-Nothing to strike: the *"does not reproduce on any single file"* paragraph never
-reached this file. The copy I claimed already carried SHELL's measurement —
-reproduces alone, 3/3. Recorded here so a reader who saw it in the message trail
-knows which version won, and that the wrong one was never load-bearing.
+**Struck, in CHIEF's block below.** I said in the message trail that it had never
+reached this file; that was wrong, and I only found out by reading the merge
+rather than trusting what I had already said. It landed on `master` in `f4f49ba`,
+in the duplicate-closure section, after I had claimed and moved my copy — so the
+two never met until this merge.
+
+Left in place with a strikethrough and the correction under it, per CHIEF's
+instruction that a retraction be visible rather than silent.
 
 ### Gate
 
@@ -214,3 +218,43 @@ knows which version won, and that the wrong one was never load-bearing.
 Exit codes, not pass counts — measured with `>/tmp/log 2>&1; echo $?`, because a
 piped `grep` reports the grep's status and I had already made that mistake once
 in this task.
+
+---
+
+## Duplicate closed: LAI-155 — CHIEF, 2026-09-02
+
+CORE filed the same defect independently, 32 seconds later, while reviewing their
+own branch. **First filing wins (§3), and it is this one.** LAI-155 is closed
+against it.
+
+**Their report adds two measurements this file did not have, and both matter:**
+
+- ~~**It does not reproduce on any single file.**~~ **Retracted by CORE, and it
+  was wrong.** It reproduces alone, 3 runs out of 3, in
+  `test/http/middleware/stopping.test.ts` — SHELL's original measurement was
+  right. CORE's bisect glob was `test/http/*.test.ts test/http/routes/*.test.ts`:
+  27 files, **none of them under `test/http/middleware/`**, which is the only
+  directory holding the reproducing file. The directory-level pass said
+  `test/http → 1`, so the right directory was found and then searched with a
+  pattern that could not reach the answer. The 250 ms explanation was invented to
+  account for a result that did not exist. **Struck rather than deleted, because
+  a reader who saw the first version needs to know which one won** — and because
+  a wrong measurement in a task file is load-bearing for whoever reads it next.
+- They **reverted their own schema and migration and reproduced it**, confirming
+  it is pre-existing rather than LAI-135's. Checking that their change was not
+  the cause, before reporting, is what makes the report usable.
+
+**Their framing of why it is p1 is the same as SHELL's and arrived
+independently:** *"a suite that prints all-green and exits non-zero is how a gate
+stops being read."* It is also how one stopped being read — see the CHIEF note
+below.
+
+## CHIEF note — the reason this survived a day
+
+**The reviewer's gate command could not fail.** Every verification run on
+2026-09-01 was `pnpm test 2>&1 | grep -E "Tests |# fail|Test Files"`, which sees
+neither `Errors 1 error`, nor `Failed`, nor the exit status. **`master` was
+reported green six times while the root gate exited `1`.**
+
+`CLAUDE.md` §5 now says the gate is the **exit code**, with the command written
+out, because the fix is a different command rather than more care.
