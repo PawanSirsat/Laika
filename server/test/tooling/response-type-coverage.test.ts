@@ -109,23 +109,26 @@ function pairedTypes(): Set<string> {
  * below fails until this list is updated.
  */
 const UNPAIRED = new Map<string, string>([
-  // The mirror exists. Fourteen entries, all LAI-160.
-  ['AcceptedInviteBody', 'AcceptedInvite'],
-  ['CreatedInviteBody', 'CreatedInvite'],
-  ['CreatedTokenBody', 'CreatedToken'],
-  ['HealthBody', 'Health'],
-  ['InvitePreview', 'InvitePreview'],
-  ['InviteView', 'PendingInvite'],
-  ['MeProfile', 'MeProfile'],
-  ['ProjectContextView', 'ProjectContext'],
+  // Thirteen of the fourteen were paired by LAI-160 and are gone from here.
+  //
+  // **`ProjectView` is the one that stayed, and it was never really unpaired.**
+  // `PAIRS` has `ProjectSummary` → `Project`, `ProjectSummary extends
+  // ProjectView`, and `fieldsOf` resolves `extends` — so every `ProjectView`
+  // field is already compared. Adding a second entry for it made the drift check
+  // **red**, correctly: it asserts the base type sends `task_counts`,
+  // `member_count`, `blocked_count`, `members` and `last_activity_at`, which are
+  // the five the summary derives.
+  //
+  // So this is not work waiting to be done. **The census counts a literal name
+  // in `PAIRS` and cannot see coverage inherited through `extends`** — worth
+  // knowing before reading its total as a to-do list.
+  //
+  // Its value stays `'Project'` because the map's second column is *the client
+  // type*, and `names a client type that exists` enforces that: a prose reason
+  // fails it. **There is no slot here for "covered another way"**, which is the
+  // finding rather than an inconvenience — and designing one is CORE's call, so
+  // SHELL left the row alone and said why (LAI-160).
   ['ProjectView', 'Project'],
-  ['SetupResultBody', 'SetupResult'],
-  ['SetupStatusBody', 'SetupStatus'],
-  ['TagView', 'ProjectTag'],
-  // Client and server agree on the name and are still not compared — the
-  // sharpest evidence that naming is not what decides coverage.
-  ['TokenView', 'TokenView'],
-  ['UnlistedView', 'UnlistedWork'],
 
   // No client type exists: the screens these feed are unbuilt.
   ['AvatarView', 'no client type exists'],

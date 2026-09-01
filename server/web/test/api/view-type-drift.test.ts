@@ -58,6 +58,84 @@ interface Pair {
 
 const PAIRS: readonly Pair[] = [
   {
+    server: 'AcceptedInviteBody',
+    serverFile: 'http/routes/invites.ts',
+    client: 'AcceptedInvite',
+    clientFile: 'invites.ts',
+  },
+  {
+    server: 'CreatedInviteBody',
+    serverFile: 'http/routes/invites.ts',
+    client: 'CreatedInvite',
+    clientFile: 'invites.ts',
+  },
+  {
+    server: 'CreatedTokenBody',
+    serverFile: 'http/routes/tokens.ts',
+    client: 'CreatedToken',
+    clientFile: 'tokens.ts',
+  },
+  {
+    server: 'HealthBody',
+    serverFile: 'http/routes/health.ts',
+    client: 'Health',
+    clientFile: 'health.ts',
+  },
+  {
+    server: 'InvitePreview',
+    serverFile: 'services/invites.ts',
+    client: 'InvitePreview',
+    clientFile: 'invites.ts',
+  },
+  {
+    server: 'InviteView',
+    serverFile: 'services/invites.ts',
+    client: 'PendingInvite',
+    clientFile: 'invites.ts',
+  },
+  {
+    server: 'MeProfile',
+    serverFile: 'services/me.ts',
+    client: 'MeProfile',
+    clientFile: 'me.ts',
+  },
+  {
+    server: 'ProjectContextView',
+    serverFile: 'services/projects.ts',
+    client: 'ProjectContext',
+    clientFile: 'project-context.ts',
+  },
+  {
+    server: 'SetupResultBody',
+    serverFile: 'http/routes/setup.ts',
+    client: 'SetupResult',
+    clientFile: 'setup.ts',
+  },
+  {
+    server: 'SetupStatusBody',
+    serverFile: 'http/routes/setup.ts',
+    client: 'SetupStatus',
+    clientFile: 'setup.ts',
+  },
+  {
+    server: 'TagView',
+    serverFile: 'services/tags.ts',
+    client: 'ProjectTag',
+    clientFile: 'tags.ts',
+  },
+  {
+    server: 'TokenView',
+    serverFile: 'services/tokens.ts',
+    client: 'TokenView',
+    clientFile: 'tokens.ts',
+  },
+  {
+    server: 'UnlistedView',
+    serverFile: 'services/unlisted.ts',
+    client: 'UnlistedWork',
+    clientFile: 'unlisted.ts',
+  },
+  {
     server: 'TaskView',
     serverFile: 'services/tasks.ts',
     client: 'Task',
@@ -66,6 +144,17 @@ const PAIRS: readonly Pair[] = [
   {
     // `ProjectSummary extends ProjectView` — the list endpoint serves the
     // derived shape, which is what the client mirrors.
+    //
+    // **This entry covers `ProjectView` too, and there must not be a second one
+    // for it** (LAI-160). `fieldsOf` resolves `extends`, so every `ProjectView`
+    // field is already compared here. Pairing `ProjectView` → `Project`
+    // separately asserts that the *base* type sends `task_counts`,
+    // `member_count`, `blocked_count`, `members` and `last_activity_at` — which
+    // it does not and must not; they are the five the summary derives.
+    //
+    // LAI-444's census listed `ProjectView` as unpaired because it looks for the
+    // literal name in this table. **Coverage here is transitive and the census
+    // cannot see that**, which is worth knowing before trusting its count.
     server: 'ProjectSummary',
     serverFile: 'services/projects.ts',
     client: 'Project',
