@@ -415,8 +415,27 @@ finishes.
 
 ### 4.7 `comments`
 
-`id`, `task_id`, `author_id`, `body_md`, `created_via` (same enum as tasks),
-`edited_at`, `deleted_at` (soft), `created_at`, `updated_at`.
+`id`, `task_id`, `author_id` (**nullable**), `body_md`, `created_via` (same enum
+as tasks), `edited_at`, `deleted_at` (soft), `created_at`, `updated_at`.
+
+**A null `author_id` means the comment has no Laika author** (LAI-449) — it was
+mirrored from somewhere else, and `created_via` says where. Today that is
+`webhook`: §10.1 mirrors a GitHub `issue_comment`, whose writer has no account
+here and, by **D-050**, no identity mapping to one.
+
+**It is not "we cannot tell you who".** That is a different fact — a reader who
+may not see an actor — and the two must not share a rendering that implies each
+other. **Nobody wrote this** and **you may not know who** are both true
+sometimes, and never the same time.
+
+**A comment with no author can be edited or deleted by nobody.** §3.2's rows are
+*own + any* and *own*; **neither is satisfiable by an absent author**, and a lead
+holding *any* would otherwise fall through and be allowed. The refusal is
+explicit and is a **conflict**, not a permission failure: the request does not
+apply to this comment, whoever asks.
+
+**A non-null `author_id` still references a real user.** Nullable is not
+unconstrained.
 
 ### 4.8 `activity` — append-only
 

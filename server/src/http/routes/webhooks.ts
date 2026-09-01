@@ -6,6 +6,7 @@ import {
   DeliveryLog,
   githubWebhookSecret,
   handlePullRequest,
+  handleIssueComment,
   handlePush,
   SIGNATURE_HEADER,
   verifyGithubSignature,
@@ -82,7 +83,14 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
         ? handlePush(db, asRecord(payload), now)
         : event === 'pull_request'
           ? handlePullRequest(db, asRecord(payload), (projectId) => systemPrincipal(projectId), now)
-          : { handled: false, reason: 'event not handled' };
+          : event === 'issue_comment'
+            ? handleIssueComment(
+                db,
+                asRecord(payload),
+                (projectId) => systemPrincipal(projectId),
+                now,
+              )
+            : { handled: false, reason: 'event not handled' };
 
     // **Acknowledged and ignored** (§10.1) — a `200` for an event Laika does not
     // handle, so GitHub stops retrying something that will never be handled.
