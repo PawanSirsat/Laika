@@ -195,7 +195,14 @@ This has now cost two tasks (LAI-070, LAI-224). The same trap applies to the
 **A criterion that names a location must be checked against that location.**
 Three of CHIEF's failed this on one day: an AC pointing at *"§6.4's task shape"*
 when §6.4 is an endpoint list with no task shape; *"the eight §7.1 tools"* when
-there are ten listed and eleven served; and *"claim LAI-147, it is fifteen
+§7.1 lists **eleven** and the server serves eleven — it was ten and
+eleven when that criterion was written, and **this sentence said so for a day
+after LAI-433 made both numbers agree**, in the passage citing this exact
+failure. A grep of §7.1 for backticked identifiers returns **22**, because the
+later columns name fields; the first column returns 11. **Every wrong number
+here was a grep that counted the wrong cells** — which is why the check that
+replaced it asserts **names from both sides**, never a count; and *"claim
+LAI-147, it is fifteen
 minutes"* when the file existed only on the builder's branch and there was
 nothing on `master` to `git mv`. Each cost a round trip, each was one `grep`
 away, and **each read as authoritative to the person receiving it** — which is
