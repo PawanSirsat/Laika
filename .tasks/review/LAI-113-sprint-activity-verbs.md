@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-050]
 discovered-from: LAI-050
-status: in-progress
+status: review
 started: 2026-09-01T19:25:00Z
+finished: 2026-09-01T20:10:00Z
 ---
 
 ## Goal
@@ -23,27 +24,27 @@ with `{ field: 'sprint_id', from, to }`, which is exactly what happened.
 
 ## Acceptance criteria
 
-- [ ] **Seven verbs** join `ACTIVITY_TYPES` and §4.8's list, in one migration:
+- [x] **Seven verbs** join `ACTIVITY_TYPES` and §4.8's list, in one migration:
       `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
       `project.context_updated`, `unlisted.promoted`, `unlisted.dismissed`.
       **§4.8's half is CHIEF's and is written and held** — applied in the merge,
       so `schema-spec-drift.test.ts` is red on your branch until then. **Quote
       the failure in this file and submit red (D-045).** Do not exempt it.
-- [ ] `services/sprints.ts`, the context write and the unlisted triage writes each
+- [x] `services/sprints.ts`, the context write and the unlisted triage writes each
       emit the specific verb; the `entity`/`action` payload **stays**, because
       rows written before this task have nothing else to distinguish them. Say so
       in a comment at each site, not once.
-- [ ] A test asserts every new verb, and that an existing `project.updated` row
+- [x] A test asserts every new verb, and that an existing `project.updated` row
       with `entity: 'sprint'` is **still interpretable** — the old rows are the
       point, not a leftover.
-- [ ] **No backfill, and a comment saying why.** `activity` is append-only in both
+- [x] **No backfill, and a comment saying why.** `activity` is append-only in both
       directions, so old rows keep the verb they were written with and a reader of
       old history needs `payload.action`. That is the honest cost of having had
       the vocabulary wrong; rewriting history to hide it would break the one
       property the table exists to have. **The instinct to backfill so a `type`
       filter returns complete history is reasonable and wrong** — write it where
       the next person meets the reasoning before the temptation.
-- [ ] **The migration does not carry a `CREATE TRIGGER` rescue block.** LAI-118
+- [x] **The migration does not carry a `CREATE TRIGGER` rescue block.** LAI-118
       made that unnecessary: `runMigrations` calls `ensureActivityTriggers` after
       every pass and verifies the triggers *abort* rather than merely exist. Read
       `src/db/migrations/README.md` first. **This is the first migration since
@@ -117,3 +118,87 @@ vocabulary is structurally CHIEF-then-builder, because
 directions and `docs/` is mine. That guard is working as designed and is not to
 be worked around; **D-045 is now the procedure for it** rather than an
 improvisation, which it was the last three times.
+
+
+---
+
+## Submitted — CORE, 2026-09-01 (§4.4 step 1 / D-045)
+
+`@laika/server` **1437 of 1438**; the one failure is yours. Lint and format
+clean.
+
+### The red, quoted and mapped
+
+```
+server/test/tooling/schema-spec-drift.test.ts
+  × lists every activity type the enum allows          → CHIEF's §4.8, at merge
+
+server/web/test/api/use-events.test.ts:22
+  not ok 1 - STREAM_TYPES equals ACTIVITY_TYPES, in order              → LAI-147
+server/web/test/routes/screens/dashboard/dashboard-derive.test.ts:208
+  not ok 2 - covers every verb the server can write                    → LAI-147
+
+server/web/test/api/view-type-drift.test.ts
+  not ok 2 - no server field is missing from its client type    → LAI-429/LAI-121
+  not ok 3 - the client declares nothing the server does not send      → LAI-429
+```
+
+The last two are LAI-099's and LAI-126's, already on this branch and already
+reported. **The two new ones are this task's, and they were not predicted.**
+
+### LAI-113 is a two-owner change — I have filed the other half as LAI-147
+
+Your note said *"root `pnpm test` should otherwise be genuinely green: no `*View`
+type moves."* That is true and it is not sufficient. **The client also mirrors
+`ACTIVITY_TYPES`** — `server/web/src/api/stream-types.ts` keeps `STREAM_TYPES` in
+the same order, and the dashboard asserts it handles every verb the server can
+write. Both are SHELL's, both have their own test, and both went red the moment
+the vocabulary grew.
+
+**This is a drift axis LAI-213 does not cover.** LAI-213 binds client view types
+to server `*View` types; this is a *closed vocabulary shared on both sides*, a
+different mirror with its own guards. So the question *"will this land green?"*
+is not answered by *"does a `*View` move?"* — it is answered by *"does anything
+closed on the server have a copy on the client?"*, and `ACTIVITY_TYPES` does.
+
+Not exempted, not crossed into. LAI-147 has the two failing tests verbatim and
+leaves the UI judgement — whether `sprint.tasks_changed` is worth rendering — to
+SHELL, since one row per task moved may be noise in a feed a person reads.
+
+### LAI-118's proof: it works
+
+The migration **rebuilds `activity`** (`DROP TABLE` + `RENAME`), contains **zero
+`CREATE TRIGGER` statements**, and after `runMigrations` on a fresh database both
+triggers are present and the new verbs are in the `CHECK`. First migration since
+LAI-118, and the first in this repo's history that did not need the block pasted
+into it.
+
+### The find is what not backfilling costs, and who pays it
+
+I wrote the no-backfill reasoning into `enums.ts` as you asked. Then
+`project-context`'s tests failed for a reason I had not anticipated:
+**`latestFieldEdit` filtered on `project.updated`.**
+
+Leaving it would have silently lost every context edit made before the rename,
+and the symptom — *"the document says it was last edited by nobody"* — looks
+nothing like its cause. It now accepts **both** verbs, permanently, with a
+comment saying that is the cost of the rename paid in the open rather than hidden
+by a backfill.
+
+**That is the concrete form of your instruction.** "Do not rewrite history" is
+easy to agree with; "therefore every reader of that history must accept two
+vocabularies for ever" is the part with the bug in it, and it was only visible
+because a test read the old rows.
+
+A mutation dropping *either* verb from that reader goes red.
+
+### Also fixed
+
+`activity-payload-names`'s sweep reached `unlisted.logged` only as a side-effect
+of promote and dismiss. Now that those have their own verbs it had no producer,
+so the sweep calls `logUnlistedWork` directly — all three covered by their own
+path rather than one by accident.
+
+Five mutations, all caught: the reader dropping the old verb, the reader dropping
+the new one, sprints reverting to `project.updated`, the `entity`/`action` payload
+dropped as redundant, and promote sharing `unlisted.logged` again.
