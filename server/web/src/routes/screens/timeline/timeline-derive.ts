@@ -1,4 +1,5 @@
 import type { Sprint } from '../../../api/sprints.ts';
+import { daysLeft } from '../sprints/sprint-derive.ts';
 
 /**
  * The timeline's layout arithmetic (SPEC §11.4.3, D-014 — LAI-084).
@@ -332,24 +333,50 @@ function span(
   return { kind, leadDays, solidDays, remainderDays, trailDays, from, to, fromSprint };
 }
 
+/**
+ * What the strip's fourth stat says, and it is not always "days left".
+ *
+ * LAI-434 clamped `daysLeft` at zero so a finished sprint could not show minus
+ * seven. That was right and it is not enough once a sprint can be *selected*
+ * (LAI-436): a completed sprint reading `DAYS LEFT 0` is indistinguishable from
+ * one ending tonight, and a sprint that has not started yet has no days left at
+ * all — it has days until it begins. **A clamp turns a wrong number into a
+ * misleading one; the label has to change with it.**
+ */
+export type SprintCountdown =
+  /** Today is inside the sprint. `DAYS LEFT`. */
+  | { readonly kind: 'left'; readonly days: number }
+  /** It has not begun. `STARTS IN`. */
+  | { readonly kind: 'starts_in'; readonly days: number }
+  /** It is over. `ENDED`, and how long ago. */
+  | { readonly kind: 'ended'; readonly days: number };
+
 export interface SprintSummary {
   readonly done: number;
   readonly total: number;
   readonly blocked: number;
   readonly wip: number;
-  /** Whole days from today to the sprint's last day, **clamped at zero**. */
-  readonly daysLeft: number;
+  /**
+   * The fourth stat, labelled by its own kind.
+   *
+   * There is deliberately **no `daysLeft` alongside this**. Keeping both would
+   * leave the old field as the easy one to reach for, and it is the one that
+   * cannot tell a finished sprint from one ending tonight.
+   */
+  readonly countdown: SprintCountdown;
 }
 
 /**
- * The active sprint's strip: DONE · BLOCKED · WIP · DAYS LEFT.
+ * A sprint's strip: DONE · BLOCKED · WIP · and the countdown.
  *
  * All four are derived. `blocked` is passed in rather than recomputed —
  * `board-derive.ts` already owns that rule and a second one would drift from it
  * (the LAI-215 `initials()` problem).
  *
- * **`daysLeft` clamps at zero.** A sprint that ended last week has not got minus
- * seven days left; it has none, and a negative would be read as a countdown.
+ * **Any sprint, not only the active one** (LAI-436). The screen can select a
+ * finished or a future sprint, which is what forced `daysLeft` to become
+ * `countdown`: the three cases are genuinely different sentences, and a single
+ * clamped number said the wrong one for two of them.
  */
 export function sprintSummary(
   tasks: readonly { readonly status: string }[],
@@ -364,12 +391,38 @@ export function sprintSummary(
     if (task.status === 'in_progress') wip += 1;
   }
 
-  const remaining = days(startOfDay(now), startOfDay(sprint.ends_on)) - 1;
   return {
     done,
     total: tasks.length,
     blocked: blockedCount,
     wip,
-    daysLeft: Math.max(0, remaining),
+    countdown: countdownFor(sprint, now),
   };
+}
+
+/**
+ * Which of the three sentences this sprint gets.
+ *
+ * `isCurrent` is the discriminator rather than `sprint.status`, and the two do
+ * disagree: §11.4.3 already treats the stored status as a label rather than the
+ * truth, because a sprint left `active` after its end date is ordinary and the
+ * dates are what a reader is looking at.
+ */
+export function countdownFor(sprint: Sprint, now: number): SprintCountdown {
+  const today = startOfDay(now);
+
+  if (isCurrent(sprint, now)) {
+    // **`daysLeft` from `sprint-derive`, not a second count.** It already owns
+    // "whole days remaining, counting the last day, never negative" and the
+    // board's strip reads it — LAI-215's `initials()` and LAI-434's blocked rule
+    // are the two precedents for what a second copy costs. This function
+    // classifies; it does not re-count.
+    return { kind: 'left', days: daysLeft(sprint.ends_on, now) };
+  }
+
+  if (today < startOfDay(sprint.starts_on)) {
+    return { kind: 'starts_in', days: days(today, startOfDay(sprint.starts_on)) - 1 };
+  }
+
+  return { kind: 'ended', days: days(startOfDay(sprint.ends_on), today) - 1 };
 }
