@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-094]
 discovered-from: LAI-094
-status: in-progress
+status: review
 started: 2026-09-01T21:25:00Z
+finished: 2026-09-01T22:10:00Z
 ---
 
 ## Goal
@@ -52,23 +53,23 @@ serialisation change and belongs in a §6.4 row, not improvised here.
 
 ## Acceptance criteria
 
-- [ ] SPEC §6 lists each endpoint before it exists.
-- [ ] Each route calls `can()` — the services already do, and the route must not
+- [x] SPEC §6 lists each endpoint before it exists.  **CHIEF's — applied at merge.**
+- [x] Each route calls `can()` — the services already do, and the route must not
       be the layer that assumes so.
-- [ ] `GET /me/watching` refuses to report anybody else's watches, and a test
+- [x] `GET /me/watching` refuses to report anybody else's watches, and a test
       says so rather than relying on the service's guard.
 - [x] ~~A read-only token can watch and unwatch, or cannot~~ — **decided,
       D-047: it cannot.** Build `task.watch` as its own action, granted to all
       three project roles and **absent from `READ_ACTIONS`**.
-- [ ] A test proves a `read_only` token is refused `PUT /watch` **and still
+- [x] A test proves a `read_only` token is refused `PUT /watch` **and still
       allowed `GET /tasks/:id/watchers`** — the refusal must be the scope layer,
       not an accident of the role layer.
-- [ ] `GET /projects/:slug/mentionable` exists and is **driven by the same
+- [x] `GET /projects/:slug/mentionable` exists and is **driven by the same
       function `resolveMentions` filters with**. A test asserts the two agree in
       both directions: a returned name always resolves, an omitted one never
       does. Two implementations of one predicate is one implementation and one
       bug.
-- [ ] An org owner who is **not a member** of the project appears in
+- [x] An org owner who is **not a member** of the project appears in
       `mentionable` — that is the case `/members` gets wrong and the reason this
       endpoint exists.
 
@@ -129,3 +130,74 @@ other owner's area and D-045's red-with-a-named-failure was the only route.
 and wants its own §6.4 line, exactly as the original note says. Filing it beats
 folding it — and after LAI-099, adding a field to `TaskView` is a two-owner
 landing on its own.
+
+
+---
+
+## Submitted — CORE, 2026-09-01
+
+Server **1489 of 1490**; the one failure is LAI-113's seven, inherited. Lint and
+format clean. Web unchanged from LAI-147's two.
+
+### The scope mechanism, and the test that makes it mean something
+
+`task.watch` is granted to **every** project role and is **absent from
+`READ_ACTIONS`**. The absence is the whole of it.
+
+The pair you asked for is one test: a `read_only` token is refused
+`PUT /tasks/:id/watch` **and allowed `GET /tasks/:id/watchers`**. The refusal
+alone would be satisfiable by a role-layer accident; the second half is what says
+the credential is the only difference between the two calls. There is a third
+alongside it — a `full` token *is* allowed the `PUT` — so the refusal is not
+about tokens either.
+
+**Mutation-proved:** putting `task.watch` into `READ_ACTIONS` turns that test red.
+The absence is load-bearing, not incidental.
+
+### One predicate, and it caught a test that had become wrong
+
+`canBeMentioned` is extracted; `resolveMentions` and `mentionableUsers` both call
+it. The agreement test runs over **every** user in the fixture and asserts
+`offered === resolves` for each — both directions in one loop, because either
+alone is satisfiable by a set that is too wide or too narrow respectively.
+
+Replacing the picker's filter with a membership check turns two tests red,
+including the org-Owner case that is the reason the endpoint exists.
+
+### `can.test.ts`'s Viewer rule needed restating, and that is the finding
+
+`Viewer write attempts all fail` broke, correctly. The rule it was written to
+state is not *"a Viewer performs no writes"* — it is *"a Viewer writes nothing
+that is not about themselves"*, and there were already four such writes
+(own tokens ×2, joining a public project, own unlisted work, own heartbeat).
+`task.watch` is the fifth, and it is the one that makes the distinction visible:
+the **role** allows it and the **scope** refuses it, which is only possible
+because it is not a read.
+
+Updated with that reasoning at the site rather than adding a fifth name to a
+list, since the next reader will otherwise assume the exception is arbitrary.
+
+### The exemption, proved to expire
+
+`task.watch` carries an in-flight `ACTIONS_WITHOUT_A_ROW` entry — my own file, so
+§4.4 step 2 is genuinely available. **Verified it is load-bearing:** exempting
+`task.write`, which §3.2 certainly grants, turns
+`removes an exemption once §3 grants the action` red — *and*
+`gives every exemption a reason naming a task`. So applying your §3.2 row forces
+mine out; it cannot silently persist.
+
+### Shapes decided while building
+
+**`PUT`/`DELETE`, not `POST`.** Watching is idempotent state, not an event —
+pressing Watch twice leaves one row. It also makes the `read_only` refusal
+legible from the method alone.
+
+**`204`, not the task.** Nothing about the task changed, and returning it would
+invite a client to diff a body that is identical either way.
+
+**A second router on `/me`.** `GET /me` is mounted *before* the database is known
+to exist, because "who am I" is answerable without one. Giving `meRoutes` a
+required `db` would move it behind that guard and change what a half-configured
+instance answers. `/users` already carries two routers for the same reason.
+
+Three mutations, all caught.
