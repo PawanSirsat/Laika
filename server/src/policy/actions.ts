@@ -54,11 +54,38 @@ export const PROJECT_ACTIONS = [
   'meeting_proposal.apply',
 ] as const;
 
+/**
+ * SPEC §3.4 — held **only** by the system principal, and by no human role.
+ *
+ * These are the §11.6 cron's writes, and they are deliberately not §3.1 rows:
+ * nobody expires an invite through the API, and a person who could would be
+ * doing something the product does not offer. Giving them their own names is
+ * what lets `can()` deny them to every role without a special case — an Owner
+ * asking for `system.invite.expire` is asking for something §3.1 never grants,
+ * which is rule 3 working rather than a rule being added.
+ *
+ * **The webhook is not here.** It performs `task.write` and `comment.create` —
+ * the *same* actions a person performs on the same resources — because the
+ * principal is what differs, not the operation. §3.4 says which existing actions
+ * the system principal may take and adds only the ones with no human owner.
+ */
+export const SYSTEM_ACTIONS = [
+  'system.heartbeat.prune',
+  'system.task.flag_stale',
+  'system.invite.expire',
+  'system.meeting_review.expire',
+] as const;
+
 export type OrgAction = (typeof ORG_ACTIONS)[number];
 export type ProjectAction = (typeof PROJECT_ACTIONS)[number];
-export type Action = OrgAction | ProjectAction;
+export type SystemAction = (typeof SYSTEM_ACTIONS)[number];
+export type Action = OrgAction | ProjectAction | SystemAction;
 
-export const ALL_ACTIONS: readonly Action[] = [...ORG_ACTIONS, ...PROJECT_ACTIONS];
+export const ALL_ACTIONS: readonly Action[] = [
+  ...ORG_ACTIONS,
+  ...PROJECT_ACTIONS,
+  ...SYSTEM_ACTIONS,
+];
 
 /**
  * Actions a `read_only` token may still perform (SPEC §6.2: "every `GET` the

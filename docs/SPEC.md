@@ -224,6 +224,51 @@ SQLite via Drizzle. Ids are ULIDs stored as `text` (sortable, no coordination).
 Timestamps are `integer` unix-milliseconds UTC, named `created_at` / `updated_at`.
 Soft-delete only where noted. All foreign keys are indexed.
 
+
+### 3.4 The system principal
+
+Some writes have no person behind them: the in-process cron (§11.6) and a
+verified webhook delivery (§10.1). §3.3 rule 1 admits no exception for them, and
+rule 3 denies by default — so they act as a **named system principal** that
+`can()` recognises explicitly (D-050).
+
+**It is not a role and it is not a column in §3.1.** A role is something a person
+holds; this is something no person can be granted. It holds exactly:
+
+| Action | Why |
+| --- | --- |
+| `task.write` | §10.1: a merged pull request moves its task to `review` |
+| `comment.create` | §10.1: `issue_comment` mirrors to task comments |
+| `system.heartbeat.prune` | §11.6: retention |
+| `system.task.flag_stale` | §11.6: stale flagging, both directions |
+| `system.invite.expire` | §11.6 |
+| `system.meeting_review.expire` | §11.6 |
+
+**Everything else is denied**, and `matrix.test.ts` asserts it cell by cell as it
+does for §3.1 and §3.2.
+
+**Scoped to one project** — the project a delivery resolved to (§9.2), or the
+project a job is acting on. A delivery that resolves to no project writes
+nothing.
+
+**Authority is not attribution.** Rows written this way carry
+`actor_kind: 'system'` and `actor_id: null` (§4.8); that is settled separately
+and is unchanged by this section.
+
+**`task.write` and `comment.create` are the human actions, not system twins.** A
+webhook moving a task performs the *same operation* on the *same resource* a
+person does; only the principal differs. Twins would be two rules for one
+operation and eventually two answers.
+
+**The four `system.*` actions are the ones with no human owner** — nobody expires
+an invite through the API. §3.1 and §3.2 have no row for them, so the role
+branches never see them and **deny-by-default does the work** rather than a
+special case.
+
+**`VACUUM` holds no action and needs none.** Rule 1 governs reading and writing
+*data*; `VACUUM` rewrites storage and touches no row, so there is no resource to
+name. A `system.database.vacuum` would be a permission that grants nothing.
+
 ### 4.1 `users`
 
 | field | type | notes |
