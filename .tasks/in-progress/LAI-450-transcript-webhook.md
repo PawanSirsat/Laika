@@ -2,11 +2,12 @@
 id: LAI-450
 title: 'POST /webhooks/transcript — a meeting becomes a reviewable proposal set'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-447]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-02T00:30:00Z
 ---
 
 ## Goal
