@@ -241,5 +241,23 @@ mirror from the view types.
 Adding a new cross-boundary guard means adding a row here. A guard nobody knows
 exists gets predicted around.
 
+**And a guard that parses a source file is coupled to that file's prose, not only
+its data.** `use-events.test.ts` extracted `ACTIVITY_TYPES` by matching any
+single-quoted run, so **one apostrophe** — in *"§4.13's indexes"*, inside a
+comment somebody was asked to write there — produced nine phantom types. It fails
+in the direction where **the guard is wrong and the code is right**, which is the
+hardest kind to diagnose, because the instinct is to go looking at the nine extra
+verbs. A parser over source strips comments *and* matches the shape; either alone
+is defeated by a comment that names a real value.
+
+**The runtime form of the same drift is a white screen.** SHELL hit
+`e.blocked_by is not iterable` from a dev server still running pre-rename code —
+the third stale process to hand somebody a false result this week. That is
+precisely what the client/server axis catches at build time, and the comparison
+is the argument for the whole table: **the drift check's reward is a named test
+failure; without it you get a white screen and a minified stack.** Before
+believing a local result, check the process is running the code you are testing
+(CLAUDE.md §4.3).
+
 Everything else in this document is enforced at PM review. If a rule here keeps
 being missed, that is an argument for automating it — file a task.
