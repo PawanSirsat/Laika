@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useState } from 'react';
-import { getSetupStatus } from './setup.ts';
+import { getSetupStatus, type SetupSystemStatus } from './setup.ts';
 
 export interface UseSetupStatus {
   /** `undefined` while the first check is in flight. */
   readonly setupRequired: boolean | undefined;
+  /**
+   * What the instance reports about itself (§6.4, LAI-206) — `undefined` until
+   * the response lands, and **after a failed check too**.
+   *
+   * The same request already carried this and nothing read it. LAI-158 renders
+   * it; the panel is absent rather than guessed while this is `undefined`,
+   * because a status panel is read precisely when somebody is trying to find out
+   * whether something is wrong.
+   */
+  readonly system: SetupSystemStatus | undefined;
   /**
    * Setup just succeeded — flip the flag **synchronously**.
    *
@@ -29,6 +39,7 @@ export interface UseSetupStatus {
  */
 export function useSetupStatus(): UseSetupStatus {
   const [setupRequired, setSetupRequired] = useState<boolean | undefined>(undefined);
+  const [system, setSystem] = useState<SetupSystemStatus | undefined>(undefined);
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
@@ -37,6 +48,7 @@ export function useSetupStatus(): UseSetupStatus {
     getSetupStatus(controller.signal)
       .then((status) => {
         setSetupRequired(status.setup_required);
+        setSystem(status.system);
       })
       .catch(() => {
         setSetupRequired(false);
@@ -55,5 +67,5 @@ export function useSetupStatus(): UseSetupStatus {
     setAttempt((n) => n + 1);
   }, []);
 
-  return { setupRequired, markComplete, recheck };
+  return { setupRequired, system, markComplete, recheck };
 }

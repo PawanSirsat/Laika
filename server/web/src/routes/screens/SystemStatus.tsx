@@ -1,43 +1,40 @@
+import type { SetupSystemStatus } from '../../api/setup.ts';
 import './auth.css';
 
 export interface SystemStatusProps {
   /**
-   * Migrations applied / total. **Both optional together** — `GET /setup/status`
-   * returns only `setup_required`, so until LAI-206 lands there is no migration
-   * state to report and the line is absent. The prototype's `41/41` is a
-   * fixture; a hardcoded count would be wrong the moment a migration is added.
+   * What the instance says about itself, from `GET /setup/status` (§6.4).
+   *
+   * `undefined` until it arrives, and the panel renders **nothing** then. It
+   * used to draw a hardcoded `sqlite · wal` on the grounds that a process
+   * serving this page has already opened the database — true, and it still does
+   * not tell you the journal mode. **A panel read precisely when somebody is
+   * checking whether something is wrong is the last place to state a fact from
+   * the page's own existence rather than from the instance.**
    */
-  readonly migrationsApplied?: number | undefined;
-  readonly migrationsTotal?: number | undefined;
-  /** Absent until an endpoint reports it — nothing does today. */
-  readonly smtpConfigured?: boolean | undefined;
+  readonly system?: SetupSystemStatus | undefined;
 }
 
 /**
- * First-boot system status (LAI-021 AC6, LAI-075 AC4).
+ * First-boot system status (LAI-021 AC6, LAI-075 AC4, rendered by LAI-158).
  *
  * **SQLite, never Postgres.** The prototype shows `postgres 16 · connected`;
- * `docs/design/README.md` lists that as an artifact to be reproduced under no
- * circumstances, and D-001 makes SQLite the only database in v1. A status panel
- * naming the wrong engine is worse than none — it is confidently wrong about
- * the one thing it exists to report.
+ * `docs/design/README.md` lists that as an artifact to reproduce under no
+ * circumstances, and D-001 makes SQLite the only database in v1. This no longer
+ * has to be enforced by the component: the string comes from the live
+ * connection's PRAGMAs, so it says what the instance *is*.
  *
- * **Why the database line needs no endpoint.** `index.ts` opens the database and
- * runs migrations *before* it binds the port, so a process that is serving this
- * page has already done both. The line reports something the page's own
- * existence proves, which is why it is the one line that is always shown.
- *
- * Every other line waits for real data and is simply absent without it. A status
- * panel is the last place to guess: it is read precisely when someone is trying
- * to find out whether something is wrong.
+ * **No total on the migrations line, deliberately** (LAI-158). §6.4 carries
+ * `migrations_applied` alone, and the reason is checkable: `index.ts` runs
+ * `runMigrations` before `serve()`, and the migrator throws rather than
+ * continuing — **a server that can answer this request has applied all of
+ * them**, so the denominator would always equal the numerator. `18/18` that can
+ * never read anything else is decoration with a chance of being wrong, which is
+ * the failure LAI-106 AC5 named. `migrationsTotal` is gone rather than passed
+ * the same number twice to make the slash appear.
  */
-export function SystemStatus({
-  migrationsApplied,
-  migrationsTotal,
-  smtpConfigured,
-}: SystemStatusProps) {
-  const hasMigrations = migrationsApplied !== undefined && migrationsTotal !== undefined;
-  const migrationsDone = hasMigrations && migrationsApplied === migrationsTotal;
+export function SystemStatus({ system }: SystemStatusProps) {
+  if (system === undefined) return null;
 
   return (
     <section className="status" aria-labelledby="status-heading">
@@ -49,35 +46,28 @@ export function SystemStatus({
           <dt className="visually-hidden">Database</dt>
           <dd>
             <span className="status-dot status-ok" aria-hidden="true" />
-            sqlite · wal
+            {system.database}
           </dd>
         </div>
 
-        {hasMigrations && (
-          <div className="status-row">
-            <dt className="visually-hidden">Migrations</dt>
-            <dd>
-              <span
-                className={migrationsDone ? 'status-dot status-ok' : 'status-dot status-warn'}
-                aria-hidden="true"
-              />
-              migrations {migrationsApplied}/{migrationsTotal} applied
-            </dd>
-          </div>
-        )}
+        <div className="status-row">
+          <dt className="visually-hidden">Migrations</dt>
+          <dd>
+            <span className="status-dot status-ok" aria-hidden="true" />
+            migrations {system.migrations_applied} applied
+          </dd>
+        </div>
 
-        {smtpConfigured !== undefined && (
-          <div className="status-row">
-            <dt className="visually-hidden">SMTP</dt>
-            <dd>
-              <span
-                className={smtpConfigured ? 'status-dot status-ok' : 'status-dot status-warn'}
-                aria-hidden="true"
-              />
-              SMTP {smtpConfigured ? 'configured' : 'not configured'}
-            </dd>
-          </div>
-        )}
+        <div className="status-row">
+          <dt className="visually-hidden">SMTP</dt>
+          <dd>
+            <span
+              className={system.smtp_configured ? 'status-dot status-ok' : 'status-dot status-warn'}
+              aria-hidden="true"
+            />
+            {system.smtp_configured ? 'smtp configured' : 'smtp not configured'}
+          </dd>
+        </div>
       </dl>
     </section>
   );

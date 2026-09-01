@@ -74,7 +74,7 @@ export function AppShell() {
 
   // Whether this instance has an owner yet. Read once on boot; the server's own
   // gate is authoritative, this only decides what to render.
-  const { setupRequired, markComplete, recheck } = useSetupStatus();
+  const { setupRequired, system, markComplete, recheck } = useSetupStatus();
 
   /**
    * Where to return after signing in (LAI-007 AC4). Captured when the guard
@@ -502,6 +502,7 @@ export function AppShell() {
             />
           ) : path === '/setup' ? (
             <FirstBootScreen
+              system={system}
               host={instanceHost}
               version={version}
               onSubmit={(values) => {
