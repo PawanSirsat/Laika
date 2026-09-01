@@ -167,6 +167,19 @@ the check, because Node's GCM `final()` throws when no tag was set at all — th
 mode will not let you skip it. So that row proves `setAuthTag` is load-bearing,
 not that a missing check would be caught; the missing check is unreachable.
 
+### AC6 is ticked narrowly, and the gap is the callers'
+
+*"Plaintext never reaches a log, a response or `activity`"* — **there is no
+caller yet**, so what I have actually asserted is what this module can control:
+that a stored value does not contain its plaintext, and that neither error
+message contains the plaintext, the key, or the attacker-controlled payload.
+
+**The other two thirds are LAI-446's and LAI-447's**, and neither task currently
+says so. `keyLast4` already refuses to decrypt for exactly this reason —
+*"a serialiser that can reach plaintext is one refactor away from returning
+it"* — and that instinct is the one to keep when the write half lands. Worth a
+criterion on LAI-447 rather than an assumption here.
+
 ### One thing my filtered run could not see
 
 `npx vitest run test/secrets.test.ts` was green while the root gate exited **2**:
