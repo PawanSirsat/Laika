@@ -1,5 +1,6 @@
 import { and, eq, gt, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { appendActivity } from '../db/activity.ts';
+import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { type Db } from '../db/client.ts';
 import { heartbeats, invites, meetingReviews, orgs, tasks } from '../db/schema.ts';
 
@@ -37,6 +38,17 @@ import { heartbeats, invites, meetingReviews, orgs, tasks } from '../db/schema.t
  */
 
 /** 30 days, §11.6. */
+/**
+ * §3.4's principal, with no project: these jobs are org-wide maintenance.
+ *
+ * **Every write below asks before it writes** (§3.3 rule 1, LAI-448). It did not
+ * until now — eight writes, zero `assertCan`, and nothing noticed because
+ * `can()` had no principal a cron could be. The grant is in `policy/can.ts` and
+ * the four `system.*` actions are held by nobody else, so this cannot quietly
+ * become a way to do something a person could not.
+ */
+const SYSTEM = systemPrincipal();
+
 export const HEARTBEAT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 /** 3 days with no heartbeat and no commit, §11.6. */
 export const STALE_AFTER_MS = 3 * 24 * 60 * 60 * 1000;
@@ -61,6 +73,8 @@ function orgId(db: Db): string | null {
  * a cutoff answer it.
  */
 export function pruneHeartbeats(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.heartbeat.prune');
+
   const cutoff = now - HEARTBEAT_RETENTION_MS;
 
   const changed = db.delete(heartbeats).where(lte(heartbeats.createdAt, cutoff)).run().changes;
@@ -118,6 +132,8 @@ export function pruneHeartbeats(db: Db, now: number): JobResult {
  * one ever.
  */
 export function flagStaleTasks(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.task.flag_stale');
+
   const cutoff = now - STALE_AFTER_MS;
 
   const candidates = db
@@ -194,6 +210,8 @@ export function flagStaleTasks(db: Db, now: number): JobResult {
  * `accepted_at` set, and deleting it would erase that.
  */
 export function expireInvites(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.invite.expire');
+
   const doomed = db
     .select({ id: invites.id, orgId: invites.orgId })
     .from(invites)
@@ -221,6 +239,8 @@ export function expireInvites(db: Db, now: number): JobResult {
 
 /** `pending` → `expired` past `expires_at` (§4.12: proposals expire after 7 days). */
 export function expireMeetingReviews(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.meeting_review.expire');
+
   const doomed = db
     .select({ id: meetingReviews.id, projectId: meetingReviews.projectId })
     .from(meetingReviews)
@@ -259,6 +279,17 @@ export function expireMeetingReviews(db: Db, now: number): JobResult {
  * No activity row: it changes no row a reader cares about, and §4.8's D-022 note
  * does not list it among the cron's writers. `changed` is 0 for the same reason
  * — nothing in the product changed.
+ */
+/**
+ * **No `assertCan`, and that is the one exception in this file worth arguing.**
+ *
+ * §3.3 rule 1 governs reading and writing *data*. `VACUUM` rewrites the storage
+ * file and touches no row — no org's data is read, changed or revealed by it,
+ * and there is no resource to name in a `can()` call. Inventing
+ * `system.database.vacuum` to satisfy the shape of the rule would add a
+ * permission that grants nothing and has to be maintained for ever.
+ *
+ * The other four jobs in this file do touch rows, and every one of them asks.
  */
 export function vacuum(db: Db): JobResult {
   db.run(sql`VACUUM`);

@@ -22,8 +22,14 @@
 
 import { ApiError } from '../errors.ts';
 import { type OrgRole, type ProjectRole, type TokenScope } from '../db/enums.ts';
-import { type Action, isReadAction, type OrgAction, type ProjectAction } from './actions.ts';
-import { ORG_ACTIONS, PROJECT_ACTIONS } from './actions.ts';
+import {
+  type Action,
+  isReadAction,
+  type OrgAction,
+  type ProjectAction,
+  type SystemAction,
+} from './actions.ts';
+import { ORG_ACTIONS, PROJECT_ACTIONS, SYSTEM_ACTIONS } from './actions.ts';
 
 export { type Action, type OrgAction, type ProjectAction } from './actions.ts';
 
@@ -71,6 +77,7 @@ export interface Resource {
 }
 
 const ORG_ACTION_SET: ReadonlySet<string> = new Set(ORG_ACTIONS);
+const SYSTEM_ACTION_SET: ReadonlySet<string> = new Set(SYSTEM_ACTIONS);
 const PROJECT_ACTION_SET: ReadonlySet<string> = new Set(PROJECT_ACTIONS);
 
 function isOrgAction(action: Action): action is OrgAction {
@@ -79,6 +86,107 @@ function isOrgAction(action: Action): action is OrgAction {
 
 function isProjectAction(action: Action): action is ProjectAction {
   return PROJECT_ACTION_SET.has(action);
+}
+
+function isSystemAction(action: Action): action is SystemAction {
+  return SYSTEM_ACTION_SET.has(action);
+}
+
+/**
+ * A trigger with no human behind it — the §11.6 cron and §10.1's webhook
+ * (SPEC §3.4, D-050, LAI-448).
+ *
+ * ## Why it is a distinct kind and not a user
+ *
+ * §3.3 rule 1 says **every** write calls `assertCan`, *"webhook-triggered,
+ * cron-triggered"* included, and rule 2 says the caller passes in a principal.
+ * Cron had neither: eight writes and no `assertCan` at all.
+ *
+ * The tempting fixes are both refused by D-050. **A sentinel `userId`** — a user
+ * row that means "the system" — is one refactor from being handed a real user's
+ * authority, and one join from appearing in a member list. **An `orgRole`** is
+ * worse: `owner` would work, and would turn a leaked webhook secret into an org
+ * takeover rather than a nuisance.
+ *
+ * So it is its own shape with a literal discriminant. It cannot be mistaken for
+ * an `Actor` by the type system, it has no role to inherit from, and it holds
+ * exactly what §3.4 lists.
+ *
+ * ## Authority, not attribution
+ *
+ * This decides what a trigger may **do**. What the resulting `activity` row
+ * *says* is a separate question §4.8 already answers — `actor_kind: 'system'`,
+ * `actor_id: null` — and this type deliberately carries neither. Conflating them
+ * is how a principal acquires an identity by accident.
+ */
+export interface SystemPrincipal {
+  readonly kind: 'system';
+  /**
+   * The project a webhook delivery resolved to, or `null` for org-wide
+   * maintenance.
+   *
+   * §10.1's *"branch → task"* can resolve to nothing — a push on `main` is a
+   * normal delivery — and §9.2's rule is that it degrades rather than errors. A
+   * `null` here therefore has to **deny** every project action rather than widen
+   * to all of them, which is rule 3 read the only way it can be.
+   */
+  readonly projectId: string | null;
+}
+
+/** Everything `can()` will answer about. */
+export type Principal = Actor | SystemPrincipal;
+
+/** The §11.6 cron: org-wide maintenance, no project. */
+export function systemPrincipal(projectId: string | null = null): SystemPrincipal {
+  return { kind: 'system', projectId };
+}
+
+function isSystem(principal: Principal): principal is SystemPrincipal {
+  return 'kind' in principal && principal.kind === 'system';
+}
+
+/**
+ * SPEC §3.4's grant, in full.
+ *
+ * **Existing actions, not new ones, wherever a human does the same thing.** The
+ * webhook moves a task and writes a comment; those are `task.write` and
+ * `comment.create` on the resolved project, and giving them system-only twins
+ * would mean two rules for one operation and eventually two answers.
+ *
+ * The four `system.*` actions are the ones with no human owner: nobody expires
+ * an invite through the API. They are denied to every role by construction —
+ * §3.1 and §3.2 have no row for them, so `canOrgAction`/`canProjectAction` never
+ * see them — which is deny-by-default doing the work rather than a special case.
+ */
+const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
+  // §11.6, the cron.
+  'system.heartbeat.prune',
+  'system.task.flag_stale',
+  'system.invite.expire',
+  'system.meeting_review.expire',
+  // §10.1, the webhook — project-scoped, see below.
+  'task.write',
+  'comment.create',
+]);
+
+/** Which of §3.4's grants need a project, and therefore a resolved delivery. */
+const SYSTEM_PROJECT_SCOPED: ReadonlySet<Action> = new Set<Action>([
+  'task.write',
+  'comment.create',
+]);
+
+function canSystem(principal: SystemPrincipal, action: Action, resource: Resource): boolean {
+  if (!SYSTEM_GRANT.has(action)) return false;
+  if (!SYSTEM_PROJECT_SCOPED.has(action)) return true;
+
+  // Scoped to the delivery that resolved. A principal with no project, or one
+  // asked about a different project, does nothing — the same shape as a token's
+  // project whitelist, and for the same reason.
+  return (
+    principal.projectId !== null &&
+    resource.projectId !== undefined &&
+    resource.projectId === principal.projectId
+  );
 }
 
 /**
@@ -369,9 +477,19 @@ export function projectRoleOnJoin(orgRole: OrgRole): ProjectRole {
  * decision, then token narrowing. Narrowing last is what guarantees a token can
  * never grant more than its user has.
  */
-export function can(actor: Actor, action: Action, resource: Resource = {}): boolean {
+export function can(principal: Principal, action: Action, resource: Resource = {}): boolean {
+  // §3.4's principal is answered on its own table and never falls through to a
+  // role, which it does not have.
+  if (isSystem(principal)) return canSystem(principal, action, resource);
+
+  const actor = principal;
   // A deactivated user keeps their rows for history but can do nothing (§4.1).
   if (!actor.isActive) return false;
+
+  // A `system.*` action belongs to no role. Denied here rather than by omission
+  // so the reason is readable: §3 grants it to nobody, and an Owner asking for
+  // it is asking for something the product does not offer.
+  if (isSystemAction(action)) return false;
 
   let allowed: boolean;
 
@@ -398,8 +516,8 @@ export function can(actor: Actor, action: Action, resource: Resource = {}): bool
  * possible by accident — a forgotten `if` around a boolean is a silent
  * authorisation bypass, and this makes that shape impossible.
  */
-export function assertCan(actor: Actor, action: Action, resource: Resource = {}): void {
-  if (!can(actor, action, resource)) {
+export function assertCan(principal: Principal, action: Action, resource: Resource = {}): void {
+  if (!can(principal, action, resource)) {
     throw new ApiError('forbidden', 'You do not have permission to perform this action', {
       action,
     });
