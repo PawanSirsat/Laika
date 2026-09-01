@@ -42,8 +42,12 @@ function main(): void {
   // the same instance to close the streams it is feeding.
   const activityFeed = new ActivityFeed({ db });
 
+  // Flipped by the shutdown handler's `onStopping`, read by every API request.
+  let stopping = false;
+
   const app = createApp({
     version,
+    isStopping: () => stopping,
     logger: log,
     auth,
     db,
@@ -76,7 +80,16 @@ function main(): void {
     backupDir: join(dirname(env.dbPath), 'backups'),
   });
 
-  const shutdown = createRuntimeShutdown({ server, log, activityFeed, sqlite, scheduler });
+  const shutdown = createRuntimeShutdown({
+    server,
+    log,
+    activityFeed,
+    sqlite,
+    scheduler,
+    markStopping: () => {
+      stopping = true;
+    },
+  });
 
   process.on('SIGTERM', () => {
     shutdown('SIGTERM');

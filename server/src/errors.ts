@@ -22,6 +22,11 @@ export const ERROR_STATUS = {
   unprocessable: 422,
   rate_limited: 429,
   internal: 500,
+  // LAI-214. The server has decided to stop and has not stopped yet — which is
+  // not any of the above: nothing the caller sent is wrong, and the server is
+  // not broken. `503` is what a load balancer, a browser and an `EventSource`
+  // all already understand, and `Retry-After` is what makes it actionable.
+  unavailable: 503,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;

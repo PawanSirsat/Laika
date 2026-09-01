@@ -54,6 +54,7 @@ describe('error envelope (SPEC §6.3)', () => {
       unprocessable: 422,
       rate_limited: 429,
       internal: 500,
+      unavailable: 503,
     };
 
     expect(ERROR_STATUS).toEqual(expected);

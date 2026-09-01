@@ -7,6 +7,7 @@ import {
   type ListActivityOptions,
 } from '../../services/activity.ts';
 import { type EventView } from '../../services/events.ts';
+import { projectMetrics } from '../../services/metrics.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 
@@ -65,9 +66,36 @@ export interface ActivityRouteOptions {
 }
 
 /** Mounted at `/api/v1/projects` — one project's feed. */
+/** 30 days — the window the Dashboard draws (§11.4.2). */
+const DEFAULT_METRICS_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
 export function projectActivityRoutes(options: ActivityRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db } = options;
+
+  /**
+   * `GET /api/v1/projects/:slug/metrics?since=` (§9.3-adjacent, LAI-124).
+   *
+   * Here rather than in its own router because it answers the same question
+   * `:slug/activity` does — *what has this project been doing* — from the same
+   * `project.read` gate, and a second router on one prefix is a second place to
+   * get the mount order wrong.
+   *
+   * `since` defaults to 30 days, which is the window the Dashboard draws and
+   * short enough that an unbounded scan is not a way to ask for the whole table.
+   */
+  app.get('/:slug/metrics', (c) => {
+    const actor = requireActor(c);
+    const raw = c.req.query('since');
+    const since =
+      raw === undefined || raw === '' ? Date.now() - DEFAULT_METRICS_WINDOW_MS : Number(raw);
+
+    if (!Number.isFinite(since)) {
+      throw ApiError.badRequest('since must be a unix-ms timestamp', { since: raw });
+    }
+
+    return c.json(projectMetrics(db, actor, c.req.param('slug'), since));
+  });
 
   app.get('/:slug/activity', (c) => {
     const actor = requireActor(c);

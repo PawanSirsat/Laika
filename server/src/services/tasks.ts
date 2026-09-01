@@ -629,6 +629,23 @@ export function changeStatus(
       // A task sent back from review and picked up again did not start twice,
       // and overwriting would silently shorten every cycle time (LAI-124).
       ...(to === 'in_progress' && task.startedAt === null ? { startedAt: now } : {}),
+      // **The latest arrival at `done`, and it is not cleared on a reopen**
+      // (LAI-146). Deliberately asymmetric with `started_at` above, which keeps
+      // its *first* value — and the asymmetry is the thing a reader assumes is a
+      // bug, so it is written down here and in §6.4.
+      //
+      // `started_at` answers "when did work begin", and it did begin then: a
+      // task sent back for rework did not start twice. `completed_at` answers
+      // "when did this last reach done", and a task done twice was completed
+      // the second time — a cycle-time calculation that lost the second
+      // completion would be wrong about the task's whole history, not just its
+      // end.
+      //
+      // **A reopened task therefore carries a `completed_at` while it is not
+      // done**, which is a fact about its history rather than a claim about its
+      // state. `status` answers "is it done now", and nothing else should: a
+      // reader inferring completion from a timestamp would already be wrong for
+      // a `cancelled` task, which never had one.
       ...(to === 'done' ? { completedAt: now } : {}),
     })
     .where(eq(tasks.id, taskId))

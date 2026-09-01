@@ -902,3 +902,82 @@ describe('started_at and completed_at', () => {
     );
   });
 });
+
+/**
+ * `completed_at` across a reopen (§4.5, LAI-146).
+ *
+ * Filed from LAI-126 and stepped around by LAI-435's backfill, which
+ * deliberately fills nothing on a task that is not `done` **now** so as not to
+ * answer this by accident. This answers it.
+ */
+describe('completed_at when a task is reopened', () => {
+  function newTask(title = 'A task') {
+    return createTask(t.sqlite, t.db, actor(adminId), 'laika', { title });
+  }
+
+  function row(id: string) {
+    return t.db.select().from(tasks).where(eq(tasks.id, id)).get();
+  }
+
+  it('keeps the latest completion, not the first', () => {
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress', 1_000);
+    changeStatus(t.db, actor(adminId), task.id, 'review', 2_000);
+    changeStatus(t.db, actor(adminId), task.id, 'done', 3_000);
+    expect(row(task.id)?.completedAt).toBe(3_000);
+
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress', 4_000);
+    changeStatus(t.db, actor(adminId), task.id, 'review', 5_000);
+    changeStatus(t.db, actor(adminId), task.id, 'done', 6_000);
+
+    // A task done twice was completed the second time. A cycle time that lost
+    // the second completion would be wrong about the whole history, not the end.
+    expect(row(task.id)?.completedAt).toBe(6_000);
+  });
+
+  it('does not clear it while the task is reopened', () => {
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress', 1_000);
+    changeStatus(t.db, actor(adminId), task.id, 'review', 2_000);
+    changeStatus(t.db, actor(adminId), task.id, 'done', 3_000);
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress', 4_000);
+
+    // **The consequence, pinned rather than left to surprise somebody.** The
+    // timestamp is a fact about the task's history; `status` is the claim about
+    // its state, and nothing else should be read as one.
+    expect(row(task.id)?.completedAt).toBe(3_000);
+    expect(row(task.id)?.status).toBe('in_progress');
+  });
+
+  it('keeps started_at at its first value across the same journey', () => {
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress', 1_000);
+    changeStatus(t.db, actor(adminId), task.id, 'review', 2_000);
+    changeStatus(t.db, actor(adminId), task.id, 'done', 3_000);
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress', 4_000);
+    changeStatus(t.db, actor(adminId), task.id, 'review', 5_000);
+    changeStatus(t.db, actor(adminId), task.id, 'done', 6_000);
+
+    // **The asymmetry, asserted beside its opposite.** First for `started_at`,
+    // latest for `completed_at` — the pair is what makes each one legible, and
+    // testing either alone leaves the other looking arbitrary.
+    expect(row(task.id)?.startedAt).toBe(1_000);
+    expect(row(task.id)?.completedAt).toBe(6_000);
+  });
+
+  it('serialises both on the wire', () => {
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+    changeStatus(t.db, actor(adminId), task.id, 'in_progress', 1_000);
+    changeStatus(t.db, actor(adminId), task.id, 'review', 2_000);
+    const done = changeStatus(t.db, actor(adminId), task.id, 'done', 3_000);
+    const reopened = changeStatus(t.db, actor(adminId), task.id, 'in_progress', 4_000);
+
+    expect(done.completed_at).toBe(3_000);
+    expect(reopened.completed_at).toBe(3_000);
+    expect(reopened.status).toBe('in_progress');
+  });
+});

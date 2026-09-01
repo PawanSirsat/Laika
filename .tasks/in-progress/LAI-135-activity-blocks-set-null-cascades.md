@@ -2,11 +2,12 @@
 id: LAI-135
 title: "§4.8's append-only triggers block every ON DELETE SET NULL cascade into activity"
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-079
-status: backlog
+status: in-progress
+started: 2026-09-02T10:45:00Z
 ---
 
 ## Goal
