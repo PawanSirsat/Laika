@@ -2418,3 +2418,76 @@ falls back to its sprint and renders as a plan.
 Retiring it is authorised here so that no builder has to decide whether a
 comment saying *"there is a test that keeps it that way"* still binds. **It does
 not — this does.**
+
+---
+
+## D-050 — A named system principal, in `policy/`, with exactly the actions it needs
+
+**2026-09-02. Decided by CHIEF on CORE's analysis, filed as LAI-448.**
+
+### The question
+
+§3.3 rule 1: *"**Every** route and **every** MCP tool calls `assertCan` before
+reading or writing — REST, MCP, **webhook-triggered, cron-triggered**, admin. No
+exceptions, no 'internal' path."*
+
+**A webhook delivery is not a principal.** `can()` answers a question about one,
+rule 2 says the caller loads it, and rule 3 denies by default — so **any actor
+invented for a webhook is a real authority grant**, not a formality.
+
+**And the rule is already being broken.** The §11.6 cron jobs call `can()`
+**zero** times across eight writes in `src/jobs/jobs.ts` — the stale flag both
+directions, three deletes, four `appendActivity`. CORE wrote them in LAI-431 and
+**I accepted it**, so the standing precedent for system-triggered writes is
+*bypass `can()`*, undocumented.
+
+### The decision
+
+**A named system principal, recognised explicitly by `can()`, holding exactly the
+actions a system trigger needs and nothing else, scoped to the project the
+trigger resolved to.**
+
+It is **not a fifth column in §3.1's matrix.** The matrix is org roles; a column
+there would put the system principal on the same axis as a person and imply it
+could be granted to one. It gets **§3.4**, its own section, listing its actions
+outright — and therefore its own rows in `matrix.test.ts`, so **the grant is
+visible in the executable version of §3 rather than implied by an object
+literal**.
+
+Attribution is unchanged: `actor_kind: 'system'`, `actor_id: null` (§4.8).
+**Authority and attribution are different questions** and this decides only the
+first.
+
+### Why not the two alternatives
+
+**A real user from the payload.** `can()` would run properly against real roles.
+But **there is no identity mapping** — no `github_login` or equivalent anywhere in
+`schema.ts` — so it is a schema feature §10.1 never mentions, and it fails closed
+in the wrong way: a push from somebody with no Laika account would silently do
+nothing.
+
+**The org owner.** Attributes GitHub's push to a person who did nothing, and
+**hands owner authority to anything GitHub can trigger.** A webhook secret leak
+becomes an org takeover rather than a nuisance.
+
+### Why this shape rather than a third `can()` exception
+
+CLAUDE.md §5's two exceptions — pure dispatcher, actor-reflection — are
+**exhaustive as written**, and both rest on the same fact: *nothing is read or
+written, so there is no resource to name.* **A webhook writes.** Adding a third
+exception would say "some writes need no authority", which is the sentence rule 1
+exists to prevent.
+
+**The principal makes the grant reviewable.** An exception hides it; a named
+actor with a listed set of actions puts it where somebody can argue with it.
+
+### The cron is fixed by the same change, and that is the point
+
+LAI-448 covers **both** callers. Fixing the webhook and leaving eight
+undocumented bypasses in `jobs.ts` would create a second shape for the same
+problem — and the cron is the better first caller, because it **already exists**,
+so the mechanism is proved against a real violation rather than against new code.
+
+**Found by a builder reading §3.3 while claiming an unrelated task**, and
+reported as a decision rather than resolved by inventing an actor — which is what
+the rule about exhaustive exceptions is for.

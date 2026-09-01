@@ -58,10 +58,13 @@ load-bearing:
       SQL. Moving a task to `review` here must be the same path a person's
       `POST /tasks/:id/status` takes, or the two will diverge — and §5's
       `can()` rule applies: this is not an "internal" path.
-- [ ] **What actor does a webhook act as?** It is not a user and not a token.
-      §4.8 has `actor_kind: 'system'` and §10.1 names `webhook.commit` and
-      `webhook.received`, both already in the vocabulary. **Decide and write it
-      down**; do not infer it from whichever service you call first.
+- [x] ~~**What actor does a webhook act as?**~~ **Answered by D-050 and built by
+      LAI-448** — a named system principal in `policy/`, holding exactly the
+      actions §10.1 needs, scoped to the project the delivery resolved to. This
+      criterion asked a builder to decide something that turned out to be §3
+      surface; CORE raised it rather than inferring an actor, which is what the
+      exhaustive-exceptions rule is for. Attribution stays `actor_kind: 'system'`,
+      `actor_id: null`.
 - [ ] Delivery-id dedupe holds across a restart, or does not, **and the task says
       which**. In-memory is defensible for 24h on a single-process deployment
       (D-002) — undocumented is not.
