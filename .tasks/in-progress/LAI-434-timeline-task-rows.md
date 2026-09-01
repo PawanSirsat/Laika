@@ -2,11 +2,12 @@
 id: LAI-434
 title: 'The Timeline gets task rows on the axis, drawn from real dates (D-049)'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-126, LAI-121]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-01T05:49:43Z
 ---
 
 ## Goal
