@@ -342,12 +342,11 @@ const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
  * the list that should empty; an entry without a task id is an entry nobody
  * intends to fix.
  */
-const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([
-  [
-    'orgs.presence_enabled',
-    'the drift that motivated this check — §4.2 specifies it, LAI-003 predates the row, LAI-207 adds it',
-  ],
-]);
+// Empty, and it emptied on purpose: `orgs.presence_enabled` was the entry, its
+// reason named LAI-207 as the task that would close it, and LAI-207 closed it.
+// An exemption whose reason names a task is one somebody intends to fix; this is
+// what that looks like when it works.
+const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([]);
 
 /** §4.8 verbs the enum has and the list does not, or the other way round. */
 const ACTIVITY_TYPE_EXEMPTIONS = new Map<string, string>([

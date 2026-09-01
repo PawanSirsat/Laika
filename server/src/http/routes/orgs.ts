@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
-import { getOrg } from '../../services/orgs.ts';
+import { getOrg, updateOrg } from '../../services/orgs.ts';
 import { type AppEnv } from '../context.ts';
+import { parseBody, strictObject, z } from '../validation.ts';
+
+const OrgPatchBody = strictObject({ presence_enabled: z.boolean().optional() });
 
 /**
  * `GET /api/v1/org` (SPEC §6.4, LAI-222).
@@ -27,6 +30,25 @@ export function orgRoutes(options: OrgRouteOptions): Hono<AppEnv> {
     if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
 
     return c.json(getOrg(db, actor));
+  });
+
+  /**
+   * `PATCH /api/v1/org` (§6.4, §3.1, LAI-207).
+   *
+   * Strict body, so a key this does not yet handle is a `422` rather than a
+   * silently discarded setting — the failure LAI-106 removed the first-boot
+   * toggle to avoid.
+   */
+  app.patch('/', async (c) => {
+    const actor = c.get('actor');
+    if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
+
+    const body = parseBody(OrgPatchBody, await c.req.json().catch(() => null));
+    if (body.presence_enabled === undefined) {
+      throw ApiError.badRequest('Give at least one setting to change', {});
+    }
+
+    return c.json(updateOrg(db, actor, body));
   });
 
   return app;

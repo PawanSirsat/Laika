@@ -34,6 +34,17 @@ export interface SetupInput {
   /** Optional first project. Both parts arrive together or not at all. */
   projectName?: string | undefined;
   projectPrefix?: string | undefined;
+  /**
+   * The first-boot presence toggle (§4.2, LAI-207). Absent means **on**, which
+   * is §4.2's default and the design's.
+   *
+   * LAI-106 had to delete this control because there was nowhere to put the
+   * answer: the body is strict (§6.3), so sending `trackPresence` failed the
+   * whole submission with a `422`. Keeping the checkbox and not sending it was
+   * the other option and is worse — a control that silently discards the user's
+   * answer is exactly what strict validation exists to prevent.
+   */
+  presenceEnabled?: boolean | undefined;
   now?: number;
 }
 
@@ -109,6 +120,8 @@ export function createFirstOrg(sqlite: Database.Database, db: Db, input: SetupIn
         // D-004: invite-only is the default posture, and it is a flag rather
         // than the `signup_mode` enum earlier task text described.
         inviteOnly: 1,
+        // Default on (§4.2), matching the design's default for the toggle.
+        presenceEnabled: input.presenceEnabled === false ? 0 : 1,
         createdAt: now,
         updatedAt: now,
       })

@@ -62,6 +62,20 @@ export interface OrgAiView {
 export interface OrgView {
   id: string;
   name: string;
+  /**
+   * Whether presence tracking is on for the org (§4.2, LAI-207).
+   *
+   * **Readable by everyone, writable by Admin and above**, and the read side is
+   * not an oversight. §11.4.2 says Capacity shows a **disabled** state when this
+   * is `0` — distinct from an empty one — so anyone who can open Capacity has to
+   * be able to tell the two apart, and Capacity is not an admin screen.
+   *
+   * It also leaks nothing. This is a statement about the org's privacy posture
+   * towards the people it would otherwise track, and **they are precisely who
+   * has the strongest claim to know it** (D-005). Hiding it from a Member would
+   * mean the promise is made about them and visible only to somebody else.
+   */
+  presence_enabled: boolean;
   created_at: number;
   updated_at: number;
   /** Present only for a caller who passes `org.settings.edit`. Absent, not null. */
@@ -93,6 +107,7 @@ export function getOrg(db: Db, actor: ResolvedActor): OrgView {
   const view: OrgView = {
     id: row.id,
     name: row.name,
+    presence_enabled: row.presenceEnabled === 1,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -123,4 +138,41 @@ export function getOrg(db: Db, actor: ResolvedActor): OrgView {
  */
 function keyLast4(_ciphertext: string | null): string | null {
   return null;
+}
+
+/**
+ * Change org settings (§3.1's *"Org settings"* row, §6.4, LAI-207).
+ *
+ * **Admin and above, not Owner-only.** LAI-207's criteria say Owner-only; §3.1's
+ * row is `✓ ✓ — —`, and D-011 makes the spec authoritative. Reported rather than
+ * silently followed either way.
+ *
+ * Only `presence_enabled` today. The AI provider, SMTP and the webhook secret are
+ * the same §3.1 row and the same action, but each carries encryption (§12) and
+ * belongs with the task that builds its screen — a setter that could write
+ * `ai_api_key_enc` without the key-derivation path is a hole waiting for a
+ * caller.
+ */
+export interface UpdateOrgInput {
+  presence_enabled?: boolean | undefined;
+}
+
+export function updateOrg(
+  db: Db,
+  actor: ResolvedActor,
+  input: UpdateOrgInput,
+  now: number = Date.now(),
+): OrgView {
+  assertCan(actor, 'org.settings.edit');
+
+  const orgId = requireOrgId(db);
+
+  if (input.presence_enabled !== undefined) {
+    db.update(orgs)
+      .set({ presenceEnabled: input.presence_enabled ? 1 : 0, updatedAt: now })
+      .where(eq(orgs.id, orgId))
+      .run();
+  }
+
+  return getOrg(db, actor);
 }

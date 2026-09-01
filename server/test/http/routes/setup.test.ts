@@ -182,3 +182,41 @@ describe('POST /api/v1/setup', () => {
     expect(res.status).toBe(422);
   });
 });
+
+describe('the presence toggle (§4.2, LAI-207)', () => {
+  async function setUp(body: Record<string, unknown>): Promise<Response> {
+    return h.app.request('/api/v1/setup', {
+      method: 'POST',
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        org_name: 'Laika',
+        owner_name: 'Ada',
+        owner_email: 'ada@example.test',
+        owner_password: 'correct-horse-battery-staple',
+        ...body,
+      }),
+    });
+  }
+
+  it('defaults to on when the key is absent', async () => {
+    expect((await setUp({})).status).toBe(201);
+    expect(h.db.select().from(orgs).get()?.presenceEnabled).toBe(1);
+  });
+
+  it('stores false when the toggle is off', async () => {
+    expect((await setUp({ presence_enabled: false })).status).toBe(201);
+    expect(h.db.select().from(orgs).get()?.presenceEnabled).toBe(0);
+  });
+
+  it('stores true when the toggle is explicitly on', async () => {
+    expect((await setUp({ presence_enabled: true })).status).toBe(201);
+    expect(h.db.select().from(orgs).get()?.presenceEnabled).toBe(1);
+  });
+
+  it('still refuses the name the control used to send', async () => {
+    // `trackPresence` is what LAI-106 found failing. It is still a 422, and that
+    // is correct — the fix was to accept `presence_enabled`, not to loosen the
+    // schema.
+    expect((await setUp({ trackPresence: false })).status).toBe(422);
+  });
+});

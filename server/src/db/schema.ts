@@ -127,6 +127,22 @@ export const orgs = sqliteTable(
     ownerUserId: text('owner_user_id').notNull(),
     /** Default 1 — invite-only is the default posture (D-004). */
     inviteOnly: integer('invite_only').notNull().default(1),
+    /**
+     * Org-wide off switch for heartbeats (§4.2, LAI-207). Default **1**, which
+     * matches the design's default for the first-boot toggle.
+     *
+     * When `0`, §4.2 says `POST /heartbeats` answers `202` and **discards**, and
+     * Presence/Capacity show a **disabled** state rather than an empty one — the
+     * two look identical in a naive implementation and mean opposite things.
+     * D-005 makes the privacy claim; this makes it enforceable by the org rather
+     * than merely promised by us.
+     *
+     * **The enforcement is not here and not in LAI-207.** The heartbeat write
+     * path is M4 and the derived views are M5; this stores the answer and those
+     * tasks honour it. `services/heartbeats.ts` and whatever builds §9.3 are the
+     * two places that must read it.
+     */
+    presenceEnabled: integer('presence_enabled').notNull().default(1),
     aiProvider: text('ai_provider', { enum: AI_PROVIDERS }),
     aiBaseUrl: text('ai_base_url'),
     /** AES-256-GCM ciphertext under a key derived from `LAIKA_SECRET` (§12). */

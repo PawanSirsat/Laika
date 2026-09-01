@@ -27,6 +27,8 @@ const SetupBody = strictObject({
       'A prefix is 2-8 letters and digits, starting with a letter',
     )
     .optional(),
+  /** §4.2's org-wide presence switch. Absent means on. */
+  presence_enabled: z.boolean().optional(),
 });
 
 export interface SetupStatusBody {
@@ -83,6 +85,7 @@ export function setupRoutes(options: SetupRouteOptions): Hono<AppEnv> {
         ownerId,
         projectName: body.project_name,
         projectPrefix: body.project_prefix,
+        presenceEnabled: body.presence_enabled,
       });
     } catch (err) {
       // The loser of a setup race leaves an account holding an email address.
