@@ -153,15 +153,25 @@ export function normaliseRepo(value: string): string | null {
   const trimmed = value.trim();
   if (trimmed === '') return null;
 
-  const matched = REMOTE_FORMS.reduce<string | null>(
-    (found, { pattern }) => found ?? pattern.exec(trimmed)?.[1] ?? null,
-    null,
-  );
+  // **A form that matches has decided, including when it captured nothing**
+  // (LAI-428). The previous version reduced with `?.[1] ?? null`, which reads
+  // *matched but captured nothing* as *did not match* and falls through to the
+  // next form — so `https://github.com`, with no trailing slash, matched the URL
+  // form, captured `undefined`, and was then read by the scp form as host
+  // `https`, path `github.com`. The ordering was right and the loop discarded
+  // it.
+  //
+  // `find` rather than `reduce` because the decision is "which form matched",
+  // and `??` cannot express it: `undefined` is a legitimate result here.
+  const form = REMOTE_FORMS.find(({ pattern }) => pattern.test(trimmed));
+  if (form === undefined) return null;
 
-  // The last form matches anything, so this is unreachable in practice — but
-  // `?.[1]` is `undefined` for a pattern that matches without capturing, and
-  // treating that as "no repo" is the degrade §9.2 asks for.
-  if (matched === null) return null;
+  // `?? ''` is safe **only** because a pattern that matched without capturing
+  // has, by construction, no path to offer — the group is optional exactly for
+  // the schemes that may omit it. It is not a typo and not a fallback: an empty
+  // path is what `https://github.com` *has*, and the trimming below turns it
+  // into `null`.
+  const matched = form.pattern.exec(trimmed)?.[1] ?? '';
 
   const repo = matched
     .replace(/^\/+/, '')
