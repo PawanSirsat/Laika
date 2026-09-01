@@ -306,6 +306,7 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `ai_provider` | `anthropic` \| `openai_compatible` \| `null` |
 | `ai_base_url` | for Ollama / vLLM |
 | `ai_api_key_enc` | AES-256-GCM, key derived from `LAIKA_SECRET` (§12) |
+| `ai_key_last4` | the key's last four characters, **stored at set time, never derived** — building a response must not require decrypting the key (LAI-447) |
 | `smtp_json_enc` | nullable, same encryption |
 | `github_webhook_secret_enc` | nullable, same encryption |
 
@@ -756,6 +757,17 @@ backlog ──▶ todo ───────────────────
   claimant gets `409 conflict` with the current assignee in the body. This is the
   API-level twin of the file-move lock the build sessions use by hand.
 - Moving to `review` requires the assignee, a project `lead`, or org Admin/Owner.
+
+  **This restricts people. It does not restrict the system principal** (§3.4,
+  D-051). The rule exists because *agents do not self-certify* — the bullet
+  below — and a merged pull request is **external evidence, not an actor
+  asserting its own work is complete**. §10.1's `pull_request` → merged →
+  `review` is therefore a distinct path, not an exception: nobody with an
+  interest in the outcome decided it.
+
+  The three human answers stay exactly as they are. A system principal reaching
+  this line is a verified webhook delivery on a resolved project and nothing
+  else.
 - **`done` is never set by `finish_task`.** Agents do not self-certify.
 - A task may be reassigned while `in_progress` — that is `task.assigned`, not a
   status change.
