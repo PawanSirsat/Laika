@@ -1,4 +1,6 @@
+import { readdirSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MIGRATIONS_FOLDER } from '../../../src/db/migrate.ts';
 import { orgs, users } from '../../../src/db/schema.ts';
 import {
   type AuthHarness,
@@ -33,19 +35,96 @@ async function post(body: unknown): Promise<Response> {
 }
 
 describe('GET /api/v1/setup/status', () => {
-  it('reports that setup is required on an empty database', async () => {
-    const res = await h.app.request('/api/v1/setup/status');
+  /** §6.4's shape, named in full so a new field is a deliberate act. */
+  interface StatusBody {
+    setup_required: boolean;
+    system: { database: string; migrations_applied: number; smtp_configured: boolean };
+  }
 
+  async function status(): Promise<StatusBody> {
+    const res = await h.app.request('/api/v1/setup/status');
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ setup_required: true });
+    return (await res.json()) as StatusBody;
+  }
+
+  it('reports that setup is required on an empty database', async () => {
+    expect((await status()).setup_required).toBe(true);
   });
 
   it('reports that it is not, once an org exists', async () => {
     seedOrg(h.db, true);
 
-    const res = await h.app.request('/api/v1/setup/status');
+    expect((await status()).setup_required).toBe(false);
+  });
 
-    expect(await res.json()).toEqual({ setup_required: false });
+  describe('the system panel (§6.4, LAI-206)', () => {
+    it('carries exactly the three fields §6.4 names', async () => {
+      // The endpoint is **pre-auth**. A field arriving here without a spec line
+      // is not a diff nobody reads, it is an unauthenticated disclosure — so the
+      // shape is pinned rather than sampled.
+      expect(Object.keys((await status()).system).sort()).toEqual(
+        ['database', 'migrations_applied', 'smtp_configured'].sort(),
+      );
+    });
+
+    it('names SQLite and its journal mode, from the live connection', async () => {
+      // D-001. `postgres 16 · connected` is the prototype artifact
+      // `docs/design/README.md` lists, and a hardcoded "SQLite · WAL" here would
+      // be the same mistake one step removed: right today, and still a constant.
+      const { system } = await status();
+
+      expect(system.database).toBe('SQLite · WAL');
+      // The value is read, not written: change the journal mode and the field
+      // follows. Without this, a string literal passes the assertion above.
+      h.t.sqlite.pragma('journal_mode = MEMORY');
+      expect((await status()).system.database).toBe('SQLite · MEMORY');
+      h.t.sqlite.pragma('journal_mode = WAL');
+    });
+
+    it('reports the migrations the migrator actually applied', async () => {
+      const { system } = await status();
+      const applied: number = system.migrations_applied;
+
+      // Counted from the migrator's journal and compared against the folder —
+      // not against a number typed here, which would need editing on every
+      // migration and would then be asserting itself.
+      const onDisk = readdirSync(MIGRATIONS_FOLDER).filter((f) => f.endsWith('.sql')).length;
+      expect(applied).toBe(onDisk);
+      expect(onDisk).toBeGreaterThan(0);
+    });
+
+    it('says SMTP is not configured when nothing is stored', async () => {
+      seedOrg(h.db, true);
+
+      expect((await status()).system.smtp_configured).toBe(false);
+    });
+
+    it('says it is once the org carries settings, and still does not say what they are', async () => {
+      seedOrg(h.db, true);
+      h.db.update(orgs).set({ smtpJsonEnc: 'encrypted-blob-nobody-should-see' }).run();
+
+      const res = await h.app.request('/api/v1/setup/status');
+      const body = await res.text();
+
+      expect(
+        (JSON.parse(body) as { system: { smtp_configured: boolean } }).system.smtp_configured,
+      ).toBe(true);
+      // The point of the boolean. This endpoint answers before anybody has
+      // authenticated, so host, port and credentials are a reconnaissance gift.
+      expect(body).not.toContain('encrypted-blob-nobody-should-see');
+      expect(body).not.toMatch(/smtp_json|host|port|password/i);
+    });
+
+    it('answers before setup as well as after', async () => {
+      // The moment the panel is actually shown. `setup-gate` exempts
+      // `/api/v1/setup/*`, and a status panel that needs an org to answer would
+      // be blank on precisely the one screen it exists for.
+      const before = await status();
+      expect(before.setup_required).toBe(true);
+      expect(before.system.database).toBe('SQLite · WAL');
+      expect(before.system.migrations_applied).toBeGreaterThan(0);
+      expect(before.system.smtp_configured).toBe(false);
+    });
   });
 });
 
@@ -140,7 +219,9 @@ describe('POST /api/v1/setup', () => {
 
     // The loser's account is removed, so setup could be retried with that email.
     const me = await h.app.request('/api/v1/setup/status');
-    expect(await me.json()).toEqual({ setup_required: false });
+    // `setup_required` is what this test is about; §6.4's `system` panel rides
+    // along on the same response and is asserted in its own describe.
+    expect(((await me.json()) as { setup_required: boolean }).setup_required).toBe(false);
 
     const emails = h.db
       .select({ email: users.email })

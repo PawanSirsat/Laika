@@ -3,7 +3,13 @@ import type Database from 'better-sqlite3';
 import { type Auth } from '../../auth/auth.ts';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
-import { createFirstOrg, removeOrphanedOwner, setupRequired } from '../../services/setup.ts';
+import {
+  createFirstOrg,
+  removeOrphanedOwner,
+  setupRequired,
+  systemStatus,
+  type SystemStatus,
+} from '../../services/setup.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -33,6 +39,12 @@ const SetupBody = strictObject({
 
 export interface SetupStatusBody {
   setup_required: boolean;
+  /**
+   * What the first-boot panel draws (§6.4, LAI-206). Read from the running
+   * instance every time — LAI-106 AC5: a panel reporting numbers nobody counted
+   * is worse than no panel, because it is believed.
+   */
+  system: SystemStatus;
 }
 
 export interface SetupResultBody {
@@ -52,7 +64,12 @@ export function setupRoutes(options: SetupRouteOptions): Hono<AppEnv> {
 
   // Public and always available — the SPA reads it to decide which screen to
   // show, so it must answer both before and after setup.
-  app.get('/status', (c) => c.json<SetupStatusBody>({ setup_required: setupRequired(options.db) }));
+  app.get('/status', (c) =>
+    c.json<SetupStatusBody>({
+      setup_required: setupRequired(options.db),
+      system: systemStatus(options.db, options.sqlite),
+    }),
+  );
 
   app.post('/', async (c) => {
     const body = parseBody(SetupBody, await c.req.json().catch(() => null));
