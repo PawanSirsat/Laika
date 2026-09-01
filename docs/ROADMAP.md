@@ -118,8 +118,20 @@ server-side and the hook sends `git config --get remote.origin.url` verbatim
 matches nothing §4.3 stores, and every heartbeat would have resolved to no
 project.
 
-**Exit:** a new repo goes from nothing to an agent working the board in one
-command, **and a heartbeat from that agent is visible in the database**. Seeded early: **LAI-012** (plugin skeleton — no dependencies, so
+**Exit: met, 2026-09-02.** `npx laika init` runs in a fresh repository with an
+empty `HOME`, driven through a real pty, and an agent then lists ready tasks over
+`/mcp` using only what `init` wrote (LAI-422). All three hooks fire from real
+Claude Code sessions — four heartbeats from one session with the throttle stamp
+held clear, **one** with it left alone — and a dead board leaves the session at
+exit `0` (LAI-418). A heartbeat sent as a raw remote URL, including one carrying
+userinfo, resolves to its project and its task (D-043, LAI-430).
+
+**Two of M4's tasks remain open and neither gates the exit**: `/laika:setup` and
+the slash commands (LAI-420), and the protocol skill (LAI-421). `.mcp.json`
+(LAI-419) is written and verified against a running board.
+
+~~**Exit:** a new repo goes from nothing to an agent working the board in one
+command, **and a heartbeat from that agent is visible in the database**.~~ Seeded early: **LAI-012** (plugin skeleton — no dependencies, so
 SHELL can build it during M1).
 
 ---
