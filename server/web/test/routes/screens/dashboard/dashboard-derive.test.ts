@@ -246,6 +246,27 @@ void describe('describeProjectEvent', () => {
     }
   });
 
+  void test('the cron verbs nobody performed are declined, and say why', () => {
+    // LAI-151. A different reason from `sprint.tasks_changed`, which was
+    // volume: these carry `actor_kind: system` and no actor, and this feed's
+    // job is what changed **and who changed it**. There is nobody to name.
+    for (const type of ['heartbeat.pruned', 'invite.expired', 'meeting_review.expired']) {
+      assert.equal(shownInFeed(type), false, `${type} reaches a feed of what people did`);
+      assert.ok((FEED_SILENT[type] ?? '').length > 20, `${type} is declined without a reason`);
+    }
+  });
+
+  void test('task.stale_flagged is deliberately kept, and stays kept', () => {
+    // The judgement, asserted rather than left implicit. It is the one cron
+    // verb a person asks about — "why is this marked stale" — and the flag
+    // itself provokes the question. Silencing it hides the answer.
+    assert.equal(shownInFeed('task.stale_flagged'), true);
+    assert.equal(
+      describeProjectEvent(event({ id: 'x', type: 'task.stale_flagged' })),
+      'flagged this task as stale',
+    );
+  });
+
   void test('every other verb the server can write is shown', () => {
     // The other half: `FEED_SILENT` must not become a place verbs go to be
     // forgotten. Anything not explicitly declined reaches the reader.
