@@ -481,6 +481,19 @@ file. The rules below are the ones that are true of every line of code.
   If satisfying the rule would mean **inventing an action §3.1 does not have**,
   that is the signal you are looking at a dispatcher. If instead you are reaching
   for a plausible-sounding existing action, you are not — write the `can()` call.
+
+  **The second narrow case is a handler that reflects the actor back**, and
+  §3.1 has no row for it because there is no resource: `GET /api/v1/me` and the
+  `laika_whoami` MCP tool both return what the auth layer already resolved and
+  read nothing. Authentication is the whole of the authorisation question, and
+  it has already been answered by the time the handler runs — `resolve-actor.ts`
+  refuses a deactivated user's token before either is reached.
+
+  **Both cases are exhaustive as written.** They are the only two, they are named
+  here with their instances, and a third one is a decision, not a judgement call
+  — if you think you have found one, that is a task for CHIEF. **"It only reads
+  the actor's own row" is not this case**: a row is data, the actor object is not,
+  and the moment a handler goes to the database it is back under the rule.
 - **No new dependencies without a task that says so.** If a task's Notes do not
   name the package, it does not get added. Write a task instead.
 - **An assertion must be specific enough that a broken setup cannot satisfy it.**
