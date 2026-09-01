@@ -817,6 +817,15 @@ those projects. A Viewer's token can never write, whatever its scope says.
   | `unprocessable` | 422 |
   | `rate_limited` | 429 |
   | `internal` | 500 |
+  | `unavailable` | 503 |
+
+  **`unavailable` is the shutting-down answer** (LAI-214). None of the others
+  fits: nothing the caller sent is wrong, and the server is not broken — it has
+  **decided to stop and has not stopped yet**. `503` with `Retry-After` is what a
+  load balancer, a browser and an `EventSource` already understand, so a draining
+  instance is drained from rather than retried against. **`GET /health` is exempt
+  and answers normally**: a supervisor deciding whether to keep routing traffic
+  here needs an answer, and *"I am draining"* is the most useful one it can get.
 
   **`payload_too_large` and `method_not_allowed` are distinct codes, not folded
   into `bad_request`** (D-021). Clients branch on `code`, not on status, and the

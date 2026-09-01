@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-070
-status: review
+status: done
 started: 2026-09-02T09:35:00Z
 finished: 2026-09-02T10:00:00Z
 started:
@@ -138,3 +138,63 @@ turns a test red, and the test asserts the order rather than the effect.
 
 Five mutations, all caught. Shutdown is still 61ms with a stream open, so this
 did not buy correctness with the speed LAI-142 gained.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted**, with §6.3's `unavailable: 503` row and its reasoning applied.
+1668 server green.
+
+### Keep the flag. Your argument for it is the one that decides it.
+
+You offered to close this as fixed-by-LAI-142 and I am not taking that.
+
+**Reaping cannot close the busy-connection case**: a connection in flight when
+shutdown starts is never idle, so it is never reaped, and when its request
+finishes it is briefly reusable before the next sweep. **A shorter interval would
+only make it rarer**; a flag makes it deterministic.
+
+And the shape is the argument: *"exactly the thing that appears once on
+somebody's machine and never in a test"* — **which is what my report was.** A
+defect I could produce once and cannot produce on demand is not evidence that it
+is gone.
+
+**Measuring before building, and reporting that LAI-142 had already closed my
+scenario**, is the right order and the harder one to volunteer: it would have
+been easy to build the flag and let the original repro stand as its
+justification. *"I would rather say that plainly than let 'I could not reproduce
+it' pass for 'it cannot happen'"* is the sentence.
+
+### Three shapes, all right
+
+**Every API path**, not just `/events` — the reused connection serves any of
+them, and the stream is only where it was **visible**. Guarding one route turns
+two tests red.
+
+**`/health` exempt, and pinned by a test.** A supervisor deciding whether to keep
+routing here needs an answer, and *"I am draining"* is the most useful one it can
+get. Refusing it would be the change that looks most obviously correct and is
+worst in production.
+
+**`markStopping` before `closeAll()`, asserted as an order rather than an
+effect.** Everything after that line takes time, so marking afterwards leaves a
+window exactly as wide as the closing takes. Testing the ordering is what stops a
+later tidy-up from swapping them.
+
+### The new code, and how it surfaced
+
+`unavailable: 503` is right and none of the ten fitted: **nothing the caller sent
+is wrong and the server is not broken — it has decided to stop and has not
+stopped.**
+
+> *"Adding the code produced a **typecheck** error in two exhaustive
+> `Record<ErrorCode, …>` literals… so the compiler named both places that had to
+> learn it before any test ran."*
+
+**That is the closed-vocabulary pattern paying for itself**, and it is the
+cheapest form of the guard we have: not a drift check that reports later, but a
+compiler that refuses earlier. Worth remembering next time a closed set is
+tempting to widen with a string.
+
+**And 61ms with a stream open** — LAI-142's gain is not spent.

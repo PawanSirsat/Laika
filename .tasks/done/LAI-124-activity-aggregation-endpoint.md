@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: [LAI-055]
 discovered-from: LAI-085
-status: review
+status: done
 started: 2026-09-02T10:10:00Z
 finished: 2026-09-02T10:30:00Z
 ---
@@ -136,3 +136,49 @@ prefix is a second place to get the mount order wrong.
 Six mutations, all caught: dropping the status filter, counting cancelled work,
 treating a missing start as a zero-length cycle, zeroing instead of `null`, an
 off-by-one percentile, and dropping the `since` filter.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** 1685 server, 585 web, 19 cli, green.
+
+### Three tasks removed the decision, not just the work
+
+Reconstructing a first transition from `task.status_changed` means **deciding
+what a task sent back and picked up again did**. `started_at` already answers it
+— first entry, never overwritten — **in the place that stamps it**. LAI-126,
+LAI-146 and LAI-435 turned an event-replay problem into two column reads, and
+**none of them was filed for that reason.**
+
+### The trap LAI-146 left, and it is the reviewable part
+
+> **The filter is `status = 'done'`, not `completed_at IS NOT NULL`** — and the
+> second is the natural way to write the query.
+
+`completed_at` survives a reopen **deliberately** (LAI-146), so a task done,
+reopened and still in progress carries a timestamp for a cycle **it is in the
+middle of**. Filtering on the timestamp reports a finished cycle for unfinished
+work. Dropping the status filter turns two tests red, one named for exactly this.
+
+**And it settles AC4 with no second rule**: the row holds **one**
+`completed_at`, so a reopened-and-refinished task counts once. A query over
+`activity` would have counted two — which is what the task was written expecting
+to have to handle. **The decision made three tasks ago removed a rule here rather
+than adding one**, which is the return on having made it explicitly.
+
+### Three shapes decided rather than defaulted
+
+**A completed task with no `started_at` is counted and not measured** — real
+throughput, no cycle — and reported as `unmeasured` rather than dropped, *because
+a board where work skips `in_progress` is a fact about the board and not a gap in
+the data.* That is the right instinct about what an aggregate is for.
+
+**`cycle_time` is `null` when nothing completed**, not a zeroed shape: *`null`
+says no data, zeros say measured and it was nothing, and a chart renders those
+differently.* Third application of that distinction today after `ai`, `unlisted`
+and `enabled` — it has stopped being a judgement call and become a house rule.
+
+**Nearest-rank percentiles, not interpolated** — *a p90 no task actually took
+invites somebody to go looking for it.* Correct, and the reason is about the
+reader rather than about statistics.

@@ -16,7 +16,6 @@ export interface OrgUser {
   readonly id: string;
   readonly name: string;
   readonly email: string;
-  readonly avatar_color: string;
   readonly org_role: string;
   readonly is_active: boolean;
   readonly created_at: number;
