@@ -2,11 +2,12 @@
 id: LAI-430
 title: 'A heartbeat''s branch resolves to a task (§9.2)'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-417, LAI-144]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-02T00:00:00Z
 ---
 
 ## Goal

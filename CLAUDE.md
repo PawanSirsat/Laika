@@ -179,6 +179,14 @@ away, and **each read as authoritative to the person receiving it** — which is
 what makes it worse than a vague criterion. Open the section, count the list,
 check the branch.
 
+CORE found the sharper form, with the source swapped: they wrote an assertion
+against *"nine of them have REST twins"* because that is how **the task file**
+described §7.2, and it is not what §7.2 says. **Quote the artefact; do not
+paraphrase from memory of a description of it.** A task file is a description,
+not the artefact — including one that is right about everything else, which is
+exactly what makes its paraphrase dangerous. When an assertion fails against the
+document, **read the document before adjusting the number.**
+
 **Only CHIEF moves `.tasks/review/` → `.tasks/done/`.** Builders never mark their
 own work done. If CHIEF sends a task back, it returns to `.tasks/in-progress/` with
 review notes appended to the file — read them, fix, and move it to review again.

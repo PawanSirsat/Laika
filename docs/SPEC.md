@@ -873,6 +873,7 @@ read them.
 
 | Tool | Input | Returns |
 | --- | --- | --- |
+| `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`. Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
 | `get_task_context` | `{ task }` | task, description, `blocked_by` + their statuses, comments, recent activity, branch, `discovered_from` chain |
@@ -922,8 +923,17 @@ implemented first.
   board would file a task instead — so there is no human write path to mirror.
   Humans read it (`GET /api/v1/unlisted`) and act on it
   (`POST /api/v1/unlisted/:id/promote`). The parity tests of §13.3 therefore
-  cover the nine tools that have twins; this one is exempt, and the exemption is
-  named so a missing tenth pair reads as intended rather than as a gap.
+  cover the ten tools that have twins; this one is exempt, and **the exemption is
+  named**, so the missing pair reads as intended rather than as a gap. *(This
+  sentence deliberately carries **one** number and not two: it said "nine … a
+  missing tenth" until LAI-433, and the guard pins only the first, so moving one
+  and not the other would have left the sentence contradicting itself with
+  nothing to catch it.)*
+- **`laika_whoami` has no twin of its own and is paired with `GET /api/v1/me`**,
+  which answers the same question with more of it. It exists so an operator whose
+  token is misbehaving can establish *who the board thinks they are* before
+  debugging anything else — the first question, and the hardest to answer from a
+  failing tool call. It writes no `activity` row, because it reads nothing.
 - `finish_task` stops at `review` by design — agents do not close their own work.
 - Inputs are zod schemas exported as JSON Schema; unknown fields are rejected.
 - Errors are MCP tool errors carrying the §6.3 `code`, so an agent can branch on
