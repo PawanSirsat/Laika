@@ -89,7 +89,6 @@ export const users = sqliteTable(
     name: text('name').notNull(),
     orgRole: text('org_role', { enum: ORG_ROLES }).notNull().default('member'),
     /** Derived from the id — no uploads in v1 (§4.1). */
-    avatarColor: text('avatar_color').notNull().default('#6b7280'),
     /** 0 = deactivated. The row is kept so history keeps its author (§4.1). */
     isActive: integer('is_active').notNull().default(1),
 

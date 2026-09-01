@@ -140,7 +140,6 @@ const NO_MIRROR_REQUIRED = new Map<string, string>([
     'auth/auth.ts',
     'better-auth configuration; behaviour is only meaningful over HTTP (auth/flow.test.ts)',
   ],
-  ['auth/avatar.ts', 'pure colour derivation; asserted through signup in auth/flow.test.ts'],
   [
     'auth/invites.ts',
     'invite lookup; asserted end-to-end in auth/flow.test.ts, which is where the rules matter',

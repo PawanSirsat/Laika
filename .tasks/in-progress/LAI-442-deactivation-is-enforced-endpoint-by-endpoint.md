@@ -2,11 +2,12 @@
 id: LAI-442
 title: A deactivated account still signs in, and its session still gets 200s
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-222]
 discovered-from: LAI-434
-status: backlog
+status: in-progress
+started: 2026-09-02T08:05:00Z
 ---
 
 ## Goal

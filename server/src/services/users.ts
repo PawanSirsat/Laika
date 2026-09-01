@@ -62,8 +62,6 @@ export interface UserView {
   id: string;
   name: string;
   email: string;
-  /** Derived from the id — no uploads in v1 (§4.1). */
-  avatar_color: string;
   org_role: OrgRole;
   /** False for a deactivated person. The row is kept so history keeps its author. */
   is_active: boolean;
@@ -78,7 +76,6 @@ function toView(row: UserRow): UserView {
     id: row.id,
     name: row.name,
     email: row.email,
-    avatar_color: row.avatarColor,
     org_role: row.orgRole,
     is_active: row.isActive === 1,
     // Date-typed columns since LAI-005 (better-auth hands the adapter `Date`s);

@@ -39,7 +39,6 @@ function seedUser(name: string): string {
       email: `${id}@example.test`,
       name,
       orgRole: 'member',
-      avatarColor: '#123456',
       createdAt: new Date(now),
       updatedAt: new Date(now),
     })

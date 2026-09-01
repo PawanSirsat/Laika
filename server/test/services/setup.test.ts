@@ -21,7 +21,6 @@ beforeEach(() => {
       email: 'ada@example.test',
       name: 'Ada',
       orgRole: 'member',
-      avatarColor: '#123456',
       createdAt: new Date(now),
       updatedAt: new Date(now),
     })
@@ -184,7 +183,6 @@ describe('single-use under concurrency (AC3)', () => {
           email: `${id}@example.test`,
           name: 'Racer',
           orgRole: 'member',
-          avatarColor: '#000000',
           createdAt: new Date(now),
           updatedAt: new Date(now),
         })

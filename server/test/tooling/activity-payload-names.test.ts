@@ -200,7 +200,6 @@ function makeUser(t: TestDb, orgRole: OrgRole, label: string): string {
       email: `${label}-${id}@example.test`,
       name: label,
       orgRole,
-      avatarColor: '#123456',
       createdAt: new Date(now),
       updatedAt: new Date(now),
     })
@@ -526,7 +525,6 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
           email: 'spare@example.test',
           name: 'Spare',
           orgRole: 'member',
-          avatarColor: '#123456',
           createdAt: new Date(1000),
           updatedAt: new Date(1000),
         })
