@@ -16,6 +16,7 @@ import {
 } from '../../../api/board-derive.ts';
 import { describeActor } from './actor-presentation.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
+import '../../../components/markers.css';
 import './task-detail.css';
 
 export interface TaskDetailPanelProps {

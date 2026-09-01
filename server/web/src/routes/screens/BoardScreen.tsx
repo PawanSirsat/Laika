@@ -29,6 +29,7 @@ import {
 } from '../../api/tasks.ts';
 import { getProject, listProjects, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
+import '../../components/markers.css';
 import './board/board.css';
 import { pickProject } from '../../api/pick-project.ts';
 import { withProjectParam } from '../nav-url.ts';

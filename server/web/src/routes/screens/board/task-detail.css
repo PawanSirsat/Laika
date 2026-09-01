@@ -134,25 +134,6 @@
   border: 1px solid var(--bd);
 }
 
-/* Purple is the design's agent colour, same as the to-do lane —
-   `docs/design/README.md` assigns `--pur` to "agent / to-do". */
-.marker-agent {
-  color: var(--pur);
-  background: var(--purs);
-  border: 1px solid var(--purb);
-}
-
-/* The system — cron, the migration runner — is deliberately quiet. It is not a
-   participant competing for attention the way a person or an agent is, and
-   `--tx3` is what the dashboard already uses for the same actor. The colour is
-   reinforcement only: these markers render the word `agent` or `system`, so
-   they are told apart without it (LAI-411 AC3). */
-.marker-system {
-  color: var(--tx3);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-}
-
 .panel-assignee {
   font-size: var(--text-sm);
   color: var(--tx2);

@@ -7,7 +7,8 @@ priority: p2
 depends-on: [LAI-432]
 discovered-from:
 started: 2026-09-01T19:00:00+05:30
-status: in-progress
+finished: 2026-09-01T20:30:00+05:30
+status: review
 ---
 
 ## Goal
@@ -67,29 +68,29 @@ An entry with no `repo` is normal and means *somebody is working, elsewhere* —
 
 ## Acceptance criteria
 
-- [ ] The screen renders from `GET /capacity` and `GET /presence`, in the
+- [x] The screen renders from `GET /capacity` and `GET /presence`, in the
       **REVIEW** sidebar group, in both themes.
-- [ ] **An agent session is visually distinct from a human**, using
+- [x] **An agent session is visually distinct from a human**, using
       `is_agent` — not by guessing from the name. §11.4.2 requires it and
       LAI-411 already established how agent-authored work is badged; **reuse
       that treatment** rather than inventing a second one.
-- [ ] **A person with no visible repo renders as a person**, with whatever is
+- [x] **A person with no visible repo renders as a person**, with whatever is
       known — name, last seen, agent-or-not — and no empty label, no dash, no
       "unknown". Test it: it is the case LAI-438 created and it is the one most
       likely to render as a broken row.
-- [ ] **Disabled shows a disabled state**, distinct from empty, saying the org
+- [x] **Disabled shows a disabled state**, distinct from empty, saying the org
       has presence off — and **not** offering a control, because turning it on is
       Admin+ on the Organisation screen (LAI-149).
-- [ ] **Unlisted work promotes in one click** — `POST /unlisted/:id/promote`
+- [x] **Unlisted work promotes in one click** — `POST /unlisted/:id/promote`
       needs a project and a title; the click may open a small form, but it must
       not send the user to another screen and back.
-- [ ] `DELETE /unlisted/:id` dismisses, with the row leaving the list.
-- [ ] **Every number comes from a response.** No client-side "active sessions"
+- [x] `DELETE /unlisted/:id` dismisses, with the row leaving the list.
+- [x] **Every number comes from a response.** No client-side "active sessions"
       count derived by grouping something else.
-- [ ] Live via `GET /events` if that is cheap; **a stale capacity screen is worse
+- [x] Live via `GET /events` if that is cheap; **a stale capacity screen is worse
       than a slow one** — if SSE does not carry what this needs, poll and say so
       in the log rather than showing a snapshot that silently ages.
-- [ ] Full gate green — repo-root `pnpm test` (D-045).
+- [x] Full gate green — repo-root `pnpm test` (D-045).
 
 ## Notes / context
 
@@ -130,3 +131,71 @@ false** — leaving the rows would be an exemption stating something untrue, whi
 is the mistake CORE refused on LAI-415. Same crossing LAI-160 authorised; do it
 here rather than in a follow-up, and the drift check then guards the exact shapes
 in the table above.
+
+
+---
+
+## Submitted — SHELL, 2026-09-01
+
+**M5's exit criterion renders.** Root gate `EXIT 0` — **1775** server, **632**
+web, 49 cli, zero `Unhandled|Errors|Failed|not ok`. Seven mutations, all red
+after two of them found gaps in my own tests.
+
+`/capacity` is in **REVIEW** and offered, by the rule `nav-truth.test.ts` already
+states: *"`/tokens` left this list when LAI-410 built the screen — the rule
+working, not an exception to it."* It has an API and a screen now, so it leaves
+too.
+
+### The LAI-438 row, built first
+
+`working elsewhere`, in quiet italic beside the name — no dash, no "unknown", no
+skeleton. The person, the time and the agent badge are all still there.
+
+**`repo === undefined` is the discriminator, and that is not a detail.** The
+other two candidates arrive `null` and `[]` whether the location was withheld or
+simply resolved to nothing, so a predicate on either cannot tell the cases apart
+— and `=== undefined` on them never fires at all. A test asserts exactly that,
+and a mutation swapping the predicate turns it red.
+
+### The two mutations that caught my tests, not my code
+
+**Disabled inferred from an empty list passed everything**, because my
+disabled fixture had `enabled: false` *and* `people: []`. There is now a fixture
+with **presence on and nobody working**, which is the only shape that separates
+them.
+
+**`unlisted ?? []` passed too** — nothing asserted on the count line. There is
+now a person with the key **absent** and one with it **empty**, and neither may
+render a count.
+
+Both gaps were invisible to a green suite and to review. Only the mutation showed
+them.
+
+### Polling, and saying so as AC8 asks
+
+**`GET /events` carries activity, not heartbeats.** Nothing on that stream fires
+when presence changes, so a screen driven by it would sit still while going
+stale. This polls every 20s and the header says `updated every 20s` rather than
+implying live.
+
+### Reuse rather than a fourth copy
+
+- **`UnlistedList` extracted** from `UnlistedScreen`, so promote and dismiss are
+  one implementation on both screens. A second promote form can drift in *what
+  it sends*, not only in how it looks.
+- **`markers.css` extracted** so `.marker-agent` — LAI-411's treatment, which AC2
+  says to reuse — is reachable outside the board. It lived in
+  `board/task-detail.css`.
+- **`UnlistedList` takes a name map, not `Member`.** It only ever reads `.name`,
+  and Capacity knows names but not emails or roles — a `Member` prop could only
+  have been satisfied by inventing three fields. Narrowing it is what let the
+  notes say *Ada Lovelace* instead of *Someone*.
+- **And I removed my own duplicate**: `locationHidden` in `api/presence.ts` was a
+  second copy of `hasLocation`, unused. The structure check is what led me to it.
+
+### What was measured live, and what was not
+
+Both endpoints were exercised on my own instance on **:3371** — the presence
+shapes in this file were corrected from that. **`unlisted`'s absence is verified
+from source only**: it needs a reader without `audit_log.export`, and I did not
+build a second user for it. Saying so rather than implying otherwise.

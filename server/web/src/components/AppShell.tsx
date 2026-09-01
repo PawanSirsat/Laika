@@ -19,6 +19,7 @@ import { MembersScreen } from '../routes/screens/MembersScreen.tsx';
 import { OrganisationScreen } from '../routes/screens/organisation/OrganisationScreen.tsx';
 import { ProjectsScreen } from '../routes/screens/ProjectsScreen.tsx';
 import { TokensScreen } from '../routes/screens/tokens/TokensScreen.tsx';
+import { CapacityScreen } from '../routes/screens/capacity/CapacityScreen.tsx';
 import { UnlistedScreen } from '../routes/screens/unlisted/UnlistedScreen.tsx';
 import { Screen } from '../routes/screens/Screen.tsx';
 import { StateGallery } from './StateGallery.tsx';
@@ -428,6 +429,12 @@ export function AppShell() {
                 }}
               />
             </>
+          ) : path === '/capacity' ? (
+            <CapacityScreen
+              onOpenTask={(taskKey) => {
+                navigate(`/board?q=${encodeURIComponent(taskKey)}`);
+              }}
+            />
           ) : path === '/unlisted' ? (
             <UnlistedScreen
               members={new Map()}
