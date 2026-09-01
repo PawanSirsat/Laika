@@ -2,11 +2,12 @@
 id: LAI-439
 title: The Capacity screen — who is on what, and what is stuck with nobody
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-432]
 discovered-from:
-status: backlog
+started: 2026-09-01T19:00:00+05:30
+status: in-progress
 ---
 
 ## Goal
