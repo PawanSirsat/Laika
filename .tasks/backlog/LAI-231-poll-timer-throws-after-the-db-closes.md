@@ -54,16 +54,27 @@ on a closed handle. `poll()` has no `catch` and is invoked from
 `setTimer(() => { this.poll(); })`, so the throw escapes into a timer callback
 with nobody above it.
 
-## The part that is worth more than the red gate
+## Production is not affected — measured, not assumed
 
-**A timer callback that throws is not a test problem.** In a live server an
-uncaught throw from `Timeout._onTimeout` is an unhandled exception, and the
-question *"can the poll timer fire against a closed database in production, at
-shutdown?"* is not one this task should answer by assertion. `closeAll()` empties
-`subscribers`, and `poll()` returns early when that set is empty — which may well
-make it unreachable outside the harness. **Measure it; do not assume it either
-way.** If it is reachable, that is a different and larger finding than a red
-gate.
+I filed this with *"can the poll timer fire against a closed database in a live
+server?"* as an open question, because an uncaught throw from
+`Timeout._onTimeout` would be an unhandled exception rather than a test error.
+**I have since read the path and the answer is no**, so the alarm is withdrawn
+and only the red gate remains:
+
+- `closeAll()` calls `remove()` for every subscriber; `remove()` calls
+  `stopIfIdle()`, which **clears the timer** once the set is empty
+  (`activity-feed.ts:224–234`). The feed disarms itself.
+- `shutdown.ts` calls `activityFeed.closeAll()` at line **90** and
+  `sqlite.close()` at line **98**. The timer is gone before the handle closes.
+
+**So the defect is in the test harness's lifecycle, not the server's.**
+`authHarness` closes the database without closing the feed, which leaves a
+subscriber — and therefore an armed timer — pointed at a dead handle. That is a
+state `shutdown.ts` cannot reach.
+
+It stays p1 because **it makes "full gate green" unachievable for every
+builder**, which is a different kind of urgent from a crash.
 
 ## Acceptance criteria
 
@@ -75,8 +86,11 @@ gate.
 - [ ] **A test that fails if the defect returns**, and it must fail on the
       *unhandled error*, not on an assertion — this defect is invisible to every
       assertion in the file, which is exactly why it shipped.
-- [ ] The production question above is answered with a measurement, and the
-      answer is written down wherever the timer is.
+- [ ] The ordering that makes production safe — `closeAll()` disarms the timer,
+      and shutdown calls it before `sqlite.close()` — **is asserted somewhere**.
+      It is currently true by the arrangement of two files and nothing would
+      notice if either moved. This is the LAI-144 lesson: an ordering that is
+      load-bearing and untested as an ordering.
 - [ ] Full gate green.
 
 ## Notes
