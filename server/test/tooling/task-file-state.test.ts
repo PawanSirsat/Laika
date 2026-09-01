@@ -50,7 +50,7 @@ function stateDirs(): string[] {
 }
 
 /** The frontmatter fields this check reads. Others are parsed and ignored. */
-type FieldName = 'id' | 'status' | 'assignee' | 'started' | 'finished';
+type FieldName = 'id' | 'status' | 'assignee' | 'started' | 'finished' | 'closed';
 type Frontmatter = Partial<Record<FieldName, string>>;
 
 interface TaskFile {
@@ -93,7 +93,7 @@ function taskFiles(): TaskFile[] {
 /**
  * Files whose frontmatter predates the field being required (LAI-415).
  *
- * **All twenty-five are in `done/`**, and none is in a live state — every file in
+ * **All twenty are in `done/`**, and none is in a live state — every file in
  * `in-progress/` and `review/` is complete. That is the shape of the finding:
  * this is an archive written under earlier versions of the protocol, not a
  * process that is currently slipping.
@@ -109,7 +109,6 @@ const PREDATES_THE_FIELD: [string, string[]][] = [
   ['.tasks/done/LAI-027-secret-env-var-name.md', ['started', 'finished']],
   ['.tasks/done/LAI-028-build-not-idempotent.md', ['started', 'finished']],
   ['.tasks/done/LAI-035-apply-contrast-tokens.md', ['started', 'finished']],
-  ['.tasks/done/LAI-057-guard-shutdown-wiring.md', ['assignee', 'started', 'finished']],
   ['.tasks/done/LAI-068-sprints-screen.md', ['assignee', 'started', 'finished']],
   ['.tasks/done/LAI-073-tags-decision.md', ['assignee', 'started', 'finished']],
   ['.tasks/done/LAI-087-setup-gate-hangs-ui.md', ['finished']],
@@ -119,47 +118,13 @@ const PREDATES_THE_FIELD: [string, string[]][] = [
   ['.tasks/done/LAI-115-document-users-query-params.md', ['assignee', 'started', 'finished']],
   ['.tasks/done/LAI-120-spec-64-invite-revoke.md', ['assignee', 'started', 'finished']],
   ['.tasks/done/LAI-128-conventions-test-posture.md', ['assignee', 'started', 'finished']],
-  ['.tasks/done/LAI-145-plugin-sends-owner-name.md', ['assignee', 'started', 'finished']],
   ['.tasks/done/LAI-201-migrations-asset-in-build.md', ['started', 'finished']],
   ['.tasks/done/LAI-202-secret-env-var-name.md', ['started', 'finished']],
   ['.tasks/done/LAI-203-format-red-on-design-imports.md', ['started', 'finished']],
-  ['.tasks/done/LAI-209-project-activity-endpoint.md', ['assignee', 'started', 'finished']],
-  ['.tasks/done/LAI-210-first-boot-tile-mark.md', ['assignee', 'started', 'finished']],
-  ['.tasks/done/LAI-212-project-card-counts.md', ['assignee', 'started', 'finished']],
   ['.tasks/done/LAI-214-events-served-during-drain.md', ['started', 'finished']],
   ['.tasks/done/LAI-217-calendar-screen.md', ['assignee', 'started', 'finished']],
   ['.tasks/done/LAI-219-no-brute-force-protection-on-sign-in.md', ['started', 'finished']],
   ['.tasks/done/LAI-222-org-endpoint-and-org-role-management.md', ['finished']],
-];
-
-/**
- * `.tasks/done/LAI-057-guard-shutdown-wiring.md` **has no frontmatter block at
- * all** — not a missing field, an absent header. It is therefore also the one
- * file with no `id:` and no `status:`, and it appears in three lists below for
- * one underlying reason.
- *
- * Exempted separately from the field list because it is a different defect and
- * deserves a different fix: the others need a value, this one needs a header.
- */
-const NO_FRONTMATTER_BLOCK = '.tasks/done/LAI-057-guard-shutdown-wiring.md';
-
-/**
- * Files whose `status:` disagrees with the directory they sit in — the exact
- * drift LAI-415 was filed for, still present.
- *
- * **`LAI-130` is the one to look at first**: it says `status: done` while sitting
- * in `backlog/`. Whichever way that happened — accepted then moved back, or
- * reopened without resetting the field — the two records disagree about whether
- * the work is finished, and the directory is the one the protocol treats as
- * authoritative.
- *
- * `LAI-118` is the LAI-045 shape exactly: accepted into `done/`, frontmatter left
- * at `review`.
- */
-const STATUS_DISAGREES: [string, string][] = [
-  ['.tasks/backlog/LAI-130-spec-task-acceptance-field.md', 'done'],
-  ['.tasks/done/LAI-118-activity-triggers-survive-rebuilds.md', 'review'],
-  [NO_FRONTMATTER_BLOCK, ''],
 ];
 
 /**
@@ -179,7 +144,7 @@ const STATUS_DISAGREES: [string, string][] = [
  * so it is not listed — and the staleness guard below is what would have told me
  * that if I had listed it, which is the point of writing exemptions this way.
  */
-const KNOWN_COLLISIONS = ['LAI-046', 'LAI-100', 'LAI-153'];
+const KNOWN_COLLISIONS = ['LAI-046', 'LAI-100'];
 
 describe('the task-file check can fail', () => {
   it('finds task files at all', () => {
@@ -192,8 +157,13 @@ describe('the task-file check can fail', () => {
     expect(files.length, 'no task files found — has .tasks/ moved?').toBeGreaterThan(50);
     // And the parser returned real frontmatter rather than empty objects, which
     // would make every field check below vacuous.
+    // This said `files.length - 1` while one file had no frontmatter block at
+    // all — **a contingent fact about that day's tree written into a guard**,
+    // which is the defect this file exists to catch, one level up. The `- 1`
+    // would have let a *new* unparseable file swap places with the old one and
+    // stay green. CHIEF fixed the file; the assertion becomes the property.
     const parsed = files.filter((f) => f.frontmatter.id !== undefined);
-    expect(parsed.length).toBe(files.length - 1);
+    expect(parsed.map((f) => f.path)).toEqual(files.map((f) => f.path));
   });
 
   it('has no stray non-markdown file in a state directory', () => {
@@ -216,35 +186,20 @@ describe('a task file agrees with the directory it sits in', () => {
   }
 
   it('carries status: <the directory it is in>', () => {
-    const exempt = new Set(STATUS_DISAGREES.map(([path]) => path));
-    const unexpected = disagreements().filter(
-      (line) => !exempt.has(line.split(' is in ')[0] ?? ''),
-    );
-
-    expect(unexpected).toEqual([]);
+    // **No exemption list.** There were three when this was written — a
+    // `backlog/` file saying `done`, a `done/` file saying `review`, and one
+    // with no frontmatter at all. All three are fixed; every entry went stale
+    // and named itself. The right response to an emptied exemption list is to
+    // delete it, not to leave scaffolding that invites re-exemption over a fix.
+    expect(disagreements()).toEqual([]);
   });
 
-  it('still has every disagreement the exemption claims', () => {
-    // Self-expiry. Without this, a fixed file leaves a permanent licence for that
-    // path to drift again — and the list would quietly become fiction.
-    const drifting = new Map(
-      taskFiles()
-        .filter((f) => f.frontmatter.status !== f.dir)
-        .map((f) => [f.path, f.frontmatter.status ?? '']),
-    );
-    const stale = STATUS_DISAGREES.filter(([path, status]) => drifting.get(path) !== status).map(
-      ([path]) => `${path} no longer disagrees — remove it from STATUS_DISAGREES`,
-    );
-
-    expect(stale).toEqual([]);
-  });
-
-  it('has no file without a frontmatter block, beyond the one known', () => {
+  it('has no file without a frontmatter block', () => {
     const headerless = taskFiles()
       .filter((f) => Object.keys(f.frontmatter).length === 0)
       .map((f) => f.path);
 
-    expect(headerless).toEqual([NO_FRONTMATTER_BLOCK]);
+    expect(headerless).toEqual([]);
   });
 });
 
@@ -261,9 +216,29 @@ describe('a task file carries the fields its state requires', () => {
     return value === undefined || value === '' || value === 'unclaimed';
   }
 
+  /**
+   * **Filed, then closed without being built** — a third state, neither `done`
+   * nor an omission.
+   *
+   * `LAI-209`, `LAI-210` and `LAI-212` were filed and never claimed: one
+   * superseded by a task that built the endpoints as a set, one landed
+   * incidentally by a shell pass, one withdrawn as a duplicate. They carry no
+   * `assignee`, `started` or `finished` **because nobody started and nobody
+   * finished**, and the only way to satisfy a check demanding them would be to
+   * invent two timestamps for work that never happened.
+   *
+   * So the check learns the state rather than exempting correct files as if they
+   * were defects — which would also have recorded something false about them, in
+   * a list titled "predates the field".
+   */
+  function closedUnbuilt(file: TaskFile): boolean {
+    return !absent(file, 'closed');
+  }
+
   function missing(dirs: string[], field: FieldName): string[] {
     return taskFiles()
       .filter((f) => dirs.includes(f.dir))
+      .filter((f) => !closedUnbuilt(f))
       .filter((f) => absent(f, field))
       .filter((f) => !(exemptFields.get(f.path) ?? []).includes(field))
       .map((f) => `${f.path} is in ${f.dir}/ and has no ${field}`);
@@ -291,6 +266,8 @@ describe('a task file carries the fields its state requires', () => {
       const file = byPath.get(path);
       if (file === undefined)
         return [`${path} no longer exists — remove it from PREDATES_THE_FIELD`];
+      if (closedUnbuilt(file))
+        return [`${path} now carries closed: — remove it from PREDATES_THE_FIELD`];
       return fields
         .filter((field) => !absent(file, field as FieldName))
         .map((field) => `${path} now has ${field} — remove it from PREDATES_THE_FIELD`);
