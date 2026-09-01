@@ -1,7 +1,8 @@
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { listActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
-import { orgs, projects } from '../db/schema.ts';
+import { requireOrgId } from '../db/orgs.ts';
+import { projects } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { eventView, type EventView } from './events.ts';
@@ -28,13 +29,6 @@ import { requireProjectBySlug } from './projects.ts';
  * and `DELETE` by trigger, and no route below `activity` accepts a method other
  * than `GET`. A mutation path here would be a door above a locked door.
  */
-
-/** The org this actor belongs to. Single-org deployment (§4.2), so there is one. */
-function orgIdFor(db: Db): string {
-  const row = db.select({ id: orgs.id }).from(orgs).limit(1).get();
-  if (row === undefined) throw new ApiError('conflict', 'This Laika has not been set up yet');
-  return row.id;
-}
 
 /**
  * Every project this actor may read, decided by asking `can()` about each one.
@@ -131,7 +125,7 @@ export function listOrgActivity(
   assertCan(actor, 'member_list.read');
 
   return listActivity(db, {
-    orgId: orgIdFor(db),
+    orgId: requireOrgId(db),
     projectIds: visibleProjectIds(db, actor),
     // Org-scoped rows — `token.created`, `member.role_changed` — are the audit
     // trail, and §3.1 grants that to Owner and Admin (see `visibleTo`).
