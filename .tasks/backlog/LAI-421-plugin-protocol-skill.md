@@ -18,7 +18,13 @@ This is the piece that makes an agent a *good* board citizen rather than merely 
 connected one. Without it an agent will write code and then look for a task, or
 close its own work, or silently drop what it noticed on the way.
 
-`plugin/skills/README.md` exists as a stub from LAI-012.
+`plugin/skills/README.md` exists as a stub from LAI-012 and **says the layout
+rule you need**: a skill is `skills/<name>/SKILL.md`, and a loose `.md` at that
+level is not loaded. The README itself is therefore not a skill and must stay
+where it is.
+
+`.claude/skills/laika-workflow/SKILL.md` exists — AC7's comparison is against a
+real file, so read it and then deliberately do not reuse it.
 
 ## Acceptance criteria
 
@@ -42,6 +48,10 @@ close its own work, or silently drop what it noticed on the way.
       git-and-task-file protocol that does not exist for a user's agent — no
       `git mv` claim, no `.tasks/` directory, no worktrees. Confusing the two
       would teach a user's agent a protocol their board does not run.
+- [ ] **The skill names all ten §7.1 tools it expects an agent to have**, and a
+      test asserts that list matches `server/src/mcp/`'s registrations. A skill
+      that teaches a tool the server does not serve is worse than one that omits
+      it, and this is the third place the tool count is written down.
 - [ ] Full gate green.
 
 ## Notes
