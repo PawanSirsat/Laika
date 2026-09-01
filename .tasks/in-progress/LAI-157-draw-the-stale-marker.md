@@ -2,11 +2,12 @@
 id: LAI-157
 title: Declare stale_flagged_at on the client Task and draw the stale marker
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-208]
 discovered-from: LAI-208
-status: backlog
+started: 2026-09-01T15:50:00+05:30
+status: in-progress
 ---
 
 ## Goal
