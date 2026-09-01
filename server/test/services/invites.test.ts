@@ -61,7 +61,6 @@ function makeUser(
       email: options.email ?? `${id.toLowerCase()}@example.test`,
       name: `User ${id.slice(-4)}`,
       orgRole: role,
-      avatarColor: '#123456',
       isActive: options.isActive === false ? 0 : 1,
       createdAt: new Date(now),
       updatedAt: new Date(now),

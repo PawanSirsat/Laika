@@ -13,7 +13,6 @@ interface UserBody {
   id: string;
   name: string;
   email: string;
-  avatar_color: string;
   org_role: string;
   is_active: boolean;
 }
@@ -47,7 +46,6 @@ function seedPerson(name: string, isActive = 1): string {
       email: `${name.toLowerCase().replace(/\s+/g, '.')}@example.test`,
       name,
       orgRole: 'member',
-      avatarColor: '#abcdef',
       isActive,
       createdAt: new Date(now),
       updatedAt: new Date(now),
@@ -93,7 +91,9 @@ describe('the endpoint §6.4 already specified (AC1)', () => {
       org_role: 'owner',
       is_active: true,
     });
-    expect(typeof body.data[0]?.avatar_color).toBe('string');
+    // `avatar_color` is gone (LAI-148): the client derives its own, theme-aware,
+    // from the id — a stored value cannot be legible in both themes (§5.1).
+    expect('avatar_color' in (body.data[0] ?? {})).toBe(false);
   });
 
   it('gives a caller the id that POST /members needs — the whole point', async () => {

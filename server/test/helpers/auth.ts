@@ -131,7 +131,6 @@ export function seedOrg(db: Db, inviteOnly: boolean): { orgId: string; ownerId: 
       email: 'existing-owner@example.test',
       name: 'Existing Owner',
       orgRole: 'owner',
-      avatarColor: '#111111',
       createdAt: new Date(now),
       updatedAt: new Date(now),
     })

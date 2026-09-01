@@ -36,7 +36,6 @@ describe('requireOrgId', () => {
         email: 'owner@example.test',
         name: 'Owner',
         orgRole: 'owner',
-        avatarColor: '#123456',
         createdAt: new Date(now),
         updatedAt: new Date(now),
       })
@@ -86,7 +85,6 @@ describe('requireOrg', () => {
         email: 'owner@example.test',
         name: 'Owner',
         orgRole: 'owner',
-        avatarColor: '#123456',
         createdAt: new Date(now),
         updatedAt: new Date(now),
       })
@@ -135,7 +133,6 @@ describe('presenceEnabled', () => {
         email: 'owner@example.test',
         name: 'Owner',
         orgRole: 'owner',
-        avatarColor: '#123456',
         createdAt: new Date(now),
         updatedAt: new Date(now),
       })

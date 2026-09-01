@@ -346,7 +346,16 @@ const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
 // reason named LAI-207 as the task that would close it, and LAI-207 closed it.
 // An exemption whose reason names a task is one somebody intends to fix; this is
 // what that looks like when it works.
-const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([]);
+const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([
+  // In flight. §4.1 still lists `avatar_color`; LAI-148 removed it from the
+  // schema because the client derives its own, theme-aware, from the id — and a
+  // stored value cannot be legible in both themes (§5.1). CHIEF's §4.1 half is
+  // applied at merge, and the staleness test below drops this the moment it is.
+  [
+    'users.avatar_color',
+    'LAI-148, in flight: awaiting §4.1 dropping the row. The column is gone; the spec still names it.',
+  ],
+]);
 
 /** §4.8 verbs the enum has and the list does not, or the other way round. */
 const ACTIVITY_TYPE_EXEMPTIONS = new Map<string, string>([
