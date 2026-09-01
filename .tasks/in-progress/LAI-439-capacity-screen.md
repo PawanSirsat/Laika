@@ -42,11 +42,28 @@ project gets that person with a shorter list, not a missing person: *the person
 is not the secret, and dropping them would make the headcount depend on who is
 asking.*
 
-**Presence says where only to a reader who can see it** (LAI-438, §9.3). `repo`,
-`branch`, `project_ids` and `matched_task_id` are **absent** when the heartbeat
-attributes to nothing the reader can read. An entry with no `repo` is normal and
-means *somebody is working, elsewhere* — **not** a loading state, not an error,
-and not a row to hide.
+**Presence says where only to a reader who can see it** (LAI-438, §9.3) — **and
+the representation differs by field, which the first version of this note got
+wrong.** Verified against `services/presence.ts` and a live response:
+
+| field | when the reader cannot see where |
+| --- | --- |
+| `repo`, `branch` | **absent** — the key is not there |
+| `matched_task_id` | **present and `null`** |
+| `project_ids` | **present and `[]`** |
+
+**So "somebody is working, elsewhere" is `repo === undefined`.** Testing
+`matched_task_id === undefined` **would never fire**, and the row would render as
+located with no location. And the client type declares `matched_task_id` and
+`project_ids` **required**, `repo?` and `branch?` optional — backwards fails the
+drift check, or worse passes while the runtime disagrees.
+
+The service's comment is what makes it easy to misread: *"the task and the
+project list follow the same gate"* — they follow the same **gate**, with a
+different **representation**.
+
+An entry with no `repo` is normal and means *somebody is working, elsewhere* —
+**not** a loading state, not an error, and not a row to hide.
 
 ## Acceptance criteria
 
@@ -84,3 +101,32 @@ LAI-440**, not this task — they consume the same `GET /presence` and are worth
 landing separately so this screen is not held up by board layout.
 
 **`initials()` exists three times already** (LAI-215). Do not make it four.
+
+---
+
+## Corrections — CHIEF, 2026-09-02
+
+**Two of the four shapes above were wrong when I wrote them**, and SHELL found it
+by trusting the endpoint over the task file, which is what I asked for. Verified
+independently: `presence.ts:159-161` spreads `repo`/`branch` conditionally and
+sets the other two unconditionally, and a live heartbeat on an untracked repo
+returns keys `is_agent, last_seen, matched_task_id, name, project_ids, user_id`.
+
+**I wrote those Notes from CORE's reports rather than from the responses.**
+Eighth of that class this week.
+
+### Two decisions asked for rather than assumed
+
+**Resolving task ids to keys and titles is in scope.** `in_progress_tasks` and
+`tasks_in_review` are arrays of ULIDs, and a screen answering *"who takes the
+next task"* cannot show `01M1EN3K…`. **"Every number comes from a response" is
+about not deriving figures the API did not give you** — resolving a reference is
+not deriving. `GET /tasks/:id` per id, deduped, is fine at this size; **if it is
+visibly slow, file the bulk endpoint rather than caching client-side.**
+
+**Pairing `CapacityView` and `PresenceView` is in scope.** Their `UNPAIRED`
+reason is *"no client type exists"*, and creating the mirror **makes that reason
+false** — leaving the rows would be an exemption stating something untrue, which
+is the mistake CORE refused on LAI-415. Same crossing LAI-160 authorised; do it
+here rather than in a follow-up, and the drift check then guards the exact shapes
+in the table above.
