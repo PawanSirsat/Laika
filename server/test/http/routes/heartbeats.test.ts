@@ -112,6 +112,72 @@ describe('the happy path', () => {
   });
 });
 
+describe('an over-long repo or branch says how long (LAI-159)', () => {
+  /**
+   * The route's schema carried `.max(REPO_MAX_LENGTH)` and
+   * `.max(BRANCH_MAX_LENGTH)` — the same constants the service compares against.
+   * zod runs first, so its refusal was the only one a REST caller could reach,
+   * and it names the limit and nothing else.
+   *
+   * The service's error names `repo_length`, `branch_length` **and which of the
+   * two was too long**, which is the whole reason it was written that way. The
+   * service's own comment says it is bounded *"here as well as in the route"* —
+   * true of the code and false of the behaviour, because equal bounds mean the
+   * inner one never runs.
+   */
+  async function refusal(body: { repo: string; branch: string }): Promise<{
+    repo_length: number;
+    repo_limit: number;
+    branch_length: number;
+    branch_limit: number;
+  }> {
+    const res = await beat(body);
+    expect(res.status, await res.clone().text()).toBe(422);
+    const parsed = (await res.json()) as { error: { details: Record<string, number> } };
+    return parsed.error.details as unknown as {
+      repo_length: number;
+      repo_limit: number;
+      branch_length: number;
+      branch_limit: number;
+    };
+  }
+
+  it('names the actual repo length, not the limit', async () => {
+    const repo = `laika/${'x'.repeat(REPO_MAX_LENGTH)}`;
+
+    const details = await refusal({ repo, branch: 'main' });
+
+    expect(details.repo_length).toBe(repo.length);
+    expect(details.repo_limit).toBe(REPO_MAX_LENGTH);
+    // A `repo_length` echoing the limit would satisfy "it is present" and tell
+    // the caller to cut nothing.
+    expect(details.repo_length).not.toBe(details.repo_limit);
+  });
+
+  it('names the actual branch length, and says the repo was fine', async () => {
+    const branch = 'b'.repeat(BRANCH_MAX_LENGTH + 7);
+
+    const details = await refusal({ repo: 'laika/core', branch });
+
+    expect(details.branch_length).toBe(branch.length);
+    // The half zod could never express: which of the two is the problem.
+    expect(details.repo_length).toBeLessThanOrEqual(details.repo_limit);
+  });
+
+  it('still refuses an empty or absent repo at the route', async () => {
+    // The size is the service's; the shape is the schema's. Dropping `.max` must
+    // not drop `min(1)`, or a blank repo reaches a function that reads
+    // `repo.length` and finds `0`, which is not greater than the limit.
+    for (const body of [
+      { repo: '', branch: 'main' },
+      { branch: 'main' },
+      { repo: 5, branch: 'm' },
+    ]) {
+      expect((await beat(body)).status, JSON.stringify(body)).toBe(422);
+    }
+  });
+});
+
 describe('token auth only (§9.1)', () => {
   it('refuses a valid session cookie', async () => {
     // The whole point: a cookie resolves a perfectly good actor. Accepting it

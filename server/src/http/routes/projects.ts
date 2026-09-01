@@ -17,7 +17,6 @@ import {
   projectSummaries,
   projectSummaryView,
   removeMember,
-  REPO_MAX_LENGTH,
   updateProject,
   updateProjectContext,
   type ProjectSummary,
@@ -61,7 +60,12 @@ const UpdateBody = strictObject({
   description: z.string().trim().max(2000).optional(),
   // `owner/name` (§4.3). Trimmed but not rewritten — the service refuses a URL
   // rather than guessing at one, and `null` clears the field.
-  repo: z.string().trim().min(1).max(REPO_MAX_LENGTH).nullable().optional(),
+  //
+  // No `.max` (LAI-159): it was `REPO_MAX_LENGTH`, the constant the service
+  // compares against, so zod refused first and the caller lost the
+  // `{ expected: 'owner/name', example }` detail that says what the field should
+  // look like rather than how long it may be.
+  repo: z.string().trim().min(1).nullable().optional(),
   visibility: z.enum(PROJECT_VISIBILITIES).optional(),
   // `context_md` is **not** here since LAI-404. It has its own pair below, so
   // there is one writer of the column, one place enforcing the size bound, and

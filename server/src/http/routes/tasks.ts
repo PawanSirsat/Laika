@@ -19,7 +19,6 @@ import {
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
-import { MAX_TAGS_PER_TASK } from '../../services/tags.ts';
 import { unwatchTask, watchersOfTask, watchTask } from '../../services/watchers.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -45,7 +44,7 @@ const CreateBody = strictObject({
   title: z.string().trim().min(1).max(300),
   description_md: z.string().max(100_000).optional(),
   acceptance_md: z.string().max(ACCEPTANCE_MAX).optional(),
-  tags: z.array(z.string().trim().min(1).max(64)).max(MAX_TAGS_PER_TASK).optional(),
+  tags: z.array(z.string().trim().min(1).max(64)).optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
   status: z.enum(TASK_STATUSES).optional(),
   assignee_id: z.string().min(1).optional(),
@@ -62,7 +61,7 @@ const UpdateBody = strictObject({
   // Replaces the whole set. Validation of each name is the service's — the
   // regex, the lowercasing and the duplicate rule live with the CHECK they
   // mirror, not in two places.
-  tags: z.array(z.string().trim().min(1).max(64)).max(MAX_TAGS_PER_TASK).optional(),
+  tags: z.array(z.string().trim().min(1).max(64)).optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
   // `null` unassigns; absent leaves it alone. They are different requests.
   assignee_id: z.string().min(1).nullable().optional(),
