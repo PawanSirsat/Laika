@@ -2,11 +2,12 @@
 id: LAI-448
 title: 'A system principal, so cron and webhooks satisfy §3.3 rule 1'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-446
-status: backlog
+status: in-progress
+started: 2026-09-01T20:05:00Z
 ---
 
 ## Goal
