@@ -2131,3 +2131,271 @@ state that contradicts where the task files actually are. **The correct repair
 for a half that landed early is the other half**, and it is in flight.
 
 CHIEF gets no exemption from a rule CHIEF wrote in the same commit that broke it.
+
+---
+
+## D-046 — `npx laika init` owns configuration; `/laika:setup` is a front door onto it
+
+**2026-09-01. Decided by CHIEF, unblocking LAI-420 and LAI-422.**
+
+Both task files said *"raise it, CHIEF decides"* and neither builder could start
+the overlapping half. Deciding it before either is claimed rather than after.
+
+### The ambiguity
+
+§8 says `/laika:setup` writes `LAIKA_URL` and `LAIKA_TOKEN` **into user
+settings**. The ROADMAP says `npx laika init` does *"authenticate, mint a token,
+write local config"*. Two descriptions of the same three steps, with two
+different destinations, and nothing saying whether they are one mechanism.
+
+### The decision
+
+**The CLI owns the mechanism: authenticating, minting, and choosing where the
+configuration lives are decided once, in `cli/`. `/laika:setup` invokes it and
+adds nothing but the invocation.** If a slash command cannot drive an
+interactive prompt, its job shrinks to detecting whether configuration exists and
+printing the exact command to run — **still one mechanism**.
+
+**One config location**, named by the CLI. §8's "user settings" and the ROADMAP's
+"local config" are the same file.
+
+### Why the CLI is the one that owns it
+
+**It is the only one that works before the other exists.** Somebody with no
+plugin installed still needs a token — that is the whole of `npx`. A mechanism
+that only runs inside an already-configured Claude Code session cannot be the one
+that configures Claude Code.
+
+**And two locations make idempotence unprovable.** LAI-422's criterion is that a
+second run does not silently mint a second token. If the two doors write
+different files, a user who has run one and then the other has two tokens, one of
+which they cannot see, and neither door can honestly report on the other. **The
+criterion is not satisfiable by a design with two homes** — which is what makes
+this a decision rather than a preference.
+
+### The general rule
+
+**When two entry points do the same job, the one that works in the fewest
+preconditions owns the implementation.** The other calls it. This is the same
+shape as D-043 — the side that can still be fixed later owns the rule — and both
+come out of asking which side you would rather be wrong on.
+
+### What this does not decide
+
+Whether `/laika:setup` ships at all in M4. If invoking an interactive CLI from a
+slash command turns out to be hostile, **filing it beats faking it** — a command
+that half-configures is worse than one that tells you what to run. That is
+LAI-420's call with the reasoning in its log, exactly as `/laika:status`'s
+capacity gap is.
+
+---
+
+## D-047 — Watching is a write. Who is mentionable is the server's answer.
+
+**2026-09-01. Decided by CHIEF, unblocking LAI-143.** Both questions were flagged
+by CORE in LAI-094 and deliberately left, because neither is a service's call.
+
+### 1. A `read_only` token may not watch a task
+
+**§6.2 already answers it and I am not writing an exception into it.** A
+`read_only` token permits *"every `GET` the user's role allows and nothing
+else"*. `PUT /tasks/:id/watch` is not a `GET`. Watching would be the **only**
+non-`GET` a read-only credential performs, and "it only writes a little" is not a
+distinction the scope makes.
+
+The argument for allowing it was that a subscription is about the holder rather
+than the project. **`GET /tasks/:id/watchers` is what defeats it**: a watch is
+readable by other people, so it is shared state, and a credential that cannot
+change anything must not be able to insert its holder into a list somebody else
+sees.
+
+**How, and this is the part that matters:** not by tightening `project.read`, but
+by giving watching **its own action**, `task.watch`, granted to `lead`, `member`
+*and* `viewer` — anyone who may read may watch — and **left out of
+`READ_ACTIONS`**, which is what refuses the token.
+
+`project.read` conflates the two questions. **The role layer answers *who* may
+watch; the scope layer answers *which credential* may do it**, and the whole
+reason §3.3 rule 4 applies scope after the role decision is so those can differ.
+`actions.ts` already says a new action landing in the write set by default is
+*"the safe direction to be wrong in"*; this is that default being correct.
+
+**Consequence, stated rather than discovered:** an org Viewer's token is forced
+`read_only` (§4.9), so a Viewer can watch through the UI and never through a
+token. §3.1 already has two rows of exactly that shape — `Log own unlisted work`
+and `Send own heartbeat`, both annotated *"(`read_only` forced, so never in
+practice)"*. This is the third, and it is a footnote, not a special case.
+
+### 2. A server endpoint says who is mentionable, not the picker
+
+**`GET /api/v1/projects/:slug/mentionable`**, and the **mention resolver and this
+endpoint must be the same function**, with a test that a name it returns always
+resolves and a name it omits never does.
+
+`resolveMentions` filters on `can(mentioned, 'project.read', { projectId })`
+using **the mentioned person's own authority**. A client cannot compute that:
+
+- **`GET /projects/:slug/members` is a subset, not the answer.** Org owners and
+  admins hold **implicit `lead` everywhere and never have a membership row**
+  (D-006), so they are mentionable and absent from `/members`.
+- A deactivated user fails `can()` and may still appear in a directory.
+- The predicate is `can()`, which changes when §3 changes.
+
+**The failure mode decides it.** A picker built on the wrong set offers a name,
+the mention resolves to nobody, and **nothing happens at all** — no error, no
+notification, no trace. A silently dropped mention is worse than a refused one,
+and it would be read as the mention feature being broken rather than as a picker
+listing the wrong people.
+
+### The rule under both
+
+**Two implementations of one predicate is one implementation and one bug.** The
+server already owns `project.read`; a client rule that agrees with it today
+agrees by coincidence, and nothing tests the coincidence. Same shape as D-043 —
+put the rule where it can still be changed — and D-046 — one job, one owner.
+
+---
+
+## D-048 — Two deactivation verbs, and `GET /org` gets its own §3.1 row
+
+**2026-09-01. Decided by CHIEF for LAI-222, on CORE's two questions.**
+
+### 1. `user.deactivated` and `user.reactivated` — two verbs, not one
+
+**Seventh instance of a feature needing a §4.8 verb that does not exist.**
+Deactivation is none of `member.added`, `member.role_changed`, `member.removed`:
+the user is not removed, the row stays, and **`member.removed` would be a lie in
+the audit trail** of exactly the kind LAI-113 spent a task undoing.
+
+**Two verbs, and the LAI-113 test is why they differ from
+`sprint.tasks_changed`.** That one is a single verb because both directions
+answer *the same reader question* — "what moved in or out of this sprint" — and
+the payload carries which. These do not: *"who was locked out, and when"* and
+*"who was let back in"* are **different questions people actually ask**, and with
+one verb you would have to read the payload to tell them apart, which is the
+exact failure §4.8's closed vocabulary exists to prevent.
+
+**`user.` and not `member.`** because `member.*` is already overloaded — it is
+written by both `invites.ts` (joining the org) and `projects.ts` (project
+membership). Deactivation is neither; it is a property of the user.
+
+### 2. `GET /api/v1/org` gets a new row, and does not borrow `member_list.read`
+
+CORE recommended borrowing, on the grounds that *"if you may see who is in the
+organisation, you may see what it is called"*. **That is true and it is not what
+the endpoint returns.**
+
+§11.4.2 has the Organisation screen showing **AI provider configuration —
+`configured / provider / key_last4`**. Whether an org has an LLM provider wired
+up, and four characters of its key, are not implied by a member list by any
+reading. **The borrow is a contingent fact about today's payload, not a property
+of the row** — D-037's shape, in a permission matrix, which is the worst place
+for it: the next field added to the response inherits a grant nobody reviewed.
+
+So:
+
+- **New §3.1 row, "View the organisation", `✓ ✓ ✓ ✓`**, action **`org.read`**,
+  and it is a **read action** — a `read_only` token may do it.
+- **The AI provider block is gated separately, on the existing
+  `org.settings.edit`.** Field-level, admin+, no new action. The response already
+  does field-level gating (`ai_api_key` is write-only), so this is the pattern
+  the endpoint has rather than a new one.
+
+**The general rule: a permission row is borrowed only when the two grants are the
+same *by definition*, never when they merely coincide today.** If explaining the
+borrow needs a sentence about what the payload currently contains, it is a new
+row.
+
+### On being asked rather than told
+
+Both came with a recommendation, an argument, and an explicit *"say which and I
+will match it"* — and on the second the recommendation was wrong for a reason the
+recommender could not see, because it turns on a screen spec in §11.4.2 rather
+than on anything in the code. **That is the case for asking**, and it is worth
+recording that the builder who asked had already written the code for their own
+answer and offered to throw it away.
+
+### Postscript 2 — the axes are now listed, because two of them surprised people
+
+D-045 came out of *"a server-only change turned a web test red"*. It happened
+again on LAI-113, to the same session, on a **different axis** — and CHIEF
+predicted green with them: *"root `pnpm test` should be genuinely green: no
+`*View` type moves."* True, and not sufficient. The client mirrors
+`ACTIVITY_TYPES` in `stream-types.ts`, and the dashboard asserts it renders every
+verb the server can write.
+
+CORE's framing is the one worth keeping: **the question is not "does a `*View`
+move?" but "does anything closed on the server have a copy on the client?"**
+
+`docs/CONVENTIONS.md` §5.1 now lists every guard that reads across an ownership
+boundary, with where it lives and what it reads. **A guard nobody knows exists
+gets predicted around**, which is what happened twice, and the second time by the
+reviewer as well as the builder.
+
+---
+
+## D-049 — D-040 is overturned. The timeline gets task rows, drawn from actuals.
+
+**2026-09-01. Decided by the owner, who looked at both screens side by side and
+said the design's is what they want.** This supersedes **D-040**; D-014 survives
+in amended form, below.
+
+### What D-040 said, and why it was right at the time
+
+> *"The design's timeline is not reachable. Reproducing those rows would mean
+> inventing dates — draw it from sprint boundaries and it costs a view; draw it
+> from task dates and it costs a scheduling engine."*
+
+**The objection was to inventing dates, and it was correct** — on 2026-08-31
+there were no per-task dates to draw. `tasks.started_at` and `completed_at`
+existed as columns and **nothing serialised them**, so the only honest bar was a
+sprint's.
+
+### What changed
+
+**LAI-126 landed today.** `TaskView` now carries `started_at` and `completed_at`,
+`started_at` is stamped on the **first** entry into `in_progress` by every route
+in, and neither is ever overwritten.
+
+So a finished task's bar is **`started_at → completed_at`: a fact about the past,
+measured, not planned.** That is precisely the distinction D-014 was protecting,
+and it now falls on the other side of it. A Gantt bar asserting *what is planned*
+is a scheduling engine; a bar showing *what actually happened* is a report.
+
+**D-040's reasoning was sound and its conclusion expired.** The decision that
+made it expire was taken four hours earlier by the same session, for an unrelated
+reason.
+
+### What each pixel comes from
+
+| Task state | Bar | Source |
+| --- | --- | --- |
+| `done` | solid, from start to finish | `started_at → completed_at` — **actual** |
+| `in_progress` | solid to today, then a lighter remainder to the sprint's end | `started_at → now`, remainder from the sprint — **actual, then plan** |
+| `todo` / `backlog`, in a sprint | outlined, spanning the sprint | the sprint's range — **plan, and it must not look like an actual** |
+| anything with no actuals and no sprint | the Unscheduled tray, as today | — |
+
+**The two must be visually distinguishable without reading a legend.** That is
+the whole of what is left of D-014: **Laika never asserts a date it was not
+told.** A solid bar is something that happened; an outline is a sprint someone
+put a task into.
+
+### What is still not being built
+
+**Tasks do not get their own date columns.** No `planned_start`, no `due_date`,
+no dragging a task bar to reschedule it. If the owner wants to *set* a task's
+dates by hand, that is a further decision — it adds two columns, an editing
+surface, and the overlap questions sprints already needed — and it is filed
+separately rather than folded in here.
+
+### The guard
+
+`timeline-derive.test.ts`'s *"D-014 — tasks never get a position on the axis"*
+**is retired by this decision, and replaced, not deleted.** Its successor asserts
+the rule that survives: **no bar is drawn from a date the task does not have.**
+A `todo` task with no sprint gets no bar; a `done` task with a null `started_at`
+falls back to its sprint and renders as a plan.
+
+Retiring it is authorised here so that no builder has to decide whether a
+comment saying *"there is a test that keeps it that way"* still binds. **It does
+not — this does.**

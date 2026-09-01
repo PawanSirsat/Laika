@@ -23,15 +23,29 @@ broken Claude Code.
 
 - [ ] `.mcp.json` points at `${LAIKA_URL}/mcp` with
       `Authorization: Bearer ${LAIKA_TOKEN}`, both from the environment.
+      **This already exists and looks right** — LAI-012 wrote it. Verify it
+      against a running board rather than rewriting it, and if it is correct say
+      so and tick it. Rewriting a correct file to feel like the criterion was met
+      is how a review loses the ability to tell the two apart.
 - [ ] **Committed files carry obvious placeholders** and no real URL or token.
       A test asserts no `lai_`-prefixed string appears anywhere in `plugin/`.
 - [ ] **Unconfigured, the plugin loads and says why it is idle** — once, clearly,
       naming the two variables and how to set them. Not a stack trace, not a
       connection error on every tool call, and not silence so complete the user
       cannot tell it is installed.
-- [ ] **Configured against a real Laika, the eight §7.1 tools appear** and one
+
+      **If Claude Code offers no hook for saying it once**, say so and file it
+      rather than approximating — a message on every tool call is the failure
+      this criterion names, and choosing it because it was the only lever
+      available makes the plugin worse, not compliant. Silence plus a clear
+      `README` is the honest fallback and it is acceptable; a nagging plugin is
+      not.
+- [ ] **Configured against a real Laika, all ten §7.1 tools appear** and one
       read tool returns real data. Verified against a running instance, not
-      inferred from the file.
+      inferred from the file. **Ten, not eight** — this criterion said eight
+      until 2026-09-01, which was the same stale count the ROADMAP already
+      corrected once; `server/src/mcp/` registers ten and §7.1 lists ten.
+      **Assert the count and the names**, so the next drift is loud.
 - [ ] A wrong or revoked token surfaces as *"your token was refused"*, not as
       *"the server is unreachable"* — LAI-224's lesson, in the plugin.
 - [ ] Full gate green.

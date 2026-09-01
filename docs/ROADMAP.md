@@ -1,6 +1,6 @@
 # Laika — Roadmap
 
-Owner: CHIEF session. Last updated: 2026-08-24.
+Owner: CHIEF session. Last updated: 2026-09-01.
 
 Milestones are sequential and each one ends in something demonstrable. A
 milestone is complete when every task carrying its label sits in `.tasks/done/`
@@ -105,11 +105,18 @@ claims it, comments, and moves it to review — visible live in a human's browse
 - `npx laika init` CLI: authenticate, mint a token, write local config
   (**LAI-422**)
 
-**One open question inside M4**: `/laika:setup` (§8) and `npx laika init`
-(this list) both "write local config", and the spec does not say whether they are
-one mechanism with two front doors. Named in both tasks as CHIEF's to settle;
-whichever builder reaches it first raises it rather than implementing a reading
-(the LAI-139 rule).
+**M4's open question is settled — D-046, 2026-09-01.** `/laika:setup` and
+`npx laika init` are **one mechanism**, and the CLI owns it: it is the only one
+that works before the other exists, since somebody with no plugin installed still
+needs a token. One config location, named by the CLI. Two homes would make
+LAI-422's *"does not silently mint a second token"* unprovable, which is what
+made it a decision rather than a preference.
+
+**Also settled since this was written:** a heartbeat's `repo` is normalised
+server-side and the hook sends `git config --get remote.origin.url` verbatim
+(**D-043**, LAI-144) — §8's own snippet said *"git remote basename"*, which
+matches nothing §4.3 stores, and every heartbeat would have resolved to no
+project.
 
 **Exit:** a new repo goes from nothing to an agent working the board in one
 command, **and a heartbeat from that agent is visible in the database**. Seeded early: **LAI-012** (plugin skeleton — no dependencies, so

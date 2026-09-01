@@ -56,25 +56,75 @@ serialisation change and belongs in a §6.4 row, not improvised here.
       be the layer that assumes so.
 - [ ] `GET /me/watching` refuses to report anybody else's watches, and a test
       says so rather than relying on the service's guard.
-- [ ] A read-only token can watch and unwatch, or cannot, and the answer is
-      written down — see Notes.
+- [x] ~~A read-only token can watch and unwatch, or cannot~~ — **decided,
+      D-047: it cannot.** Build `task.watch` as its own action, granted to all
+      three project roles and **absent from `READ_ACTIONS`**.
+- [ ] A test proves a `read_only` token is refused `PUT /watch` **and still
+      allowed `GET /tasks/:id/watchers`** — the refusal must be the scope layer,
+      not an accident of the role layer.
+- [ ] `GET /projects/:slug/mentionable` exists and is **driven by the same
+      function `resolveMentions` filters with**. A test asserts the two agree in
+      both directions: a returned name always resolves, an omitted one never
+      does. Two implementations of one predicate is one implementation and one
+      bug.
+- [ ] An org owner who is **not a member** of the project appears in
+      `mentionable` — that is the case `/members` gets wrong and the reason this
+      endpoint exists.
 
 ## Notes / context
 
-**Two shapes need deciding, and neither is a service's call.**
+**Both shapes are decided — D-047.** They were right not to be a service's call.
 
-1. **Is watching a read or a write?** `watchTask` asks `can()` for
-   `project.read`, because you may watch what you may read and watching grants
-   nothing. But it writes a row, so a **read-only token** currently *can* watch.
-   That may be right — a subscription is about the holder, not the project — or
-   it may be exactly the kind of write a read-only credential should not make.
-   §9.1 decides, not this task.
+**1. Watching is a write, and a `read_only` token is refused it.** Not by
+tightening `project.read` — by giving watching **its own action, `task.watch`**,
+granted to `lead`, `member` *and* `viewer` (anyone who may read may watch) and
+**left out of `READ_ACTIONS`**, which is what refuses the token.
 
-2. **Does `GET /users` tell a mention picker who is mentionable?** It is
-   org-wide; a mention only resolves for somebody who passes `project.read` on
-   that task's project (§4.19). A picker built on the org-wide list will offer
-   names that silently resolve to nobody, which reads as a bug in the mention
-   feature. Either the picker filters or an endpoint does.
+§6.2 already answered it: `read_only` permits *"every `GET` the user's role
+allows and nothing else"*, and `PUT /watch` is not a `GET`. The argument the
+other way — a subscription is about the holder — is defeated by
+`GET /tasks/:id/watchers`: **a watch is readable by other people, so it is
+shared state**, and a credential that cannot change anything must not add its
+holder to a list somebody else sees.
+
+`project.read` conflates *who may* with *which credential may*. The role layer
+answers the first, the scope layer the second, and §3.3 rule 4 exists so they can
+differ. `actions.ts` already calls the write-set default *"the safe direction to
+be wrong in"*.
+
+**2. A server endpoint says who is mentionable:
+`GET /api/v1/projects/:slug/mentionable`** — and it and `resolveMentions` **must
+be the same function**, with a test that a name it returns always resolves and a
+name it omits never does.
+
+`GET /projects/:slug/members` is a **subset, not the answer**: org owners and
+admins hold **implicit `lead` everywhere and have no membership row** (D-006), so
+they are mentionable and absent from it. A deactivated user fails `can()` and may
+still be in a directory. And the predicate is `can()`, which moves when §3 moves.
+
+**The failure mode decides it:** a picker on the wrong set offers a name, the
+mention resolves to nobody, and **nothing happens at all** — no error, no
+notification, no trace. That reads as the mention feature being broken.
 
 Unread counts and a notification centre remain out of scope — they were out of
 LAI-094's scope too, and they are a read-state model plus a screen.
+
+---
+
+## Ruled and sequenced — CHIEF, 2026-09-01 (D-047)
+
+**Both open questions are answered above; the SPEC half is written and held**
+(`scratchpad/lai-143-spec.patch`) — a §3.2 row for *Watch / unwatch a task* with
+its `read_only` footnote, and §6.4 lines for the five endpoints.
+
+**This is a §4.4 two-owner change of the covered kind.** A §3.2 row and the
+`can()` action it grants cannot land in one commit, but **the exemption is
+available to you**: `ACTIONS_WITHOUT_A_ROW` is in your own file, so take it,
+named for this task, and it expires when I apply the SPEC half at merge. That is
+step 2 working as designed — unlike LAI-126's, where the exemption lived in the
+other owner's area and D-045's red-with-a-named-failure was the only route.
+
+**`TaskView.watch_state` is still out of scope.** It is a serialisation change
+and wants its own §6.4 line, exactly as the original note says. Filing it beats
+folding it — and after LAI-099, adding a field to `TaskView` is a two-owner
+landing on its own.

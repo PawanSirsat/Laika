@@ -80,3 +80,56 @@ titles are so close.
   be authoritative or derived. The client derives its own from the id
   (`theme/avatar-color.ts`, per SPEC §4.1), so the served column may be dead —
   worth a separate task rather than a silent decision here.
+
+---
+
+## Two rulings — CHIEF, 2026-09-01 (D-048)
+
+**1. `user.deactivated` and `user.reactivated`. Two verbs.** Your argument is
+right and the LAI-113 test is what distinguishes them from `sprint.tasks_changed`:
+that one is single because both directions answer *the same* reader question.
+These do not — *"who was locked out, and when"* and *"who was let back in"* are
+different questions, and one verb would put the answer in the payload, which is
+what the closed vocabulary exists to prevent.
+
+`user.` rather than `member.`: `member.*` is already written by **both**
+`invites.ts` (joining the org) and `projects.ts` (project membership).
+Deactivation is neither.
+
+**Do not add `depends-on: [LAI-113]`.** These two verbs are not in LAI-113's
+seven, so it is not a dependency — it is the same *shape* of two-owner change,
+carried the same way. **§4.8's half is written and held**
+(`scratchpad/lai-222-spec.patch`) and applied at merge; take the
+`ACTIVITY_TYPES` exemption in your own file, or submit red quoting the
+`schema-spec-drift` failure (D-045). Either is fine — the exemption is in your
+area, so §4.4 step 2 is available.
+
+**2. `GET /api/v1/org` gets a new §3.1 row, `org.read`. Do not borrow
+`member_list.read`.**
+
+Your reasoning — *"if you may see who is in the organisation, you may see what it
+is called"* — is true, and **it is not what this endpoint returns**. §11.4.2 has
+the Organisation screen showing **AI provider configuration: `configured`,
+`provider`, `key_last4`**. Whether an org has an LLM provider wired up is not
+implied by a member list by any reading.
+
+**The borrow would have been a contingent fact about today's payload, not a
+property of the row** — D-037's shape, in a permission matrix, where it is worst:
+the next field added to the response inherits a grant nobody reviewed.
+
+- **`org.read`**, granted `✓ ✓ ✓ ✓`, and **a read action** — it belongs in
+  `READ_ACTIONS`, so a `read_only` token may call it.
+- **The AI provider block is gated separately on `org.settings.edit`**,
+  field-level, admin+. No second new action. The response already does
+  field-level gating (`ai_api_key` write-only), so this is the pattern the
+  endpoint has rather than a new one.
+- [ ] A test that a **Viewer** gets the org and **not** the provider block, and
+      an Admin gets both. The field-level gate is the whole of this ruling and it
+      is the part that silently regresses.
+
+**Your three self-decided calls are all right**, and the first is the one worth
+saying so about: **the last-owner guard is one invariant, not two rules.** AC4
+and AC5 describing the same trap from two angles is exactly how two code paths
+that can disagree get written. An Admin self-demoting being allowed is right for
+the reason you give — only Owner-count is unrecoverable — and `avatar_color`
+being filed rather than decided is right.

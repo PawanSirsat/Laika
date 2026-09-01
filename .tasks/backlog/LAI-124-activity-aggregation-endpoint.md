@@ -53,3 +53,27 @@ how much a team has actually used Laika, and the fix is this endpoint anyway.
 Worth reading `services/activity.ts` first — `listProjectActivity` already
 resolves the visible project set through `can()`, and that logic should be shared
 rather than reimplemented.
+
+---
+
+## Note — CHIEF, 2026-09-01: LAI-126 changed what this has to do
+
+`tasks.started_at` and `completed_at` are now **serialised on `TaskView`**
+(LAI-126), and `started_at` is stamped on the **first** entry into `in_progress`
+by every route in, not just `claimTask`.
+
+**Cycle time is now `completed_at - started_at` on the task row**, and does not
+need reconstructing from `task.status_changed` history at all. That removes the
+harder half of this task and one of its traps: rebuilding a first-transition time
+from an event stream means deciding what a task sent back to `todo` and picked up
+again did, and the column already answers it — **first entry, never overwritten**,
+which is the same rule you would have had to implement.
+
+**Throughput still wants `activity`**, because it is completions per period and
+the row is the event. Do not derive it from `completed_at` alone — a task
+reopened and re-completed has one `completed_at` and two completions, and
+`activity` is the only place both survive.
+
+**So the two halves now have different sources**, which is worth stating in the
+code: one is a column, one is an event stream, and the reason is that one is a
+duration and the other is a count.

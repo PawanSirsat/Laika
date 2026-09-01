@@ -19,16 +19,22 @@ nothing else.
 Everything it needs already exists: `POST /api/v1/tokens` (LAI-402), token auth
 (LAI-403), `/mcp` (LAI-406).
 
-## One thing to settle before building
+## Settled before you start — D-046
 
-**This overlaps `/laika:setup` (LAI-420).** §8 says the slash command writes
-`LAIKA_URL` and `LAIKA_TOKEN` into user settings; the ROADMAP says this CLI
-does "authenticate, mint a token, write local config". One mechanism with two
-front doors, or two different things — **the spec does not say.**
+**One mechanism. This CLI owns it.** Authenticating, minting, and **choosing
+where the configuration lives** are decided once, here. `/laika:setup` (LAI-420)
+invokes this and adds nothing but the invocation.
 
-**Raise it; do not settle it by implementing** (LAI-139). If the answer is "one
-mechanism", one of these calls the other and the shared part needs a home. Build
-the parts that are unambiguous while you wait.
+**Why this side:** it is the only one that works before the other exists —
+somebody with no plugin installed still needs a token, which is the whole of
+`npx`. A mechanism that only runs inside an already-configured Claude Code
+session cannot be the thing that configures Claude Code.
+
+**And it is what makes AC5 provable.** Two doors writing two config locations
+means a user who ran both has two tokens, one of which they cannot see, and
+neither door can honestly report on the other. **"Does not silently mint a second
+token" is not satisfiable by a design with two homes** — so name the one location
+in this task and say it in the CLI's own output.
 
 ## Acceptance criteria
 
