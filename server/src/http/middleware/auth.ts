@@ -1,5 +1,6 @@
 import { createMiddleware } from 'hono/factory';
 import { type Db } from '../../db/client.ts';
+import { ApiError } from '../../errors.ts';
 import { type Auth } from '../../auth/auth.ts';
 import { resolveActor, type ResolvedActor } from '../../auth/resolve-actor.ts';
 import { TokenAuthError } from '../../auth/tokens.ts';
@@ -27,6 +28,19 @@ export function authMiddleware(options: { auth: Auth; db: Db }) {
       //
       // The reason is logged here and nowhere else: it is on the error rather
       // than in `details`, so it never reaches the response body (§6.1).
+      // A deliberate refusal is not an anonymous request either (LAI-442). The
+      // resolver throws `ApiError` when a session belongs to a deactivated
+      // account; swallowing it here would turn "your account is switched off"
+      // into "you are not signed in", which is the same class of wrong answer
+      // this task exists to remove one layer down.
+      if (err instanceof ApiError) {
+        c.get('log').warn('auth.session_refused', {
+          request_id: c.get('requestId'),
+          code: err.code,
+        });
+        throw err;
+      }
+
       if (err instanceof TokenAuthError) {
         c.get('log').warn('auth.token_rejected', {
           request_id: c.get('requestId'),

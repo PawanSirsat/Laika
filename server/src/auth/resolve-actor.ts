@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type ActorKind, type ProjectRole } from '../db/enums.ts';
 import { projectMemberships, users } from '../db/schema.ts';
+import { ApiError } from '../errors.ts';
 import { type Actor } from '../policy/can.ts';
 import { type Auth } from './auth.ts';
 import { findTokenBySecret, TokenAuthError, touchTokenUsage, tokenProjectIds } from './tokens.ts';
@@ -70,7 +71,31 @@ export async function resolveActor(
   const session = await options.auth.api.getSession({ headers: request.headers });
   if (session === null) return null;
 
-  return loadActor(options.db, session.user.id);
+  const actor = loadActor(options.db, session.user.id);
+
+  // **A deactivated account stops here, not at each route** (LAI-442).
+  //
+  // The token path has refused an inactive user since LAI-005
+  // (`resolveTokenActor`, below); the cookie path did not, and every route was
+  // relying on its own `can()` calls to notice. They do — §3.3 rule 3 denies a
+  // deactivated user everything — but a *filter* that denies each project in
+  // turn answers `200 []`, and "you have no projects" is a different claim from
+  // "your account is switched off". `GET /me` was the only endpoint that said
+  // the true thing, because it looked at the field directly.
+  //
+  // Authentication is where an inactive account stops. §3.3 rule 1's argument
+  // for `can()` — one authority, called everywhere — applies here and there was
+  // none.
+  //
+  // **`403`, where the token path gives `401`**, and the difference is real: a
+  // refused token is a bad credential, while a valid cookie for a deactivated
+  // person is a good credential whose holder may do nothing. What converges is
+  // the *place*, not the status.
+  if (actor !== null && !actor.isActive) {
+    throw new ApiError('forbidden', 'This account has been deactivated');
+  }
+
+  return actor;
 }
 
 /**
