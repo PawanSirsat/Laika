@@ -95,8 +95,8 @@ export const ACTIVITY_TYPES = [
   // LAI-113. Three features filed their audit trail under a verb that did not
   // name them: sprints and the context document rode `project.updated`,
   // promotion and dismissal rode `unlisted.logged`. An audit reader filtering on
-  // `type` — the obvious query, and what §4.13's indexes are for — could not see
-  // any of them.
+  // `type` — the obvious query, and what the §4.13 indexes are for — could not
+  // see any of them.
   'sprint.created',
   'sprint.updated',
   'sprint.deleted',

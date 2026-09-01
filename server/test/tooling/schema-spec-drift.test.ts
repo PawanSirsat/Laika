@@ -350,16 +350,6 @@ const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([]);
 
 /** §4.8 verbs the enum has and the list does not, or the other way round. */
 const ACTIVITY_TYPE_EXEMPTIONS = new Map<string, string>([
-  // In flight, not permanent. §4.8 gains both verbs in the merge that lands
-  // LAI-222; the staleness test below drops these the moment it does.
-  [
-    'user.deactivated',
-    "LAI-222, in flight: awaiting §4.8's `user.deactivated`, held by CHIEF and applied at merge.",
-  ],
-  [
-    'user.reactivated',
-    "LAI-222, in flight: awaiting §4.8's `user.reactivated`, held by CHIEF and applied at merge.",
-  ],
   // Empty, and that is the point (LAI-098). `task.dependency_removed`,
   // `comment.edited` and `comment.deleted` lived here because the enum had them
   // and §4.8's list did not; §4.8 now lists all three.
