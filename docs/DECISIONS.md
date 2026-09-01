@@ -2314,3 +2314,20 @@ recommender could not see, because it turns on a screen spec in §11.4.2 rather
 than on anything in the code. **That is the case for asking**, and it is worth
 recording that the builder who asked had already written the code for their own
 answer and offered to throw it away.
+
+### Postscript 2 — the axes are now listed, because two of them surprised people
+
+D-045 came out of *"a server-only change turned a web test red"*. It happened
+again on LAI-113, to the same session, on a **different axis** — and CHIEF
+predicted green with them: *"root `pnpm test` should be genuinely green: no
+`*View` type moves."* True, and not sufficient. The client mirrors
+`ACTIVITY_TYPES` in `stream-types.ts`, and the dashboard asserts it renders every
+verb the server can write.
+
+CORE's framing is the one worth keeping: **the question is not "does a `*View`
+move?" but "does anything closed on the server have a copy on the client?"**
+
+`docs/CONVENTIONS.md` §5.1 now lists every guard that reads across an ownership
+boundary, with where it lives and what it reads. **A guard nobody knows exists
+gets predicted around**, which is what happened twice, and the second time by the
+reviewer as well as the builder.

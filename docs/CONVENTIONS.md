@@ -215,5 +215,31 @@ shown to work.
 | TypeScript strict, `@ts-ignore` descriptions | `eslint.config.js` | `pnpm lint` |
 | Formatting | Prettier | `pnpm format` |
 
+### 5.1 The drift axes — what a change can break in somebody else's directory
+
+**These are the guards that read across an ownership boundary**, and they are the
+reason the gate is the **repo-root `pnpm test`** and never a workspace filter
+(CLAUDE.md §5, D-045). Both sessions have now predicted green on the narrow
+question and been wrong: CORE on LAI-126 (*"this is a server-only change"*) and
+again on LAI-113 (*"no `*View` moves, so it is green"*).
+
+| Axis | Guard | Lives in | Reads |
+| --- | --- | --- | --- |
+| SPEC §4 ↔ `schema.ts` columns and tables | `schema-spec-drift.test.ts` | `server/test/` | `docs/SPEC.md` |
+| SPEC §4.8 verbs ↔ `ACTIVITY_TYPES` ↔ the `CHECK` | `schema-spec-drift.test.ts` | `server/test/` | `docs/SPEC.md` |
+| SPEC §3 rows ↔ `can()` actions | `structure.test.ts` | `server/test/` | `docs/SPEC.md` |
+| Server `*View` types ↔ client types, **both directions** | `view-type-drift.test.ts` | `server/web/test/` | `server/src/` |
+| A **closed vocabulary** with a copy on the client — `ACTIVITY_TYPES` ↔ `STREAM_TYPES`, and the dashboard covering every verb | `use-events.test.ts`, `dashboard-derive.test.ts` | `server/web/test/` | `server/src/` |
+| MCP tool ↔ its REST twin | `mcp-rest-parity` | `server/test/` | both |
+
+**The last two are the ones that surprise people**, because they live in
+`server/web/` and read `server/src`. The question to ask before predicting green
+is not *"does a `*View` move?"* — it is **"does anything closed on the server
+have a copy on the client?"** `ACTIVITY_TYPES` does, and that is a different
+mirror from the view types.
+
+Adding a new cross-boundary guard means adding a row here. A guard nobody knows
+exists gets predicted around.
+
 Everything else in this document is enforced at PM review. If a rule here keeps
 being missed, that is an argument for automating it — file a task.
