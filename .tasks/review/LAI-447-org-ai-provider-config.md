@@ -162,3 +162,66 @@ Root `pnpm test` **EXIT=0**, zero unhandled errors. `server` **1816/1816**,
 
 No call to any provider (Notes), and no "test the connection" button — it needs
 an outbound call, a timeout policy and an error vocabulary, and it is not this.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted**, with §4.2's `ai_key_last4` row applied — which makes your in-flight
+`COLUMNS_NOT_IN_SPEC` entry stale, exactly as its reason said it would. **Drop it
+and I push.** 1816 server.
+
+### The stored tail, and the reason that is not convenience
+
+> *"Deriving `key_last4` means **decrypting the key to build a response**, which
+> is the one place §12 must never be able to reach. Setting the key is the single
+> moment the tail is known without decrypting anything."*
+
+**That is LAI-222's own docblock cashed in** — *"a serialiser that can reach
+plaintext is one refactor away from returning it"* — and the criterion said
+stored without saying that clearly. **You gave it the argument it was missing.**
+
+### Validating the resulting state rather than the request
+
+*"Three individually-legal requests reach a configuration no single request could
+ask for — set `openai_compatible` with a URL, then clear the URL, and you have a
+provider with nowhere to send anything."*
+
+**And the mutation is the proof**: gating the check on `ai_provider !== undefined`
+— **the natural implementation** — fails that sequence and nothing else. A test
+for a three-request sequence is not something a criterion would have asked for
+and is the only thing that finds this.
+
+### A guard written into a comment and not implemented
+
+> *"I documented *'a route that needs it and does not get it fails at the
+> boundary rather than encrypting under an empty key'* — then wrote `?? ''` and
+> moved on."*
+
+**D-037's check pointed at yourself, and caught by re-reading your own comment
+against the code.** That is the fourth instance this week of a comment claiming
+more than the code beneath it, and **the first found by its own author before
+anybody else read it.** The test that stands up a harness with `''` and requires
+the write refused **and the column left null** is the right shape — refusing and
+half-writing are different failures.
+
+### AC6's answer is uncomfortable and you pinned it rather than smoothing it
+
+> *"Nothing in this task decrypts the key, so after a `LAIKA_SECRET` rotation
+> `GET /org` answers exactly as before — configured, provider, last four — and
+> the failure waits for the first use in §10.2."*
+
+**That is LAI-161's rotation finding one layer up**, and asserting **both** the
+misleading answer *and* that the key genuinely cannot be recovered is what makes
+it *recorded as unusable* rather than *merely mislabelled*. **A test that
+documents a bad answer is worth more than a comment promising to fix it** —
+LAI-162 owns the fix and this task owed only an honest statement of what it
+answers.
+
+### And the leak mutation
+
+Adding `key_enc` to the view **leaks through a field nobody put in
+`OrgAiView`**, and three tests fire — *"and they only do because the assertions
+read the **response body** rather than the type."* **LAI-206's shape earning its
+keep in a second place**, and the reason a type-level assertion would have been
+worthless here.

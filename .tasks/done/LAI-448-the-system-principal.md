@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-446
-status: review
+status: done
 started: 2026-09-01T20:05:00Z
 finished: 2026-09-01T20:45:00Z
 ---
@@ -198,3 +198,80 @@ meets it in the first ten minutes otherwise.
 
 Root `pnpm test` **EXIT=0**, zero unhandled errors. `server` **1799/1799**,
 `web` 604/604, `cli` 49/49, `pnpm lint` EXIT=0, `pnpm format` EXIT=0.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted**, with §3.4 applied. Root gate `EXIT 0` — **1799** server, 604 web,
+49 cli.
+
+### The finding is not the missing calls
+
+> *"**It was that removing one is invisible.** `assertCan(SYSTEM, …)` always
+> passes — the principal holds the action — so deleting it changes nothing
+> behaviour can see."*
+
+**Measured independently:** deleting `assertCan(SYSTEM, 'system.invite.expire')`
+fails **two** tests — your structural `calls assertCan in every job that touches
+a row`, and the exemption staleness — and **all 406 behavioural tests pass with
+the call gone.**
+
+**That is how the rule came to be broken in eight places without either of us
+noticing**, and a task that only added the calls would have left the next removal
+just as silent.
+
+### The exemption that would never have expired
+
+> *"Its staleness test reads §3.1 and §3.2 only, and **§3.4 is a new section** —
+> so it would never have fired, and the four would have become permanent without
+> anybody deciding that."*
+
+**A self-expiring exemption whose expiry condition cannot be observed is just an
+exemption**, and it looks exactly like the ones that work. Scanning §3.4 for the
+names rather than parsing it as a table — *because the row labels are CHIEF's and
+a guess would fail for the wrong reason* — and **throwing when §3.4 exists and
+names none of them**, rather than quietly leaving them.
+
+**Verified by simulation before there was a §3.4 to verify against**, which is
+the second time today you have tested an expiry against a document that did not
+exist yet.
+
+### Three grants I would have got wrong
+
+**`task.write` and `comment.create` as the human actions, not system twins** —
+*"the same operation on the same resource; only the principal differs. Twins
+would be two rules for one operation and eventually two answers."*
+
+**Deny-by-default doing the work** — §3.1 and §3.2 have no row for the four, so
+the role branches never see them — **with the one explicit deny in the *user*
+branch so the reason reads rather than being implied by omission.**
+
+**`VACUUM` holding no action, exempted by name.** *"Rule 1 governs reading and
+writing **data**; `VACUUM` rewrites storage and touches no row, so there is no
+resource to name. A `system.database.vacuum` would be a permission that grants
+nothing."* **By name, so a fifth job cannot inherit it** — the difference between
+an exemption and a hole.
+
+**And a distinct `kind` rather than a sentinel `userId`**, for the reason the
+criterion gave and the docblock repeats: *a row that means "the system" is one
+refactor from being handed a real user's authority.*
+
+### Stripping comments, knowing in advance
+
+Third guard this week to need it — after `use-events.test.ts` and LAI-159's — and
+**the first where somebody knew before the first run**: *"both files discuss
+`assertCan` at length and I have already been bitten by a check reading its own
+documentation."*
+
+### And the LAI-446 half
+
+You said so before I merged, which is §4.4 working. I could not strip it —
+`3277b35` is an ancestor of everything here. **Reviewed on its merits and it
+stands; not an accepted task**, and that is written on LAI-446 so `master` does
+not carry half a task with no record of why.
+
+**The `ResolvedActor` finding is a criterion there now.** Services take
+`ResolvedActor`, not `Actor`, so a `SystemPrincipal` cannot simply be handed to
+one — **found while building this and flagged rather than left to be met in the
+first ten minutes of the next task.**
