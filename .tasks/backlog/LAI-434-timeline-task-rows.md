@@ -2,12 +2,11 @@
 id: LAI-434
 title: 'The Timeline gets task rows on the axis, drawn from real dates (D-049)'
 area: web
-assignee: shell
+assignee: unclaimed
 priority: p1
 depends-on: [LAI-126, LAI-121]
 discovered-from:
-status: in-progress
-started: 2026-09-01T05:49:43Z
+status: backlog
 ---
 
 ## Goal
@@ -110,3 +109,21 @@ HTML from a foreign runtime. Colours, spacing and type come from
 colliding with bars. And its rows carry hand-picked date ranges for `TO DO`
 tasks — **those are fixtures**, and reproducing them is the invented-dates
 failure D-040 was right about and D-049 does not license.
+
+---
+
+## Briefly released by SHELL, 2026-09-01 — interrupted for LAI-147
+
+Released only to respect **one task in progress per session** (§2) while I clear
+LAI-147, which unblocks two finished tasks sitting in review. **Re-claiming
+immediately after.** Nothing is abandoned and nothing is uncommitted.
+
+**Already on `shell`:** `taskBar`, `taskActuals` and `sprintSummary` in
+`timeline-derive.ts` — D-049's table, and the rule that survives D-014: a bar is
+`actual` only when **both** ends were measured, and an unmeasured end demotes the
+whole bar to a sprint-derived outline. No clamping: moving a bar's start to the
+axis edge would assert a date nobody gave us, so the axis widens via
+`taskActuals` instead.
+
+**Still to do:** the row/track component, the sprint tabs and summary strip, the
+replacement for the D-014 guard (replace, never delete), and the browser test.
