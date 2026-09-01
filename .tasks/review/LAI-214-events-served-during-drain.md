@@ -6,8 +6,9 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-070
-status: in-progress
+status: review
 started: 2026-09-02T09:35:00Z
+finished: 2026-09-02T10:00:00Z
 started:
 finished:
 ---
@@ -68,11 +69,72 @@ be served during the drain — the events stream is just where it is visible.
 
 ## Acceptance criteria
 
-- [ ] After `shutdown.start`, a new `GET /api/v1/events` on a reused keep-alive
+- [x] After `shutdown.start`, a new `GET /api/v1/events` on a reused keep-alive
       connection does not receive a `ready` frame.
-- [ ] A test drives an actual shutdown and fails if a `ready` is issued during
+- [x] A test drives an actual shutdown and fails if a `ready` is issued during
       the grace window. Prove it can fail by removing the guard.
-- [ ] Clients already connected still get `closing` before the socket ends —
+- [x] Clients already connected still get `closing` before the socket ends —
       the existing behaviour must not regress.
-- [ ] Ordinary requests during the drain get a definite answer, not a hang: a
+- [x] Ordinary requests during the drain get a definite answer, not a hang: a
       refusal is fine, a socket held to `grace_ms` is not.
+
+
+---
+
+## Submitted — CORE, 2026-09-02
+
+**1667 of 1668 server green**; the one failure is §6.3's code table and is
+CHIEF's half. Web red only on LAI-153.
+
+### LAI-142 had already closed the path you observed, and I measured that first
+
+Before building anything I reproduced your scenario against the current build: a
+pooled keep-alive connection, `SIGTERM`, then a fresh `GET /api/v1/events` on
+that socket.
+
+```
+delay   0ms  ->  ECONNRESET
+delay  20ms  ->  ECONNREFUSED
+delay 100ms  ->  ECONNREFUSED
+delay 300ms  ->  ECONNREFUSED
+ready frames served after shutdown.start: 0
+```
+
+LAI-142 reaps idle connections every 50ms instead of once, so the socket in your
+report would have been gone before the browser reused it.
+
+**I built this anyway, and the reason is the part worth reviewing.** Reaping
+cannot close the case where a connection is *busy* when shutdown starts: it is
+never idle, so it is never reaped, and when its request finishes it is briefly
+reusable before the next sweep. That window is small and timing dependent —
+**exactly the shape that appears once on somebody's machine and never in a
+test**, which is what your report was. A flag makes it deterministic; a shorter
+interval would only make it rarer.
+
+### Every API path, not the stream
+
+Your Notes said it: *"the same reused-keep-alive path means any endpoint can be
+served during the drain — the events stream is just where it is visible."*
+Guarding only `/events` turns two tests red.
+
+**`/health` is exempt on purpose.** A supervisor deciding whether to keep routing
+traffic here needs an answer, and "I am draining" is the most useful one it can
+get. Refusing it also turns a test red, so the exemption is pinned rather than
+incidental.
+
+### `unavailable: 503` is a new §6.3 code
+
+The server has decided to stop and has not stopped: none of the existing ten fit,
+because nothing the caller sent is wrong and the server is not broken. **This is
+the red to quote** — `has exactly the codes the spec lists` compares
+`ERROR_STATUS` against §6.3's table, which has ten.
+
+### The ordering
+
+`markStopping` runs **before** `closeAll()`. Everything after that line takes
+time, and a request arriving during it must already be refused — marking
+afterwards leaves a window exactly as wide as the closing takes. Swapping them
+turns a test red, and the test asserts the order rather than the effect.
+
+Five mutations, all caught. Shutdown is still 61ms with a stream open, so this
+did not buy correctness with the speed LAI-142 gained.
