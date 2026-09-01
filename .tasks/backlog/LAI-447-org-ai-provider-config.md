@@ -53,6 +53,13 @@ without `org.settings.edit`. §4.2's columns exist: `ai_provider`, `ai_base_url`
 - [ ] `ai_base_url` is validated as a URL and **`openai_compatible` requires
       it** while `anthropic` does not (§4.2's enum). A provider with no endpoint
       is a configuration that cannot work.
+- [ ] **AC6's other two thirds, which LAI-161 could not assert.** It proved the
+      stored value does not contain its plaintext and that neither error message
+      leaks it — but it has no caller, so *"never reaches a log, a response or
+      `activity`"* was untestable there. **This is where it becomes testable**:
+      assert it of the response at every grade, of the `activity` row this write
+      produces, and of the log line. CORE named the gap rather than ticking
+      through it.
 - [ ] Full gate green — **`EXIT 0`**.
 
 ## Notes / context
