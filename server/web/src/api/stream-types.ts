@@ -42,4 +42,8 @@ export const STREAM_TYPES: readonly string[] = [
   'unlisted.dismissed',
   'user.deactivated',
   'user.reactivated',
+  'heartbeat.pruned',
+  'task.stale_flagged',
+  'invite.expired',
+  'meeting_review.expired',
 ];

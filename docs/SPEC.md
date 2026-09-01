@@ -394,7 +394,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`,
 `unlisted.promoted`, `unlisted.dismissed`, `project.context_updated`,
 `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
-`user.deactivated`, `user.reactivated`.
+`user.deactivated`, `user.reactivated`, `task.stale_flagged`,
+`heartbeat.pruned`, `invite.expired`, `meeting_review.expired`.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -421,6 +422,30 @@ one they were written with, and a reader of old history needs `payload.action`.
 That is the honest cost of having had the vocabulary wrong, and **every reader of
 that history must therefore accept two vocabularies permanently** —
 `latestFieldEdit` is the first and was found by a test rather than by design.
+
+**The four cron verbs close a contradiction this section had with itself**
+(LAI-431). D-022's note below already names the in-process cron as a writer of
+rows with no human actor — *"heartbeat pruning, stale-task flagging, invite and
+meeting-review expiry"* — and the type list had a verb for **none** of them. The
+nullability rule was justified by rows the vocabulary made impossible to write.
+
+**`heartbeat.pruned` is one row per run, not per heartbeat.** Thirty days of an
+active org is thousands of deletions, and a row each would make the audit trail
+mostly a record of presence data being removed — which is a strange thing for a
+table whose privacy claim is D-005. One row carrying the count and the cutoff
+answers *"was retention running"*, which is the only question anyone asks of it.
+
+**`task.stale_flagged` rather than `task.updated`**, for LAI-113's reason: a
+reader filtering on `type` should not open a payload to learn that this update
+was the cron and not a person. It is also the one cron row a human sees, on the
+task's own timeline.
+
+**Four verbs, not six.** The note enumerates the writers, and the nightly
+snapshot and the weekly vacuum are **not** among them. A backup is not a change
+to the product's history and a `VACUUM` changes no row; writing them would put
+two entries a week in every feed saying nothing happened. Their jobs say so at
+the site, so a reader finding no `appendActivity` does not assume it was
+forgotten.
 
 **`project.archived` is its own verb, not a flag on `project.updated`.** Archiving
 removes a project from everyone's board; a settings edit does not. Reading an

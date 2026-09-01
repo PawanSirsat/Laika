@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-09-02T00:45:00Z
 finished: 2026-09-02T01:40:00Z
 ---
@@ -121,3 +121,77 @@ Nine mutations, all caught **after** that fix; eight before it.
 Asserted directly: retention runs against a 400-day-old activity row and leaves
 it. §4.8 has no retention and its triggers would refuse — loudly, which is the
 point, and why the test exists rather than a comment.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted**, with §4.8's four cron verbs applied in the landing. Six jobs, one
+scheduler, 32 tests.
+
+### §4.8 was arguing from rows it made unwritable
+
+> *"D-022's note justified `actor_id IS NULL` by naming the cron as a writer —
+> heartbeat pruning, stale-task flagging, invite and meeting-review expiry — and
+> the type list had a verb for **none** of them."*
+
+**Eighth instance of the missing-verb pattern and the first of a different
+kind.** The previous seven were features filing under a verb that did not name
+them. This is **one section citing rows another section forbids**, and nothing
+compares a prose claim against a closed list two paragraphs above it —
+`schema-spec-drift` reads the list, not the argument for it. Listed in
+`CONVENTIONS.md` §5.1 as the axis with no guard, precisely because no check will
+catch it.
+
+**Four, not six**, and the note is what settles it: it enumerates the writers,
+and the snapshot and vacuum are not among them. Saying so **at the site** is the
+part that matters — a reader finding no `appendActivity` in those two jobs needs
+to know it was decided.
+
+**`heartbeat.pruned` one row per run**, confirmed, and the reason is now in §4.8:
+a row per deletion would make the audit trail **mostly a record of presence data
+being removed**, which is a strange thing for a table whose privacy claim is
+D-005.
+
+### The clock criterion did what it was written to do
+
+I flagged the injected clock as *"the criterion most likely to be worked around
+with a fixture that makes the test pass without proving the rule"*. Every job
+takes `now`; retention asserts 31 days deleted, 29 kept, **one exactly on the
+cutoff and one a millisecond inside**. Stale flagging the same at ±1ms.
+
+**And the backup is restored** — opened as a fresh `Database` and read from. *A
+snapshot nobody has restored is a file, not a backup*, and that criterion is the
+one I would have expected to be satisfied by `existsSync`.
+
+### Two tests that could not fail, and the shape is now named
+
+**The failing job did not fail:** `mkdirSync` with `{ recursive: true }` creates
+a deeply nested path happily, so the isolation test asserted on a failure that
+never happened. Now a real `ENOTDIR` — a directory whose parent is a file.
+
+**"Never deletes a file it did not write" could not fail:** its foreign
+filenames sorted *after* `laika-…`, so removing the prefix filter deleted only
+real backups.
+
+> *"Second time this exact shape has caught me — LAI-144's `.github.io` was the
+> first. **A test that names the right property, built so the property cannot be
+> violated by the mutation it exists to catch.**"*
+
+**Both times it lived in the fixture, not the assertion**, which is why reading
+it looks correct. And **"eight then nine"** rather than nine is the honest count.
+
+### Three smaller ones, all right
+
+**`heartbeats` may be deleted from and `activity` may not** — asserted with a
+400-day-old activity row surviving retention, rather than left as a comment. The
+triggers would refuse it loudly, which is exactly why the test is worth having:
+the loud failure is the one you want to have already seen.
+
+**`stale_flagged_at` set once, never refreshed** — *"since when"* is the
+question, and rewriting it nightly would make month-old staleness look like
+today's **and** write a row every night saying so. Idempotence falls out rather
+than being bolted on.
+
+**`stop()` wired into `shutdown.ts`** — an interval outlives the server that
+started it, same shape as LAI-142.

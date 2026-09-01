@@ -126,3 +126,19 @@ the CLI were absent, so the package stops being green-by-vacancy.
 The `init` flow end to end: reachability check, no-echo prompt, sign-in, the
 idempotence check against existing config, mint, write settings, and the
 end-to-end run against a real instance that is M4's exit.
+
+---
+
+## Briefly released by SHELL, 2026-09-01 — LAI-151 takes precedence
+
+Released **only** to respect one-task-in-progress while I land LAI-151, a
+closed-vocabulary mirror blocking a finished server task. **Re-claiming
+immediately after.** Nothing uncommitted.
+
+**Code complete and tested. What remains is the end-to-end run** — fresh repo →
+`init` → an agent lists ready tasks through `/mcp`, which is M4's exit and is
+worth doing for real rather than reasoning about.
+
+On the branch: `src/{index,init,api,config,prompt,failures}.ts` and
+`test/cli.test.ts` — **13 tests, and the first is the one that fails if the CLI
+is absent**, closing the `# tests 0` hole this task carried as a criterion.
