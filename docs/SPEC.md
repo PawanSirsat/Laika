@@ -154,6 +154,20 @@ be kept in step by hand. If the two ever need to differ — a Member who may wat
 the feed but not export it — that is the moment to split them, and the split will
 be obvious because someone will be asking for it.
 | Configure webhooks | ✓ | ✓ | — | — |
+| View the organisation | ✓ | ✓ | ✓ | ✓ |
+
+**"View the organisation" is `org.read` and is a read action** (D-048) — a
+`read_only` token may do it. It does **not** cover the AI provider block:
+`configured`, `provider` and `key_last4` are gated on `org.settings.edit`
+(admin+), field-level, the same way `ai_api_key` is already write-only, and the
+block is **absent rather than null** for a caller who may not see it — `null`
+would say *"no provider is configured"*, which is a different fact.
+
+The row was added rather than borrowed from *"View member list"*, which grants
+the same four roles today. Whether an org has an LLM provider wired up is not
+implied by who is in it, so the borrow would have been **a fact about the current
+payload rather than a property of the row** — and the next field added to the
+response would inherit a grant nobody reviewed.
 
 ### 3.2 Project-level permission matrix
 
@@ -175,6 +189,7 @@ Requires membership, unless the actor is org Owner/Admin (implicit `lead`).
 | Cancel / delete task | ✓ | own-created | — |
 | Add / remove dependencies | ✓ | ✓ | — |
 | Read tasks, comments, activity, capacity | ✓ | ✓ | ✓ |
+| Watch / unwatch a task | ✓ | ✓ | ✓ |
 | Apply a meeting-diff proposal | ✓ | ✓ | — |
 
 ### 3.3 The `can()` module is the only authority
@@ -376,7 +391,36 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `comment.added`, `comment.edited`, `comment.deleted`, `project.created`,
 `project.updated`, `project.archived`, `member.added`, `member.role_changed`,
 `member.removed`, `token.created`, `token.revoked`, `heartbeat.session`,
-`webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`.
+`webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`,
+`unlisted.promoted`, `unlisted.dismissed`, `project.context_updated`,
+`sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
+`user.deactivated`, `user.reactivated`.
+
+**The nine verbs added 2026-09-01 are the same argument, four more times.**
+Sprints, the project context document, unlisted-work triage and deactivation
+were all filing under a verb that does not name them — sprints and context under
+`project.updated`, promote and dismiss under `unlisted.logged`, and deactivation
+under nothing at all. Each was a recorded compromise; four of them is the
+vocabulary being wrong (LAI-113, LAI-222).
+
+**The test is the one `project.archived` already passed:** could a reader answer
+*"when did this happen?"* without inspecting a payload? *"When was this sprint
+deleted?"*, *"when did the brief last change?"*, *"who dismissed that note?"* and
+*"who was locked out?"* all failed it.
+
+**`sprint.tasks_changed` is one verb for both directions** — assigning into and
+removing from a sprint both answer *"what moved in or out"*, and the payload
+carries which. **`user.deactivated` and `user.reactivated` are two**, because
+*"who was locked out"* and *"who was let back in"* are different questions a
+person asks (D-048). One verb with a direction in the payload is the thing this
+vocabulary exists to avoid.
+
+**Migrating existing rows is not required and must not be attempted.** `activity`
+is append-only in both directions, so rows written before a verb existed keep the
+one they were written with, and a reader of old history needs `payload.action`.
+That is the honest cost of having had the vocabulary wrong, and **every reader of
+that history must therefore accept two vocabularies permanently** —
+`latestFieldEdit` is the first and was found by a test rather than by design.
 
 **`project.archived` is its own verb, not a flag on `project.updated`.** Archiving
 removes a project from everyone's board; a settings edit does not. Reading an
@@ -777,6 +821,11 @@ GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date r
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
+PUT    /api/v1/tasks/:id/watch               DELETE /api/v1/tasks/:id/watch   (204)
+GET    /api/v1/tasks/:id/watchers            GET /api/v1/me/watching   (own only)
+GET    /api/v1/projects/:slug/mentionable    who an @mention resolves for (4.19) —
+                                             members plus org owner/admin, who hold
+                                             implicit lead and have no membership row
 POST   /api/v1/tasks/:id/dependencies        body { blocked_by_task_id }  — the path keeps the
                                              collection noun on purpose (§4.5, D-044)
 DELETE /api/v1/tasks/:id/dependencies/:depId

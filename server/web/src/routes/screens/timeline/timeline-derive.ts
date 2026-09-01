@@ -11,18 +11,24 @@ import type { Sprint } from '../../../api/sprints.ts';
  * there is no lane-packing, no collision resolution and no critical path. D-014
  * chose sprints as the unit precisely to buy that.
  *
- * ## Tasks have no bars, and that is the whole point
+ * ## Tasks get bars, and where each one comes from is the whole point
  *
- * The prototype's timeline gives every task its own start and length
- * (`tlSpans`), which is fiction: `tasks` has no planned-start and no due-date
- * column, and D-014 keeps it that way deliberately — *"draw it from sprint
- * boundaries and it costs a view; draw it from task dates and it costs a
- * scheduling engine."* Reproducing those rows would mean inventing dates, which
- * is the artifact class `docs/design/README.md` says not to copy.
+ * **D-049 overturned D-040.** Until LAI-126 landed there were no per-task dates
+ * to draw, so the only honest bar was a sprint's — that was D-040 and it was
+ * right on the day. `TaskView` now carries `started_at` and `completed_at`,
+ * stamped on the first entry into `in_progress` and never overwritten, so a
+ * finished task's bar is a **measurement** rather than a plan.
  *
- * So a task appears **inside** its sprint's bar or in the unscheduled tray, and
- * nothing in this file positions a task on the axis. There is a test that keeps
- * it that way.
+ * What survives of D-014 is one rule, and it is the only thing in this file
+ * that is not arithmetic:
+ *
+ * > **Laika never asserts a date it was not told.**
+ *
+ * So a bar is `actual` only when both its ends were measured. Everything else
+ * falls back to the sprint's range and is marked `planned`, which the screen
+ * draws as an outline — *a solid bar is something that happened; an outline is
+ * somewhere a task was put*. A task with neither goes to the unscheduled tray
+ * and gets no bar at all.
  */
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -192,4 +198,162 @@ export function isPast(sprint: Sprint, now: number): boolean {
 export function isCurrent(sprint: Sprint, now: number): boolean {
   const today = startOfDay(now);
   return today >= startOfDay(sprint.starts_on) && today <= startOfDay(sprint.ends_on);
+}
+
+/** Where a bar's extent came from — and therefore how it must be drawn. */
+export type BarKind =
+  /** Both ends measured. Drawn solid. */
+  | 'actual'
+  /** Started for real, still running: measured up to now, then the sprint. */
+  | 'partial'
+  /** Nothing measured. The sprint someone put it in. Drawn as an outline. */
+  | 'planned';
+
+export interface TaskBar {
+  readonly kind: BarKind;
+  /** Day counts across the axis; they sum to `range.days`. */
+  readonly leadDays: number;
+  /** The measured part, or the whole outline when `kind` is `planned`. */
+  readonly solidDays: number;
+  /** `partial` only: now → the sprint's end. Zero otherwise. */
+  readonly remainderDays: number;
+  readonly trailDays: number;
+  /** The extent the bar claims, for the row's label. */
+  readonly from: number;
+  readonly to: number;
+  /**
+   * True when `from`/`to` came from the sprint rather than the task.
+   *
+   * The row **must** say so. Presenting a sprint's range in the same voice as a
+   * measured one is the misreading D-014 exists to prevent, and it is invisible
+   * once the bar is drawn.
+   */
+  readonly fromSprint: boolean;
+}
+
+/** The dates a task can contribute to the axis — actuals only, never a plan. */
+export function taskActuals(tasks: readonly TimelineTask[]): number[] {
+  const out: number[] = [];
+  for (const task of tasks) {
+    if (task.started_at !== null) out.push(startOfDay(task.started_at));
+    if (task.completed_at !== null) out.push(startOfDay(task.completed_at));
+  }
+  return out;
+}
+
+/** The fields of a task this module reads. Structural, so tests need no fixture. */
+export interface TimelineTask {
+  readonly status: string;
+  readonly started_at: number | null;
+  readonly completed_at: number | null;
+}
+
+/**
+ * Where a task's bar sits, or `undefined` when it has earned no bar.
+ *
+ * The table is D-049's, and the fallback is the load-bearing part: **an
+ * unmeasured end demotes the whole bar to `planned`.** A `done` task with a
+ * `started_at` and no `completed_at` is legacy data, not a measurement of when
+ * it finished, so it is drawn as a plan rather than as a bar ending today.
+ */
+export function taskBar(
+  task: TimelineTask,
+  sprint: Sprint | undefined,
+  range: TimelineRange,
+  now: number,
+): TaskBar | undefined {
+  const started = task.started_at === null ? undefined : startOfDay(task.started_at);
+  const completed = task.completed_at === null ? undefined : startOfDay(task.completed_at);
+
+  if (task.status === 'done' && started !== undefined && completed !== undefined) {
+    return span(range, started, completed, 'actual', 0, false);
+  }
+
+  if (task.status === 'in_progress' && started !== undefined) {
+    const today = startOfDay(now);
+    const solidTo = today < started ? started : today;
+    // The remainder is a plan, so it only exists where a plan does.
+    const plannedEnd = sprint === undefined ? solidTo : startOfDay(sprint.ends_on);
+    const remainder = Math.max(0, days(solidTo, plannedEnd) - 1);
+    return span(range, started, solidTo, 'partial', remainder, false);
+  }
+
+  if (sprint !== undefined) {
+    return span(
+      range,
+      startOfDay(sprint.starts_on),
+      startOfDay(sprint.ends_on),
+      'planned',
+      0,
+      true,
+    );
+  }
+
+  // No measurement and nowhere it was put. The tray, and no bar.
+  return undefined;
+}
+
+/** Inclusive day count between two day-starts. */
+function days(from: number, to: number): number {
+  return Math.round((to - from) / DAY) + 1;
+}
+
+function span(
+  range: TimelineRange,
+  from: number,
+  to: number,
+  kind: BarKind,
+  remainderDays: number,
+  fromSprint: boolean,
+): TaskBar {
+  // Clamping would move a bar's start to the axis edge, which asserts a date
+  // nobody gave us. `timelineRange` is widened by `taskActuals` instead, so a
+  // bar that falls outside the axis is a bug rather than something to hide.
+  const leadDays = Math.max(0, days(range.from, from) - 1);
+  const solidDays = Math.max(1, days(from, to));
+  const trailDays = Math.max(0, range.days - leadDays - solidDays - remainderDays);
+
+  return { kind, leadDays, solidDays, remainderDays, trailDays, from, to, fromSprint };
+}
+
+export interface SprintSummary {
+  readonly done: number;
+  readonly total: number;
+  readonly blocked: number;
+  readonly wip: number;
+  /** Whole days from today to the sprint's last day, **clamped at zero**. */
+  readonly daysLeft: number;
+}
+
+/**
+ * The active sprint's strip: DONE · BLOCKED · WIP · DAYS LEFT.
+ *
+ * All four are derived. `blocked` is passed in rather than recomputed —
+ * `board-derive.ts` already owns that rule and a second one would drift from it
+ * (the LAI-215 `initials()` problem).
+ *
+ * **`daysLeft` clamps at zero.** A sprint that ended last week has not got minus
+ * seven days left; it has none, and a negative would be read as a countdown.
+ */
+export function sprintSummary(
+  tasks: readonly { readonly status: string }[],
+  blockedCount: number,
+  sprint: Sprint,
+  now: number,
+): SprintSummary {
+  let done = 0;
+  let wip = 0;
+  for (const task of tasks) {
+    if (task.status === 'done') done += 1;
+    if (task.status === 'in_progress') wip += 1;
+  }
+
+  const remaining = days(startOfDay(now), startOfDay(sprint.ends_on)) - 1;
+  return {
+    done,
+    total: tasks.length,
+    blocked: blockedCount,
+    wip,
+    daysLeft: Math.max(0, remaining),
+  };
 }
