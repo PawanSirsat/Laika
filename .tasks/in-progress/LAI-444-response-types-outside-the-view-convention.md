@@ -2,11 +2,12 @@
 id: LAI-444
 title: 'A response type that is not a `*View` has no client mirror check'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-213]
 discovered-from: LAI-206
-status: backlog
+status: in-progress
+started: 2026-09-01T17:25:00Z
 ---
 
 ## Goal
