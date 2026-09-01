@@ -2,11 +2,12 @@
 id: LAI-161
 title: '§12 is unimplemented — nothing encrypts or decrypts `orgs.*_enc`'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-446
-status: backlog
+status: in-progress
+started: 2026-09-01T19:10:00Z
 ---
 
 ## Goal
