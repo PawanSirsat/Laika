@@ -245,6 +245,24 @@ export function canCreateTask(
  * "leave it alone" (absent) from "clear it" (`null`), which is why this always
  * sends the key.
  */
+/**
+ * One task by id (§6.4).
+ *
+ * Capacity serves `in_progress_tasks` and `tasks_in_review` as **ids** — ULIDs,
+ * not keys — and a screen answering *"who takes the next task"* cannot show
+ * `01M1EN3K…`. Resolving a reference is not deriving a figure, so this stays
+ * inside LAI-439's "every number comes from a response".
+ *
+ * **No client-side cache.** If this is ever visibly slow the answer is a bulk
+ * endpoint, not a second copy of the truth kept here.
+ */
+export function getTask(taskId: string, signal?: AbortSignal): Promise<Task> {
+  return request<Task>(
+    `/tasks/${encodeURIComponent(taskId)}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
 export function assignTask(taskId: string, assigneeId: string | null): Promise<Task> {
   return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, {
     method: 'PATCH',

@@ -58,6 +58,32 @@ interface Pair {
 
 const PAIRS: readonly Pair[] = [
   {
+    // Paired the moment the mirror existed (LAI-439). The census listed both as
+    // "no client type exists"; creating the client type is what made that reason
+    // false, so the rows came out of `UNPAIRED` in the same change.
+    //
+    // **Only the envelopes are here, and that is not enough on its own.** These
+    // two carry `enabled` and a list — everything that matters about presence is
+    // in `PresenceEntry`, which the census does not count as a served type
+    // (it is nested, and not a `*View`), so pairing it here turns
+    // `PAIRS names a server type that no longer exists` red.
+    //
+    // `presence.test.ts` covers the entries instead, and goes further than
+    // this check can: **`fieldsOf` matches `name\??\s*:`, so optional and
+    // required are the same field to it** — and `repo?` versus `repo` is the
+    // entire LAI-438 distinction.
+    server: 'PresenceView',
+    serverFile: 'services/presence.ts',
+    client: 'PresenceView',
+    clientFile: 'presence.ts',
+  },
+  {
+    server: 'CapacityView',
+    serverFile: 'services/presence.ts',
+    client: 'CapacityView',
+    clientFile: 'presence.ts',
+  },
+  {
     server: 'AcceptedInviteBody',
     serverFile: 'http/routes/invites.ts',
     client: 'AcceptedInvite',
