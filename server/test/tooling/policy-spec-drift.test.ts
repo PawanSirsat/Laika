@@ -100,18 +100,6 @@ const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
   // expire (LAI-219).
   ['presence.read', 'LAI-432, in flight: awaiting §3.1\'s "Presence and capacity" row.'],
   ['capacity.read', 'LAI-432, in flight: awaiting §3.1\'s "Presence and capacity" row.'],
-  // In flight. **§3.4 is a new section**, not a row in §3.1 — that matrix is org
-  // roles, and a column there would put the system principal on the same axis as
-  // a person (D-050). Written by CHIEF and applied at merge; the staleness test
-  // below drops all four the moment it lands.
-  //
-  // These four are held by the system principal and by **no human role** — §3.1
-  // and §3.2 have no row for them by design, which is why they appear here as
-  // orphans rather than as a mismatched cell.
-  ['system.heartbeat.prune', 'LAI-448, in flight: awaiting SPEC §3.4 (D-050).'],
-  ['system.task.flag_stale', 'LAI-448, in flight: awaiting SPEC §3.4 (D-050).'],
-  ['system.invite.expire', 'LAI-448, in flight: awaiting SPEC §3.4 (D-050).'],
-  ['system.meeting_review.expire', 'LAI-448, in flight: awaiting SPEC §3.4 (D-050).'],
   // Empty, and it should stay that way: an action `can()` allows and §3 never
   // grants is a permission with no written source.
   //
