@@ -2,11 +2,12 @@
 id: LAI-440
 title: The Board's WORKING NOW strip and the agent-sessions rail card
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p3
 depends-on: [LAI-432]
 discovered-from:
-status: backlog
+started: 2026-09-01T20:40:00+05:30
+status: in-progress
 ---
 
 ## Goal
