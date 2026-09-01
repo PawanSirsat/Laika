@@ -44,6 +44,13 @@ export interface RuntimeTeardown {
    * exists (LAI-431).
    */
   scheduler?: { stop: () => void };
+  /**
+   * Called first, before anything is closed (LAI-214). Where the app is told to
+   * stop answering: a request on a reused keep-alive connection can still arrive
+   * after `close()`, and `200 ready` from a process that is about to exit is
+   * worse than a refusal.
+   */
+  markStopping?: () => void;
   /** Checkpoints the WAL and releases the file lock. */
   sqlite: { close: () => void };
   graceMs?: number;
@@ -77,6 +84,9 @@ export function createRuntimeShutdown(parts: RuntimeTeardown): (signal: string) 
     // the server would otherwise wait out the whole grace period and then cut
     // it mid-frame.
     onStopping: () => {
+      // First: everything below this line takes time, and a request arriving
+      // during it must already be refused.
+      parts.markStopping?.();
       parts.activityFeed.closeAll();
       // Before the listener closes, with the streams: both are things that keep
       // the loop alive on purpose and neither ends by itself.

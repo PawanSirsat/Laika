@@ -2,11 +2,12 @@
 id: LAI-124
 title: Throughput and cycle time need a server aggregation, not a client loop
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-055]
 discovered-from: LAI-085
-status: backlog
+status: in-progress
+started: 2026-09-02T10:10:00Z
 ---
 
 ## Goal

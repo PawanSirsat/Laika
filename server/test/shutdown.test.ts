@@ -399,3 +399,57 @@ describe('idle connections are reaped until close completes', () => {
     }
   });
 });
+
+describe('the app is told to stop before anything is closed (LAI-214)', () => {
+  it('marks stopping first, then closes the streams', () => {
+    const order: string[] = [];
+    const server = fakeServer();
+    const log = captureLog();
+
+    const shutdown = createRuntimeShutdown({
+      server,
+      log: log.logger,
+      activityFeed: {
+        closeAll: () => {
+          order.push('closeAll');
+        },
+      },
+      sqlite: { close: () => undefined },
+      markStopping: () => {
+        order.push('markStopping');
+      },
+      exit: () => undefined,
+      setTimer: () => ({ unref: () => undefined }),
+    });
+
+    shutdown('SIGTERM');
+
+    // Order matters: everything after this takes time, and a request arriving
+    // during it must already be refused. Marking after `closeAll` would leave a
+    // window exactly as wide as the closing takes.
+    expect(order).toEqual(['markStopping', 'closeAll']);
+  });
+
+  it('still closes the streams when nothing marks stopping', () => {
+    // `markStopping` is optional — the LAI-002 apps are built without it — and
+    // its absence must not skip the teardown that follows.
+    let closed = false;
+    const server = fakeServer();
+    const log = captureLog();
+
+    createRuntimeShutdown({
+      server,
+      log: log.logger,
+      activityFeed: {
+        closeAll: () => {
+          closed = true;
+        },
+      },
+      sqlite: { close: () => undefined },
+      exit: () => undefined,
+      setTimer: () => ({ unref: () => undefined }),
+    })('SIGTERM');
+
+    expect(closed).toBe(true);
+  });
+});

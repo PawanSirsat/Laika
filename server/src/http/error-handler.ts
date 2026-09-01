@@ -53,6 +53,7 @@ const DEFAULT_MESSAGE: Record<ErrorCode, string> = {
   unprocessable: 'Request could not be processed',
   rate_limited: 'Too many requests',
   internal: 'Internal server error',
+  unavailable: 'This server is shutting down',
 };
 
 function respond(c: Context<AppEnv>, body: ErrorBody, status: number): Response {
