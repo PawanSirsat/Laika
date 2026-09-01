@@ -266,7 +266,7 @@ function postureUnder(nodeEnv: string): Posture {
  *
  * The first version called `postureUnder` inside each `it`, which was five
  * spawns at roughly 0.8s each — about 4s against vitest's 5s default. It passed
- * alone and failed in PM's full parallel run at 5135ms, which is the worst kind
+ * alone and failed in CHIEF's full parallel run at 5135ms, which is the worst kind
  * of gate: one that trains people to re-run rather than read. Two spawns in a
  * hook with a generous explicit budget cannot do that.
  *

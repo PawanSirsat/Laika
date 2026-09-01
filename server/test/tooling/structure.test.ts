@@ -11,8 +11,8 @@ import { SERVER_ROOT } from '../../src/paths.ts';
  * `format-fix.test.ts` builds a real git repo. It needs no dependency, and the
  * failure message can explain itself — which a generic casing rule cannot.
  *
- * Covers **both trees**: `server/src` (Builder-A) and `server/web/src`
- * (Builder-B, D-016). One rule set, two trees — LAI-039 extended this file
+ * Covers **both trees**: `server/src` (CORE) and `server/web/src`
+ * (SHELL, D-016). One rule set, two trees — LAI-039 extended this file
  * rather than adding a second copy, because two copies of a naming rule drift
  * and then disagree, and the disagreement is settled by argument rather than by
  * a test.

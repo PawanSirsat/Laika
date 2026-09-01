@@ -6,7 +6,7 @@
  *   2. `publicDir/index.html`             — the built SPA (LAI-007)
  *   3. the committed fallback document    — clean clone, no build yet
  *
- * Step 3 is the PM decision on LAI-016: `public/` is build output and stays
+ * Step 3 is the CHIEF decision on LAI-016: `public/` is build output and stays
  * entirely gitignored, so the "no SPA yet" document lives in `src/` and is
  * committed there. Nothing is ever committed into `public/`.
  */

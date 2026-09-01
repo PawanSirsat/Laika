@@ -147,8 +147,8 @@ export function parseSpecTables(text: string): Map<string, string[]> {
  *
  * D-011 makes the spec authoritative, so the spec leads the code, so the gap
  * between deciding and building is a **normal** state rather than a fault. The
- * mark has to be writable by whoever writes the section — and `docs/` is PM's
- * while this file is Builder-A's. An exemption map here would mean every spec
+ * mark has to be writable by whoever writes the section — and `docs/` is CHIEF's
+ * while this file is CORE's. An exemption map here would mean every spec
  * decision needed a second person to touch a second file before master went
  * green again, which is precisely the friction that got §4.16 reverted rather
  * than marked (LAI-080's own history).
@@ -536,7 +536,7 @@ describe('§4.8’s closed vocabularies match enums.ts', () => {
 /**
  * LAI-080. Fed synthetic spec text rather than `docs/SPEC.md`, for two reasons:
  * the real document has no planned section most of the time, so a test reading it
- * would assert nothing; and `docs/` is PM's, so proving the mechanism must not
+ * would assert nothing; and `docs/` is CHIEF's, so proving the mechanism must not
  * require editing it.
  */
 describe('the planned mark (LAI-080)', () => {
@@ -622,7 +622,7 @@ describe('the planned mark (LAI-080)', () => {
 
   it('works on the real document, not only on a ten-line fixture', () => {
     // The fixture above proves the rules; this proves the parser survives being
-    // handed the actual §4 with one section added — which is the change PM will
+    // handed the actual §4 with one section added — which is the change CHIEF will
     // really make, and the case a fixture cannot vouch for.
     // `widgets`, not `tags`: this fixture needs a table that does **not** exist,
     // and `tags` stopped qualifying the moment LAI-079 built it. A fixture whose
