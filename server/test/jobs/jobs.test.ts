@@ -191,6 +191,82 @@ describe('stale-task flagging (§11.6, 3 days, both signals)', () => {
     expect(flagStaleTasks(t.db, NOW).changed).toBe(0);
   });
 
+  describe('and clears it when the task stops being stale (LAI-208)', () => {
+    /**
+     * Until LAI-208 nothing un-wrote `stale_flagged_at`, which did not matter
+     * while the column reached no client. It is on `TaskView` now so §11.4.1 can
+     * draw the marker, and a set-only flag is **a permanent mark on a task that
+     * was briefly slow**: picked up, finished, shipped, still labelled as one
+     * nobody is looking at.
+     *
+     * The job owns both directions rather than the routes clearing on a status
+     * change — a handler clearing on "somebody touched it" would be a second,
+     * simpler rule that can disagree with this one, which is §4.5's argument for
+     * `ready` applied to a stored field.
+     */
+    function flaggedTask(updatedAt: number): string {
+      const id = inProgressTask(updatedAt);
+      expect(flagStaleTasks(t.db, NOW).changed, 'setup did not flag anything').toBe(1);
+      expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.staleFlaggedAt).toBe(NOW);
+      return id;
+    }
+
+    it('clears it once the task moves out of in_progress', () => {
+      const id = flaggedTask(NOW - 10 * 24 * 60 * 60 * 1000);
+      t.db.update(tasks).set({ status: 'done' }).where(eq(tasks.id, id)).run();
+
+      expect(flagStaleTasks(t.db, NOW).changed).toBe(1);
+      expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.staleFlaggedAt).toBeNull();
+    });
+
+    it('clears it once the task is touched again', () => {
+      const id = flaggedTask(NOW - 10 * 24 * 60 * 60 * 1000);
+      t.db
+        .update(tasks)
+        .set({ updatedAt: NOW - 60 * 1000 })
+        .where(eq(tasks.id, id))
+        .run();
+
+      expect(flagStaleTasks(t.db, NOW).changed).toBe(1);
+      expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.staleFlaggedAt).toBeNull();
+    });
+
+    it('clears it once an agent beats on it again', () => {
+      const id = flaggedTask(NOW - 10 * 24 * 60 * 60 * 1000);
+      addHeartbeat(NOW - 60 * 1000, id);
+
+      expect(flagStaleTasks(t.db, NOW).changed).toBe(1);
+      expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.staleFlaggedAt).toBeNull();
+    });
+
+    it('leaves it alone while the task is still stale', () => {
+      // The property that makes the timestamp mean "since when". Re-running the
+      // job must not move it, or a task stale for a month reads as stale today —
+      // and a clear-then-reflag in one pass would do exactly that while still
+      // reporting a non-null value to every assertion above.
+      const id = flaggedTask(NOW - 10 * 24 * 60 * 60 * 1000);
+
+      expect(flagStaleTasks(t.db, NOW + 5_000).changed).toBe(0);
+      expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.staleFlaggedAt).toBe(NOW);
+    });
+
+    it('flags it again with a new timestamp if it goes quiet a second time', () => {
+      // "Since when" means since *this* quiet spell. A task rescued in March and
+      // abandoned in June went stale in June.
+      const id = flaggedTask(NOW - 10 * 24 * 60 * 60 * 1000);
+      t.db
+        .update(tasks)
+        .set({ updatedAt: NOW - 60 * 1000 })
+        .where(eq(tasks.id, id))
+        .run();
+      flagStaleTasks(t.db, NOW);
+
+      const later = NOW + 10 * 24 * 60 * 60 * 1000;
+      expect(flagStaleTasks(t.db, later).changed).toBe(1);
+      expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.staleFlaggedAt).toBe(later);
+    });
+  });
+
   it('flags at 3 days and one millisecond, not at 3 days less one', () => {
     const justStale = inProgressTask(NOW - STALE_AFTER_MS - 1);
     const justFresh = inProgressTask(NOW - STALE_AFTER_MS + 1);

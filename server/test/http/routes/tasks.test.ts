@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { users } from '../../../src/db/schema.ts';
+import { tasks, users } from '../../../src/db/schema.ts';
+import { flagStaleTasks, STALE_AFTER_MS } from '../../../src/jobs/jobs.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 let h: AuthHarness;
@@ -285,6 +286,106 @@ describe('acceptance criteria on the wire', () => {
  * The service owns the watcher set and its rules. What is left here is transport
  * and the **scope layer** — the half D-047 turns on.
  */
+
+describe('the stale marker reaches the client (§11.4.1, LAI-208)', () => {
+  /**
+   * `tasks.stale_flagged_at` has existed and been written by the nightly job
+   * since §11.7, and was **not** in `TaskView` — so the board could draw
+   * `blocked` and `ready` and not `stale`, which is the one of the three that
+   * says nobody is looking at this.
+   *
+   * Driven through the **real job** rather than by writing the column: what has
+   * to hold is that the value a client receives is the value §11.6 wrote. A
+   * fixture that sets the column itself would pass against a job that never runs
+   * and against a column nothing populates.
+   */
+  async function flagOne(): Promise<{ id: string; key: string; at: number }> {
+    const task = await newTask('Left running');
+
+    // §5's path, walked one step at a time, **each one asserted**. The first
+    // version of this used a PATCH that the route ignores; it returned a
+    // non-200 nobody looked at, the task stayed in `backlog`, and the job then
+    // had nothing to flag. Only the `changed` guard below caught it.
+    for (const status of ['todo', 'in_progress'] as const) {
+      const res = await post(`/api/v1/tasks/${task.id}/status`, { status });
+      expect(res.status, `${status}: ${await res.clone().text()}`).toBe(200);
+    }
+
+    // The job flags `in_progress` tasks untouched for three days. Ageing the row
+    // is the only way to reach that without waiting.
+    const now = Date.now();
+    h.db
+      .update(tasks)
+      .set({ updatedAt: now - STALE_AFTER_MS - 1 })
+      .where(eq(tasks.id, task.id))
+      .run();
+
+    const result = flagStaleTasks(h.db, now);
+    // Without this the tests below assert `null === null` and pass against a
+    // field that is never populated — the failure this whole task is about.
+    expect(result.changed, 'the job flagged nothing, so nothing is being proved').toBe(1);
+
+    return { id: task.id, key: task.key, at: now };
+  }
+
+  it('round-trips a flagged task through GET /tasks/:id', async () => {
+    const flagged = await flagOne();
+
+    const body = (await (await req(`/api/v1/tasks/${flagged.id}`)).json()) as {
+      stale_flagged_at: number | null;
+    };
+
+    // The timestamp the job wrote, not merely "something non-null": a view that
+    // sent `Date.now()` would satisfy a null check and be a different field.
+    expect(body.stale_flagged_at).toBe(flagged.at);
+  });
+
+  it('round-trips it through GET /projects/:slug/tasks as well', async () => {
+    // AC2 names both endpoints. They share `toView`, but "they share a helper
+    // today" is not the property — that the list is not separately assembled is
+    // exactly the kind of thing a later refactor changes without noticing.
+    const flagged = await flagOne();
+
+    const body = (await (await req('/api/v1/projects/laika/tasks')).json()) as {
+      data: { id: string; stale_flagged_at: number | null }[];
+    };
+    const row = body.data.find((t) => t.id === flagged.id);
+
+    expect(row, 'the flagged task is not in the page').toBeDefined();
+    expect(row?.stale_flagged_at).toBe(flagged.at);
+  });
+
+  it('is null for a task nobody has flagged, not absent', async () => {
+    // A marker the UI draws on truthiness must be able to tell "not stale" from
+    // "this server does not send the field" — `undefined` renders the same as
+    // `null` in JS and means something different.
+    const task = await newTask('Perfectly fine');
+
+    const body = (await (await req(`/api/v1/tasks/${task.id}`)).json()) as {
+      stale_flagged_at: number | null;
+    };
+
+    expect(body).toHaveProperty('stale_flagged_at');
+    expect(body.stale_flagged_at).toBeNull();
+  });
+
+  it('sends the stored timestamp rather than a computed boolean', async () => {
+    // AC1, stated as its own case. `ready` is derived server-side because §4.5
+    // must have one definition; staleness is *stored*, so the honest shape is
+    // the value the job wrote. A boolean would discard the only information the
+    // row holds, and §11.4.1's marker wants to say how stale.
+    const flagged = await flagOne();
+
+    const body = (await (await req(`/api/v1/tasks/${flagged.id}`)).json()) as {
+      stale_flagged_at: number | null;
+    };
+
+    expect(typeof body.stale_flagged_at).toBe('number');
+    expect(body).not.toHaveProperty('stale');
+    expect(body).not.toHaveProperty('is_stale');
+  });
+});
+
 describe('watching a task', () => {
   async function mintToken(scope: 'full' | 'read_only'): Promise<string> {
     const res = await h.app.request('/api/v1/tokens', {

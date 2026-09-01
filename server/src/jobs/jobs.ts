@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { heartbeats, invites, meetingReviews, orgs, tasks } from '../db/schema.ts';
@@ -93,6 +93,29 @@ export function pruneHeartbeats(db: Db, now: number): JobResult {
  * question is "since when", and rewriting it every night would make a task that
  * has been stale for a month look like it went stale today. That also makes the
  * job idempotent for free.
+ *
+ * ## And cleared when the task stops being stale (LAI-208)
+ *
+ * Nothing un-wrote it until now, which did not matter while the column was
+ * invisible. LAI-208 puts it on `TaskView` so §11.4.1 can draw the marker, and a
+ * flag that is only ever set becomes **a permanent mark on a task that was
+ * briefly slow** — somebody picks it up, finishes it, ships it, and the board
+ * still says nobody is looking at it.
+ *
+ * **The job owns the field in both directions**, rather than the routes clearing
+ * it on a status change. The rule for "stale" is three conditions — status,
+ * heartbeat and commit — and a handler clearing on "somebody touched it" would
+ * be a *second, simpler* rule that can disagree with this one. That is §4.5's
+ * argument for computing `ready` in one place, applied to a stored field.
+ *
+ * The cost is honest and worth naming: a task rescued at noon keeps its marker
+ * until the next nightly run. A staleness signal built on a three-day window is
+ * already coarse, and a marker that is a day stale is a much smaller wrong than
+ * two definitions of staleness that disagree.
+ *
+ * A cleared task can be flagged again later, with a **new** timestamp. That is
+ * the point: "since when" means since *this* quiet spell, not since the first
+ * one ever.
  */
 export function flagStaleTasks(db: Db, now: number): JobResult {
   const cutoff = now - STALE_AFTER_MS;
@@ -135,6 +158,29 @@ export function flagStaleTasks(db: Db, now: number): JobResult {
         now,
       });
     }
+  }
+
+  // The other direction. A task carrying the flag that now fails *any* of the
+  // three staleness conditions is no longer stale, so the mark comes off.
+  const flagged = db
+    .select({ id: tasks.id, status: tasks.status, updatedAt: tasks.updatedAt })
+    .from(tasks)
+    .where(isNotNull(tasks.staleFlaggedAt))
+    .all();
+
+  for (const task of flagged) {
+    const quiet =
+      task.status === 'in_progress' &&
+      task.updatedAt <= cutoff &&
+      db
+        .select({ id: heartbeats.id })
+        .from(heartbeats)
+        .where(and(eq(heartbeats.matchedTaskId, task.id), gt(heartbeats.createdAt, cutoff)))
+        .get() === undefined;
+    if (quiet) continue;
+
+    db.update(tasks).set({ staleFlaggedAt: null }).where(eq(tasks.id, task.id)).run();
+    changed += 1;
   }
 
   return { changed };
