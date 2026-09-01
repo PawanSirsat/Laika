@@ -2,11 +2,12 @@
 id: LAI-428
 title: A scheme URL with no path falls through to the scp form
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-144]
 discovered-from: LAI-144
-status: backlog
+status: in-progress
+started: 2026-09-02T06:50:00Z
 ---
 
 ## Goal
