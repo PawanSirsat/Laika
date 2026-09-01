@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, heartbeats, orgs, projects, tokens, users } from '../../src/db/schema.ts';
+import { activity, heartbeats, orgs, projects, tasks, tokens, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import {
   BRANCH_MAX_LENGTH,
@@ -14,6 +14,7 @@ import {
   resolveRepoProjects,
 } from '../../src/services/heartbeats.ts';
 import { createProject } from '../../src/services/projects.ts';
+import { createTask } from '../../src/services/tasks.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -532,5 +533,154 @@ describe('a heartbeat sending what the plugin documents (LAI-144)', () => {
     expect(
       resolveRepoProjects(t.db, 'git@github.com:PawanSirsat/Laika.git', 'main').projectIds,
     ).toHaveLength(1);
+  });
+});
+
+/**
+ * A branch resolves to a task (§9.2, LAI-430).
+ *
+ * `matched_task_id` was nullable and always null: `branchProjectPrefix` extracted
+ * the prefix for LAI-116's repo narrowing and stopped there.
+ */
+describe('resolving a branch to a task (LAI-430)', () => {
+  function projectTracking(slug: string, prefix: string, repo: string | null): string {
+    const project = createProject(t.sqlite, t.db, actor(ownerId), { name: slug, slug, prefix });
+    t.db.update(projects).set({ repo }).where(eq(projects.id, project.id)).run();
+    return project.id;
+  }
+
+  function taskIn(slug: string, title = 'A task') {
+    return createTask(t.sqlite, t.db, actor(ownerId), slug, { title });
+  }
+
+  function beat(repo: string, branch: string) {
+    return recordHeartbeat(t.db, withToken(actor(ownerId), 'full'), { repo, branch, now: 1000 });
+  }
+
+  it('matches the task the branch names', () => {
+    projectTracking('laika', 'LAI', 'kvell/laika');
+    const task = taskIn('laika');
+
+    expect(beat('kvell/laika', `lai-${task.number}-add-crud`).matched_task_id).toBe(task.id);
+  });
+
+  it('is case-insensitive, per §9.2', () => {
+    projectTracking('laika', 'LAI', 'kvell/laika');
+    const task = taskIn('laika');
+
+    for (const branch of [`lai-${task.number}-x`, `LAI-${task.number}-X`, `Lai-${task.number}-x`]) {
+      expect(beat('kvell/laika', branch).matched_task_id, branch).toBe(task.id);
+    }
+  });
+
+  it('stores the branch on the task, as a last-seen', () => {
+    projectTracking('laika', 'LAI', 'kvell/laika');
+    const task = taskIn('laika');
+
+    beat('kvell/laika', `lai-${task.number}-first`);
+    beat('kvell/laika', `lai-${task.number}-second`);
+
+    // Overwriting is correct — §9.2's `branch` is where the work is *now*. The
+    // history is `activity`.
+    expect(t.db.select().from(tasks).where(eq(tasks.id, task.id)).get()?.branch).toBe(
+      `lai-${task.number}-second`,
+    );
+  });
+
+  describe('everything unresolvable degrades and never errors (§9.2)', () => {
+    beforeEach(() => {
+      projectTracking('laika', 'LAI', 'kvell/laika');
+      taskIn('laika');
+    });
+
+    it('a branch that is not the convention at all', () => {
+      for (const branch of ['main', 'develop', 'no-numbers', 'release/2.0', '42-leading']) {
+        expect(beat('kvell/laika', branch).matched_task_id, branch).toBeNull();
+      }
+    });
+
+    it('but a *missing* branch is still a 422, which is a different thing', () => {
+      // §9.2's "degrades, it never errors" is about a branch that does not
+      // follow the convention. A branch that is not there at all is a malformed
+      // request (§6.3, LAI-417) — and conflating the two would turn a client bug
+      // into a silent no-op. My first version of the test above included `''`
+      // and found this.
+      for (const branch of ['', '   ']) {
+        expect(() => beat('kvell/laika', branch), JSON.stringify(branch)).toThrow(ApiError);
+      }
+    });
+
+    it('a prefix no project holds', () => {
+      expect(beat('kvell/laika', 'zzz-1-x').matched_task_id).toBeNull();
+    });
+
+    it('a number no task has', () => {
+      expect(beat('kvell/laika', 'lai-9999-x').matched_task_id).toBeNull();
+    });
+
+    it('a repo no project tracks', () => {
+      expect(beat('someone/else', 'lai-1-x').matched_task_id).toBeNull();
+    });
+
+    it('a number too large to be one', () => {
+      // `\d+` is unbounded and a branch is untrusted input.
+      expect(beat('kvell/laika', 'lai-99999999999999999999-x').matched_task_id).toBeNull();
+    });
+
+    it('writes the heartbeat anyway, every time', () => {
+      beat('someone/else', 'nonsense');
+      beat('kvell/laika', 'lai-9999-x');
+
+      // Degrading means the row still lands. A heartbeat that errors because the
+      // branch was odd would take presence down for a naming convention.
+      expect(t.db.select().from(heartbeats).all()).toHaveLength(2);
+    });
+  });
+
+  describe('the project is decided before the number', () => {
+    it('does not resolve LAI-42 to WEB-42', () => {
+      // **The case that corrupts data.** Two projects share a repo; the branch
+      // names `web`, which narrows to the API project — and the task number
+      // exists in *both*. Searching by number first would return the wrong one.
+      projectTracking('web', 'WEB', 'kvell/mono');
+      projectTracking('api', 'API', 'kvell/mono');
+      const webTask = taskIn('web');
+      const apiTask = taskIn('api');
+      expect(webTask.number).toBe(apiTask.number);
+
+      expect(beat('kvell/mono', `web-${webTask.number}-x`).matched_task_id).toBe(webTask.id);
+      expect(beat('kvell/mono', `api-${apiTask.number}-x`).matched_task_id).toBe(apiTask.id);
+    });
+
+    it('resolves to nothing when an ambiguous repo is not narrowed', () => {
+      projectTracking('web', 'WEB', 'kvell/mono');
+      projectTracking('api', 'API', 'kvell/mono');
+      const task = taskIn('web');
+
+      // `zzz` narrows nothing, so both projects remain candidates. "Task 1 of
+      // whichever sorts first" is worse than no answer.
+      expect(beat('kvell/mono', `zzz-${task.number}-x`).matched_task_id).toBeNull();
+    });
+
+    it('refuses a prefix the single matching project does not hold', () => {
+      // A repo with one project is returned without consulting the branch, so
+      // `web-1-x` on a repo tracked only by `LAI` arrives with a project that
+      // does not own that prefix. It must not resolve.
+      projectTracking('laika', 'LAI', 'kvell/laika');
+      const task = taskIn('laika');
+
+      expect(beat('kvell/laika', `web-${task.number}-x`).matched_task_id).toBeNull();
+    });
+  });
+
+  it('does not resolve when the org has presence_enabled = 0', () => {
+    projectTracking('laika', 'LAI', 'kvell/laika');
+    const task = taskIn('laika');
+    t.db.update(orgs).set({ presenceEnabled: 0 }).run();
+
+    // Resolving would write `matched_task_id` and `tasks.branch` — exactly the
+    // record of who was working on what that the switch exists to stop (D-005).
+    expect(beat('kvell/laika', `lai-${task.number}-x`).matched_task_id).toBeNull();
+    expect(t.db.select().from(tasks).where(eq(tasks.id, task.id)).get()?.branch).toBeNull();
   });
 });
