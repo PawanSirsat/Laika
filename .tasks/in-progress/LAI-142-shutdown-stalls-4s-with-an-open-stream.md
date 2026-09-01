@@ -2,11 +2,12 @@
 id: LAI-142
 title: Shutdown takes 4s with an SSE stream open, not the 0.1s it takes without
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-057
-status: backlog
+status: in-progress
+started: 2026-09-02T05:25:00Z
 ---
 
 ## Goal
