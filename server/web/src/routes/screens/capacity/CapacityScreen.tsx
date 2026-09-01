@@ -7,7 +7,6 @@ import {
   getCapacity,
   getPresence,
   type CapacityView,
-  type PresenceEntry,
   type PresenceView,
 } from '../../../api/presence.ts';
 import { getTask, type Task } from '../../../api/tasks.ts';
@@ -16,7 +15,8 @@ import { UnlistedList } from '../unlisted/UnlistedList.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
-import { byAvailability, hasLocation, oldestAge, taskIdsToResolve } from './capacity-derive.ts';
+import { byAvailability, oldestAge, taskIdsToResolve } from './capacity-derive.ts';
+import { PresencePerson } from '../../../components/PresencePerson.tsx';
 import '../../../components/markers.css';
 import './capacity.css';
 
@@ -150,7 +150,12 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
             ) : (
               <ul className="cap-present">
                 {working.map((entry) => (
-                  <PresenceRow key={entry.user_id} entry={entry} theme={theme} />
+                  <li key={entry.user_id} className="cap-present-row">
+                    <PresencePerson entry={entry} theme={theme} variant="row" />
+                    <span className="cap-seen">
+                      {new Date(entry.last_seen).toLocaleTimeString()}
+                    </span>
+                  </li>
                 ))}
               </ul>
             )}
@@ -237,40 +242,6 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
         </>
       )}
     </div>
-  );
-}
-
-/** One present person. **The no-location case is the one that must look normal.** */
-function PresenceRow({ entry, theme }: { readonly entry: PresenceEntry; readonly theme: string }) {
-  const ink = avatarColor(entry.user_id, theme as Parameters<typeof avatarColor>[1]);
-  const located = hasLocation(entry);
-
-  return (
-    <li className="cap-present-row">
-      <span className="cap-avatar" style={{ background: ink.background, color: ink.foreground }}>
-        {initials(entry.name)}
-      </span>
-      <span className="cap-name">{entry.name}</span>
-      {/* LAI-411's treatment, not a second one — `.marker-agent` is shared now. */}
-      {entry.is_agent && <span className="marker marker-agent">agent</span>}
-
-      {located ? (
-        <span className="cap-where">
-          <code className="cap-repo">{entry.repo}</code>
-          <span className="cap-branch">{entry.branch}</span>
-        </span>
-      ) : (
-        /* **A normal state, not a loading one** (LAI-438). The person, the time
-           and whether it is an agent are all still known; only the place is
-           withheld, because the hook fires in every repository someone opens and
-           publishing each one would make consent to be seen working here into
-           consent to broadcast everything else. No dash, no "unknown", no
-           skeleton — a sentence. */
-        <span className="cap-elsewhere">working elsewhere</span>
-      )}
-
-      <span className="cap-seen">{new Date(entry.last_seen).toLocaleTimeString()}</span>
-    </li>
   );
 }
 

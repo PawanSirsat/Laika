@@ -35,6 +35,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
+import { hasLocation, type PresenceEntry } from '../../src/api/presence.ts';
 
 const SERVER = fileURLToPath(new URL('../../../src/services/presence.ts', import.meta.url));
 const CLIENT = fileURLToPath(new URL('../../src/api/presence.ts', import.meta.url));
@@ -130,5 +131,46 @@ void describe('the capacity entry mirrors the server, optionality and all', () =
     // claim — "this person has logged nothing". Never `?? []`.
     assert.deepEqual(optional(there), ['unlisted']);
     assert.deepEqual(optional(here), ['unlisted']);
+  });
+});
+
+function present(over: Partial<PresenceEntry> & { user_id: string }): PresenceEntry {
+  return {
+    name: over.user_id,
+    matched_task_id: null,
+    project_ids: [],
+    is_agent: false,
+    last_seen: 0,
+    ...over,
+  };
+}
+
+void describe('hasLocation — the LAI-438 predicate, and it lives beside the type', () => {
+  void test('`repo` present means the reader may be told where', () => {
+    assert.equal(hasLocation(present({ user_id: 'u', repo: 'o/n', branch: 'main' })), true);
+  });
+
+  void test('`repo` absent is the withheld case', () => {
+    assert.equal(hasLocation(present({ user_id: 'u' })), false);
+  });
+
+  void test('the other two fields cannot stand in for it', () => {
+    // **This is the assertion the whole screen rests on.** The task file
+    // originally said `matched_task_id` and `project_ids` go absent too; they do
+    // not — they arrive `null` and `[]`, measured against a running instance.
+    // So a predicate written on either of them never fires, and the row renders
+    // as located with no location.
+    const withheld = present({ user_id: 'u' });
+    assert.equal(withheld.matched_task_id, null, 'null, not undefined');
+    assert.deepEqual(withheld.project_ids, [], 'empty, not undefined');
+    assert.equal(withheld.matched_task_id === undefined, false, 'testing this never fires');
+    assert.equal(hasLocation(withheld), false, 'but `repo` does');
+  });
+
+  void test('a located entry whose repo matched no task is still located', () => {
+    // `matched_task_id: null` with a `repo` means §9.2 parsed no task id from
+    // the branch — an ordinary state, and nothing to do with permission.
+    const located = present({ user_id: 'u', repo: 'o/n', branch: 'main', matched_task_id: null });
+    assert.equal(hasLocation(located), true);
   });
 });
