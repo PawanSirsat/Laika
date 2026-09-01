@@ -3,6 +3,7 @@ import {
   createRuntimeShutdown,
   createShutdownHandler,
   type ClosableServer,
+  REAP_INTERVAL_MS,
 } from '../src/shutdown.ts';
 import { ActivityFeed } from '../src/services/activity-feed.ts';
 import { freshDb } from './helpers/db.ts';
@@ -328,6 +329,73 @@ describe('the runtime wiring (LAI-057)', () => {
       expect(ended, 'a live subscriber was not told the server is going away').toBe(true);
     } finally {
       t.close();
+    }
+  });
+});
+
+/**
+ * Reaping idle connections **repeatedly** (LAI-142).
+ *
+ * One call is not enough, and that was measured rather than reasoned: with a
+ * single SSE stream open, shutdown took **4022ms**, and a probe on
+ * `getConnections()` every 250ms showed `open: 1` for the whole of it. The
+ * stream's response had ended, but the connection was not *idle* at the instant
+ * the one call happened — and nothing looked again. On an interval, the same
+ * shutdown takes **57ms**.
+ */
+describe('idle connections are reaped until close completes', () => {
+  it('keeps looking, rather than looking once', () => {
+    vi.useFakeTimers();
+    try {
+      const { server, shutdown } = harness();
+      shutdown('SIGTERM');
+
+      // The immediate call: a keep-alive connection already idle is reaped now.
+      expect(server.closeIdleConnections).toHaveBeenCalledTimes(1);
+
+      // And again, for the one that becomes idle a moment later. Without this
+      // the connection waits for whatever other timeout eventually takes it.
+      vi.advanceTimersByTime(REAP_INTERVAL_MS * 3);
+      expect(server.closeIdleConnections).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops once the server reports closed', () => {
+    vi.useFakeTimers();
+    try {
+      const { server, shutdown } = harness();
+      shutdown('SIGTERM');
+      vi.advanceTimersByTime(REAP_INTERVAL_MS);
+      const during = (server.closeIdleConnections as unknown as { mock: { calls: unknown[] } }).mock
+        .calls.length;
+
+      server.finishClose();
+      vi.advanceTimersByTime(REAP_INTERVAL_MS * 10);
+
+      // A timer that outlives the shutdown it belongs to is the same class of
+      // bug as the stream that started this task.
+      expect(server.closeIdleConnections).toHaveBeenCalledTimes(during);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops when the grace period forces the exit', () => {
+    vi.useFakeTimers();
+    try {
+      const { server, shutdown, fireTimer } = harness();
+      shutdown('SIGTERM');
+      fireTimer();
+      const atForce = (server.closeIdleConnections as unknown as { mock: { calls: unknown[] } })
+        .mock.calls.length;
+
+      vi.advanceTimersByTime(REAP_INTERVAL_MS * 10);
+
+      expect(server.closeIdleConnections).toHaveBeenCalledTimes(atForce);
+    } finally {
+      vi.useRealTimers();
     }
   });
 });

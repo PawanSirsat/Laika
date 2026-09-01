@@ -279,18 +279,28 @@ describe('the built server, run the way the container runs it', () => {
 
     const { elapsed, serverLog } = await timeShutdownWithOpenStream(PORT + 3, emptyPublic);
 
-    // **Measured, both ways.** Wired: 4.0s. With `onStopping` severed: 10.0s —
-    // the full grace, then the forced exit. The threshold sits between them.
+    // **Measured, four ways** (LAI-142, on this machine):
     //
-    // It is not tighter because 4s is *not* what this should cost, and pinning
-    // it at 4s would freeze a stall as the standard. The server's own log puts
-    // `shutdown.start` → `shutdown.complete` at 4005ms, so the delay is inside
-    // the server, after the feed closes — filed as **LAI-142**, out of scope
-    // here (this task guards the wiring, it does not tune it).
+    // | | shutdown |
+    // | --- | --- |
+    // | no stream open | **9ms** |
+    // | one stream, before LAI-142 | **4022ms** |
+    // | one stream, after | **56–60ms** |
+    // | one stream, `onStopping` severed | **10010ms**, then `shutdown.forced` |
+    //
+    // The 4s was one `closeIdleConnections()` call that ran while the stream's
+    // connection was still flushing and therefore not idle; nothing looked
+    // again. It is now reaped on an interval — see `shutdown.ts`.
+    //
+    // The floor is **one reap interval** (`REAP_INTERVAL_MS`, 50ms), which is
+    // why this is not as fast as the no-stream case and never will be.
+    //
+    // 1.5s is well above the 60ms observed and well below both the 4s
+    // regression and the 10s severed case, so it fails for either.
     expect(
       elapsed,
       `shutdown took ${String(elapsed)}ms with a stream open. The grace period is ${String(DEFAULT_GRACE_MS)}ms, and waiting it out is what "the activity feed was never closed" looks like.\n\nserver log:\n${serverLog}`,
-    ).toBeLessThan(7_000);
+    ).toBeLessThan(1_500);
 
     rmSync(emptyPublic, { recursive: true, force: true });
   }, 60_000);

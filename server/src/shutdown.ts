@@ -96,12 +96,33 @@ export function createRuntimeShutdown(parts: RuntimeTeardown): (signal: string) 
 export const DEFAULT_GRACE_MS = 10_000;
 
 /**
+ * How often to look for connections that have become idle since the last look.
+ *
+ * Short enough that it is not the thing anybody waits for, long enough not to
+ * spin: at 50ms the measured shutdown is 57ms, against 4022ms with a single
+ * call. It is not tunable because there is no deployment for which a different
+ * number is better — it runs only during shutdown and only until `close()`
+ * reports done.
+ */
+export const REAP_INTERVAL_MS = 50;
+
+/**
  * Stop accepting, let in-flight requests finish, exit 0 (LAI-002).
  *
  * Two details that matter:
- *  - `closeIdleConnections()` is called immediately. Without it a keep-alive
- *    connection sitting idle holds the server open for the full grace period,
- *    so a healthy deploy takes 10s instead of milliseconds.
+ *  - `closeIdleConnections()` is called immediately **and then repeatedly**.
+ *    Once is not enough and this was measured, not reasoned (LAI-142): with a
+ *    single SSE stream open, shutdown took **4022ms**, and a probe on
+ *    `getConnections()` every 250ms showed `open: 1` for the whole of it. The
+ *    stream's response has ended by then, but the connection is not *idle* at
+ *    the instant the one call happens — it is still flushing — so it is not
+ *    reaped, and nothing looks again. Reaping on a short interval takes the same
+ *    shutdown to **57ms**.
+ *
+ *    Without any call at all, a keep-alive connection sitting idle holds the
+ *    server open for the full grace period, so a healthy deploy takes 10s
+ *    instead of milliseconds. That is what the first call is for; this is what
+ *    the rest are for.
  *  - The forced exit is a backstop, not the path. A request that hangs past the
  *    grace period loses its connection rather than blocking the shutdown
  *    forever — which is what makes `docker stop` return instead of escalating
@@ -150,7 +171,25 @@ export function createShutdownHandler(options: ShutdownOptions): (signal: string
       }
     };
 
+    // **Before `close()`, not after.** `close()` may invoke its callback
+    // synchronously — a server with nothing left to drain does, and so does any
+    // double a test supplies — and that callback clears this interval. Created
+    // after the call, it would be cleared before it existed.
+    //
+    // `unref()` because this must never be the reason the process is alive: if
+    // everything else has finished, the loop should drain whether or not this
+    // interval is pending.
+    const reaper = setInterval(() => {
+      server.closeIdleConnections?.();
+    }, REAP_INTERVAL_MS);
+    reaper.unref?.();
+
+    // The immediate reap: a keep-alive connection that is *already* idle goes
+    // now rather than at the next tick.
+    server.closeIdleConnections?.();
+
     server.close((err) => {
+      clearInterval(reaper);
       if (err) {
         log.error('shutdown.close_failed', { signal, message: err.message });
       } else {
@@ -160,9 +199,8 @@ export function createShutdownHandler(options: ShutdownOptions): (signal: string
       exit(0);
     });
 
-    server.closeIdleConnections?.();
-
     const timer = setTimer(() => {
+      clearInterval(reaper);
       log.warn('shutdown.forced', { signal, grace_ms: graceMs });
       server.closeAllConnections?.();
       release();
