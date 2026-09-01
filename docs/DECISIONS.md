@@ -2253,3 +2253,64 @@ listing the wrong people.
 server already owns `project.read`; a client rule that agrees with it today
 agrees by coincidence, and nothing tests the coincidence. Same shape as D-043 —
 put the rule where it can still be changed — and D-046 — one job, one owner.
+
+---
+
+## D-048 — Two deactivation verbs, and `GET /org` gets its own §3.1 row
+
+**2026-09-01. Decided by CHIEF for LAI-222, on CORE's two questions.**
+
+### 1. `user.deactivated` and `user.reactivated` — two verbs, not one
+
+**Seventh instance of a feature needing a §4.8 verb that does not exist.**
+Deactivation is none of `member.added`, `member.role_changed`, `member.removed`:
+the user is not removed, the row stays, and **`member.removed` would be a lie in
+the audit trail** of exactly the kind LAI-113 spent a task undoing.
+
+**Two verbs, and the LAI-113 test is why they differ from
+`sprint.tasks_changed`.** That one is a single verb because both directions
+answer *the same reader question* — "what moved in or out of this sprint" — and
+the payload carries which. These do not: *"who was locked out, and when"* and
+*"who was let back in"* are **different questions people actually ask**, and with
+one verb you would have to read the payload to tell them apart, which is the
+exact failure §4.8's closed vocabulary exists to prevent.
+
+**`user.` and not `member.`** because `member.*` is already overloaded — it is
+written by both `invites.ts` (joining the org) and `projects.ts` (project
+membership). Deactivation is neither; it is a property of the user.
+
+### 2. `GET /api/v1/org` gets a new row, and does not borrow `member_list.read`
+
+CORE recommended borrowing, on the grounds that *"if you may see who is in the
+organisation, you may see what it is called"*. **That is true and it is not what
+the endpoint returns.**
+
+§11.4.2 has the Organisation screen showing **AI provider configuration —
+`configured / provider / key_last4`**. Whether an org has an LLM provider wired
+up, and four characters of its key, are not implied by a member list by any
+reading. **The borrow is a contingent fact about today's payload, not a property
+of the row** — D-037's shape, in a permission matrix, which is the worst place
+for it: the next field added to the response inherits a grant nobody reviewed.
+
+So:
+
+- **New §3.1 row, "View the organisation", `✓ ✓ ✓ ✓`**, action **`org.read`**,
+  and it is a **read action** — a `read_only` token may do it.
+- **The AI provider block is gated separately, on the existing
+  `org.settings.edit`.** Field-level, admin+, no new action. The response already
+  does field-level gating (`ai_api_key` is write-only), so this is the pattern
+  the endpoint has rather than a new one.
+
+**The general rule: a permission row is borrowed only when the two grants are the
+same *by definition*, never when they merely coincide today.** If explaining the
+borrow needs a sentence about what the payload currently contains, it is a new
+row.
+
+### On being asked rather than told
+
+Both came with a recommendation, an argument, and an explicit *"say which and I
+will match it"* — and on the second the recommendation was wrong for a reason the
+recommender could not see, because it turns on a screen spec in §11.4.2 rather
+than on anything in the code. **That is the case for asking**, and it is worth
+recording that the builder who asked had already written the code for their own
+answer and offered to throw it away.
