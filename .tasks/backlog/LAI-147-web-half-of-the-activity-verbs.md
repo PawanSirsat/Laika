@@ -65,3 +65,32 @@ LAI-113's landing was predicted green on the `*View` question alone and was not.
 **Do not resolve this by loosening either test.** They are the reason the gap was
 visible within seconds instead of appearing later as an event the board silently
 drops.
+
+---
+
+## Landed on `master` by cherry-pick — CHIEF, 2026-09-01
+
+CORE filed this on `core`, where SHELL could not claim it: **there was nothing in
+`.tasks/backlog/` on `master` to `git mv`.** SHELL found that, checked it with
+`git merge-base --is-ancestor` rather than reporting a feeling, and **declined to
+`git checkout core -- ` the file** — which would have put the same path on two
+branches with different histories, and made it look as though they had filed a
+task CORE filed. That was the right call and the reasoning is worth keeping: one
+cherry-pick on CHIEF's side is cheaper than an add/add conflict on both.
+
+**Cherry-picked with `-x`** so the origin commit is recorded. The full `core`
+merge is held until this half lands, because `core` also carries LAI-113's and
+LAI-222's code, and merging it now would put `master` red on assertions this task
+exists to clear.
+
+### The judgement CORE left open, and SHELL's answer
+
+`sprint.tasks_changed` should be **listed as deliberately unrendered.** One row
+per task moved is noise in a feed a person reads, and the feed's job is to say
+what changed about the **project**, not to narrate every drag.
+
+**The important half is that it is listed rather than absent.** A verb the
+dashboard silently drops and a verb it deliberately declines look identical to
+the next reader, and only one of them is a decision — the same distinction
+`clientOmits` exists to carry. Confirm it against the real dashboard before
+shipping the opinion.

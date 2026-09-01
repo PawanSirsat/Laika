@@ -169,6 +169,16 @@ Then write your log entry.
 This has now cost two tasks (LAI-070, LAI-224). The same trap applies to the
 **claim** commit above, which is why step 4 there moves before step 5 edits.
 
+**A criterion that names a location must be checked against that location.**
+Three of CHIEF's failed this on one day: an AC pointing at *"§6.4's task shape"*
+when §6.4 is an endpoint list with no task shape; *"the eight §7.1 tools"* when
+there are ten listed and eleven served; and *"claim LAI-147, it is fifteen
+minutes"* when the file existed only on the builder's branch and there was
+nothing on `master` to `git mv`. Each cost a round trip, each was one `grep`
+away, and **each read as authoritative to the person receiving it** — which is
+what makes it worse than a vague criterion. Open the section, count the list,
+check the branch.
+
 **Only CHIEF moves `.tasks/review/` → `.tasks/done/`.** Builders never mark their
 own work done. If CHIEF sends a task back, it returns to `.tasks/in-progress/` with
 review notes appended to the file — read them, fix, and move it to review again.
@@ -554,6 +564,14 @@ file. The rules below are the ones that are true of every line of code.
   addition turns a *web* test red (D-045). **Own a directory, gate the repo** —
   "I verified the thing I owned rather than the thing my change affected" is how
   a green branch gets submitted red.
+
+  **And a workspace whose test script cannot fail is a hole in that gate.** A new
+  package whose `test` runs a matcher with nothing behind it prints `# tests 0`
+  and **exits 0**, so the root run stays green while covering nothing — SHELL
+  found `cli/` doing exactly that. The first test in a new workspace is the one
+  that **fails if the thing the workspace exists for is absent**; green by
+  vacancy is the same defect as an assertion a broken setup satisfies, moved up
+  to the package level.
 
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.

@@ -2366,6 +2366,25 @@ is a scheduling engine; a bar showing *what actually happened* is a report.
 made it expire was taken four hours earlier by the same session, for an unrelated
 reason.
 
+**SHELL's own account of it is sharper and is the one to use.** Their strongest
+argument for D-040 was that *a task belongs to exactly one sprint, so a
+sprint-derived bar cannot express a task crossing a sprint boundary at all*:
+
+> *"That argument was about **sprint-derived bars**. `started_at → completed_at`
+> is not sprint-derived, so it does not apply — **the objection dissolves rather
+> than being overruled.**"*
+
+That is not a nicety. It tells you the boundary-crossing case is now
+**representable**: a task started in one sprint and finished in the next draws
+**one bar across both bands**, and that is correct rather than a compromise. It
+is a test in LAI-434.
+
+They built both halves — the measurement in LAI-426 that produced D-040, and the
+fields in LAI-121 that expired it, where they wrote *"drawing task bars from them
+is a separate decision that needs the owner"*. **Neither builder nor reviewer
+connected the two on the day. The owner did, by putting the two screens side by
+side.**
+
 ### What each pixel comes from
 
 | Task state | Bar | Source |
