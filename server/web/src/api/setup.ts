@@ -9,8 +9,35 @@ import { ApiError } from './errors.ts';
  * here rather than being spread across the screen.
  */
 
+/**
+ * What `GET /setup/status` reports about the running instance (§6.4, LAI-206).
+ *
+ * **Named `SetupSystemStatus`, not `SystemStatus`**, because
+ * `routes/screens/SystemStatus.tsx` is the component that draws it and one name
+ * for the wire shape and the thing that renders it would make every import site
+ * pick which one it meant.
+ */
+export interface SetupSystemStatus {
+  /** Engine and journal mode, e.g. `SQLite · WAL`. */
+  readonly database: string;
+  readonly migrations_applied: number;
+  readonly smtp_configured: boolean;
+}
+
 export interface SetupStatus {
   readonly setup_required: boolean;
+  /**
+   * **Declared because it is served; rendered by LAI-158.**
+   *
+   * LAI-206 added it to the response and no client type mirrored it, so the two
+   * could drift with nothing going red — LAI-160 is what noticed, by pairing
+   * this type for the first time. Declaring it is the repo's answer to a served
+   * field whose screen is not built yet (`Task.blocks`, `Task.sprint_id`), and
+   * it is a better one than a `clientOmits` entry: the omission was never a
+   * decision, it was an oversight, and an exemption would have recorded it as
+   * the former.
+   */
+  readonly system: SetupSystemStatus;
 }
 
 export interface SetupInput {
