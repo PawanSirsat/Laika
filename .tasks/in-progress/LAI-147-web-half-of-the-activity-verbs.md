@@ -2,11 +2,12 @@
 id: LAI-147
 title: The client mirrors §4.8's vocabulary and has not seen LAI-113's seven verbs
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-113]
 discovered-from: LAI-113
-status: backlog
+status: in-progress
+started: 2026-09-01T05:52:20Z
 ---
 
 ## Goal
