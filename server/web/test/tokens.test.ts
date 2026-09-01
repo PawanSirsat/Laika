@@ -167,7 +167,9 @@ void describe('token-list.ts matches tokens.css', () => {
 void describe('no per-person avatar colours shipped', () => {
   void test('the mockup fixtures are absent', () => {
     // --mk --ta --sv --jd --rb are five named people in the prototype.
-    // SPEC §4.1 derives avatar_color from the user id at runtime.
+    // Avatar colours are derived from the user id at render (docs/design/
+    // README.md). There is no `avatar_color` column to read — §4.1 has not had
+    // one since LAI-148, and this comment cited it until LAI-153.
     const fixtures = ['--mk', '--ta', '--sv', '--jd', '--rb'];
     const present = fixtures.filter((t) => light.has(t) || dark.has(t));
     assert.deepEqual(present, [], 'per-person colour fixtures must not ship');

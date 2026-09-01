@@ -1,10 +1,19 @@
 /**
  * Avatar colours, derived from a user id.
  *
- * SPEC §4.1 makes `avatar_color` derived from the id, and `docs/design/README.md`
- * says the same: the prototype's `--mk --ta --sv --jd` are fixtures for four
- * named people (Mira Kellner, Sana Verma and friends) and must not ship. A
+ * Derived at render, from the id, and never stored. `docs/design/README.md` is
+ * where the rule lives: the prototype's `--mk --ta --sv --jd` are fixtures for
+ * four named people (Mira Kellner, Sana Verma and friends) and must not ship. A
  * per-person colour map would also mean a new deploy every time someone joins.
+ *
+ * **This used to cite SPEC §4.1's `avatar_color` column, and there is no such
+ * column** (LAI-148, LAI-153). Three places disagreed about it — the server
+ * derived it from email and stored it, §4.1 said it came from the id, and this
+ * function ignored the served value and derived from the id at render. This one
+ * was right, because it is the only version that can satisfy §5.1's
+ * both-themes rule: a single stored colour cannot be legible in light and dark.
+ * So the column went and the rule stayed, which is why the citation had to move
+ * rather than simply be deleted.
  *
  * The hues below are a fixed, evenly spaced ring rather than the raw hash, so
  * every avatar is a colour the palette would accept — hashing straight to a hue
