@@ -2,11 +2,12 @@
 id: LAI-431
 title: The in-process scheduler — retention, stale flagging, expiry, backups
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-02T00:45:00Z
 ---
 
 ## Goal
