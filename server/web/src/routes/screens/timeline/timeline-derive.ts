@@ -54,8 +54,19 @@ export interface TimelineRange {
  * the screen says which side of it today falls on — see `todayPosition`. That is
  * a real trade and it is made here so it is visible.
  */
-export function timelineRange(sprints: readonly Sprint[]): TimelineRange | null {
-  if (sprints.length === 0) return null;
+export function timelineRange(
+  sprints: readonly Sprint[],
+  /**
+   * Extra days the axis must cover — task actuals, from {@link taskActuals}.
+   *
+   * **The axis widens rather than the bars being clamped** (LAI-434). A task
+   * that started before the first sprint has to be drawn where it started;
+   * clipping it to the axis edge would show a start date nobody gave us, which
+   * is the one thing D-049 kept from D-014.
+   */
+  extra: readonly number[] = [],
+): TimelineRange | null {
+  if (sprints.length === 0 && extra.length === 0) return null;
 
   let from = Number.POSITIVE_INFINITY;
   let to = Number.NEGATIVE_INFINITY;
@@ -63,6 +74,11 @@ export function timelineRange(sprints: readonly Sprint[]): TimelineRange | null 
   for (const sprint of sprints) {
     from = Math.min(from, startOfDay(sprint.starts_on));
     to = Math.max(to, startOfDay(sprint.ends_on));
+  }
+
+  for (const at of extra) {
+    from = Math.min(from, startOfDay(at));
+    to = Math.max(to, startOfDay(at));
   }
 
   // `ends_on` is inclusive (§4.15), so the last day counts.
