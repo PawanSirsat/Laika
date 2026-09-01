@@ -1082,6 +1082,20 @@ normalises it. This line said *"git remote basename"* until LAI-144 — a basena
 **`|| true` is mandatory.** A board that is down, slow, or unreachable must never
 break a coding session. Every hook fails silent.
 
+**And a hook must not send a value it obtained from a failed command** (LAI-418).
+`|| true` swallows the exit status; `$(…)` keeps the output — so a command that
+**fails and still prints** hands the board a plausible wrong answer that nothing
+can see. `git rev-parse --abbrev-ref HEAD` exits `128` on a repository with no
+commit yet **and writes `HEAD` to stdout**, so the board would be told the branch
+is called `HEAD`. Use `git branch --show-current`, which gives the real name on an
+unborn branch and gives **nothing** on a detached `HEAD` — the case that should
+be skipped.
+
+**The mandatory fail-silent is what makes a plausible-but-wrong value
+invisible.** The general form is worth more than the git case: **`failed` is not
+always `empty`**, and `|| true` around anything that prints on failure has the
+same hole.
+
 **Commands**: `/laika:setup`, `/laika:status` (own capacity), `/laika:tasks`
 (`list_ready_tasks`), `/laika:standup` (own activity, last 24h).
 

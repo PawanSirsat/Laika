@@ -1,4 +1,39 @@
 {
-  "description": "Laika hooks. Empty by design until M4 — see plugin/hooks/README.md.",
-  "hooks": {}
+  "description": "Laika heartbeat (SPEC §8). Presence only: the git remote and the branch, never file contents. Silent when unconfigured, and it can never fail a session.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/heartbeat.sh\" session-start || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/heartbeat.sh\" tool-use || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/heartbeat.sh\" stop || true",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }
