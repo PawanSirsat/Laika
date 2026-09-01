@@ -2,11 +2,12 @@
 id: LAI-231
 title: The activity poll timer throws after the database closes, and the root gate is red on master
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-418
-status: backlog
+status: in-progress
+started: 2026-09-01T12:20:00Z
 ---
 
 ## Goal
