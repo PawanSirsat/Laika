@@ -2,11 +2,12 @@
 id: LAI-140
 title: Two services still answer "which org" privately
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-405
-status: backlog
+status: in-progress
+started: 2026-09-02T06:10:00Z
 ---
 
 ## Goal
