@@ -2,11 +2,12 @@
 id: LAI-158
 title: Render the first-boot status panel from real values
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p3
 depends-on: [LAI-206]
 discovered-from: LAI-206
-status: backlog
+started: 2026-09-01T21:45:00+05:30
+status: in-progress
 ---
 
 ## Goal
