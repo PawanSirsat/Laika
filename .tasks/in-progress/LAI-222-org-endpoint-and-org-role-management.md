@@ -2,12 +2,12 @@
 id: LAI-222
 title: No org endpoint, and no way to change an org role or deactivate anyone
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-086
-status: backlog
-started:
+status: in-progress
+started: 2026-09-01T20:25:00Z
 finished:
 ---
 
