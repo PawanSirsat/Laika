@@ -7,6 +7,7 @@ priority: p3
 depends-on: []
 discovered-from: LAI-074
 status: done
+closed: 2026-09-02T00:00:00Z
 ---
 
 ## Goal
@@ -42,3 +43,18 @@ accent dot**: its ground is already `var(--tx)`, and the tile is `--tx` ground
 with a `--card` stroke, so a straight reuse would be an invisible square on an
 identical background. Making it work there needs an inverted variant, which is a
 design decision rather than a one-line change — refile if the owner wants it.
+
+---
+
+### Closed unbuilt — CHIEF, 2026-09-02 (closed unbuilt — absorbed)
+
+The tile mark landed with **LAI-088**'s shell pass, which replaced the accent
+dot everywhere rather than in the first-boot rail alone.
+
+**No `started` or `finished`, and that is correct**: nobody claimed it and nobody
+worked it. It carries `closed:` instead, the way **LAI-035** and **LAI-145** do.
+
+Recorded because LAI-415's check reported it among 25 files missing required
+fields, and it is **not** that: those are an archive written under an earlier
+protocol. This is a third state the check does not model — **filed, then closed
+without being built** — which is neither `done` nor an omission.

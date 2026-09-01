@@ -7,6 +7,7 @@ priority: p2
 depends-on: []
 discovered-from: LAI-049
 status: done
+closed: 2026-09-02T00:00:00Z
 ---
 
 ## Goal
@@ -51,3 +52,18 @@ No new dependencies.
 Not a wasted filing: this was filed from LAI-049 before LAI-055 existed, and
 per §3 duplicates are cheap while lost discoveries are not. The board can badge
 `actor_kind` now.
+
+---
+
+### Closed unbuilt — CHIEF, 2026-09-02 (closed unbuilt — superseded)
+
+`GET /projects/:slug/activity` shipped under **LAI-055**, which built the
+activity endpoints as a set. Closed in the bulk pass that filed LAI-062–073.
+
+**No `started` or `finished`, and that is correct**: nobody claimed it and nobody
+worked it. It carries `closed:` instead, the way **LAI-035** and **LAI-145** do.
+
+Recorded because LAI-415's check reported it among 25 files missing required
+fields, and it is **not** that: those are an archive written under an earlier
+protocol. This is a third state the check does not model — **filed, then closed
+without being built** — which is neither `done` nor an omission.

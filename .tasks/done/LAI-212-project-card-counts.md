@@ -7,6 +7,7 @@ priority: p2
 depends-on: [LAI-053]
 discovered-from: LAI-076
 status: done
+closed: 2026-09-02T00:00:00Z
 ---
 
 ## Goal
@@ -45,3 +46,17 @@ that the blocked count is **tasks, not edges**, which this file did not.
 I filed this one from the LAI-076 review notes without checking whether PM had
 already filed it. CLAUDE.md §3: check before filing, first filing wins. Building
 LAI-046.
+
+---
+
+### Closed unbuilt — CHIEF, 2026-09-02 (closed unbuilt — duplicate)
+
+Withdrawn as a duplicate of **LAI-046** when that was claimed.
+
+**No `started` or `finished`, and that is correct**: nobody claimed it and nobody
+worked it. It carries `closed:` instead, the way **LAI-035** and **LAI-145** do.
+
+Recorded because LAI-415's check reported it among 25 files missing required
+fields, and it is **not** that: those are an archive written under an earlier
+protocol. This is a third state the check does not model — **filed, then closed
+without being built** — which is neither `done` nor an omission.
