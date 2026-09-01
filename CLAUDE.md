@@ -439,6 +439,13 @@ reaches for an exemption instead.
    the merge that retires it — the `ACTIONS_WITHOUT_A_ROW` and
    `TABLES_NOT_IN_SPEC` shape. **It must be proved to expire**, not assumed.
 
+   **A builder who takes an in-flight exemption re-runs the staleness guards
+   after every merge of `master`** — that is when they expire, and it is the
+   difference between the builder dropping the entry unprompted and CHIEF holding
+   a landing to ask. CORE's line, after it cost two round trips in one session:
+   *"the round trip is real, and it is a habit of mine, not a property of the
+   rule."*
+
    **Unless the exemption list lives in the other owner's area** — `clientOmits`
    in `server/web/` is the case that came up. Then there is no exemption to take
    that is not a crossing, and step 1's red-with-a-named-failure is the whole

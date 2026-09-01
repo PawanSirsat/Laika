@@ -747,6 +747,26 @@ a client must be able to tell them apart:
 required (D-018); this is the constraint on its *value*. If it does not match,
 sign-in fails with a message about the origin — not about the password.
 
+**Repeated failed sign-ins for one account are throttled** (LAI-219). Five
+consecutive failures are free; the next attempt is refused with `429` and a
+`retry_after_seconds`, starting at 30 seconds and doubling to a cap of 15
+minutes. A success, or an hour of quiet, clears the count.
+
+**A delay rather than a lockout, deliberately.** A lockout would let anyone close
+an account they cannot enter, and an invite-only instance (D-004) has a small,
+known list of addresses. The cap bounds the owner's worst case and clears itself
+without an administrator.
+
+The counter is keyed on the **submitted address**, whether or not an account has
+it, so the response never reveals which addresses exist — the same reason the
+table above gives `401` to both a wrong password and an unknown address.
+
+**Only a rejected credential counts.** An origin refusal is a `403` raised
+*before any password is looked at*, so counting it would let an attacker throttle
+any account from a foreign origin **without ever submitting a guess** — a cheaper
+denial of service than the one this trade accepts, arrived at by defending
+against the expensive one. A malformed body is not an attempt either.
+
 ### 6.2 Authorisation
 
 Handler resolves `Actor` → loads the resource → `assertCan(...)` → 403 if false.

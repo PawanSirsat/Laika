@@ -36,6 +36,7 @@ import { heartbeatRoutes } from './http/routes/heartbeats.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
+import { SignInThrottle } from './auth/sign-in-throttle.ts';
 import { type Db } from './db/client.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
@@ -68,6 +69,12 @@ export const API_BASE = '/api/v1';
 
 export interface CreateAppOptions {
   version: string;
+  /**
+   * Per-account sign-in throttling (§6.1, LAI-219). Injectable so a test can
+   * supply one with a clock it controls — the rule is "after n failures, wait" ,
+   * and proving it against `Date.now()` would mean sleeping for the delay.
+   */
+  signInThrottle?: SignInThrottle;
   logger?: Logger;
   /**
    * Auth and the database. Optional so the HTTP-level tests of LAI-002 can build
@@ -102,6 +109,26 @@ export interface CreateAppOptions {
  * a value, and a factory that also called `serve()` would make every HTTP test
  * open a real socket (SPEC §13.3).
  */
+/**
+ * The `email` from a sign-in body, or null.
+ *
+ * Deliberately total: a body that is not JSON, or carries no email, is
+ * better-auth's problem to reject — this only decides whether there is an
+ * account to count failures against, and "no" is a safe answer because it means
+ * the request is passed through untouched.
+ */
+function readEmail(body: string): string | null {
+  try {
+    const parsed: unknown = JSON.parse(body);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+
+    const email = (parsed as { email?: unknown }).email;
+    return typeof email === 'string' && email.trim() !== '' ? email : null;
+  } catch {
+    return null;
+  }
+}
+
 export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   const log = options.logger ?? createLogger();
   const db = options.db;
@@ -212,8 +239,63 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   if (options.auth !== undefined) {
     const configuredAuth = options.auth;
 
+    const signInThrottle = options.signInThrottle ?? new SignInThrottle();
+
     app.on(['GET', 'POST'], `${AUTH_BASE_PATH}/*`, async (c) => {
-      const response = await configuredAuth.handler(c.req.raw);
+      // **Sign-in only.** Sign-out, session reads and the rest of better-auth's
+      // surface are not guessing attempts and must not share a failure counter
+      // with one (LAI-219).
+      const isSignIn = c.req.method === 'POST' && c.req.path.endsWith('/sign-in/email');
+
+      // The body is read once and re-attached: `c.req.raw` is a stream, and
+      // better-auth needs it intact after this handler has looked.
+      let email: string | null = null;
+      let request = c.req.raw;
+
+      if (isSignIn) {
+        const body = await c.req.raw.clone().text();
+        email = readEmail(body);
+
+        if (email !== null) {
+          const decision = signInThrottle.check(email);
+
+          if (!decision.allowed) {
+            // §6.3's envelope, and `Retry-After` so a legitimate user is told
+            // how long rather than left guessing. Identical for a real account
+            // and an unknown one — see `sign-in-throttle.ts`.
+            throw new ApiError('rate_limited', 'Too many sign-in attempts', {
+              retry_after_seconds: decision.retryAfterSeconds ?? 0,
+            });
+          }
+        }
+
+        request = new Request(c.req.raw.url, {
+          method: c.req.raw.method,
+          headers: c.req.raw.headers,
+          body,
+        });
+      }
+
+      const response = await configuredAuth.handler(request);
+
+      if (email !== null) {
+        if (response.ok) {
+          signInThrottle.recordSuccess(email);
+        } else if (response.status === 401) {
+          // **Only a rejected credential counts.** A `403` is the origin check
+          // refusing before any password was looked at (§6.1), and counting it
+          // would let an attacker throttle any account from a foreign origin
+          // **without ever submitting a guess** — a cheaper denial of service
+          // than the one the capped delay deliberately accepts. `400` and
+          // better-auth's own `429` are the same: no credential was evaluated,
+          // so no attempt was made against this account.
+          //
+          // This does not reopen the account-existence oracle: a wrong password
+          // and an unknown address both answer `401`, which is asserted in
+          // `test/http/sign-in-throttle.test.ts`.
+          signInThrottle.recordFailure(email);
+        }
+      }
 
       // Successes pass through untouched — they carry better-auth's session
       // payload and `Set-Cookie`. Failures are re-emitted in the §6.3 envelope,

@@ -350,22 +350,6 @@ const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([]);
 
 /** §4.8 verbs the enum has and the list does not, or the other way round. */
 const ACTIVITY_TYPE_EXEMPTIONS = new Map<string, string>([
-  [
-    'heartbeat.pruned',
-    "LAI-431, in flight: §4.8's D-022 note already names the cron as a writer of this and the vocabulary had no verb for it. CHIEF's §4.8 half is held and applied at merge; the staleness test below drops this the moment it lands.",
-  ],
-  [
-    'task.stale_flagged',
-    "LAI-431, in flight: §4.8's D-022 note already names the cron as a writer of this and the vocabulary had no verb for it. CHIEF's §4.8 half is held and applied at merge; the staleness test below drops this the moment it lands.",
-  ],
-  [
-    'invite.expired',
-    "LAI-431, in flight: §4.8's D-022 note already names the cron as a writer of this and the vocabulary had no verb for it. CHIEF's §4.8 half is held and applied at merge; the staleness test below drops this the moment it lands.",
-  ],
-  [
-    'meeting_review.expired',
-    "LAI-431, in flight: §4.8's D-022 note already names the cron as a writer of this and the vocabulary had no verb for it. CHIEF's §4.8 half is held and applied at merge; the staleness test below drops this the moment it lands.",
-  ],
   // Empty, and that is the point (LAI-098). `task.dependency_removed`,
   // `comment.edited` and `comment.deleted` lived here because the enum had them
   // and §4.8's list did not; §4.8 now lists all three.
