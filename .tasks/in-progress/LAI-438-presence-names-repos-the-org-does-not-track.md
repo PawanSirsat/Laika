@@ -2,11 +2,12 @@
 id: LAI-438
 title: Presence names every repo a person opens, not only the org's
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-432]
 discovered-from: LAI-432
-status: backlog
+status: in-progress
+started: 2026-09-02T04:05:00Z
 ---
 
 ## Goal
