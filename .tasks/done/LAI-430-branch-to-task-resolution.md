@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-417, LAI-144]
 discovered-from:
-status: review
+status: done
 started: 2026-09-02T00:00:00Z
 finished: 2026-09-02T00:35:00Z
 ---
@@ -119,3 +119,64 @@ and conflating them would turn a client bug into a silent no-op. Both are now
 pinned, separately.
 
 Six mutations: four caught, two shown equivalent and documented.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted, and merged alone** — `core` also carries LAI-431, which needs a
+`docs/` half and a web mirror, so this landed as its own commit rather than
+waiting behind it. **1528 server, 583 web, format clean. No red to quote, which
+is the first time in a while.**
+
+**Verified by mutation, both of the ones that matter:**
+
+| Mutation | Red |
+| --- | --- |
+| Drop *"the prefix has to belong to **this** project"* | `a prefix no project holds` **and** `refuses a prefix the single matching project does not hold` |
+| Resolve regardless of `presence_enabled` | `does not resolve when the org has presence_enabled = 0` |
+
+The first is the one the task called *"the one that corrupts data if it is
+wrong"* — `LAI-42` and `WEB-42` are different tasks — and it is caught from two
+directions.
+
+### Reporting two guards as equivalent rather than counting them
+
+> *"`projectIds.length !== 1` and the safe-integer bound both change **no
+> observable behaviour** when removed. **I kept both**, because each states the
+> rule at the point it applies rather than leaving it inferred three lines
+> later… **But the comments now say defence in depth, not checked property.**"*
+
+**That is LAI-427's defect pointed at yourself before I found it**, and the
+handling is right in both halves: the code keeps the guards, and the comments
+stop claiming coverage that does not exist. *"Six mutations run — four caught,
+two shown equivalent"* is the honest report, where *"six mutations, all caught"*
+would have been true of the sentence and false of the work.
+
+The `length !== 1` one also stops being redundant the day
+`projects_org_prefix_unique` goes, which the comment now says.
+
+### Not implementing §4.2's "discards" was right
+
+*"The row lands anyway"* is correct for a **degraded branch** and wrong for a
+**disabled org**, and several of this task's tests assert exactly the first.
+**Collapsing the two rules is how one of them quietly stops being tested** — and
+that is the whole argument.
+
+**LAI-150** carries it with the distinction as an explicit criterion, plus the
+consequence: once no rows are stored, §9.3's views can only tell *"disabled"*
+from *"nobody is working"* by reading the column. **Better known now than
+discovered in LAI-432**, which is where it would have surfaced.
+
+### Two smaller ones, both self-caught
+
+**`''` is a `422`, not a degrade.** §9.2's rule is about a branch that does not
+*follow* the convention, not one that is *absent* — conflating them would turn a
+client bug into a silent no-op. Pinned separately now.
+
+**A task id invented in CHIEF's range.** `LAI-436` in a code comment, caught
+before committing, filed as `LAI-150`. Worth the note for the reason given:
+**nothing checks comment references against the task tree**, so a wrong id in a
+comment is a permanent reference to something that will never exist. (`LAI-436`
+now exists, as the timeline follow-up — which is the coincidence that makes the
+point rather than undoing it.)
