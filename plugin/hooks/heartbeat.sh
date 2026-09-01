@@ -51,7 +51,6 @@ note() {
 # Most repositories on most machines have never heard of Laika. A hook that
 # warns on session start in every one of them is a defect, not a courtesy.
 if [ -z "$URL" ] || [ -z "$TOKEN" ]; then
-  echo "laika: not configured" >&2
   note "not configured (LAIKA_URL / LAIKA_TOKEN unset) — nothing sent"
   exit 0
 fi

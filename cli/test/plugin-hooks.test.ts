@@ -112,7 +112,7 @@ function runHook(
   options: { cwd: string; url?: string; token?: string; state?: string; path?: string },
 ): Promise<Run> {
   const env: Record<string, string> = {
-    PATH: options.path ?? (process.env.PATH ?? ''),
+    PATH: options.path ?? process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
     TMPDIR: options.state ?? dir('laika-hookstate-'),
   };
@@ -141,8 +141,8 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 150));
 }
 
-describe('the hook exists and is runnable at all', () => {
-  test('heartbeat.sh is present and executable', () => {
+void describe('the hook exists and is runnable at all', () => {
+  void test('heartbeat.sh is present and executable', () => {
     assert.ok(existsSync(HOOK), `${HOOK} is missing — every test below would pass vacuously`);
     const mode = execFileSync('/bin/sh', ['-c', `test -x "${HOOK}" && echo yes || echo no`])
       .toString()
@@ -150,13 +150,13 @@ describe('the hook exists and is runnable at all', () => {
     assert.equal(mode, 'yes', 'the hook must be executable, or every hook fails to `|| true`');
   });
 
-  test('it is valid shell', () => {
+  void test('it is valid shell', () => {
     execFileSync('bash', ['-n', HOOK], { stdio: 'pipe' });
   });
 });
 
-describe('unconfigured is silent, not broken', () => {
-  test('says nothing, exits 0, and posts nothing with neither variable set', async () => {
+void describe('unconfigured is silent, not broken', () => {
+  void test('says nothing, exits 0, and posts nothing with neither variable set', async () => {
     const board = await stubBoard();
     const run = await runHook('session-start', { cwd: repo() });
     assert.equal(run.code, 0);
@@ -167,25 +167,29 @@ describe('unconfigured is silent, not broken', () => {
     board.server.close();
   });
 
-  test('a URL without a token sends nothing', async () => {
+  void test('a URL without a token sends nothing', async () => {
     const board = await stubBoard();
     const run = await runHook('session-start', { cwd: repo(), url: board.url });
     assert.equal(run.code, 0);
     assert.equal(run.stdout + run.stderr, '');
     await settle();
-    assert.equal(board.beats.length, 0, 'half-configured is unconfigured, not a 401 every 5 minutes');
+    assert.equal(
+      board.beats.length,
+      0,
+      'half-configured is unconfigured, not a 401 every 5 minutes',
+    );
     board.server.close();
   });
 
-  test('a token without a URL sends nothing', async () => {
+  void test('a token without a URL sends nothing', async () => {
     const run = await runHook('session-start', { cwd: repo(), token: 'lai_secret' });
     assert.equal(run.code, 0);
     assert.equal(run.stdout + run.stderr, '');
   });
 });
 
-describe('what goes on the wire', () => {
-  test('POSTs repo and branch to /api/v1/heartbeats with a bearer token', async () => {
+void describe('what goes on the wire', () => {
+  void test('POSTs repo and branch to /api/v1/heartbeats with a bearer token', async () => {
     const board = await stubBoard();
     const run = await runHook('session-start', {
       cwd: repo(),
@@ -208,7 +212,7 @@ describe('what goes on the wire', () => {
     board.server.close();
   });
 
-  test('the remote is sent verbatim — not owner/name, not a basename (D-043)', async () => {
+  void test('the remote is sent verbatim — not owner/name, not a basename (D-043)', async () => {
     const board = await stubBoard();
     await runHook('session-start', {
       cwd: repo({ remote: 'https://github.com/PawanSirsat/Laika.git' }),
@@ -226,7 +230,7 @@ describe('what goes on the wire', () => {
     board.server.close();
   });
 
-  test('a trailing slash on LAIKA_URL does not become //api/v1', async () => {
+  void test('a trailing slash on LAIKA_URL does not become //api/v1', async () => {
     const board = await stubBoard();
     await runHook('session-start', { cwd: repo(), url: `${board.url}/`, token: 'lai_x' });
     await settle();
@@ -234,7 +238,7 @@ describe('what goes on the wire', () => {
     board.server.close();
   });
 
-  test('a double quote in the remote still produces valid JSON', async () => {
+  void test('a double quote in the remote still produces valid JSON', async () => {
     const board = await stubBoard();
     await runHook('session-start', {
       cwd: repo({ remote: 'https://example.com/a"b.git' }),
@@ -252,8 +256,8 @@ describe('what goes on the wire', () => {
   });
 });
 
-describe('nothing to report is not an error', () => {
-  test('outside a git repository, nothing is sent', async () => {
+void describe('nothing to report is not an error', () => {
+  void test('outside a git repository, nothing is sent', async () => {
     const board = await stubBoard();
     const run = await runHook('session-start', {
       cwd: dir('laika-nogit-'),
@@ -267,7 +271,7 @@ describe('nothing to report is not an error', () => {
     board.server.close();
   });
 
-  test('a repository with no remote sends nothing', async () => {
+  void test('a repository with no remote sends nothing', async () => {
     const board = await stubBoard();
     const run = await runHook('session-start', {
       cwd: repo({ remote: null }),
@@ -280,7 +284,7 @@ describe('nothing to report is not an error', () => {
     board.server.close();
   });
 
-  test('a repository with no commit yet reports its branch, not `HEAD`', async () => {
+  void test('a repository with no commit yet reports its branch, not `HEAD`', async () => {
     // `git rev-parse --abbrev-ref HEAD` was here first. On an unborn branch it
     // exits 128 **and prints `HEAD` on stdout**, so `|| true` swallowed the
     // failure and the board would have been told the branch was called HEAD.
@@ -298,20 +302,24 @@ describe('nothing to report is not an error', () => {
     board.server.close();
   });
 
-  test('a detached HEAD sends nothing — there is no branch to report', async () => {
+  void test('a detached HEAD sends nothing — there is no branch to report', async () => {
     const board = await stubBoard();
     const cwd = repo();
     execFileSync('git', ['checkout', '-q', '--detach', 'HEAD'], { cwd, stdio: 'pipe' });
     const run = await runHook('session-start', { cwd, url: board.url, token: 'lai_x' });
     assert.equal(run.code, 0);
     await settle();
-    assert.equal(board.beats.length, 0, '`branch` is required; an empty one is a 422, not presence');
+    assert.equal(
+      board.beats.length,
+      0,
+      '`branch` is required; an empty one is a 422, not presence',
+    );
     board.server.close();
   });
 });
 
-describe('a board that is down must not break the session', () => {
-  test('a dead port exits 0, silently, and quickly', async () => {
+void describe('a board that is down must not break the session', () => {
+  void test('a dead port exits 0, silently, and quickly', async () => {
     // Port 1 is reserved and nothing listens on it.
     const run = await runHook('session-start', {
       cwd: repo(),
@@ -324,7 +332,7 @@ describe('a board that is down must not break the session', () => {
     assert.ok(run.ms < 10_000, `took ${String(run.ms)}ms — the timeouts are not bounding it`);
   });
 
-  test('a board that hangs is abandoned, not waited out', async () => {
+  void test('a board that hangs is abandoned, not waited out', async () => {
     const server = createServer(() => {
       /* accept, answer nothing, ever */
     });
@@ -343,8 +351,8 @@ describe('a board that is down must not break the session', () => {
   });
 });
 
-describe('the throttle', () => {
-  test('two tool-use calls in a row post once', async () => {
+void describe('the throttle', () => {
+  void test('two tool-use calls in a row post once', async () => {
     const board = await stubBoard();
     const state = dir('laika-hookstate-');
     const cwd = repo();
@@ -352,11 +360,15 @@ describe('the throttle', () => {
     await settle();
     await runHook('tool-use', { cwd, url: board.url, token: 'lai_x', state });
     await settle();
-    assert.equal(board.beats.length, 1, 'a hook on every tool call posts hundreds of times an hour');
+    assert.equal(
+      board.beats.length,
+      1,
+      'a hook on every tool call posts hundreds of times an hour',
+    );
     board.server.close();
   });
 
-  test('Stop shares the same 5 minutes as PostToolUse', async () => {
+  void test('Stop shares the same 5 minutes as PostToolUse', async () => {
     const board = await stubBoard();
     const state = dir('laika-hookstate-');
     const cwd = repo();
@@ -368,7 +380,7 @@ describe('the throttle', () => {
     board.server.close();
   });
 
-  test('SessionStart is never throttled — sitting down is when it matters', async () => {
+  void test('SessionStart is never throttled — sitting down is when it matters', async () => {
     const board = await stubBoard();
     const state = dir('laika-hookstate-');
     const cwd = repo();
@@ -380,7 +392,7 @@ describe('the throttle', () => {
     board.server.close();
   });
 
-  test('another branch posts immediately, throttle or not', async () => {
+  void test('another branch posts immediately, throttle or not', async () => {
     const board = await stubBoard();
     const state = dir('laika-hookstate-');
     const cwd = repo();
@@ -394,7 +406,7 @@ describe('the throttle', () => {
     board.server.close();
   });
 
-  test('another repository posts immediately too', async () => {
+  void test('another repository posts immediately too', async () => {
     const board = await stubBoard();
     const state = dir('laika-hookstate-');
     await runHook('tool-use', { cwd: repo(), url: board.url, token: 'lai_x', state });
@@ -411,8 +423,8 @@ describe('the throttle', () => {
   });
 });
 
-describe('the token stays out of argv', () => {
-  test('curl is never given the token on its command line', async () => {
+void describe('the token stays out of argv', () => {
+  void test('curl is never given the token on its command line', async () => {
     // A fake curl, first on PATH, that records exactly what it was handed.
     const bin = dir('laika-fakebin-');
     const argvLog = join(bin, 'argv.txt');
@@ -444,7 +456,7 @@ describe('the token stays out of argv', () => {
   });
 });
 
-describe('hooks.json', () => {
+void describe('hooks.json', () => {
   const raw = readFileSync(HOOKS_JSON, 'utf8');
   const parsed = JSON.parse(raw) as {
     hooks: Record<string, { hooks: { type: string; command: string; timeout?: number }[] }[]>;
@@ -453,16 +465,16 @@ describe('hooks.json', () => {
     .flat()
     .flatMap((entry) => entry.hooks);
 
-  test('registers exactly the three events SPEC §8 names', () => {
+  void test('registers exactly the three events SPEC §8 names', () => {
     assert.deepEqual(Object.keys(parsed.hooks).sort(), ['PostToolUse', 'SessionStart', 'Stop']);
   });
 
-  test('is not still empty', () => {
+  void test('is not still empty', () => {
     assert.ok(commands.length >= 3);
     assert.ok(!raw.includes('Empty by design'));
   });
 
-  test('every command ends in `|| true`', () => {
+  void test('every command ends in `|| true`', () => {
     for (const command of commands) {
       assert.ok(
         command.command.trimEnd().endsWith('|| true'),
@@ -471,7 +483,7 @@ describe('hooks.json', () => {
     }
   });
 
-  test('every command runs the script from the plugin root, with a timeout', () => {
+  void test('every command runs the script from the plugin root, with a timeout', () => {
     for (const command of commands) {
       assert.equal(command.type, 'command');
       assert.ok(command.command.includes('${CLAUDE_PLUGIN_ROOT}/hooks/heartbeat.sh'));
@@ -479,7 +491,7 @@ describe('hooks.json', () => {
     }
   });
 
-  test('each event passes the mode the script expects', () => {
+  void test('each event passes the mode the script expects', () => {
     const modeOf = (event: string): string =>
       (parsed.hooks[event]?.[0]?.hooks[0]?.command ?? '').split('heartbeat.sh"')[1]?.trim() ?? '';
     assert.ok(modeOf('SessionStart').startsWith('session-start'));
@@ -487,7 +499,7 @@ describe('hooks.json', () => {
     assert.ok(modeOf('Stop').startsWith('stop'));
   });
 
-  test('no secret and no board URL is committed', () => {
+  void test('no secret and no board URL is committed', () => {
     for (const file of [raw, readFileSync(HOOK, 'utf8')]) {
       assert.ok(!/lai_[A-Za-z0-9]{8,}/.test(file), 'a token-shaped literal is committed');
       assert.ok(!/https?:\/\/(?!127\.0\.0\.1)[a-z0-9.-]*laika[a-z0-9.-]*/i.test(file));
@@ -495,15 +507,15 @@ describe('hooks.json', () => {
   });
 });
 
-describe('the README says what a second client needs', () => {
+void describe('the README says what a second client needs', () => {
   const readme = readFileSync(HOOK_README, 'utf8');
 
-  test('no longer claims the hooks are empty until M4', () => {
+  void test('no longer claims the hooks are empty until M4', () => {
     assert.ok(!readme.includes('empty by design'));
     assert.ok(!readme.includes('deliberately empty'));
   });
 
-  test('states the exact command `repo` comes from, and does not say basename', () => {
+  void test('states the exact command `repo` comes from, and does not say basename', () => {
     assert.ok(readme.includes('git config --get remote.origin.url'));
     assert.ok(readme.includes('verbatim'));
     assert.ok(
@@ -512,7 +524,7 @@ describe('the README says what a second client needs', () => {
     );
   });
 
-  test('shows an example of the form actually sent', () => {
+  void test('shows an example of the form actually sent', () => {
     assert.ok(readme.includes('git@github.com:PawanSirsat/Laika.git'));
     assert.ok(readme.includes('"repo":"git@github.com:PawanSirsat/Laika.git"'));
   });
