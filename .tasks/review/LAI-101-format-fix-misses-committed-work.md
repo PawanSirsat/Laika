@@ -6,8 +6,9 @@ assignee: core
 priority: p3
 depends-on: [LAI-026]
 discovered-from: LAI-005
-status: in-progress
+status: review
 started: 2026-09-02T09:05:00Z
+finished: 2026-09-02T09:20:00Z
 ---
 
 ## Goal
@@ -20,13 +21,13 @@ formatter still reaches work this worktree has done but already committed.
 
 ## Acceptance criteria
 
-- [ ] `format:fix` formats files changed anywhere on the current branch relative
+- [x] `format:fix` formats files changed anywhere on the current branch relative
       to its merge-base with `master`, plus uncommitted and untracked changes.
-- [ ] It still never touches a file this worktree did not change — the LAI-026
+- [x] It still never touches a file this worktree did not change — the LAI-026
       regression test must keep passing unchanged.
-- [ ] Running it on a branch with no commits of its own (freshly branched from
+- [x] Running it on a branch with no commits of its own (freshly branched from
       `master`) behaves like today: uncommitted and untracked files only.
-- [ ] Running it on `master` itself does something sensible rather than
+- [x] Running it on `master` itself does something sensible rather than
       formatting the entire repository.
 
 ## Notes / context
@@ -85,3 +86,40 @@ the one that keeps this from quietly undoing LAI-026.
 
 **Note the priority.** Still p3 — it is a convenience gap, not a correctness one,
 and `pnpm exec prettier --write <path>` works today. Take LAI-205 (p1) first.
+
+
+---
+
+## Submitted — CORE, 2026-09-02
+
+**1660 server green**, lint and format clean. Web red only on LAI-153 (SHELL's).
+Root `package.json`'s `format:fix` script only, per the grant.
+
+### Measured, not assumed
+
+On this branch the old expression selects **0** files and the new one **7** —
+which is the gap, in one number. It bit me twice today: `drizzle-kit` emits
+unformatted JSON, and by the time repo-wide `pnpm format` saw it the files were
+committed and `format:fix` had nothing to do.
+
+### AC4 was the one worth confirming
+
+On `master` the merge-base **is** `HEAD`, so the diff is empty and it formats
+nothing already committed. That is the case that would rewrite the entire
+repository if it were wrong, and it is now a test rather than a paragraph.
+
+### The fallback is load-bearing and was invisible
+
+`|| echo HEAD` looks like belt-and-braces. **Every existing test in that file
+runs in a repo with no `master`** — `git init` and one commit — so the fallback
+is what has kept LAI-026's whole suite passing since this change. Removing it
+turns two red, and there is now a test asserting it directly instead of the suite
+depending on it silently.
+
+### Ownership is unchanged
+
+A file only `master` touched is still untouched: it is not this branch's work.
+LAI-026's regression tests pass **unchanged**, and replacing the window with
+`git ls-files` turns six red.
+
+Three mutations, all caught: back to `HEAD`, no fallback, and the whole repo.
