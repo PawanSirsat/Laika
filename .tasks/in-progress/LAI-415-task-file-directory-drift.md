@@ -2,11 +2,12 @@
 id: LAI-415
 title: A task file's status can disagree with the directory it sits in
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-045
-status: backlog
+status: in-progress
+started: 2026-09-01T15:15:00Z
 ---
 
 ## Goal
