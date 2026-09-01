@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-434
-status: review
+status: done
 started: 2026-09-01T13:05:00Z
 finished: 2026-09-01T13:40:00Z
 ---
@@ -189,3 +189,83 @@ Notes' instruction to file if it is more than a few lines.
 Root `pnpm test` **EXIT=0**, zero unhandled errors. `server` 1701/1701,
 `web` 585/585, `cli` 19/19. `pnpm lint` EXIT=0 — it caught an untyped
 `JSON.parse(...).error` in my own new test — `pnpm format` EXIT=0.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0`, zero unhandled errors — 1701 server, 585 web,
+19 cli.
+
+**Mutation-verified:** putting the `ApiError` branch back above `TokenAuthError`
+turns red with the message *"auth.token_rejected is unreachable again"*. The test
+is named for the regression it prevents, which is the only way that guard is
+worth anything.
+
+### The regression was mine to catch and I did not
+
+**I reviewed LAI-442, ran a mutation on that exact `catch` block, and got five
+red.** The mutation I chose removed the rethrow; **I never checked the ordering
+of the two branches**, and `TokenAuthError extends ApiError` is the fact that
+makes ordering the whole behaviour.
+
+So from LAI-442 until now, every rejected token logged `auth.session_refused`
+with `code: 'unauthorized'` and **no `reason`** — unknown, revoked, expired and
+inactive_user collapsed into one line, which is the single thing that log exists
+to tell apart. `resolve-actor.ts`'s note that the reason is *"logged and not
+returned"* quietly stopped being true.
+
+> *"Nothing caught it because the status was right either way."*
+
+**Twice today the interesting bug has been behind a correct-looking status code,
+and both times what found it was a mutation refusing to go red** — not a test
+going red. That is a different signal from the one anybody looks for.
+
+### Keeping it inside this task was right
+
+Same `catch` block, same misclassification, and this task's subject is *auth
+failures reported as something they are not*. Splitting it would have meant two
+reviews of one line and a landing that could not be tested as a whole. **Offering
+the split rather than assuming it** is what made that decision reviewable.
+
+### Reproducing before fixing, and the reproduction that lied
+
+`PRAGMA query_only = ON` gives the same `SQLITE_READONLY` from the same driver,
+deterministically — better than my wrong-owner file, which needed a container.
+
+**And the first reproduction returned `200` and would have "passed" against the
+bug**: `touchTokenUsage` is throttled to one write a minute, so a token minted
+seconds earlier writes nothing. **Clearing `last_used_at` is what makes the write
+run**, and putting that in the helper rather than in one test is what stops the
+next person reproducing nothing.
+
+### The comment was defending a path that does not exist
+
+> *"Measured: better-auth's `getSession` **returns `null`** for a garbage cookie,
+> a nonsense header and an invalid token alike — it never throws, so it never
+> reaches that catch. **That is why the swallow survived review: the comment
+> named a real-sounding case and nobody checked it could occur.**"*
+
+That is the sharpest instance yet of the rule this repo keeps rediscovering: a
+comment can justify code by naming a case, and **the case is the thing to
+verify**, not the reasoning about it.
+
+**Rethrowing rather than wrapping in `ApiError('internal')`** is right for the
+stated reason — a wrapper discards the `request_id` and the stack, which are
+exactly the two things the operator needs.
+
+### One found in review — LAI-443, p3
+
+**Neutralising the `ApiError` branch leaves 120 of 120 passing.** The behaviour
+survives, because LAI-437's catch rethrows what it does not recognise, so a
+deactivated user still gets `403`. **What is lost is `auth.session_refused`, and
+nothing asserts it.**
+
+That is the same state `auth.token_rejected` was in for a day — correct response,
+missing log, every test green. The only difference is that this branch is
+currently reachable, and **nothing keeps it that way.**
+
+### And the fourth ANCHOR FAILED of the day
+
+*"One of my four mutations printed `ANCHOR FAILED` and did not run. Its `EXIT=0`
+would have read as coverage."* Reported rather than counted, for the fourth time.
