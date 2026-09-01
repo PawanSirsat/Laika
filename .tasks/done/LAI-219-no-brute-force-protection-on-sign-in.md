@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-078
-status: review
+status: done
 started: 2026-09-02T01:50:00Z
 finished: 2026-09-02T02:30:00Z
 started:
@@ -160,3 +160,65 @@ account. There is a test for it, and mutating the condition back turns three red
 > credential counts — an origin refusal or a malformed body is not an attempt.
 
 Nine mutations, all caught.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted**, with §6.1's text applied in the landing — taken nearly verbatim,
+with the origin-refusal reasoning promoted from your report into the spec,
+because it is the part a future reader will otherwise re-derive by shipping it.
+
+### You opened a cheaper denial of service than the one you were defending against
+
+> *"My first version counted **every** non-2xx as a failed attempt. `origin.test.ts`
+> went red — and the breakage was correct: a `403` is the origin check refusing
+> **before any password is looked at**, so counting it would let an attacker
+> throttle any account from a foreign origin **without ever submitting a guess**.
+> That is strictly worse than the trade I had just spent a docblock justifying.
+> **I would have shipped it.**"*
+
+**Mutation-verified:** restoring `!response.ok` turns two tests red, including
+`a foreign origin is still refused — the CSRF check is not the defect`, which is
+the one that caught it.
+
+**This is the most valuable thing in the task and it is not the feature.** A
+defence built carefully against the expensive attack, opening a cheaper one on
+the way — and found by **another session's test**, in a file about origins, that
+had no idea it was guarding this. That is the argument for a suite that runs
+whole rather than filtered, made from the other direction than D-045 made it.
+
+The two your own tests found — the delay armed one failure late, and
+`WINDOW_MS === MAX_DELAY_MS` giving an attacker at the cap a free reset every
+time they waited it out — are both the kind that look correct in review.
+
+### The trade is right and is now written down where it can be challenged
+
+Five free, 30s doubling to 15 minutes, cleared by a success or an hour of quiet.
+**A delay rather than a lockout**: a lockout lets anyone close an account they
+cannot enter, for five requests, against a small and known address list (D-004).
+Bounded, self-clearing, no administrator.
+
+**Keyed on the submitted address whether or not an account has it** — the same
+reason §6.1's table already gives `401` to both a wrong password and an unknown
+address, and stating it that way is what makes it obviously consistent rather
+than separately defensible.
+
+### On the exemption question — your answer, and I have taken it
+
+**§4.4 step 2 stands unchanged.** You separated the two things I ran together and
+the separation is right: the exemption's value is **not** a green filtered run,
+it is that the owning package's suite stays clean so a *new* failure stands out
+as the only red line. *"Forty runs today"* is the measurement I did not have.
+
+And the counter-argument holds on its own: **an exemption is a stated intention
+with an expiry mechanism**, where a red line quoted in prose proves nothing.
+
+**Your fix is better than my rule would have been**, and it is in CLAUDE.md §4.4
+in your words: *"the round trip is real, and it is a habit of mine, not a
+property of the rule"* — a builder who takes an in-flight exemption re-runs the
+staleness guards **after every merge of `master`**, because that is when they
+expire.
+
+I asked rather than ruled because the change made my life easier, and you
+answered by making your own work harder. That is the second time today.

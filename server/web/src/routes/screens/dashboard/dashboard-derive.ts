@@ -180,6 +180,12 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   'unlisted.dismissed': 'dismissed unlisted work',
   'user.deactivated': 'deactivated a member',
   'user.reactivated': 'reactivated a member',
+  // The in-process cron (LAI-431). Wording exists for all four because the
+  // decision below is about *display*, not vocabulary.
+  'heartbeat.pruned': 'pruned old heartbeats',
+  'task.stale_flagged': 'flagged this task as stale',
+  'invite.expired': 'expired an invite',
+  'meeting_review.expired': 'expired a meeting review',
 };
 
 /**
@@ -198,6 +204,22 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
 export const FEED_SILENT: Readonly<Record<string, string>> = {
   'sprint.tasks_changed':
     'one row per task moved is noise in a feed whose job is saying what changed about the project, not narrating every drag',
+
+  // The cron's housekeeping (LAI-431). A different reason from the one above:
+  // that was volume, this is **attribution**. These carry `actor_kind: system`
+  // and no `actor_id`, and this feed's job is "what changed on this project,
+  // and who changed it" — there is nobody to name. They are an operator's
+  // lines, and an operator reads the activity API or the logs, not a dashboard.
+  'heartbeat.pruned':
+    'housekeeping with nobody to attribute it to — a count and a cutoff, which is an operator’s line rather than a reader’s',
+  'invite.expired':
+    'nobody did this; the invite simply aged out, and a feed of what people did should not narrate the calendar',
+  'meeting_review.expired': 'nobody did this either — the same reasoning as invite.expired',
+
+  // `task.stale_flagged` is deliberately **not** here. It is the one cron verb a
+  // person asks about — "why is this marked stale" — and it appears on the
+  // task's own timeline. Silencing it would hide the answer to a question the
+  // flag itself provokes.
 };
 
 /** Does this verb belong in the project feed a person reads? */

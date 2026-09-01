@@ -394,7 +394,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `webhook.commit`, `webhook.received`, `meeting.applied`, `unlisted.logged`,
 `unlisted.promoted`, `unlisted.dismissed`, `project.context_updated`,
 `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
-`user.deactivated`, `user.reactivated`.
+`user.deactivated`, `user.reactivated`, `task.stale_flagged`,
+`heartbeat.pruned`, `invite.expired`, `meeting_review.expired`.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -421,6 +422,30 @@ one they were written with, and a reader of old history needs `payload.action`.
 That is the honest cost of having had the vocabulary wrong, and **every reader of
 that history must therefore accept two vocabularies permanently** —
 `latestFieldEdit` is the first and was found by a test rather than by design.
+
+**The four cron verbs close a contradiction this section had with itself**
+(LAI-431). D-022's note below already names the in-process cron as a writer of
+rows with no human actor — *"heartbeat pruning, stale-task flagging, invite and
+meeting-review expiry"* — and the type list had a verb for **none** of them. The
+nullability rule was justified by rows the vocabulary made impossible to write.
+
+**`heartbeat.pruned` is one row per run, not per heartbeat.** Thirty days of an
+active org is thousands of deletions, and a row each would make the audit trail
+mostly a record of presence data being removed — which is a strange thing for a
+table whose privacy claim is D-005. One row carrying the count and the cutoff
+answers *"was retention running"*, which is the only question anyone asks of it.
+
+**`task.stale_flagged` rather than `task.updated`**, for LAI-113's reason: a
+reader filtering on `type` should not open a payload to learn that this update
+was the cron and not a person. It is also the one cron row a human sees, on the
+task's own timeline.
+
+**Four verbs, not six.** The note enumerates the writers, and the nightly
+snapshot and the weekly vacuum are **not** among them. A backup is not a change
+to the product's history and a `VACUUM` changes no row; writing them would put
+two entries a week in every feed saying nothing happened. Their jobs say so at
+the site, so a reader finding no `appendActivity` does not assume it was
+forgotten.
 
 **`project.archived` is its own verb, not a flag on `project.updated`.** Archiving
 removes a project from everyone's board; a settings edit does not. Reading an
@@ -721,6 +746,26 @@ a client must be able to tell them apart:
 **`LAIKA_PUBLIC_URL` must be the URL people actually type.** It is already
 required (D-018); this is the constraint on its *value*. If it does not match,
 sign-in fails with a message about the origin — not about the password.
+
+**Repeated failed sign-ins for one account are throttled** (LAI-219). Five
+consecutive failures are free; the next attempt is refused with `429` and a
+`retry_after_seconds`, starting at 30 seconds and doubling to a cap of 15
+minutes. A success, or an hour of quiet, clears the count.
+
+**A delay rather than a lockout, deliberately.** A lockout would let anyone close
+an account they cannot enter, and an invite-only instance (D-004) has a small,
+known list of addresses. The cap bounds the owner's worst case and clears itself
+without an administrator.
+
+The counter is keyed on the **submitted address**, whether or not an account has
+it, so the response never reveals which addresses exist — the same reason the
+table above gives `401` to both a wrong password and an unknown address.
+
+**Only a rejected credential counts.** An origin refusal is a `403` raised
+*before any password is looked at*, so counting it would let an attacker throttle
+any account from a foreign origin **without ever submitting a guess** — a cheaper
+denial of service than the one this trade accepts, arrived at by defending
+against the expensive one. A malformed body is not an attempt either.
 
 ### 6.2 Authorisation
 
