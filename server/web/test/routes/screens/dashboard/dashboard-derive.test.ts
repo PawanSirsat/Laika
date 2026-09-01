@@ -23,6 +23,8 @@ import {
   statusBreakdown,
   statusChange,
   STATUS_ORDER,
+  FEED_SILENT,
+  shownInFeed,
 } from '../../../../src/routes/screens/dashboard/dashboard-derive.ts';
 
 function task(over: Partial<Task> & { id: string }): Task {
@@ -223,6 +225,32 @@ void describe('describeProjectEvent', () => {
 
     const unlabelled = types.filter((t) => describeProjectEvent(event({ id: 'x', type: t })) === t);
     assert.deepEqual(unlabelled, [], 'these §4.8 verbs have no wording on the dashboard');
+  });
+
+  void test('a verb the feed declines is declined on purpose, with a reason', () => {
+    // AC3. A verb silently absent and a verb deliberately declined **look
+    // identical to the next reader, and only one of them is a decision.**
+    // `FEED_SILENT` is what makes the difference readable.
+    assert.ok(Object.keys(FEED_SILENT).length > 0, 'nothing is declined — this proves nothing');
+
+    for (const [type, reason] of Object.entries(FEED_SILENT)) {
+      assert.ok(reason.length > 20, `${type} is declined without a reason worth reading`);
+      // Still in the vocabulary: the decision is about display, not wording.
+      assert.notEqual(
+        describeProjectEvent(event({ id: 'x', type })),
+        type,
+        `${type} is declined AND unlabelled — that is a gap wearing a decision's clothes`,
+      );
+      assert.equal(shownInFeed(type), false, `${type} is listed as declined but still shown`);
+    }
+  });
+
+  void test('every other verb the server can write is shown', () => {
+    // The other half: `FEED_SILENT` must not become a place verbs go to be
+    // forgotten. Anything not explicitly declined reaches the reader.
+    for (const type of ['task.created', 'sprint.created', 'project.context_updated']) {
+      assert.equal(shownInFeed(type), true, `${type} is not reaching the feed`);
+    }
   });
 
   void test('an unknown verb degrades to itself rather than throwing', () => {

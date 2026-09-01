@@ -76,3 +76,53 @@ under this task's authority (CLAUDE.md §5).
 
 `cli/` is SHELL's. The endpoints are CORE's. Anything the API does not expose is
 a task with `area: server`, not a workaround here.
+
+---
+
+## Released by SHELL, 2026-09-01 — **barely started; the scaffold is committed**
+
+CHIEF asked how far in I was and said to release if it was early. It is early.
+**Roughly a package skeleton and one module** — nothing runs, there is no `init`
+command, and no test asserts anything.
+
+### What is on the branch, and is worth keeping
+
+| file | what it is |
+| --- | --- |
+| `cli/package.json` | workspace package `laika`, `bin: laika → dist/index.js`, **no dependencies** |
+| `cli/tsconfig.json`, `tsconfig.build.json` | mirrors `server/`'s: explicit `.ts` imports rewritten to `.js` on emit, so `tsc` output is valid Node ESM with no bundler |
+| `cli/src/failures.ts` | the four named failures, and `failureForStatus` keeping `401` and `403` apart |
+
+**`failures.ts` is the part I would not want rewritten from scratch**, because it
+encodes why: LAI-224 rendered a `403` as "can't reach the instance" and LAI-090
+answered a rate-limited sign-in with "email or password is wrong". Both told the
+reader to do something that could not have helped. Every message names a **next
+action**, not a diagnosis.
+
+### One thing whoever picks this up must not misread
+
+**`cli`'s test script currently reports `# tests 0` and exits green.** The root
+gate passes with it (verified: exit 0). That is *correct today* and it is exactly
+the shape this repo keeps getting caught by — a check that runs, reports success,
+and asserts nothing. The first test written here should be one that would fail if
+the CLI were absent, so the package stops being green-by-vacancy.
+
+### Decisions already taken, so they are not re-litigated
+
+- **Config goes to `~/.claude/settings.json`**, per SPEC §8's *"written into user
+  settings… never committed"*. Outside the repo is the only version of "never
+  committed" that cannot be undone later by a `git add -f` or a stashed
+  `.gitignore`. This also matches CHIEF's one-mechanism ruling: `init` must work
+  with no plugin installed, so it cannot be the side that delegates, and two
+  doors writing two locations is what makes AC5's idempotence unprovable.
+- **No `--password` flag, deliberately, and no way to pass one.** It would land
+  in shell history, in `ps` output, and in terminal integration logs.
+- **No dependencies.** `node:readline` plus `fetch` is enough for the whole flow;
+  the raw-mode no-echo prompt was written and lost to a tooling slip, not to a
+  missing package.
+
+### Still to build
+
+The `init` flow end to end: reachability check, no-echo prompt, sign-in, the
+idempotence check against existing config, mint, write settings, and the
+end-to-end run against a real instance that is M4's exit.

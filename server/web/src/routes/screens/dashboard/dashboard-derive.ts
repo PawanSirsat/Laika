@@ -171,7 +171,39 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   'webhook.received': 'received a webhook',
   'meeting.applied': 'applied a meeting proposal',
   'unlisted.logged': 'logged unlisted work',
+  'sprint.created': 'planned a sprint',
+  'sprint.updated': 'changed a sprint',
+  'sprint.deleted': 'deleted a sprint',
+  'sprint.tasks_changed': 'moved tasks between sprints',
+  'project.context_updated': 'edited the project context',
+  'unlisted.promoted': 'promoted unlisted work into a task',
+  'unlisted.dismissed': 'dismissed unlisted work',
+  'user.deactivated': 'deactivated a member',
+  'user.reactivated': 'reactivated a member',
 };
+
+/**
+ * Verbs the project feed deliberately does not show, and **why**.
+ *
+ * Every one of these still has wording above, because the decision is about
+ * *display*, not vocabulary — and because a verb that is silently absent and a
+ * verb that is deliberately declined **look identical to the next reader, and
+ * only one of them is a decision.** The same distinction `clientOmits` carries
+ * in the drift check: an exemption with a reason is a choice; a missing entry is
+ * an oversight nobody can tell from a choice.
+ *
+ * Anything listed here is still rendered anywhere else that names activity —
+ * this is the project feed's editorial line, not a global mute.
+ */
+export const FEED_SILENT: Readonly<Record<string, string>> = {
+  'sprint.tasks_changed':
+    'one row per task moved is noise in a feed whose job is saying what changed about the project, not narrating every drag',
+};
+
+/** Does this verb belong in the project feed a person reads? */
+export function shownInFeed(type: string): boolean {
+  return !(type in FEED_SILENT);
+}
 
 export function describeProjectEvent(event: ActivityEvent): string {
   return PROJECT_LABELS[event.type] ?? event.type;

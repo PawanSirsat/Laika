@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": ["node"],
+    // Same as `server/`: explicit `.ts` extensions in imports, rewritten to
+    // `.js` on emit, so the output is valid Node ESM with no bundler.
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts"]
+}

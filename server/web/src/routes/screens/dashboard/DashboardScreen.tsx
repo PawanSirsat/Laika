@@ -9,6 +9,7 @@ import {
   blockedTasks,
   byActorKind,
   describeProjectEvent,
+  shownInFeed,
   DEFAULT_RANGE,
   RANGES,
   rangeById,
@@ -145,7 +146,12 @@ export function DashboardScreen() {
   const { tasks, events, members, truncated } = dashboard.state;
   const breakdown = statusBreakdown(tasks);
   const blocked = blockedTasks(tasks);
+  // The feed is edited; the counts are not. `byActorKind` still sees every
+  // event, because "12 events, 3 by agents" is a claim about what happened —
+  // hiding a verb from the list must not quietly change the arithmetic beside
+  // it (`FEED_SILENT` explains which verb and why).
   const kinds = byActorKind(events);
+  const shown = events.filter((event) => shownInFeed(event.type));
 
   const nameFor = (id: string | null): string =>
     id === null ? 'Laika' : (members.get(id)?.name ?? id);
@@ -234,14 +240,27 @@ export function DashboardScreen() {
           </span>
         </h2>
 
-        {events.length === 0 ? (
+        {shown.length === 0 ? (
           <EmptyState
-            headline={`Nothing in the ${range.label.toLowerCase()}`}
-            body="Widen the range to see older activity."
+            headline={
+              events.length === 0
+                ? `Nothing in the ${range.label.toLowerCase()}`
+                : 'Nothing worth showing in this range'
+            }
+            body={
+              events.length === 0
+                ? 'Widen the range to see older activity.'
+                : /* The count beside this says how many events there were, and
+                     it is not wrong — they are all verbs the feed declines
+                     (`FEED_SILENT`). Saying "nothing happened" over a count of
+                     52 is the contradiction; saying nothing worth *showing* is
+                     the truth. */
+                  'Everything in this range is the kind of event this feed leaves out — tasks moved between sprints.'
+            }
           />
         ) : (
           <ul className="dash-feed">
-            {events.map((event) => {
+            {shown.map((event) => {
               const moved = statusChange(event);
 
               return (

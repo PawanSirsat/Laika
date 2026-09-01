@@ -4,7 +4,10 @@
  * `EventSource` only fires `onmessage` for **unnamed** frames, and the server
  * names every activity frame with its type — so a client that forgets to
  * subscribe by name silently receives nothing at all while looking connected.
- * Kept in step with `server/src/db/enums.ts`; `use-events.test.ts` asserts it.
+ * Kept in step with `server/src/db/enums.ts`; `use-events.test.ts` asserts it —
+ * **in order**, not just membership, because the two lists are one vocabulary
+ * and a client subscribing to the right names in the wrong order is not a
+ * failure anyone would notice from the outside.
  */
 export const STREAM_TYPES: readonly string[] = [
   'org.created',
@@ -30,4 +33,13 @@ export const STREAM_TYPES: readonly string[] = [
   'webhook.received',
   'meeting.applied',
   'unlisted.logged',
+  'sprint.created',
+  'sprint.updated',
+  'sprint.deleted',
+  'sprint.tasks_changed',
+  'project.context_updated',
+  'unlisted.promoted',
+  'unlisted.dismissed',
+  'user.deactivated',
+  'user.reactivated',
 ];

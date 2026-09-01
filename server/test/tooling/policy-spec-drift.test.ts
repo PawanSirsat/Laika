@@ -63,6 +63,7 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Send own heartbeat', ['heartbeat.send_own']],
   ['Export audit log', ['audit_log.export']],
   ['Configure webhooks', ['webhook.configure']],
+  ['View the organisation', ['org.read']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
@@ -80,6 +81,7 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
   ['Cancel / delete task', ['task.delete']],
   ['Add / remove dependencies', ['task.dependency.write']],
   ['Read tasks, comments, activity, capacity', ['project.read']],
+  ['Watch / unwatch a task', ['task.watch']],
   ['Apply a meeting-diff proposal', ['meeting_proposal.apply']],
 ]);
 
