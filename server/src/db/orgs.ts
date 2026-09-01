@@ -49,3 +49,24 @@ export function requireOrg(db: Db): { id: string; name: string } {
 export function requireOrgId(db: Db): string {
   return requireOrg(db).id;
 }
+
+/**
+ * Whether the org records presence at all (§4.2, LAI-152).
+ *
+ * **Non-throwing, unlike the two above, and that is the difference that matters
+ * rather than a stylistic one:** "there is no org" has a *correct answer* here —
+ * an instance with nothing set up has nothing to have switched off, so presence
+ * is on, which is also §4.2's default. For the id there is no such answer, which
+ * is why that one throws.
+ *
+ * `db/orgs.ts` says a non-throwing form should arrive **with** its caller rather
+ * than ahead of it. This one arrives with two: `heartbeats.ts` uses it to decide
+ * whether to store a row at all (LAI-150), and `presence.ts` to set `enabled` on
+ * the response (LAI-432). They had a byte-identical private copy each, written
+ * an hour apart, and neither said why `?? 1` was the right default.
+ */
+export function presenceEnabled(db: Db): boolean {
+  const row = db.select({ on: orgs.presenceEnabled }).from(orgs).limit(1).get();
+
+  return (row?.on ?? 1) === 1;
+}

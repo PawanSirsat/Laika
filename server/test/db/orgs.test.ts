@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { newId } from '../../src/db/ids.ts';
-import { requireOrg, requireOrgId } from '../../src/db/orgs.ts';
+import { presenceEnabled, requireOrg, requireOrgId } from '../../src/db/orgs.ts';
 import { ApiError } from '../../src/errors.ts';
 import { orgs, users } from '../../src/db/schema.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
@@ -121,5 +121,57 @@ describe('requireOrg', () => {
     expect((a as ApiError).code).toBe((b as ApiError).code);
     expect((a as ApiError).message).toBe((b as ApiError).message);
     expect((a as ApiError).details).toEqual((b as ApiError).details);
+  });
+});
+
+describe('presenceEnabled', () => {
+  function seedOrg(presence: number): void {
+    const ownerId = newId();
+    const now = Date.now();
+    t.db
+      .insert(users)
+      .values({
+        id: ownerId,
+        email: 'owner@example.test',
+        name: 'Owner',
+        orgRole: 'owner',
+        avatarColor: '#123456',
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      })
+      .run();
+    t.db
+      .insert(orgs)
+      .values({
+        id: newId(),
+        name: 'Laika',
+        ownerUserId: ownerId,
+        presenceEnabled: presence,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+  }
+
+  it('answers true with no org at all', () => {
+    // **The case neither private copy tested**, and the reason this one does not
+    // throw where `requireOrgId` does: "there is no org" has a correct answer
+    // here. An instance with nothing set up has nothing to have switched off,
+    // and §4.2's default is on.
+    expect(presenceEnabled(t.db)).toBe(true);
+  });
+
+  it('reads the column when there is one', () => {
+    seedOrg(0);
+
+    expect(presenceEnabled(t.db)).toBe(false);
+  });
+
+  it('is on when the column says so', () => {
+    seedOrg(1);
+
+    // Both values, not just the interesting one: asserting only `false` passes
+    // against an implementation that always says `false`.
+    expect(presenceEnabled(t.db)).toBe(true);
   });
 });
