@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Brand } from '../../components/Brand.tsx';
 import { ThemeToggle } from '../../components/ThemeToggle.tsx';
 import { SystemStatus } from './SystemStatus.tsx';
+import type { SetupSystemStatus } from '../../api/setup.ts';
 import { Button } from '../../components/forms/Button.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
 import { TextInput } from '../../components/forms/TextInput.tsx';
@@ -22,6 +23,11 @@ export interface FirstBootSubmit {
 }
 
 export interface FirstBootScreenProps {
+  /**
+   * What the instance reports about itself (§6.4), or `undefined` until the
+   * status response lands. Threaded from `AppShell`, which already reads it.
+   */
+  readonly system?: SetupSystemStatus | undefined;
   readonly host: string;
   /** Laika's version, from `/health`. Absent until it answers. */
   readonly version?: string | undefined;
@@ -68,6 +74,7 @@ export interface FirstBootScreenProps {
 export function FirstBootScreen({
   host,
   version,
+  system,
   onSubmit,
   submitting = false,
   serverError,
@@ -133,7 +140,7 @@ export function FirstBootScreen({
             instance up at night must be able to stop being dazzled. */}
         <ThemeToggle />
 
-        <SystemStatus />
+        <SystemStatus system={system} />
       </aside>
 
       <form
