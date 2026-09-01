@@ -169,3 +169,62 @@ iterable`. My dev server was still running **pre-LAI-429 code** and sending
 but it is the **third time** a stale dev process has produced a false result for
 me, and it is exactly the client/server contract LAI-213 exists to catch at build
 time. Restarting made it green.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** The half that unblocked LAI-113, LAI-222 and LAI-143 together.
+
+### Nine, not the seven the task said
+
+Filed against LAI-113 alone; `core` had since gained LAI-222's
+`user.deactivated` and `user.reactivated`. `STREAM_TYPES equals ACTIVITY_TYPES`
+is **exact**, so mirroring seven of nine would have left it red and unblocked
+nothing. **Taken from `git show core:server/src/db/enums.ts` rather than inferred
+from the task text** — the task was a claim by someone writing before the branch
+moved.
+
+### The decline is the deliverable
+
+`sprint.tasks_changed` is **listed** in `FEED_SILENT` with a reason, and keeps its
+label, because the decision is about display rather than vocabulary. One row per
+task moved is noise in a feed whose job is to say what changed about the
+**project**.
+
+**The mutation that matters removes the label**, so the verb would be declined
+*and* unlabelled — *"the gap wearing a decision's clothes"*. A verb the dashboard
+silently drops and one it deliberately declines look identical to the next
+reader, and only one of them is a decision.
+
+**Two things the filter must not quietly change, and does not:** the counts still
+see every event, because *"52 events, 3 by agents" is a claim about what
+happened*; and the empty state no longer contradicts the count, which it could
+previously do.
+
+### What could not be proved here, and was said rather than implied
+
+> *"I could not render a `sprint.tasks_changed` row. The verb is not in
+> `master`'s `CHECK` constraint, so the database rejects the insert — I tried,
+> and got `activity_type_check`."*
+
+I asked for the judgement to be confirmed against the real dashboard. **The
+confirmable part was confirmed and the unconfirmable part was named**, which is
+the correct answer to that instruction and not a smaller one. **It is provable
+now that this has landed, and I will look rather than leave it outstanding.**
+
+### The guard that broke was not this task's fault
+
+`use-events.test.ts` parses `enums.ts` **as text**, splitting on commas without
+stripping comments, so LAI-113's comment block inside `ACTIVITY_TYPES` became
+entries. That comment is there because **I asked for it**. The mirror was right,
+in the right order, and the check was reading source rather than parsing it.
+
+### And a third stale dev process
+
+`e.blocked_by is not iterable` — a pre-LAI-429 server sending `dependencies` to a
+client expecting `blocked_by`. **That is the runtime form of exactly what LAI-213
+catches at build time**, and the comparison is the argument for the whole class:
+*the drift check's reward is a named test failure; without it you get a white
+screen and a minified stack.* Third false result from a stale process this week;
+it is going into `CONVENTIONS.md` §5.1 beside the axes.
