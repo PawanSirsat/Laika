@@ -36,6 +36,7 @@ import { unlistedRoutes } from './http/routes/unlisted.ts';
 import { heartbeatRoutes } from './http/routes/heartbeats.ts';
 import { capacityRoutes, presenceRoutes } from './http/routes/presence.ts';
 import { setupGate } from './http/middleware/setup-gate.ts';
+import { stoppingGate } from './http/middleware/stopping.ts';
 import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
 import { SignInThrottle } from './auth/sign-in-throttle.ts';
@@ -72,6 +73,13 @@ export const API_BASE = '/api/v1';
 
 export interface CreateAppOptions {
   version: string;
+  /**
+   * Whether shutdown has begun (§11.2, LAI-214). A request on a **reused
+   * keep-alive connection** can still reach a closing server, and answering
+   * `200 ready` to a stream that will never deliver a frame is worse than
+   * refusing.
+   */
+  isStopping?: () => boolean;
   /**
    * Per-account sign-in throttling (§6.1, LAI-219). Injectable so a test can
    * supply one with a clock it controls — the rule is "after n failures, wait" ,
@@ -177,6 +185,11 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // Front half of errorHandler — see the module comment for why it is here and
   // not a stage of its own.
   app.use('*', errorBoundary);
+
+  // Early: a server that has decided to stop should not resolve a credential,
+  // touch the database, or take a rate-limit token on the way to refusing. After
+  // `errorBoundary` so the refusal is still §6.3-shaped.
+  if (options.isStopping !== undefined) app.use('*', stoppingGate(options.isStopping));
   app.use('*', requestLogger(log));
   app.use(
     '*',
