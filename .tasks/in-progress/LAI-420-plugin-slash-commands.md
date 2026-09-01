@@ -2,11 +2,12 @@
 id: LAI-420
 title: The four /laika: slash commands
 area: plugin
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-419, LAI-422]
 discovered-from:
-status: backlog
+started: 2026-09-01T23:15:00+05:30
+status: in-progress
 ---
 
 ## Goal
