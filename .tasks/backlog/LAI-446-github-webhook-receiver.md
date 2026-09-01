@@ -4,7 +4,7 @@ title: 'POST /webhooks/github — HMAC verified before the body is parsed'
 area: server
 assignee: unclaimed
 priority: p2
-depends-on: []
+depends-on: [LAI-161]
 discovered-from:
 status: backlog
 ---
@@ -66,8 +66,10 @@ load-bearing:
       which**. In-memory is defensible for 24h on a single-process deployment
       (D-002) — undocumented is not.
 - [ ] `github_webhook_secret_enc` (§4.2) is the source of the secret, decrypted
-      per request, never logged, and **absent means every delivery is `401`**
-      rather than every delivery being accepted.
+      per request **through LAI-161's module**, never logged, and **absent means
+      every delivery is `401`** rather than every delivery being accepted.
+      **There was no decrypt when this was filed** — §12 is unimplemented, CORE
+      found it on claiming, and LAI-161 is now a dependency.
 - [ ] Full gate green — **`EXIT 0`**, not a pass count.
 
 ## Notes / context

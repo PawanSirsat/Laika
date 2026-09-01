@@ -4,7 +4,7 @@ title: Setting the org's LLM provider, with the key encrypted at rest
 area: server
 assignee: unclaimed
 priority: p2
-depends-on: [LAI-222]
+depends-on: [LAI-222, LAI-161]
 discovered-from:
 status: backlog
 ---
@@ -28,8 +28,15 @@ without `org.settings.edit`. §4.2's columns exist: `ai_provider`, `ai_base_url`
       `ai_api_key`, gated on `org.settings.edit` (Owner and Admin — §3.1's row is
       `✓ ✓ — —`, checked rather than remembered).
 - [ ] **The key is encrypted at rest with AES-256-GCM, keyed from
-      `LAIKA_SECRET`** (§4.2, §12) — the same mechanism `smtp_json_enc` already
-      uses. **Reuse it; do not write a second one.**
+      `LAIKA_SECRET`** (§4.2, §12), through **LAI-161's** module.
+      ~~the same mechanism `smtp_json_enc` already uses~~ — **there is no such
+      mechanism.** §12 is entirely unimplemented: no `encrypt`, no `decrypt`, no
+      key derivation, and nothing has ever written any of the three `_enc`
+      columns. CORE found it on claiming LAI-446 and filed **LAI-161**, which
+      this now depends on. **I asserted a mechanism existed without opening the
+      file** — seventh of that class this week and the one that would have cost
+      most, because "reuse the existing crypto" is an instruction somebody
+      follows.
 - [ ] **Write-only, and asserted at the serialisation boundary.** No response, at
       any grade, contains the plaintext key or the ciphertext. LAI-206's test is
       the model: store a recognisable value and require the body not to contain
