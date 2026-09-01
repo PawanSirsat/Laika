@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { backfillTaskTimestamps } from './backfill.ts';
 import { type Db } from './client.ts';
 
 /**
@@ -144,4 +145,10 @@ export function ensureActivityTriggers(db: Db): void {
 export function runMigrations(db: Db, migrationsFolder: string = MIGRATIONS_FOLDER): void {
   migrate(db, { migrationsFolder });
   ensureActivityTriggers(db);
+
+  // Recovers `started_at` / `completed_at` from the audit trail for tasks that
+  // moved before LAI-126 began stamping them. Here rather than in a `.sql`
+  // migration because it reads `payload_json`, whose format `db/activity.ts`
+  // owns — see `backfill.ts`. Idempotent by construction: it only fills a null.
+  backfillTaskTimestamps(db);
 }
