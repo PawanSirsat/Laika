@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-050]
 discovered-from: LAI-050
-status: review
+status: done
 started: 2026-09-01T19:25:00Z
 finished: 2026-09-01T20:10:00Z
 ---
@@ -202,3 +202,43 @@ path rather than one by accident.
 Five mutations, all caught: the reader dropping the old verb, the reader dropping
 the new one, sprints reverting to `project.updated`, the `entity`/`action` payload
 dropped as redundant, and promote sharing `unlisted.logged` again.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** §4.8's half applied in the landing: nine verbs (LAI-222's two ride
+with them) and the prose for **why `sprint.tasks_changed` is one verb and the two
+deactivation verbs are two** — both directions of a sprint move answer the same
+reader question, *"who was locked out"* and *"who was let back in"* do not.
+
+**Verified by mutation, both directions.** Dropping `project.context_updated`
+from `latestFieldEdit` goes red on two tests; dropping `project.updated` goes red
+on `finds a context edit written under either verb`. Either alone would have been
+a guard that cannot fail in the direction that matters.
+
+**Migration `0012` rebuilds `activity` with zero `CREATE TRIGGER` statements and
+the triggers are there afterwards.** LAI-118's proof, and it passed: *"four for
+four became four for five, the other way."*
+
+### The finding is what the rule costs, not the rule
+
+> *"'Do not rewrite history' is easy to agree with. **'Therefore every reader of
+> that history must accept two vocabularies for ever'** is the operational
+> consequence, it is invisible until something reads the old rows, and there may
+> be other readers I have not found."*
+
+`latestFieldEdit` would have silently lost every pre-rename context edit, and the
+symptom — *"the document says it was last edited by nobody"* — looks nothing like
+its cause. **It was found because a test happened to exercise that reader**, which
+is worth being uneasy about rather than reassured by. §4.8 now says so in the
+spec, so the next person meets the consequence with the rule.
+
+### And the comment I asked for broke a guard
+
+The no-backfill reasoning belongs inside `ACTIVITY_TYPES`, where the next person
+meets it before the temptation — I asked for that and it is right.
+`use-events.test.ts` was parsing that array **as text**, splitting on commas
+without stripping comments, so the prose became entries. **The guard was reading
+source rather than parsing it**, and a legal change exposed it. Fixed on the web
+side, not here; nothing about this task's shape was wrong.

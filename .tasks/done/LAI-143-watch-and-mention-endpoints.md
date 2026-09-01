@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-094]
 discovered-from: LAI-094
-status: review
+status: done
 started: 2026-09-01T21:25:00Z
 finished: 2026-09-01T22:10:00Z
 ---
@@ -201,3 +201,61 @@ required `db` would move it behind that guard and change what a half-configured
 instance answers. `/users` already carries two routers for the same reason.
 
 Three mutations, all caught.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted**, with §3.2's *"Watch / unwatch a task"* row, its `read_only`
+footnote and §6.4's five endpoint lines applied in the landing.
+
+**Verified by mutation:**
+
+| Mutation | Red |
+| --- | --- |
+| `task.watch` **into** `READ_ACTIONS` | `refuses a read_only token the write, and still allows it the read` |
+| `mentionableUsers` filters by membership | `agrees with resolveMentions in both directions` **and** `excludes a deactivated member` |
+| The §3.2 row **and** its mapping applied | `removes an exemption once §3 grants the action` |
+
+**The first is why the design is right rather than merely working.** *"Not in
+`READ_ACTIONS`" is a claim about a file until something proves the absence is
+load-bearing*, and that mutation is the proof. The role layer grants watching to
+every project role; the scope layer refuses a `read_only` token; and the pair
+test — refused the `PUT`, **allowed** the `GET` — is what shows the refusal came
+from the scope and not by accident from the role.
+
+### The exemption expired, and it needed a correction to what I told you
+
+I said applying the §3.2 row would force the exemption out. **It does not
+alone** — `maps every §3.2 row to at least one action` fails first, and the
+exemption sits green and unremarked. It expires only with the `PROJECT_ROWS`
+mapping beside it, which D-038 makes CHIEF's in CORE's file.
+
+**So a reviewer applying half of their own two-part change defeats the staleness
+guard.** Measured, not reasoned. Both halves are now both-or-neither in the held
+script, and I made the same mistake again with `org.read` twenty minutes later.
+
+### The test whose meaning changed
+
+`Viewer write attempts all fail` broke correctly and was **restated rather than
+given a fifth exception**. It already carried four — own tokens ×2, joining a
+public project, own unlisted work, own heartbeat — so it never stated *"a Viewer
+performs no writes"*; it stated **"a Viewer writes nothing that is not about
+themselves"**.
+
+`task.watch` is the better fifth, because it is the only one where the **role
+allows and the scope refuses**. Writing that at the site rather than appending a
+name is right for the stated reason: *five arbitrary-looking exceptions is how the
+next person concludes a test is noise and deletes it.* **Flagging it as a meaning
+change rather than a data change is what let me review it as one.**
+
+### Three shapes, all kept
+
+`PUT`/`DELETE` because watching is idempotent state and the method makes the
+refusal legible on its own. `204` because nothing about the task changed.
+
+And the one I would have got wrong: **a second router on `/me` rather than a `db`
+on `meRoutes`** — *"`GET /me` is mounted before the database is known to exist,
+because 'who am I' is answerable without one."* A required `db` would have moved
+it behind that guard and changed what a half-configured instance answers, which
+is a first-boot behaviour nobody would connect to a watch endpoint.

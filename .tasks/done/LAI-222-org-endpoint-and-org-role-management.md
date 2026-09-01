@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-086
-status: review
+status: done
 started: 2026-09-01T20:25:00Z
 finished: 2026-09-01T21:15:00Z
 finished:
@@ -216,3 +216,61 @@ Six mutations, all caught: the field gate removed, `ai` null instead of absent,
 `org.read` narrowed to Admin+, the invariant counting rows instead of active rows,
 the invariant skipped on deactivation, and `targetOrgRole` not passed so §3.1's
 Admin caveat cannot apply.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted**, with §3.1's *"View the organisation"* row and its `org.read`
+footnote applied in the landing, plus §4.8's two deactivation verbs.
+
+**Verified by mutation:**
+
+| Mutation | Red |
+| --- | --- |
+| `activeOwnerCount` counts rows, not active rows | `does not count a deactivated Owner as cover` |
+| The field gate removed | `gives a Viewer the org and not the provider block`, + the Member twin |
+| `ai: null` instead of absent | the same two |
+
+**The third is the one worth having.** *"`null` says no provider is configured,
+which is a different fact and one a Viewer would act on."* The obvious
+implementation and the correct one produce the same-looking response and
+different meanings, and the test distinguishes them.
+
+**Not decrypting for `key_last4`** — *"a serialiser that can reach plaintext is
+one refactor away from returning it"* — is a judgement about a boundary rather
+than about this function, which is why it will still be right when somebody
+extends the endpoint.
+
+### The diagnosis of the wrong argument is the transferable half
+
+> *"My argument was 'nothing this endpoint returns is sensitive'. The criterion
+> is 'nothing this **row** grants is sensitive'. Those are the same sentence only
+> while the response never grows."*
+
+**A permission row does not look like a guard, and it is one** — it asserts
+something about every future response. That is why D-037 did not fire for
+somebody who had been applying it to tests and comments all day: the shape was
+familiar and the location was not.
+
+### Three guards, three real mistakes, none a typo
+
+The route lint rule catching an `enums.ts` import; `asserts every action in the
+closed union` catching `org.read` with no matrix grades; and **`404s /users/:id`,
+which became wrong because of this task's own work rather than by decay**.
+Updating it to `405` with `Allow: PATCH` **while keeping the distinction it pins**
+is the harder call — deleting it would have been defensible and would have lost
+the difference between an unregistered path and an unbuilt method.
+
+### `avatar_color` — LAI-148, and worse than my Notes guessed
+
+Three sources, three answers — §4.1 says *derived from id*, the server derives
+from **email** and stores it, the client derives from **id** at render and ignores
+the stored value — plus better-auth's `defaultValue: '#6b7280'` as a fourth for
+any row created by a path that skips the hook.
+
+**The criterion that matters is the one added rather than the finding:** *do not
+fix this by making the client read the served value.* One stored colour cannot be
+legible in both themes, which §5.1 requires, so deriving at render is the only
+option that satisfies the design — and the tempting one-line fix is the wrong
+one. **I would have accepted that fix in review.**

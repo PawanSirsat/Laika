@@ -6,7 +6,7 @@ assignee: shell
 priority: p2
 depends-on: [LAI-113]
 discovered-from: LAI-113
-status: review
+status: done
 started: 2026-09-01T05:52:20Z
 finished: 2026-09-01T06:20:00Z
 ---
@@ -101,7 +101,7 @@ shipping the opinion.
 
 ## Build note — SHELL, 2026-09-01
 
-### **Submitted red under D-045: one failure, and it is the point of the task**
+### ~~Submitted red under D-045~~ — **now fully green, and the parse was the fault**
 
 From the **repo-root** `pnpm test`:
 
@@ -169,3 +169,120 @@ iterable`. My dev server was still running **pre-LAI-429 code** and sending
 but it is the **third time** a stale dev process has produced a false result for
 me, and it is exactly the client/server contract LAI-213 exists to catch at build
 time. Restarting made it green.
+
+---
+
+## Follow-up — SHELL, 2026-09-01: the parse, not the mirror
+
+CHIEF assembled the landing and it was red on `STREAM_TYPES equals
+ACTIVITY_TYPES`. **My nine entries were right; the test was reading the enum
+badly.** Reopened, fixed, back in review. **568 web tests pass, 0 fail.**
+
+### One correction to the diagnosis, because it changes the fix
+
+CHIEF read it as *"splits on commas without stripping comments"*. It does not
+split on commas — it matched `/'([^']+)'/g`, **any single-quoted run**. LAI-113's
+comment inside the array contains *"§4.13's indexes"*, and **the apostrophe in
+`4.13's` opened a match** that ran to the next apostrophe, capturing prose as a
+type.
+
+That matters: stripping comments alone would have fixed today's failure, and
+matching the shape alone would have fixed today's failure, and **neither alone is
+enough**. A comment that *names* a real type — `// unlike 'project.created'` — is
+shaped correctly and would be counted as declared.
+
+### So: both defences, in one place
+
+`test/helpers/enums.ts` — `readVocabulary(source, name)`:
+
+1. **strips comments first**, so prose contributes nothing at all; then
+2. **matches the shape** `'word.word'`, not "anything quoted".
+
+Both mirrors now use it — the SSE list and the dashboard's wording. The
+dashboard's own regex was already shaped, so it survived today, but it would not
+have survived a comment naming a type. Fixing one and leaving the other would
+have left the same trap one file over.
+
+It also **throws** when the array is not found, rather than returning `[]`. An
+empty vocabulary satisfies every caller's assertion vacuously — the
+green-by-vacancy shape again.
+
+### The criterion, which is the point of the fix
+
+`test/helpers/enums.test.ts` parses a fixture that **carries the hazards on
+purpose**: an apostrophe in prose, a block comment naming a real type, and a test
+that adds *another* comment and asserts the parse is unchanged.
+
+**If the next person writes a comment in that array, this fails first and says
+why** — rather than the mirror failing and reading as a drift that is not there.
+
+### What is red now, and it is not mine
+
+The root gate shows **two failures, both in `server/test/tooling/`** — the stale
+exemption entries CHIEF said CORE has to drop:
+
+```
+policy-spec-drift  — 'task.watch', 'org.read' are exempted but §3 now grants them
+schema-spec-drift  — an activity-type exemption whose gap has closed
+```
+
+Self-expiring exemptions expiring. **My half is green.**
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** The half that unblocked LAI-113, LAI-222 and LAI-143 together.
+
+### Nine, not the seven the task said
+
+Filed against LAI-113 alone; `core` had since gained LAI-222's
+`user.deactivated` and `user.reactivated`. `STREAM_TYPES equals ACTIVITY_TYPES`
+is **exact**, so mirroring seven of nine would have left it red and unblocked
+nothing. **Taken from `git show core:server/src/db/enums.ts` rather than inferred
+from the task text** — the task was a claim by someone writing before the branch
+moved.
+
+### The decline is the deliverable
+
+`sprint.tasks_changed` is **listed** in `FEED_SILENT` with a reason, and keeps its
+label, because the decision is about display rather than vocabulary. One row per
+task moved is noise in a feed whose job is to say what changed about the
+**project**.
+
+**The mutation that matters removes the label**, so the verb would be declined
+*and* unlabelled — *"the gap wearing a decision's clothes"*. A verb the dashboard
+silently drops and one it deliberately declines look identical to the next
+reader, and only one of them is a decision.
+
+**Two things the filter must not quietly change, and does not:** the counts still
+see every event, because *"52 events, 3 by agents" is a claim about what
+happened*; and the empty state no longer contradicts the count, which it could
+previously do.
+
+### What could not be proved here, and was said rather than implied
+
+> *"I could not render a `sprint.tasks_changed` row. The verb is not in
+> `master`'s `CHECK` constraint, so the database rejects the insert — I tried,
+> and got `activity_type_check`."*
+
+I asked for the judgement to be confirmed against the real dashboard. **The
+confirmable part was confirmed and the unconfirmable part was named**, which is
+the correct answer to that instruction and not a smaller one. **It is provable
+now that this has landed, and I will look rather than leave it outstanding.**
+
+### The guard that broke was not this task's fault
+
+`use-events.test.ts` parses `enums.ts` **as text**, splitting on commas without
+stripping comments, so LAI-113's comment block inside `ACTIVITY_TYPES` became
+entries. That comment is there because **I asked for it**. The mirror was right,
+in the right order, and the check was reading source rather than parsing it.
+
+### And a third stale dev process
+
+`e.blocked_by is not iterable` — a pre-LAI-429 server sending `dependencies` to a
+client expecting `blocked_by`. **That is the runtime form of exactly what LAI-213
+catches at build time**, and the comparison is the argument for the whole class:
+*the drift check's reward is a named test failure; without it you get a white
+screen and a minified stack.* Third false result from a stale process this week;
+it is going into `CONVENTIONS.md` §5.1 beside the axes.
