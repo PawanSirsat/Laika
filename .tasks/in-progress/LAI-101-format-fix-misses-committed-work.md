@@ -2,11 +2,12 @@
 id: LAI-101
 title: '`format:fix` cannot fix a file once it is committed'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-026]
 discovered-from: LAI-005
-status: backlog
+status: in-progress
+started: 2026-09-02T09:05:00Z
 ---
 
 ## Goal
