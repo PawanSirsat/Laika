@@ -9,6 +9,7 @@ import { type TaskStatus } from '../db/enums.ts';
 import { tasks } from '../db/schema.ts';
 import { requireOrgId } from '../db/orgs.ts';
 import { resolveBranchTask } from './heartbeats.ts';
+import { addComment } from './comments.ts';
 import { changeStatus } from './tasks.ts';
 
 /**
@@ -296,4 +297,54 @@ function statusForPullRequest(action: string, merged: boolean): TaskStatus | nul
   if (action === 'opened' || action === 'reopened') return 'in_progress';
   if (action === 'closed' && merged) return 'review';
   return null;
+}
+
+interface IssueCommentPayload {
+  action?: unknown;
+  comment?: { body?: unknown; user?: { login?: unknown }; html_url?: unknown };
+  issue?: { pull_request?: { head?: { ref?: unknown } } };
+  repository?: { full_name?: unknown };
+}
+
+/**
+ * `issue_comment` → a comment on the task, with no Laika author (§10.1, LAI-449).
+ *
+ * **The GitHub login is preserved in the body**, because a mirrored comment that
+ * loses who wrote it is worse than none. It goes in the text rather than in a
+ * column: §4.7 has nowhere to put a foreign identity, and adding one would be
+ * the identity mapping D-050 refused, arriving as a convenience.
+ *
+ * `created` only. `edited` and `deleted` would have to find the row they mirror,
+ * and §4.7 stores no GitHub id to find it by — mirroring an edit as a second
+ * comment would be worse than not mirroring it, so §10.1's silence is taken as
+ * "not handled" rather than guessed at.
+ */
+export function handleIssueComment(
+  db: Db,
+  payload: IssueCommentPayload,
+  principal: (projectId: string) => ServiceCaller,
+  now: number,
+): DeliveryOutcome {
+  if (str(payload.action) !== 'created') return IGNORED;
+
+  const repo = str(payload.repository?.full_name);
+  const branch = str(payload.issue?.pull_request?.head?.ref);
+  const body = str(payload.comment?.body);
+  if (repo === null || branch === null || body === null) {
+    return { handled: false, reason: 'issue_comment is missing repo, branch or body' };
+  }
+
+  const resolved = resolveBranchTask(db, repo, branch);
+  if (resolved === null) return { handled: false, reason: 'branch resolved to no task' };
+
+  const login = str(payload.comment?.user?.login) ?? 'someone';
+  addComment(
+    db,
+    principal(resolved.projectId),
+    resolved.taskId,
+    `**@${login}** on GitHub:\n\n${body}`,
+    now,
+  );
+
+  return { handled: true, taskId: resolved.taskId };
 }

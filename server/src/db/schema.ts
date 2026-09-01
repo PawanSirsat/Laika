@@ -380,9 +380,23 @@ export const comments = sqliteTable(
     taskId: text('task_id')
       .notNull()
       .references(() => tasks.id, { onDelete: 'cascade' }),
-    authorId: text('author_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
+    /**
+     * **Nullable, and null means there is no Laika user** (§4.7, LAI-449).
+     *
+     * §10.1 mirrors a GitHub `issue_comment` into this table, and the person who
+     * wrote it has no account here. D-050 refused identity mapping, so there is
+     * nothing to point at — and `created_via` already carries where the comment
+     * came from.
+     *
+     * The alternative was an org-owned "GitHub" user row, which is the sentinel
+     * D-050 refused one table over: a row that means *not a person* is one
+     * refactor from being treated as one, and it would appear in member lists
+     * and assignee pickers on the way there.
+     *
+     * **Nullable is not unconstrained.** A non-null value still references a real
+     * user, and `restrict` still refuses to delete one who has commented.
+     */
+    authorId: text('author_id').references(() => users.id, { onDelete: 'restrict' }),
     bodyMd: text('body_md').notNull(),
     createdVia: text('created_via', { enum: CREATED_VIA }).notNull(),
     editedAt: integer('edited_at'),

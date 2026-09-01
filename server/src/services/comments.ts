@@ -1,5 +1,11 @@
 import { and, asc, eq, gt, gte, inArray, isNull, or, sql } from 'drizzle-orm';
-import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
+import {
+  activityActor,
+  isSystemPrincipal,
+  type ResolvedActor,
+  type ServiceCaller,
+  withProject,
+} from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type CreatedVia } from '../db/enums.ts';
@@ -34,7 +40,7 @@ import { syncMentions } from './mentions.ts';
 export interface CommentView {
   id: string;
   task_id: string;
-  author_id: string;
+  author_id: string | null;
   body_md: string;
   created_via: CreatedVia;
   /** Non-null once edited, so a UI can say "edited" without comparing timestamps. */
@@ -61,6 +67,32 @@ function toView(row: CommentRow): CommentView {
 /** How the request arrived (§4.7). A token-authenticated caller is an agent. */
 export function createdViaFor(actor: ResolvedActor): CreatedVia {
   return actor.token === null || actor.token === undefined ? 'web' : 'api';
+}
+
+/**
+ * A mirrored comment has no author, and therefore no editor and no deleter
+ * (§3.2, §10.1, LAI-449).
+ *
+ * **Explicit, rather than falling out of the `ownerId` comparison.** §3.2's two
+ * cells are *own* and *own + any*: `null === actor.userId` is false, so the
+ * *own* half already refuses — but a project **lead** holds *any*, falls
+ * through, and would be allowed. `can()` answering "yes" there is not wrong; it
+ * is answering a question about a comment that has an owner.
+ *
+ * The reason it must be nobody: this row is a record of what somebody said on
+ * GitHub. **Editing it would make Laika assert that a person said something they
+ * did not**, and deleting it drops half of a conversation whose other half lives
+ * somewhere Laika does not control. Neither is a permission a role should carry.
+ *
+ * `409` rather than `403`: it is not that this actor may not: it is that the
+ * request does not apply to this comment, whoever is asking.
+ */
+function assertHasAuthor(comment: { authorId: string | null }): void {
+  if (comment.authorId === null) {
+    throw new ApiError('conflict', 'A mirrored comment has no author and cannot be changed here', {
+      reason: 'no_local_author',
+    });
+  }
 }
 
 function requireTaskContext(db: Db, taskId: string) {
@@ -174,7 +206,7 @@ export function commentCounts(db: Db, taskIds: readonly string[]): Map<string, n
 
 export function addComment(
   db: Db,
-  actor: ResolvedActor,
+  actor: ServiceCaller,
   taskId: string,
   bodyMd: string,
   now: number = Date.now(),
@@ -183,14 +215,18 @@ export function addComment(
   assertCan(withProject(actor, project.id), 'comment.create', { projectId: project.id });
 
   const id = newId();
+  // **No author, and `webhook` says why** (§10.1, LAI-449). The two fields are
+  // set together on purpose: a null author with `created_via: 'web'` would be a
+  // row nobody can explain.
+  const system = isSystemPrincipal(actor);
 
   db.insert(comments)
     .values({
       id,
       taskId,
-      authorId: actor.userId,
+      authorId: system ? null : actor.userId,
       bodyMd,
-      createdVia: createdViaFor(actor),
+      createdVia: system ? 'webhook' : createdViaFor(actor),
       createdAt: now,
       updatedAt: now,
     })
@@ -226,6 +262,8 @@ export function editComment(
   if (comment.deletedAt !== null) {
     throw new ApiError('conflict', 'That comment has been deleted');
   }
+
+  assertHasAuthor(comment);
 
   // §3.2: a member edits their own; a lead and org Admin/Owner may edit any.
   // `ownerId` is what `can()` compares against for the `own` cells.
@@ -274,6 +312,8 @@ export function deleteComment(
   if (comment.deletedAt !== null) {
     throw new ApiError('conflict', 'That comment has already been deleted');
   }
+
+  assertHasAuthor(comment);
 
   assertCan(withProject(actor, project.id), 'comment.delete', {
     projectId: project.id,

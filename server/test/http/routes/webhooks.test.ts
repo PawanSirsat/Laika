@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { activity, orgs, projects, tasks } from '../../../src/db/schema.ts';
+import { activity, comments, orgs, projects, tasks } from '../../../src/db/schema.ts';
 import { encryptSecret } from '../../../src/secrets.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
@@ -20,6 +20,7 @@ const TEST_SECRET = 'test-secret-that-is-long-enough-to-pass-validation';
 
 let h: AuthHarness;
 let projectId: string;
+let ownerCookie: string;
 
 function sign(body: string, secret = WEBHOOK_SECRET): string {
   return `sha256=${createHmac('sha256', secret).update(body, 'utf8').digest('hex')}`;
@@ -58,6 +59,7 @@ beforeEach(async () => {
   });
   expect(setup.status, await setup.clone().text()).toBe(201);
   const cookie = cookieFrom(setup);
+  ownerCookie = cookie;
 
   projectId = h.db.select().from(projects).get()?.id ?? '';
   h.db.update(projects).set({ repo: 'kvell/laika' }).where(eq(projects.id, projectId)).run();
@@ -195,6 +197,108 @@ describe('a verified delivery', () => {
     // The point of deduplicating: `activity` is append-only, so a second
     // `webhook.commit` for one push would be permanent.
     expect(h.db.select().from(activity).all().length).toBe(rows);
+  });
+});
+
+async function watchers(taskId: string): Promise<unknown[]> {
+  const res = await h.app.request(`/api/v1/tasks/${taskId}/watchers`, {
+    headers: jsonHeaders({ Cookie: ownerCookie }),
+  });
+  expect(res.status, await res.clone().text()).toBe(200);
+  const body = (await res.json()) as { watchers?: unknown[]; data?: unknown[] };
+  return body.watchers ?? body.data ?? [];
+}
+
+describe('issue_comment mirrors, with no Laika author (§10.1, LAI-449)', () => {
+  async function commentEvent(action = 'created', body = 'Looks good to me'): Promise<Response> {
+    return deliver('issue_comment', {
+      action,
+      comment: { body, user: { login: 'octocat' }, html_url: 'https://github.test/c/1' },
+      issue: { pull_request: { head: { ref: taskKeyBranch() } } },
+      repository: { full_name: 'kvell/laika' },
+    });
+  }
+
+  it('stores the comment with a null author and created_via webhook', async () => {
+    const res = await commentEvent();
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    const row = h.db.select().from(comments).get();
+    expect(row?.authorId).toBeNull();
+    // The two are set together: a null author with `created_via: 'web'` would be
+    // a row nobody can explain.
+    expect(row?.createdVia).toBe('webhook');
+  });
+
+  it('keeps the GitHub login, because a mirror that loses the author is worse than none', async () => {
+    await commentEvent();
+
+    expect(h.db.select().from(comments).get()?.bodyMd).toContain('octocat');
+  });
+
+  it('ignores an edit or a delete rather than guessing which row they mean', async () => {
+    // §4.7 stores no GitHub id, so there is nothing to find the mirrored row by.
+    // Mirroring an edit as a second comment would be worse than not mirroring it.
+    await commentEvent();
+    const after = h.db.select().from(comments).all().length;
+
+    await commentEvent('edited');
+    await commentEvent('deleted');
+
+    expect(h.db.select().from(comments).all().length).toBe(after);
+  });
+
+  it('cannot be edited or deleted by anyone, including a lead', async () => {
+    // **The trap.** §3.2's cells are *own* and *own + any*: `null === userId` is
+    // false so *own* already refuses, but a lead holds *any* and would fall
+    // through. Editing would make Laika assert a person said something they did
+    // not; deleting drops half a conversation Laika does not own.
+    await commentEvent();
+    const id = h.db.select().from(comments).get()?.id ?? '';
+
+    const setup = await h.app.request('/api/v1/setup/status');
+    expect(setup.status).toBe(200);
+
+    for (const [method, body] of [
+      ['PATCH', JSON.stringify({ body_md: 'Rewritten' })],
+      ['DELETE', undefined],
+    ] as const) {
+      const res = await h.app.request(`/api/v1/comments/${id}`, {
+        method,
+        headers: jsonHeaders({ Cookie: ownerCookie }),
+        ...(body === undefined ? {} : { body }),
+      });
+
+      // The owner is org Owner and holds `any` — so this is the explicit
+      // refusal, not a role decision.
+      expect(res.status, `${method}: ${await res.clone().text()}`).toBe(409);
+    }
+
+    expect(h.db.select().from(comments).get()?.bodyMd).toContain('octocat');
+  });
+
+  it('makes no watcher of an author who does not exist', async () => {
+    // **Asserted against the watcher list, not against the comment row.**
+    //
+    // The first version checked that the stored `author_id` was null — true
+    // whether or not the null reaches `impliedWatcherIds`, so a mutation adding
+    // it to the set passed. This asks the endpoint instead.
+    //
+    // **It still does not distinguish the guard in `watchers.ts` from
+    // `canRead`**, which filters unknown ids out of the result anyway — so
+    // removing that guard keeps this green. The property asserted here is the
+    // one that matters to a caller (a mirrored comment adds no watcher); the
+    // guard is defence in depth and is labelled as such where it lives, rather
+    // than counted as covered.
+    const taskId = h.db.select().from(tasks).get()?.id ?? '';
+    const before = await watchers(taskId);
+
+    await commentEvent();
+
+    const after = await watchers(taskId);
+    expect(after, 'a mirrored comment added a watcher').toEqual(before);
+    expect(after).not.toContain(null);
+    expect(after.every((id) => typeof id === 'string' && id !== '')).toBe(true);
   });
 });
 

@@ -163,7 +163,17 @@ function impliedWatcherIds(db: Db, taskId: string): Set<string> {
     .from(comments)
     .where(and(eq(comments.taskId, taskId), isNull(comments.deletedAt)))
     .all())
-    implied.add(row.authorId);
+    // **A mirrored comment implies no watcher** (LAI-449). Its author has no
+    // Laika account, so there is nobody to notify.
+    //
+    // **Defence in depth, and measured as such**: removing this check does not
+    // fail any test, because `watchersOfTask` filters the result through
+    // `canRead`, and `loadActor(db, null)` finds nobody — so a `null` that got
+    // in here is dropped before anything sees it. The guard earns its place by
+    // keeping a non-id out of a `Set<string>` rather than by being the thing
+    // that protects the output, and saying so is the difference between
+    // defence in depth and a test somebody thinks covers this.
+    if (row.authorId !== null) implied.add(row.authorId);
 
   for (const userId of mentionedUserIds(db, [taskId]).get(taskId) ?? []) implied.add(userId);
 
