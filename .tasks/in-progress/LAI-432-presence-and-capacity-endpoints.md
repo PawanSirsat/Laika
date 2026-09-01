@@ -2,11 +2,12 @@
 id: LAI-432
 title: 'GET /presence and GET /capacity (§9.3)'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-430]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-02T02:40:00Z
 ---
 
 ## Goal
