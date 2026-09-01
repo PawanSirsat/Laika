@@ -4,10 +4,11 @@ import { hashToken, newTokenSecret, tokenDisplayPrefix } from '../auth/tokens.ts
 import { activityActor, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
+import { requireOrgId } from '../db/orgs.ts';
 import { type TokenScope } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
-import { orgs, projects, tokens, users } from '../db/schema.ts';
+import { projects, tokens, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, forcedTokenScope } from '../policy/can.ts';
 import { canSeeProject } from './projects.ts';
@@ -174,7 +175,7 @@ export function createToken(
     db.insert(tokens).values(row).run();
 
     appendActivity(db, {
-      orgId: currentOrgId(db),
+      orgId: requireOrgId(db),
       // Org-scoped: a token is not a project's business, and §3.1 puts reading
       // these rows behind the audit-log cell (`visibleTo` in services/events).
       projectId: null,
@@ -314,7 +315,7 @@ function revoke(
     db.update(tokens).set({ revokedAt: now }).where(eq(tokens.id, row.id)).run();
 
     appendActivity(db, {
-      orgId: currentOrgId(db),
+      orgId: requireOrgId(db),
       projectId: null,
       ...activityActor(actor),
       type: 'token.revoked',
@@ -325,11 +326,6 @@ function revoke(
 }
 
 /** Single-org deployment (§4.2), so there is exactly one row to find. */
-function currentOrgId(db: Db): string {
-  const row = db.select({ id: orgs.id }).from(orgs).limit(1).get();
-  if (row === undefined) throw ApiError.notFound('This instance has no organisation yet');
-  return row.id;
-}
 
 /**
  * Every id in the whitelist must be a project this actor can actually read.

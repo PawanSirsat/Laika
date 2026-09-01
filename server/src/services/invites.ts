@@ -5,6 +5,7 @@ import { hashInviteToken } from '../auth/invites.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
+import { requireOrg } from '../db/orgs.ts';
 import { type OrgRole, type ProjectRole } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
@@ -143,17 +144,6 @@ export interface CreatedInvite {
   token: string;
 }
 
-function currentOrg(db: Db): { id: string; name: string } {
-  const row = db.select({ id: orgs.id, name: orgs.name }).from(orgs).limit(1).get();
-
-  // The setup gate answers `conflict` for every API path before an org exists,
-  // so reaching here without one means the gate was bypassed, not that a caller
-  // did something wrong.
-  if (row === undefined) throw new ApiError('conflict', 'This Laika has not been set up yet');
-
-  return row;
-}
-
 /**
  * Refuse an address that already has an account.
  *
@@ -232,7 +222,7 @@ export function createInvite(
   assertCan(actor, 'user.set_role', { targetOrgRole: input.orgRole });
 
   const now = input.now ?? Date.now();
-  const org = currentOrg(db);
+  const org = requireOrg(db);
   const email =
     input.email === undefined || input.email === null ? null : input.email.toLowerCase();
 
