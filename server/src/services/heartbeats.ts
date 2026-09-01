@@ -403,18 +403,37 @@ export function recordHeartbeat(
 
   const now = input.now ?? Date.now();
 
-  // §4.2's org-wide off switch. When presence is off the branch is **not**
-  // resolved: resolving would write `matched_task_id` and `tasks.branch`, which
-  // is exactly the record of "who was working on what" the switch exists to stop
-  // (D-005, LAI-207).
+  // §4.2's org-wide off switch: *"When 0, `POST /heartbeats` returns `202` and
+  // **discards**."*
   //
-  // The row is still written here. §4.2 says a disabled instance "accepts and
-  // discards", and discarding the row itself is a wider change than this task —
-  // it is the difference between storing nothing and storing something inert,
-  // and it belongs with whatever builds §9.3's disabled state. Recorded rather
-  // than assumed either way (LAI-150).
-  const presenceOn = presenceEnabled(db);
-  const matched = presenceOn ? resolveBranchTask(db, repo, branch) : null;
+  // **Discarding means writing nothing, not writing something inert** (LAI-150).
+  // A stored row still carries the user, the token, the repo and the branch —
+  // the same metadata, minus the task link — so keeping it would leave the
+  // switch promising a privacy property (D-005) it does not deliver.
+  //
+  // Still `202`, deliberately: a plugin must not start reporting errors because
+  // an org turned a feature off. §9.2's "degrades, it never errors" applies to
+  // the whole endpoint, and an operator who disabled presence does not want an
+  // alert storm for it.
+  //
+  // **This is not retention** (§11.6, LAI-431), which removes old rows on a
+  // schedule. This never takes them — so turning presence back on resumes with
+  // nothing to backfill, because there was never a gap to fill.
+  if (!presenceEnabled(db)) {
+    return {
+      id: newId(),
+      user_id: actor.userId,
+      token_id: actor.token?.id ?? null,
+      repo,
+      branch,
+      matched_task_id: null,
+      created_at: now,
+      project_ids: [],
+      attribution: 'none',
+    };
+  }
+
+  const matched = resolveBranchTask(db, repo, branch);
 
   const row: typeof heartbeats.$inferInsert = {
     id: newId(),

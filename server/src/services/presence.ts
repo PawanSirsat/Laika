@@ -25,9 +25,10 @@ import { resolveRepoProjects } from './heartbeats.ts';
  * is working" versus "this org does not record who is working".
  *
  * That distinction is why the flag is a **field on the response** rather than
- * something a client infers from an empty list. Once LAI-150 stops storing rows
- * for a disabled org, an empty table is the *only* thing left — so inferring
- * would be permanently wrong and silently so.
+ * something a client infers from an empty list. Since LAI-150 a disabled org
+ * stores no heartbeats at all, so an empty table is the *only* thing left —
+ * inferring "disabled" from it would be permanently wrong and silently so, and
+ * inferring "nobody is working" would be wrong in the other direction.
  *
  * ## Two grades in one response
  *

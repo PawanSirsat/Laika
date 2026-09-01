@@ -684,3 +684,79 @@ describe('resolving a branch to a task (LAI-430)', () => {
     expect(t.db.select().from(tasks).where(eq(tasks.id, task.id)).get()?.branch).toBeNull();
   });
 });
+
+/**
+ * A disabled org takes no heartbeat at all (§4.2, LAI-150).
+ *
+ * LAI-430 stopped *resolving* the branch when presence is off, which is the half
+ * that would otherwise build the who-was-working-on-what record. This is the
+ * other half: §4.2 says the endpoint "accepts and **discards**", and a stored row
+ * still carrying user, token, repo and branch is not discarded.
+ */
+describe('presence_enabled = 0 discards rather than storing (LAI-150)', () => {
+  function projectTracking(slug: string, prefix: string, repo: string): string {
+    const project = createProject(t.sqlite, t.db, actor(ownerId), { name: slug, slug, prefix });
+    t.db.update(projects).set({ repo }).where(eq(projects.id, project.id)).run();
+    return project.id;
+  }
+
+  function beat(repo = 'kvell/laika', branch = 'lai-1-x') {
+    return recordHeartbeat(t.db, withToken(actor(ownerId), 'full'), { repo, branch, now: 1000 });
+  }
+
+  beforeEach(() => {
+    projectTracking('laika', 'LAI', 'kvell/laika');
+    createTask(t.sqlite, t.db, actor(ownerId), 'laika', { title: 'A task' });
+    t.db.update(orgs).set({ presenceEnabled: 0 }).run();
+  });
+
+  it('writes no row', () => {
+    beat();
+
+    // Not "a row with nulls in it" — no row. The metadata a stored row carries
+    // is the thing the switch exists to stop collecting.
+    expect(t.db.select().from(heartbeats).all()).toEqual([]);
+  });
+
+  it('still answers, and the caller cannot tell it was dropped', () => {
+    const view = beat();
+
+    // A plugin must not start reporting errors because an org turned a feature
+    // off. The view echoes what was sent, unresolved.
+    expect(view.repo).toBe('kvell/laika');
+    expect(view.matched_task_id).toBeNull();
+    expect(view.attribution).toBe('none');
+  });
+
+  it('leaves tasks.branch alone', () => {
+    const task = t.db.select().from(tasks).get();
+    beat('kvell/laika', `lai-${task?.number ?? 1}-x`);
+
+    expect(t.db.select().from(tasks).get()?.branch).toBeNull();
+  });
+
+  it('resumes on being turned back on, with no gap to backfill', () => {
+    beat();
+    expect(t.db.select().from(heartbeats).all()).toEqual([]);
+
+    t.db.update(orgs).set({ presenceEnabled: 1 }).run();
+    beat();
+
+    // One row, not two. The rows during the disabled period were never taken,
+    // so there is nothing to fill in — which is different from retention
+    // (§11.6), where rows existed and were removed.
+    expect(t.db.select().from(heartbeats).all()).toHaveLength(1);
+  });
+
+  it('still validates the body — disabled is not a bypass', () => {
+    // A disabled org must not become a path that accepts anything. The bounds
+    // and the required fields are §9.1's, not presence's.
+    expect(() => beat('', 'main')).toThrow(ApiError);
+    expect(() =>
+      recordHeartbeat(t.db, withToken(actor(ownerId), 'full'), {
+        repo: 'x'.repeat(REPO_MAX_LENGTH + 1),
+        branch: 'main',
+      }),
+    ).toThrow(ApiError);
+  });
+});
