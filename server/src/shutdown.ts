@@ -38,6 +38,12 @@ export interface RuntimeTeardown {
   log: Logger;
   /** §11.5's streams. They never end by themselves, which is the whole problem. */
   activityFeed: { closeAll: () => void };
+  /**
+   * §11.6's cron. An interval outlives the server that started it and holds the
+   * process open — the same shape as an unclosed stream, and the reason LAI-142
+   * exists (LAI-431).
+   */
+  scheduler?: { stop: () => void };
   /** Checkpoints the WAL and releases the file lock. */
   sqlite: { close: () => void };
   graceMs?: number;
@@ -72,6 +78,9 @@ export function createRuntimeShutdown(parts: RuntimeTeardown): (signal: string) 
     // it mid-frame.
     onStopping: () => {
       parts.activityFeed.closeAll();
+      // Before the listener closes, with the streams: both are things that keep
+      // the loop alive on purpose and neither ends by itself.
+      parts.scheduler?.stop();
     },
     // After the last request drains, so nothing is mid-query when the handle
     // goes. A WAL that never checkpoints makes the next boot recover a journal.

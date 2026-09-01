@@ -7,7 +7,16 @@ import { apiFieldNames, apiPayload, appendActivity, readPayload } from '../../sr
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { ACTIVITY_TYPES, type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, unlistedWork, users } from '../../src/db/schema.ts';
+import {
+  activity,
+  heartbeats,
+  invites,
+  meetingReviews,
+  projects,
+  tasks,
+  unlistedWork,
+  users,
+} from '../../src/db/schema.ts';
 import { eventView } from '../../src/services/events.ts';
 import { addComment, deleteComment, editComment } from '../../src/services/comments.ts';
 import { createInvite, consumeInvite } from '../../src/services/invites.ts';
@@ -38,6 +47,13 @@ import {
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
 import { setOrgRole, setUserActive } from '../../src/services/users.ts';
+import {
+  expireInvites,
+  expireMeetingReviews,
+  flagStaleTasks,
+  pruneHeartbeats,
+} from '../../src/jobs/jobs.ts';
+import { requireOrgId } from '../../src/db/orgs.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -518,6 +534,77 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       setUserActive(t.db, owner(), spare, false);
       setUserActive(t.db, owner(), spare, true);
       setOrgRole(t.db, owner(), spare, 'admin');
+
+      // --- jobs/: the four verbs §11.6's cron writes (LAI-431) --------------
+      // Driven through the real job functions with an injected clock, not by
+      // appending rows by hand — the payloads these produce are the thing under
+      // test, and a hand-written one would test the fixture.
+      const stale = newId();
+      t.db
+        .insert(tasks)
+        .values({
+          id: stale,
+          projectId: t.db.select({ id: projects.id }).from(projects).get()!.id,
+          number: 90_001,
+          title: 'Left alone',
+          status: 'in_progress',
+          priority: 'p2',
+          createdBy: ownerId,
+          createdVia: 'web',
+          createdAt: 1000,
+          updatedAt: 1000,
+        })
+        .run();
+      t.db
+        .insert(heartbeats)
+        .values({
+          id: newId(),
+          userId: ownerId,
+          tokenId: null,
+          repo: 'kvell/laika',
+          branch: 'main',
+          matchedTaskId: null,
+          createdAt: 1000,
+        })
+        .run();
+      t.db
+        .insert(invites)
+        .values({
+          id: newId(),
+          orgId: requireOrgId(t.db),
+          email: 'gone@example.test',
+          orgRole: 'member',
+          projectId: null,
+          projectRole: null,
+          tokenHash: `${newId()}-hash`,
+          createdBy: ownerId,
+          expiresAt: 2000,
+          acceptedBy: null,
+          acceptedAt: null,
+          createdAt: 1000,
+        })
+        .run();
+      t.db
+        .insert(meetingReviews)
+        .values({
+          id: newId(),
+          projectId: t.db.select({ id: projects.id }).from(projects).get()!.id,
+          source: 'upload',
+          transcriptHash: `${newId()}-hash`,
+          proposalsJson: '[]',
+          status: 'pending',
+          reviewedBy: null,
+          reviewedAt: null,
+          expiresAt: 2000,
+          createdAt: 1000,
+        })
+        .run();
+
+      const later = 1000 + 400 * 24 * 60 * 60 * 1000;
+      pruneHeartbeats(t.db, later);
+      flagStaleTasks(t.db, later);
+      expireInvites(t.db, later);
+      expireMeetingReviews(t.db, later);
 
       // --- unlisted.ts: three verbs since LAI-113 --------------------------
       // `unlisted.logged` now means only what it says — a note was written —
