@@ -2,11 +2,12 @@
 id: LAI-159
 title: Three more route bounds shadow a richer service error
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-228]
 discovered-from: LAI-228
-status: backlog
+status: in-progress
+started: 2026-09-01T17:55:00Z
 ---
 
 ## Goal
