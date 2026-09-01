@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type Database from 'better-sqlite3';
+import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { cors } from 'hono/cors';
@@ -39,6 +40,7 @@ import { setupRequired } from './services/setup.ts';
 import { AUTH_BASE_PATH, type Auth } from './auth/auth.ts';
 import { SignInThrottle } from './auth/sign-in-throttle.ts';
 import { type Db } from './db/client.ts';
+import { users } from './db/schema.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
@@ -118,6 +120,31 @@ export interface CreateAppOptions {
  * account to count failures against, and "no" is a safe answer because it means
  * the request is passed through untouched.
  */
+/**
+ * Is the account that just authenticated still active?
+ *
+ * Read from the row rather than from better-auth's session payload: `is_active`
+ * changes, and a session minted before a deactivation must not keep carrying the
+ * old value around — the same reason `loadActor` reads the database.
+ */
+function signedInUserIsActive(db: Db, email: string): boolean {
+  const row = db
+    .select({ isActive: users.isActive })
+    .from(users)
+    .where(eq(users.email, email.trim().toLowerCase()))
+    .get();
+
+  // No row means better-auth authenticated somebody this query cannot find,
+  // which should not happen — and "let them in" is the wrong way to be wrong.
+  //
+  // **Not independently tested, and it cannot be**: reaching here requires
+  // better-auth to have just verified a password against a row, so the row is
+  // there. Removing the guard changes no observable behaviour. It is defence in
+  // depth rather than a checked property, and saying so beats a comment that
+  // implies coverage nothing provides (LAI-427).
+  return row?.isActive === 1;
+}
+
 function readEmail(body: string): string | null {
   try {
     const parsed: unknown = JSON.parse(body);
@@ -280,6 +307,30 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
       }
 
       const response = await configuredAuth.handler(request);
+
+      // **A deactivated account may not sign in** (§4.1, LAI-442) — checked
+      // *after* better-auth has verified the password, deliberately.
+      //
+      // Refusing before would answer "deactivated" to anyone who typed the
+      // address, turning `403` into an account-existence oracle — the property
+      // LAI-219 went to some trouble to keep. Refusing after means only somebody
+      // who **already proved they hold the credential** learns the account is
+      // switched off, which they are entitled to know and which tells an
+      // attacker nothing they could not already confirm.
+      //
+      // The session better-auth just issued is discarded with the response, so
+      // no cookie reaches the client.
+      // `db` is optional on this app (the LAI-002 HTTP tests build one without
+      // it); with no database there is no account to be deactivated.
+      if (
+        isSignIn &&
+        response.ok &&
+        email !== null &&
+        db !== undefined &&
+        !signedInUserIsActive(db, email)
+      ) {
+        throw new ApiError('forbidden', 'This account has been deactivated');
+      }
 
       if (email !== null) {
         if (response.ok) {
