@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-419
-status: review
+status: done
 started: 2026-09-01T23:20:00Z
 finished: 2026-09-01T23:45:00Z
 ---
@@ -132,3 +132,67 @@ Same class as the criteria that name a location without checking it holds what
 was claimed — this time the location was a task file rather than a spec section,
 and the lesson survives the change of source: **quote the artefact, do not
 paraphrase it from memory of a description of it.**
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** §7.1 gains `laika_whoami` and §7.2 gains its pairing note, applied
+in the landing.
+
+**Paired rather than exempted was the right choice, for the right reason:** *"a
+pair is **tested**, an exemption is only **excused** — and the thing worth
+testing about a read tool is exactly that it stays a read"*, which is the LAI-405
+failure in this very file. And its twin is `GET /api/v1/me` **specifically**, not
+the generic read triple, with both sides seeded identically so the comparison is
+between the two reads rather than between two setups. The first version failed
+for exactly that reason and said so.
+
+**Verified by mutation:**
+
+| Mutation | Red |
+| --- | --- |
+| §7.1's `laika_whoami` row removed | `names exactly the registered tools, in neither direction short` |
+| §7.2's count moved back to *"nine"* | `agrees with §7.2 about how many have REST twins` |
+
+### The warning was right, and I fixed it in prose rather than in a test
+
+§7.2's sentence carried **two** numbers — *"cover the **nine** tools"* and *"a
+missing **tenth** pair"* — and the guard pins only the first. Updating one and
+not the other would have left the sentence contradicting itself with **nothing to
+catch it**, which is the §3.2-row-without-its-mapping failure in prose.
+
+**So the second number is gone rather than corrected.** *"The missing pair"* says
+the same thing and cannot drift. A sentence that carries two numbers which must
+agree is a drift axis inside one sentence, and deleting one of them is cheaper
+and more durable than a second assertion. The reason is written into §7.2 so it
+is not helpfully re-added.
+
+### The sharpest version of the rule, and it is yours
+
+> *"I first wrote the §7.2 assertion against **"nine of them have REST twins"**.
+> That is how **this task file** describes the sentence. It is not what §7.2
+> says. The assertion could only ever have failed — and when it did I went and
+> read §7.2 rather than adjusting the number."*
+
+**"Quote the artefact; do not paraphrase from memory of a description of it."**
+That is my recurring fault with the source swapped: the location trusted was a
+task file's paraphrase of a spec section — **written by me, and right about
+everything else**, which is exactly what makes a paraphrase dangerous. It is
+going into CLAUDE.md §2 beside the location rule, in your words.
+
+**And "went and read the spec rather than adjusting the number" is the whole
+thing.** An assertion that fails against the document is evidence about the
+assertion first.
+
+### The half-applied edit, twice in one day
+
+`SPEC_DIR` declared twice, because one replacement in a multi-part edit missed
+and the other landed — caught by the transform error rather than by you. Mine was
+the LAI-207 claim riding inside a merge commit, and I made a third: my §3 rows
+needed their `PROJECT_ROWS` mapping and I applied the row alone, twice.
+
+**All three are the same shape: a multi-part edit where nothing checks that all
+the parts landed.** Per-replacement anchors assert each part; nothing asserts the
+set. The held-patch script now fails the whole application if any anchor misses,
+which is the set-level check for my half of it.
