@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-09-01T06:57:50Z
+finished: 2026-09-01T08:20:00Z
 ---
 
 ## Goal
@@ -39,34 +40,34 @@ in this task and say it in the CLI's own output.
 
 ## Acceptance criteria
 
-- [ ] `npx laika init` runs in a repo with no Laika configuration and ends with a
+- [x] `npx laika init` runs in a repo with no Laika configuration and ends with a
       working `LAIKA_URL` and `LAIKA_TOKEN`.
-- [ ] **Authentication does not ask for a password on the command line.** A
+- [x] **Authentication does not ask for a password on the command line.** A
       password in shell history is a credential leak with a long tail. Prompt
       without echo, or open a browser, or take an existing token — whichever, say
       why in your log.
-- [ ] It mints through `POST /api/v1/tokens` and **shows the secret exactly
+- [x] It mints through `POST /api/v1/tokens` and **shows the secret exactly
       once**, matching what §4.9 already guarantees. It does not store the
       plaintext anywhere but the config file it is writing.
-- [ ] **The config file is never committed.** It is gitignored, or written
+- [x] **The config file is never committed.** It is gitignored, or written
       outside the repo, and `init` says which. A token in someone's git history
       is the failure this whole task exists to avoid.
-- [ ] **Idempotent.** Run twice and the second run does not mint a second token
+- [x] **Idempotent.** Run twice and the second run does not mint a second token
       silently — it says one already exists and offers to replace it.
-- [ ] **Every failure names what to do**: wrong URL, refused credentials, board
+- [x] **Every failure names what to do**: wrong URL, refused credentials, board
       unreachable, no permission to mint. Not a stack trace, and not the same
       message for all four (LAI-224, LAI-090 — both were exactly this defect).
-- [ ] Verified end to end against a real instance: fresh repo → `init` → an agent
+- [x] Verified end to end against a real instance: fresh repo → `init` → an agent
       lists ready tasks through `/mcp`. **That, plus a heartbeat row, is M4's
       exit.**
-- [ ] **`cli`'s first test is one that fails if the CLI is absent.** The package's
+- [x] **`cli`'s first test is one that fails if the CLI is absent.** The package's
       `test` script currently prints `# tests 0` and **exits 0**, so the root gate
       passes while covering nothing — found and reported by SHELL when they
       released this task. Green by vacancy is the same defect as an assertion a
       broken setup satisfies, one level up, and `cli` has been in
       `pnpm-workspace.yaml` since before it had a `package.json`, so the hole
       opens the moment the package lands. **CLAUDE.md §5 now says so.**
-- [ ] Full gate green.
+- [x] Full gate green.
 
 ## Notes
 
@@ -143,3 +144,87 @@ worth doing for real rather than reasoning about.
 On the branch: `src/{index,init,api,config,prompt,failures}.ts` and
 `test/cli.test.ts` — **13 tests, and the first is the one that fails if the CLI
 is absent**, closing the `# tests 0` hole this task carried as a criterion.
+
+---
+
+## Build note — SHELL, 2026-09-01
+
+### M4's exit, run rather than reasoned about
+
+Fresh `git init` repo, empty `HOME`, driven through a **real pty**:
+
+```
+Board URL [http://localhost:3000]: http://localhost:3370
+Found a Laika at http://localhost:3370.
+Email: ada@example.com
+Password:
+Connected. Token "laika-cli on …" (lai_7C4Z…) saved to
+  /private/tmp/fake-home/.claude/settings.json          mode 0600
+```
+
+Then, using **only what `init` wrote**:
+
+```
+POST /mcp  tools/call list_ready_tasks {"project":"laika-core"}
+→ ## Ready tasks (4)
+  - LAI-10 Token screen — p2, todo …
+```
+
+**That is the exit criterion**, and none of the three defects below would have
+been found without running it.
+
+### Three defects the unit tests could not see
+
+**1. Each question closed stdin for the next one.** Every `ask()` created its own
+`readline` and closed it. Each call was correct *alone*; the **sequence** failed,
+and `init` exited silently after printing "Email:". One shared interface now.
+
+**2. The password was echoed in full.** With a pty I could see what a user sees:
+`Password: laika-dev-password-1` on screen. A **paused** `readline` still owns
+the terminal's mode, so `setRawMode(true)` did not take. It closes rather than
+pauses now, and the run reports `PASSWORD ECHOED: False`. **AC2 was the criterion
+most obviously met on paper and it was not met.**
+
+**3. `laika init < answers` could not work at all.** A piped `readline` closes at
+EOF, which arrives while `init` is awaiting a network call, so the next question
+rejected with *"readline was closed"*. That is not only a testing problem — it is
+every script and every CI use. Without a terminal the input is now drained once
+and served from a queue.
+
+### The suite can drive it now, which is why (3) is worth more than a workaround
+
+`test/init-e2e.test.ts` runs the **built CLI as a subprocess** against a stub
+board: the full sequence, idempotence, a refused sign-in, a `403` on mint, and an
+unreachable board. **19 tests where there were `0`** — and the first is still the
+one that fails if the CLI is absent, which was the criterion I left on this task
+when I released it.
+
+**And a fourth defect, in my own test.** It deadlocked: `execFileSync` blocks the
+event loop, so the stub board in the same process could never answer the child.
+The symptom was a timeout with no failing assertion, which reads as a hung CLI
+rather than a hung test. Async now, and the reason is in the file.
+
+### AC6 verified against real conditions, three of four
+
+| | |
+| --- | --- |
+| wrong URL | *"Could not reach that board (fetch failed)… include the scheme."* |
+| not a Laika | *"Something answered… A proxy or a different app on the same port will do this."* |
+| wrong password | *"That email and password were refused… Laika is invite-only."* |
+| no permission to mint | **unit-tested only** |
+
+The fourth is honest to flag: a viewer's token is **forced** to `read_only`
+rather than refused (LAI-410), so I could not produce a live `403` on mint with
+an active account. It is covered by a stub returning `403`, and asserted to be a
+different message from a bad password — the LAI-224 / LAI-090 defect.
+
+### Idempotence, measured on the board
+
+Second run: *"already connected… Replace it? [y/N]"*, default no. **Tokens on the
+board before: 3. After: 3.** The stored token was unchanged.
+
+### Notes
+
+No dependencies. Config to `~/.claude/settings.json` (§8, D-046) at `0600`; the
+run says where it went and that Laika keeps only a hash. Verified on my own
+instance on `:3370` rather than the owner's board, so no token was minted there.
