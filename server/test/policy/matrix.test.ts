@@ -127,6 +127,10 @@ const PROJECT_MATRIX: ProjectRow[] = [
   ['sprint.manage', true, false, false],
   // | Assign tasks into or out of a sprint | ✓ | ✓ | — |
   ['task.assign_sprint', true, true, false],
+  // | Watch / unwatch a task | ✓ | ✓ | ✓ |
+  // Every role, including viewer — and **not** in `READ_ACTIONS`, which is what
+  // refuses a `read_only` token (D-047). See `can.test.ts` for the pair.
+  ['task.watch', true, true, true],
   // | Create / edit / move any task | ✓ | ✓ | — |
   ['task.write', true, true, false],
   // | Claim a task (start_working) | ✓ | ✓ | — |

@@ -22,6 +22,7 @@ import {
   type ProjectSummary,
 } from '../../services/projects.ts';
 import { deleteTag, listProjectTags, renameTag } from '../../services/tags.ts';
+import { mentionableUsers } from '../../services/mentions.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince, tombstone, type WithTombstones } from '../updated-since.ts';
@@ -203,6 +204,24 @@ export function projectRoutes(options: ProjectRouteOptions): Hono<AppEnv> {
     // The count of tasks that lost the label. **Not** a count of anything
     // deleted — §4.16 is explicit that removing a tag removes join rows only.
     c.json(deleteTag(sqlite, db, requireActor(c), c.req.param('slug'), c.req.param('name'))),
+  );
+
+  /**
+   * Who may be mentioned in a comment on this project (§4.19, §6.4, LAI-143).
+   *
+   * **Not the same as `/:slug/members`, and that is why it exists.** Org Owners
+   * and Admins hold implicit `lead` everywhere and have **no membership row**
+   * (D-006), so they are mentionable and absent from the member list. A picker
+   * built on `/members` therefore omits names that would resolve, and a picker
+   * built on org-wide `GET /users` offers names that will not — and the failure
+   * is silent either way: the mention resolves to nobody, nothing is written, and
+   * it reads as the mention feature being broken.
+   *
+   * The set is produced by the **same predicate** `resolveMentions` filters with,
+   * so the two cannot disagree.
+   */
+  app.get('/:slug/mentionable', (c) =>
+    c.json({ users: mentionableUsers(db, requireActor(c), c.req.param('slug')) }),
   );
 
   app.get('/:slug/members', (c) =>

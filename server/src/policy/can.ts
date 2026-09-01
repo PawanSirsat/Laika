@@ -241,6 +241,25 @@ function canProjectAction(
     case 'task.assign_sprint':
       return isMemberUp;
 
+    // | Watch / unwatch a task | ✓ | ✓ | ✓ |
+    //
+    // Every project role, including `viewer`: anyone who may read a task may
+    // choose to hear about it, and watching grants nothing a reader does not
+    // already have.
+    //
+    // **Its own action, and deliberately absent from `READ_ACTIONS`** (D-047).
+    // Grading it as `project.read` would conflate *who may* with *which
+    // credential may* — §3.3 rule 4 exists so those can differ. §6.2 says a
+    // `read_only` token permits "every GET the user's role allows and nothing
+    // else", and `PUT /watch` is not a GET.
+    //
+    // The argument that a subscription is private to its holder is defeated by
+    // `GET /tasks/:id/watchers`: **a watch is readable by other people, so it is
+    // shared state**, and a credential that cannot change anything must not add
+    // its holder to a list somebody else sees.
+    case 'task.watch':
+      return true;
+
     // | Create / edit / move any task | ✓ | ✓ | — |
     case 'task.write':
       return isMemberUp;

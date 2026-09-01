@@ -18,7 +18,7 @@ import { requestId } from './http/middleware/request-id.ts';
 import { createSecurityHeaders } from './http/middleware/security-headers.ts';
 import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-headers.ts';
 import { healthRoutes } from './http/routes/health.ts';
-import { meRoutes } from './http/routes/me.ts';
+import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
 import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
@@ -165,6 +165,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   app.route(`${API_BASE}/me`, meRoutes());
 
   if (db !== undefined) {
+    app.route(`${API_BASE}/me`, meWatchRoutes({ db }));
     app.route(
       `${API_BASE}/events`,
       eventRoutes({ db, feed: options.activityFeed ?? new ActivityFeed({ db }) }),

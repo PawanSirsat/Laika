@@ -47,6 +47,7 @@ export const PROJECT_ACTIONS = [
   'comment.delete',
   'task.delete',
   'task.dependency.write',
+  'task.watch',
   'project.read',
   'meeting_proposal.apply',
 ] as const;

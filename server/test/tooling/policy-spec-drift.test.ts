@@ -91,6 +91,13 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
+  // In flight, not permanent. §3.2 gains a "Watch / unwatch a task" row with the
+  // `read_only` footnote, written by CHIEF and applied at merge; the staleness
+  // test below drops this entry the moment the row exists.
+  [
+    'task.watch',
+    'LAI-143, in flight: awaiting §3.2\'s "Watch / unwatch a task" row (✓ ✓ ✓, read_only refused), held by CHIEF and applied at merge.',
+  ],
   // In flight, not permanent — the LAI-408/LAI-417 shape. §3.1 gains a
   // "View the organisation" row for `org.read`, written by CHIEF and applied in
   // the merge that lands LAI-222. The staleness test below removes this entry the
