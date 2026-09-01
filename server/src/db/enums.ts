@@ -115,6 +115,18 @@ export const ACTIVITY_TYPES = [
   // different questions people actually ask separately.
   'user.deactivated',
   'user.reactivated',
+  // LAI-431. §4.8's own D-022 note already named these four as things the
+  // in-process cron writes — "heartbeat pruning, stale-task flagging, invite and
+  // meeting-review expiry" — while the list below had a verb for none of them.
+  // The nullability rule was justified by rows the vocabulary made impossible.
+  //
+  // The nightly snapshot and the weekly vacuum are deliberately absent: that
+  // note enumerates the cron's writers and does not include them, which is
+  // right. A backup is not a change to the product's history.
+  'heartbeat.pruned',
+  'task.stale_flagged',
+  'invite.expired',
+  'meeting_review.expired',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

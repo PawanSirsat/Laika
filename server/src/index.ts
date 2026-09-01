@@ -9,7 +9,9 @@ import { serve } from '@hono/node-server';
 import { createApp } from './app.ts';
 import { createAuth } from './auth/auth.ts';
 import { openDb } from './db/client.ts';
+import { dirname, join } from 'node:path';
 import { runMigrations } from './db/migrate.ts';
+import { startScheduler } from './jobs/scheduler.ts';
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
@@ -65,7 +67,16 @@ function main(): void {
   // It used to be four lines here, in a function nothing can call — and during
   // the LAI-048 review `onStopping` was replaced with a comment and every test
   // still passed.
-  const shutdown = createRuntimeShutdown({ server, log, activityFeed, sqlite });
+  // §11.6's cron. After the port is bound — a job is not a reason to delay
+  // serving — and handed to the shutdown path, which stops it with the streams.
+  const scheduler = startScheduler({
+    db,
+    sqlite,
+    log,
+    backupDir: join(dirname(env.dbPath), 'backups'),
+  });
+
+  const shutdown = createRuntimeShutdown({ server, log, activityFeed, sqlite, scheduler });
 
   process.on('SIGTERM', () => {
     shutdown('SIGTERM');

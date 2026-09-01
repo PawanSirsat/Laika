@@ -2,11 +2,12 @@
 id: LAI-219
 title: Sign-in has no per-account lockout, and its only brake is production-only
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-078
-status: backlog
+status: in-progress
+started: 2026-09-02T01:50:00Z
 started:
 finished:
 ---
