@@ -1,0 +1,112 @@
+/* One present person, shared by Capacity and the Board (LAI-440). */
+
+.pp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pp-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--bd2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+}
+
+.pp-body {
+  display: flex;
+  min-width: 0;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* The chip stacks, so a strip of them stays one row tall. */
+.pp-chip .pp-body {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+}
+
+/*
+ * **The chip has to fit its container, and the rail's is narrow.**
+ *
+ * Found by looking: in the Board's rail — about 250px — the repo and the branch
+ * sat side by side at up to 9rem each and ran off the right edge of the card.
+ * `max-width` on the children could not help, because the row they are in had no
+ * reason to shrink. `min-width: 0` is what lets a flex item be narrower than its
+ * content, and without it `overflow: hidden` never gets the chance to apply.
+ */
+.pp-chip,
+.pp-chip .pp-body,
+.pp-chip .pp-head,
+.pp-chip .pp-where {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.pp-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.pp-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  white-space: nowrap;
+}
+
+.pp-chip .pp-name {
+  font-size: var(--text-xs);
+}
+
+.pp-where {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.pp-repo,
+.pp-branch {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 20rem;
+}
+
+.pp-chip .pp-repo,
+.pp-chip .pp-branch {
+  max-width: 9rem;
+}
+
+.pp-branch {
+  color: var(--tx3);
+}
+
+/*
+ * *Somebody is working, elsewhere*.
+ *
+ * Ordinary text, deliberately: it is a normal state, so no warning colour and no
+ * dashed placeholder. `--tx3` is the same weight as the location it stands in
+ * for, which is exactly how much attention it deserves.
+ */
+.pp-elsewhere {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  font-style: italic;
+  white-space: nowrap;
+}

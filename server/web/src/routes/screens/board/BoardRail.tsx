@@ -1,6 +1,4 @@
-import { DemoNotice } from '../../../components/DemoNotice.tsx';
 import { describeEvent } from '../../../api/activity.ts';
-import { demoAgentSessions } from '../../../demo/agent-sessions.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { streamEmptyNote } from './stream-presentation.ts';
@@ -8,6 +6,8 @@ import { describeActor } from './actor-presentation.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import type { ActivityEvent } from '../../../api/activity.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
+import { PresencePerson } from '../../../components/PresencePerson.tsx';
+import type { PresenceView } from '../../../api/presence.ts';
 import type { StreamStatus } from '../../../api/use-events.ts';
 import './board-rail.css';
 
@@ -17,6 +17,8 @@ export interface BoardRailProps {
   readonly gapped: boolean;
   readonly tasks: readonly Task[];
   readonly members: ReadonlyMap<string, Member>;
+  /** `undefined` while the first read is in flight (LAI-440). */
+  readonly presence: PresenceView | undefined;
 }
 
 const DAY = 86_400_000;
@@ -39,9 +41,13 @@ function ageDays(at: number, now: number): number {
  * `updated_at`, which every task carries. **Agent sessions is sample data**:
  * nothing stores a session, and `heartbeats` is an empty table with no route.
  */
-export function BoardRail({ status, events, gapped, tasks, members }: BoardRailProps) {
+export function BoardRail({ status, events, gapped, tasks, members, presence }: BoardRailProps) {
   const now = Date.now();
-  const sessions = demoAgentSessions(tasks);
+  // **Real agent sessions** (LAI-440): a heartbeat sent on a token is an agent,
+  // per §4.8's `actor_kind`. `demoAgentSessions` invented a percentage bar and a
+  // progress figure that nothing measures — there is no such thing on the wire,
+  // and a bar that means nothing is worse than no bar.
+  const agents = presence?.present.filter((entry) => entry.is_agent) ?? [];
   // Read through the hook, not `document.documentElement`: avatar colours are
   // computed in JS, so they only follow the theme if this component re-renders.
   const { theme } = useTheme();
@@ -122,30 +128,35 @@ export function BoardRail({ status, events, gapped, tasks, members }: BoardRailP
         )}
       </section>
 
-      <section className="rail-card">
-        <header className="rail-head">
-          <h2>Agent sessions</h2>
-          <span className="rail-count">{sessions.length}</span>
-        </header>
-        <DemoNotice what="No session data exists — nothing writes to heartbeats." />
-        <ul className="rail-sessions">
-          {sessions.map((session) => (
-            <li key={session.id}>
-              <p className="rail-session-who">
-                {session.who}
-                <span className={`rail-pill rail-pill-${session.state}`}>
-                  {session.state.toUpperCase()}
-                </span>
-              </p>
-              <p className="rail-session-task">{session.task}</p>
-              <span className="rail-bar" aria-hidden="true">
-                <span style={{ width: `${String(session.pct)}%` }} />
-              </span>
-              <p className="rail-session-meta">{session.meta}</p>
-            </li>
-          ))}
-        </ul>
-      </section>
+      {/* Hidden entirely when the org has presence off — the same rule as the
+          strip. A card headed "Agent sessions" that can never fill is worse on a
+          screen somebody looks at all day than no card. */}
+      {presence?.enabled !== false && (
+        <section className="rail-card">
+          <header className="rail-head">
+            <h2>Agent sessions</h2>
+            {presence !== undefined && <span className="rail-count">{agents.length}</span>}
+          </header>
+          {presence === undefined ? (
+            <p className="rail-empty">Loading…</p>
+          ) : agents.length === 0 ? (
+            /* Three states, and this is the one that used to be a bare heading:
+               nobody is running an agent, said rather than implied. */
+            <p className="rail-empty">No agent has a session in the last five minutes.</p>
+          ) : (
+            <ul className="rail-sessions">
+              {agents.map((entry) => (
+                <li key={entry.user_id}>
+                  <PresencePerson entry={entry} theme={theme} variant="chip" />
+                  <p className="rail-session-meta">
+                    last seen {new Date(entry.last_seen).toLocaleTimeString()}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       <section className="rail-card">
         <header className="rail-head">

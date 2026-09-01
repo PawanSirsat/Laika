@@ -103,3 +103,20 @@ export function getPresence(signal?: AbortSignal): Promise<PresenceView> {
 export function getCapacity(signal?: AbortSignal): Promise<CapacityView> {
   return request<CapacityView>('/capacity', signal === undefined ? {} : { signal });
 }
+
+/**
+ * May this entry say **where** the person is working? (LAI-438)
+ *
+ * `repo` is the discriminator, and the other candidates cannot stand in for it:
+ * `matched_task_id` arrives `null` and `project_ids` arrives `[]` whether the
+ * location was withheld **or** the repo simply matched no project — so a
+ * predicate on either cannot tell the two apart, and `=== undefined` on them
+ * never fires at all.
+ *
+ * **Lives here, with the type, because two screens ask it** — Capacity and the
+ * Board's strip. It briefly existed twice in LAI-439 and one copy was unused;
+ * this is the one, and `capacity-derive.ts` re-exports nothing.
+ */
+export function hasLocation(entry: PresenceEntry): boolean {
+  return entry.repo !== undefined;
+}

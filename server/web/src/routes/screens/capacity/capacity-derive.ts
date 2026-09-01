@@ -1,4 +1,4 @@
-import type { CapacityEntry, PresenceEntry } from '../../../api/presence.ts';
+import type { CapacityEntry } from '../../../api/presence.ts';
 
 /**
  * Capacity's client-side derivations — **all of them about presentation**.
@@ -26,19 +26,6 @@ export function oldestAge(ms: number | null): string | undefined {
   const hours = Math.floor(elapsed / 3_600_000);
   if (hours < 24) return `${String(hours)}h`;
   return `${String(Math.floor(elapsed / 86_400_000))}d`;
-}
-
-/**
- * Whether this entry may say **where** the person is working (LAI-438).
- *
- * `repo` is the discriminator and the other candidates do not work:
- * `matched_task_id` arrives as `null` and `project_ids` as `[]` whether the
- * location was withheld or simply resolved to nothing, so testing either would
- * never distinguish the two — and testing `=== undefined` on them never fires
- * at all.
- */
-export function hasLocation(entry: PresenceEntry): boolean {
-  return entry.repo !== undefined;
 }
 
 /**
