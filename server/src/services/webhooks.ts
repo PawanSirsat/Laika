@@ -1,7 +1,15 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { type Db } from '../db/client.ts';
 import { orgs } from '../db/schema.ts';
+import { appendActivity } from '../db/activity.ts';
 import { decryptSecret } from '../secrets.ts';
+import { eq } from 'drizzle-orm';
+import { type ServiceCaller } from '../auth/resolve-actor.ts';
+import { type TaskStatus } from '../db/enums.ts';
+import { tasks } from '../db/schema.ts';
+import { requireOrgId } from '../db/orgs.ts';
+import { resolveBranchTask } from './heartbeats.ts';
+import { changeStatus } from './tasks.ts';
 
 /**
  * `POST /webhooks/github` — the parts that decide whether to listen (§10.1).
@@ -158,4 +166,134 @@ export class DeliveryLog {
       this.seenAt.delete(oldest.value);
     }
   }
+}
+
+/**
+ * What a delivery did, for the route to answer with and a test to assert on.
+ *
+ * `ignored` is a first-class outcome, not a failure: §10.1 says *"everything
+ * else is acknowledged and ignored"*, and a push on `main` that resolves to no
+ * task is a **normal delivery** — §9.2's rule is that resolution degrades rather
+ * than errors, and it applies here too.
+ */
+export interface DeliveryOutcome {
+  handled: boolean;
+  /** The task a `push` or `pull_request` resolved to, when it resolved to one. */
+  taskId?: string;
+  reason?: string;
+}
+
+const IGNORED: DeliveryOutcome = { handled: false, reason: 'event not handled' };
+
+/** GitHub's `push`: `ref` is `refs/heads/<branch>`, `repository.full_name` is `owner/name`. */
+interface PushPayload {
+  ref?: unknown;
+  repository?: { full_name?: unknown };
+}
+
+interface PullRequestPayload {
+  action?: unknown;
+  pull_request?: { head?: { ref?: unknown }; number?: unknown; merged?: unknown };
+  repository?: { full_name?: unknown };
+}
+
+function str(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null;
+}
+
+/**
+ * `push` → the task its branch names, and one `webhook.commit` row (§10.1, §9.2).
+ *
+ * **A branch that resolves to no task is not an error.** §9.2's resolution
+ * degrades, and `main` is the commonest branch there is — answering `422` to
+ * every push on it would make the endpoint useless and the logs unreadable.
+ */
+export function handlePush(db: Db, payload: PushPayload, now: number): DeliveryOutcome {
+  const repo = str(payload.repository?.full_name);
+  const ref = str(payload.ref);
+  if (repo === null || ref === null)
+    return { handled: false, reason: 'push is missing repo or ref' };
+
+  const branch = ref.replace(/^refs\/heads\//, '');
+  const resolved = resolveBranchTask(db, repo, branch);
+  if (resolved === null) return { handled: false, reason: 'branch resolved to no task' };
+
+  appendActivity(db, {
+    orgId: requireOrgId(db),
+    projectId: resolved.projectId,
+    taskId: resolved.taskId,
+    actorId: null,
+    actorKind: 'system',
+    type: 'webhook.commit',
+    payload: { repo, branch },
+    now,
+  });
+
+  return { handled: true, taskId: resolved.taskId };
+}
+
+/**
+ * `pull_request` → link it and move the task (§10.1).
+ *
+ * **opened → `in_progress`; merged → `review`.** Both go through
+ * `changeStatus`, which is §5's rules and one `activity` row and one SSE event —
+ * the same path a person's `POST /tasks/:id/status` takes. A second
+ * implementation here would be a second answer to "what happens when a task
+ * moves", and they would diverge on the first change to either.
+ *
+ * **Merged → `review` is D-051.** §5 restricts that move to the assignee, a
+ * lead or an admin, and a webhook is none of them — but that restriction is
+ * about people, because its reason is *"agents do not self-certify"* and a
+ * merged pull request is somebody else's review, not the actor's own claim.
+ *
+ * A transition §5 forbids — a `backlog` task whose PR is merged — still throws,
+ * because `assertTransition` is not part of the exemption and nothing about a
+ * webhook makes an impossible move possible.
+ */
+export function handlePullRequest(
+  db: Db,
+  payload: PullRequestPayload,
+  principal: (projectId: string) => ServiceCaller,
+  now: number,
+): DeliveryOutcome {
+  const action = str(payload.action);
+  const repo = str(payload.repository?.full_name);
+  const branch = str(payload.pull_request?.head?.ref);
+  if (action === null || repo === null || branch === null) {
+    return { handled: false, reason: 'pull_request is missing action, repo or branch' };
+  }
+
+  const to = statusForPullRequest(action, payload.pull_request?.merged === true);
+  if (to === null) return IGNORED;
+
+  const resolved = resolveBranchTask(db, repo, branch);
+  if (resolved === null) return { handled: false, reason: 'branch resolved to no task' };
+
+  const number = payload.pull_request?.number;
+  if (typeof number === 'number') {
+    // §9.2's `external_ref`. Written before the transition so a refused move
+    // still records which pull request was talking about this task.
+    db.update(tasks)
+      .set({ externalRef: `${repo}#${String(number)}`, updatedAt: now })
+      .where(eq(tasks.id, resolved.taskId))
+      .run();
+  }
+
+  changeStatus(db, principal(resolved.projectId), resolved.taskId, to, now);
+
+  return { handled: true, taskId: resolved.taskId };
+}
+
+/**
+ * Which §5 status a pull-request action means, or `null` for one §10.1 does not
+ * name.
+ *
+ * `closed` without `merged` is **not** a transition: a pull request abandoned
+ * without merging says nothing about whether the task is still being worked on,
+ * and moving it would be inventing a rule §10.1 does not have.
+ */
+function statusForPullRequest(action: string, merged: boolean): TaskStatus | null {
+  if (action === 'opened' || action === 'reopened') return 'in_progress';
+  if (action === 'closed' && merged) return 'review';
+  return null;
 }

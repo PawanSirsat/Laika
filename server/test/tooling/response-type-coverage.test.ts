@@ -264,11 +264,23 @@ describe('every served response type is paired or named', () => {
 
     expect(inherited.has('ProjectView'), 'ProjectSummary extends ProjectView').toBe(true);
 
-    // And the other direction: a served type that nothing extends into is not
-    // covered by this and must still be accounted for. `CapacityView` has no
-    // derived type at all.
-    expect(inherited.has('CapacityView')).toBe(false);
-    expect(UNPAIRED.has('CapacityView')).toBe(true);
+    // And the other direction, **against names that are not in the tree**.
+    //
+    // The first version named `CapacityView` — a real type that was genuinely
+    // unpaired when it was written and was paired by LAI-439 a few hours later,
+    // turning this red for the best possible reason. **A negative example that
+    // is a real unpaired type is a fixture that expires the moment somebody does
+    // the work the census exists to prompt**, which is `CONVENTIONS.md` §4's
+    // rule pointed the other way: not *built so the property cannot be
+    // violated*, but built so it decays when the codebase improves.
+    //
+    // `ProjectView` stays as the positive case because that one **is** the real
+    // thing the task exists for, and it cannot decay: pairing it is the mistake
+    // the drift check already refuses.
+    const synthetic = coveredByExtends(new Set(['NotARealDerivedType']));
+
+    expect(synthetic.has('NotARealBaseType')).toBe(false);
+    expect(synthetic.size, 'a name that is in no file extends nothing').toBe(0);
   });
 
   it('does not treat every type as covered', () => {

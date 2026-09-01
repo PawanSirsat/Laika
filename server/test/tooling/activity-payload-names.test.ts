@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -53,6 +54,7 @@ import {
   flagStaleTasks,
   pruneHeartbeats,
 } from '../../src/jobs/jobs.ts';
+import { handlePush } from '../../src/services/webhooks.ts';
 import { requireOrgId } from '../../src/db/orgs.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
@@ -603,6 +605,22 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       flagStaleTasks(t.db, later);
       expireInvites(t.db, later);
       expireMeetingReviews(t.db, later);
+
+      // --- webhooks.ts: webhook.commit (§10.1, LAI-446) --------------------
+      // Driven through the real handler for the same reason the jobs above are:
+      // the payload it writes is the thing under test, and appending the row by
+      // hand would test the fixture. Needs the project to carry a repo, which is
+      // §9.2's resolution input.
+      t.db.update(projects).set({ repo: 'kvell/laika' }).where(eq(projects.slug, 'core')).run();
+      const pushed = t.db.select().from(tasks).where(eq(tasks.id, task.id)).get();
+      handlePush(
+        t.db,
+        {
+          ref: `refs/heads/lai-${String(pushed?.number ?? 1)}-renamed`,
+          repository: { full_name: 'kvell/laika' },
+        },
+        later,
+      );
 
       // --- unlisted.ts: three verbs since LAI-113 --------------------------
       // `unlisted.logged` now means only what it says — a note was written —

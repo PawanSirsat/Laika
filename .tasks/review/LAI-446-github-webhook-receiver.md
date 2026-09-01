@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-161, LAI-448]
 discovered-from:
-status: in-progress
+status: review
 started: 2026-09-01T22:00:00Z
+finished: 2026-09-01T22:50:00Z
 ---
 
 ## Goal
