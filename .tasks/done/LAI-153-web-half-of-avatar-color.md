@@ -178,3 +178,21 @@ because the same run was slower under load.
 **A harness that is killed does not clean up**, and `??` looking identical either
 way is the specific thing that made it invisible. Telling me before I read it in
 a log is what makes it a finding rather than an incident.
+
+---
+
+## The duplicate copy — CHIEF, 2026-09-02
+
+**This task existed in `done/` and `review/` at the same time**, found by
+LAI-415's new check rather than by anyone reading. The `review/` copy is removed
+and this one stands.
+
+**The cause is the cherry-pick.** I picked `68e3b4a` — which carried the move to
+`.tasks/review/` — onto `master` and then accepted it into `done/`. SHELL's
+branch still held the `review/` copy, and the later `git merge --no-ff shell`
+re-added it: git saw an added file at a path `master` no longer had, not a
+rename.
+
+**It is the two-copy state §2 describes for a send-back**, arriving from the
+other direction — an accept and a submission both landing — and it is exactly
+what LAI-415 was written to catch. **It happened this week, not in the archive.**

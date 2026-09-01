@@ -15,6 +15,7 @@ import {
   blockers,
   byIdIndex,
   groupByColumn,
+  staleFor,
 } from '../../src/api/board-derive.ts';
 import type { Task } from '../../src/api/tasks.ts';
 
@@ -34,6 +35,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_by_client: null,
     discovered_from: null,
     ready: false,
+    stale_flagged_at: null,
     blocked_by: [],
     tags: [],
     acceptance_md: null,
@@ -189,5 +191,41 @@ void describe('blockers — which dependency is holding this up (LAI-066)', () =
   void test('no blocked_by means nothing to name', () => {
     const t = task({ id: '1' });
     assert.deepEqual(blockers(t, byIdIndex([t])), []);
+  });
+});
+
+void describe('staleFor — how long, in the fewest characters (LAI-157)', () => {
+  const MINUTE = 60_000;
+  const HOUR = 3_600_000;
+  const DAY = 86_400_000;
+
+  void test('reads in the unit a person would use', () => {
+    assert.equal(staleFor(0, 30_000), 'now');
+    assert.equal(staleFor(0, 5 * MINUTE), '5m');
+    assert.equal(staleFor(0, 3 * HOUR), '3h');
+    assert.equal(staleFor(0, 9 * DAY), '9d');
+  });
+
+  void test('rounds down at every boundary, so it never overstates', () => {
+    // A marker that says `1d` at 23h59m would be claiming a day that has not
+    // happened. The board is read to decide whether to chase somebody.
+    assert.equal(staleFor(0, HOUR - 1), '59m');
+    assert.equal(staleFor(0, DAY - 1), '23h');
+    assert.equal(staleFor(0, 2 * DAY - 1), '1d');
+  });
+
+  void test('a server clock ahead of the browser reads `now`, never `-1m`', () => {
+    // `stale_flagged_at` is the server's clock and `now` is the browser's; they
+    // disagree routinely, and a negative duration on a card reads as a broken
+    // board rather than as two clocks.
+    //
+    // **This covers the branch order, not the clamp**, and a mutation is what
+    // established that: deleting `Math.max` leaves these green, because a
+    // negative `minutes` is `< 1` and the first branch catches it anyway. The
+    // clamp guards the tidy-up that guards *that* branch. Breaking either alone
+    // is invisible here — so this asserts the property both of them serve, and
+    // says which one it can actually see.
+    assert.equal(staleFor(10_000, 0), 'now');
+    assert.equal(staleFor(9 * DAY, 0), 'now');
   });
 });

@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-049
-status: review
+status: done
 started: 2026-09-01T13:50:00Z
 finished: 2026-09-01T14:20:00Z
 ---
@@ -126,3 +126,42 @@ in `backlog`, the job flagged nothing, and the assertions would have compared
 `null` to `null` and passed. `expect(result.changed).toBe(1)` is what failed
 instead. **The setup call now asserts its own status**, which is the rule that
 should have stopped it a step earlier.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted**, landed with SHELL's LAI-157 which clears its declared red. Root
+gate `EXIT 0` — 1719 server, 594 web, 49 cli.
+
+**The question I asked you to decide rather than infer, decided in the file:**
+`stale_flagged_at` is **set-only**, and the nightly job owns it in both
+directions.
+
+> *"The alternative — routes clearing it on a status change — is worse: the rule
+> for stale is **three conditions**, and a handler clearing on 'somebody touched
+> it' is a second, simpler rule that can disagree with the first."*
+
+That is §4.5's argument for `ready` applied to a stored field, and it is the
+right one. **The cost is named rather than hidden** — a task rescued at noon
+keeps its marker until the next nightly run — and LAI-157 is told **not** to
+paper over it client-side by hiding the marker on non-`in_progress` tasks,
+because that would be a **third** staleness rule. *If the lag is too visible, the
+fix is the job's schedule.*
+
+**The mutation worth reporting** is *clear the flag unconditionally* — a
+clear-then-reflag every night. It **still reports a non-null value to every
+"is it set" assertion** while destroying the *"since when"* the field exists for,
+and only `leaves it alone while the task is still stale` catches it.
+
+### And the guard that caught you is the one you have been writing about
+
+> *"My first round-trip test used a `PATCH` to set `in_progress`. That route
+> ignores it… the task stayed in `backlog`, the job flagged nothing, and **both
+> assertions would have compared `null` to `null` and passed.** What failed
+> instead was `expect(result.changed).toBe(1)`."*
+
+**LAI-407 exactly — a setup step with no assertion cannot fail — in a new test,
+on the day it appeared in three of your own log entries.** The `changed` guard
+was a second line of defence that should not have been needed, and moving the
+assertion into the setup call is where it belonged.
