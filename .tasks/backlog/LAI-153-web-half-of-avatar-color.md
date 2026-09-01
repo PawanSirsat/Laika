@@ -39,6 +39,13 @@ written. The field was declared, served, and read by nobody.
       sends and the client deliberately ignores; this is the reverse, and an
       entry there would silence the one check that proves the field is gone from
       both sides.
+- [ ] **`theme/avatar-color.ts`'s docblock no longer cites §4.1 as the authority
+      for the field.** It says *"SPEC §4.1 makes `avatar_color` derived from the
+      id"* — and as of this landing §4.1 says there is **no such column**, and
+      says why. The rule survives (derive at render, per `docs/design/README.md`
+      and §5.1's both-themes requirement); the citation does not. **A comment
+      pointing at a sentence that no longer exists is worse than none**, because
+      the next reader goes looking for it.
 - [ ] Nothing renders differently. `no per-person avatar colours shipped` already
       passes and must keep passing.
 
