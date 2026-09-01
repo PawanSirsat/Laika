@@ -91,6 +91,14 @@ const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
  * removes an entry the moment §3 grows a row for it.
  */
 const ACTIONS_WITHOUT_A_ROW: ReadonlyMap<Action, string> = new Map([
+  // In flight, not permanent — the LAI-408/LAI-417 shape. §3.1 gains a
+  // "View the organisation" row for `org.read`, written by CHIEF and applied in
+  // the merge that lands LAI-222. The staleness test below removes this entry the
+  // moment the row exists, so it cannot outlive its reason.
+  [
+    'org.read',
+    'LAI-222, in flight: awaiting §3.1\'s "View the organisation" row (✓ ✓ ✓ ✓), held by CHIEF and applied at merge.',
+  ],
   // Empty, and it should stay that way: an action `can()` allows and §3 never
   // grants is a permission with no written source.
   //

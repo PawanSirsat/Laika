@@ -37,6 +37,7 @@ import {
 } from '../../src/services/tasks.ts';
 import { createToken, revokeOwnToken } from '../../src/services/tokens.ts';
 import { dismissUnlisted, logUnlistedWork, promoteUnlisted } from '../../src/services/unlisted.ts';
+import { setOrgRole, setUserActive } from '../../src/services/users.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -497,6 +498,26 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       // than in a second sweep of their own.
       const minted = createToken(t.sqlite, t.db, owner(), { name: 'ci', scope: 'full' });
       revokeOwnToken(t.sqlite, t.db, owner(), minted.token.id);
+
+      // --- users.ts: the two org-level lifecycle verbs (LAI-222) -------------
+      // A second person, so deactivating them cannot hit the last-Owner
+      // invariant — which would refuse the call and leave the sweep with no row.
+      const spare = newId();
+      t.db
+        .insert(users)
+        .values({
+          id: spare,
+          email: 'spare@example.test',
+          name: 'Spare',
+          orgRole: 'member',
+          avatarColor: '#123456',
+          createdAt: new Date(1000),
+          updatedAt: new Date(1000),
+        })
+        .run();
+      setUserActive(t.db, owner(), spare, false);
+      setUserActive(t.db, owner(), spare, true);
+      setOrgRole(t.db, owner(), spare, 'admin');
 
       // --- unlisted.ts: three verbs since LAI-113 --------------------------
       // `unlisted.logged` now means only what it says — a note was written —

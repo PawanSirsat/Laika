@@ -19,6 +19,7 @@ export const ORG_ACTIONS = [
   'user.invite',
   'user.set_role',
   'user.deactivate',
+  'org.read',
   'member_list.read',
   'project.join_public',
   'token.create_own',
@@ -65,6 +66,7 @@ export const ALL_ACTIONS: readonly Action[] = [...ORG_ACTIONS, ...PROJECT_ACTION
  * which is the safe direction to be wrong in.
  */
 export const READ_ACTIONS: ReadonlySet<Action> = new Set<Action>([
+  'org.read',
   'member_list.read',
   'token.read_own',
   'audit_log.export',

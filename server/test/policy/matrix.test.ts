@@ -37,6 +37,12 @@ const ORG_MATRIX: OrgRow[] = [
   ['user.invite', true, true, false, false],
   // | Deactivate user | ✓ | ✓ | — | — |
   ['user.deactivate', true, true, false, false],
+  // | View the organisation | ✓ | ✓ | ✓ | ✓ |
+  // Its own row rather than folded into `member_list.read` (LAI-222): the
+  // response also carries the AI provider block, which is gated field-level on
+  // `org.settings.edit`, and a borrowed row would have handed the next field
+  // added to it a grant nobody reviewed.
+  ['org.read', true, true, true, true],
   // | View member list | ✓ | ✓ | ✓ | ✓ |
   ['member_list.read', true, true, true, true],
   // | Generate own tokens | ✓ | ✓ | ✓ | ✓ (read_only forced) |

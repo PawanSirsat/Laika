@@ -104,6 +104,17 @@ export const ACTIVITY_TYPES = [
   'project.context_updated',
   'unlisted.promoted',
   'unlisted.dismissed',
+  // LAI-222. Deactivation is none of the `member.*` verbs: the user is not
+  // removed and the row stays. `user.` rather than `member.` because `member.*`
+  // is already written by both `invites.ts` and `projects.ts`, and these are
+  // org-level rather than project membership.
+  //
+  // Two verbs, not one with a direction in the payload — unlike
+  // `sprint.tasks_changed`, whose two directions answer the same reader
+  // question. "Who was locked out, and when" and "who was let back in" are
+  // different questions people actually ask separately.
+  'user.deactivated',
+  'user.reactivated',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

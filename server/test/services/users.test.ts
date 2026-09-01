@@ -3,10 +3,11 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
+import { readPayload } from '../../src/db/activity.ts';
 import { newId } from '../../src/db/ids.ts';
-import { orgs, users } from '../../src/db/schema.ts';
+import { activity, orgs, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
-import { listUsers } from '../../src/services/users.ts';
+import { listUsers, setOrgRole, setUserActive } from '../../src/services/users.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 let t: TestDb;
@@ -254,5 +255,153 @@ describe('there is nothing non-human to exclude (AC4)', () => {
 
     expect(listUsers(t.db, actor(ownerId), PAGE).map((u) => u.id)).toContain(person);
     expect(t.db.select().from(users).where(eq(users.id, person)).get()?.isActive).toBe(1);
+  });
+});
+
+/**
+ * Org role changes and deactivation (§3.1, §4.1, LAI-222).
+ *
+ * §3.1 granted both since the matrix was written and no route wrote either, so
+ * the permissions were real and unreachable. Every refusal below is driven, and
+ * each is mutation-proved able to fail.
+ */
+describe('changing an org role', () => {
+  it('promotes and demotes, and reports the new role', () => {
+    const target = makeUser('Grace', 'member');
+
+    expect(setOrgRole(t.db, actor(ownerId), target, 'admin').org_role).toBe('admin');
+    expect(setOrgRole(t.db, actor(ownerId), target, 'viewer').org_role).toBe('viewer');
+  });
+
+  it('writes an org-scoped member.role_changed carrying both ends', () => {
+    const target = makeUser('Grace', 'member');
+    setOrgRole(t.db, actor(ownerId), target, 'admin', 5000);
+
+    const row = t.db
+      .select()
+      .from(activity)
+      .all()
+      .find((r) => r.type === 'member.role_changed');
+
+    // `project_id` is null because an org role belongs to no project (§4.8,
+    // D-022) — the same shape `token.created` has.
+    expect(row?.projectId).toBeNull();
+    expect(row?.actorId).toBe(ownerId);
+    expect(readPayload(row!)).toEqual({
+      scope: 'org',
+      user_id: target,
+      from: 'member',
+      to: 'admin',
+    });
+  });
+
+  it('lets an Admin set any role except Owner (§3.1’s caveat)', () => {
+    const adminId = makeUser('Admin', 'admin');
+    const target = makeUser('Grace', 'member');
+
+    expect(setOrgRole(t.db, actor(adminId), target, 'admin').org_role).toBe('admin');
+
+    // Without this an Admin promotes themselves and the distinction is
+    // decorative.
+    expect(() => setOrgRole(t.db, actor(adminId), target, 'owner')).toThrow(ApiError);
+  });
+
+  it('refuses a Member and a Viewer outright', () => {
+    const target = makeUser('Grace', 'member');
+
+    for (const role of ['member', 'viewer'] as const) {
+      expect(() => setOrgRole(t.db, actor(makeUser(role, role)), target, 'admin')).toThrow(
+        ApiError,
+      );
+    }
+  });
+
+  it('writes nothing when the role is already what was asked for', () => {
+    const target = makeUser('Grace', 'member');
+    setOrgRole(t.db, actor(ownerId), target, 'member');
+
+    // A no-op that logged would put "changed member to member" in the audit
+    // trail, which is noise a reader has to learn to ignore.
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
+  });
+
+  it('404s on a user that does not exist', () => {
+    expect(() => setOrgRole(t.db, actor(ownerId), 'nope', 'admin')).toThrow(ApiError);
+  });
+});
+
+describe('the last active Owner is the invariant, not four rules', () => {
+  it('refuses to demote the only Owner', () => {
+    expect(() => setOrgRole(t.db, actor(ownerId), ownerId, 'admin')).toThrow(/last active Owner/i);
+  });
+
+  it('refuses to deactivate the only Owner', () => {
+    expect(() => setUserActive(t.db, actor(ownerId), ownerId, false)).toThrow(/last active Owner/i);
+  });
+
+  it('allows it once a second Owner exists', () => {
+    const second = makeUser('Second', 'member');
+    setOrgRole(t.db, actor(ownerId), second, 'owner');
+
+    expect(setOrgRole(t.db, actor(ownerId), ownerId, 'admin').org_role).toBe('admin');
+  });
+
+  it('does not count a deactivated Owner as cover', () => {
+    const second = makeUser('Second', 'owner', { isActive: 0 });
+    void second;
+
+    // Two Owner rows, one active. Counting rows rather than *active* rows would
+    // let the org be locked out by a person who cannot sign in.
+    expect(() => setOrgRole(t.db, actor(ownerId), ownerId, 'admin')).toThrow(/last active Owner/i);
+  });
+
+  it('lets an Admin demote themselves, because that is recoverable', () => {
+    const adminId = makeUser('Admin', 'admin');
+
+    // Any Owner can promote them back; an org with no Owner has no route back at
+    // all. Only unrecoverable states are guarded.
+    expect(setOrgRole(t.db, actor(adminId), adminId, 'member').org_role).toBe('member');
+  });
+});
+
+describe('deactivating and reactivating', () => {
+  it('flips is_active and writes the verb that names it', () => {
+    const target = makeUser('Grace', 'member');
+
+    expect(setUserActive(t.db, actor(ownerId), target, false).is_active).toBe(false);
+    expect(setUserActive(t.db, actor(ownerId), target, true).is_active).toBe(true);
+
+    const types = t.db
+      .select()
+      .from(activity)
+      .all()
+      .map((r) => r.type);
+
+    // Not `member.removed`: the person is not removed and the row stays (§4.1).
+    expect(types).toEqual(['user.deactivated', 'user.reactivated']);
+  });
+
+  it('keeps the row, because history keeps its author (§4.1)', () => {
+    const target = makeUser('Grace', 'member');
+    setUserActive(t.db, actor(ownerId), target, false);
+
+    expect(t.db.select().from(users).where(eq(users.id, target)).get()).toBeDefined();
+  });
+
+  it('refuses a Member and a Viewer', () => {
+    const target = makeUser('Grace', 'member');
+
+    for (const role of ['member', 'viewer'] as const) {
+      expect(() => setUserActive(t.db, actor(makeUser(role, role)), target, false)).toThrow(
+        ApiError,
+      );
+    }
+  });
+
+  it('writes nothing when the state is already what was asked for', () => {
+    const target = makeUser('Grace', 'member');
+    setUserActive(t.db, actor(ownerId), target, true);
+
+    expect(t.db.select().from(activity).all()).toHaveLength(0);
   });
 });

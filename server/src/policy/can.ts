@@ -134,6 +134,20 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'user.deactivate':
       return isAdminUp;
 
+    // | View the organisation | ✓ | ✓ | ✓ | ✓ |
+    //
+    // Deliberately **not** folded into `member_list.read`, which was the obvious
+    // borrow and is wrong (LAI-222). "If you may see who is in the org you may
+    // see its name" is true of today's payload and is not a property of the row:
+    // §11.4.2's Organisation screen also carries the AI provider block, and
+    // whether an org has an LLM wired up is not implied by who its members are.
+    // A borrowed row would have handed the next field added to this response a
+    // grant nobody reviewed — D-037's shape, in a permission matrix.
+    //
+    // The provider block is gated field-level on `org.settings.edit` instead;
+    // see `services/orgs.ts`.
+    case 'org.read':
+
     // | View member list | ✓ | ✓ | ✓ | ✓ |
     case 'member_list.read':
       return true;
