@@ -78,6 +78,43 @@ export const ACTIVITY_TYPES = [
   'webhook.received',
   'meeting.applied',
   'unlisted.logged',
+  // ## Growing this list never rewrites what is already written
+  //
+  // `activity` is append-only **in both directions**. Rows written before a verb
+  // existed keep the verb they were written with, and a reader of old history
+  // needs `payload.action` to interpret them.
+  //
+  // **The instinct to backfill — so that a `type` filter returns complete
+  // history — is reasonable and wrong.** A partial history genuinely looks like
+  // a bug, which is exactly why the temptation is worth naming here. But
+  // rewriting rows to hide that the vocabulary was once wrong would break the
+  // one property this table exists to have, and an audit trail that edits its
+  // own past is not one. The honest cost of a late verb is that old rows keep
+  // the old one.
+  //
+  // LAI-113. Three features filed their audit trail under a verb that did not
+  // name them: sprints and the context document rode `project.updated`,
+  // promotion and dismissal rode `unlisted.logged`. An audit reader filtering on
+  // `type` — the obvious query, and what §4.13's indexes are for — could not see
+  // any of them.
+  'sprint.created',
+  'sprint.updated',
+  'sprint.deleted',
+  'sprint.tasks_changed',
+  'project.context_updated',
+  'unlisted.promoted',
+  'unlisted.dismissed',
+  // LAI-222. Deactivation is none of the `member.*` verbs: the user is not
+  // removed and the row stays. `user.` rather than `member.` because `member.*`
+  // is already written by both `invites.ts` and `projects.ts`, and these are
+  // org-level rather than project membership.
+  //
+  // Two verbs, not one with a direction in the payload — unlike
+  // `sprint.tasks_changed`, whose two directions answer the same reader
+  // question. "Who was locked out, and when" and "who was let back in" are
+  // different questions people actually ask separately.
+  'user.deactivated',
+  'user.reactivated',
 ] as const;
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 

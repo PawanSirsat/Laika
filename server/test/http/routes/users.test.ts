@@ -126,12 +126,17 @@ describe('read-only for now (AC2)', () => {
     }
   });
 
-  it('404s /users/:id, which §6.4 specifies and no task has built', async () => {
-    // Not a 405: no route is registered on that path at all, so there is no
-    // `Allow` set to report. "No such endpoint" is the accurate answer, and the
-    // distinction is worth pinning — I had claimed 405 here in a comment and the
-    // socket said otherwise.
-    for (const method of ['GET', 'PATCH', 'DELETE']) {
+  it('405s the unbuilt methods on /users/:id, now that PATCH is registered', async () => {
+    // **This changed with LAI-222.** It used to be `404` with no `Allow`, and
+    // that was correct: no route was registered on the path at all, so "no such
+    // endpoint" was the honest answer. `PATCH` now exists, so the path does too,
+    // and `405` with the methods that *are* built is the accurate answer for the
+    // ones that are not.
+    //
+    // Kept rather than deleted, because the distinction it pins — 404 for an
+    // unregistered path, 405 for an unbuilt method on a registered one — is the
+    // thing worth not losing (D-021).
+    for (const method of ['GET', 'DELETE']) {
       const res = await req('/api/v1/users/usr_someone', {
         method,
         // No body on GET — `fetch` refuses one, which is a Request-level rule and
@@ -139,9 +144,8 @@ describe('read-only for now (AC2)', () => {
         ...(method === 'GET' ? {} : { body: JSON.stringify({}) }),
       });
 
-      expect(res.status, method).toBe(404);
-      expect(res.headers.get('Allow')).toBeNull();
-      expect(((await res.json()) as { error: { code: string } }).error.code).toBe('not_found');
+      expect(res.status, method).toBe(405);
+      expect(res.headers.get('Allow'), method).toContain('PATCH');
     }
   });
 });
@@ -206,4 +210,75 @@ describe('paging and catch-up (AC3)', () => {
     expect((await req('/api/v1/users?updated_since=lately')).status).toBe(400);
     expect((await req('/api/v1/users?cursor=nonsense')).status).toBe(400);
   });
+});
+
+/**
+ * `PATCH /api/v1/users/:id` (§6.4, §3.1, LAI-222).
+ *
+ * The service owns the rules and drives each refusal; this is transport — that
+ * the route exists at all (it 404'd before LAI-222), that the body is strict,
+ * and that a refusal reaches the client as the right status.
+ */
+describe('PATCH /api/v1/users/:id', () => {
+  async function patch(id: string, body: unknown): Promise<Response> {
+    return req(`/api/v1/users/${id}`, { method: 'PATCH', body: JSON.stringify(body) });
+  }
+
+  it('is registered — it answered 404 before LAI-222', async () => {
+    const target = seedPerson('Grace Hopper');
+    const res = await patch(target, { org_role: 'admin' });
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(((await res.json()) as UserBody).org_role).toBe('admin');
+  });
+
+  it('deactivates and reactivates', async () => {
+    const target = seedPerson('Grace Hopper');
+
+    expect(((await (await patch(target, { is_active: false })).json()) as UserBody).is_active).toBe(
+      false,
+    );
+    expect(((await (await patch(target, { is_active: true })).json()) as UserBody).is_active).toBe(
+      true,
+    );
+  });
+
+  it('refuses an unknown key rather than ignoring it', async () => {
+    const target = seedPerson('Grace Hopper');
+
+    // §6.3 is strict everywhere. A key that is silently dropped is a caller
+    // believing they changed something they did not.
+    expect((await patch(target, { org_role: 'admin', is_admin: true })).status).toBe(422);
+  });
+
+  it('refuses a role that is not an org role', async () => {
+    const target = seedPerson('Grace Hopper');
+
+    expect((await patch(target, { org_role: 'lead' })).status).toBe(422);
+  });
+
+  it('refuses a patch that asks for nothing', async () => {
+    const target = seedPerson('Grace Hopper');
+
+    // `200` here would report a change that did not happen.
+    expect((await patch(target, {})).status).toBe(400);
+  });
+
+  it('404s on a user that does not exist', async () => {
+    expect((await patch('usr_nobody', { org_role: 'admin' })).status).toBe(404);
+  });
+
+  it('409s rather than 403s when the last Owner is the target', async () => {
+    // The request is well formed and the caller is permitted; the *state*
+    // forbids it. A `403` would say "you may not", and an Owner may.
+    const res = await patch(ownerId, { org_role: 'admin' });
+
+    expect(res.status).toBe(409);
+    expect(await res.text()).toMatch(/last active Owner/i);
+  });
+
+  // A Member's refusal is driven at the service, where signing a second person
+  // in is not needed to state the rule — `test/services/users.test.ts`,
+  // "refuses a Member and a Viewer outright". A route-level duplicate would
+  // assert the same `can()` call twice and cost an auth round trip to do it.
 });

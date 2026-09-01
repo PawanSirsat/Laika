@@ -388,3 +388,96 @@ describe('rebuilding the table does not renumber the SSE cursor (LAI-110)', () =
     ).toEqual(before);
   });
 });
+
+/**
+ * The vocabulary grew and the old rows stayed (§4.8, LAI-113).
+ *
+ * Three features used to file under verbs that did not name them: sprints and
+ * the context document rode `project.updated`, promotion and dismissal rode
+ * `unlisted.logged`. Seven verbs now name them.
+ *
+ * **These tests are about what did *not* change.** `activity` is append-only in
+ * both directions, so every row written before the rename keeps its old verb for
+ * ever, and anything reading history has to accept both. The instinct to backfill
+ * — so a `type` filter returns complete history — is reasonable and wrong, and
+ * these are the tests that fail if somebody acts on it.
+ */
+describe('old rows survive the vocabulary growing (LAI-113)', () => {
+  /** A row exactly as `services/sprints.ts` wrote it before LAI-113. */
+  function legacySprintRow(action: string, sprintId: string) {
+    return appendActivity(t.db, {
+      orgId: s.orgId,
+      projectId: s.projectId,
+      actorId: s.userId,
+      actorKind: 'user',
+      type: 'project.updated',
+      payload: { entity: 'sprint', action, sprint_id: sprintId, name: 'v0.4' },
+    });
+  }
+
+  it('keeps a pre-LAI-113 sprint row readable, and says which sprint', () => {
+    const row = legacySprintRow('deleted', 'spr_1');
+    const payload = readPayload(row) as Record<string, unknown>;
+
+    // `entity` + `action` are the *only* thing distinguishing this row, which is
+    // why LAI-113 kept writing them on the new rows too rather than dropping
+    // them as redundant. A reader cannot tell from `type` alone.
+    expect(payload.entity).toBe('sprint');
+    expect(payload.action).toBe('deleted');
+    expect(payload.sprint_id).toBe('spr_1');
+  });
+
+  it('is not migrated, renamed or hidden by anything the new code does', () => {
+    legacySprintRow('created', 'spr_1');
+
+    // Read back through the ordinary reader rather than a bespoke query: if a
+    // later change ever did rewrite history, this is where it would show.
+    const rows = listActivity(t.db, { orgId: s.orgId });
+
+    expect(rows.map((r) => r.type)).toContain('project.updated');
+    expect(rows.map((r) => r.type)).not.toContain('sprint.created');
+  });
+
+  it('lets both vocabularies coexist in one project’s history', () => {
+    legacySprintRow('created', 'spr_1');
+    appendActivity(t.db, {
+      orgId: s.orgId,
+      projectId: s.projectId,
+      actorId: s.userId,
+      actorKind: 'user',
+      type: 'sprint.deleted',
+      payload: { entity: 'sprint', action: 'deleted', sprint_id: 'spr_1', tasks_released: 3 },
+    });
+
+    const rows = listActivity(t.db, { orgId: s.orgId });
+    const forSprint = rows.filter(
+      (r) => (readPayload(r) as Record<string, unknown>).sprint_id === 'spr_1',
+    );
+
+    // Two rows, two verbs, one sprint. A reader filtering on `payload.sprint_id`
+    // sees the whole story; a reader filtering on `type` sees half — which is
+    // the honest cost of having had the vocabulary wrong.
+    expect(forSprint).toHaveLength(2);
+    expect(forSprint.map((r) => r.type).sort()).toEqual(['project.updated', 'sprint.deleted']);
+  });
+
+  it('finds a context edit written under either verb', () => {
+    // `latestFieldEdit` is the reader that pays the cost: it accepts
+    // `project.updated` **and** `project.context_updated`, because dropping the
+    // old one would silently lose every context edit made before the rename.
+    appendActivity(t.db, {
+      orgId: s.orgId,
+      projectId: s.projectId,
+      actorId: s.userId,
+      actorKind: 'user',
+      type: 'project.updated',
+      payload: { changed: ['context_md'], length: 4, previous_length: 0 },
+      now: 1_000,
+    });
+
+    const found = activityModule.latestFieldEdit(t.db, s.projectId, 'context_md');
+
+    expect(found?.createdAt).toBe(1_000);
+    expect(found?.actorId).toBe(s.userId);
+  });
+});

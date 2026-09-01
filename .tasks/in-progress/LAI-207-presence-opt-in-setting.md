@@ -2,11 +2,12 @@
 id: LAI-207
 title: An org setting for presence tracking, and restore the first-boot toggle
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-106
-status: backlog
+status: in-progress
+started: 2026-09-01T22:20:00Z
 ---
 
 ## Goal

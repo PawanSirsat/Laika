@@ -1,10 +1,17 @@
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
-import { listUsers, type UserView } from '../../services/users.ts';
+import {
+  listUsers,
+  ORG_ROLES,
+  setOrgRole,
+  setUserActive,
+  type UserView,
+} from '../../services/users.ts';
 import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
+import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
  * `GET /api/v1/users` (SPEC §6.4). Transport only — §3.1's cell and §4.1's
@@ -23,6 +30,11 @@ import { parseUpdatedSince } from '../updated-since.ts';
  *    at all. "No such endpoint" is the honest answer for a path §6.4 specifies
  *    and no task has built.
  */
+
+const UserPatchBody = strictObject({
+  org_role: z.enum(ORG_ROLES).optional(),
+  is_active: z.boolean().optional(),
+});
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
@@ -62,6 +74,38 @@ export function userRoutes(options: { db: Db }): Hono<AppEnv> {
     }));
 
     return c.json(page);
+  });
+
+  /**
+   * `PATCH /api/v1/users/:id` — org role and active state (§6.4, §3.1, LAI-222).
+   *
+   * §3.1 has granted *"Invite users / change org roles"* and *"Deactivate user"*
+   * since the matrix was written, and `users` has carried `org_role` and
+   * `is_active` since LAI-003 — but no route wrote either, so both permissions
+   * were real and unreachable.
+   *
+   * **Two fields, two `can()` calls, applied per field.** They are different
+   * §3.1 rows: `user.set_role` carries the *"(not to Owner)"* caveat for an
+   * Admin, `user.deactivate` does not. One combined check would grade the weaker
+   * request by the stronger rule or the reverse, and both are wrong.
+   *
+   * At least one field is required: `PATCH {}` is a request that asks for
+   * nothing, and answering `200` to it would report a change that did not
+   * happen.
+   */
+  app.patch('/:id', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(UserPatchBody, await c.req.json().catch(() => null));
+    const id = c.req.param('id');
+
+    if (body.org_role === undefined && body.is_active === undefined) {
+      throw ApiError.badRequest('Give at least one of org_role or is_active', {});
+    }
+
+    let view = body.org_role === undefined ? undefined : setOrgRole(db, actor, id, body.org_role);
+    if (body.is_active !== undefined) view = setUserActive(db, actor, id, body.is_active);
+
+    return c.json(view!);
   });
 
   return app;

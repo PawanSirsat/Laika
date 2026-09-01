@@ -217,9 +217,19 @@ describe('the cases LAI-004 calls out by name', () => {
       const joining = action === 'project.join_public';
       const ownUnlisted = action === 'unlisted.log_own';
       const ownHeartbeat = action === 'heartbeat.send_own';
+      // `task.watch` is the fifth, and the one that shows what this test is
+      // really about (D-047, LAI-143). It is **not** a read action — that is
+      // deliberate and is what refuses a `read_only` token — but the *role*
+      // allows it, because anyone who may read a task may choose to hear about
+      // it. The role layer and the scope layer answer different questions, and
+      // §3.3 rule 4 exists so they can differ.
+      //
+      // So the rule this test states is not "a Viewer performs no writes" — it
+      // is "a Viewer writes nothing that is not about themselves".
+      const ownWatch = action === 'task.watch';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
-        selfToken || joining || ownUnlisted || ownHeartbeat,
+        selfToken || joining || ownUnlisted || ownHeartbeat || ownWatch,
       );
     }
   });

@@ -62,7 +62,15 @@ function requireTaskContext(db: Db, taskId: string) {
 /** Set `watching` for this actor on this task, inserting or updating the one row. */
 function setWatching(db: Db, actor: ResolvedActor, taskId: string, watching: 0 | 1, now: number) {
   const { project } = requireTaskContext(db, taskId);
-  assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
+
+  // `task.watch`, not `project.read` (D-047, LAI-143). Every project role holds
+  // it — anyone who may read a task may choose to hear about it — but it is
+  // **not** in `READ_ACTIONS`, so a `read_only` token is refused. The role layer
+  // answers who may; the scope layer answers which credential may. A watch is
+  // visible to other people through `GET /tasks/:id/watchers`, so it is shared
+  // state, and a credential that cannot change anything must not add its holder
+  // to a list somebody else sees.
+  assertCan(withProject(actor, project.id), 'task.watch', { projectId: project.id });
 
   const existing = db
     .select({ id: taskWatchers.id })
@@ -90,12 +98,7 @@ function setWatching(db: Db, actor: ResolvedActor, taskId: string, watching: 0 |
     .run();
 }
 
-/**
- * Watch a task.
- *
- * `project.read` rather than a new §3 action: you may watch what you may read,
- * and watching grants nothing a reader does not already have.
- */
+/** Watch a task. Graded by `task.watch` — see `setWatching`. */
 export function watchTask(
   db: Db,
   actor: ResolvedActor,

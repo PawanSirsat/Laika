@@ -1,9 +1,20 @@
 import { and, asc, eq, gt, gte, or, type SQL } from 'drizzle-orm';
-import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { activityActor, type ResolvedActor } from '../auth/resolve-actor.ts';
+import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import { type OrgRole } from '../db/enums.ts';
+import { requireOrgId } from '../db/orgs.ts';
 import { users } from '../db/schema.ts';
+import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+
+/**
+ * Re-exported so `http/routes/users.ts` can validate a role without importing
+ * `db/` — routes are transport and reach data through `services/`
+ * (CONVENTIONS §2). `services/tasks.ts` re-exports the task vocabularies for the
+ * same reason.
+ */
+export { ORG_ROLES } from '../db/enums.ts';
 
 /**
  * The organisation's people (SPEC §6.4 `GET /api/v1/users`, §4.1, §3.1).
@@ -143,4 +154,141 @@ export function listUsers(db: Db, actor: ResolvedActor, options: ListUsersOption
     .limit(options.limit + 1)
     .all()
     .map(toView);
+}
+
+/**
+ * Org role changes and deactivation (SPEC §3.1, §4.1, LAI-222).
+ *
+ * §3.1 grants Owner and Admin *"Invite users / change org roles"* and
+ * *"Deactivate user"*, and `users` has carried `org_role` and `is_active` since
+ * LAI-003 — but until LAI-222 **no route wrote either**, so the permissions were
+ * real and unreachable.
+ *
+ * ## One invariant, not four rules
+ *
+ * An organisation with no active Owner is unrecoverable: there is no route back,
+ * no console, and no second org to escalate from. Four of this task's criteria
+ * describe that trap from different angles — demoting the last Owner,
+ * deactivating them, and doing either to yourself — and they are all the same
+ * sentence: **at least one active Owner must remain.**
+ *
+ * Both write paths check exactly that, so self-versus-other never enters into
+ * it. Two rules that must agree eventually disagree; one rule cannot.
+ *
+ * **An Admin demoting themselves is allowed**, and that is not an oversight.
+ * It is recoverable — any Owner can promote them back — where losing the last
+ * Owner is not. Only unrecoverable states are guarded.
+ */
+
+/** How many people can still administer the org at Owner level. */
+function activeOwnerCount(db: Db, excluding?: string): number {
+  return db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.orgRole, 'owner'), eq(users.isActive, 1)))
+    .all()
+    .filter((row) => row.id !== excluding).length;
+}
+
+/**
+ * Refuse anything that would leave the org with no active Owner.
+ *
+ * `409`, matching how a project refuses to lose its last lead: the request is
+ * well-formed and the state forbids it, which is a conflict rather than a
+ * permission problem. A `403` would say "you may not", and an Owner may.
+ */
+function assertAnOwnerRemains(db: Db, target: UserRow, stillOwner: boolean): void {
+  if (target.orgRole !== 'owner' || stillOwner) return;
+  if (activeOwnerCount(db, target.id) > 0) return;
+
+  throw new ApiError(
+    'conflict',
+    'This is the last active Owner. Promote somebody else to Owner first — an organisation with no Owner cannot be recovered.',
+    { user_id: target.id },
+  );
+}
+
+function requireUser(db: Db, userId: string): UserRow {
+  const row = db.select().from(users).where(eq(users.id, userId)).get();
+  if (row === undefined) throw ApiError.notFound(`No user with id "${userId}"`);
+  return row;
+}
+
+export function setOrgRole(
+  db: Db,
+  actor: ResolvedActor,
+  userId: string,
+  role: OrgRole,
+  now: number = Date.now(),
+): UserView {
+  const target = requireUser(db, userId);
+
+  // `targetOrgRole` is what `can()` compares for §3.1's "(not to Owner)" caveat:
+  // an Admin may set any role except Owner. Passing it is not optional — without
+  // it the caveat cannot be evaluated and an Admin promotes themselves.
+  assertCan(actor, 'user.set_role', { targetOrgRole: role });
+
+  assertAnOwnerRemains(db, target, role === 'owner');
+
+  if (target.orgRole === role) return toView(target);
+
+  db.update(users)
+    .set({ orgRole: role, updatedAt: new Date(now) })
+    .where(eq(users.id, userId))
+    .run();
+
+  appendActivity(db, {
+    orgId: requireOrgId(db),
+    // Org-scoped: an org role belongs to no project (§4.8, D-022).
+    projectId: null,
+    ...activityActor(actor),
+    type: 'member.role_changed',
+    payload: { scope: 'org', user_id: userId, from: target.orgRole, to: role },
+    now,
+  });
+
+  return toView(requireUser(db, userId));
+}
+
+/**
+ * Deactivate or reactivate a person (§3.1, §4.1, LAI-222).
+ *
+ * The row is **kept** — §4.1 keeps it so history keeps its author, and `can()`
+ * already refuses every action to an inactive user, so deactivation is a lock
+ * rather than a delete. That is why neither `member.removed` nor a hard delete
+ * describes it, and why §4.8 gained `user.deactivated` / `user.reactivated`.
+ */
+export function setUserActive(
+  db: Db,
+  actor: ResolvedActor,
+  userId: string,
+  active: boolean,
+  now: number = Date.now(),
+): UserView {
+  const target = requireUser(db, userId);
+
+  assertCan(actor, 'user.deactivate');
+
+  // Reactivating can never empty the org of Owners, so the invariant only bites
+  // one way — but it is the same call, because "still an active Owner after
+  // this" is exactly what it asks.
+  assertAnOwnerRemains(db, target, active);
+
+  if ((target.isActive === 1) === active) return toView(target);
+
+  db.update(users)
+    .set({ isActive: active ? 1 : 0, updatedAt: new Date(now) })
+    .where(eq(users.id, userId))
+    .run();
+
+  appendActivity(db, {
+    orgId: requireOrgId(db),
+    projectId: null,
+    ...activityActor(actor),
+    type: active ? 'user.reactivated' : 'user.deactivated',
+    payload: { user_id: userId, org_role: target.orgRole },
+    now,
+  });
+
+  return toView(requireUser(db, userId));
 }

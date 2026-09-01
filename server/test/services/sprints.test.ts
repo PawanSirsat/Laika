@@ -84,14 +84,19 @@ function task(title = 'Do the thing', slug = 'laika'): string {
 
 /** Activity rows for a sprint, newest last. */
 function sprintActivity(sprintId: string): { action: string; payload: Record<string, unknown> }[] {
-  return t.db
-    .select()
-    .from(activity)
-    .where(eq(activity.type, 'project.updated'))
-    .all()
-    .map((row) => readPayload(row) as Record<string, unknown>)
-    .filter((p) => p.entity === 'sprint' && p.sprint_id === sprintId)
-    .map((payload) => ({ action: String(payload.action), payload }));
+  return (
+    t.db
+      .select()
+      .from(activity)
+      .all()
+      // Every `sprint.*` verb, not one of them: LAI-113 split what used to be a
+      // single `project.updated` into three, and a helper pinned to one member of
+      // the family silently stops seeing the others.
+      .filter((row) => row.type.startsWith('sprint.'))
+      .map((row) => readPayload(row) as Record<string, unknown>)
+      .filter((p) => p.entity === 'sprint' && p.sprint_id === sprintId)
+      .map((payload) => ({ action: String(payload.action), payload }))
+  );
 }
 
 function expectApiError(fn: () => unknown, code: string, message?: RegExp): ApiError {
@@ -456,7 +461,7 @@ describe('assigning tasks (AC2)', () => {
     expect(t.db.select().from(tasks).where(eq(tasks.id, mine)).get()?.sprintId).toBeNull();
   });
 
-  it('writes one task.updated per task moved, and none for a task already there', () => {
+  it('writes one sprint.tasks_changed per task moved, and none for a task already there', () => {
     const s = sprint({ name: 'Sprint 1' });
     const a = task('A');
 
@@ -466,7 +471,7 @@ describe('assigning tasks (AC2)', () => {
     const moves = t.db
       .select()
       .from(activity)
-      .where(and(eq(activity.type, 'task.updated'), eq(activity.taskId, a)))
+      .where(and(eq(activity.type, 'sprint.tasks_changed'), eq(activity.taskId, a)))
       .all()
       .map((row) => readPayload(row));
 

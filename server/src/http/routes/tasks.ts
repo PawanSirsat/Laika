@@ -17,6 +17,7 @@ import { type AppEnv } from '../context.ts';
 import { buildPage, parsePageQuery, type Page } from '../pagination.ts';
 import { parseUpdatedSince } from '../updated-since.ts';
 import { MAX_TAGS_PER_TASK } from '../../services/tags.ts';
+import { unwatchTask, watchersOfTask, watchTask } from '../../services/watchers.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -173,6 +174,32 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       201,
     );
   });
+
+  /**
+   * Watch and unwatch (§6.4, LAI-143).
+   *
+   * `PUT`/`DELETE` rather than `POST`/`POST` because watching is **idempotent
+   * state, not an event**: pressing Watch twice leaves one row, and `PUT` says
+   * so. It also makes the `read_only` refusal obvious from the method alone —
+   * §6.2 permits "every GET the user's role allows and nothing else".
+   *
+   * `204`, not the task: nothing about the task changed, and returning it would
+   * invite a client to diff a body that is identical either way.
+   */
+  app.put('/:id/watch', (c) => {
+    watchTask(db, requireActor(c), c.req.param('id'));
+    return c.body(null, 204);
+  });
+
+  app.delete('/:id/watch', (c) => {
+    unwatchTask(db, requireActor(c), c.req.param('id'));
+    return c.body(null, 204);
+  });
+
+  /** Who is watching — implicit and explicit, filtered to who can still read it. */
+  app.get('/:id/watchers', (c) =>
+    c.json({ watchers: watchersOfTask(db, requireActor(c), c.req.param('id')) }),
+  );
 
   app.delete('/:id/dependencies/:depId', (c) =>
     c.json(removeTaskDependency(db, requireActor(c), c.req.param('id'), c.req.param('depId'))),

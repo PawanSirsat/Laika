@@ -37,6 +37,12 @@ const ORG_MATRIX: OrgRow[] = [
   ['user.invite', true, true, false, false],
   // | Deactivate user | ✓ | ✓ | — | — |
   ['user.deactivate', true, true, false, false],
+  // | View the organisation | ✓ | ✓ | ✓ | ✓ |
+  // Its own row rather than folded into `member_list.read` (LAI-222): the
+  // response also carries the AI provider block, which is gated field-level on
+  // `org.settings.edit`, and a borrowed row would have handed the next field
+  // added to it a grant nobody reviewed.
+  ['org.read', true, true, true, true],
   // | View member list | ✓ | ✓ | ✓ | ✓ |
   ['member_list.read', true, true, true, true],
   // | Generate own tokens | ✓ | ✓ | ✓ | ✓ (read_only forced) |
@@ -121,6 +127,10 @@ const PROJECT_MATRIX: ProjectRow[] = [
   ['sprint.manage', true, false, false],
   // | Assign tasks into or out of a sprint | ✓ | ✓ | — |
   ['task.assign_sprint', true, true, false],
+  // | Watch / unwatch a task | ✓ | ✓ | ✓ |
+  // Every role, including viewer — and **not** in `READ_ACTIONS`, which is what
+  // refuses a `read_only` token (D-047). See `can.test.ts` for the pair.
+  ['task.watch', true, true, true],
   // | Create / edit / move any task | ✓ | ✓ | — |
   ['task.write', true, true, false],
   // | Claim a task (start_working) | ✓ | ✓ | — |

@@ -1,9 +1,10 @@
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { loadActor } from '../auth/resolve-actor.ts';
+import { loadActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import { commentMentions, comments, users } from '../db/schema.ts';
-import { can } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
+import { requireProjectBySlug } from './projects.ts';
 
 /**
  * `@mentions` in a comment body — parsed and resolved **server-side** (SPEC
@@ -78,6 +79,57 @@ function localPart(email: string): string {
 }
 
 /**
+ * Can this person be mentioned on this project — on **their own** authority?
+ *
+ * The single definition of "mentionable", used by `resolveMentions` at write
+ * time and by `mentionableUsers` for the picker (LAI-143). **Two implementations
+ * of one predicate is one implementation and one bug**, and the bug is silent: a
+ * picker built on a wider set offers a name, the mention resolves to nobody, and
+ * nothing happens at all — no error, no notification, no trace. That reads as
+ * the mention feature being broken.
+ *
+ * Their authority, not the author's, and no token context — the question is
+ * whether *they* may see this project. `can()` also refuses a deactivated user
+ * (§4.1), so that rule is not restated here.
+ */
+export function canBeMentioned(db: Db, userId: string, projectId: string): boolean {
+  const person = loadActor(db, userId);
+  if (person === null) return false;
+
+  const membership = person.memberships.find((m) => m.projectId === projectId);
+
+  return can({ ...person, projectRole: membership?.role ?? null }, 'project.read', { projectId });
+}
+
+/**
+ * Everyone who may be mentioned on this project, for a picker.
+ *
+ * **Not `GET /projects/:slug/members`**, which is a subset: org Owners and
+ * Admins hold implicit `lead` everywhere and have **no membership row** (D-006),
+ * so they are mentionable and absent from it. Sorted by name so a picker does
+ * not have to.
+ */
+export function mentionableUsers(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+): { id: string; name: string }[] {
+  const project = requireProjectBySlug(db, slug);
+  // The *caller* must be able to read the project to ask who is mentionable in
+  // it; `canBeMentioned` then answers for each candidate on their own authority.
+  assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
+
+  const projectId = project.id;
+
+  return db
+    .select({ id: users.id, name: users.name })
+    .from(users)
+    .all()
+    .filter((row) => canBeMentioned(db, row.id, projectId))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
  * Handles → user ids, dropping any handle that is ambiguous or that names
  * somebody who cannot read the project.
  *
@@ -107,18 +159,7 @@ export function resolveMentions(db: Db, projectId: string, handles: readonly str
     if (candidates.length !== 1) continue;
 
     const userId = candidates[0]!;
-    const mentioned = loadActor(db, userId);
-    if (mentioned === null) continue;
-
-    // The mentioned person's own authority, not the author's, and no token
-    // context — the question is whether *they* may see this project at all.
-    // `can()` also refuses a deactivated user (§4.1), so that rule is not
-    // restated here.
-    const membership = mentioned.memberships.find((m) => m.projectId === projectId);
-    if (
-      !can({ ...mentioned, projectRole: membership?.role ?? null }, 'project.read', { projectId })
-    )
-      continue;
+    if (!canBeMentioned(db, userId, projectId)) continue;
 
     resolved.push(userId);
   }

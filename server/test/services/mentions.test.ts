@@ -4,9 +4,11 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { commentMentions, orgs, users } from '../../src/db/schema.ts';
+import { ApiError } from '../../src/errors.ts';
 import {
   mentionedUserIds,
   parseMentionHandles,
+  mentionableUsers,
   resolveMentions,
 } from '../../src/services/mentions.ts';
 import { addComment, deleteComment, editComment } from '../../src/services/comments.ts';
@@ -202,5 +204,73 @@ describe('rows follow the body', () => {
   it('returns an entry for every task asked about', () => {
     expect(mentionedUserIds(t.db, [taskId]).has(taskId)).toBe(true);
     expect(mentionedUserIds(t.db, []).size).toBe(0);
+  });
+});
+
+/**
+ * The picker and the parser are one predicate (§4.19, D-047, LAI-143).
+ *
+ * Two implementations of "mentionable" is one implementation and one bug, and
+ * the bug is silent: a picker on a wider set offers a name, the mention resolves
+ * to nobody, nothing is written, and it reads as the feature being broken.
+ */
+describe('who is mentionable', () => {
+  function mentionable(userId: string): string[] {
+    return mentionableUsers(t.db, actor(userId), 'laika').map((u) => u.id);
+  }
+
+  it('includes an org Owner who is not a member of the project', () => {
+    // The case `/members` gets wrong and the reason this endpoint exists: org
+    // Owners and Admins hold implicit `lead` everywhere and have **no
+    // membership row** (D-006), so they are mentionable and absent from it.
+    const adaId = member('ada@example.test');
+
+    expect(mentionable(adaId)).toContain(adminId);
+  });
+
+  it('excludes somebody in the org who is not in the project', () => {
+    const adaId = member('ada@example.test');
+    const outsiderId = makeUser('outsider@example.test');
+
+    expect(mentionable(adaId)).not.toContain(outsiderId);
+  });
+
+  it('excludes a deactivated member', () => {
+    const adaId = member('ada@example.test');
+    const graceId = member('grace@example.test');
+    t.db.update(users).set({ isActive: 0 }).where(eq(users.id, graceId)).run();
+
+    expect(mentionable(adaId)).not.toContain(graceId);
+  });
+
+  it('agrees with resolveMentions in both directions', () => {
+    // The criterion: a name it returns always resolves, and a name it omits
+    // never does. One direction alone is satisfiable by a set that is too wide
+    // or too narrow respectively.
+    member('ada@example.test');
+    member('grace@example.test');
+    makeUser('outsider@example.test');
+    const deactivated = member('dormant@example.test');
+    t.db.update(users).set({ isActive: 0 }).where(eq(users.id, deactivated)).run();
+
+    const asker = member('asker@example.test');
+    const offered = new Set(mentionable(asker));
+
+    const everyone = t.db.select({ id: users.id, email: users.email }).from(users).all();
+
+    for (const person of everyone) {
+      const handle = person.email.split('@')[0]!;
+      const resolves = resolveMentions(t.db, projectId, [handle]).includes(person.id);
+
+      expect(resolves, `${handle}: offered=${String(offered.has(person.id))}`).toBe(
+        offered.has(person.id),
+      );
+    }
+  });
+
+  it('refuses a caller who cannot read the project', () => {
+    const outsiderId = makeUser('outsider@example.test');
+
+    expect(() => mentionableUsers(t.db, actor(outsiderId), 'laika')).toThrow(ApiError);
   });
 });

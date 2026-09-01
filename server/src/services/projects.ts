@@ -624,7 +624,17 @@ export function updateProjectContext(
     // growing it is a change to `docs/SPEC.md`, which is not this session's to
     // make (`schema-spec-drift.test.ts` enforces the pair in both directions).
     // Same reason `services/sprints.ts` rides under this verb.
-    type: 'project.updated',
+    // Not `project.updated` (LAI-113): the context document is the project's
+    // shared brief, and an edit to it is not a settings change. It was
+    // distinguishable only by `changed: ['context_md']`, which a `type` filter
+    // never sees.
+    type: 'project.context_updated',
+    // **The `entity` / `action` payload stays, and that is not redundancy.**
+    // `activity` is append-only in both directions, so every row written before
+    // LAI-113 carries the old verb and is distinguishable *only* by those two
+    // fields. Migrating them is not an option and not a shortcut declined — it
+    // is the property the table exists to have. New rows carry both, which costs
+    // a few bytes and means one payload shape across the whole table.
     // The lengths are what make this a *history* rather than a bare marker:
     // §7.3 wants a reviewer to see what changed between two agent sessions, and
     // "grew from 4k to 40k" is the version of that which costs no extra storage.

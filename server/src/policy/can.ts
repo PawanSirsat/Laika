@@ -134,6 +134,20 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'user.deactivate':
       return isAdminUp;
 
+    // | View the organisation | ✓ | ✓ | ✓ | ✓ |
+    //
+    // Deliberately **not** folded into `member_list.read`, which was the obvious
+    // borrow and is wrong (LAI-222). "If you may see who is in the org you may
+    // see its name" is true of today's payload and is not a property of the row:
+    // §11.4.2's Organisation screen also carries the AI provider block, and
+    // whether an org has an LLM wired up is not implied by who its members are.
+    // A borrowed row would have handed the next field added to this response a
+    // grant nobody reviewed — D-037's shape, in a permission matrix.
+    //
+    // The provider block is gated field-level on `org.settings.edit` instead;
+    // see `services/orgs.ts`.
+    case 'org.read':
+
     // | View member list | ✓ | ✓ | ✓ | ✓ |
     case 'member_list.read':
       return true;
@@ -226,6 +240,25 @@ function canProjectAction(
     // | Assign tasks into or out of a sprint | ✓ | ✓ | — |
     case 'task.assign_sprint':
       return isMemberUp;
+
+    // | Watch / unwatch a task | ✓ | ✓ | ✓ |
+    //
+    // Every project role, including `viewer`: anyone who may read a task may
+    // choose to hear about it, and watching grants nothing a reader does not
+    // already have.
+    //
+    // **Its own action, and deliberately absent from `READ_ACTIONS`** (D-047).
+    // Grading it as `project.read` would conflate *who may* with *which
+    // credential may* — §3.3 rule 4 exists so those can differ. §6.2 says a
+    // `read_only` token permits "every GET the user's role allows and nothing
+    // else", and `PUT /watch` is not a GET.
+    //
+    // The argument that a subscription is private to its holder is defeated by
+    // `GET /tasks/:id/watchers`: **a watch is readable by other people, so it is
+    // shared state**, and a credential that cannot change anything must not add
+    // its holder to a list somebody else sees.
+    case 'task.watch':
+      return true;
 
     // | Create / edit / move any task | ✓ | ✓ | — |
     case 'task.write':

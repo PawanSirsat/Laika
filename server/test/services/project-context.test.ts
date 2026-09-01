@@ -199,7 +199,7 @@ describe('every edit has a history (§7.3)', () => {
       .select()
       .from(activity)
       .all()
-      .filter((r) => r.type === 'project.updated');
+      .filter((r) => r.type === 'project.context_updated');
 
     expect(rows).toHaveLength(2);
   });
@@ -212,7 +212,7 @@ describe('every edit has a history (§7.3)', () => {
       .select()
       .from(activity)
       .all()
-      .filter((r) => r.type === 'project.updated')
+      .filter((r) => r.type === 'project.context_updated')
       .map((r) => readPayload(r));
 
     expect(payloads[0]).toEqual({ changed: ['context_md'], length: 4, previous_length: 0 });

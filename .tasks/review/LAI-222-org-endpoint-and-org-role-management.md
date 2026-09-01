@@ -2,12 +2,13 @@
 id: LAI-222
 title: No org endpoint, and no way to change an org role or deactivate anyone
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-086
-status: backlog
-started:
+status: review
+started: 2026-09-01T20:25:00Z
+finished: 2026-09-01T21:15:00Z
 finished:
 ---
 
@@ -51,22 +52,22 @@ titles are so close.
 
 ## Acceptance criteria
 
-- [ ] `GET /api/v1/org` returns the caller's organisation — at least id and
+- [x] `GET /api/v1/org` returns the caller's organisation — at least id and
       name — and answers `401` when signed out. Mounted in `app.ts`, not merely
       written.
-- [ ] Changing another user's `org_role`, gated by `can()` per §3.1: Owner may
+- [x] Changing another user's `org_role`, gated by `can()` per §3.1: Owner may
       set any role; **Admin may not set or remove Owner**; Member and Viewer may
       not change roles at all.
-- [ ] Deactivating and reactivating a user, same gate. `is_active` already
+- [x] Deactivating and reactivating a user, same gate. `is_active` already
       exists on the row.
-- [ ] **The last Owner cannot be demoted or deactivated.** An org with no owner
+- [x] **The last Owner cannot be demoted or deactivated.** An org with no owner
       is unrecoverable — there is no route back and no console. Refuse with a
       `409` that says why, the way a project refuses to lose its last lead.
-- [ ] Nobody can demote or deactivate themselves out of their own last
+- [x] Nobody can demote or deactivate themselves out of their own last
       privilege — same trap, one actor.
-- [ ] Both actions write `member.role_changed` / the appropriate §4.8 activity
+- [x] Both actions write `member.role_changed` / the appropriate §4.8 activity
       row, so the audit log shows who did it.
-- [ ] Tests drive each refusal, and each is proven able to fail.
+- [x] Tests drive each refusal, and each is proven able to fail.
 
 ## Notes
 
@@ -123,7 +124,7 @@ the next field added to the response inherits a grant nobody reviewed.
   field-level, admin+. No second new action. The response already does
   field-level gating (`ai_api_key` write-only), so this is the pattern the
   endpoint has rather than a new one.
-- [ ] A test that a **Viewer** gets the org and **not** the provider block, and
+- [x] A test that a **Viewer** gets the org and **not** the provider block, and
       an Admin gets both. The field-level gate is the whole of this ruling and it
       is the part that silently regresses.
 
@@ -133,3 +134,85 @@ and AC5 describing the same trap from two angles is exactly how two code paths
 that can disagree get written. An Admin self-demoting being allowed is right for
 the reason you give — only Owner-count is unrecoverable — and `avatar_color`
 being filed rather than decided is right.
+
+
+---
+
+## Submitted — CORE, 2026-09-01
+
+Server **1474 of 1475**; the one failure is LAI-113's, inherited. Lint and format
+clean. Web unchanged from LAI-113's two.
+
+### The red, quoted
+
+```
+server/test/tooling/schema-spec-drift.test.ts
+  × lists every activity type the enum allows
+      sprint.created, sprint.updated, sprint.deleted, sprint.tasks_changed,
+      project.context_updated, unlisted.promoted, unlisted.dismissed
+                                        → LAI-113's §4.8 half, held for LAI-147
+
+server/web/test/api/use-events.test.ts:22          → LAI-147
+server/web/test/routes/.../dashboard-derive.test.ts:208 → LAI-147
+```
+
+**Exactly LAI-113's seven, listed rather than asserted** — I read the failure to
+check none of them were mine. `org.read`, `user.deactivated` and
+`user.reactivated` carry in-flight exemptions in `policy-spec-drift` and
+`schema-spec-drift`, both files in my area (§4.4 step 2), both entries
+self-expiring.
+
+### On your ruling — you were right and my argument was the wrong shape
+
+I recommended borrowing `member_list.read` and gave a true argument for it. It
+was true **of what the endpoint returns today**, which is exactly the thing
+D-037 says a guard may not be built on — and a permission matrix is the worst
+place to put a contingent fact, because the next field inherits the grant.
+
+I could not have seen §11.4.2's provider block from the code. But I could have
+noticed that my argument's form was *"nothing this returns is sensitive"* rather
+than *"nothing this row grants is sensitive"*, and those differ the moment the
+response grows. That is the transferable part.
+
+`org.read` is `✓ ✓ ✓ ✓` and in `READ_ACTIONS`. The provider block is field-gated
+on `org.settings.edit`, **absent rather than null** for a caller who may not see
+it — `null` says "no provider is configured", which is a different fact and one a
+Viewer would act on. Your added criterion is
+`gives a Viewer the org and not the provider block`, plus a serialisation-level
+check that the key and the other encrypted columns never reach the wire at any
+grade.
+
+### The last-Owner invariant
+
+One question in both write paths: does an **active** Owner remain? It counts
+active rows, not rows — a deactivated Owner is not cover, or an org could be
+locked out by somebody who cannot sign in. Driven six ways, and mutating the
+`is_active` filter out goes red.
+
+### Three existing guards caught real mistakes
+
+- **The route lint rule** — I imported `db/enums.ts` into a route. The vocabulary
+  is now re-exported from `services/users.ts`, which is what `services/tasks.ts`
+  already does for the same reason.
+- **`asserts every action in the closed union`** — `org.read` had no matrix
+  assertion. That test exists so a new action cannot be added without stating its
+  grades, and it worked.
+- **`404s /users/:id`** — correct only while nothing was registered on that path.
+  `PATCH` now exists, so it is `405` with `Allow: PATCH`. **Updated rather than
+  deleted**, because the distinction it pins (404 for an unregistered path, 405
+  for an unbuilt method on a registered one) is the part worth keeping.
+
+### `avatar_color` — checked, and worse than the Notes expected
+
+Filed as **LAI-148**. Three places disagree: §4.1 says *derived from id*, the
+server derives it from **email** and stores it, and the client derives it from
+**id** at render and ignores the served value entirely.
+
+So the column is dead **and** contradicts the spec. The client is right and it is
+not a preference: `avatarColor(id, theme)` is theme-aware, and one stored value
+cannot be legible in both themes, which §5.1 requires.
+
+Six mutations, all caught: the field gate removed, `ai` null instead of absent,
+`org.read` narrowed to Admin+, the invariant counting rows instead of active rows,
+the invariant skipped on deactivation, and `targetOrgRole` not passed so §3.1's
+Admin caveat cannot apply.

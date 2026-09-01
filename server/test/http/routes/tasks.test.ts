@@ -1,4 +1,6 @@
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { users } from '../../../src/db/schema.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 let h: AuthHarness;
@@ -11,6 +13,11 @@ async function req(path: string, init: RequestInit = {}): Promise<Response> {
     ...init,
     headers: jsonHeaders({ Cookie: cookie, ...((init.headers as Record<string, string>) ?? {}) }),
   });
+}
+
+/** The Owner's id, read from the row rather than threaded through the harness. */
+function ownerUserId(): string {
+  return h.db.select().from(users).where(eq(users.email, 'ada@example.test')).get()?.id ?? '';
 }
 
 async function post(path: string, body: unknown): Promise<Response> {
@@ -269,5 +276,116 @@ describe('acceptance criteria on the wire', () => {
     });
 
     expect(res.status).toBe(422);
+  });
+});
+
+/**
+ * Watch and unwatch (§6.4, D-047, LAI-143).
+ *
+ * The service owns the watcher set and its rules. What is left here is transport
+ * and the **scope layer** — the half D-047 turns on.
+ */
+describe('watching a task', () => {
+  async function mintToken(scope: 'full' | 'read_only'): Promise<string> {
+    const res = await h.app.request('/api/v1/tokens', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({ name: `t-${scope}`, scope }),
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    return ((await res.json()) as { secret: string }).secret;
+  }
+
+  async function asToken(secret: string, path: string, method = 'GET'): Promise<Response> {
+    return h.app.request(path, {
+      method,
+      headers: jsonHeaders({ Authorization: `Bearer ${secret}` }),
+    });
+  }
+
+  it('watches and unwatches with 204, and reports the watcher', async () => {
+    const task = (await newTask()).id;
+
+    expect((await req(`/api/v1/tasks/${task}/watch`, { method: 'PUT' })).status).toBe(204);
+
+    const watchers = (await (await req(`/api/v1/tasks/${task}/watchers`)).json()) as {
+      watchers: string[];
+    };
+    expect(watchers.watchers).toContain(ownerUserId());
+
+    expect((await req(`/api/v1/tasks/${task}/watch`, { method: 'DELETE' })).status).toBe(204);
+    const after = (await (await req(`/api/v1/tasks/${task}/watchers`)).json()) as {
+      watchers: string[];
+    };
+    expect(after.watchers).not.toContain(ownerUserId());
+  });
+
+  it('refuses a read_only token the write, and still allows it the read', async () => {
+    const task = (await newTask()).id;
+    const readOnly = await mintToken('read_only');
+
+    // **Both halves, and the second is what makes the first mean anything.**
+    // The refusal has to come from the **scope** layer: `task.watch` is granted
+    // to every project role, so a role-layer denial would be an accident. The
+    // token can still read the watcher list, so the credential is the only
+    // difference between the two calls.
+    expect((await asToken(readOnly, `/api/v1/tasks/${task}/watch`, 'PUT')).status).toBe(403);
+    expect((await asToken(readOnly, `/api/v1/tasks/${task}/watchers`)).status).toBe(200);
+  });
+
+  it('allows a full token the write, so the refusal is about scope and not tokens', async () => {
+    const task = (await newTask()).id;
+    const full = await mintToken('full');
+
+    expect((await asToken(full, `/api/v1/tasks/${task}/watch`, 'PUT')).status).toBe(204);
+  });
+
+  it('401s when signed out', async () => {
+    const task = (await newTask()).id;
+    const res = await h.app.request(`/api/v1/tasks/${task}/watch`, {
+      method: 'PUT',
+      headers: jsonHeaders(),
+    });
+
+    expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /me/watching and GET /projects/:slug/mentionable (LAI-143)', () => {
+  it('lists the caller’s watched tasks and nobody else’s', async () => {
+    const task = (await newTask()).id;
+    await req(`/api/v1/tasks/${task}/watch`, { method: 'PUT' });
+
+    const body = (await (await req('/api/v1/me/watching')).json()) as { task_ids: string[] };
+
+    expect(body.task_ids).toContain(task);
+  });
+
+  it('has no path that could ask about somebody else', async () => {
+    // The permission is the shape of the URL: `/users/:id/watching` is not a
+    // route, so the request cannot be expressed. The service refuses a foreign
+    // id too, but nothing can reach it to try.
+    const res = await req(`/api/v1/users/${ownerUserId()}/watching`);
+
+    expect([404, 405]).toContain(res.status);
+  });
+
+  it('401s /me/watching when signed out', async () => {
+    const res = await h.app.request('/api/v1/me/watching', { headers: jsonHeaders() });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('offers the Owner as mentionable although they have no membership row', async () => {
+    const body = (await (await req('/api/v1/projects/laika/mentionable')).json()) as {
+      users: { id: string; name: string }[];
+    };
+
+    // The case `/members` gets wrong (D-006).
+    expect(body.users.map((u) => u.id)).toContain(ownerUserId());
+  });
+
+  it('404s mentionable on a project that does not exist', async () => {
+    expect((await req('/api/v1/projects/nope/mentionable')).status).toBe(404);
   });
 });
