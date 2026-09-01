@@ -46,8 +46,25 @@ export const PRESENCE_WINDOW_MS = 5 * 60_000;
 export interface PresenceEntry {
   user_id: string;
   name: string;
-  repo: string;
-  branch: string;
+  /**
+   * Where they are working — **only for a reader who can see a project the repo
+   * attributes to** (LAI-438).
+   *
+   * `LAIKA_URL` and `LAIKA_TOKEN` live in `~/.claude/settings.json` — *user*
+   * settings, not per-repository (D-046) — so the heartbeat hook fires in
+   * **every** repository that person opens, not the org's. Without this gate, a
+   * member who opens an unrelated private repo broadcasts its name and branch to
+   * the whole org, in a view no individual can switch off.
+   *
+   * Consent to be seen working on the org's projects is not consent to publish
+   * the name of everything else you open. §9.3 said "with repo, branch" and was
+   * written before D-046 existed.
+   *
+   * **Absent, not an empty string.** `repo: ''` is a different claim and a
+   * client would render it — the same rule as `unlisted` and the org's `ai`.
+   */
+  repo?: string;
+  branch?: string;
   /** §9.2's resolution, or null. */
   matched_task_id: string | null;
   /** Every project the repo attributes to (§9.1) — legitimately more than one. */
@@ -85,13 +102,20 @@ function presenceEnabled(db: Db): boolean {
   return (db.select({ on: orgs.presenceEnabled }).from(orgs).limit(1).get()?.on ?? 1) === 1;
 }
 
-/** Can the caller read any of the projects this heartbeat attributes to? */
-function visibleToReader(actor: ResolvedActor, projectIds: readonly string[]): boolean {
-  // A heartbeat that attributes to no project names no project, so there is
-  // nothing to leak — it says only that somebody is working, which is org-level
-  // and no more than the member list already gives away.
-  if (projectIds.length === 0) return true;
-
+/**
+ * May the caller be told **where** this person is working?
+ *
+ * Only if the repo attributes to a project they can read. A repo tracked by a
+ * project you cannot see is exactly as private as one tracked by nothing — so
+ * "no projects" and "no projects you can read" are the same answer here, and the
+ * two rules cannot drift apart because there is only one.
+ *
+ * **The person is still shown.** Presence answers "who is working right now",
+ * which is org-level: dropping the entry would make the headcount depend on who
+ * is asking, and that is the reasoning capacity already uses for somebody else's
+ * task list.
+ */
+function maySeeLocation(actor: ResolvedActor, projectIds: readonly string[]): boolean {
   return projectIds.some((id) => can(withProject(actor, id), 'project.read', { projectId: id }));
 }
 
@@ -127,15 +151,17 @@ export function presenceNow(db: Db, actor: ResolvedActor, now: number = Date.now
     seen.add(row.userId);
 
     const { projectIds } = resolveRepoProjects(db, row.repo, row.branch);
-    if (!visibleToReader(actor, projectIds)) continue;
+    const located = maySeeLocation(actor, projectIds);
 
     present.push({
       user_id: row.userId,
       name: row.name,
-      repo: row.repo,
-      branch: row.branch,
-      matched_task_id: row.matchedTaskId,
-      project_ids: projectIds,
+      // The task and the project list follow the same gate: all three name
+      // *where* the work is, and one of them leaking would make the others'
+      // absence decorative.
+      ...(located ? { repo: row.repo, branch: row.branch } : {}),
+      matched_task_id: located ? row.matchedTaskId : null,
+      project_ids: located ? projectIds : [],
       is_agent: row.tokenId !== null,
       last_seen: row.createdAt,
     });

@@ -215,8 +215,14 @@ one day):
   luck, not by the filter.
 - **A suffix or a boundary: include the near miss.** `gitignore` does not test a
   `.git` suffix rule; `owner/owner.github.io` does.
+- **A field that is conditionally withheld: populate it.** A fixture where the
+  field is always `null` cannot tell *withheld* from *absent anyway* — LAI-438's
+  `matched_task_id` leaked past a gate `repo` was correctly behind, and every
+  test passed, because no fixture had a heartbeat that actually resolved.
 
-LAI-144, LAI-431 and LAI-432, all found by mutating and none by reading. **The
+LAI-144, LAI-431, LAI-432 and LAI-438, all found by mutating and none by
+reading. The first three were fixture **data**; the fourth was fixture **state** —
+the field under test was never populated, so the assertion about it was vacuous. **The
 examples are the point** — the rule alone reads as obvious, and every one of
 these was written by someone being careful about exactly this.
 

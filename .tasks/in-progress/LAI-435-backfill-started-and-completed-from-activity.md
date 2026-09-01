@@ -2,11 +2,12 @@
 id: LAI-435
 title: Tasks that finished before LAI-126 have no dates, and `activity` knows them
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-126]
 discovered-from: LAI-434
-status: backlog
+status: in-progress
+started: 2026-09-02T04:45:00Z
 ---
 
 ## Goal
