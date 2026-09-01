@@ -2,11 +2,12 @@
 id: LAI-208
 title: Expose stale_flagged_at on TaskView so the board can draw the stale marker
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-049
-status: backlog
+status: in-progress
+started: 2026-09-01T13:50:00Z
 ---
 
 ## Goal
