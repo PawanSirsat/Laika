@@ -2,11 +2,12 @@
 id: LAI-422
 title: npx laika init — one command from nothing to a working agent
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-01T06:34:13Z
 ---
 
 ## Goal
