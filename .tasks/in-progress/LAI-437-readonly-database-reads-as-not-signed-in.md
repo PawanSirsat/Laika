@@ -2,11 +2,12 @@
 id: LAI-437
 title: A read-only database reports as "Not signed in"
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-434
-status: backlog
+status: in-progress
+started: 2026-09-01T13:05:00Z
 ---
 
 ## Goal
