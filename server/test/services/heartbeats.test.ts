@@ -39,7 +39,6 @@ function makeUser(orgRole: OrgRole, label: string): string {
       email: `${label}@example.test`,
       name: label,
       orgRole,
-      avatarColor: '#123456',
       createdAt: new Date(now),
       updatedAt: new Date(now),
     })
@@ -466,6 +465,27 @@ describe('normalising a repo (LAI-144)', () => {
     expect(normaliseRepo('git@github.com:PawanSirsat/PawanSirsat.github.io.git')).toBe(
       'PawanSirsat/PawanSirsat.github.io',
     );
+  });
+
+  it('a scheme with a host and no path is not a repo (LAI-428)', () => {
+    // **The fall-through the ordering was supposed to prevent.** The URL form's
+    // path group is optional, so `https://github.com` matched it and captured
+    // nothing — and reading "captured nothing" as "did not match" handed the
+    // string to the scp form, which read `https` as the host and answered
+    // `github.com`.
+    //
+    // A form that matches has decided. Only the trailing-slash case was tested
+    // before, and it passed for the wrong reason: with the slash the URL form
+    // captures an empty string rather than `undefined`.
+    for (const url of [
+      'https://github.com',
+      'https://github.com/',
+      'ssh://git@host',
+      'git://github.com',
+      'http://gitlab.example',
+    ]) {
+      expect(normaliseRepo(url), url).toBeNull();
+    }
   });
 
   it('degrades to null rather than erroring — §9.2', () => {

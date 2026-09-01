@@ -6,7 +6,6 @@ import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
 import * as schema from '../db/schema.ts';
 import { consumeInvite, removeOrphanedInvitee } from '../services/invites.ts';
-import { avatarColorFor } from './avatar.ts';
 import { findUsableInvite, inviteMatchesEmail, isInviteOnly } from './invites.ts';
 import { scrubTelemetryEnv } from './telemetry.ts';
 import { trustedOriginsFor } from './trusted-origins.ts';
@@ -79,7 +78,6 @@ export function createAuth(options: CreateAuthOptions) {
         // Ours, not better-auth's. `input: false` keeps them off the public
         // signup payload — otherwise anyone could POST themselves `owner`.
         orgRole: { type: 'string', required: false, defaultValue: 'member', input: false },
-        avatarColor: { type: 'string', required: false, defaultValue: '#6b7280', input: false },
         isActive: { type: 'number', required: false, defaultValue: 1, input: false },
       },
     },
@@ -234,10 +232,6 @@ export function createAuth(options: CreateAuthOptions) {
                 ...user,
                 // Lowercased on write so uniqueness is case-insensitive (§4.1).
                 email,
-                // Seeded from the email rather than the id: better-auth has not
-                // assigned an id yet when this runs, and the email is unique
-                // anyway, so the colour is just as stable.
-                avatarColor: avatarColorFor(email),
               },
             });
           },

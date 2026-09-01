@@ -2,11 +2,12 @@
 id: LAI-146
 title: completed_at survives a task leaving `done`
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-126]
 discovered-from: LAI-126
-status: backlog
+status: in-progress
+started: 2026-09-02T08:40:00Z
 ---
 
 ## Goal

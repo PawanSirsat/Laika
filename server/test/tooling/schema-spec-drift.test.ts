@@ -346,6 +346,9 @@ const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
 // reason named LAI-207 as the task that would close it, and LAI-207 closed it.
 // An exemption whose reason names a task is one somebody intends to fix; this is
 // what that looks like when it works.
+// Empty again, and twice now for the same reason: an entry whose reason named
+// the task that would close it, closed by that task. `orgs.presence_enabled`
+// (LAI-207) and `users.avatar_color` (LAI-148).
 const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([]);
 
 /** §4.8 verbs the enum has and the list does not, or the other way round. */

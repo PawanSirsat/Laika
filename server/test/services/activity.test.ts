@@ -34,7 +34,6 @@ function makeUser(orgRole: OrgRole): string {
       email: `${id}@example.test`,
       name: 'Person',
       orgRole,
-      avatarColor: '#123456',
       createdAt: new Date(now),
       updatedAt: new Date(now),
     })
@@ -243,7 +242,6 @@ describe('the org-wide feed (AC2)', () => {
           email: 'admin@example.test',
           name: 'Admin',
           orgRole: 'admin',
-          avatarColor: '#123456',
           createdAt: new Date(now),
           updatedAt: new Date(now),
         })

@@ -57,7 +57,6 @@ export function seed(db: Db, now = Date.now()): Seed {
       email: 'owner@example.test',
       name: 'Owner',
       orgRole: 'owner',
-      avatarColor: '#123456',
       isActive: 1,
       // users.createdAt/updatedAt are Date-typed since LAI-005 (better-auth
       // hands the adapter Dates); the stored value is still integer unix-ms.

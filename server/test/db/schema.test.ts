@@ -199,8 +199,8 @@ describe('closed vocabularies are enforced by CHECK, not only by types', () => {
 
     expectSqliteError(() => {
       t.db.run(sql`
-        INSERT INTO users (id, email, name, org_role, avatar_color, is_active, created_at, updated_at)
-        VALUES (${newId()}, 'x@example.test', 'X', 'superuser', '#fff', 1, ${now}, ${now})
+        INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+        VALUES (${newId()}, 'x@example.test', 'X', 'superuser', 1, ${now}, ${now})
       `);
     }, /CHECK constraint failed/i);
   });
@@ -227,7 +227,6 @@ describe('closed vocabularies are enforced by CHECK, not only by types', () => {
           email: 'dup@example.test',
           name: 'Dup',
           orgRole: 'member',
-          avatarColor: '#fff',
           createdAt: new Date(now),
           updatedAt: new Date(now),
         })

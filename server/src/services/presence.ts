@@ -1,7 +1,8 @@
 import { and, desc, eq, gt, inArray } from 'drizzle-orm';
 import { loadActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
-import { heartbeats, orgs, tasks, unlistedWork, users } from '../db/schema.ts';
+import { presenceEnabled } from '../db/orgs.ts';
+import { heartbeats, tasks, unlistedWork, users } from '../db/schema.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { resolveRepoProjects } from './heartbeats.ts';
 
@@ -96,10 +97,6 @@ export interface CapacityEntry {
 export interface CapacityView {
   enabled: boolean;
   people: CapacityEntry[];
-}
-
-function presenceEnabled(db: Db): boolean {
-  return (db.select({ on: orgs.presenceEnabled }).from(orgs).limit(1).get()?.on ?? 1) === 1;
 }
 
 /**

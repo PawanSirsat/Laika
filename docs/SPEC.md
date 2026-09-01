@@ -232,9 +232,20 @@ Soft-delete only where noted. All foreign keys are indexed.
 | `email` | text unique | lowercased on write |
 | `name` | text | |
 | `org_role` | text | `owner` \| `admin` \| `member` \| `viewer` |
-| `avatar_color` | text | derived from id — **no uploads in v1** |
 | `is_active` | integer | 0 = deactivated, row kept for history |
 | `created_at`, `updated_at` | integer | |
+
+**There is no `avatar_color` column** (LAI-148). This table listed one, *"derived
+from id"*, and three places disagreed about it: the server derived it from
+**email** and stored it, the client derived it from **id** at render and ignored
+the stored value entirely, and better-auth's `additionalFields` supplied
+`#6b7280` for any row created by a path that skipped the hook. **The served value
+was never read by anything.**
+
+Deriving at render is the only answer that satisfies §5.1's both-themes rule —
+one stored colour cannot be legible in light and dark — so the column was the
+mistake rather than the client, and **reading the served value would have been
+the tempting one-line fix and the wrong one.**
 
 Credentials, sessions and verification records belong to **better-auth's own
 tables** (§11.3). Do not hand-write password or session columns.

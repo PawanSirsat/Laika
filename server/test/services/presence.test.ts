@@ -39,7 +39,6 @@ function makeUser(orgRole: OrgRole, name: string = orgRole): string {
       email: `${id}@example.test`,
       name,
       orgRole,
-      avatarColor: '#123456',
       createdAt: new Date(NOW),
       updatedAt: new Date(NOW),
     })

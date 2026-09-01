@@ -183,7 +183,6 @@ describe('members over HTTP', () => {
         email: 'grace@example.test',
         name: 'Grace',
         orgRole: 'member',
-        avatarColor: '#222222',
         createdAt: new Date(now),
         updatedAt: new Date(now),
       })

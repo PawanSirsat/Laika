@@ -146,7 +146,6 @@ describe('finding a token by the secret presented', () => {
         email: 'agent@example.test',
         name: 'Agent',
         orgRole: 'member',
-        avatarColor: '#123456',
         createdAt: new Date(now),
         updatedAt: new Date(now),
       })

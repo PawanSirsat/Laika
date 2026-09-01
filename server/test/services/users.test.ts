@@ -31,7 +31,6 @@ function makeUser(
       email: extra.email ?? `${name.toLowerCase().replace(/\s+/g, '.')}@example.test`,
       name,
       orgRole,
-      avatarColor: '#123456',
       isActive: extra.isActive ?? 1,
       createdAt: new Date(now),
       updatedAt: new Date(now),
@@ -71,14 +70,13 @@ afterEach(() => {
 });
 
 describe('the fields a picker needs (AC1)', () => {
-  it('returns id, name, email, avatar_color, role and whether they are active', () => {
+  it('returns id, name, email, role and whether they are active', () => {
     const [ada] = listUsers(t.db, actor(ownerId), PAGE);
 
     expect(ada).toMatchObject({
       id: ownerId,
       name: 'Ada Lovelace',
       email: 'ada.lovelace@example.test',
-      avatar_color: '#123456',
       org_role: 'owner',
       is_active: true,
     });
@@ -104,7 +102,6 @@ describe('the fields a picker needs (AC1)', () => {
     const [ada] = listUsers(t.db, actor(ownerId), PAGE);
 
     expect(Object.keys(ada ?? {}).sort()).toEqual([
-      'avatar_color',
       'created_at',
       'email',
       'id',
