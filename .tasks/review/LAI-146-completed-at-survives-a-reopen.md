@@ -123,3 +123,38 @@ reader inferring completion from the timestamp is **already** wrong for a
 
 Three mutations, all caught: keeping the first completion, clearing it on the way
 out, and letting `started_at` take the latest so the asymmetry collapses.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted**, with §4.5's text applied — taken almost verbatim, including the
+sentence that does the work: *a `completed_at` on a task that is not `done` is a
+fact about its **history**; `status` is the only claim about its **state**.*
+
+**Mutation-verified both rejected answers:**
+
+| Mutation | Red |
+| --- | --- |
+| Clear it on leaving `done` (option 1) | `does not clear it while the task is reopened` + `serialises both on the wire` |
+| Stamp only the first completion (option 3) | `keeps the latest completion, not the first` + `keeps started_at at its first value across the same journey` |
+
+### An undecided decision that happens to be implemented correctly is still undecided
+
+`changeStatus` has always written `completedAt: now` on every arrival, so the
+**behaviour** was option 2 before this task existed. **Nothing said so, nothing
+tested it, and LAI-435's backfill had to step around it** — filling nothing for a
+task that is not `done` now, specifically to avoid answering by accident.
+
+**That is the whole justification and it is a good one.** The next person to
+touch that line had nothing telling them which of three answers it was, and two
+of them are one character away: `task.completedAt === null`, or an `else` branch.
+Both are now mutations that turn tests red.
+
+### The asymmetry asserted on one journey
+
+`todo → in_progress → review → done → in_progress → review → done`, with
+`started_at` keeping its first value and `completed_at` its latest **in the same
+test**. That is right: **the asymmetry is exactly what a reader assumes is a
+bug**, and testing either half alone leaves the other looking arbitrary rather
+than deliberate.

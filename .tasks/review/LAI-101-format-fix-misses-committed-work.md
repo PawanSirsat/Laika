@@ -123,3 +123,40 @@ LAI-026's regression tests pass **unchanged**, and replacing the window with
 `git ls-files` turns six red.
 
 Three mutations, all caught: back to `HEAD`, no fallback, and the whole repo.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Server 1660 green; the only red in the tree is LAI-153's.
+
+**Measured rather than argued:** *"the old expression selects 0 files on this
+branch, the new one 7."* A fix to a formatting script is exactly the kind of
+change that gets reasoned about instead of run, and the count is what makes it a
+fix rather than a plausible edit.
+
+### `|| echo HEAD` was load-bearing and invisible
+
+> *"It reads as belt-and-braces. In fact **every existing test in that file runs
+> in a repo with no `master`** — `git init` plus one commit — so the fallback is
+> the only reason LAI-026's entire suite kept passing after my change. Removing
+> it turns two red."*
+
+**Nineteen tests were depending on it silently**, and it looked like defensive
+noise. That is the most dangerous shape a line of code can have: **load-bearing
+and indistinguishable from decoration.** There is now a test asserting the
+fallback directly, which is the difference between a suite that happens to pass
+and one that says why.
+
+*"I nearly shipped it without noticing, and the mutation is what showed me."*
+
+### AC4 was the one to confirm rather than reason about
+
+**On `master` the merge-base *is* `HEAD`, so the diff is empty and it will not
+reformat its own history.** That is the case that rewrites the whole repository
+if it is wrong — and reasoning about it correctly and reasoning about it
+incorrectly feel identical from the inside.
+
+**Root `package.json`'s `format:fix` only**, per the grant, with `git status`
+checked to say exactly that file and the test. A repo-root edit under a scope
+exception, kept to the line the exception names.
