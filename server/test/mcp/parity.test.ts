@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
@@ -30,6 +33,9 @@ import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpe
  * That is the load-bearing half. An exemption protects the one case somebody
  * thought about; a derived list protects the case nobody did.
  */
+
+/** `docs/`, resolved from this module rather than from `process.cwd()`. */
+const SPEC_DIR = fileURLToPath(new URL('../../../docs', import.meta.url));
 
 const PASSWORD = 'correct-horse-battery-staple';
 
@@ -308,6 +314,25 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
     'get_project_context',
     { rest: readsNothingRest, mcp: readsNothingMcp('get_project_context', { project: 'core' }) },
   ],
+  [
+    'laika_whoami',
+    {
+      // Its twin is `GET /api/v1/me` specifically, not the generic read triple:
+      // both answer "who is this credential acting as", and both must write
+      // nothing. Paired rather than exempted (LAI-433) because a pair is
+      // **tested** where an exemption is only excused — and the thing worth
+      // testing about a read tool is exactly that it stays a read.
+      rest: async (s) => {
+        // Same seed as the MCP half: the comparison is between the two *reads*,
+        // so both databases must start from the same rows or the diff is the
+        // setup rather than the tools.
+        await seedTask(s);
+        await request(s, '/api/v1/me');
+      },
+      mcp: readsNothingMcp('laika_whoami', {}),
+      note: 'both answer "who am I" and neither writes anything',
+    },
+  ],
 ]);
 
 /** One task, so a read tool has something to read. Returns its id. */
@@ -346,7 +371,11 @@ describe('the pair list is derived from the server, not written down', () => {
     await client.close();
 
     const uncovered = registered.filter(
-      (name) => !PAIRS.has(name) && !EXEMPT.has(name) && name !== 'laika_whoami',
+      // No inline carve-out. `laika_whoami` used to be excluded by a
+      // `name !== '…'` on this line, next to an `EXEMPT` set it did not use —
+      // and an inline comparison is audited by nobody, where a named entry can
+      // be found, counted and challenged (LAI-433).
+      (name) => !PAIRS.has(name) && !EXEMPT.has(name),
     );
 
     expect(
@@ -477,5 +506,82 @@ describe('the read tools write nothing at all', () => {
     await client.close();
 
     expect(rowCount(side)).toBe(before);
+  });
+});
+
+/**
+ * §7.1's table against the tools the server registers (LAI-433).
+ *
+ * The count has been wrong in three places at once — the ROADMAP said eight,
+ * LAI-419's AC4 said eight, §7.1 lists ten, and the server serves eleven. Three
+ * documents disagreeing about a number nobody was comparing.
+ *
+ * **Names, not just the count.** A count agrees by accident the moment one tool
+ * is added and another renamed, and it is the accident this file exists to stop:
+ * `PAIRS` and `EXEMPT` are derived from the running server precisely so nothing
+ * has to be remembered, and §7.1 was the one list still written down.
+ */
+describe('§7.1 lists the tools the server actually serves', () => {
+  /** §7.1's table, read as the tool column of every row. */
+  function specTools(): string[] {
+    const spec = readFileSync(join(SPEC_DIR, 'SPEC.md'), 'utf8');
+    const section = spec.slice(spec.indexOf('### 7.1 Tools'), spec.indexOf('### 7.2'));
+    const rows = [...section.matchAll(/^\| `([a-z_]+)` \|/gm)].map((m) => m[1]!);
+
+    expect(rows.length, 'could not parse §7.1’s tool table').toBeGreaterThan(5);
+    return rows.sort();
+  }
+
+  it('names exactly the registered tools, in neither direction short', async () => {
+    const side = await makeSide();
+    const client = await connect(side);
+    const registered = (await client.listTools()).tools.map((t) => t.name).sort();
+    await client.close();
+
+    // Both directions in one assertion: a tool §7.1 lists and the server does
+    // not serve is as wrong as the reverse, and `toEqual` on sorted names says
+    // which without anybody having to count.
+    expect(registered).toEqual(specTools());
+  });
+
+  it('agrees with §7.2 about how many have REST twins', async () => {
+    const side = await makeSide();
+    const client = await connect(side);
+    const registered = (await client.listTools()).tools.map((t) => t.name);
+    await client.close();
+
+    const twinned = registered.filter((name) => !EXEMPT.has(name)).length;
+    const spec = readFileSync(join(SPEC_DIR, 'SPEC.md'), 'utf8');
+
+    // §7.2's exact sentence: "cover the nine tools that have twins". Matched
+    // rather than paraphrased — I first wrote this against "nine of them have
+    // REST twins", which is how the task described it and is not what the spec
+    // says, so the assertion could only ever have failed.
+    const claimed = /cover the ([a-z]+) tools that have twins/.exec(spec);
+    expect(
+      claimed,
+      '§7.2 no longer states how many tools have twins in the expected words',
+    ).not.toBeNull();
+
+    const words = [
+      'zero',
+      'one',
+      'two',
+      'three',
+      'four',
+      'five',
+      'six',
+      'seven',
+      'eight',
+      'nine',
+      'ten',
+      'eleven',
+      'twelve',
+    ];
+
+    expect(
+      claimed?.[1],
+      `§7.2 says "${claimed?.[1] ?? '?'}" tools have twins; the server has ${twinned}`,
+    ).toBe(words[twinned]);
   });
 });
