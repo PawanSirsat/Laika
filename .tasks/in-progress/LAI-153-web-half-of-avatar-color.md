@@ -2,11 +2,12 @@
 id: LAI-153
 title: The client `OrgUser` type still declares avatar_color, which the server no longer sends
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-148]
 discovered-from: LAI-148
-status: backlog
+started: 2026-09-01T13:20:00+05:30
+status: in-progress
 ---
 
 ## Goal

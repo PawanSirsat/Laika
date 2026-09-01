@@ -2,12 +2,11 @@
 id: LAI-418
 title: Plugin hooks — heartbeat on session start, stop, and a timer
 area: plugin
-assignee: shell
+assignee: unclaimed
 priority: p1
 depends-on: [LAI-417]
 discovered-from:
-started: 2026-09-01T08:34:00+05:30
-status: in-progress
+status: backlog
 ---
 
 ## Goal
