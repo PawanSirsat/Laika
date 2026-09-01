@@ -2,11 +2,12 @@
 id: LAI-150
 title: '`presence_enabled = 0` should discard the heartbeat, not store an inert one'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-207, LAI-430]
 discovered-from: LAI-430
-status: backlog
+status: in-progress
+started: 2026-09-02T03:30:00Z
 ---
 
 ## Goal
