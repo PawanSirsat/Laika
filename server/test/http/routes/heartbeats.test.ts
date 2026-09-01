@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { activity, heartbeats, projects, tokens, users } from '../../../src/db/schema.ts';
+import { activity, heartbeats, orgs, projects, tokens, users } from '../../../src/db/schema.ts';
 import { LIMITS, RateLimiter } from '../../../src/http/rate-limit.ts';
 import { BRANCH_MAX_LENGTH, REPO_MAX_LENGTH } from '../../../src/services/heartbeats.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
@@ -327,5 +327,46 @@ describe('attributing a heartbeat to a project (LAI-116)', () => {
     await beat({ repo: 'kvell/mono', branch: 'api-42-add-crud' });
 
     expect(h.log.find('heartbeat.repo_ambiguous')).toBeUndefined();
+  });
+});
+
+describe('a disabled org answers 202 and stores nothing (§4.2, LAI-150)', () => {
+  it('is 202 in both states, so the client contract does not change', async () => {
+    const enabled = await beat({ repo: 'kvell/laika', branch: 'main' });
+    expect(enabled.status).toBe(202);
+    expect(await enabled.text()).toBe('');
+
+    h.db.update(orgs).set({ presenceEnabled: 0 }).run();
+
+    const disabled = await beat({ repo: 'kvell/laika', branch: 'main' });
+
+    // Not 403 and not 409. A plugin must not start reporting errors because an
+    // org turned a feature off — §9.2's "degrades, never errors" is about the
+    // whole endpoint, and an operator who disabled presence does not want an
+    // alert storm as the receipt.
+    expect(disabled.status).toBe(202);
+    expect(await disabled.text()).toBe('');
+  });
+
+  it('stores the first and not the second', async () => {
+    await beat({ repo: 'kvell/laika', branch: 'main' });
+    h.db.update(orgs).set({ presenceEnabled: 0 }).run();
+    await beat({ repo: 'kvell/laika', branch: 'main' });
+
+    expect(h.db.select().from(heartbeats).all()).toHaveLength(1);
+  });
+
+  it('still refuses a cookie, because §9.1 is about the credential', async () => {
+    h.db.update(orgs).set({ presenceEnabled: 0 }).run();
+
+    const res = await h.app.request('/api/v1/heartbeats', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: ownerCookie }),
+      body: JSON.stringify({ repo: 'kvell/laika', branch: 'main' }),
+    });
+
+    // Disabled must not become a path with different auth. The credential rule
+    // is §9.1's and has nothing to do with whether rows are kept.
+    expect(res.status).toBe(403);
   });
 });
