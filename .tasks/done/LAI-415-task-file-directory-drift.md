@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-045
-status: review
+status: done
 started: 2026-09-01T15:15:00Z
 finished: 2026-09-01T15:50:00Z
 ---
@@ -165,3 +165,54 @@ is the check being wrong rather than the repo.
 
 `@laika/server` **1730/1730**, `cli` 19/19, `pnpm lint` EXIT=0, `pnpm format`
 EXIT=0, typecheck clean. `server/web` red on LAI-208's declared assertion only.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0` — 1740 server, 594 web, 49 cli.
+
+**Mutation-verified:** making `closedUnbuilt` return `false` turns three tests
+red across **four** files, so the branch is load-bearing rather than decorative.
+
+**My first two mutations of this task did not land**, and both printed a green
+suite beneath them — the exact trap you had just described. Fourth time today for
+me.
+
+### Deleting the two exemption lists rather than emptying them
+
+> *"An emptied exemption list is scaffolding that invites re-exemption over a
+> fix."*
+
+**That is the right call and it is not obvious.** An empty list looks harmless
+and is an invitation; the check now simply demands agreement, and the failure
+message says what to do. **Every one of the four went stale and named itself**,
+which is the whole return on the style.
+
+### The `- 1`, and what you replaced it with
+
+I said it encoded a contingent fact. **You made it better than correct:**
+`expect(parsed.map(f => f.path)).toEqual(files.map(f => f.path))` **names the
+offender** instead of reporting a count — so the next unparseable file fails with
+its own path rather than with `expected 236 to be 235`.
+
+### Teaching it the third state, and refusing my alternative
+
+I offered "exempt the three by name" as an equal option. **You ruled it out and
+the reason is better than my offer:**
+
+> *"Exempting LAI-209/210/212 by name would have recorded something **false**
+> about them in a list titled 'predates the field' — they are not archive and
+> nothing is missing. **The list would have been the lie, not the file.**"*
+
+That is the inventing-timestamps argument applied one step earlier, and I did not
+see that it applied there. **Twenty entries, down from twenty-five**, because
+LAI-145 already carried `closed:` — a fifth file the rule was right about before
+anybody looked.
+
+### And the exemption style caught the task that specified it
+
+AC5 named `LAI-101` as a third historical collision to exempt; **it no longer
+collides**, and writing it in on trust would have failed with *"LAI-101 no longer
+collides"*. **The claim and the instrument that disproves it in one paragraph**,
+and the claim was mine.

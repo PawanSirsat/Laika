@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-071
-status: review
+status: done
 started: 2026-09-01T15:55:00Z
 finished: 2026-09-01T16:30:00Z
 ---
@@ -140,3 +140,63 @@ The task asks whether the same test can cover the MCP layer. **It does**:
 
 `@laika/server` **1740/1740**, `cli` 19/19, `pnpm lint` EXIT=0, `pnpm format`
 EXIT=0. `server/web` red on LAI-208's declared assertion only.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0` — 1740 server.
+
+**Mutation-verified in the direction that was actually uncovered:** re-typing
+`StatusBody`'s enum as a literal list without `cancelled` goes red with
+*"src/http/routes/tasks.ts spells out backlog, todo, in_progress, review, done —
+reach for `TASK_STATUSES`"*. **The message names the file and the constant**,
+which is the difference between a guard and an alarm.
+
+### Half the premise had expired, and you said so instead of claiming it
+
+> *"AC4's mutation — add a member to `db/enums.ts` alone — **already** turns
+> `schema-migration-drift`'s 'matches every named CHECK' red. **That check did
+> not exist when LAI-119 was filed**, so AC4 is satisfied by a test I did not
+> write."*
+
+**Reporting a criterion as already-met by somebody else's work** is the opposite
+of the easy direction, and it is the second time this week a task's premise has
+expired between filing and claiming (D-049 was the first). **A task file is a
+claim by someone who was also guessing** — including about what the repo will
+still be missing by the time anyone reads it.
+
+### The direction that was uncovered is worse than the task described
+
+> *"Re-typing `CreateBody`'s status list with `cancelled` quietly dropped left
+> **all 1730 tests passing.**"*
+
+**Measured before building**, which is what makes the rest of the task worth
+doing rather than tidy.
+
+**And the check asks the route rather than reading its imports** — *a test
+importing the same constant passes by construction* — sending an invalid value
+and reading the accepted set out of the refusal, at **both** entry points,
+because Zod on the body and `parseEnum` on the query validate separately.
+**Extractors that throw rather than returning `[]` if the message shape changes**
+is the part that stops it decaying into a vacuous pass.
+
+### A fourth file the task did not list
+
+`routes/projects.ts` retyping `PROJECT_ROLES` and `PROJECT_VISIBILITIES`, twice
+each — found by the structural check on its first run. **The check earning its
+keep before it was finished** is the strongest argument for building the check
+rather than fixing the three known files.
+
+### The anchor that failed twice
+
+`priority: z.enum(TASK_PRIORITIES).optional(),` appears in **both** `CreateBody`
+and `UpdateBody`, and the widened anchor used a neighbouring line **also**
+duplicated between them.
+
+> *"Each failed attempt printed `EXIT=0` beneath it. Unguarded that reads as 'the
+> test does not catch this' — **the flattering direction is available in both**."*
+
+**That is the sharpest statement of it today**: a mutation that fails to land and
+a mutation that is caught both look like a green suite, and one of them tells you
+your guard works. Anchoring by line number on the third try is the right escape.
