@@ -2580,3 +2580,66 @@ unstaged, while the commit *title* named it. CORE checked `git show --stat`,
 **That refusal is the mechanism doing what it is for.** An exemption's reason is
 a sentence somebody can check, and checking it caught a false claim from the
 person who wrote the rule.
+
+---
+
+## D-052 — `/webhooks/transcript` gets its own shared secret, not a token and not a §3 action
+
+**2026-09-02. Decided by CHIEF on CORE's analysis, filed as LAI-164.**
+
+### The hole
+
+**§10.2 specifies no authentication**, and §10's preamble says `/webhooks/*` is
+*"outside `/api/v1`, no user session"*. §10.1 has a shared secret and an HMAC;
+**§10.2 has neither**, and §3 has no action for submitting a transcript — §3.2's
+meeting row is *"Apply a meeting-diff proposal"*, which is a different endpoint.
+
+**As specified, anyone who can reach the port can choose which project's open
+tasks and whole `context_md` leave the instance**, because §10.2 says exactly
+what the prompt contains and the caller picks the project by `project_slug`.
+
+They can also spend the org's money — each submission is a paid provider call —
+and fill `meeting_reviews` with attacker-written text that a human then reads.
+
+**The data path is the one that matters.** LAI-450's own criterion calls this
+*"the one place in Laika where data leaves the instance"*, and as written an
+unauthenticated stranger decides which data and when.
+
+### The decision
+
+**A shared secret and an HMAC, as §10.1 has — and its own secret, not GitHub's.**
+
+**Because `/webhooks/*` is for machines.** A transcript source is a meeting bot
+or a recorder integration, not a person — so a personal access token is the wrong
+shape, and a §3 action requiring a principal is worse: it would need a person
+behind something that has none, which is the reasoning D-050 already settled one
+endpoint over.
+
+**Keeping `/webhooks/*` coherent is the second reason**: everything under that
+prefix is authenticated by a shared secret and never by a session. A token here
+would mean the preamble is wrong or the endpoint belongs elsewhere, and both are
+larger changes than the hole requires.
+
+**Its own `SecretPurpose`**, because two integrations with one secret means
+revoking either breaks both, and a leak of the GitHub secret would hand somebody
+the transcript path as well. LAI-161's derivation makes a second purpose one
+line, and it is the case its per-column keying was built for.
+
+**A new §4.2 column** — `transcript_webhook_secret_enc` — since only
+`github_webhook_secret_enc` exists.
+
+### And a rate is not enough
+
+**Each submission is a paid outbound call**, so §6.3's anonymous bucket is the
+wrong instrument even once the caller is known. **An authenticated integration
+gone wrong spends money at a perfectly legal rate.** LAI-164 asks for a per-org
+**cap** as well as a rate, and for what happens when it is reached to be a
+distinct, actionable refusal rather than a generic `429`.
+
+### How it was found
+
+**A criterion said *"if that turns out to be a §3 or §10 sentence, stop and file
+it"*, and it did, and they stopped.** The endpoint's authentication was missing
+from the specification rather than from the implementation, which is the class of
+gap no test can find — and the second time in two days that reading two sections
+against each other has caught one (D-051 was the first).

@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-446]
 discovered-from: LAI-446
-status: review
+status: done
 started: 2026-09-01T23:40:00Z
 finished: 2026-09-02T00:20:00Z
 ---
@@ -161,3 +161,58 @@ yours to write: the check that should have insisted cannot see it.
 
 Root `pnpm test` **EXIT=0**, zero unhandled errors. `server` **1836/1836**,
 `web` 604/604, `cli` 49/49, lint and format EXIT=0.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted**, with §4.7's sentence written. Root gate `EXIT 0` — 1836 server.
+**LAI-446's fourth handler is built**, which is the one you declined to guess at.
+
+### Both traps were real
+
+**The lead trap, confirmed before the guard was written.** `null === actor.userId`
+denies the *own* half — **and a lead holds *any*, falls through, and would be
+allowed.** *"`can()` is not wrong there; it is answering a question about a
+comment that has an owner."*
+
+**And `409` rather than `403` is the right distinction:** *it is not that this
+actor may not, it is that the request does not apply to this comment, whoever
+asks.* A `403` would send somebody looking for a permission to grant.
+
+**Seven readers, and the compiler found two of them.** *"I grepped four; the view
+type and the watcher set both failed to typecheck the moment the column went
+nullable. Cheaper than my list, and it does not forget."* **A criterion that asks
+for an enumeration is asking for the weaker instrument** when the type system can
+answer — worth remembering next time I write *"enumerate them first"*.
+
+### A guard reported as unobservable rather than covered
+
+Skipping a null author in `impliedWatcherIds` **fails no test**, because
+`watchersOfTask` filters through `canRead` and `loadActor(db, null)` finds
+nobody — *"so the null is dropped before anything sees it."*
+
+> *"I rewrote the test to ask the endpoint instead of the row — and it **still**
+> survived, which is how I found out the property is **unobservable** rather than
+> untested."*
+
+**Two mutations to establish that a guard cannot be tested, rather than one to
+establish it is not.** The label is defence-in-depth and the test asserts what a
+caller can actually see: a mirrored comment adds no watcher.
+
+**And the first version was the weak-fixture shape again** — asserting the stored
+`author_id` was null, *"which is true whether or not the null reaches the set."*
+Third time this week, second caught by mutating rather than reading.
+
+### AC2 expected a drift failure and none came
+
+**`schema-spec-drift` compares column *names*, not nullability.** So §4.7 can
+promise `author_id` is required while the schema makes it optional, indefinitely,
+with the gate green — and **its sibling `schema-migration-drift` does check
+`notNull`**, so the chain §4 → `schema.ts` → migrations is verified on two legs
+and not the third. **The leg it misses is the one this task changed.**
+
+**LAI-163 filed with the hard part named**: §4's tables are prose, and
+*`nullable, same encryption`* states it where *`for Ollama / vLLM`* does not — so
+the check needs a convention before it can be written. **That is the right thing
+to say about a check nobody can build yet.**
