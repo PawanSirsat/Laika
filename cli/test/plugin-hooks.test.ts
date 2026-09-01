@@ -41,7 +41,32 @@ function dir(prefix: string): string {
   scratch.push(made);
   return made;
 }
+
+/**
+ * Every stub board, closed centrally.
+ *
+ * **A server closed at the end of a test is only closed when the test passes.**
+ * An assertion that throws skips the `close()` below it, the handle keeps the
+ * event loop alive, and `node --test` never exits — so the suite **hangs
+ * instead of failing**, which is strictly worse than the failure it is hiding.
+ * That is not hypothetical: it hung the root gate and two mutation runs today,
+ * every time something went red, and read as slowness rather than as a defect.
+ *
+ * `unref()` is the belt to this brace: a server that somehow escapes the list
+ * still cannot be the reason the process stays alive.
+ */
+const servers: Server[] = [];
+function track(server: Server): Server {
+  servers.push(server);
+  server.unref();
+  return server;
+}
+
 after(() => {
+  for (const server of servers) {
+    server.closeAllConnections?.();
+    server.close();
+  }
   for (const path of scratch) rmSync(path, { recursive: true, force: true });
 });
 
@@ -70,6 +95,7 @@ function stubBoard(): Promise<{ url: string; server: Server; beats: Beat[] }> {
       res.writeHead(202).end();
     });
   });
+  track(server);
   return new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
@@ -164,7 +190,6 @@ void describe('unconfigured is silent, not broken', () => {
     assert.equal(run.stderr, '');
     await settle();
     assert.equal(board.beats.length, 0);
-    board.server.close();
   });
 
   void test('a URL without a token sends nothing', async () => {
@@ -178,7 +203,6 @@ void describe('unconfigured is silent, not broken', () => {
       0,
       'half-configured is unconfigured, not a 401 every 5 minutes',
     );
-    board.server.close();
   });
 
   void test('a token without a URL sends nothing', async () => {
@@ -209,7 +233,6 @@ void describe('what goes on the wire', () => {
       repo: 'git@github.com:PawanSirsat/Laika.git',
       branch: 'shell',
     });
-    board.server.close();
   });
 
   void test('the remote is sent verbatim — not owner/name, not a basename (D-043)', async () => {
@@ -227,7 +250,6 @@ void describe('what goes on the wire', () => {
     assert.notEqual(sent, 'PawanSirsat/Laika');
     assert.notEqual(sent, 'Laika');
     assert.ok(sent.endsWith('.git'), '.git is not stripped here; §9.1 strips it server-side');
-    board.server.close();
   });
 
   void test('a trailing slash on LAIKA_URL does not become //api/v1', async () => {
@@ -235,7 +257,6 @@ void describe('what goes on the wire', () => {
     await runHook('session-start', { cwd: repo(), url: `${board.url}/`, token: 'lai_x' });
     await settle();
     assert.equal(board.beats[0]?.url, '/api/v1/heartbeats');
-    board.server.close();
   });
 
   void test('a double quote in the remote still produces valid JSON', async () => {
@@ -252,7 +273,6 @@ void describe('what goes on the wire', () => {
       repo: 'https://example.com/a"b.git',
       branch: 'shell',
     });
-    board.server.close();
   });
 });
 
@@ -268,7 +288,6 @@ void describe('nothing to report is not an error', () => {
     assert.equal(run.stdout + run.stderr, '');
     await settle();
     assert.equal(board.beats.length, 0);
-    board.server.close();
   });
 
   void test('a repository with no remote sends nothing', async () => {
@@ -281,7 +300,6 @@ void describe('nothing to report is not an error', () => {
     assert.equal(run.code, 0);
     await settle();
     assert.equal(board.beats.length, 0);
-    board.server.close();
   });
 
   void test('a repository with no commit yet reports its branch, not `HEAD`', async () => {
@@ -299,7 +317,6 @@ void describe('nothing to report is not an error', () => {
     await settle();
     assert.equal(board.beats.length, 1);
     assert.equal((JSON.parse(board.beats[0]?.body ?? '{}') as { branch: string }).branch, 'shell');
-    board.server.close();
   });
 
   void test('a detached HEAD sends nothing — there is no branch to report', async () => {
@@ -314,7 +331,6 @@ void describe('nothing to report is not an error', () => {
       0,
       '`branch` is required; an empty one is a 422, not presence',
     );
-    board.server.close();
   });
 });
 
@@ -333,9 +349,11 @@ void describe('a board that is down must not break the session', () => {
   });
 
   void test('a board that hangs is abandoned, not waited out', async () => {
-    const server = createServer(() => {
-      /* accept, answer nothing, ever */
-    });
+    const server = track(
+      createServer(() => {
+        /* accept, answer nothing, ever */
+      }),
+    );
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const address = server.address();
     const port = typeof address === 'object' && address !== null ? address.port : 0;
@@ -347,7 +365,6 @@ void describe('a board that is down must not break the session', () => {
     });
     assert.equal(run.code, 0);
     assert.ok(run.ms < 10_000, `took ${String(run.ms)}ms — --max-time is not doing its job`);
-    server.close();
   });
 });
 
@@ -365,7 +382,6 @@ void describe('the throttle', () => {
       1,
       'a hook on every tool call posts hundreds of times an hour',
     );
-    board.server.close();
   });
 
   void test('Stop shares the same 5 minutes as PostToolUse', async () => {
@@ -377,7 +393,6 @@ void describe('the throttle', () => {
     await runHook('stop', { cwd, url: board.url, token: 'lai_x', state });
     await settle();
     assert.equal(board.beats.length, 1);
-    board.server.close();
   });
 
   void test('SessionStart is never throttled — sitting down is when it matters', async () => {
@@ -389,7 +404,6 @@ void describe('the throttle', () => {
     await runHook('session-start', { cwd, url: board.url, token: 'lai_x', state });
     await settle();
     assert.equal(board.beats.length, 2);
-    board.server.close();
   });
 
   void test('another branch posts immediately, throttle or not', async () => {
@@ -403,7 +417,6 @@ void describe('the throttle', () => {
     await settle();
     assert.equal(board.beats.length, 2, 'presence is about where somebody is; a move is news');
     assert.equal((JSON.parse(board.beats[1]?.body ?? '{}') as { branch: string }).branch, 'other');
-    board.server.close();
   });
 
   void test('another repository posts immediately too', async () => {
@@ -419,7 +432,6 @@ void describe('the throttle', () => {
     });
     await settle();
     assert.equal(board.beats.length, 2);
-    board.server.close();
   });
 });
 
