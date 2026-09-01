@@ -1,6 +1,12 @@
 import { and, asc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
-import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
+import {
+  activityActor,
+  isSystemPrincipal,
+  type ResolvedActor,
+  type ServiceCaller,
+  withProject,
+} from '../auth/resolve-actor.ts';
 import { apiFieldNames, appendActivity, creatingClientNames } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
 import {
@@ -603,7 +609,7 @@ export function claimTask(
 
 export function changeStatus(
   db: Db,
-  actor: ResolvedActor,
+  actor: ServiceCaller,
   taskId: string,
   to: TaskStatus,
   now: number = Date.now(),
@@ -617,10 +623,26 @@ export function changeStatus(
   // §5: moving to `review` requires the assignee, a project lead, or org
   // Admin/Owner. The task text said "assignee, Admin or Owner" and omitted lead;
   // the spec wins (D-011).
-  if (to === 'review') {
+  //
+  // ## The system principal is not held to it (D-051, §10.1, LAI-446)
+  //
+  // **§5's restriction constrains people**, and its neighbouring bullet gives
+  // the reason: *"`done` is never set by `finish_task`. Agents do not
+  // self-certify."* A merged pull request is **external evidence** — somebody
+  // else reviewed it and merged it — so refusing it would apply a rule against
+  // self-certification to the opposite of self-certification.
+  //
+  // What keeps that narrow is D-050, not this branch: anything reaching here as
+  // a system principal is a **verified delivery, on a project the branch
+  // resolved to, holding `task.write` and nothing else**. It cannot widen into
+  // "the system may do anything" without §3.4 changing, and §3.4 is a document
+  // somebody reads.
+  if (to === 'review' && !isSystemPrincipal(actor)) {
     const isAssignee = task.assigneeId === actor.userId;
     const isLeadOrAbove =
-      scoped.projectRole === 'lead' || actor.orgRole === 'owner' || actor.orgRole === 'admin';
+      (isSystemPrincipal(scoped) ? null : scoped.projectRole) === 'lead' ||
+      actor.orgRole === 'owner' ||
+      actor.orgRole === 'admin';
 
     if (!isAssignee && !isLeadOrAbove) {
       throw new ApiError(

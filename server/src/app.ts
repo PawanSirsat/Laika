@@ -25,6 +25,7 @@ import { projectRoutes } from './http/routes/projects.ts';
 import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
+import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { userRoutes } from './http/routes/users.ts';
 import { inviteRoutes } from './http/routes/invites.ts';
 import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts';
@@ -260,6 +261,13 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/users`, userTokenRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
     app.route(`${API_BASE}/org`, orgRoutes({ db, serverSecret: options.serverSecret ?? '' }));
+
+    // **Outside `/api/v1`, and that is §10's first sentence** — *"Mounted at
+    // `/webhooks/*`, outside `/api/v1`, no user session."* It still passes
+    // through the middleware chain: `/webhooks/` is a reserved path, so §6.3's
+    // limiter bounds it, and `authMiddleware` resolves nothing and leaves
+    // `actor: null`, which is correct — the signature is the authentication.
+    app.route('/webhooks', githubWebhookRoutes({ db, serverSecret: options.serverSecret ?? '' }));
     app.route(`${API_BASE}/tokens`, tokenRoutes({ db, sqlite: options.sqlite }));
     app.route(
       `${API_BASE}/invites`,

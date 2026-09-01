@@ -4,7 +4,7 @@ import { type ActorKind, type ProjectRole } from '../db/enums.ts';
 import { projectMemberships, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { type Logger } from '../log.ts';
-import { type Actor } from '../policy/can.ts';
+import { type Actor, type Principal, type SystemPrincipal } from '../policy/can.ts';
 import { type Auth } from './auth.ts';
 import { findTokenBySecret, TokenAuthError, touchTokenUsage, tokenProjectIds } from './tokens.ts';
 
@@ -146,21 +146,37 @@ export function resolveTokenActor(
 /**
  * The three attribution fields every `activity` row needs (§4.8, LAI-403).
  *
- * A helper rather than three lines repeated at eighteen call sites: the actor is
- * always the **person**, and the two fields that vary are exactly the two that
- * say the request arrived on a token. Spreading one object means a new call site
- * cannot record a cookie's attribution for an agent's request by forgetting a
- * field.
+ * A helper rather than three lines repeated at eighteen call sites: the two
+ * fields that vary are exactly the two that say the request arrived on a token.
+ * Spreading one object means a new call site cannot record a cookie's
+ * attribution for an agent's request by forgetting a field.
+ *
+ * ## The system principal returns `null`, and §4.8 already said so
+ *
+ * `activity.actor_id` is documented *"Null for system actors — webhooks (§6.1)
+ * and cron (§11.6)"*, and `actor_kind` has `system` for *"no human — cron or
+ * webhook"*. So this is not a new rule; it is the first caller that needs it
+ * (LAI-446).
+ *
+ * **LAI-448 deliberately left this alone**: `SystemPrincipal` carries no
+ * `actor_kind` and no `actor_id`, because authority and attribution are
+ * different questions and a principal that carries an identity acquires one by
+ * accident. This is where the second question is answered, and it is answered
+ * from §4.8 rather than from the principal.
  */
-export function activityActor(actor: ResolvedActor): {
-  actorId: string;
+export function activityActor(principal: Principal): {
+  actorId: string | null;
   actorKind: ActorKind;
   actorTokenId: string | null;
 } {
-  const token = actor.token;
+  if (isSystemPrincipal(principal)) {
+    return { actorId: null, actorKind: 'system', actorTokenId: null };
+  }
+
+  const token = principal.token;
 
   return {
-    actorId: actor.userId,
+    actorId: principal.userId,
     actorKind: token === null || token === undefined ? 'user' : 'agent',
     actorTokenId: token?.id ?? null,
   };
@@ -216,8 +232,35 @@ export function loadActor(db: Db, userId: string): ResolvedActor | null {
  * forgets it passes `projectRole: null` and silently denies, which looks like a
  * permissions bug and is very hard to spot in review.
  */
-export function withProject(actor: ResolvedActor, projectId: string): ResolvedActor {
-  const membership = actor.memberships.find((m) => m.projectId === projectId);
+/**
+ * Everything a service can be asked to act for: a real person's resolved actor,
+ * or §3.4's principal. Narrower than `Principal`, which admits a bare `Actor`
+ * with no memberships to narrow.
+ */
+export type ServiceCaller = ResolvedActor | SystemPrincipal;
 
-  return { ...actor, projectRole: membership?.role ?? null };
+export function withProject(principal: ResolvedActor, projectId: string): ResolvedActor;
+export function withProject(principal: SystemPrincipal, projectId: string): SystemPrincipal;
+export function withProject(principal: ServiceCaller, projectId: string): ServiceCaller;
+/**
+ * **Overloads rather than a generic with a cast.** The generic version compiles
+ * only with an `as T`, and a cast here would be asserting exactly the thing the
+ * function is supposed to establish — that what comes out is the same shape as
+ * what went in. Three signatures say it and the compiler checks it.
+ */
+export function withProject(principal: ServiceCaller, projectId: string): ServiceCaller {
+  // A system principal has no memberships to look up — its project scope is the
+  // delivery that resolved, and `can()` compares it to the resource directly
+  // (§3.4). Returning it unchanged is not a special case so much as the absence
+  // of one: there is nothing to narrow.
+  if (isSystemPrincipal(principal)) return principal;
+
+  const membership = principal.memberships.find((m) => m.projectId === projectId);
+
+  return { ...principal, projectRole: membership?.role ?? null };
+}
+
+/** Narrow to the §3.4 principal. Exported so services can branch on it. */
+export function isSystemPrincipal(principal: Principal): principal is SystemPrincipal {
+  return 'kind' in principal && principal.kind === 'system';
 }
