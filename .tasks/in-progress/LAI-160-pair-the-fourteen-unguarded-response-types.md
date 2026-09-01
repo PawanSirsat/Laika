@@ -2,11 +2,12 @@
 id: LAI-160
 title: Fourteen server response types have a client mirror and no pair
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-444]
 discovered-from: LAI-444
-status: backlog
+started: 2026-09-01T18:15:00+05:30
+status: in-progress
 ---
 
 ## Goal
