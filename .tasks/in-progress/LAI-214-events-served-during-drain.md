@@ -2,11 +2,12 @@
 id: LAI-214
 title: The events stream hands out `ready` during shutdown drain
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-070
-status: backlog
+status: in-progress
+started: 2026-09-02T09:35:00Z
 started:
 finished:
 ---

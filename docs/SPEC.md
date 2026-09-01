@@ -334,6 +334,15 @@ which is the check working on the document it exists to pin.
 | `stale_flagged_at` | nullable, set by cron (§11.6) |
 | `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in, and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
 
+**`started_at`** is set the first time a task enters `in_progress` and is never
+moved again. **`completed_at`** is set on **every** arrival at `done`, and is
+**not cleared** when a task is reopened: a task completed twice was completed the
+second time, and a reopened task keeps the record of having been finished before.
+
+**The two are deliberately asymmetric** — first for one, latest for the other
+(LAI-146). A `completed_at` on a task that is not `done` is a fact about its
+**history**; `status` is the only claim about its **state**.
+
 **`started_at` and `completed_at` are actuals, not a plan.** D-014 gives tasks no
 dates so the timeline stays a rendering pass over sprint boundaries rather than a
 scheduling engine. These record what *happened*; a Gantt bar asserts what is
