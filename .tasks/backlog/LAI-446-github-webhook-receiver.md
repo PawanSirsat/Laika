@@ -2,12 +2,11 @@
 id: LAI-446
 title: 'POST /webhooks/github — HMAC verified before the body is parsed'
 area: server
-assignee: core
+assignee: unclaimed
 priority: p2
-depends-on: [LAI-161]
+depends-on: [LAI-161, LAI-448]
 discovered-from:
-status: in-progress
-started: 2026-09-01T19:50:00Z
+status: backlog
 ---
 
 ## Goal
