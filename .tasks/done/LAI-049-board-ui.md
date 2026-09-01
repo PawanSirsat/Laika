@@ -21,10 +21,11 @@ SPEC §11.4.1 — real data through the LAI-007 API client, no fixtures.
 
 - [x] **Kanban**: five columns — `backlog`, `todo`, `in_progress`, `review`,
       `done` — with counts. `cancelled` is behind a filter, not a column.
-- [~] Cards show display key (`LAI-42`), title, assignee, priority, and the
+- [x] Cards show display key (`LAI-42`), title, assignee, priority, and the
       **blocked**, **ready** and **stale** markers of §11.4.1.
-      *(blocked and ready ship; **stale cannot** — `stale_flagged_at` is not on
-      `TaskView`. → LAI-208)*
+      *(blocked and ready shipped here; **stale** could not — `stale_flagged_at`
+      was not on `TaskView`. Served by LAI-208, drawn by **LAI-157**, which
+      ticked this line.)*
 - [x] Dragging a card issues `POST /api/v1/tasks/:id/status`. An illegal
       transition **snaps back and surfaces the error** — it must not
       optimistically lie about a change the server refused.
@@ -72,6 +73,9 @@ I have marked them rather than ticked them.
 - **`stale` marker (AC2).** `tasks.stale_flagged_at` is in the schema and the
   cron sets it, but `TaskView` does not carry it — so it never reaches the
   client. `blocked` and `ready` do ship. → **LAI-208**.
+  *(Closed 2026-09-01: LAI-208 put it on `TaskView`, LAI-157 declared it on the
+  client and drew the marker. AC2 above is now ticked. The reading of the
+  situation was right — it was the field, not the card.)*
 - **Agent-authored badge (AC8).** There is **no activity endpoint at all**;
   §6.4 lists `GET /projects/:slug/activity` and it is unimplemented. → **LAI-209**.
 
