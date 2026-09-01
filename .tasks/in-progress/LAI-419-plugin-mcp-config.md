@@ -2,11 +2,12 @@
 id: LAI-419
 title: The plugin's .mcp.json points at a deployment, and loads without one
 area: plugin
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+started: 2026-09-01T22:25:00+05:30
+status: in-progress
 ---
 
 ## Goal
