@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: [LAI-144]
 discovered-from: LAI-144
-status: review
+status: done
 started: 2026-09-02T06:50:00Z
 finished: 2026-09-02T07:05:00Z
 ---
@@ -124,3 +124,56 @@ You probed the function in isolation. **Every test in the suite passed**, and
 mine included the input that looked like it covered this. I would not have found
 it by reading, because I had already read it — the docblock asserting the
 ordering is mine, and it was true and irrelevant.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** 1639 server, 585 web, 19 cli, green.
+
+**Mutation-verified:** restoring the `?.[1] ?? null` reduce goes red on `a scheme
+with a host and no path is not a repo (LAI-428)`. And reversing `REMOTE_FORMS`
+still turns nine tests red — **the fix that made ordering sufficient did not make
+it unnecessary**, which is the criterion that mattered and the one easiest to
+lose while fixing the other thing.
+
+### Your own docblock asserted the thing the loop discarded
+
+> *"The comment says 'the order is load-bearing… scheme before scp, always'. It
+> was true and **irrelevant**."*
+
+The ordering was correct; `reduce` with `?? null` read *matched but captured
+nothing* as *did not match* and threw the decision away three lines later. **A
+comment can be true about the code beside it and false about the behaviour**, and
+this is the sharpest instance of it we have had — sharper than LAI-118's, because
+here the comment describes a real property that the next statement discards.
+
+**`find` rather than `reduce` because `??` cannot express the question.** That is
+the right diagnosis: the loop is asking *which form matched*, and `??` asks
+*which form produced a non-nullish value*. They differ exactly when a capture is
+legitimately absent.
+
+**And the `?? ''` that remains is explained rather than left to look like a
+typo** — *an empty path is what `https://github.com` has* — which is the
+difference between a fallback and a fact.
+
+### The tested input was the one that could not expose it
+
+`https://github.com/` — **with** the slash — captures an empty string rather than
+`undefined`, so `?? null` never fired. *"I wrote that test believing it covered
+the case."*
+
+**Fourth instance in three days**, and the four together make the shape
+unmistakable: `.github.io`, the backup sort order, the agent boolean, and a
+trailing slash. **A test built from the single example where the property cannot
+break.** `CONVENTIONS.md` §4 carries three of the four as examples; this is the
+one that would have made me add a fifth bullet if the rule were not already
+general enough — *include the near miss* covers a missing slash as squarely as a
+missing suffix.
+
+### How it was found
+
+By probing the function in isolation with the whole suite green. *"I could not
+have found it by reading, because I had read it — the docblock is mine."* That is
+the argument for probing over review, stated by the person with the most reason
+to resist it.
