@@ -6,8 +6,9 @@ assignee: core
 priority: p3
 depends-on: [LAI-055]
 discovered-from: LAI-085
-status: in-progress
+status: review
 started: 2026-09-02T10:10:00Z
+finished: 2026-09-02T10:30:00Z
 ---
 
 ## Goal
@@ -29,20 +30,20 @@ client — which on a 200-task board is 200 requests to draw one number.
 
 ## Acceptance criteria
 
-- [ ] An endpoint that answers both without the client walking per-task history.
+- [x] An endpoint that answers both without the client walking per-task history.
       Shape is the designer's call; `GET /api/v1/projects/:slug/metrics?since=`
       returning completions per bucket and a cycle-time distribution is the
       obvious start.
-- [ ] `can()`-gated on `project.read` like the rest of the project's reads.
-- [ ] **Cancelled work is excluded from cycle time and named as excluded.** A
+- [x] `can()`-gated on `project.read` like the rest of the project's reads.
+- [x] **Cancelled work is excluded from cycle time and named as excluded.** A
       task cancelled after two weeks in progress is not a two-week cycle time; it
       is not a cycle at all. The sprint progress bar and the dashboard's status
       counts already make this call (LAI-083, LAI-085) and a third answer here
       would be the inconsistent one.
-- [ ] A task that moved to `done` more than once counts once — §5 allows
+- [x] A task that moved to `done` more than once counts once — §5 allows
       `done → in_progress`, so reopening is legal and the naive query
       double-counts it.
-- [ ] Tested against a task with a real, multi-step history rather than a
+- [x] Tested against a task with a real, multi-step history rather than a
       synthetic pair of rows.
 
 ## Notes / context
@@ -78,3 +79,60 @@ reopened and re-completed has one `completed_at` and two completions, and
 **So the two halves now have different sources**, which is worth stating in the
 code: one is a column, one is an event stream, and the reason is that one is a
 duration and the other is a count.
+
+
+---
+
+## Submitted — CORE, 2026-09-02
+
+**1684 of 1685 server green**; the one red is LAI-214's `unavailable` awaiting
+§6.3, not this task.
+
+### Your note was right and it removed more than the harder half
+
+Cycle time is `completed_at - started_at` on the row. What that removed is not
+just work — it removed **the decision**: reconstructing a first transition from
+`task.status_changed` means deciding what a task sent back and picked up again
+did, and `started_at` already answers it, once, in the place that stamps it.
+
+### The trap LAI-146 left, and it is the one worth reviewing
+
+**The filter is `status = 'done'`, not `completed_at IS NOT NULL`.**
+
+`completed_at` survives a reopen deliberately (LAI-146), so a task done, reopened
+and still in progress carries a timestamp for a cycle **it is in the middle of**.
+Filtering on the timestamp would report a finished cycle for unfinished work —
+and it is the natural way to write the query. Dropping the status filter turns
+two tests red, one of them named for exactly this.
+
+It also settles AC4 without a second rule: the row holds **one** `completed_at`,
+so a reopened-and-refinished task counts once, at its latest completion. A query
+over `activity` would have counted two.
+
+### Cancelled work
+
+Excluded **by construction** — `status = 'done'` already does it, so there is no
+second clause that could disagree with LAI-083's and LAI-085's call.
+
+### Two shapes decided rather than defaulted
+
+**A completed task with no `started_at` is counted and not measured**, reported
+as `unmeasured`. It is real throughput; it has no cycle. Reported rather than
+dropped, because a board where most work never passes through `in_progress` is a
+fact about the board and not a gap in the data.
+
+**`cycle_time` is `null` when nothing completed**, not a zeroed shape. `null`
+says *no data*; zeros say *measured, and it was nothing*, and a chart renders
+those differently.
+
+Percentiles are **nearest rank**: a p90 no task actually took invites somebody to
+go looking for it.
+
+### Mounted beside `:slug/activity`
+
+Same question, same `project.read` gate, same router — a second router on one
+prefix is a second place to get the mount order wrong.
+
+Six mutations, all caught: dropping the status filter, counting cancelled work,
+treating a missing start as a zero-length cycle, zeroing instead of `null`, an
+off-by-one percentile, and dropping the `since` filter.
