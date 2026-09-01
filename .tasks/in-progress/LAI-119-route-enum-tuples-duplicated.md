@@ -2,11 +2,12 @@
 id: LAI-119
 title: Route files retype the closed vocabularies instead of reaching for them
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-071
-status: backlog
+status: in-progress
+started: 2026-09-01T15:55:00Z
 ---
 
 ## Goal
