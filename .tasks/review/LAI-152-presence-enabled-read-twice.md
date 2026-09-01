@@ -6,8 +6,9 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-140
-status: in-progress
+status: review
 started: 2026-09-02T07:15:00Z
+finished: 2026-09-02T07:30:00Z
 ---
 
 ## Goal
@@ -40,13 +41,13 @@ is how this got filed.
 
 ## What is needed
 
-- [ ] One reader, in `db/orgs.ts` beside `requireOrg` — it is a query with no
+- [x] One reader, in `db/orgs.ts` beside `requireOrg` — it is a query with no
       policy in it, which is what `db/` is for (CONVENTIONS §2).
-- [ ] Both services call it.
-- [ ] **The no-org answer stays `true`, and is stated once.** Presence is on by
+- [x] Both services call it.
+- [x] **The no-org answer stays `true`, and is stated once.** Presence is on by
       default (§4.2) and an instance with no org has nothing to have disabled;
       today that reasoning exists in neither copy, only in the `?? 1`.
-- [ ] A test that the shared reader answers `true` with no org at all — the case
+- [x] A test that the shared reader answers `true` with no org at all — the case
       neither private copy tests today.
 
 ## Notes / context
@@ -58,3 +59,34 @@ non-throwing because "no org" has a correct answer here, unlike the id.
 **Both callers read it for different purposes** — `heartbeats.ts` to decide
 whether to store a row at all (LAI-150), `presence.ts` to set `enabled` on the
 response (LAI-432). That is two callers of one fact, not two facts.
+
+
+---
+
+## Submitted — CORE, 2026-09-02
+
+**Fully green: 1642 server, 585 web.** One reader remains; `grep` for
+`orgs.presenceEnabled` outside `schema.ts` returns a single line.
+
+### Why this one does not throw
+
+`requireOrgId` throws because "no org" has no correct id. `presenceEnabled` does
+not, because "no org" **does** have a correct answer: nothing set up means
+nothing switched off, and §4.2's default is on. The reasoning lived in a `?? 1`
+in two files and in prose in neither.
+
+### The no-org case is now tested
+
+Neither private copy tested it — the one behaviour that made two copies risky was
+the one nothing pinned. Both boolean values are asserted, because a test that
+only checks `false` passes against an implementation that always says `false`.
+
+### Two mutations did not apply, and I re-ran them
+
+`?? 1` is not unique in `db/orgs.ts`, so my first attempts printed
+`ANCHOR FAILED` and the suite came back green. **That is the no-op mutation
+again**, and it is the fifth I have seen this week — reading it as coverage would
+have been the whole failure this task's own guards exist to prevent.
+
+Three mutations, all caught once anchored on the actual line: defaulting to off,
+always on, always off.
