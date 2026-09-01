@@ -2331,3 +2331,71 @@ move?" but "does anything closed on the server have a copy on the client?"**
 boundary, with where it lives and what it reads. **A guard nobody knows exists
 gets predicted around**, which is what happened twice, and the second time by the
 reviewer as well as the builder.
+
+---
+
+## D-049 — D-040 is overturned. The timeline gets task rows, drawn from actuals.
+
+**2026-09-01. Decided by the owner, who looked at both screens side by side and
+said the design's is what they want.** This supersedes **D-040**; D-014 survives
+in amended form, below.
+
+### What D-040 said, and why it was right at the time
+
+> *"The design's timeline is not reachable. Reproducing those rows would mean
+> inventing dates — draw it from sprint boundaries and it costs a view; draw it
+> from task dates and it costs a scheduling engine."*
+
+**The objection was to inventing dates, and it was correct** — on 2026-08-31
+there were no per-task dates to draw. `tasks.started_at` and `completed_at`
+existed as columns and **nothing serialised them**, so the only honest bar was a
+sprint's.
+
+### What changed
+
+**LAI-126 landed today.** `TaskView` now carries `started_at` and `completed_at`,
+`started_at` is stamped on the **first** entry into `in_progress` by every route
+in, and neither is ever overwritten.
+
+So a finished task's bar is **`started_at → completed_at`: a fact about the past,
+measured, not planned.** That is precisely the distinction D-014 was protecting,
+and it now falls on the other side of it. A Gantt bar asserting *what is planned*
+is a scheduling engine; a bar showing *what actually happened* is a report.
+
+**D-040's reasoning was sound and its conclusion expired.** The decision that
+made it expire was taken four hours earlier by the same session, for an unrelated
+reason.
+
+### What each pixel comes from
+
+| Task state | Bar | Source |
+| --- | --- | --- |
+| `done` | solid, from start to finish | `started_at → completed_at` — **actual** |
+| `in_progress` | solid to today, then a lighter remainder to the sprint's end | `started_at → now`, remainder from the sprint — **actual, then plan** |
+| `todo` / `backlog`, in a sprint | outlined, spanning the sprint | the sprint's range — **plan, and it must not look like an actual** |
+| anything with no actuals and no sprint | the Unscheduled tray, as today | — |
+
+**The two must be visually distinguishable without reading a legend.** That is
+the whole of what is left of D-014: **Laika never asserts a date it was not
+told.** A solid bar is something that happened; an outline is a sprint someone
+put a task into.
+
+### What is still not being built
+
+**Tasks do not get their own date columns.** No `planned_start`, no `due_date`,
+no dragging a task bar to reschedule it. If the owner wants to *set* a task's
+dates by hand, that is a further decision — it adds two columns, an editing
+surface, and the overlap questions sprints already needed — and it is filed
+separately rather than folded in here.
+
+### The guard
+
+`timeline-derive.test.ts`'s *"D-014 — tasks never get a position on the axis"*
+**is retired by this decision, and replaced, not deleted.** Its successor asserts
+the rule that survives: **no bar is drawn from a date the task does not have.**
+A `todo` task with no sprint gets no bar; a `done` task with a null `started_at`
+falls back to its sprint and renders as a plan.
+
+Retiring it is authorised here so that no builder has to decide whether a
+comment saying *"there is a test that keeps it that way"* still binds. **It does
+not — this does.**
