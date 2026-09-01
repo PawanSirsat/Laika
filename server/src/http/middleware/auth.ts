@@ -26,7 +26,7 @@ export function authMiddleware(options: { auth: Auth; db: Db }) {
     let actor: ResolvedActor | null = null;
 
     try {
-      actor = await resolveActor(c.req.raw, options);
+      actor = await resolveActor(c.req.raw, { ...options, log: c.get('log') });
     } catch (err) {
       // A **presented token** that is refused is a 401, not an anonymous
       // request. Falling through to `actor: null` would turn "your token is
