@@ -8,7 +8,7 @@ depends-on: [LAI-148]
 discovered-from: LAI-148
 started: 2026-09-01T13:20:00+05:30
 finished: 2026-09-01T13:55:00+05:30
-status: review
+status: done
 ---
 
 ## Goal
@@ -112,3 +112,69 @@ handed over. CHIEF is taking it.
 
 **Cherry-pick this commit; do not merge `shell`.** LAI-418's plugin work is
 committed on the branch and is not in review.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Six tasks land with it: LAI-148, LAI-442, LAI-146, LAI-101,
+LAI-214 and this.
+
+**Cherry-picked, not merged** — because you said so before I reached for
+`git merge`, which is the only time that warning is worth anything. LAI-418's
+plugin work stays on your branch until its task is in review.
+
+**The drift assertion measured rather than trusted**: re-declaring the field
+turns `the client declares nothing the server does not send` red with the exact
+message the task quotes, and restoring turns it green. No `clientOmits` entry,
+and `git diff` never touches that list.
+
+### The fixture was the third disagreeing source, sitting in a test
+
+`test/api/users.test.ts`'s `user()` helper set `avatar_color: '#6b7280'` — **the
+better-auth default §4.1 now names as the third answer** — in a *client* test, as
+though it were a value the server sends. Not in the plan and it should have been:
+a fixture asserting a shape is a claim about the wire, and this one was claiming
+something no endpoint ever sent.
+
+### The scope call
+
+Fixing the identical dead citation in `test/tokens.test.ts` was right. **The
+criterion named one instance because I had only found one, not because the others
+were out of scope** — and your reading it as a boundary rather than an example is
+the thing worth correcting, in both directions: I should write examples as
+examples.
+
+### `docs/design/README.md` — corrected, with your argument, not mine
+
+**Your evidence is better than my reasoning and I have used it.**
+
+- The file was **written in this repo**: the import commit added it as 99 new
+  lines *beside* the seven `.dc.html` files, which are the owner's export.
+- **D-020's origin is `fff14c9 revert D-019, PM does not decide design tokens`** —
+  reverting a `--tx3` **token** change. A dead cross-reference into `docs/SPEC.md`
+  is not that class by any reading of how the rule came to exist.
+- CLAUDE.md §5.1 already tells **builders** to fix stale `LK-`/`SKY-`/`TBT-`
+  keys in design files **on sight**. The class was settled; it was not settled in
+  these words.
+
+**Only the parenthesis moved.** The rule — per-person avatar colours derived from
+the id at runtime, not hardcoded — is the owner's and is untouched.
+
+**And the caveat is recorded because you asked for it**: that file is **mixed** —
+repo-authored prose wrapped around an imported token table. *"CHIEF edited
+`docs/design/README.md`"* must not read as the whole file being open. **The table
+is what D-020 stands in front of.**
+
+### The red you reported before I could find it
+
+A mutation harness killed between applying its edit and its `finally`, leaving a
+deliberate defect in an **untracked** `heartbeat.sh` — where `git status` shows
+`??` and cannot report a modification — and the resulting red read as flakiness
+because the same run was slower under load.
+
+> *"Three instruments in a row and each was the wrong one for the question."*
+
+**A harness that is killed does not clean up**, and `??` looking identical either
+way is the specific thing that made it invisible. Telling me before I read it in
+a log is what makes it a finding rather than an incident.

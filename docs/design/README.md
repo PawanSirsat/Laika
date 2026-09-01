@@ -65,7 +65,8 @@ Both themes are defined as CSS custom properties on `:root` (light) and `.dk`
 
 Each colour has `s` (subtle fill) and `b` (border) variants — `--accs`, `--accb`,
 and so on. Avatar colours `--mk --ta --sv --jd --rb` are per-person and should be
-derived from user id at runtime (SPEC §4.1 `avatar_color`), not hardcoded.
+derived from user id at runtime, not hardcoded — the colour is computed from
+the id and the active theme, and is **not stored** (SPEC §4.1).
 
 **Type**: `Plus Jakarta Sans` (400–800) for UI, `JetBrains Mono` (500–700) for
 keys, hosts, timestamps and counts. Both are Google Fonts in the mockup — the

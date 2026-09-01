@@ -235,3 +235,51 @@ describe('the org feed does not leak a project (AC2)', () => {
     }
   });
 });
+
+describe('GET /projects/:slug/metrics (LAI-124)', () => {
+  it('answers throughput and cycle time in one request', async () => {
+    // The whole point: LAI-085 filed this because the alternative is one request
+    // per task — 200 requests to draw one number on a 200-task board.
+    const res = await req('/api/v1/projects/laika/metrics');
+
+    expect(res.status, await res.clone().text()).toBe(200);
+
+    const body = (await res.json()) as {
+      since: number;
+      throughput: { day: string; completed: number }[];
+      cycle_time: unknown;
+    };
+    expect(Array.isArray(body.throughput)).toBe(true);
+    expect(typeof body.since).toBe('number');
+  });
+
+  it('defaults to a 30-day window rather than scanning everything', async () => {
+    const before = Date.now() - 31 * 24 * 60 * 60 * 1000;
+
+    const body = (await (await req('/api/v1/projects/laika/metrics')).json()) as {
+      since: number;
+    };
+
+    // An unbounded default is a way to ask for the whole table without meaning
+    // to; 30 days is what the Dashboard draws.
+    expect(body.since).toBeGreaterThan(before);
+  });
+
+  it('rejects a since that is not a number', async () => {
+    const res = await req('/api/v1/projects/laika/metrics?since=yesterday');
+
+    // Not silently defaulted: a client that sent a bad value believes it asked
+    // for a window it did not get.
+    expect(res.status).toBe(400);
+  });
+
+  it('401s when signed out', async () => {
+    const res = await h.app.request('/api/v1/projects/laika/metrics', { headers: jsonHeaders() });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('404s an unknown project', async () => {
+    expect((await req('/api/v1/projects/nope/metrics')).status).toBe(404);
+  });
+});
