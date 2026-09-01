@@ -7,7 +7,6 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
 import { describe, test } from 'node:test';
 import type { Sprint } from '../../../../src/api/sprints.ts';
 import {
@@ -15,6 +14,9 @@ import {
   isPast,
   monthBands,
   startOfDay,
+  sprintSummary,
+  taskActuals,
+  taskBar,
   timelineRange,
   todayPosition,
   toSegments,
@@ -22,6 +24,8 @@ import {
 
 const DAY = 24 * 60 * 60 * 1000;
 const day = (iso: string): number => Date.parse(`${iso}T00:00:00.000Z`);
+/** Day `n` relative to 1 Aug, for the bar tests — negative reaches before it. */
+const d = (n: number): number => day('2026-08-01') + n * DAY;
 
 function sprint(over: Partial<Sprint> & { id: string }): Sprint {
   return {
@@ -258,40 +262,188 @@ void describe('startOfDay', () => {
   });
 });
 
-void describe('D-014 — tasks never get a position on the axis', () => {
-  void test('nothing in the timeline folder positions a task', async () => {
-    // The prototype draws a row per task with its own start and length
-    // (`tlSpans`). `tasks` has no planned-start and no due-date column and D-014
-    // keeps it that way, so those rows are invented dates. This fails if anyone
-    // reintroduces them — a comment would not.
-    const dir = new URL('../../../../src/routes/screens/timeline/', import.meta.url);
+/**
+ * The successor to *"D-014 — tasks never get a position on the axis"*.
+ *
+ * **D-049 retired that guard and authorised this replacement.** Tasks get bars
+ * now; what survives is the rule the old guard was really protecting:
+ *
+ * > **Laika never asserts a date it was not told.**
+ *
+ * So this does not check that bars are absent. It checks that **no bar is drawn
+ * from a date the task does not have** — an unmeasured end falls back to the
+ * sprint and is marked as a plan, and a task with neither gets no bar at all.
+ */
+void describe('D-049 — no bar is drawn from a date the task does not have', () => {
+  const RANGE = timelineRange([sprint({ id: 's1', starts_on: d(0), ends_on: d(9) })])!;
+  const SPRINT = sprint({ id: 's1', starts_on: d(0), ends_on: d(9) });
+  const NOW = d(4);
 
-    for (const name of await readdir(dir)) {
-      if (!/\.tsx?$/.test(name)) continue;
+  void test('a finished task is measured, start to finish', () => {
+    const bar = taskBar(
+      { status: 'done', started_at: d(1), completed_at: d(3) },
+      SPRINT,
+      RANGE,
+      NOW,
+    );
+    assert.equal(bar?.kind, 'actual');
+    assert.equal(bar?.fromSprint, false);
+    assert.equal(bar?.from, d(1));
+    assert.equal(bar?.to, d(3));
+  });
 
-      const source = await readFile(new URL(name, dir), 'utf8');
-      const body = source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  void test('a running task is measured to today, then planned to the sprint end', () => {
+    const bar = taskBar(
+      { status: 'in_progress', started_at: d(2), completed_at: null },
+      SPRINT,
+      RANGE,
+      NOW,
+    );
+    assert.equal(bar?.kind, 'partial');
+    assert.equal(bar?.to, d(4), 'the solid part must stop at today, not run to the sprint end');
+    assert.ok((bar?.remainderDays ?? 0) > 0, 'the planned remainder is missing');
+  });
 
-      // A task span would have to come from somewhere: there is no task date
-      // field, so any of these appearing means one was invented.
-      for (const banned of ['due_date', 'plannedStart', 'planned_start', 'taskSpan', 'tlSpans']) {
-        assert.ok(!body.includes(banned), `${name} references ${banned} — see D-014`);
-      }
+  void test('a task with no actuals gets its sprint, marked as a plan', () => {
+    const bar = taskBar(
+      { status: 'todo', started_at: null, completed_at: null },
+      SPRINT,
+      RANGE,
+      NOW,
+    );
+    assert.equal(bar?.kind, 'planned');
+    assert.equal(bar?.fromSprint, true, 'a sprint-derived bar must say so');
+    assert.equal(bar?.from, d(0));
+  });
 
-      // `flexGrow` is how a bar claims its share of the axis. It must only ever
-      // be applied to a sprint segment or a month band, never to a task.
-      const positionsTask = /task[A-Za-z]*\s*\.\s*(?:starts_on|ends_on|days)/.test(body);
-      assert.ok(!positionsTask, `${name} appears to derive an axis position from a task`);
+  void test('**a done task with no completed_at is a plan, not a measurement**', () => {
+    // The load-bearing fallback. We know when it started and not when it
+    // finished, so drawing it as an actual would assert an end nobody gave us.
+    const bar = taskBar(
+      { status: 'done', started_at: d(1), completed_at: null },
+      SPRINT,
+      RANGE,
+      NOW,
+    );
+    assert.equal(bar?.kind, 'planned');
+    assert.equal(bar?.fromSprint, true);
+  });
+
+  void test('no actuals and no sprint means no bar at all', () => {
+    assert.equal(
+      taskBar({ status: 'todo', started_at: null, completed_at: null }, undefined, RANGE, NOW),
+      undefined,
+    );
+  });
+
+  void test('a running task with no sprint is still measured, with no remainder', () => {
+    // Actuals alone are enough to earn a position — the tray is for tasks with
+    // neither, not for tasks without a sprint.
+    const bar = taskBar(
+      { status: 'in_progress', started_at: d(2), completed_at: null },
+      undefined,
+      RANGE,
+      NOW,
+    );
+    assert.equal(bar?.kind, 'partial');
+    assert.equal(bar?.remainderDays, 0, 'a remainder with no sprint would be invented');
+  });
+
+  void test('a task crossing a sprint boundary draws one bar across both', () => {
+    // The case D-040 said was unrepresentable. It was — from sprint boundaries.
+    // From actuals it is one span, and that is the point of D-049.
+    const wide = timelineRange([
+      sprint({ id: 'a', starts_on: d(0), ends_on: d(4) }),
+      sprint({ id: 'b', starts_on: d(5), ends_on: d(9) }),
+    ])!;
+    const bar = taskBar(
+      { status: 'done', started_at: d(3), completed_at: d(7) },
+      sprint({ id: 'a', starts_on: d(0), ends_on: d(4) }),
+      wide,
+      d(9),
+    );
+    assert.equal(bar?.kind, 'actual');
+    assert.equal(bar?.from, d(3));
+    assert.equal(bar?.to, d(7), 'the bar must not be clipped to its own sprint');
+  });
+
+  void test('the segments always sum to the axis', () => {
+    // The same invariant the sprint track has: if they do not sum, the header
+    // stops lining up with the bars.
+    for (const task of [
+      { status: 'done', started_at: d(1), completed_at: d(3) },
+      { status: 'in_progress', started_at: d(2), completed_at: null },
+      { status: 'todo', started_at: null, completed_at: null },
+    ]) {
+      const bar = taskBar(task, SPRINT, RANGE, NOW);
+      assert.ok(bar !== undefined);
+      const total = bar.leadDays + bar.solidDays + bar.remainderDays + bar.trailDays;
+      assert.equal(
+        total,
+        RANGE.days,
+        `${task.status} sums to ${String(total)} not ${String(RANGE.days)}`,
+      );
     }
   });
 
-  void test('the client Task type still has no date a bar could use', async () => {
-    // If one is ever added, this fails and whoever added it reads D-014 before
-    // the timeline quietly becomes a scheduling engine.
-    const source = await readFile(new URL('../../../../src/api/tasks.ts', import.meta.url), 'utf8');
+  void test('the axis widens to cover actuals rather than clamping them', () => {
+    // Clamping would move a bar's start to the axis edge, which asserts a date
+    // nobody gave us — the exact thing this describe block exists for.
+    const actuals = taskActuals([{ status: 'done', started_at: d(-3), completed_at: d(1) }]);
+    const widened = timelineRange([SPRINT], actuals)!;
+    assert.ok(widened.from <= d(-3), 'a task that started before the first sprint was clipped');
+  });
+});
 
-    for (const banned of ['due_date', 'planned_start', 'starts_on', 'ends_on']) {
-      assert.ok(!source.includes(banned), `api/tasks.ts declares ${banned} — see D-014`);
-    }
+void describe('the active sprint strip: DONE · BLOCKED · WIP · DAYS LEFT', () => {
+  /** All four differ on purpose — four equal counts is a test that cannot fail. */
+  const TASKS = [
+    { status: 'done' },
+    { status: 'done' },
+    { status: 'done' },
+    { status: 'in_progress' },
+    { status: 'in_progress' },
+    { status: 'todo' },
+    { status: 'todo' },
+    { status: 'todo' },
+    { status: 'todo' },
+  ];
+  const BLOCKED = 1;
+  const SPRINT = sprint({ id: 's', starts_on: d(0), ends_on: d(9) });
+
+  void test('each count is itself, and no two are accidentally equal', () => {
+    const summary = sprintSummary(TASKS, BLOCKED, SPRINT, d(3));
+    assert.deepEqual(summary, { done: 3, total: 9, blocked: 1, wip: 2, daysLeft: 6 });
+
+    const four = [summary.done, summary.blocked, summary.wip, summary.daysLeft];
+    assert.equal(new Set(four).size, 4, 'the fixture must keep all four distinct');
+  });
+
+  void test('blocked is passed in, not recomputed', () => {
+    // `board-derive.ts` owns that rule. A second one drifts from it — the
+    // LAI-215 `initials()` problem.
+    assert.equal(sprintSummary(TASKS, 7, SPRINT, d(3)).blocked, 7);
+  });
+
+  void test('DAYS LEFT clamps at zero for a sprint that has ended', () => {
+    // A sprint that ended last week has not got minus seven days left. A
+    // negative reads as a countdown running the wrong way.
+    assert.equal(sprintSummary(TASKS, 0, SPRINT, d(20)).daysLeft, 0);
+  });
+
+  void test('the last day of the sprint is zero days left, not one', () => {
+    // `ends_on` is inclusive (§4.15): on the final day there is no day left
+    // after today.
+    assert.equal(sprintSummary(TASKS, 0, SPRINT, d(9)).daysLeft, 0);
+  });
+
+  void test('an empty sprint is zeroes, not a division by nothing', () => {
+    assert.deepEqual(sprintSummary([], 0, SPRINT, d(3)), {
+      done: 0,
+      total: 0,
+      blocked: 0,
+      wip: 2 - 2,
+      daysLeft: 6,
+    });
   });
 });

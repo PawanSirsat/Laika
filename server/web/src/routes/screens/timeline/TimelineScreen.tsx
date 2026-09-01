@@ -7,10 +7,17 @@ import { useRoute } from '../../use-route.ts';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { useSprints } from '../sprints/use-sprints.ts';
+import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
+import { listMembers, type Member } from '../../../api/tasks.ts';
+import { avatarColor } from '../../../theme/avatar-color.ts';
+import { initials } from '../../../theme/initials.ts';
+import { useTheme } from '../../../theme/use-theme.ts';
 import {
   isCurrent,
-  isPast,
   monthBands,
+  sprintSummary,
+  taskActuals,
+  taskBar,
   timelineRange,
   todayPosition,
   toSegments,
@@ -48,7 +55,6 @@ export function TimelineScreen() {
   const { params, setParams } = useRoute();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
-  const [expanded, setExpanded] = useState<string | undefined>(undefined);
 
   // Fixed at mount rather than read per render: every position on the axis is
   // derived from it, and a clock that moved mid-render would shift the marker
@@ -79,6 +85,28 @@ export function TimelineScreen() {
     };
   }, [slug]);
 
+  const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
+
+  // Names and avatar colours for the left column. A failure costs the initials,
+  // not the timeline, so it degrades to "?" rather than erroring the screen.
+  useEffect(() => {
+    if (slug === undefined) return;
+    const controller = new AbortController();
+
+    listMembers(slug, controller.signal)
+      .then((page) => {
+        setMembers(new Map(page.members.map((m) => [m.user_id, m])));
+      })
+      .catch(() => {
+        setMembers(new Map());
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [slug]);
+
+  const { theme } = useTheme();
   const sprints = useSprints(slug);
 
   if (projectError !== null) {
@@ -111,7 +139,16 @@ export function TimelineScreen() {
   }
 
   const { rows, unassigned } = sprints.state;
-  const range = timelineRange(rows.map((r) => r.sprint));
+  const allTasks = [...rows.flatMap((r) => r.tasks), ...unassigned];
+  const byTaskId = byIdIndex(allTasks);
+
+  // The axis covers the sprints **and** every measured date, so a task that
+  // started before the first sprint is drawn where it started rather than
+  // clipped to the edge — clipping would show a date nobody gave us (D-049).
+  const range = timelineRange(
+    rows.map((r) => r.sprint),
+    taskActuals(allTasks),
+  );
 
   // AC5: an empty project gets the empty state, not a bare axis. An axis with
   // no bars is a chart that looks broken rather than a project that has not been
@@ -134,6 +171,26 @@ export function TimelineScreen() {
   const bands = monthBands(range);
   const today = todayPosition(range, now);
   const byId = new Map(rows.map((r) => [r.sprint.id, r]));
+
+  /** One drawn row per task that has earned a position. */
+  const drawn = rows.flatMap((row) =>
+    row.tasks.flatMap((task) => {
+      const bar = taskBar(task, row.sprint, range, now);
+      return bar === undefined ? [] : [{ task, sprint: row.sprint, bar }];
+    }),
+  );
+
+  const active = rows.find((r) => isCurrent(r.sprint, now)) ?? rows[0];
+  const summary =
+    active === undefined
+      ? undefined
+      : sprintSummary(
+          active.tasks,
+          // `board-derive`'s rule, not a second one (LAI-215).
+          active.tasks.filter((t) => blockedState(t, byTaskId) === true).length,
+          active.sprint,
+          now,
+        );
 
   return (
     <div className="timeline">
@@ -158,131 +215,176 @@ export function TimelineScreen() {
           cannot see reads as a bug**, so the screen says outright why there is
           no bar per task rather than leaving them to infer one is missing. */}
       <p className="timeline-sub">
-        One bar per sprint. Tasks have no dates of their own, so they are listed inside their sprint
-        rather than placed on the axis — open a sprint to see what is in it.
+        One row per task. A <strong>solid</strong> bar is what happened, from the day work started
+        to the day it finished. An <strong>outline</strong> is the sprint a task sits in — a plan,
+        not a measurement.
       </p>
 
-      <div className="timeline-chart">
-        <div className="timeline-months" aria-hidden="true">
-          {bands.map((band) => (
-            <div key={band.key} className="timeline-month" style={{ flexGrow: band.days }}>
-              <span className="timeline-month-label">{band.label}</span>
+      {/*
+        The task track (D-049, LAI-434).
+
+        **A solid bar is something that happened; an outline is somewhere a task
+        was put.** That distinction is the whole of what survives D-014, so it is
+        carried by *shape* — a filled bar against a hatched outline — and not by
+        colour alone: a colour-only difference disappears for a colour-blind
+        reader and in a screenshot.
+      */}
+      {summary !== undefined && active !== undefined && (
+        <div className="tl-strip">
+          <span className="tl-strip-name">{active.sprint.name}</span>
+          <span className="tl-stat">
+            DONE <b>{summary.done}</b>/{summary.total}
+          </span>
+          <span className="tl-stat tl-stat-blocked">
+            BLOCKED <b>{summary.blocked}</b>
+          </span>
+          <span className="tl-stat">
+            WIP <b>{summary.wip}</b>
+          </span>
+          <span className="tl-stat">
+            DAYS LEFT <b>{summary.daysLeft}</b>
+          </span>
+        </div>
+      )}
+
+      <div className="tl-grid">
+        <div className="tl-head">
+          <div className="tl-head-label">TASK</div>
+          <div className="tl-head-axis">
+            <div className="timeline-months" aria-hidden="true">
+              {bands.map((band) => (
+                <div key={band.key} className="timeline-month" style={{ flexGrow: band.days }}>
+                  <span className="timeline-month-label">{band.label}</span>
+                </div>
+              ))}
             </div>
-          ))}
+            <div className="tl-bands">
+              {segments.map((segment, i) =>
+                segment.kind === 'gap' ? (
+                  <div
+                    key={`g${String(i)}`}
+                    className="tl-band-gap"
+                    style={{ flexGrow: segment.days }}
+                  />
+                ) : (
+                  <div
+                    key={segment.sprint.id}
+                    className={isCurrent(segment.sprint, now) ? 'tl-band tl-band-now' : 'tl-band'}
+                    style={{ flexGrow: segment.days }}
+                  >
+                    <span className="tl-band-name">{segment.sprint.name}</span>
+                    <span className="tl-band-meta">
+                      {(() => {
+                        const row = byId.get(segment.sprint.id);
+                        return row === undefined || row.progress.total === 0
+                          ? 'no tasks'
+                          : `${String(row.progress.done)}/${String(row.progress.total)}`;
+                      })()}
+                    </span>
+                  </div>
+                ),
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="timeline-track-wrap">
-          <div className="timeline-track">
-            {segments.map((segment, i) =>
-              segment.kind === 'gap' ? (
-                <div
-                  key={`gap-${String(i)}`}
-                  className="timeline-gap"
-                  style={{ flexGrow: segment.days }}
-                />
-              ) : (
-                <button
-                  key={segment.sprint.id}
-                  type="button"
-                  className={[
-                    'timeline-bar',
-                    `timeline-bar-${segment.sprint.status}`,
-                    isPast(segment.sprint, now) ? 'timeline-bar-past' : '',
-                    isCurrent(segment.sprint, now) ? 'timeline-bar-now' : '',
-                    expanded === segment.sprint.id ? 'timeline-bar-open' : '',
-                  ]
-                    .filter((c) => c !== '')
-                    .join(' ')}
-                  style={{ flexGrow: segment.days }}
-                  aria-expanded={expanded === segment.sprint.id}
-                  onClick={() => {
-                    setExpanded(expanded === segment.sprint.id ? undefined : segment.sprint.id);
-                  }}
-                >
-                  <span className="timeline-bar-name">{segment.sprint.name}</span>
-                  <span className="timeline-bar-meta">
-                    {(() => {
-                      const row = byId.get(segment.sprint.id);
-                      return row === undefined || row.progress.total === 0
-                        ? 'no tasks'
-                        : `${String(row.progress.done)}/${String(row.progress.total)}`;
-                    })()}
-                  </span>
+        <div className="tl-body">
+          {drawn.length === 0 && (
+            <p className="timeline-task-empty">
+              No task has a sprint or a recorded start, so there is nothing to place on the axis.
+            </p>
+          )}
+
+          {drawn.map(({ task, bar }) => {
+            const who = task.assignee_id === null ? undefined : members.get(task.assignee_id);
+            const ink = avatarColor(task.assignee_id ?? task.id, theme);
+            const isBlocked = blockedState(task, byTaskId) === true;
+
+            return (
+              <div key={task.id} className="tl-row">
+                <div className="tl-row-label">
                   <span
-                    className="timeline-bar-fill"
-                    style={{
-                      width: `${String(byId.get(segment.sprint.id)?.progress.percent ?? 0)}%`,
-                    }}
-                  />
-                </button>
-              ),
-            )}
-          </div>
+                    className="tl-avatar"
+                    style={{ background: ink.background, color: ink.foreground }}
+                    title={who?.name ?? 'Unassigned'}
+                  >
+                    {who === undefined ? '?' : initials(who.name)}
+                  </span>
+                  <span className="tl-lines">
+                    <span className="tl-title" title={task.title}>
+                      {task.title}
+                    </span>
+                    <span className="tl-meta">
+                      <span className="tl-key">{task.key}</span>
+                      <span className={`timeline-task-status timeline-task-${task.status}`}>
+                        {task.status}
+                      </span>
+                      {/*
+                    The row says which dates the bar is. A sprint's range
+                    presented in the same voice as a measured one is the
+                    misreading D-014 exists to prevent, and it is invisible once
+                    the bar is drawn.
+                  */}
+                      <span className={bar.fromSprint ? 'tl-dates tl-dates-planned' : 'tl-dates'}>
+                        {formatRange(bar.from, bar.to)}
+                        {bar.fromSprint && <span className="tl-planned-note"> · sprint</span>}
+                      </span>
+                    </span>
+                  </span>
+                </div>
+
+                <div className="tl-track">
+                  <div className="tl-lead" style={{ flexGrow: bar.leadDays }} />
+                  <div
+                    className={[
+                      'tl-bar',
+                      `tl-bar-${bar.kind}`,
+                      `tl-bar-${task.status}`,
+                      isBlocked ? 'tl-bar-blocked' : '',
+                    ]
+                      .filter((c) => c !== '')
+                      .join(' ')}
+                    style={{ flexGrow: bar.solidDays }}
+                    title={`${task.key} · ${formatRange(bar.from, bar.to)}${
+                      bar.fromSprint ? ' (the sprint, not the task)' : ''
+                    }`}
+                  >
+                    {isBlocked && <span className="tl-blocked-dot" aria-hidden="true" />}
+                    <span className="visually-hidden">
+                      {bar.fromSprint ? 'planned, from its sprint' : 'actual'}
+                      {isBlocked ? ', blocked' : ''}
+                    </span>
+                  </div>
+                  {bar.remainderDays > 0 && (
+                    <div className="tl-remainder" style={{ flexGrow: bar.remainderDays }} />
+                  )}
+                  <div className="tl-trail" style={{ flexGrow: bar.trailDays }} />
+                </div>
+              </div>
+            );
+          })}
 
           {today.on === 'axis' && (
             <div
-              className="timeline-today"
-              style={{ left: `${String(today.percent)}%` }}
+              className="tl-today"
+              style={{
+                left: `calc(var(--tl-label) + (100% - var(--tl-label)) * ${String(today.percent / 100)})`,
+              }}
               role="presentation"
             >
-              <span className="timeline-today-label">Today</span>
+              <span className="tl-today-label">TODAY</span>
             </div>
           )}
         </div>
-
-        {today.on !== 'axis' && (
-          <p className="timeline-note" role="status">
-            {/* The axis is not stretched to reach today — that would squash every
-                bar to accommodate empty months. Saying where today is instead. */}
-            Today is {today.on === 'before' ? 'before' : 'after'} every sprint on this timeline.
-          </p>
-        )}
       </div>
 
-      <ul className="timeline-legend">
-        {rows.map((row) => (
-          <li key={row.sprint.id} className="timeline-legend-item">
-            <button
-              type="button"
-              className="timeline-legend-button"
-              aria-expanded={expanded === row.sprint.id}
-              onClick={() => {
-                setExpanded(expanded === row.sprint.id ? undefined : row.sprint.id);
-              }}
-            >
-              <span className={`timeline-chip timeline-chip-${row.sprint.status}`}>
-                {row.sprint.status}
-              </span>
-              <span className="timeline-legend-name">{row.sprint.name}</span>
-              <span className="timeline-legend-dates">
-                {formatRange(row.sprint.starts_on, row.sprint.ends_on)}
-              </span>
-              <span className="timeline-legend-count">
-                {row.progress.total === 0
-                  ? 'no tasks'
-                  : `${String(row.progress.done)}/${String(row.progress.total)} done`}
-              </span>
-            </button>
-
-            {expanded === row.sprint.id && (
-              <ul className="timeline-tasks">
-                {row.tasks.length === 0 && (
-                  <li className="timeline-task-empty">Nothing assigned to this sprint.</li>
-                )}
-                {row.tasks.map((task) => (
-                  <li key={task.id} className="timeline-task">
-                    <span className="timeline-task-key">{task.key}</span>
-                    <span className="timeline-task-title">{task.title}</span>
-                    <span className={`timeline-task-status timeline-task-${task.status}`}>
-                      {task.status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </li>
-        ))}
-      </ul>
+      {today.on !== 'axis' && (
+        <p className="timeline-note" role="status">
+          {/* The axis is not stretched to reach today — that would squash every
+              bar to accommodate empty months. Saying where today is instead. */}
+          Today is {today.on === 'before' ? 'before' : 'after'} every sprint on this timeline.
+        </p>
+      )}
 
       {/* §11.4.3's unscheduled tray. Read-only here: dragging into a sprint is
           the Sprints screen's "Add tasks", and duplicating it is out of scope. */}
