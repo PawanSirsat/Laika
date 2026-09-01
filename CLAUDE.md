@@ -156,6 +156,14 @@ behind as an unstaged modification. Measured, not assumed:
 **`0 insertions(+), 0 deletions(-)` on a task-file commit is the tell.** It means
 a pure rename landed and every edit you made is still sitting unstaged.
 
+**The other way round is a script whose edit never ran.** CORE's frontmatter edit
+aborted on a bad anchor and **the `&&` chain after it did not stop**, so the move
+committed cleanly and LAI-206 arrived in `.tasks/review/` still saying
+`status: backlog`, `assignee: unclaimed`, nothing ticked. The guidance above
+assumes the edit happened and asks whether it was staged; **this is the case
+where it did not happen at all**, and the `--stat` shows a healthy diff because
+the *move* is real. Only reading the field back out of the commit catches it.
+
 **Verify from `git show`, never from the file on disk.** `grep`-ing the working
 tree cannot tell *edited and committed* from *edited and not staged* — it shows
 what you just typed either way. Read the field back out of the commit:

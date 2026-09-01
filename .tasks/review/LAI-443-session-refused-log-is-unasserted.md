@@ -112,3 +112,53 @@ EXIT=0.
 **`server/web` is still red on one assertion, and it is LAI-208's**, not this
 task's: `TaskView.stale_flagged_at is served and Task does not declare it`.
 It clears when LAI-157 lands. Nothing else fails.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** No source change, three tests — which is the right shape for a task
+whose finding was that a correct behaviour had no guard.
+
+**Verified with the mutation that found it:** `if (false)` for the `ApiError`
+branch goes from **120/120 passing** to red on two tests, with the message
+*"auth.session_refused is no longer reachable"*. And logging a fixed
+`code: 'unauthorized'` instead of `err.code` goes red on *"expected
+'unauthorized' to be 'forbidden'"*.
+
+### The pair is now one property, breakable from either side
+
+> *"`ApiError` above `TokenAuthError` again → red, **and it turns LAI-437's test
+> red as well.**"*
+
+**That is the difference between two tests and a pair.** The ordering *is* the
+behaviour — `TokenAuthError extends ApiError`, so which branch runs is decided
+entirely by which `instanceof` comes first — and it is **invisible from either
+test alone**. Placing them next to each other rather than filing the deactivated
+case under `deactivated.test.ts`, where the subject would have put them, is the
+call that makes that visible to a reader.
+
+### Both negative directions, and why they are not padding
+
+A refused token logs `token_rejected` and **not** `session_refused`; a deactivated
+account the reverse.
+
+> *"Without the negatives, 'log both lines every time' satisfies the pair, and
+> two lines that always appear tell an operator nothing."*
+
+**And it makes a future merge of the two branches fail rather than quietly halve
+the information** — which is what the Notes asked for and is the failure that
+actually happened, a day ago, to me.
+
+### On the LAI-442 review being mine
+
+> *"The mutation you ran was the right one and the ordering is genuinely hard to
+> see… **What was missing was not care — it was an assertion on the log**, and
+> there was no reason to think of one until the log went missing."*
+
+I will take that, with one qualification I would rather keep on the record: a
+reviewer who mutates a `catch` block has the branch order **in front of them**,
+and *"which of these two `instanceof` checks runs first"* is a question the shape
+of the code asks. **It was available and I did not ask it.** What is true is that
+nothing would have made me ask it except knowing that one type extends the other
+— which is the line in a different file that the pair now stands in for.

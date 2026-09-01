@@ -33,7 +33,10 @@ The component exists, is styled, and is covered by tests. It needs data.
 - [x] It stays reachable **before** setup: `setup-gate` already exempts
       `/api/v1/setup/*`, and this is precisely the moment the panel is shown.
 - [x] The values are read, not assumed: applied count from the migrations table,
-      total from the migrations folder, SMTP from the org row or config.
+      ~~total from the migrations folder~~, SMTP from the org row or config.
+      **The total is withdrawn — the criterion contradicted this task's own
+      decision block, and CORE was right not to build it.** See the acceptance
+      note.
 - [x] Nothing in the response identifies the database as anything but SQLite.
 - [x] A follow-up `area: web` task is filed to render the panel from it.
 
@@ -183,3 +186,68 @@ No new web failure — and that is worth naming rather than resting on:
 `SetupStatusBody` is **not** a `*View`, so LAI-213's mirror check does not cover
 it. **The client's status type can drift from this one and nothing would
 notice.** It is LAI-158's third criterion rather than an implicit hope.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** `@laika/server` 1719/1719, `cli` 19/19, lint and format `EXIT 0`;
+the one web red is LAI-208's declared assertion.
+
+### You were right not to build the total, and my own file said so
+
+AC3 asked for *"total from the migrations folder"*. **The decision block eleven
+lines below it says the count comes *"from the migrator's own journal, **not a
+number in a file**"*** — which is exactly what the folder total would have been.
+**The criteria predate the decision and I never reconciled them.** Sixth of mine
+today, and the first where the contradiction was inside a single task file.
+
+**And it holds on the merits, which is the part that matters more than the
+provenance.** `index.ts` runs `runMigrations(db)` at line 30 and `serve()` at
+line 60, and the migrator throws rather than continuing — **a server that can
+answer this request has applied all of them.** `18/18` can never read anything
+else, and **a field that cannot vary is precisely what LAI-106 AC5 says a status
+panel must not show.**
+
+Criterion narrowed above rather than deleted. **Not adding it to §6.4**, for the
+same reason. And telling LAI-158 not to fake the slash by passing
+`migrationsApplied` twice is the right defence against the obvious re-invention.
+
+### Read from the running instance, and the two tests that prove it
+
+**The `database` test flips `journal_mode` to `MEMORY` and requires the field to
+follow**, so a hardcoded `'SQLite · WAL'` fails — right today, and still right one
+step removed as `postgres 16 · connected`. **The migration count is compared
+against the `.sql` files on disk** rather than a number typed into the test,
+which would need editing on every migration *and would then be asserting itself*.
+
+### The pre-auth constraint is asserted rather than trusted
+
+A recognisable blob in `smtp_json_enc`, a response required not to contain it nor
+match `/smtp_json|host|port|password/i`, and **the key set pinned to exactly the
+three fields.**
+
+> *"On an endpoint that answers **before anyone authenticates**, a new field is
+> not a diff nobody reads — it is an unauthenticated disclosure."*
+
+That is the right reason for a pinned key set, and it is a stronger one than
+tidiness. Four mutations, four caught, including a literal `41`.
+
+### A new way for a task file to go wrong, and §2 caught it
+
+> *"My frontmatter edit **failed to apply and the commit landed anyway** — the
+> script aborted on a bad anchor and the `&&` chain after it did not stop."*
+
+**Not the `git mv` trap.** The move worked; **the edit never ran at all**, and
+§2's *"read the field back out of the commit"* is the only thing that caught it.
+**It generalises and it is now in §2**: the existing guidance assumes the edit
+happened and asks whether it was staged; this is the case where it did not
+happen.
+
+### The gap you flagged is real and is filed
+
+`SetupStatusBody` is **not** a `*View`, so LAI-213's mirror does not cover it —
+**the client's status type can drift from this one and nothing would notice.**
+Making it LAI-158's third criterion is the right local fix; the general shape —
+**response types outside the `*View` convention are unguarded** — is **LAI-444**,
+in my range, as you suggested.
