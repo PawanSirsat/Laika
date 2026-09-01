@@ -2,11 +2,12 @@
 id: LAI-152
 title: '`presenceEnabled` is byte-identical in two services, and I wrote both today'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-140
-status: backlog
+status: in-progress
+started: 2026-09-02T07:15:00Z
 ---
 
 ## Goal
