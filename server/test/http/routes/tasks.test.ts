@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { tasks, users } from '../../../src/db/schema.ts';
 import { flagStaleTasks, STALE_AFTER_MS } from '../../../src/jobs/jobs.ts';
+import { MAX_TAGS_PER_TASK } from '../../../src/services/tags.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 let h: AuthHarness;
@@ -286,6 +287,31 @@ describe('acceptance criteria on the wire', () => {
  * The service owns the watcher set and its rules. What is left here is transport
  * and the **scope layer** — the half D-047 turns on.
  */
+
+describe('too many tags says how many (LAI-159)', () => {
+  it('names the count the caller actually sent', async () => {
+    // `.max(MAX_TAGS_PER_TASK)` on the route was the same constant the service
+    // compares against, so zod refused first and `count` — the only number that
+    // tells somebody how many to drop — never reached the caller.
+    const tags = Array.from({ length: MAX_TAGS_PER_TASK + 3 }, (_, i) => `tag-${String(i)}`);
+
+    const res = await post('/api/v1/projects/laika/tasks', { title: 'many tags', tags });
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { details: { count?: number } } };
+    expect(body.error.details.count).toBe(tags.length);
+  });
+
+  it('still accepts exactly the maximum', async () => {
+    // The boundary the refusal is measured from; without it a service refusing
+    // at `>=` would satisfy the assertion above.
+    const tags = Array.from({ length: MAX_TAGS_PER_TASK }, (_, i) => `tag-${String(i)}`);
+
+    const res = await post('/api/v1/projects/laika/tasks', { title: 'exactly enough', tags });
+
+    expect(res.status, await res.clone().text()).toBe(201);
+  });
+});
 
 describe('the stale marker reaches the client (§11.4.1, LAI-208)', () => {
   /**

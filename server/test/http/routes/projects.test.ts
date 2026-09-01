@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { CONTEXT_MD_LIMIT } from '../../../src/services/projects.ts';
+import { CONTEXT_MD_LIMIT, REPO_MAX_LENGTH } from '../../../src/services/projects.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 let h: AuthHarness;
@@ -403,6 +403,36 @@ describe('GET/PATCH /api/v1/projects/:slug/context (§6.4, LAI-404)', () => {
 
     const read = await req('/api/v1/projects/laika/context');
     expect((await read.json()) as { context_md: string }).toMatchObject({ context_md: raw });
+  });
+
+  it('tells a caller the repo shape, not just that it is too long (LAI-159)', async () => {
+    // The route carried `.max(REPO_MAX_LENGTH)`, the same constant the service
+    // compares against, so zod refused first with "Too big: expected string to
+    // have <=200 characters" — the size, and nothing about the shape. The
+    // service says `owner/name` with an example, which is what somebody who got
+    // it wrong actually needs.
+    const res = await req('/api/v1/projects/laika', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: `laika/${'x'.repeat(REPO_MAX_LENGTH)}` }),
+    });
+
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: { details: { expected?: string; example?: string } };
+    };
+
+    expect(body.error.details.expected).toBe('owner/name');
+    expect(body.error.details.example).toBeDefined();
+  });
+
+  it('still refuses an empty repo at the route', async () => {
+    // `min(1)` stays: the shape is the schema's job, the size is the service's.
+    const res = await req('/api/v1/projects/laika', {
+      method: 'PATCH',
+      body: JSON.stringify({ repo: '' }),
+    });
+
+    expect(res.status).toBe(422);
   });
 
   it('422s an oversize document, naming the limit and the length', async () => {

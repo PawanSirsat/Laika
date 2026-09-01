@@ -346,8 +346,20 @@ export function resolveBranchTask(
   return task === undefined ? null : { taskId: task.id, projectId };
 }
 
-/** §4.10's columns are names, not paths. Long enough for a real branch. */
-export const REPO_MAX_LENGTH = 200;
+/**
+ * **`REPO_MAX_LENGTH` is `projects.ts`'s** (LAI-159).
+ *
+ * It was declared here too, with the same value, for the same field — and two
+ * copies of a number are two numbers, which is the argument `db/enums.ts` makes
+ * about vocabularies and LAI-119 acted on. `projects.ts` owns the `repo` column
+ * (§4.3); this module matches a heartbeat against it, so it is the same rule
+ * about the same string and there is nothing here to own.
+ *
+ * `BRANCH_MAX_LENGTH` stays: §4.10's branch is this module's, and no other file
+ * has an opinion about it.
+ */
+export { REPO_MAX_LENGTH } from './projects.ts';
+import { REPO_MAX_LENGTH } from './projects.ts';
 export const BRANCH_MAX_LENGTH = 255;
 
 export interface HeartbeatInput {

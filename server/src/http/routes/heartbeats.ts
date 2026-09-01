@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
-import { BRANCH_MAX_LENGTH, recordHeartbeat, REPO_MAX_LENGTH } from '../../services/heartbeats.ts';
+import { recordHeartbeat } from '../../services/heartbeats.ts';
 import { type AppEnv } from '../context.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
@@ -25,9 +25,23 @@ import { parseBody, strictObject, z } from '../validation.ts';
  * there is nothing to read yet.
  */
 
+/**
+ * **No `.max` here, and that is the fix rather than an omission** (LAI-159).
+ *
+ * These carried `.max(REPO_MAX_LENGTH)` and `.max(BRANCH_MAX_LENGTH)`, the same
+ * constants the service compares against — and zod runs first, so its refusal
+ * was the only one a REST caller could reach. The service's error names
+ * `repo_length` and `branch_length`, **the actual lengths, and which of the two
+ * was too long**; zod's names neither.
+ *
+ * The service's comment says it is bounded *"here as well as in the route"*,
+ * which assumes the two coexist. They do not: equal bounds mean the inner one
+ * never runs. `min(1)` and `.trim()` stay — an empty string is a malformed
+ * request, which is this schema's job, where the size is the service's.
+ */
 const HeartbeatBody = strictObject({
-  repo: z.string().trim().min(1).max(REPO_MAX_LENGTH),
-  branch: z.string().trim().min(1).max(BRANCH_MAX_LENGTH),
+  repo: z.string().trim().min(1),
+  branch: z.string().trim().min(1),
 });
 
 export interface HeartbeatRouteOptions {
