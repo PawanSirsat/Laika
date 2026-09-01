@@ -555,6 +555,14 @@ file. The rules below are the ones that are true of every line of code.
   "I verified the thing I owned rather than the thing my change affected" is how
   a green branch gets submitted red.
 
+  **And a workspace whose test script cannot fail is a hole in that gate.** A new
+  package whose `test` runs a matcher with nothing behind it prints `# tests 0`
+  and **exits 0**, so the root run stays green while covering nothing — SHELL
+  found `cli/` doing exactly that. The first test in a new workspace is the one
+  that **fails if the thing the workspace exists for is absent**; green by
+  vacancy is the same defect as an assertion a broken setup satisfies, moved up
+  to the package level.
+
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
 - **`pnpm format` checks the whole repo; `pnpm format:fix` writes only what your
