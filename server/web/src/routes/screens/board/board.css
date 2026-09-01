@@ -354,6 +354,18 @@
 }
 
 .marker {
+  /* A pill label never breaks. `stale 9d` was the first marker text with a
+     space in it and it wrapped into a two-line oval — found by looking at the
+     rendered board, in both themes, after every assertion about the marker had
+     passed.
+
+     **The fix that did the work is `flex-wrap` on `.card-foot`**, which gives
+     the pill its own line instead of a cramped one; removing that turns the
+     browser test red, and removing this line alone does not. Kept as the belt
+     to that brace — a label with nowhere to go should still not break — and
+     said plainly here because the mutation is what established which was
+     which. */
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
@@ -377,6 +389,30 @@
   background: var(--tub);
   border: 1px solid var(--bd);
 }
+/*
+ * Stale, in the design's own vocabulary (§11.4.1).
+ *
+ * The prototype has no card-level stale marker — its clock, `--amb` and the
+ * "Stale · N days quiet" phrasing come from the dashboard panel — so this
+ * borrows that rather than inventing a colour. It shares amber with
+ * `.marker-unknown`, which is tolerable because the two say different words and
+ * co-occur rarely; the alternative was giving a spec'd state a colour the design
+ * never chose, to keep it apart from one the design never mentions.
+ */
+.marker-stale {
+  color: var(--amb);
+  background: var(--ambs);
+  border: 1px solid var(--ambb);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.marker-stale svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  stroke: currentColor;
+}
+
 /* A dependency outside the loaded set — stated, not guessed. */
 .marker-unknown {
   color: var(--amb);
@@ -816,6 +852,16 @@
   display: flex;
   align-items: center;
   gap: 0.375rem;
+  /* Wrap, or the row overflows the card. Two markers fitted; the third (stale,
+     LAI-157) pushed the pill past the right edge into the lane gutter. The row
+     could not wrap, so it had nowhere to put what did not fit. */
+  flex-wrap: wrap;
+  /* And once it wraps, `space-between` — set by the earlier `.card-foot` block
+     in this file, which this one only partly overrides — spreads the first line
+     and throws the key to the right edge. `.card-spacer { flex: 1 }` is what
+     right-aligns the avatar, so `space-between` was already doing nothing until
+     wrapping gave it something to do. Also caught by looking. */
+  justify-content: flex-start;
 }
 
 .card-spacer {

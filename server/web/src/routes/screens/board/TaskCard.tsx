@@ -1,5 +1,5 @@
 import { avatarColor } from '../../../theme/avatar-color.ts';
-import { blockedState, blockers } from '../../../api/board-derive.ts';
+import { blockedState, blockers, staleFor } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
@@ -158,6 +158,21 @@ export function TaskCard({
             title="Unassigned, unblocked, ready to pick up"
           >
             ready
+          </span>
+        )}
+        {task.stale_flagged_at !== null && (
+          <span
+            className="marker marker-stale card-above"
+            title={`Flagged stale ${staleFor(task.stale_flagged_at, Date.now())} ago — the nightly job found no heartbeat and no commit for three days (§11.6)`}
+          >
+            {/* The design's clock, from the dashboard's stale panel — the
+                prototype has no card marker, so the vocabulary is borrowed
+                rather than invented: amber, a clock, and a duration. */}
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.2" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8v4l3 2" />
+            </svg>
+            {`stale ${staleFor(task.stale_flagged_at, Date.now())}`}
           </span>
         )}
         {blocked === undefined && (

@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: [LAI-437]
 discovered-from: LAI-437
-status: review
+status: done
 started: 2026-09-01T14:30:00Z
 finished: 2026-09-01T14:45:00Z
 ---

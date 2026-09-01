@@ -69,6 +69,49 @@ export function blockers(task: Task, byId: ReadonlyMap<string, Task>): readonly 
   return found;
 }
 
+/**
+ * How long this task has been flagged stale, compactly — `9d`, `5h`, `12m`.
+ *
+ * **This formats a timestamp; it does not decide anything.** Whether a task is
+ * stale is three conditions evaluated by the nightly job (§11.6), and the only
+ * question here is what to print next to the marker. `ready` is absent from this
+ * module for the same reason and it is worth keeping the distinction sharp: a
+ * second *definition* drifts, a second *rendering* of a served value does not.
+ *
+ * Coarse, because the signal is: the job runs nightly against a three-day
+ * window, so a minute-accurate figure would imply a precision the number does
+ * not have. Days once it has been a day.
+ *
+ * `stale_flagged_at` is the *server's* clock and `now` is the *browser's*; they
+ * disagree routinely, and a few seconds is enough for `now - flaggedAt` to go
+ * negative.
+ *
+ * **The clamp does not change today's output, and the comment here said it did
+ * until a mutation proved otherwise.** A negative `elapsed` gives a negative
+ * `minutes`, which is `< 1`, so the first branch already returns `now` — the
+ * branch order is what prevents `-1m`, not `Math.max`. The clamp earns its place
+ * against the obvious tidy-up: the moment somebody guards that branch as
+ * `elapsed >= 0 && minutes < 1`, an unclamped negative falls straight through to
+ * the `d` case and renders `-8999d`.
+ *
+ * `relativeTime` in `dashboard-derive.ts` carries the same pair and says so in
+ * the same terms. **Removing either alone leaves the tests green; that is the
+ * point of keeping both**, and it is why the test below says which one it is
+ * really covering.
+ */
+export function staleFor(flaggedAt: number, now: number): string {
+  const elapsed = Math.max(0, now - flaggedAt);
+
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${String(minutes)}m`;
+
+  const hours = Math.floor(elapsed / 3_600_000);
+  if (hours < 24) return `${String(hours)}h`;
+
+  return `${String(Math.floor(elapsed / 86_400_000))}d`;
+}
+
 export function byIdIndex(tasks: readonly Task[]): ReadonlyMap<string, Task> {
   return new Map(tasks.map((t) => [t.id, t]));
 }

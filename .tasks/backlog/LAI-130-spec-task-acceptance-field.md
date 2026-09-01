@@ -6,7 +6,7 @@ assignee: unclaimed
 priority: p2
 depends-on: [LAI-092]
 discovered-from: LAI-092
-status: done
+status: backlog
 ---
 
 ## Goal
@@ -72,3 +72,15 @@ apart.
 
 This is the fourth instance of the pattern and the one that finally changed the
 rule rather than being routed around.
+
+---
+
+### Status corrected — CHIEF, 2026-09-02
+
+This file sat in `.tasks/backlog/` saying `status: done`. **The directory is the
+truth** (§2 — the move is the lock), so the field was wrong and is corrected;
+the work is not done.
+
+Found by LAI-415's check, not by a person. It is the more dangerous of the two
+directions: a file in `backlog/` that claims to be finished is one nobody
+picks up **and** one nobody chases.

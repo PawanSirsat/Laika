@@ -54,6 +54,29 @@ export interface Task {
    * bug LAI-049 warns about, because the two definitions would drift.
    */
   readonly ready: boolean;
+  /**
+   * When the nightly job last flagged this task as stale — unix ms, `null` when
+   * it has not (§11.6, LAI-208, LAI-157).
+   *
+   * **A timestamp, not a boolean, and that is the whole point.** The marker
+   * §11.4.1 asks for says *how* stale, and "stale" and "stale for 9 days" are
+   * different messages to somebody scanning a board. A served `stale: true`
+   * would have thrown away the only thing the row actually holds.
+   *
+   * **Nothing here decides whether a task is stale.** The rule is three
+   * conditions — `in_progress`, no heartbeat, no commit, for three days (§11.6)
+   * — and the job evaluates them. Reading the field is display; recomputing it
+   * would be the second definition §4.5 refuses for `ready`, and it would drift
+   * the same way.
+   *
+   * **The job owns it in both directions**, so a rescued task is un-flagged
+   * rather than marked forever — but only at the next run. A task rescued at
+   * noon keeps its marker until tonight, and **the client must not paper over
+   * that** by hiding the marker on, say, non-`in_progress` tasks: that is a
+   * third staleness rule, and if the lag is too visible the fix is the job's
+   * schedule.
+   */
+  readonly stale_flagged_at: number | null;
   /** Acceptance criteria, as written. Markdown source, not rendered. */
   readonly acceptance_md: string | null;
   readonly blocked_by: readonly string[];
