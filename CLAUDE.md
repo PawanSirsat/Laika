@@ -580,6 +580,23 @@ file. The rules below are the ones that are true of every line of code.
   who was also guessing.** Verify the instrument before using it, whoever handed
   it to you.
 
+- **The gate is the exit code, not the pass count.** `Tests 1685 passed` and
+  `Failed` print on adjacent lines: vitest fails a run on an **unhandled error**
+  with every assertion green, and a grep for `Tests ` sees one of them. CHIEF
+  reported `master` green six times on 2026-09-01 while the root gate exited `1`,
+  and pushed seven tasks on top of it — the same *"the instrument cannot see the
+  thing"* failure written into this file three times that day about mutations and
+  anchors, arriving in the verification command itself.
+
+  Run it so a failure cannot be filtered out:
+
+  ```bash
+  pnpm test > /tmp/gate.txt 2>&1; echo "EXIT $?"
+  grep -E "Unhandled|Errors|Failed|not ok|✗" /tmp/gate.txt
+  ```
+
+  **`EXIT 0` is the claim. A count is not.**
+
 - **The gate is the repo-root `pnpm test`, not your workspace's.** A filtered run
   cannot see a check your change breaks in somebody else's directory, and several
   of them read across: LAI-213's client/server drift check lives in

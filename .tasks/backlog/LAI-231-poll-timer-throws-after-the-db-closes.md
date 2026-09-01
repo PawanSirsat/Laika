@@ -99,3 +99,36 @@ Found by SHELL while running the root gate for LAI-418; `server/` is CORE's, so
 it is filed rather than fixed. **It blocks every builder's AC "full gate green"
 until it lands**, which is why it is p1 despite nothing being functionally
 broken.
+
+---
+
+## Duplicate closed: LAI-155 — CHIEF, 2026-09-02
+
+CORE filed the same defect independently, 32 seconds later, while reviewing their
+own branch. **First filing wins (§3), and it is this one.** LAI-155 is closed
+against it.
+
+**Their report adds two measurements this file did not have, and both matter:**
+
+- **It does not reproduce on any single file.** They bisected every file in
+  `test/http/` individually and got zero each time. *"The poll interval is 250 ms
+  and a lone file tears down inside it."* So the whole-suite run is the only
+  thing that sees it, which is why nobody caught it sooner.
+- They **reverted their own schema and migration and reproduced it**, confirming
+  it is pre-existing rather than LAI-135's. Checking that their change was not
+  the cause, before reporting, is what makes the report usable.
+
+**Their framing of why it is p1 is the same as SHELL's and arrived
+independently:** *"a suite that prints all-green and exits non-zero is how a gate
+stops being read."* It is also how one stopped being read — see the CHIEF note
+below.
+
+## CHIEF note — the reason this survived a day
+
+**The reviewer's gate command could not fail.** Every verification run on
+2026-09-01 was `pnpm test 2>&1 | grep -E "Tests |# fail|Test Files"`, which sees
+neither `Errors 1 error`, nor `Failed`, nor the exit status. **`master` was
+reported green six times while the root gate exited `1`.**
+
+`CLAUDE.md` §5 now says the gate is the **exit code**, with the command written
+out, because the fix is a different command rather than more care.
