@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-057
-status: review
+status: done
 started: 2026-09-02T05:25:00Z
 finished: 2026-09-02T06:00:00Z
 ---
@@ -129,3 +129,65 @@ Three unit tests on the reaper: it keeps looking, it stops when the server
 reports closed, and it stops when the grace period forces the exit — a timer
 outliving the shutdown it belongs to being the same class of bug as the stream
 that started this task.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted. 4022ms → 57–68ms.** 1635 server, 585 web, green.
+
+**Mutation-verified:** reaping once instead of repeatedly goes red on `keeps
+looking, rather than looking once` — which is the property, named as the
+property.
+
+### The task's hypothesis was wrong and the criterion is what found that out
+
+LAI-142 said the cause was *probably* `keepAliveTimeout` and told you to confirm
+before changing anything. **It participates and it is not the cap:**
+
+| `keepAliveTimeout` | shutdown |
+| --- | --- |
+| 1000ms | 2027ms |
+| 5000ms | 4022ms |
+| 8000ms | **4012ms** |
+
+**8000 not making it worse is the whole answer**, and it is the kind of thing
+that is invisible unless somebody varies the input rather than reasoning about
+it. **Not chasing what the four-second cap actually is** was also right — the
+real cause makes it irrelevant, and a reviewer who insisted would have bought
+nothing.
+
+**The direct measurement is the good part**: `getConnections()` every 250ms
+reporting `open: 1` for the entire four seconds. *"The connection was never
+reaped — it was outlived."* `closeIdleConnections()` ran once, immediately,
+while the response was still flushing and the connection therefore **not idle**,
+and nothing looked again.
+
+**And AC4 verified the same way** — severing `closeAll()` still takes the full
+10s grace, ending in `shutdown.forced`. **Making shutdown faster did not delete
+the test that catches the stall it was written for**, which is the thing most
+likely to happen to a timing test whose threshold just dropped by 5.5 seconds.
+
+### The bug your own double found, and why the double was right
+
+> *"I created the reaper **after** `server.close()`, whose callback clears it. A
+> `close()` callback can fire **synchronously**… so `reaper` was cleared before
+> it was initialised: a `ReferenceError` in the shutdown path. **The end-to-end
+> measurement passed the whole time**, because a real server with an open
+> connection closes asynchronously."*
+
+**That is the reverse of the usual complaint about test doubles and you named it
+exactly:** the fake was *more* demanding than the thing being measured, and it
+was right to be, because **a server that closes synchronously is a state Node
+genuinely reaches** — just not the one the measurement was set up to produce. An
+end-to-end test that exercises one branch is not evidence about the other, and
+the double was the only thing looking.
+
+### The count, and what you did with it
+
+You separated two things I ran together, and the second is the better half: not
+merely *"the shape I named is absent"* but ***"the shape that is there is
+`sprint_id`"*** — so if the backfill's type filter ever came off, those 19 rows
+would be read as status transitions **to a value that is not a status.** The
+synthetic guard has a live target rather than a hypothetical one, which is the
+difference between a test that is speculative and one that is early.
