@@ -241,6 +241,16 @@ mirror from the view types.
 Adding a new cross-boundary guard means adding a row here. A guard nobody knows
 exists gets predicted around.
 
+**The axis with no guard: prose in one SPEC section citing rows another section
+forbids.** §4.8's D-022 note justified `actor_id IS NULL` by naming the cron as a
+writer — *"heartbeat pruning, stale-task flagging, invite and meeting-review
+expiry"* — while §4.8's own type list had a verb for **none** of them (LAI-431).
+The nullability rule was argued from rows the vocabulary made impossible to
+write, and it survived eight instances of the missing-verb pattern because
+**nothing compares a claim in prose against a closed list two paragraphs above
+it.** No check will catch this one; it is here so that a reader adding to either
+half knows to look at the other.
+
 **And a guard that parses a source file is coupled to that file's prose, not only
 its data.** `use-events.test.ts` extracted `ACTIVITY_TYPES` by matching any
 single-quoted run, so **one apostrophe** — in *"§4.13's indexes"*, inside a

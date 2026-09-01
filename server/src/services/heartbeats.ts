@@ -1,7 +1,8 @@
+import { and, eq } from 'drizzle-orm';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { newId } from '../db/ids.ts';
-import { heartbeats, projects } from '../db/schema.ts';
+import { heartbeats, orgs, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 
@@ -204,10 +205,42 @@ function fold(value: string): string | null {
  * would show up as a heartbeat attributed to one project and a task resolved
  * from another.
  */
-export function branchProjectPrefix(branch: string): string | null {
-  const match = /([A-Za-z]+)-\d+/.exec(branch.trim());
+export interface BranchRef {
+  /** Lowercased, to compare against `projects.prefix` case-insensitively. */
+  prefix: string;
+  /** The task's per-project `number`, not its id. */
+  number: number;
+}
 
-  return match === null ? null : match[1]!.toLowerCase();
+/**
+ * §9.2's convention parsed **once**, for both of the things that read it.
+ *
+ * `branchProjectPrefix` narrows an ambiguous repo (LAI-116); `resolveBranchTask`
+ * finds the task (LAI-430). Both need the same match, and LAI-144's lesson is
+ * that two implementations of one rule is one implementation and one bug.
+ */
+export function parseBranchRef(branch: string): BranchRef | null {
+  const match = /([A-Za-z]+)-(\d+)/.exec(branch.trim());
+  if (match === null) return null;
+
+  const number = Number(match[2]);
+
+  // `\d+` is unbounded and a branch is untrusted input, so this rejects a number
+  // no task could have.
+  //
+  // **Not independently tested, and it cannot be.** Removing it changes no
+  // observable behaviour: `Number('9…9')` becomes a float no `tasks.number`
+  // equals, so the lookup below returns nothing either way. It is here because a
+  // parser returning `1e20` as a task number is wrong even when the next line
+  // hides it — but it is defence in depth, not a checked property, and saying so
+  // is better than a comment that implies a guard nothing exercises (LAI-118).
+  if (!Number.isSafeInteger(number) || number <= 0) return null;
+
+  return { prefix: match[1]!.toLowerCase(), number };
+}
+
+export function branchProjectPrefix(branch: string): string | null {
+  return parseBranchRef(branch)?.prefix ?? null;
 }
 
 export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoProjects {
@@ -235,6 +268,78 @@ export function resolveRepoProjects(db: Db, repo: string, branch: string): RepoP
   return { projectIds: matches.map((row) => row.id).sort(), attribution: 'repo' };
 }
 
+/** §4.2's org-wide presence switch. Absent org reads as on — nothing to disable. */
+function presenceEnabled(db: Db): boolean {
+  return (db.select({ on: orgs.presenceEnabled }).from(orgs).limit(1).get()?.on ?? 1) === 1;
+}
+
+/**
+ * A branch name → the task it names (SPEC §9.2, LAI-430).
+ *
+ * `lai-42-add-crud` on a repo that resolves to the project with prefix `LAI` is
+ * task 42 of that project. Everything else is `null`: §9.2 says unparseable
+ * input *"degrades, it never errors"*, and there are four separate ways to be
+ * unresolvable — no `prefix-number` at all, a prefix no candidate project holds,
+ * a number no task in that project has, and a repo that resolved to no project
+ * in the first place.
+ *
+ * ## The project is decided before the number, and that ordering is the whole
+ * risk
+ *
+ * `LAI-42` and `WEB-42` are **different tasks**. Searching by number first and
+ * filtering by project afterwards gives the same answer whenever the number is
+ * unique and the wrong answer exactly when it is not — which is the case a
+ * monorepo makes ordinary rather than rare (LAI-108).
+ *
+ * So the candidate projects come from `resolveRepoProjects`, which has already
+ * applied §9.1's rule that a branch prefix narrows an ambiguous repo. If that
+ * left more than one project, the branch did **not** name a prefix any of them
+ * holds, and the honest answer is nothing — not "task 42 of whichever project
+ * sorts first".
+ */
+export function resolveBranchTask(
+  db: Db,
+  repo: string,
+  branch: string,
+): { taskId: string; projectId: string } | null {
+  const ref = parseBranchRef(branch);
+  if (ref === null) return null;
+
+  const { projectIds } = resolveRepoProjects(db, repo, branch);
+
+  // **Also not independently tested**, for a reason worth knowing: if two
+  // projects survive, the branch prefix matched neither — `resolveRepoProjects`
+  // narrows to one whenever it matches — so the prefix check below rejects the
+  // candidate anyway. `projects_org_prefix_unique` (§4.13) is what makes that
+  // true, by forbidding two projects in one org from sharing a prefix.
+  //
+  // Kept because it states the rule at the point the rule applies, rather than
+  // leaving §9.1's narrowing to be inferred from a check three lines later. If
+  // that unique index ever goes, this stops being redundant.
+  if (projectIds.length !== 1) return null;
+
+  const projectId = projectIds[0]!;
+
+  // The prefix has to belong to *this* project. `resolveRepoProjects` narrows an
+  // ambiguous repo by prefix, but a repo with exactly one project is returned
+  // without consulting the branch at all — so `web-42` on a repo tracked only by
+  // `LAI` arrives here with a project that does not own that prefix.
+  const project = db
+    .select({ id: projects.id, prefix: projects.prefix })
+    .from(projects)
+    .where(eq(projects.id, projectId))
+    .get();
+  if (project?.prefix.toLowerCase() !== ref.prefix) return null;
+
+  const task = db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.projectId, projectId), eq(tasks.number, ref.number)))
+    .get();
+
+  return task === undefined ? null : { taskId: task.id, projectId };
+}
+
 /** §4.10's columns are names, not paths. Long enough for a real branch. */
 export const REPO_MAX_LENGTH = 200;
 export const BRANCH_MAX_LENGTH = 255;
@@ -252,7 +357,7 @@ export interface HeartbeatView {
   token_id: string | null;
   repo: string;
   branch: string;
-  /** Always null until §9.2 lands in M5. */
+  /** The task §9.2's branch convention names, or null (LAI-430). */
   matched_task_id: string | null;
   created_at: number;
   /**
@@ -296,18 +401,40 @@ export function recordHeartbeat(
     });
   }
 
+  const now = input.now ?? Date.now();
+
+  // §4.2's org-wide off switch. When presence is off the branch is **not**
+  // resolved: resolving would write `matched_task_id` and `tasks.branch`, which
+  // is exactly the record of "who was working on what" the switch exists to stop
+  // (D-005, LAI-207).
+  //
+  // The row is still written here. §4.2 says a disabled instance "accepts and
+  // discards", and discarding the row itself is a wider change than this task —
+  // it is the difference between storing nothing and storing something inert,
+  // and it belongs with whatever builds §9.3's disabled state. Recorded rather
+  // than assumed either way (LAI-150).
+  const presenceOn = presenceEnabled(db);
+  const matched = presenceOn ? resolveBranchTask(db, repo, branch) : null;
+
   const row: typeof heartbeats.$inferInsert = {
     id: newId(),
     userId: actor.userId,
     tokenId: actor.token?.id ?? null,
     repo,
     branch,
-    // §9.2, M5. Null rather than a guess.
-    matchedTaskId: null,
-    createdAt: input.now ?? Date.now(),
+    matchedTaskId: matched?.taskId ?? null,
+    createdAt: now,
   };
 
   db.insert(heartbeats).values(row).run();
+
+  if (matched !== null) {
+    // §9.2 stores the branch on the task as well. **Last seen, not a history** —
+    // overwriting is correct, and the history is `activity`. No activity row: a
+    // heartbeat is presence, not an audited action, and an agent beating every
+    // few minutes would drown the feed (see the module comment).
+    db.update(tasks).set({ branch, updatedAt: now }).where(eq(tasks.id, matched.taskId)).run();
+  }
 
   // After the insert: a repo nobody tracks is **not** an error (§9.2 degrades,
   // it never errors), so the row is written either way and the resolution is
@@ -320,7 +447,7 @@ export function recordHeartbeat(
     token_id: row.tokenId ?? null,
     repo: row.repo,
     branch: row.branch,
-    matched_task_id: null,
+    matched_task_id: row.matchedTaskId ?? null,
     created_at: row.createdAt,
     project_ids: resolved.projectIds,
     attribution: resolved.attribution,
