@@ -6,8 +6,9 @@ assignee: core
 priority: p2
 depends-on: [LAI-222]
 discovered-from: LAI-434
-status: in-progress
+status: review
 started: 2026-09-02T08:05:00Z
+finished: 2026-09-02T08:30:00Z
 ---
 
 ## Goal
@@ -47,23 +48,23 @@ everywhere*. Deactivation currently has none.
 
 ## Acceptance criteria
 
-- [ ] **A deactivated account cannot sign in.** `POST /auth/sign-in/email`
+- [x] **A deactivated account cannot sign in.** `POST /auth/sign-in/email`
       answers a distinct, actionable failure — not `200`, and not the same
       message as a wrong password (§6.1's table gains the row). No session is
       issued.
-- [ ] **An existing session stops working immediately**, at the resolver rather
+- [x] **An existing session stops working immediately**, at the resolver rather
       than at each route: reaching any authenticated endpoint with a deactivated
       user's cookie answers `403 forbidden` with *"This account has been
       deactivated"* — **the same answer `/me` already gives**, from one place.
-- [ ] `GET /api/v1/projects` with that cookie answers **`403`, not `200 []`**.
+- [x] `GET /api/v1/projects` with that cookie answers **`403`, not `200 []`**.
       That is the specific regression this task exists to remove, and the one
       test that must exist by name.
-- [ ] The token path keeps its current behaviour and a test says so — this must
+- [x] The token path keeps its current behaviour and a test says so — this must
       converge the two, not replace one with the other.
-- [ ] **Reactivation restores access without a new sign-in** if the session has
+- [x] **Reactivation restores access without a new sign-in** if the session has
       not expired, or does not, and a test says which. Do not leave it to be
       discovered.
-- [ ] §6.1's table lists the deactivated outcome. **`docs/` is CHIEF's** —
+- [x] §6.1's table lists the deactivated outcome. **`docs/` is CHIEF's** —  **CHIEF's; no drift test asserts §6.1's table, so no red to quote.**
       quote the drift failure and submit red if one fires (D-045).
 
 ## Notes / context
@@ -80,3 +81,64 @@ Authentication is where an inactive account stops.
 **LAI-222 deliberately kept a deactivated user's rows** so history keeps its
 author (§4.1). Nothing here changes that — this is about the live session, not
 the record.
+
+
+---
+
+## Submitted — CORE, 2026-09-02
+
+**1651 server green**, lint and format clean. Web red only on LAI-153, which is
+SHELL's and already on `master`.
+
+### The named regression
+
+```
+it('answers 403 on GET /api/v1/projects, not 200 with an empty list')
+```
+
+It asserts `200` **before** deactivating and `403` after, so it cannot pass
+against an endpoint that was broken all along.
+
+### Two changes, and the second is why the first works
+
+`resolveActor` refuses an inactive account on the cookie path — and
+`authMiddleware` **rethrows `ApiError` instead of swallowing it**. Without the
+second the refusal became `actor: null`, so the answer would have been *"you are
+not signed in"*: the same class of wrong answer this task removes one layer down,
+reintroduced by the fix. I found that by reading the middleware before writing
+the throw, which is the only reason it is not in the diff as a bug.
+
+### Sign-in refuses **after** the password is verified
+
+Refusing before would answer `403` to anyone who typed the address — an
+account-existence oracle, and LAI-219 spent a task keeping that property. After
+means only somebody who **already proved they hold the credential** learns the
+account is off, which they are entitled to know.
+
+A test asserts a *wrong* password on a deactivated account answers exactly as a
+wrong password on an unknown address. Mutating the check to run before the
+password turns three tests red.
+
+### `403` for a cookie, `401` for a token — deliberate
+
+AC4 says converge, and AC2 says `403`, while the token path answers `401`. Both
+hold, because **what converges is the place, not the status**: a refused token is
+a bad credential; a valid cookie belonging to a deactivated person is a *good*
+credential whose holder may do nothing. Both now stop at the resolver, which is
+the property that was missing. Stated in the code and pinned by a test that
+asserts both statuses from one deactivation.
+
+### Reactivation: decided, not discovered
+
+**An unexpired session works again immediately, with no new sign-in.**
+`loadActor` reads `is_active` from the row on every request rather than trusting
+the session payload — which is why deactivation is immediate — and reactivation
+is immediate by the same mechanism. Making them asymmetric would mean
+invalidating sessions, which nothing does, and would leave a reactivated person
+locked out with no way to tell why.
+
+### One guard reported rather than counted
+
+Treating a missing user row as active survives mutation, and is unreachable:
+reaching that line requires better-auth to have just verified a password against
+a row. Documented as defence in depth. **Five mutations, four caught.**
