@@ -4,7 +4,7 @@ title: 'POST /webhooks/transcript — a meeting becomes a reviewable proposal se
 area: server
 assignee: unclaimed
 priority: p2
-depends-on: [LAI-447]
+depends-on: [LAI-447, LAI-164]
 discovered-from:
 status: backlog
 ---
