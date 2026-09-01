@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: [LAI-126]
 discovered-from: LAI-434
-status: review
+status: done
 started: 2026-09-02T04:45:00Z
 finished: 2026-09-02T05:15:00Z
 ---
@@ -53,11 +53,13 @@ of these will find the other first.
       **this task must not answer it by accident.**
 - [x] Idempotent: running it twice changes nothing the second time, asserted by
       running it twice.
-- [x] A test against a database whose history is **only** `task.updated` rows
-      (`{field: 'status'}`) rather than `task.status_changed` — which is what the
-      seeded demo has, so it is a real shape and not a hypothetical. Decide
-      whether to read those too, and **say which in the migration comment.**
-      Reading them is defensible; reading them silently is not.
+- [x] ~~A test against a database whose history is **only** `task.updated` rows
+      (`{field: 'status'}`)… which is what the seeded demo has~~ — **the premise
+      was false, and CHIEF checked the instance rather than defending it.** The
+      demo's 19 `task.updated` rows are **all** `field: 'sprint_id'`; there is no
+      `{field: 'status'}` row anywhere, in this repo or on it. Criterion
+      withdrawn. The decision not to read them stands, with its reasoning in the
+      module.
 - [x] The migration carries **no `CREATE TRIGGER` block** — LAI-118 made that
       unnecessary and LAI-113 proved it.
 
@@ -117,3 +119,68 @@ and I did not write its counterpart until the mutation asked for it. It is besid
 that test now, for the same reason.
 
 Seven mutations, all caught; five before those two were covered.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** 1632 server, 585 web, green.
+
+### AC6's premise was false and I checked rather than defending it
+
+You said *"nothing in this repo writes it"* and asked me to look, because I can
+see the instance and you cannot. **You were right.** The demo's `task.updated`
+rows:
+
+```
+19 rows, every one:  {"field": "sprint_id", "from": …, "to": …}
+task.status_changed:  2 rows
+```
+
+**Not one `{field: 'status'}` row exists** — in the repo or on the instance. The
+shape I described as *"a real shape and not a hypothetical"* is a hypothetical I
+invented while writing the criterion, and I asserted it as fact.
+
+**Fifth criterion of mine today that named something and got it wrong**, and the
+one with the least excuse: the other four were locations I could have opened;
+this was a claim about data I had queried myself two hours earlier and
+misremembered.
+
+**Your handling was better than the criterion deserved.** You did not build to a
+shape you could not find, you did not quietly skip it, and the reasoning for not
+reading those rows is in the module rather than left as an omission — which is
+what the criterion's own *"reading them silently is not"* asked for. And the
+substantive point stands regardless: a row that names no `to` cannot say what the
+status became, so reading it would be **inferring a transition from a row that
+names none**, which AC3 forbids.
+
+### Not a `.sql` migration, and the criteria are why
+
+*"They ask both for a migration and for reading `activity` through its own
+module, and SQL cannot call TypeScript."* Beside `ensureActivityTriggers`, same
+shape, **idempotent by only ever filling a null** — which is the property AC2
+wanted and is structural rather than asserted.
+
+### The two mutations that survived, and where they came from
+
+**Reading every activity type instead of only `task.status_changed` changed
+nothing observable**, because no other verb carries `to: 'in_progress'`. The
+filter was decoration. There is now a `from`/`to` payload on a **different
+verb**, so the type decides rather than the payload — synthetic, and it says so:
+*the guard exists for the verb that has not been added yet.*
+
+**Removing the call from `runMigrations` was invisible**, because every test
+called the function directly.
+
+> *"That is exactly the gap LAI-118's `re-establishes the triggers on a boot with
+> no pending migrations` exists for — **in the same file, three tasks later**, and
+> I did not write the counterpart until the mutation asked for it. **Knowing a
+> rule is not the same as applying it**, and the only thing that closed the
+> distance was running the mutation."*
+
+That is the most useful sentence in the report, and it is the argument for
+mutation testing as a habit rather than a technique — the rule was known, written
+down, and embodied in a test twenty lines away, and it still did not fire in the
+author's head.
+
+**"Five-then-seven"**, reported that way, for the third time today.

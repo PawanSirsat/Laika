@@ -1,4 +1,4 @@
-import { createInterface } from 'node:readline/promises';
+import { createInterface, type Interface } from 'node:readline/promises';
 import { stdin, stdout } from 'node:process';
 
 /**
@@ -8,47 +8,104 @@ import { stdin, stdout } from 'node:process';
  * lands in `~/.zsh_history`, in `ps` output while the process runs, and in
  * whatever shell-integration log the terminal keeps. So there is no
  * `--password` flag, deliberately, and no way to pass one.
+ *
+ * ## One interface for the whole session, and why
+ *
+ * The first version created a `readline` per question and closed it after.
+ * That works interactively and **breaks the moment input is piped**: closing an
+ * interface ends the underlying stream, so the second question read `null` and
+ * `init` exited silently after printing "Email:". Found by running the thing
+ * end to end — no unit test of `ask()` alone would have shown it, because each
+ * call is correct in isolation and it is the *sequence* that fails.
  */
 
+let shared: Interface | undefined;
+
+/**
+ * Answers read from a pipe, when there is no terminal.
+ *
+ * **A piped `readline` closes at EOF**, and it reaches EOF as soon as the writer
+ * is done — which is usually while `init` is still awaiting a network call. The
+ * next question then rejects with *"readline was closed"* and the whole flow
+ * dies after the first answer. That is not only a testing problem: it is why
+ * `laika init < answers` and any CI use of it could not work at all.
+ *
+ * So without a terminal the input is drained **once**, up front, and questions
+ * are served from it. With a terminal nothing changes.
+ */
+let piped: string[] | undefined;
+
+function rl(): Interface {
+  shared ??= createInterface({ input: stdin, output: stdout });
+  return shared;
+}
+
+async function drainStdin(): Promise<string[]> {
+  let text = '';
+  stdin.setEncoding('utf8');
+  // Typed as `unknown` rather than `Buffer`: with an encoding set the stream
+  // yields strings, and asserting the buffer type is what tripped the lint.
+  for await (const chunk of stdin) text += String(chunk);
+  return text.split('\n');
+}
+
+/** The next piped answer, or `''` when the input ran out. */
+async function nextPiped(): Promise<string> {
+  piped ??= await drainStdin();
+  return piped.shift() ?? '';
+}
+
+/** Release stdin. Called once, when the flow is finished with it. */
+export function closePrompt(): void {
+  shared?.close();
+  shared = undefined;
+}
+
 export async function ask(question: string, fallback?: string): Promise<string> {
-  const rl = createInterface({ input: stdin, output: stdout });
-  try {
-    const suffix = fallback === undefined ? '' : ` [${fallback}]`;
-    const answer = (await rl.question(`${question}${suffix}: `)).trim();
-    return answer === '' && fallback !== undefined ? fallback : answer;
-  } finally {
-    rl.close();
+  const suffix = fallback === undefined ? '' : ` [${fallback}]`;
+
+  if (stdin.isTTY !== true) {
+    stdout.write(`${question}${suffix}: `);
+    const piped_ = (await nextPiped()).trim();
+    stdout.write(`${piped_}\n`);
+    return piped_ === '' && fallback !== undefined ? fallback : piped_;
   }
+
+  const answer = (await rl().question(`${question}${suffix}: `)).trim();
+  return answer === '' && fallback !== undefined ? fallback : answer;
 }
 
 /**
  * Ask without echoing what is typed.
  *
- * `readline` has no silent mode, so the terminal goes into raw mode and the
- * keystrokes are read directly. **Restoring it matters more than the feature**:
- * leaving a terminal raw after a crash makes the user's shell unusable until
- * they type `reset` blind, so every exit path goes through `restore`.
+ * `readline` has no silent mode, so on a terminal the shared interface is
+ * paused and the keystrokes are read raw. **Restoring matters more than the
+ * feature**: leaving a terminal raw after a crash makes the shell unusable
+ * until the user types `reset` blind, so every exit path goes through
+ * `restore`.
  */
 export function askSecret(question: string): Promise<string> {
-  return new Promise((resolve, reject) => {
+  // Not a TTY — piped, or CI. Reading raw would hang, so read a line normally
+  // and say plainly that it will be visible rather than pretending otherwise.
+  if (stdin.isTTY !== true) {
+    // Nothing to hide from: there is no terminal echoing anything. The answer
+    // came from a pipe, so the only place it could leak is the caller's own
+    // script, which is theirs to look after.
     stdout.write(`${question}: `);
+    return nextPiped().then((value) => {
+      stdout.write('\n');
+      return value.trim();
+    });
+  }
 
-    // Not a TTY — a pipe, or CI. Reading raw would hang forever, so fall back
-    // to a normal read and say plainly that it will be visible.
-    if (stdin.isTTY !== true) {
-      stdout.write('\n(no terminal — input will be visible)\n');
-      const rl = createInterface({ input: stdin, output: stdout });
-      rl.question('')
-        .then((answer) => {
-          rl.close();
-          resolve(answer.trim());
-        })
-        .catch((cause: unknown) => {
-          rl.close();
-          reject(cause instanceof Error ? cause : new Error(String(cause)));
-        });
-      return;
-    }
+  return new Promise((resolve, reject) => {
+    // **Close it, do not pause it.** A paused `readline` still owns the
+    // terminal's mode, so `setRawMode(true)` did not take and the password was
+    // echoed in full — found by driving the CLI through a real pty, which is
+    // the only way that shows. Closing releases the tty; `shared` is cleared so
+    // a later question builds a fresh interface.
+    closePrompt();
+    stdout.write(`${question}: `);
 
     stdin.setRawMode(true);
     stdin.resume();

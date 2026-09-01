@@ -7,7 +7,7 @@ import {
   withLaikaConfig,
   writeSettings,
 } from './config.ts';
-import { ask, askSecret, confirm } from './prompt.ts';
+import { ask, askSecret, closePrompt, confirm } from './prompt.ts';
 
 /**
  * `npx laika init` — M4's exit criterion.
@@ -36,6 +36,16 @@ export function tokenName(host: string = hostname()): string {
 }
 
 export async function init(io: InitIo = defaultIo): Promise<number> {
+  try {
+    return await run(io);
+  } finally {
+    // Release stdin on every path. A left-open interface keeps the process
+    // alive after the last line is printed, which reads as a hang.
+    closePrompt();
+  }
+}
+
+async function run(io: InitIo): Promise<number> {
   const { out } = io;
 
   out('Laika — connect this machine to your board.');
