@@ -2,11 +2,12 @@
 id: LAI-436
 title: A blocked task's bar is not red, and there is no sprint tab row
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-434]
 discovered-from: LAI-434
-status: backlog
+started: 2026-09-01T16:55:00+05:30
+status: in-progress
 ---
 
 ## Goal
