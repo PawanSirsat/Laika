@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-430]
 discovered-from:
-status: review
+status: done
 started: 2026-09-02T02:40:00Z
 finished: 2026-09-02T03:20:00Z
 ---
@@ -114,3 +114,69 @@ every call passing a real name was an error the test run ignored entirely. Third
 or fourth time the LAI-136 composite has earned itself.
 
 Seven mutations, all caught.
+
+---
+
+## Accepted — CHIEF, 2026-09-01
+
+**Accepted.** M5's server side is complete: LAI-430, LAI-431, LAI-432.
+
+**Verified by mutation:**
+
+| Mutation | Red |
+| --- | --- |
+| Remove the disabled short-circuit | `answers enabled:false rather than an empty list` + its serialisation twin |
+| Capacity's flag hard-coded `true` | `capacity says so too, and still lists people` + twin |
+| `is_agent` always `false` | `marks a heartbeat on a token as an agent and a cookie as not` |
+
+**My first attempt at the first one was a no-op** — the regex matched the literal
+`enabled: false` in the disabled branch and replaced it with itself. **Fourth
+no-op mutation of the day**, third across the two of you and now one of mine. The
+printed anchor is the only reason I noticed; the suite came back green and would
+have read as *"the guard does not catch it"*.
+
+### `enabled` as a field, asserted both ways
+
+*"`enabled: false` with rows present, **and** `enabled: true` on an empty
+board — the second is the one that matters, because asserting only the first
+passes against a hard-coded `false`."*
+
+That is the same check you named this hour and applied to yourself before I got
+here: **when a test asserts a boolean, assert both values.** It is now three
+instances of one shape in one day —`.github.io`, the backup filenames, the agent
+case — and stating it as a mechanical check rather than a lesson is the right
+move: *when it asserts a filter, include something the filter must exclude.*
+
+### The window at `gt` versus `gte`
+
+4m59s present, 5m01s absent, **and exactly five minutes** — the case a real-clock
+test would never hit and the only one that distinguishes the two operators.
+
+### Two grades in one response, twice now
+
+`unlisted` **absent rather than empty** for a caller without `audit_log.export`,
+for the same reason `ai` is absent on the org: an empty array says *"this person
+has logged nothing"*, which is a different fact and one a Member would act on.
+Second application of a rule you established four hours ago, unprompted.
+
+**Capacity keeping the person while filtering their tasks** is the right call and
+the reason is the general one: *the person is not the secret, and dropping them
+would make the headcount depend on who is asking.*
+
+### On the unattributed heartbeat — you were right to flag it, and I am changing it
+
+You said an unattributed heartbeat is visible to everyone because *"it names no
+project, so there is nothing to leak"*. **It names a `repo`**, and that is where
+it turns, for a reason you could not have seen from here:
+
+**D-046 puts `LAIKA_URL` and `LAIKA_TOKEN` in `~/.claude/settings.json` — user
+settings, not per-repository.** So the hook fires in **every** repository that
+person opens, including ones the org has nothing to do with. Consent to be seen
+working on the org's projects is not consent to broadcast the name of every
+private repository you open in an editor.
+
+**Filed as LAI-438**, and §9.3 will say it: an entry that attributes to no
+project the reader can see says *somebody is working* without naming where.
+**Not a defect in this task** — §9.3 as written says presence shows the repo, and
+you built §9.3. The interaction with D-046 is new, and it is the second time
+today a decision made for one reason has changed what another one means.
