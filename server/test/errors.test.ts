@@ -128,7 +128,7 @@ describe('the vocabulary matches SPEC §6.3 (D-021)', () => {
    * vocabulary exists to prevent. Parsing the table means the spec and
    * `ERROR_STATUS` cannot disagree without something going red.
    *
-   * `docs/` is PM's area — this reads it, never writes it.
+   * `docs/` is CHIEF's area — this reads it, never writes it.
    */
   function specTable(): Map<string, number> {
     const spec = readFileSync(join(SERVER_ROOT, '..', 'docs', 'SPEC.md'), 'utf8');

@@ -48,7 +48,7 @@ export const SERVER_ROOT = findServerRoot(CODE_ROOT);
 export const PUBLIC_DIR = resolve(SERVER_ROOT, 'public');
 
 /**
- * The committed document served when no SPA build is present (PM decision on
+ * The committed document served when no SPA build is present (CHIEF decision on
  * LAI-016).
  *
  * Anchored to `CODE_ROOT`, not to `src/`: a container ships `dist/` alone, so a

@@ -432,7 +432,7 @@ describe('the keepalive (AC5)', () => {
    * AC5 names 25 seconds in bold, and until this test existed nothing referenced
    * `KEEPALIVE_MS` at all: every other test here injects `keepaliveMs`, so what
    * they proved was "a frame is sent on the interval we asked for", not the
-   * interval the server actually uses. PM changed the constant to 250_000 and all
+   * interval the server actually uses. CHIEF changed the constant to 250_000 and all
    * 560 tests passed.
    *
    * Asserting the literal `25_000` rather than `KEEPALIVE_MS` is the whole point —

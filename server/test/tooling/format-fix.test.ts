@@ -8,7 +8,7 @@ import { SERVER_ROOT } from '../../src/paths.ts';
 /**
  * LAI-026. `pnpm format:fix` used to run Prettier with `--write` over the whole
  * repo, so from any worktree it rewrote files in every area — it reformatted
- * Builder-B's `plugin/.claude-plugin/plugin.json` from Builder-A's worktree.
+ * SHELL's `plugin/.claude-plugin/plugin.json` from CORE's worktree.
  *
  * These tests run the **real command**, read out of the root `package.json`, in a
  * throwaway git repo. Reading it rather than restating it is the point: a test
@@ -191,7 +191,7 @@ describe('format:fix respects the repo formatting policy (LAI-001)', () => {
   });
 });
 
-describe('third-party artefacts are never formatted (LAI-026, PM addition)', () => {
+describe('third-party artefacts are never formatted (LAI-026, CHIEF addition)', () => {
   it('leaves an ignored directory alone even when this worktree changed it', () => {
     // `docs/design/` holds imported mockups and a vendored runtime. They are a
     // visual reference — reformatting corrupts the comparison they exist for.

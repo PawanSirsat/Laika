@@ -18,7 +18,7 @@ import { SERVER_ROOT } from '../../src/paths.ts';
  * discovered by *running* `readEnv`, not by parsing it: what the code actually
  * reads and actually rejects, not what it appears to.
  *
- * `docker/` is Builder-B's under D-016. This reads it and never writes it.
+ * `docker/` is SHELL's under D-016. This reads it and never writes it.
  */
 
 const COMPOSE = join(SERVER_ROOT, '..', 'docker', 'docker-compose.yml');

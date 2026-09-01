@@ -300,7 +300,7 @@ describe('the org-wide feed (AC2)', () => {
   });
 });
 
-describe('it answers exactly what the stream would (PM’s note)', () => {
+describe('it answers exactly what the stream would (CHIEF’s note)', () => {
   it('matches visibleTo row for row, for every kind of actor', () => {
     write(alphaId, 'task.created', 1000);
     write(betaId, 'task.created', 2000);
