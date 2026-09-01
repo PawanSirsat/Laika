@@ -5,7 +5,7 @@ import { type OrgRole } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
 import { orgs, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
-import { getOrg } from '../../src/services/orgs.ts';
+import { getOrg, updateOrg } from '../../src/services/orgs.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -151,5 +151,64 @@ describe('the provider block is gated field-level (§3.1, §11.4.2)', () => {
 
     expect(serialised).not.toContain('smtp-secret');
     expect(serialised).not.toContain('hook-secret');
+  });
+});
+
+/**
+ * The org-wide presence switch (§4.2, §11.4.2, LAI-207).
+ *
+ * LAI-106 deleted the first-boot toggle because there was nowhere to put the
+ * answer. §4.2 had specified the column all along; the schema was what lacked it.
+ */
+describe('presence_enabled', () => {
+  it('defaults to on, matching §4.2 and the design', () => {
+    expect(getOrg(t.db, actor(makeUser('member'))).presence_enabled).toBe(true);
+  });
+
+  it('is readable by every role, including a Viewer', () => {
+    t.db.update(orgs).set({ presenceEnabled: 0 }).where(eq(orgs.id, orgId)).run();
+
+    for (const role of ['owner', 'admin', 'member', 'viewer'] as const) {
+      // Not an admin-only setting to *read*. §11.4.2 shows a **disabled** state
+      // on Capacity when this is 0 — distinct from an empty one — and Capacity is
+      // not an admin screen. It is also a claim about the people being tracked,
+      // who have the strongest reason to know it (D-005).
+      expect(getOrg(t.db, actor(makeUser(role))).presence_enabled, role).toBe(false);
+    }
+  });
+
+  it('is changed by an Admin and an Owner', () => {
+    for (const role of ['admin', 'owner'] as const) {
+      expect(
+        updateOrg(t.db, actor(makeUser(role)), { presence_enabled: false }).presence_enabled,
+      ).toBe(false);
+      updateOrg(t.db, actor(makeUser(role)), { presence_enabled: true });
+    }
+  });
+
+  it('refuses a Member and a Viewer the write, while still letting them read', () => {
+    for (const role of ['member', 'viewer'] as const) {
+      const id = makeUser(role);
+
+      expect(() => updateOrg(t.db, actor(id), { presence_enabled: false })).toThrow(ApiError);
+      // The read must survive the refusal, or "disabled" becomes unreadable to
+      // exactly the people the setting is about.
+      expect(getOrg(t.db, actor(id)).presence_enabled, role).toBe(true);
+    }
+  });
+
+  it('leaves it alone when the patch does not mention it', () => {
+    const adminId = makeUser('admin');
+    updateOrg(t.db, actor(adminId), { presence_enabled: false });
+
+    expect(updateOrg(t.db, actor(adminId), {}).presence_enabled).toBe(false);
+  });
+
+  it('moves updated_at, so a client can tell the org changed', () => {
+    const adminId = makeUser('admin');
+
+    expect(updateOrg(t.db, actor(adminId), { presence_enabled: false }, 9000).updated_at).toBe(
+      9000,
+    );
   });
 });

@@ -2,11 +2,12 @@
 id: LAI-433
 title: '`laika_whoami` is registered, undocumented, and carved out of the parity check by name'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-419
-status: backlog
+status: in-progress
+started: 2026-09-01T23:20:00Z
 ---
 
 ## Goal

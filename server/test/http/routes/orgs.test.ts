@@ -20,6 +20,7 @@ let ownerId: string;
 interface OrgBody {
   id: string;
   name: string;
+  presence_enabled: boolean;
   created_at: number;
   updated_at: number;
   ai?: { configured: boolean; provider: string | null; key_last4: string | null };
@@ -105,5 +106,42 @@ describe('GET /api/v1/org', () => {
     // would say "no such thing".
     expect(res.status).toBe(405);
     expect(res.headers.get('allow')).toContain('GET');
+  });
+});
+
+describe('PATCH /api/v1/org (LAI-207)', () => {
+  async function patch(body: unknown): Promise<Response> {
+    return h.app.request('/api/v1/org', {
+      method: 'PATCH',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify(body),
+    });
+  }
+
+  it('turns presence off and reports the new value', async () => {
+    const res = await patch({ presence_enabled: false });
+
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(((await res.json()) as OrgBody).presence_enabled).toBe(false);
+  });
+
+  it('refuses an unknown key rather than discarding it', async () => {
+    // The failure LAI-106 deleted the first-boot toggle to avoid: a control that
+    // appears to save and does not.
+    expect((await patch({ track_presence: false })).status).toBe(422);
+  });
+
+  it('refuses a patch that asks for nothing', async () => {
+    expect((await patch({})).status).toBe(400);
+  });
+
+  it('401s when signed out', async () => {
+    const res = await h.app.request('/api/v1/org', {
+      method: 'PATCH',
+      headers: jsonHeaders(),
+      body: JSON.stringify({ presence_enabled: false }),
+    });
+
+    expect(res.status).toBe(401);
   });
 });
