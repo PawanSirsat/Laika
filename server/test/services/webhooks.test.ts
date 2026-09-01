@@ -7,7 +7,7 @@ import {
   DELIVERY_TTL_MS,
   DeliveryLog,
   githubWebhookSecret,
-  verifyGithubSignature,
+  verifySignature,
 } from '../../src/services/webhooks.ts';
 import { freshDb, seed, type TestDb } from '../helpers/db.ts';
 
@@ -28,16 +28,16 @@ function sign(body: string, secret = WEBHOOK_SECRET): string {
 
 describe('verifying a signature', () => {
   it('accepts a body signed with the shared secret', () => {
-    expect(verifyGithubSignature(BODY, sign(BODY), WEBHOOK_SECRET)).toBe(true);
+    expect(verifySignature(BODY, sign(BODY), WEBHOOK_SECRET)).toBe(true);
   });
 
   it('refuses a body that was changed after signing', () => {
     // The property, stated as tampering rather than as "a wrong string".
-    expect(verifyGithubSignature(`${BODY} `, sign(BODY), WEBHOOK_SECRET)).toBe(false);
+    expect(verifySignature(`${BODY} `, sign(BODY), WEBHOOK_SECRET)).toBe(false);
   });
 
   it('refuses a signature made with a different secret', () => {
-    expect(verifyGithubSignature(BODY, sign(BODY, 'not-the-secret'), WEBHOOK_SECRET)).toBe(false);
+    expect(verifySignature(BODY, sign(BODY, 'not-the-secret'), WEBHOOK_SECRET)).toBe(false);
   });
 
   it('refuses an absent, mis-schemed or malformed header', () => {
@@ -57,7 +57,7 @@ describe('verifying a signature', () => {
       // buffer and throw.
       `sha256=${'z'.repeat(64)}`,
     ]) {
-      expect(verifyGithubSignature(BODY, header, WEBHOOK_SECRET), String(header)).toBe(false);
+      expect(verifySignature(BODY, header, WEBHOOK_SECRET), String(header)).toBe(false);
     }
   });
 
@@ -68,10 +68,8 @@ describe('verifying a signature', () => {
     // accepting `SHA256=` would be laxity rather than correctness.
     const [scheme, digest] = sign(BODY).split('=') as [string, string];
 
-    expect(verifyGithubSignature(BODY, `${scheme}=${digest.toUpperCase()}`, WEBHOOK_SECRET)).toBe(
-      true,
-    );
-    expect(verifyGithubSignature(BODY, sign(BODY).toUpperCase(), WEBHOOK_SECRET)).toBe(false);
+    expect(verifySignature(BODY, `${scheme}=${digest.toUpperCase()}`, WEBHOOK_SECRET)).toBe(true);
+    expect(verifySignature(BODY, sign(BODY).toUpperCase(), WEBHOOK_SECRET)).toBe(false);
   });
 
   it('signs the exact bytes, so an equivalent JSON re-encoding fails', () => {
@@ -83,7 +81,7 @@ describe('verifying a signature', () => {
     const spaced = '{"ref": "refs/heads/lai-42-do-the-thing"}';
 
     expect(JSON.parse(spaced)).toEqual(JSON.parse(BODY));
-    expect(verifyGithubSignature(spaced, sign(BODY), WEBHOOK_SECRET)).toBe(false);
+    expect(verifySignature(spaced, sign(BODY), WEBHOOK_SECRET)).toBe(false);
   });
 });
 

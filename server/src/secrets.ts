@@ -72,7 +72,8 @@ const SALT = Buffer.from('laika/secrets/v1');
  * would derive a *different, valid* key and fail to decrypt at some later date
  * with no clue why. This makes that a compile error.
  */
-export type SecretPurpose = 'ai_api_key' | 'smtp_json' | 'github_webhook_secret';
+export type SecretPurpose =
+  'ai_api_key' | 'smtp_json' | 'github_webhook_secret' | 'transcript_webhook_secret';
 
 /**
  * `v1.` and then base64url of `nonce ‖ tag ‖ ciphertext`.

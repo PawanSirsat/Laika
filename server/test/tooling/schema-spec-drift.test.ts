@@ -333,6 +333,18 @@ const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
     'users.image',
     'required by better-auth’s user model; unused — §4.1 says avatars are derived, no uploads in v1',
   ],
+  // In flight (LAI-450). §4.2's `orgs` table gains a
+  // `transcript_webhook_secret_enc` row under D-052, written by CHIEF and
+  // applied at merge; the staleness test below drops this the moment it lands.
+  //
+  // **Its own column rather than reusing `github_webhook_secret_enc`**: one
+  // secret for two integrations means revoking either breaks both, and a leak of
+  // one hands over the other. It has its own `SecretPurpose` too, so the derived
+  // keys differ and a ciphertext written for one will not open under the other.
+  [
+    'orgs.transcript_webhook_secret_enc',
+    'LAI-450, in flight: awaiting §4.2’s `transcript_webhook_secret_enc` row (D-052).',
+  ],
 ]);
 
 /**

@@ -1,0 +1,1 @@
+ALTER TABLE `orgs` ADD `transcript_webhook_secret_enc` text;

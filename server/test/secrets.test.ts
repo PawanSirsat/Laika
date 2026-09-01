@@ -108,6 +108,7 @@ describe('the key', () => {
       ai_api_key: encryptSecret('sk-ant-0123', SECRET, 'ai_api_key'),
       smtp_json: encryptSecret('{"host":"x"}', SECRET, 'smtp_json'),
       github_webhook_secret: encryptSecret('ghp_0123', SECRET, 'github_webhook_secret'),
+      transcript_webhook_secret: encryptSecret('tr_0123', SECRET, 'transcript_webhook_secret'),
     } as const;
 
     for (const purpose of Object.keys(stored) as SecretPurpose[]) {

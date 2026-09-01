@@ -209,6 +209,96 @@ async function watchers(taskId: string): Promise<unknown[]> {
   return body.watchers ?? body.data ?? [];
 }
 
+describe('POST /webhooks/transcript (§10.2, D-052)', () => {
+  const TRANSCRIPT_SECRET = 'the-transcript-recorders-secret';
+
+  function configure(): void {
+    h.db
+      .update(orgs)
+      .set({
+        transcriptWebhookSecretEnc: encryptSecret(
+          TRANSCRIPT_SECRET,
+          TEST_SECRET,
+          'transcript_webhook_secret',
+        ),
+      })
+      .run();
+  }
+
+  async function submit(body: unknown, secret = TRANSCRIPT_SECRET): Promise<Response> {
+    const raw = JSON.stringify(body);
+    return h.app.request('/webhooks/transcript', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-hub-signature-256': sign(raw, secret),
+      },
+      body: raw,
+    });
+  }
+
+  it('refuses when no transcript secret is configured', async () => {
+    // §10.2 was specified with no authentication at all (LAI-164). Absent means
+    // refuse, exactly as §10.1 does — an org that has not configured this has
+    // not agreed to have its tasks and context sent anywhere.
+    const res = await submit({ project_slug: 'laika', transcript: 'x', source: 'r' });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses a signature made with the GitHub secret', async () => {
+    // **The reason D-052 gave it its own secret and its own key.** One secret
+    // for two integrations means revoking either breaks both; here it also means
+    // a GitHub webhook could submit transcripts.
+    configure();
+
+    const res = await submit(
+      { project_slug: 'laika', transcript: 'x', source: 'r' },
+      WEBHOOK_SECRET,
+    );
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses before parsing, as §10.1 does', async () => {
+    configure();
+    const res = await h.app.request('/webhooks/transcript', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-hub-signature-256': 'sha256=dead' },
+      body: '{ not json',
+    });
+
+    expect(res.status).toBe(401);
+  });
+
+  it('refuses when the org has no AI provider, and says so distinctly', async () => {
+    // `unavailable`, not `internal`: an org with no provider cannot do this yet,
+    // which is a state of the instance rather than a fault in the request.
+    configure();
+
+    const res = await submit({ project_slug: 'laika', transcript: 'x', source: 'r' });
+    const body = (await res.json()) as { error: { code: string; details: { reason?: string } } };
+
+    expect(res.status).toBe(503);
+    expect(body.error.code).toBe('unavailable');
+    expect(body.error.details.reason).toBe('no_provider');
+  });
+
+  it('validates the body strictly', async () => {
+    configure();
+
+    for (const body of [
+      { transcript: 'x', source: 'r' },
+      { project_slug: 'laika', source: 'r' },
+      { project_slug: 'laika', transcript: '', source: 'r' },
+      { project_slug: 'laika', transcript: 'x', source: 'r', extra: 'no' },
+    ]) {
+      const res = await submit(body);
+      expect(res.status, JSON.stringify(body)).toBe(422);
+    }
+  });
+});
+
 describe('issue_comment mirrors, with no Laika author (§10.1, LAI-449)', () => {
   async function commentEvent(action = 'created', body = 'Looks good to me'): Promise<Response> {
     return deliver('issue_comment', {
