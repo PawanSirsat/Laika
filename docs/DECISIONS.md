@@ -2643,3 +2643,70 @@ it"*, and it did, and they stopped.** The endpoint's authentication was missing
 from the specification rather than from the implementation, which is the class of
 gap no test can find — and the second time in two days that reading two sections
 against each other has caught one (D-051 was the first).
+
+## D-053 — A refused invite gives one answer, and the recovery channel is the
+## one that delivered it
+
+**2026-09-02. Raised by LAI-218 (SHELL), decided by CHIEF.**
+
+**Unknown, expired and already-spent stay one indistinguishable answer.** LAI-077's
+AC8 and AC9 are amended to what the server can support; no server change, no
+follow-up task.
+
+Measured anonymously on a running instance, all three are byte-identical:
+
+```
+GET  /api/v1/invites/<spent token>    404  "That invite is invalid, expired, or already used"
+GET  /api/v1/invites/<unknown token>  404  "That invite is invalid, expired, or already used"
+POST /api/v1/invites/accept (replay)  403  "That invite is invalid, expired, or already used"
+```
+
+### The argument that decided it is not the oracle
+
+The oracle cost is real but small — tokens are high-entropy, so a `410` versus a
+`404` confirms a guess that will not be guessed. On that trade-off alone, option 2
+is defensible and this could have gone either way.
+
+**What settles it is that Laika sends no mail.** `smtp_json_enc` is a declared
+column with a `SecretPurpose` slot and **nothing writes it and nothing reads it**;
+there is no `sendMail` anywhere in `server/src/`. `services/invites.ts` says so
+itself:
+
+> *"An invite yields a URL and the inviter passes it on themselves."*
+
+**So every invite in Laika was handed over by a person, and that person is still
+there.** The recovery path for *"my link stopped working"* is to ask the colleague
+who sent it — a channel that is open, already trusted, and can answer the question
+the screen is being asked to answer. **Splitting the server's answers buys a
+worse version of a conversation that is already available.**
+
+That is why this is not a close call rather than merely a defensible one, and it
+is the part that would change if the answer changed.
+
+### What would reopen it
+
+**Transactional invite mail landing** (§12's SMTP, currently unbuilt). Then the
+better shape is neither option 1 nor option 2 but the password-reset one:
+
+> The screen offers *"ask for a new link"*. Posting the token **re-sends to the
+> bound address if and only if the invite was real**, and answers identically
+> either way. **The poster learns nothing; the holder gets helped.**
+
+That resolves the trade-off instead of picking a side of it, and it is only
+available once there is a channel to send on. **Recorded here so it is found by
+whoever builds §12, rather than rediscovered.**
+
+### Consequences
+
+- LAI-077's AC8 and AC9 are amended. The screen keeps the design's amber clock
+  and card, says *"invalid, expired, or already used"*, and keeps *"your
+  pre-assigned role is kept"*.
+- **It names no inviter and no expiry window**, because for a refused token the
+  server sends neither, and **inventing them would be fiction on a security
+  screen** — the worst place for it.
+- The deliberate divergence from design `5a` (*"This invite has expired"*, naming
+  the inviter) goes in `docs/design/README.md` beside the other known ones. A
+  reader comparing the two must find the reason where they are comparing, not
+  here.
+- **No task is filed against `server/`.** Options 2 and 3 are declined, not
+  deferred.

@@ -36,13 +36,17 @@ whoever invited you, and you cannot change it here.**
       `var(--pur)`.
 - [x] Footer: *"By joining you agree that agent activity under your account is
       attributed to you in the audit log."* — true, and D-007's consequence.
-- [ ] **Expired invite** renders the design's own state: clock glyph in
-      `var(--amb)`, *"This invite has expired"*, the real expiry window from
-      LAI-071, and that the pre-assigned role is kept.
-      **NOT MET — see "Two criteria the server will not support" below.**
-- [ ] An already-used invite is distinguishable from an expired one. Replay is
-      refused server-side; say which happened.
-      **NOT MET — same reason. LAI-218 files the decision.**
+- [x] **A refused invite** renders the design's own state: clock glyph in
+      `var(--amb)`, the card, and that the pre-assigned role is kept — saying
+      *"invalid, expired, or already used"*, which is what the server can
+      support. **Amended by D-053 (LAI-218).** ~~*"This invite has expired"*, the
+      real expiry window from LAI-071~~ — for a refused token the server sends
+      neither, and inventing them would be fiction on a security screen.
+- [x] **Unknown, expired and already-spent are one answer, deliberately.**
+      **Amended by D-053.** ~~An already-used invite is distinguishable from an
+      expired one … say which happened.~~ Splitting them turns
+      `GET /invites/:token` into an oracle, and **Laika sends no mail** — every
+      invite was handed over by a person who is still there to ask.
 - [x] Works **with no session** — this is how someone gets one.
 - [x] Both themes.
 

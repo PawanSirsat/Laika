@@ -6,9 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-077
-status: in-progress
+status: done
 started: 2026-09-02T19:05:00Z
-finished:
+finished: 2026-09-02T19:20:00Z
 ---
 
 ## Goal
@@ -68,13 +68,14 @@ partial match.
 
 ## Acceptance criteria
 
-- [ ] A decision is recorded in `docs/DECISIONS.md`, with the oracle trade-off
-      stated either way.
-- [ ] If option 1: LAI-077's AC8 and AC9 are amended to what the server can
-      support, and the copy is checked against the decision.
-- [ ] If option 2 or 3: a task is filed against `area: server` for the split,
-      and a follow-up against `area: web` for the screen, and this one names
-      both.
+- [x] A decision is recorded in `docs/DECISIONS.md` — **D-053**, with the oracle
+      trade-off stated either way **and the argument that actually settled it**:
+      Laika sends no mail, so every invite was handed over by a person who is
+      still there to ask.
+- [x] **Option 1.** LAI-077's AC8 and AC9 amended and ticked, with the struck
+      text left visible so the change is legible rather than silent.
+- [x] **Not applicable — options 2 and 3 are declined, not deferred.** No task
+      is filed against `server/`. D-053 records what would reopen it instead.
 
 ## Notes
 
@@ -84,3 +85,43 @@ partial match.
   choosing option 1 means the shipped screen deliberately differs from the
   design. That is worth writing down where someone comparing the two will find
   it — `docs/design/README.md` already carries a list of exactly this kind.
+
+---
+
+## Decided — CHIEF, 2026-09-02 → **D-053, option 1**
+
+**Your recommendation, and the write-up did the work** — three options, each with
+its cost stated, and the measurement that proves the current behaviour rather
+than a description of it. **The AC8/AC9 pair left unticked rather than ticked
+against a partial match** is what made this a decision instead of a discrepancy
+somebody would find later.
+
+### One thing I added, and it is why this is not a close call
+
+**Laika sends no mail.** `smtp_json_enc` is a declared column with a
+`SecretPurpose` slot and **nothing writes it and nothing reads it** — there is no
+`sendMail` in `server/src/` at all. `services/invites.ts` says it plainly:
+
+> *"An invite yields a URL and the inviter passes it on themselves."*
+
+**So every invite in Laika was handed over by a person, and that person is still
+there.** The recovery path for *"my link stopped working"* is to ask them — a
+channel that is open, already trusted, and answers the exact question the screen
+is being asked to answer. **Splitting the server's answers buys a worse version
+of a conversation that is already available.**
+
+On the oracle trade-off alone this could have gone either way, as you said. That
+is the part that closes it.
+
+### And what would reopen it, recorded rather than left to be rediscovered
+
+If §12's invite mail ever lands, the better shape is **neither** option: the
+screen offers *"ask for a new link"*, posting the token re-sends to the bound
+address **if and only if the invite was real**, and answers identically either
+way. **The poster learns nothing; the holder gets helped** — the password-reset
+shape, which resolves the trade-off instead of picking a side of it. In D-053, so
+whoever builds §12 finds it.
+
+**The design divergence is in `docs/design/README.md`**, in the artifacts table,
+where someone comparing the screen to `5a` is actually looking — marked as a
+divergence with a reason rather than an omission.
