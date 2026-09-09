@@ -2,11 +2,12 @@
 id: LAI-441
 title: Nothing stops the password being echoed again
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-422]
 discovered-from: LAI-422
-status: backlog
+started: 2026-09-09T17:51:58+05:30
+status: in-progress
 ---
 
 ## Goal
