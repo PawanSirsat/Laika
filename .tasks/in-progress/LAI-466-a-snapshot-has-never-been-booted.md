@@ -2,11 +2,12 @@
 id: LAI-466
 title: 'A snapshot has never been booted — the restore drill M7 exits on'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-431]
 discovered-from: LAI-463
-status: backlog
+status: in-progress
+started: 2026-09-09T23:05:00Z
 ---
 
 ## Goal
