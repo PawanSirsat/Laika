@@ -206,6 +206,21 @@ Write *"beyond the recorded collisions"*. Write *"the §7.1 tools"*, not *"the t
 §7.1 tools"*. **And do not fix it by writing the right number** — that is the same
 defect with a fresh expiry date.
 
+**Past tense is the escape hatch, and it is the only one.** *"There were three
+when this was written"*, *"thirteen of the fourteen were paired by LAI-160"* —
+those are claims about a moment and cannot rot, because the moment does not
+change. **A count that describes a list the code holds now can; a count in the
+past tense cannot.** That distinction is what makes a sweep for this finite: a
+grep for number words across `server/test/tooling/` returns about ninety hits and
+nearly all are ordinary prose (LAI-461).
+
+**The worst instance found so far was not a count at all.** A docblock said *"the
+four `system.*` entries in `ACTIONS_WITHOUT_A_ROW` carry the gap"* after §3.4
+landed and the guard had **already removed all four**. It told a reader a gap was
+**currently open** when it had closed — inside the docblock explaining
+self-expiring exemptions. **Rewritten in the past tense, the same sentence becomes
+evidence the mechanism worked.**
+
 **Nor by asserting the count.** A test that checks `LIST.length === 2` is a second
 copy of the number and the one that fails when the list legitimately changes. The
 fix is to stop writing it.

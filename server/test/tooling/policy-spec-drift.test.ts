@@ -364,15 +364,19 @@ describe('the parser reads §3, prose and all', () => {
 });
 
 /**
- * §3.4's actions, once the section exists (LAI-448).
+ * §3.4's actions (LAI-448).
  *
- * **Written before the section it reads**, deliberately. D-050 rules the system
- * principal and CHIEF applies §3.4 at merge, so today this finds nothing and the
- * four `system.*` entries in `ACTIONS_WITHOUT_A_ROW` carry the gap. The moment
- * the section lands, these become granted, and *"removes an exemption once §3
- * grants the action"* fails until the four entries are dropped.
+ * **Written before the section it reads**, deliberately: D-050 ruled the system
+ * principal while §3.4 was still to come, so `system.*` entries in
+ * `ACTIONS_WITHOUT_A_ROW` carried the gap and this function found nothing.
  *
- * That is the whole point of writing it now: an exemption whose retirement
+ * **§3.4 has since landed and those entries are gone** — which is the mechanism
+ * having worked, not a reason to delete this. It became `true` for the
+ * `system.*` actions the moment the section merged, *"removes an exemption once
+ * §3 grants the action"* went red, and the entries came out. **The next new
+ * section gets the same treatment for free.**
+ *
+ * That was the whole point of writing it early: an exemption whose retirement
  * depends on somebody remembering is not self-expiring, and the existing
  * staleness test reads §3.1 and §3.2 only — **it would never have fired for a
  * new section.**

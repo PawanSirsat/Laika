@@ -93,7 +93,7 @@ function taskFiles(): TaskFile[] {
 /**
  * Files whose frontmatter predates the field being required (LAI-415).
  *
- * **All twenty are in `done/`**, and none is in a live state — every file in
+ * **Every one of them is in `done/`**, and none is in a live state — every file in
  * `in-progress/` and `review/` is complete. That is the shape of the finding:
  * this is an archive written under earlier versions of the protocol, not a
  * process that is currently slipping.
@@ -288,7 +288,7 @@ describe('no two task files share an id', () => {
     return [...byId].filter(([, paths]) => paths.length > 1);
   }
 
-  it('has no collision beyond the three recorded', () => {
+  it('has no collision beyond the recorded ones', () => {
     const unexpected = duplicates()
       .filter(([id]) => !KNOWN_COLLISIONS.includes(id))
       .map(([id, paths]) => `${id} appears in ${paths.join(' and ')}`);
