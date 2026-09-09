@@ -186,8 +186,41 @@ describe('where a reconnect resumes (AC3, AC4)', () => {
     expect(base).toBeGreaterThan(0);
   });
 
+  /**
+   * `count` rows, appended and nothing else (LAI-456).
+   *
+   * **Deliberately not `write()`**, which reads the whole log twice around each
+   * insert to hand back the row it wrote. `fill` throws that row away, so at
+   * `MAX_REPLAY` it was paying for ~250,000 row reads to produce 500 values
+   * nobody looks at — quadratic setup for a linear fixture.
+   *
+   * Measured on a quiet machine, `fill(MAX_REPLAY)`:
+   *
+   * | | |
+   * | --- | --- |
+   * | via `write()` | **217ms**, of which **172ms (79%)** was the discarded reads |
+   * | appending directly | **46ms** |
+   *
+   * That 79% is what made the test's cost track machine contention: it was
+   * mostly queries, competing with a browser suite and a cli suite for the same
+   * cores, and it crossed vitest's 5000ms default at 5464ms under the root gate
+   * while taking 466ms alone.
+   *
+   * **The rows are identical either way** — same table, same columns, same
+   * order. `write()` stays exactly as it was for the tests that need the row
+   * back.
+   */
   function fill(count: number): void {
-    for (let i = 0; i < count; i++) write(laikaId, 'task.created');
+    for (let i = 0; i < count; i++) {
+      appendActivity(t.db, {
+        orgId,
+        projectId: laikaId,
+        actorId: ownerId,
+        actorKind: 'user',
+        type: 'task.created',
+        payload: { note: 'hello' },
+      });
+    }
   }
 
   it('starts a fresh client at the head, with no replay', () => {
