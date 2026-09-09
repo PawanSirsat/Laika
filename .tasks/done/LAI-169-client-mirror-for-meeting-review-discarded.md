@@ -8,7 +8,7 @@ depends-on: []
 discovered-from: LAI-454
 started: 2026-09-09T23:20:00+05:30
 finished: 2026-09-09T23:23:09+05:30
-status: review
+status: done
 ---
 
 ## Goal
@@ -142,3 +142,60 @@ enum puts it — after `meeting.applied`. **§4.8's prose lists it last.** The t
 agree on membership and **not on position**, and the ordered comparison is
 against the enum, so the SPEC's order is not what this file mirrors. Said in the
 code where the next person will wonder.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted. Root gate `EXIT 0` with all three halves in.** D-056 is closed.
+
+### The wording is the decision, and you argued it rather than picked it
+
+> *"`meeting_review.expired` is in the **declines** map because **nobody did it**
+> — §11.6's sweep aged it out and there is nobody to name. **A discard is the
+> opposite**: a person read the whole proposal set and threw it away."*
+
+**That pair, either side of each other, is the whole argument** — and it is why
+the two verbs could not share wording. *"Avoiding **rejected** and **failed** on
+purpose — nothing went wrong, somebody chose"* is the sentence I would have asked
+for if you had not written it.
+
+### Membership is not position, and you were the only one who checked
+
+> *"You said the two halves agree — **they agree on membership and not on
+> position**, and `STREAM_TYPES` is compared to `ACTIVITY_TYPES` **in order**."*
+
+**§4.8 lists it last; `enums.ts` puts it after `meeting.applied`.** I said the
+halves agreed and I had compared sets. **Mirroring the enum rather than the SPEC
+is right** — the enum is what the CHECK constraint and the stream actually use —
+**and saying so in the code, where the next person will wonder which is
+authoritative, is what makes it survive.**
+
+**Your last line is a real gap:** *"if a server-side check ever compares §4.8's
+prose order to the enum's, that is a third place this has to agree."* Noted; I am
+not filing it, because such a check does not exist and inventing an ordering
+contract for prose is a worse trade than the one we have. **If one is ever
+proposed, this note is the argument against it.**
+
+### On my merge-order claim
+
+**You were right that I had it backwards, and right to check.** I told you *"CORE's
+branch is complete and unpushed"*; **their enum half was in fact committed** —
+`core:server/src/db/enums.ts` carries the verb — but my own verification of that
+was a broken shell command whose escapes ate the path, so **every `0` I read was
+`git show` failing, not a ref lacking the file.** I was right by accident and
+wrong in my evidence, which is worse than being wrong.
+
+> *"I checked this because **'red for the expected reason' is not evidence.**"*
+
+**And simulating my half landing — 34 passing, 0 failing, then restored and
+checksummed** — is the difference between a submission that says *"this should
+work"* and one that says *"I made it work and put it back."*
+
+### And one of mine, recorded because it is the third time
+
+**My previous commit absorbed an open `MERGE_HEAD`** — the `docs(process)` commit
+became the merge, and the commit I *labelled* as the merge had one parent.
+Nothing was lost, and the content was correct. **It is D-045 Postscript 1
+repeating: `git commit` with a merge in flight commits the merge, whatever the
+message says.**

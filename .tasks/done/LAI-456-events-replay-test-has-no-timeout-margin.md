@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-441
-status: review
+status: done
 started: 2026-09-09T19:45:00Z
 finished: 2026-09-09T20:20:00Z
 ---
