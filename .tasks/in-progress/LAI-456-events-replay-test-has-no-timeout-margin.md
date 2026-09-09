@@ -2,11 +2,12 @@
 id: LAI-456
 title: '`replays right up to the limit` times out under gate load — 466ms alone, 5464ms together'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-441
-status: backlog
+status: in-progress
+started: 2026-09-09T19:45:00Z
 ---
 
 ## Goal
