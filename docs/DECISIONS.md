@@ -2766,3 +2766,77 @@ rules, and the client's is the one that will be stale.**
   quiet*, and neither is visible from either side alone. **The sweep that finds
   them is client-called endpoints versus served endpoints**, and it is worth
   running again rather than trusting that two was all of them.
+
+## D-055 — The root gate stays parallel. The flakes it found are defects, not noise.
+
+**2026-09-02. CHIEF, on CORE's observation in LAI-166.**
+
+CORE noticed that three flakes in three workspaces share one signature and
+argued it is **a property of the gate, not three flaky tests**:
+
+> *"Three workspaces running concurrently, every timeout in the repo chosen
+> against an idle machine."*
+
+**That diagnosis is right.** The obvious remedy is to stop running them
+concurrently, and I measured it before deciding:
+
+| | wall | result |
+| --- | --- | --- |
+| `pnpm -r` — parallel, as today | **88s** | `EXIT 0` |
+| `--workspace-concurrency=1` | **160s** | `EXIT 0` |
+
+**72 seconds to retire the class. I was going to take it, and it is the wrong
+call.**
+
+### What changed my mind is what the contention actually found
+
+**LAI-452 was not a timing problem.** `execFile` reports a failure to *start*
+through the same callback as a non-zero exit, with `error.code` a **string**
+errno; the harness mapped anything non-numeric to `1`, so a machine that could
+not fork produced `code: 1` with both streams empty — **byte for byte what a hook
+exiting 1 silently looks like.** The test that lost was whichever happened to be
+running.
+
+**A sequential gate would never have surfaced that**, and the bug would have sat
+in the harness that verifies every plugin hook, mislabelling the component at
+fault on the day it finally fired.
+
+So the parallel gate is not the cause of these three findings. **It is the
+instrument that found them**, and it is the only place in the repo where three
+workspaces compete the way a real machine does.
+
+### What is actually wrong is the bounds, and that is per-test
+
+Each of the three carries a wall-clock ceiling chosen against an idle machine:
+
+| | solo | under the gate | bound |
+| --- | --- | --- | --- |
+| LAI-166 `board-presence` | 1883ms | timed out | **20 000ms fixed** |
+| LAI-456 `events` replay | 466ms | 5464ms | 5000ms default |
+| LAI-452 hook run | 109–125ms | — | 20 000ms, **now deleted** |
+
+**LAI-166's is the instructive one: the bound was already ten times the solo
+duration and it still failed.** So "pick a bigger multiple" is not a fix, it is
+the same mistake with a later expiry — the calendar-fixture defect wearing a
+stopwatch.
+
+**The rule, then:**
+
+> **A test may not carry a wall-clock ceiling chosen against an idle machine.**
+> Wait on the condition. If a bound is genuinely needed, justify it by **measured
+> work under load**, say so beside it, and prefer deleting it — as LAI-452 did,
+> once the measurement showed it could only ever convert a slow machine into a
+> failed assertion.
+
+### The cost I am accepting, stated plainly
+
+**A parallel gate will flake again**, and a gate that flakes teaches people to
+re-run rather than read — which is the exact harm LAI-452 was filed on. I am
+accepting that because **each flake so far has been a real defect**, and three for
+three is the evidence available. **If a flake arrives that is genuinely only
+contention — no harness bug, no unjustified bound — this decision is wrong and
+should be revisited**, and that is the condition to watch for rather than a
+feeling about how often it happens.
+
+**Not doing:** raising timeouts to make red go away; a retry-the-suite wrapper,
+which is the same thing with a worse audit trail.
