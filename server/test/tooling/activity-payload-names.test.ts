@@ -54,6 +54,7 @@ import {
   flagStaleTasks,
   pruneHeartbeats,
 } from '../../src/jobs/jobs.ts';
+import { applyMeetingReview } from '../../src/services/meeting-reviews.ts';
 import { handlePush } from '../../src/services/webhooks.ts';
 import { requireOrgId } from '../../src/db/orgs.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
@@ -663,6 +664,44 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
         })
         .run();
       dismissUnlisted(t.db, owner(), dismissedId);
+
+      // --- meeting-reviews.ts: meeting.applied (§10.2, LAI-451) ------------
+      // Through the real apply path, for the reason the jobs above are: the
+      // payload is what is under test, and its `applied` entries carry field
+      // names that a hand-written row would not exercise.
+      const meetingTask = createTask(t.sqlite, t.db, owner(), 'core', { title: 'From a meeting' });
+      const proposalId = newId();
+      const appliedReviewId = newId();
+      t.db
+        .insert(meetingReviews)
+        .values({
+          id: appliedReviewId,
+          projectId: t.db.select({ id: projects.id }).from(projects).get()!.id,
+          source: 'recorder',
+          transcriptHash: `${newId()}-hash`,
+          proposalsJson: JSON.stringify([
+            {
+              id: proposalId,
+              kind: 'change',
+              task: meetingTask.key,
+              title: null,
+              description: null,
+              changes: { priority: 'p1' },
+              reason: null,
+              quote: 'we should bump that one',
+            },
+          ]),
+          status: 'pending',
+          reviewedBy: null,
+          reviewedAt: null,
+          expiresAt: JAN1 + 400 * DAY,
+          createdAt: JAN1,
+        })
+        .run();
+      applyMeetingReview(t.sqlite, t.db, owner(), appliedReviewId, {
+        accepted_proposal_ids: [proposalId],
+        now: JAN1,
+      });
 
       // Archiving last: it is the one that takes a project out of active views.
       removeMember(t.db, owner(), 'core', memberId);
