@@ -225,7 +225,12 @@ This has now cost two tasks (LAI-070, LAI-224). The same trap applies to the
 
 **A criterion that names a location must be checked against that location.**
 Three of CHIEF's failed this on one day: an AC pointing at *"§6.4's task shape"*
-when §6.4 is an endpoint list with no task shape; *"the eight §7.1 tools"* when
+when §6.4's shape did not list the field — and **that correction was wrong too.**
+§6.4 *does* carry a task shape, one paragraph below its endpoint block, and it
+named `status` as writable on `PATCH` when `PATCH` refuses it `422` (LAI-130).
+**A criterion aimed at the wrong place, corrected by a claim the place did not
+exist, when it did and was itself wrong.** Three readings of one paragraph, none
+of which opened it. Also *"the eight §7.1 tools"* when
 §7.1 lists **eleven** and the server serves eleven — it was ten and
 eleven when that criterion was written, and **this sentence said so for a day
 after LAI-433 made both numbers agree**, in the passage citing this exact
