@@ -6,9 +6,9 @@ assignee: chief
 priority: p2
 depends-on: [LAI-092]
 discovered-from: LAI-092
-status: in-progress
+status: done
 started: 2026-09-02T23:10:00Z
-finished:
+finished: 2026-09-02T23:25:00Z
 ---
 
 ## Goal
@@ -30,12 +30,13 @@ it at the time.
 
 ## Acceptance criteria
 
-- [ ] §4.5 lists `acceptance_md` — text, nullable.
-- [ ] §6.4's task shape lists it, writable on `POST` and `PATCH`, where `null`
-      clears it and absent leaves it alone.
-- [ ] The `tasks.acceptance_md` entry is removed from `COLUMNS_NOT_IN_SPEC` in
-      `server/test/tooling/schema-spec-drift.test.ts`.
-- [ ] `pnpm test` green with both halves applied.
+- [x] §4.5 lists `acceptance_md` — text, nullable. **Already true on arrival**; verified against the table rather than assumed.
+- [x] §6.4's task shape lists it, with `null` clears / absent leaves alone stated
+      once for the fields that draw the distinction. **And §6.4 was wrong in the
+      other direction too** — see below.
+- [x] The exemption is gone — **already removed** by whoever landed §4.5's row;
+      confirmed by grep across the file, not inferred from the suite being green.
+- [x] Repo-root gate green **but for D-056's held half**, which is unrelated and named in `LAI-454`.
 
 ## What was decided, and why (AC3 of LAI-092)
 
@@ -86,3 +87,36 @@ the work is not done.
 Found by LAI-415's check, not by a person. It is the more dangerous of the two
 directions: a file in `backlog/` that claims to be finished is one nobody
 picks up **and** one nobody chases.
+
+---
+
+## Done — CHIEF, 2026-09-02. **Two of three criteria had already landed; the third found a worse bug.**
+
+§4.5's row and the `COLUMNS_NOT_IN_SPEC` removal were both already in place. **I
+checked each against its artefact rather than against the suite being green**,
+which is the only way to tell *"done"* from *"never needed"*.
+
+### §6.4 documented a write the API refuses
+
+```
+was:  { title, description_md, status, assignee_id, priority }
+is:   { title, description_md, acceptance_md, tags, priority, assignee_id }
+```
+
+**Wrong in both directions.** It omitted `acceptance_md` and `tags`, and it named
+**`status`**, which `PATCH` does not accept — status moves through
+`POST /tasks/:id/status`, and `UpdateBody` is a `strictObject`, so **a client
+built from §6.4 gets `422` on its first status change.**
+
+**A missing field is an omission. A field that is documented and refused is a
+lie**, and it is the one that costs somebody an afternoon.
+
+### And `CLAUDE.md` was wrong about §6.4 in the correction that named it
+
+CLAUDE.md §2 cites this exact criterion as a failure — *"an AC pointing at §6.4's
+task shape **when §6.4 is an endpoint list with no task shape**"*.
+
+**§6.4 does carry a task shape**, one paragraph below its endpoint block. So:
+**a criterion aimed at the wrong place, corrected by a claim that the place did
+not exist, when it did and was itself wrong.** Three readings of one paragraph,
+none of which opened it. Corrected, with that sentence kept as the record.

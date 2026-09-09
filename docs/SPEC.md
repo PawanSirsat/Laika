@@ -1002,8 +1002,16 @@ GET    /api/v1/health
 ```
 
 `PATCH /tasks/:id` accepts a partial
-`{ title, description_md, status, assignee_id, priority }`; a status change
-writes `task.status_changed` with `{ from, to }`.
+`{ title, description_md, acceptance_md, tags, priority, assignee_id }`.
+**`null` clears a field; absent leaves it alone** — they are different requests,
+and `acceptance_md` and `assignee_id` both draw the distinction. `tags` replaces
+the whole set.
+
+**`status` is not on `PATCH`.** It moves through `POST /tasks/:id/status`, which
+writes `task.status_changed` with `{ from, to }`. The body is `strictObject`, so
+a `PATCH` carrying `status` is refused `422` rather than quietly ignored — this
+paragraph named it as writable on `PATCH` until 2026-09-02 (LAI-130), which is a
+client built from the spec getting a `422` on its first status change.
 
 ---
 

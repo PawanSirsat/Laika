@@ -54,6 +54,43 @@ Also read the builder's log entry for that task in `logs/<session>-*.md`.
 evidence. For each one, find the code that satisfies it. Where a criterion says
 "tested", find the test and confirm it asserts the thing.
 
+**3a. Verify by breaking it — and verify the break.** A criterion that says a
+guard exists is checked by removing what it guards and watching **that
+assertion** go red.
+
+**Two rules, both learned on 2026-09-02, both by the reviewer rather than the
+builder:**
+
+> **A mutation's red must come from the assertion you are testing.**
+> **A green must come from the repo-root gate.**
+
+The first: CHIEF appended `.notNull()` inside `users.id`, `tsc` refused the file,
+the suite went red, and it was nearly recorded as *"the guard caught it"*. Confirm
+the mutation **compiles** — `pnpm --filter ./server exec tsc --noEmit` — before
+believing a red.
+
+The second: CHIEF ran `vitest` on one service file, read the green as *"this
+endpoint has no `can()` guard"*, and was one sentence from handing that to the
+builder as a finding. **The guard was in the route tests.** A filtered run cannot
+prove an absence.
+
+And the older one, which fired twice more the same day: **an anchor that misses
+runs the suite against unmutated code and prints whatever it would have printed
+anyway.** Structure every mutation so it cannot proceed if the edit did not land:
+
+```bash
+set -e
+python3 - <<'EOF'
+s = open(P).read(); assert OLD in s, "!! ANCHOR FAILED — refusing to run"
+open(P,'w').write(s.replace(OLD, NEW, 1))
+EOF
+grep -qF "$NEW" "$P" || { echo "MUTATION DID NOT LAND"; exit 1; }
+```
+
+**Restore by checksum, not by assumption.** `shasum` the file before and `-c`
+after — an untracked or already-dirty file will not show the mutation in
+`git status`, and a killed harness leaves it behind.
+
 **3b. For a `web` task, render it. Do not review UI from the diff alone.**
 
 A screenshot is the only thing that catches what the diff cannot: the sidebar
