@@ -2,11 +2,13 @@
 id: LAI-129
 title: SPEC §4.5 and §6.4 should carry the task's reverse dependency direction
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: [LAI-091]
 discovered-from: LAI-091
-status: backlog
+status: in-progress
+started: 2026-09-03T01:05:00Z
+finished:
 ---
 
 ## Goal
