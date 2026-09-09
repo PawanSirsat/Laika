@@ -33,7 +33,7 @@ import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
 import { eventRoutes } from './http/routes/events.ts';
 import { tokenRoutes, userTokenRoutes } from './http/routes/tokens.ts';
 import { mcpRoutes } from './http/routes/mcp.ts';
-import { meetingReviewRoutes } from './http/routes/meeting-reviews.ts';
+import { meetingReviewRoutes, projectMeetingReviewRoutes } from './http/routes/meeting-reviews.ts';
 import { unlistedRoutes } from './http/routes/unlisted.ts';
 import { heartbeatRoutes } from './http/routes/heartbeats.ts';
 import { capacityRoutes, presenceRoutes } from './http/routes/presence.ts';
@@ -281,6 +281,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/sprints`, sprintRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/unlisted`, unlistedRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/heartbeats`, heartbeatRoutes({ db }));
+    app.route(`${API_BASE}/projects`, projectMeetingReviewRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/meeting-reviews`, meetingReviewRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/presence`, presenceRoutes({ db }));
     app.route(`${API_BASE}/capacity`, capacityRoutes({ db }));

@@ -487,7 +487,14 @@ const COLUMNS_NOT_IN_SCHEMA = new Map<string, string>([]);
 
 /** §4.8 verbs the enum has and the list does not, or the other way round. */
 const ACTIVITY_TYPE_EXEMPTIONS = new Map<string, string>([
-  // Empty, and that is the point (LAI-098). `task.dependency_removed`,
+  // Empty again, and that is the point (LAI-098). `meeting_review.discarded`
+  // sat here for the length of one task — LAI-454 needed the verb, §4.8 did not
+  // have it, D-056 added it — and **the staleness guard below is what took the
+  // entry back out**, by failing until it was gone. An exemption that expires
+  // because it was proved unnecessary is the mechanism working; one that
+  // expires because somebody remembered to look is luck.
+  //
+  // Empty before that too (LAI-098). `task.dependency_removed`,
   // `comment.edited` and `comment.deleted` lived here because the enum had them
   // and §4.8's list did not; §4.8 now lists all three.
   //

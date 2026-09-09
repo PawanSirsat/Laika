@@ -54,7 +54,7 @@ import {
   flagStaleTasks,
   pruneHeartbeats,
 } from '../../src/jobs/jobs.ts';
-import { applyMeetingReview } from '../../src/services/meeting-reviews.ts';
+import { applyMeetingReview, discardMeetingReview } from '../../src/services/meeting-reviews.ts';
 import { handlePush } from '../../src/services/webhooks.ts';
 import { requireOrgId } from '../../src/db/orgs.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
@@ -702,6 +702,26 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
         accepted_proposal_ids: [proposalId],
         now: JAN1,
       });
+
+      // A discard, on its own review — the set it rejects must be a different
+      // one from the applied set above, or the apply would have taken it.
+      const discardedId = newId();
+      t.db
+        .insert(meetingReviews)
+        .values({
+          id: discardedId,
+          projectId: t.db.select({ id: projects.id }).from(projects).get()!.id,
+          source: 'recorder',
+          transcriptHash: `${newId()}-hash`,
+          proposalsJson: JSON.stringify([]),
+          status: 'pending',
+          reviewedBy: null,
+          reviewedAt: null,
+          expiresAt: JAN1 + 400 * DAY,
+          createdAt: JAN1,
+        })
+        .run();
+      discardMeetingReview(t.db, owner(), discardedId, JAN1);
 
       // Archiving last: it is the one that takes a project out of active views.
       removeMember(t.db, owner(), 'core', memberId);

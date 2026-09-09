@@ -177,9 +177,15 @@ describe('POST /api/v1/meeting-reviews/:id/apply', () => {
     expect(h.db.select().from(tasks).get()?.status).toBe('todo');
   });
 
-  it('a member outside the project cannot apply', async () => {
+  it('a member outside the project gets 404, not 403, and applies nothing', async () => {
     // `meeting_proposal.apply` is a project action, so org membership alone is
     // not access to this project's meeting.
+    //
+    // **404 rather than 403** (changed by LAI-454): `apply` shares its
+    // disclosure helper with the two GETs, so it cannot confirm that a review
+    // exists to somebody who may not know the project does. It answered 403
+    // when LAI-451 was submitted; one endpoint disclosing what its neighbours
+    // conceal is the leak, and the helper is what stops the three drifting.
     addTask(1, 'Kill me');
     const { id, ids } = review([{ kind: 'dead', task: 'LAI-1' }]);
     const outsider = await join('outsider@example.test', 'member');
@@ -190,7 +196,7 @@ describe('POST /api/v1/meeting-reviews/:id/apply', () => {
       outsider,
     );
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(h.db.select().from(tasks).get()?.status).toBe('todo');
   });
 
@@ -245,5 +251,99 @@ describe('POST /api/v1/meeting-reviews/:id/apply', () => {
 
     expect(res.status).toBe(422);
     expect(h.db.select().from(tasks).all()).toHaveLength(0);
+  });
+});
+
+describe('GET /api/v1/projects/:slug/meeting-reviews', () => {
+  it('pages like every other list and carries no quotes', async () => {
+    review([{ kind: 'new', title: 'A task', quote: 'a sentence somebody said aloud' }]);
+
+    const res = await req('/api/v1/projects/laika/meeting-reviews');
+    expect(res.status).toBe(200);
+
+    const page = (await res.json()) as { data: { proposal_count: number }[]; next_cursor: unknown };
+    expect(page.data).toHaveLength(1);
+    expect(page.data[0]?.proposal_count).toBe(1);
+    expect(page).toHaveProperty('next_cursor');
+    // A quote is verbatim transcript content; a paginated list must not carry it.
+    expect(JSON.stringify(page)).not.toContain('a sentence somebody said aloud');
+  });
+
+  it('404s a project the caller cannot see, rather than 403', async () => {
+    review([{ kind: 'new', title: 'A task' }]);
+    const outsider = await join('outsider@example.test', 'member');
+
+    const res = await req('/api/v1/projects/laika/meeting-reviews', {}, outsider);
+    expect(res.status).toBe(404);
+  });
+
+  it('400s an unknown status filter rather than ignoring it', async () => {
+    const res = await req('/api/v1/projects/laika/meeting-reviews?status=nonsense');
+
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('bad_request');
+  });
+});
+
+describe('GET /api/v1/meeting-reviews/:id', () => {
+  it('returns the proposals with their quotes, in one request', async () => {
+    const { id } = review([
+      { kind: 'new', title: 'A task', quote: 'we should build it' },
+      { kind: 'decision', description: 'We use SQLite', quote: 'sqlite then' },
+    ]);
+
+    const res = await req(`/api/v1/meeting-reviews/${id}`);
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      status: string;
+      proposal_count: number;
+      proposals: { kind: string; quote: string }[];
+    };
+    expect(body.status).toBe('pending');
+    expect(body.proposal_count).toBe(2);
+    expect(body.proposals.map((p) => p.quote)).toEqual(['we should build it', 'sqlite then']);
+  });
+
+  it('404s for a review the caller cannot see, and for one that does not exist', async () => {
+    const { id } = review([{ kind: 'new', title: 'A task' }]);
+    const outsider = await join('outsider@example.test', 'member');
+
+    expect((await req(`/api/v1/meeting-reviews/${id}`, {}, outsider)).status).toBe(404);
+    expect((await req(`/api/v1/meeting-reviews/${newId()}`)).status).toBe(404);
+  });
+});
+
+describe('POST /api/v1/meeting-reviews/:id/discard', () => {
+  it('discards a pending set and answers with its new status', async () => {
+    const { id } = review([{ kind: 'new', title: 'A task' }]);
+
+    const res = await req(`/api/v1/meeting-reviews/${id}/discard`, { method: 'POST' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(((await res.json()) as { status: string }).status).toBe('discarded');
+  });
+
+  it('409s a second discard, and 409s an apply afterwards', async () => {
+    const { id, ids } = review([{ kind: 'new', title: 'MUST NOT EXIST' }]);
+    expect((await req(`/api/v1/meeting-reviews/${id}/discard`, { method: 'POST' })).status).toBe(
+      200,
+    );
+
+    const again = await req(`/api/v1/meeting-reviews/${id}/discard`, { method: 'POST' });
+    expect(again.status).toBe(409);
+
+    const applied = await req(`/api/v1/meeting-reviews/${id}/apply`, {
+      method: 'POST',
+      body: JSON.stringify({ accepted_proposal_ids: ids }),
+    });
+    expect(applied.status).toBe(409);
+    expect(h.db.select().from(tasks).all()).toHaveLength(0);
+  });
+
+  it('refuses an anonymous caller', async () => {
+    const { id } = review([{ kind: 'new', title: 'A task' }]);
+
+    const res = await req(`/api/v1/meeting-reviews/${id}/discard`, { method: 'POST' }, '');
+    expect(res.status).toBe(401);
   });
 });
