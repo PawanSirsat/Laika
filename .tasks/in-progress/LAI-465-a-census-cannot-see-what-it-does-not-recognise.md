@@ -2,11 +2,12 @@
 id: LAI-465
 title: 'Three guards this week decided their own reach and none reported it'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from: LAI-454
-status: backlog
+status: in-progress
+started: 2026-09-09T22:20:00Z
 ---
 
 ## Goal
