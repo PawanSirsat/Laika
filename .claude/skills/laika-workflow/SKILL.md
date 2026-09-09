@@ -45,10 +45,19 @@ git merge master
 # pick ONE from .tasks/backlog/ that is yours: right area, unclaimed,
 # and every id in depends-on is present in .tasks/done/ on master
 
-# CHECK EVERY BRANCH — a rival claim is on their branch, not in your tree:
-git log --all --oneline -- '.tasks/in-progress/LAI-00X*' \
-                           '.tasks/review/LAI-00X*' '.tasks/done/LAI-00X*'
-# any output at all => already taken, pick another
+# CHECK EVERY BRANCH — a rival claim is on their branch, not in your tree.
+# Ask where the file IS now, not what the history says:
+for ref in master core shell; do
+  printf '%-7s ' "$ref"
+  git ls-tree -r --name-only "$ref" .tasks/ | grep LAI-00X || echo '(absent)'
+done
+# outside .tasks/backlog/ on ANY branch => taken, pick another.
+# (absent) is NOT free — that branch has not merged master yet. Believe the
+# branch showing it furthest from backlog/.
+#
+# Not `git log --all`: it was wrong both ways. A RELEASED task stays
+# 'claimed' in history for ever (stranded, not free), and a claim living
+# only on another branch shows up in neither your tree nor master's.
 
 git mv .tasks/backlog/LAI-00X-slug.md .tasks/in-progress/
 # edit frontmatter: assignee: <you>, status: in-progress, started: <ISO-8601>
