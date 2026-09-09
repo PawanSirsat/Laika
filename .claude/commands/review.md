@@ -87,6 +87,22 @@ EOF
 grep -qF "$NEW" "$P" || { echo "MUTATION DID NOT LAND"; exit 1; }
 ```
 
+**Judge a mutation run by its exit code, never by grepping for failures.** A
+mutation that breaks the **typecheck** stops the tests running at all — `tsc`
+fails, `node --test` never executes, and a `grep` for `not ok` finds nothing.
+**That reads exactly like "the guard did not catch it."** CHIEF hit this on
+LAI-460, whose own subject is a check that cannot tell *"nothing here"* from
+*"nothing I recognise"* — the mutation left an unused variable, `tsc` exited `2`,
+and the review nearly recorded the check as unguarded.
+
+```bash
+pnpm --filter ./<pkg> test > /tmp/m.txt 2>&1; RC=$?
+[ $RC -eq 0 ] && echo "GREEN — not caught" || echo "RED"
+```
+
+**Same rule as the gate**, one level in: **the exit code is the claim, a count is
+not.**
+
 **Never put `2>/dev/null` on a command whose output you will report as a fact.**
 SHELL and CHIEF independently produced the same false table on 2026-09-02, from
 the same cause: in zsh, `git show "$ref:server/src/db/e..."` is parsed as `$ref`
