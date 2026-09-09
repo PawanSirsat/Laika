@@ -170,6 +170,16 @@ const PROJECT_LABELS: Readonly<Record<string, string>> = {
   'webhook.commit': 'pushed a commit',
   'webhook.received': 'received a webhook',
   'meeting.applied': 'applied a meeting proposal',
+  // **Worded, not declined, and the pair either side is the argument.**
+  // `meeting_review.expired` is in the declines map because *nobody did it* —
+  // §11.6's sweep aged the review out and there is no one to name. A discard is
+  // the opposite: a person read the whole proposal set and threw it away. It has
+  // an actor, it is a decision, and a feed whose job is "what changed and who
+  // changed it" is exactly where a decision belongs.
+  //
+  // The phrasing avoids "rejected" and "failed": nothing went wrong, somebody
+  // chose. That is the same reason it is not sharing a verb with the expiry.
+  'meeting_review.discarded': 'discarded a meeting review',
   'unlisted.logged': 'logged unlisted work',
   'sprint.created': 'planned a sprint',
   'sprint.updated': 'changed a sprint',
