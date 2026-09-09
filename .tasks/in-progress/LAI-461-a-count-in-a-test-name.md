@@ -2,11 +2,12 @@
 id: LAI-461
 title: '`has no collision beyond the three recorded` — there are two'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-131
-status: backlog
+status: in-progress
+started: 2026-09-09T21:25:00Z
 ---
 
 ## Goal
