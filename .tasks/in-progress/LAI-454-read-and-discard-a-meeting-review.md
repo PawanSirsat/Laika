@@ -2,11 +2,12 @@
 id: LAI-454
 title: 'Reading a meeting review, and discarding one — §11.4.2''s other three endpoints'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-450]
 discovered-from: LAI-450
-status: backlog
+status: in-progress
+started: 2026-09-09T17:35:00Z
 ---
 
 ## Goal
