@@ -2,11 +2,12 @@
 id: LAI-462
 title: '`schema-spec-drift.test.ts` says it would not have caught LAI-449. It does.'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-163]
 discovered-from: LAI-163
-status: backlog
+status: in-progress
+started: 2026-09-09T20:30:00Z
 ---
 
 ## Goal

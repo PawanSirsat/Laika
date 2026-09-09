@@ -1,22 +1,146 @@
+---
+id: LAI-456
+title: '`replays right up to the limit` times out under gate load — 466ms alone, 5464ms together'
+area: server
+assignee: core
+priority: p2
+depends-on: []
+discovered-from: LAI-441
+status: review
+started: 2026-09-09T19:45:00Z
+finished: 2026-09-09T20:20:00Z
+---
+
+## Goal
+
+`server/test/services/events.test.ts:205` — *"replays right up to the limit"* —
+**failed the root gate on a 5000ms timeout**, and passes on its own:
+
+| how it was run | duration |
+| --- | --- |
+| the file alone | **466ms** |
+| the full root gate, server + web browser tests + cli in parallel | **5464ms** |
+
+**An 11× slowdown, against a 5000ms default with no margin declared.** It is not
+random: it is a test whose cost tracks machine contention, run on a machine that
+is also driving a browser suite.
+
+## Why p2
+
+**This is the second flake in the root gate in one day** — LAI-452 is the other,
+in `cli/`. Both were found by CHIEF running the gate rather than by the owner
+running their workspace, which is the point CLAUDE.md §5 makes about *"own a
+directory, gate the repo"* arriving from the other direction: **a filtered run is
+where a contention flake hides**, because filtering is what removes the
+contention.
+
+**And a timeout flake is the worst-shaped one.** It reports as
+`Error: Test timed out in 5000ms` — which reads as a hang in the code under test,
+not as a scheduling artefact, so the first person to see it goes looking in
+`events.ts`.
+
+## Acceptance criteria
+
+- [x] **Find out where the 466ms goes first.** `fill(MAX_REPLAY)` is the setup;
+      if the work is proportional to `MAX_REPLAY` and `MAX_REPLAY` is large, the
+      fix may be that the test does not need a full buffer to prove a boundary.
+      **Say what the time was actually spent on** — that determines which of the
+      criteria below applies.
+- [x] **Raising the timeout is allowed only if the duration is justified.** A
+      test that legitimately takes 500ms of real work under load deserves a
+      declared timeout with a comment saying why. **A test that is slow because
+      it builds more than it needs should get smaller instead.** Do not raise the
+      number to make the red go away.
+- [x] **The neighbour is measured too.** *"refuses one past the limit"* runs
+      446ms and does the same `fill`. If one has no margin, neither does the
+      other, and fixing only the one that happened to fail leaves the other
+      armed.
+- [x] **Prove it under contention, not alone.** Run the repo-root `pnpm test` —
+      that is the only configuration where this failed — and say what the
+      duration was there afterwards.
+- [ ] Full gate green — **`EXIT 0`**, repo root. — **NOT MET, and not from
+      this task.** The two failures are LAI-169's; see below.
+
+## Notes / context
+
+**CORE's own line from LAI-450 applies here**, and it is the reason this is worth
+a task rather than a retry: *a timeout test that sat until vitest's five-second
+limit was "passing nothing and proving nothing"*. That was a fake ignoring an
+abort signal; this is a real test being starved. **Different cause, same lesson —
+a duration near the timeout is information, and the suite currently throws it
+away.**
+
+---
+
+## Submission note — CORE, 2026-09-09
+
+### AC1 — where the 466ms went, which decided everything else
+
+**Not the 500 inserts.** `fill` called `write()`, which reads the whole log twice
+around every insert so it can return the row it wrote — and `fill` discards that
+row. At `MAX_REPLAY` that is ~250,000 row reads to produce 500 values nobody
+looks at.
+
+| `fill(MAX_REPLAY)` | |
+| --- | --- |
+| via `write()` | **217ms** |
+| appending directly | **46ms** |
+| the discarded reads | **172ms — 79%** |
+
+Being mostly *queries* is also why its cost tracked contention rather than just
+being slow: it was competing for cores with a browser suite and a cli suite.
+
+### AC2 — no timeout raised
+
+| | before | after |
+| --- | --- | --- |
+| `replays right up to the limit` | 466ms | **63ms** |
+| `refuses one past the limit` | 446ms | **59ms** |
+
+79× margin against the 5000ms default, from none. **The raise would have been
+three characters and would have passed review**, and would have left `fill` in
+place for whoever next raises `MAX_REPLAY`.
+
+### AC3 — the neighbour, measured
+
+*"refuses one past the limit"* does the same `fill` and was 446ms. One change
+fixed both. Had I fixed only the test that failed, the other was next.
+
+### AC4 — under contention, not alone
+
+Root gate running **plus a second vitest instance on top** — harsher than the
+condition that produced the failure: **189ms and 488ms**. Was 5464ms.
+
+### AC5 — the gate is red, and none of it is this task
+
+```
+not ok 1 - STREAM_TYPES equals ACTIVITY_TYPES, in order
+not ok 2 - covers every verb the server can write
+```
+
+Both on `meeting_review.discarded`, both in `server/web/`, both **LAI-169** —
+already named in LAI-454's submission, which is in review for exactly them.
+**Zero failures outside `server/web/`**; `server` and `cli` clean; lint and
+format `EXIT 0`. Nothing here touches either file.
+
+### What I did not do
+
+`write()` is unchanged, so the tests that need the row back are unaffected, and
+the fixture rows are byte-identical — same table, same columns, same order.
+Nothing about what these tests prove changed.
 
 ---
 
 ## Accepted — CHIEF, 2026-09-02
 
-**Accepted, and held** behind LAI-169 with LAI-454. **The task title is wrong and
-the finding is better than the task.**
+**Accepted.** **The task title is wrong and the finding is better than the task.**
 
 > *"The test was never slow. **Its setup was quadratic, and pointless.**"*
 
 `fill` called `write()`, which reads the whole log twice around every insert so it
-can hand back the row it just wrote — **and `fill` discards that row.** Roughly
-**250,000 row reads to produce 500 values nobody looks at.**
-
-| `fill(MAX_REPLAY)` | |
-| --- | --- |
-| via `write()` | 217ms |
-| appending directly | 46ms |
-| **the discarded reads** | **172ms — 79%** |
+can hand back the row it just wrote — **and `fill` discards that row.** Around
+**250,000 row reads to produce 500 values nobody looks at**, 79% of the setup's
+cost.
 
 ```
 replays right up to the limit            466ms → 63ms
@@ -24,46 +148,37 @@ refuses one past the limit               446ms → 59ms
 under the gate + a second vitest         189ms and 488ms   (was 5464ms)
 ```
 
-**And being mostly *queries* is why its cost tracked contention** rather than
-merely being high — it was competing for cores with a browser suite and a cli
-suite. That sentence explains the 11× that nothing else did.
+**And "being mostly *queries* is why its cost tracked contention"** is the
+sentence that explains the 11×. A high constant cost would have been high alone
+too; a cost made of queries competes for cores with a browser suite.
 
-### AC1 is the criterion that earned its place, and you say why
+### AC1 is the criterion that earned its place, and you said why
 
 > *"I would have raised the number otherwise, and it would have been three
 > characters and would have passed review."*
 
 **`466ms alone, 5464ms together` reads as "this test is slow, give it room."** It
-was not slow. **A raise would have left `fill` in the file for whoever next raises
-`MAX_REPLAY`** — a constant-factor defect that only became visible because
-something made it 11× worse.
+was not slow — and a raise would have left `fill` in the file for whoever next
+raises `MAX_REPLAY`.
 
-**And AC3 did its job too**: the neighbour was 446ms doing the same `fill`, and
-fixing only the one that failed would have left it armed. **One change did both**,
-because the cause was shared and the symptom was not.
+**AC3 did its job too**: the neighbour ran 446ms doing the same `fill`, and fixing
+only the one that failed would have left it armed. **One change did both, because
+the cause was shared and the symptom was not.**
 
-### Your challenge to D-055 — it strengthens the decision rather than weakening it
+### Your challenge to D-055 strengthens it
 
-> *"Your 88s-vs-160s decision would have made this test pass **without fixing
-> anything**, and the quadratic `fill` would still be sitting there."*
+> *"Sequential execution and this fix are not alternatives; **if you go
+> sequential, this class of defect stops being visible at all.**"*
 
-**That is the sharpest version of the argument I declined the 72 seconds on**, and
-it is better than my own. D-055 said the parallel gate *found* the three defects;
-**you have shown it found a fourth, and this one is the cleanest case yet** —
-LAI-452's was a harness lying about a component, and this is a test whose own
-setup did five times the work it needed. **Neither is a timing problem, and a
-sequential gate hides both.**
+**Better than the argument I wrote the decision on**, and it is now D-055's
+postscript in your words. **Four for four** — a harness lying about which
+component failed, a fixture pinned to a calendar, a bound ten times its own solo
+duration, and a setup doing five times the work it needed. **The condition that
+would make D-055 wrong has still not occurred.**
 
-**Four for four.** The condition that would make D-055 wrong — a flake with no
-defect behind it — has still not occurred, and this is now recorded there.
+**And you kept LAI-166 honest:** the general property holds whether or not this
+instance was it, and **saying this instance was not — rather than letting it stand
+as evidence for your own earlier claim — is the part worth noting.**
 
-**On the general property, you are still right and I am keeping LAI-166
-separate:** *"every timeout in the repo was chosen against an idle machine"* holds
-whether or not this instance was that. **This one was not, and saying so rather
-than letting it stand as evidence for your own earlier claim is the part worth
-noting.**
-
-### `write()` untouched, fixture rows byte-identical
-
-Same table, columns, order. **Nothing about what those tests prove changed**, which
-is the sentence that makes a setup rewrite reviewable at all.
+`write()` untouched, fixture rows byte-identical: same table, columns, order.
+**Nothing about what those tests prove changed.**
