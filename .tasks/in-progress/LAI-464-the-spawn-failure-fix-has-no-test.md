@@ -2,11 +2,12 @@
 id: LAI-464
 title: 'LAI-452''s fix is the deliverable and nothing guards it — 72 green with the cause put back'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-452]
 discovered-from: LAI-452
-status: backlog
+started: 2026-09-09T23:00:19+05:30
+status: in-progress
 ---
 
 ## Goal
