@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { type Db } from '../db/client.ts';
-import { orgs } from '../db/schema.ts';
+import { gt, sql } from 'drizzle-orm';
+import { meetingReviews, orgs } from '../db/schema.ts';
 import { appendActivity } from '../db/activity.ts';
 import { ApiError } from '../errors.ts';
 import { decryptSecret, type SecretPurpose } from '../secrets.ts';
@@ -374,7 +375,7 @@ export function handleIssueComment(
 }
 
 /**
- * §10.2's monthly cap, per D-052.
+ * §10.2's monthly cap, per D-052 — **counted from the database** (LAI-467).
  *
  * **A rate limit is not sufficient.** §6.3's limiter answers "you are going too
  * fast"; an authenticated integration gone wrong spends money at a perfectly
@@ -384,25 +385,51 @@ export function handleIssueComment(
  * attacker a fresh budget at a predictable moment, and an org that starts using
  * this on the 28th should not get two days of quota.
  *
- * In memory, like `DeliveryLog` and for the same reason — one process, one file
- * (D-002) — **and with the same cost stated**: a restart forgives the count. For
- * a bound that exists to stop a runaway integration that is the wrong direction
- * to be wrong in, so it is worth a task if this ever guards real spend. It is
- * not one today: nothing calls a provider until §10.2 has a configured one.
+ * ## Why this is a query and no longer a counter in memory
+ *
+ * It was a `SubmissionCounter` holding timestamps in the process, and LAI-450
+ * wrote the cost down rather than leaving it to be found: **a restart forgave
+ * the count**, which for a *spend* bound is the wrong direction to be wrong in.
+ * A crash-loop, a deploy or a container restart reset the month's budget.
+ *
+ * **Derived rather than stored**, which is the stronger of the two fixes: a
+ * count you can recompute cannot drift from the thing it counts. There is no
+ * column to migrate, no counter to reconcile after a manual delete, and a
+ * restored snapshot (LAI-466) carries the right number by construction because
+ * it carries the rows.
+ *
+ * ## What this does not count, and it is not nothing
+ *
+ * A submission consumes budget **when it produces a `meeting_reviews` row**.
+ * `storeTranscriptReview` calls the provider and *then* inserts, so a response
+ * the model returns and `parseProposals` refuses has **cost money and left no
+ * row** — and does not count here.
+ *
+ * A malformed body is fine: it is rejected before the provider is reached, so it
+ * spends nothing and correctly counts nothing. The gap is the bad-JSON case, it
+ * is real, and closing it needs somewhere durable to record an *attempt* —
+ * a §4 change, so **LAI-171** rather than a guess made here.
  */
 export const MONTHLY_SUBMISSION_CAP = 200;
-const CAP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-export class SubmissionCounter {
-  private readonly at: number[] = [];
+/** Thirty days, in ms. Not a calendar month — see above. */
+export const CAP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
-  /** Record this submission and return how many are inside the window. */
-  recordAndCount(now: number): number {
-    this.at.push(now);
-    while (this.at.length > 0 && now - (this.at[0] ?? 0) > CAP_WINDOW_MS) this.at.shift();
+/**
+ * How many transcript submissions this instance has stored inside the window.
+ *
+ * The boundary is **exclusive at the far end**: a review created exactly
+ * `CAP_WINDOW_MS` ago has left the window. Stated because *"monthly"* does not
+ * say, and a caller at the edge gets a different answer from each reading.
+ */
+export function submissionsInWindow(db: Db, now: number): number {
+  const row = db
+    .select({ n: sql<number>`count(*)` })
+    .from(meetingReviews)
+    .where(gt(meetingReviews.createdAt, now - CAP_WINDOW_MS))
+    .get();
 
-    return this.at.length;
-  }
+  return row?.n ?? 0;
 }
 
 /**

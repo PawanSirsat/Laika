@@ -1,0 +1,181 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { openDb } from '../../src/db/client.ts';
+import { runMigrations } from '../../src/db/migrate.ts';
+import { eq } from 'drizzle-orm';
+import { meetingReviews, orgs, projects } from '../../src/db/schema.ts';
+import { newId } from '../../src/db/ids.ts';
+import {
+  CAP_WINDOW_MS,
+  MONTHLY_SUBMISSION_CAP,
+  submissionsInWindow,
+} from '../../src/services/webhooks.ts';
+import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+
+/**
+ * §10.2's monthly spend cap, counted from the database (D-052, LAI-467).
+ *
+ * LAI-450 wrote the defect down rather than leaving it to be discovered: the cap
+ * lived in the process, so **a restart forgave the count**. For a bound whose
+ * whole job is stopping a runaway integration from spending money, that is the
+ * wrong direction to be wrong in — and a crash-loop resets it for free.
+ */
+
+let t: TestDb;
+let s: Seed;
+
+const NOW = Date.UTC(2026, 8, 10);
+
+beforeEach(() => {
+  t = freshDb();
+  s = seed(t.db);
+});
+afterEach(() => {
+  t.close();
+});
+
+/** A stored review, which is what a paid submission leaves behind. */
+function review(createdAt: number): string {
+  const id = newId();
+  t.db
+    .insert(meetingReviews)
+    .values({
+      id,
+      projectId: s.projectId,
+      source: 'recorder',
+      transcriptHash: `${id}-hash`,
+      proposalsJson: '[]',
+      status: 'pending',
+      reviewedBy: null,
+      reviewedAt: null,
+      expiresAt: createdAt + 7 * 24 * 60 * 60 * 1000,
+      createdAt,
+    })
+    .run();
+  return id;
+}
+
+describe('the count survives a restart', () => {
+  it('is read from the file, so a new process sees the same number', () => {
+    // **A genuine restart, not a cleared variable.** Clearing the variable tests
+    // the variable. This closes the connection the submissions were made through
+    // and opens the same file again — which is what a deploy, a crash-loop or
+    // `docker compose restart` actually does, and it is the only version of this
+    // test that could have failed against the old in-memory counter.
+    const dir = mkdtempSync(join(tmpdir(), 'laika-cap-restart-'));
+    const path = join(dir, 'laika.db');
+
+    try {
+      const first = openDb({ path });
+      runMigrations(first.db);
+      const seeded = seed(first.db);
+
+      for (let i = 0; i < 7; i++) {
+        const id = newId();
+        first.db
+          .insert(meetingReviews)
+          .values({
+            id,
+            projectId: seeded.projectId,
+            source: 'recorder',
+            transcriptHash: `${id}-hash`,
+            proposalsJson: '[]',
+            status: 'pending',
+            reviewedBy: null,
+            reviewedAt: null,
+            expiresAt: NOW + 1000,
+            createdAt: NOW - i * 1000,
+          })
+          .run();
+      }
+      expect(submissionsInWindow(first.db, NOW)).toBe(7);
+
+      // ---- the restart -----------------------------------------------------
+      first.sqlite.close();
+
+      const second = openDb({ path });
+      try {
+        // No migrations, no seeding, nothing carried across in a variable: the
+        // number comes back out of the file.
+        expect(
+          submissionsInWindow(second.db, NOW),
+          "the month's spend was forgiven by a restart",
+        ).toBe(7);
+      } finally {
+        second.sqlite.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('the window is a rolling 30 days, and the boundary is stated', () => {
+  it('counts a submission inside the window and not one on its far edge', () => {
+    // §10.2 says "monthly" and that does not say which. This pins it: rolling
+    // 30 days, **exclusive at the far end** — a review created exactly
+    // `CAP_WINDOW_MS` ago has left. A caller at the edge gets a different answer
+    // from each reading, so the test names the one this implements.
+    review(NOW - CAP_WINDOW_MS + 1); // inside by a millisecond
+    review(NOW - CAP_WINDOW_MS); // exactly on the edge — out
+    review(NOW - CAP_WINDOW_MS - 1); // older still — out
+
+    expect(submissionsInWindow(t.db, NOW)).toBe(1);
+  });
+
+  it('lets the window roll: yesterday-full is today-empty', () => {
+    for (let i = 0; i < 5; i++) review(NOW - CAP_WINDOW_MS + 1000 + i);
+
+    expect(submissionsInWindow(t.db, NOW)).toBe(5);
+    // Thirty days later the same rows are all outside it.
+    expect(submissionsInWindow(t.db, NOW + CAP_WINDOW_MS)).toBe(0);
+  });
+
+  it('counts only what is stored, so an empty instance has spent nothing', () => {
+    expect(submissionsInWindow(t.db, NOW)).toBe(0);
+  });
+});
+
+describe('the cap bounds the count', () => {
+  it('is not reached at the cap and is reached one past it', () => {
+    for (let i = 0; i < MONTHLY_SUBMISSION_CAP; i++) review(NOW - i);
+
+    // The route refuses on `>= CAP`, because the submission being served is not
+    // yet a row. So at exactly the cap the next one is refused.
+    expect(submissionsInWindow(t.db, NOW)).toBe(MONTHLY_SUBMISSION_CAP);
+    expect(submissionsInWindow(t.db, NOW) >= MONTHLY_SUBMISSION_CAP).toBe(true);
+
+    // And one fewer is still servable.
+    t.db.delete(meetingReviews).where(eq(meetingReviews.createdAt, NOW)).run();
+    expect(submissionsInWindow(t.db, NOW) >= MONTHLY_SUBMISSION_CAP).toBe(false);
+  });
+
+  it('does not count rows from outside the window towards it', () => {
+    for (let i = 0; i < MONTHLY_SUBMISSION_CAP; i++) review(NOW - CAP_WINDOW_MS - 1 - i);
+
+    expect(submissionsInWindow(t.db, NOW)).toBe(0);
+  });
+});
+
+describe('what the derived count deliberately does not see', () => {
+  it('counts stored reviews, so an org with none has spent nothing regardless of projects', () => {
+    // Stated as a test rather than only a comment: the count is over
+    // `meeting_reviews`, not over projects, orgs or anything else that grows.
+    t.db
+      .insert(projects)
+      .values({
+        id: newId(),
+        orgId: t.db.select({ id: orgs.id }).from(orgs).get()?.id ?? '',
+        name: 'Another',
+        slug: 'another',
+        prefix: 'ANO',
+        createdAt: NOW,
+        updatedAt: NOW,
+      })
+      .run();
+
+    expect(submissionsInWindow(t.db, NOW)).toBe(0);
+  });
+});

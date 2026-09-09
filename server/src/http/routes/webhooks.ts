@@ -8,8 +8,8 @@ import {
   DeliveryLog,
   githubWebhookSecret,
   MONTHLY_SUBMISSION_CAP,
+  submissionsInWindow,
   providerFor,
-  SubmissionCounter,
   transcriptWebhookSecret,
   handlePullRequest,
   handleIssueComment,
@@ -34,7 +34,6 @@ export interface WebhookRouteOptions {
   /** Injectable so a test can drive the 24h window without waiting a day. */
   deliveries?: DeliveryLog;
   /** Injectable so a test can reach the cap without two hundred requests. */
-  submissions?: SubmissionCounter;
   now?: () => number;
 }
 
@@ -54,7 +53,6 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
   const app = new Hono<AppEnv>();
   const { db, serverSecret } = options;
   const deliveries = options.deliveries ?? new DeliveryLog();
-  const submissions = options.submissions ?? new SubmissionCounter();
   const clock = options.now ?? Date.now;
 
   app.post('/github', async (c) => {
@@ -146,8 +144,15 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
     // it — and reaching the cap answers *distinctly*, because "you have used
     // this month's budget" and "you are going too fast" want different actions
     // from whoever reads it.
-    const spent = submissions.recordAndCount(clock());
-    if (spent > MONTHLY_SUBMISSION_CAP) {
+    // **Counted from the database, not from a variable** (LAI-467). The
+    // previous counter lived in the process, so a restart forgave the month's
+    // spend — the wrong direction to be wrong in for a bound that exists to
+    // stop a runaway integration.
+    //
+    // `>=` and not `>`: this counts the rows that already exist, and the
+    // submission being served is not one of them yet. The 200th is served and
+    // the 201st is refused, exactly as the record-then-compare did.
+    if (submissionsInWindow(db, clock()) >= MONTHLY_SUBMISSION_CAP) {
       throw new ApiError('rate_limited', 'This org has reached its monthly transcript cap', {
         cap: MONTHLY_SUBMISSION_CAP,
         reason: 'monthly_cap',
