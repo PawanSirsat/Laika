@@ -2,11 +2,12 @@
 id: LAI-451
 title: 'POST /meeting-reviews/:id/apply — only what a human accepted'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-450]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-09T14:50:00Z
 ---
 
 ## Goal

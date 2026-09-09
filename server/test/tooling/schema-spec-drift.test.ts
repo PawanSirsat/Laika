@@ -30,6 +30,24 @@ import { declaredSchema } from '../helpers/declared-schema.ts';
  * of "what schema.ts says" sitting between the spec and the database would break
  * the chain in the middle, quietly.
  *
+ * ## What is compared, and what is not
+ *
+ * **Names, in both directions — and nullability only where §4 states it**
+ * (LAI-163). A column is a name plus what it promises, and until LAI-163 this
+ * file compared the name alone: §4 could call a column nullable while the schema
+ * made it required, indefinitely, with the gate green. That is not hypothetical
+ * — LAI-449 changed `comments.author_id`'s nullability and nothing here moved.
+ *
+ * The nullability half is bounded by what the document says out loud — **29 of
+ * the schema's 191 columns when this was written**, a snapshot rather than a
+ * live claim; the block at the bottom of this file explains why silence cannot
+ * be read as *required*.
+ * **Types are still not compared at all.** `text` versus `integer` is a larger
+ * job and §4 is less consistent about it — so a type can still drift here
+ * without this file noticing, and `schema-migration-drift.test.ts`'s *"columns
+ * agree on type, nullability and primary key"* is what catches it one leg
+ * further down.
+ *
  * ## §4 is written in two formats
  *
  * Some sections are Markdown tables (§4.1, §4.2, §4.5, …), others are a prose
@@ -289,6 +307,122 @@ function parseSpecActivityTypes(): string[] {
 }
 
 const REPO_ROOT = join(SERVER_ROOT, '..');
+
+/**
+ * Nullability §4 **states**, per `table.column` (LAI-163).
+ *
+ * ## What this can and cannot check
+ *
+ * §4 uses the word `nullable` 27 times and `not null` once, and says nothing for
+ * most columns. So this is a check on **what the document states**, not on every
+ * column — and that is the honest reach, not a first version.
+ *
+ * **It would not have caught what it was filed for.** LAI-449 changed
+ * `comments.author_id` from `NOT NULL` to nullable and no drift fired; the reason
+ * is that §4.7 said neither word about it, and silence cannot be compared. A
+ * check that inferred *required* from silence would fail on every column §4
+ * simply lists, which is most of them.
+ *
+ * What it does catch is the direction that **is** written down: a column §4
+ * calls nullable that the schema makes required, or the reverse. Those
+ * statements were being enforced by nobody.
+ *
+ * ## Two shapes, and why they read parentheses in opposite ways
+ *
+ * A table row describes the columns its **first cell** names, so the names come
+ * from `fieldsIn` — the same reader `parseSpecTables` uses one screen up — and
+ * the nullability word is looked for in the rest of the row. Sharing that reader
+ * is the point: a row whose first cell names several columns
+ * (`| \`last_used_at\`, \`expires_at\`, \`revoked_at\` | nullable |`) is one
+ * statement about three columns, and a second opinion here about what a row
+ * *is* would leave columns checked for existence and not for nullability, which
+ * is precisely the half-checked shape this file exists to prevent. Writing this
+ * function's own regex is what did that, and it cost five columns.
+ *
+ * `fieldsIn` drops parentheses, because in a first cell they hold enum values
+ * and section references. **Prose needs the opposite rule.** A prose list is one
+ * sentence naming many columns, so the only thing tying `nullable` to a
+ * particular name is the parenthetical attached to it: *"`project_id`
+ * (nullable), `project_role` (nullable), `token_hash`, `created_by`"* has the
+ * word on the same line as `token_hash`, which is required. So prose counts a
+ * parenthetical **attached to a name** and nothing else.
+ */
+function statedNullability(text: string): Map<string, boolean> {
+  const stated = new Map<string, boolean>();
+  let table: string | null = null;
+  let paragraph: string[] = [];
+
+  /**
+   * **Prose is matched on the joined paragraph, not line by line.**
+   *
+   * §4's lists are hand-wrapped at 80 columns, so a name and its parenthetical
+   * routinely straddle a line break — §4.11 ends one line with `project_id` and
+   * starts the next with `(nullable)`. A line-by-line reader misses exactly the
+   * statements that wrapped, which is an arbitrary subset and the worst kind to
+   * miss silently.
+   */
+  const flush = (): void => {
+    if (table !== null && paragraph.length > 0) {
+      const joined = paragraph.join(' ');
+      for (const m of joined.matchAll(/`([a-z_][a-z0-9_]*)`\s*\(([^)]*)\)/g)) {
+        record(stated, table, [m[1] ?? ''], m[2] ?? '');
+      }
+    }
+    paragraph = [];
+  };
+
+  for (const line of text.split('\n')) {
+    const heading = /^### 4\.\d+ `([a-z_]+)`/.exec(line);
+    if (heading !== null) {
+      flush();
+      table = heading[1] ?? null;
+      continue;
+    }
+
+    // Any other heading ends the section — §4.13 has no backticked table name
+    // and §5 starts a new chapter. Without this the last §4 table stays current
+    // to the end of the document, and a `\`name\` (nullable)` written anywhere
+    // below would be recorded against it.
+    if (/^#{2,3} /.test(line)) {
+      flush();
+      table = null;
+      continue;
+    }
+
+    if (table === null) continue;
+
+    if (line.startsWith('|')) {
+      flush();
+      const cells = line.split('|');
+      const firstCell = cells[1] ?? '';
+      if (/^\s*-+\s*$/.test(firstCell) || /^\s*field\s*$/i.test(firstCell)) continue;
+      record(stated, table, fieldsIn(firstCell), cells.slice(2).join('|'));
+      continue;
+    }
+
+    if (line.trim() === '') flush();
+    else paragraph.push(line);
+  }
+  flush();
+
+  return stated;
+}
+
+function record(
+  into: Map<string, boolean>,
+  table: string,
+  columns: readonly string[],
+  description: string,
+): void {
+  const said = description.toLowerCase();
+  // `not null` first: "**not null** — every event belongs to the one org" would
+  // otherwise be missed, and a description saying both is a spec bug rather
+  // than something to guess at.
+  const nullable = /\bnot\s+null\b/.test(said) ? false : /\bnullable\b/.test(said) ? true : null;
+  if (nullable === null) return;
+
+  for (const column of columns) if (column !== '') into.set(`${table}.${column}`, nullable);
+}
 
 const specTables = parseSpecTables(spec);
 const plannedSections = parsePlannedSections(spec);
@@ -755,5 +889,75 @@ describe('the exemption lists stay honest', () => {
       .map(([entry]) => `${entry} — name the task that will remove this exemption`);
 
     expect(untracked).toEqual([]);
+  });
+});
+
+describe('§4 and the schema agree about nullability (LAI-163)', () => {
+  const stated = statedNullability(spec);
+  const declared = new Map<string, boolean>(
+    [...declaredSchema().values()].flatMap((table) =>
+      table.columns.map((column) => [`${table.name}.${column.name}`, !column.notNull] as const),
+    ),
+  );
+
+  it('finds the statements it claims to check', () => {
+    // A parse that found nothing would make the comparison below vacuous — and
+    // this file already has that failure written into two other guards. The
+    // floor is deliberately not a count: a count of §4's `nullable` mentions is
+    // not the number of statements, because one row can name three columns and
+    // two mentions name none. The named cases below are what pin the shapes.
+    expect(stated.size, 'no nullability statements parsed from §4').toBeGreaterThan(20);
+    expect([...stated.values()].filter((nullable) => !nullable).length).toBeGreaterThan(0);
+  });
+
+  it('reads a row whose first cell names several columns as a statement about each', () => {
+    // §4.5 states three at once: `| `last_used_at`, `expires_at`, `revoked_at` |
+    // nullable |`. This is why the row half shares `fieldsIn` with
+    // `parseSpecTables` instead of matching a single name — a stricter regex
+    // silently skipped this row and §4.6's `started_at`, `completed_at`, so five
+    // columns were checked for existence and not for nullability.
+    for (const column of ['last_used_at', 'expires_at', 'revoked_at']) {
+      expect(stated.get(`tokens.${column}`), `tokens.${column}`).toBe(true);
+    }
+    expect(stated.get('tasks.started_at')).toBe(true);
+    expect(stated.get('tasks.completed_at')).toBe(true);
+  });
+
+  it('ends the section at a heading, so §5 cannot be read as the last §4 table', () => {
+    const stray = statedNullability(
+      '### 4.99 `widgets`\n\n| `a` | nullable |\n\n## 5. Something else\n\n`b` (nullable), `c`.\n',
+    );
+
+    expect([...stray.keys()]).toEqual(['widgets.a']);
+  });
+
+  it('does not read a prose list as though every name in it were nullable', () => {
+    // The false positive the narrow prose rule exists to avoid: §4.11 lists
+    // "`project_id` (nullable), `project_role` (nullable), `token_hash`, ..."
+    // on one line, and `token_hash` is required.
+    expect(stated.get('invites.project_id')).toBe(true);
+    expect(stated.has('invites.token_hash'), 'a bare name in a list was read as nullable').toBe(
+      false,
+    );
+  });
+
+  it('matches the schema wherever §4 states it', () => {
+    const wrong = [...stated]
+      .filter(([key]) => declared.has(key))
+      .filter(([key, nullable]) => declared.get(key) !== nullable)
+      .map(
+        ([key, nullable]) =>
+          `${key}: §4 says ${nullable ? 'nullable' : 'not null'} and schema.ts says the opposite`,
+      );
+
+    expect(wrong).toEqual([]);
+  });
+
+  it('states nothing about a column the schema does not have', () => {
+    // A statement about a column that no longer exists is a stale sentence, and
+    // the same class as an exemption nobody retired.
+    const ghosts = [...stated.keys()].filter((key) => !declared.has(key));
+
+    expect(ghosts).toEqual([]);
   });
 });
