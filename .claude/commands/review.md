@@ -87,6 +87,19 @@ EOF
 grep -qF "$NEW" "$P" || { echo "MUTATION DID NOT LAND"; exit 1; }
 ```
 
+**Never put `2>/dev/null` on a command whose output you will report as a fact.**
+SHELL and CHIEF independently produced the same false table on 2026-09-02, from
+the same cause: in zsh, `git show "$ref:server/src/db/e..."` is parsed as `$ref`
+with a `:s` **history modifier** applied, so the path becomes `masternums.ts` and
+`git show` fails. **With stderr suppressed, the failure piped nothing into
+`grep -c`, which printed `0`** — indistinguishable from *"the file does not
+contain the string"*. Both of us then reported *"no ref has it"*, and one of us
+handed it to the other as grounds for a merge-ordering decision.
+
+> **Suppressing stderr on a diagnostic turns every failure into a plausible
+> answer.** It is fine on a command whose failure you are handling. On one whose
+> output you are about to state as fact, it is the same as not looking.
+
 **Restore by checksum, not by assumption.** `shasum` the file before and `-c`
 after — an untracked or already-dirty file will not show the mutation in
 `git status`, and a killed harness leaves it behind.

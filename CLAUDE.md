@@ -295,6 +295,17 @@ both.
 This happened on LAI-224. Nothing was lost, only because the builder had not yet
 ticked anything when the note arrived.
 
+**Filing a task *for another session* produces the two-copy shape too, and it is
+now the common way.** You file `LAI-0XX` into `.tasks/backlog/` on your branch;
+they claim it and move it on theirs. **Neither branch has the other's path, so
+the merge *adds* rather than renames** and both copies survive — the same shape as
+a send-back, arriving from the filing direction. It reddens
+`task-file-state.test.ts`'s id-collision check, which is how you find out.
+
+**Whoever merges deletes the copy that is furthest back**, keeps the one the
+claimant moved, and does it in its own commit. Observed on LAI-169, on `core` and
+on `master`, within an hour of each other.
+
 ## 3. Logging
 
 After **every** task and at the end of **every** session, append to
