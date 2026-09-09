@@ -1704,8 +1704,12 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
    the limit and the actual length.
 8. **Manager dashboard metrics** — which numbers actually answer "where are we"?
    Throughput and cycle time are the obvious ones and may be the wrong ones.
-   `GET /projects/:slug/metrics` (§6.4) reserves the surface; the payload is not
-   yet defined. Needs shaping before M5.
+   **The payload is now defined and served** (LAI-124): daily throughput buckets,
+   and cycle time as `p50`/`p75`/`p90` over completed tasks that had a
+   `started_at`, with the unmeasured ones counted separately rather than assumed.
+   **The open question is narrower than it was, and it is the one that matters:**
+   are these the right two numbers? **Nothing on the Dashboard renders them yet**
+   — LAI-457 — so the question has not been tested against a real board.
 9. **Laika Assistant — three questions, all due before Phase 6** (D-015). Until
    all three are answered the screen has no endpoints and cannot be scheduled
    into a task:
