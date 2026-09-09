@@ -2,11 +2,12 @@
 id: LAI-460
 title: 'Nothing notices when an endpoint is served and never called'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-441
-status: backlog
+started: 2026-09-09T23:32:18+05:30
+status: in-progress
 ---
 
 ## Goal
