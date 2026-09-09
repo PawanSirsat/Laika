@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { reportDiscovery } from '../helpers/discovery.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 
 /**
@@ -147,6 +148,15 @@ const PREDATES_THE_FIELD: [string, string[]][] = [
 const KNOWN_COLLISIONS = ['LAI-046', 'LAI-100'];
 
 describe('the task-file check can fail', () => {
+  it('says how many task files it scanned', () => {
+    // LAI-465: the floor below catches a walk that returns nothing; the number
+    // catches a walk that returns half, which no assertion can.
+    reportDiscovery('task files', {
+      files: taskFiles().length,
+      stateDirs: stateDirs().length,
+    });
+  });
+
   it('finds task files at all', () => {
     // Every assertion below is over a filtered list, and an empty list satisfies
     // all of them. A path or parser change must fail here rather than pass

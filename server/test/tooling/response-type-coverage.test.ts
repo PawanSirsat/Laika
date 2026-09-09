@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { reportDiscovery } from '../helpers/discovery.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 
 /**
@@ -52,12 +53,31 @@ function tsFiles(dir: string): string[] {
 /**
  * What the server serves, by two independent signals:
  *
- *  - an exported `*View` — the convention, which is followed;
+ *  - an exported `*View` — the naming convention;
  *  - a type named in a `c.json<…>` — the routes that do not follow it.
  *
  * Deliberately **not** "every exported interface": most are inputs, options and
  * internal shapes, and a set that large would be exempted into uselessness.
- * These two catch what actually crosses the wire.
+ *
+ * ## This is a heuristic, and here is what escapes it (LAI-465)
+ *
+ * This docblock used to call the `*View` suffix *"the convention, which is
+ * followed"*. **Nothing enforces that**, and it was not followed: LAI-454 added
+ * `MeetingReviewSummary` and `MeetingReviewDetail`, which this census could not
+ * see, while `ProposalView` beside them was counted **purely because of what it
+ * was called**. LAI-465 found a fourth, `ApplyReviewResult`, returned by
+ * `POST /meeting-reviews/:id/apply` through a bare `c.json(result)`.
+ *
+ * **A type escapes when it is neither named `*View` nor annotated**, and the
+ * remedy is either spelling — rename it, or write `c.json<T>(…)` at the route,
+ * which is what that second signal is for.
+ *
+ * The escape is no longer silent: `NOT_SERVED` below lists every exported type
+ * whose name *looks* like a response and which this census does not count, each
+ * with a reason. A new one fails until somebody says which it is. That does not
+ * make the reach complete — a served type named `Thing` still escapes both
+ * signals and both lists — and the honest statement of the reach is: **two
+ * spellings, plus a list of the near-misses somebody has ruled on.**
  */
 function servedTypes(): Map<string, string> {
   const found = new Map<string, string>();
@@ -180,18 +200,74 @@ const UNPAIRED = new Map<string, string>([
   ['MeetingReviewView', 'no client type exists'],
   ['MeetingReviewDetailView', 'no client type exists'],
   ['ProposalView', 'no client type exists'],
+  ['ApplyReviewResult', 'no client type exists'],
   ['HeartbeatView', 'no client type exists'],
   ['MetricsView', 'no client type exists'],
   ['OrgAiView', 'no client type exists'],
   ['OrgView', 'no client type exists'],
 ]);
 
+/**
+ * Exported types whose **name looks like a response** and which the census does
+ * not count (LAI-465).
+ *
+ * The census finds `*View` and `c.json<T>`. Everything else is invisible to it,
+ * and the two spellings are a convention nothing enforces — which is how
+ * `MeetingReviewSummary`, `MeetingReviewDetail` and `ApplyReviewResult` each
+ * slipped past a guard whose whole job is noticing untracked response shapes.
+ *
+ * This list closes the near-miss half of that. A new exported type ending in one
+ * of the suffixes below **fails until somebody rules on it**: either it crosses
+ * the wire, in which case rename it or annotate the route, or it does not, in
+ * which case it belongs here with a reason.
+ *
+ * **It does not make the reach complete.** A served type called `Thing` escapes
+ * the suffixes as surely as it escapes `*View`. What it removes is the *silent*
+ * escape for names that already look the part.
+ */
+const RESPONSE_SHAPED = ['Summary', 'Detail', 'Response', 'Payload', 'Result', 'Body'] as const;
+
+const NOT_SERVED = new Map<string, string>([
+  ['BackfillResult', 'what a backfill did, returned to the migration runner and never to a client'],
+  ['JobResult', '§11.6 cron bookkeeping — counts the sweep touched, logged rather than served'],
+  ['LookupResult', 'the idempotency middleware asking whether it has seen this key'],
+  ['StoredResponse', 'the idempotency cache entry — a stored response, not a served type'],
+  ['OpenDbResult', 'the `{ db, sqlite }` pair `openDb` hands back inside the process'],
+  ['SetupResult', 'first-boot wiring returned to the route, which serves its own shape'],
+  [
+    'ErrorBody',
+    'the §6.3 envelope. Served on every error and deliberately not a view: the ' +
+      'error handler builds it, no route returns it, and pairing it would assert ' +
+      'a client type for a shape the client only ever reads on a failure path.',
+  ],
+  [
+    'Page',
+    'the pagination wrapper, `Page<T>`. What crosses the wire is the `T`, which ' +
+      'is counted on its own; the envelope is shared by every list endpoint.',
+  ],
+  [
+    'ProjectSummary',
+    'served and already paired — the census adds it by hand below, as the ' +
+      'counter-example to the naming convention deciding coverage.',
+  ],
+]);
+
 const NO_MIRROR = 'no client type exists';
 
 describe('the response-type census can fail', () => {
-  it('finds served types and paired types', () => {
-    // Both sides are derived. Either returning nothing would make every
-    // assertion below compare an empty set to an empty set and pass.
+  it('finds served types and paired types, and says how many', () => {
+    // **Reported, not only floored** (LAI-465). The floor catches a total
+    // collapse; it cannot catch the partial miss that actually happened —
+    // `MeetingReviewSummary` and `MeetingReviewDetail` were invisible here while
+    // `ProposalView` was counted purely because of its name, and the set was
+    // never empty, so nothing failed. Only a reader seeing the number catches
+    // that, which is why it prints on a passing run.
+    reportDiscovery('response-type census', {
+      served: servedTypes().size,
+      paired: pairedTypes().size,
+      unpaired: UNPAIRED.size,
+    });
+
     expect(servedTypes().size, 'no response types derived from src/').toBeGreaterThan(20);
     expect(pairedTypes().size, 'no PAIRS read from the drift check').toBeGreaterThan(5);
   });
@@ -299,6 +375,46 @@ describe('every served response type is paired or named', () => {
     for (const name of UNPAIRED.keys()) {
       expect(inherited.has(name), `${name} is exempted and also claimed as covered`).toBe(false);
     }
+  });
+
+  it('rules on every response-shaped name the census cannot see', () => {
+    // LAI-465's near-miss guard. `ApplyReviewResult` was returned by a route
+    // through a bare `c.json(result)` and was invisible here until it was
+    // annotated; nothing would have said so.
+    const served = servedTypes();
+    const unruled: string[] = [];
+
+    for (const file of tsFiles(SRC)) {
+      const text = readFileSync(file, 'utf8');
+      for (const m of text.matchAll(/export (?:interface|type) ([A-Za-z][A-Za-z0-9]*)\b/g)) {
+        const name = m[1] ?? '';
+        if (served.has(name) || NOT_SERVED.has(name)) continue;
+        if (RESPONSE_SHAPED.some((suffix) => name.endsWith(suffix))) {
+          unruled.push(`${name} (${file.slice(SRC.length + 1)})`);
+        }
+      }
+    }
+
+    expect(
+      unruled.sort(),
+      'these names look like responses and the census cannot see them — rename, ' +
+        'annotate the route with c.json<T>, or add a NOT_SERVED entry saying why not',
+    ).toEqual([]);
+  });
+
+  it('keeps NOT_SERVED honest — every entry names a type that still exists', () => {
+    // The same rule every other exemption list here follows: an entry for a type
+    // nobody declares any more is a claim about a codebase that has moved on.
+    const declared = new Set<string>();
+    for (const file of tsFiles(SRC)) {
+      for (const m of readFileSync(file, 'utf8').matchAll(
+        /export (?:interface|type) ([A-Za-z][A-Za-z0-9]*)\b/g,
+      )) {
+        declared.add(m[1] ?? '');
+      }
+    }
+
+    expect([...NOT_SERVED.keys()].filter((name) => !declared.has(name))).toEqual([]);
   });
 
   it('reports how much of the surface is actually guarded', () => {

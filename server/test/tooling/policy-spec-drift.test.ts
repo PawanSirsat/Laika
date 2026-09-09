@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { reportDiscovery } from '../helpers/discovery.ts';
 import { type OrgRole, type ProjectRole } from '../../src/db/enums.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 import {
@@ -318,6 +319,16 @@ const org = parseMatrix(ORG_MATRIX);
 const project = parseMatrix(PROJECT_MATRIX);
 
 describe('the parser reads §3, prose and all', () => {
+  it('says how much of §3 it parsed', () => {
+    // LAI-465: a parser that finds three rows of a nine-row table reports the
+    // same green as one that finds all nine.
+    reportDiscovery('§3 matrices', {
+      orgRows: org.rows.length,
+      projectRows: project.rows.length,
+      proseRules: PROSE_RULES.length,
+    });
+  });
+
   it('finds both matrices with their real columns', () => {
     expect(org.roles).toEqual(['Owner', 'Admin', 'Member', 'Viewer']);
     expect(project.roles).toEqual(['Lead', 'Member', 'Viewer']);

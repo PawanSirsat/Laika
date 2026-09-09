@@ -3,6 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { reportDiscovery } from '../helpers/discovery.ts';
 import * as schema from '../../src/db/schema.ts';
 import { apiFieldNames, apiPayload, appendActivity, readPayload } from '../../src/db/activity.ts';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
@@ -264,6 +265,16 @@ describe('the derived list of names that must not appear', () => {
 });
 
 describe('the sweep finds its own files', () => {
+  it('says how many service files and emitters it found', () => {
+    // LAI-465. This guard's reach is a directory walk plus a regex over each
+    // file's `type:` lines — both silent about what they skipped.
+    reportDiscovery('activity emitters', {
+      sourceFiles: sourceFiles(SRC).length,
+      emittedTypes: emittedActivityTypes().size,
+      drizzleOnlyNames: drizzleOnlyNames().size,
+    });
+  });
+
   it('discovers every service file, including the seven the old list never named', () => {
     const found = sourceFiles(SRC).map((path) => path.replace(/^.*\/src\//, ''));
 

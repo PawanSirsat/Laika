@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, sep } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { reportDiscovery } from '../helpers/discovery.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 
 /**
@@ -228,6 +229,24 @@ function walk(dir: string): string[] {
 
 const srcFiles = walk(SRC);
 const srcModules = srcFiles.filter((f) => extname(f) === '.ts' && !f.endsWith('.test.ts'));
+
+describe('the structure check can fail', () => {
+  it('walked both trees and found files in them', () => {
+    // **The fourth instance of LAI-465's shape, and the quietest.** Every naming
+    // and mirror rule in this file iterates a walk; if the walk returns nothing,
+    // each one compares an empty list to an empty list and passes. Measured by
+    // stubbing `walk` to return `[]`: **16 of 19 tests stayed green**, and the
+    // three that failed did so only incidentally — they check that exemption
+    // entries name files that exist, so they fail because the *files* vanished,
+    // not because the scan did. Empty those lists and this file asserts nothing
+    // at all, silently.
+    reportDiscovery('structure', {
+      srcFiles: srcFiles.length,
+      srcModules: srcModules.length,
+      webSrcFiles: webSrcFiles.length,
+    });
+  });
+});
 
 describe('CONVENTIONS §3 — naming', () => {
   it('names every directory under src/ in kebab-case', () => {
