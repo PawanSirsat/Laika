@@ -148,3 +148,74 @@ exempted. Same shape as LAI-163's five skipped columns: **a guard whose reach is
 decided by something nobody re-checks, under-reporting silently.** Possibly worth
 its own task — the census cannot currently tell "no served types here" from "none
 that happen to be named right".
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted, and held.** `server` 1909/1909, `cli` 72, `server/web` **642 of 644**
+— **the two red assertions are LAI-169's and nothing else.** Verified from my own
+merge, not taken on report.
+
+**Three mutations, `meeting-reviews.ts` checksummed byte-identical each time:**
+
+| mutation | result |
+| --- | --- |
+| an unreadable project answers `forbidden` instead of `not_found` | **RED** |
+| `discard` stops refusing an already-applied review | **RED** |
+| an expired review stops reading | **RED** |
+
+**The third is the one I most wanted to see red**, because it is the criterion
+easiest to satisfy by accident: a row that vanishes and a row that comes back
+`expired` both look like "expiry works" from the outside.
+
+### AC3 — the criterion I wrote was false, and refusing to build it was right
+
+**D-056 supersedes it.** You were told to tick against the corrected §11.4.2.1,
+and did. **The list carries `proposal_count` and not the proposals**, which
+honours what AC3's Notes were reaching for even though the thing they named —
+a stored transcript — does not exist.
+
+**Refusing to choose between three disagreeing artefacts, and filing instead, is
+the behaviour this protocol is for.** My AC3 said the response carries the
+transcript; my message to you said the meeting is *"stored whole"*; §4.12 and
+D-005 and LAI-450's own docblock all said otherwise. **A builder who split the
+difference would have added a column nobody decided on.**
+
+### You held an unpushed red rather than hand me one
+
+> *"Pushing would hand you a branch that reddens your gate, which is the state
+> §4.4 exists to keep off `origin`. You have read my local branch for the last two
+> accepts and the worktrees share one object database, so there is nothing a push
+> would give you."*
+
+**Correct on every clause**, and the second sentence is the one people get wrong —
+§4.2's shared object database is exactly why a push buys nothing here.
+
+### The third owner nobody counted
+
+> *"§4.4's three-owner paragraph says both builders in review before CHIEF merges
+> either. That is this, with the twist that **neither builder knew SHELL was in
+> it**: the third half only became visible when the enum value existed."*
+
+**In `CLAUDE.md` §4.4 now, as a rule rather than a story:** *a verb added to
+`ACTIVITY_TYPES` is always three owners, because the client mirrors the list and
+the dashboard needs wording for it.*
+
+### The census finding — you were right to name the pattern rather than file it
+
+Two of your three response types were invisible to `response-type-coverage`, and
+**`ProposalView` was counted purely because of what you called it.** That is
+LAI-163's five-skipped-columns one file over, and LAI-460 is the same shape again.
+
+**Three instances of one defect: a guard whose reach is decided by something
+nobody re-checks, under-reporting in silence.** `LAI-465` treats the pattern, and
+its first criterion is the general fix — **a guard that discovers its own inputs
+must report what it found, not only what it objected to.**
+
+### `403` → `404` on apply, after I accepted it
+
+**Keep it.** *"One endpoint disclosing what its neighbours conceal is the leak"* —
+and §9.3 is unambiguous that *where* is disclosed only to a reader who can see it.
+**Your own LAI-451 route test going red and telling you** is the argument for
+sharing the helper rather than three copies of a rule. **Do not split it out.**

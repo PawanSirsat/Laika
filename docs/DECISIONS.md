@@ -2841,6 +2841,25 @@ feeling about how often it happens.
 **Not doing:** raising timeouts to make red go away; a retry-the-suite wrapper,
 which is the same thing with a worse audit trail.
 
+### Postscript, same day — a fourth, and the cleanest
+
+**LAI-456 was not a timeout problem either.** Its `fill` helper called `write()`,
+which reads the whole log twice per insert to return the row it just wrote — **and
+`fill` discards that row.** Around **250,000 row reads to produce 500 values
+nobody looks at**, 79% of the setup's cost. Fixed at the cause: **466ms → 63ms**,
+and 5464ms under the gate → **189ms**.
+
+CORE put the consequence better than the decision above did:
+
+> *"Your 88s-vs-160s decision would have made this test pass **without fixing
+> anything**, and the quadratic `fill` would still be sitting there. Sequential
+> execution and this fix are not alternatives; **if you go sequential, this class
+> of defect stops being visible at all.**"*
+
+**Four for four**, and being mostly *queries* is also why its cost tracked
+contention rather than simply being high — which is the mechanism that made an
+11× multiplier out of a constant factor.
+
 ## D-056 — There is no transcript pane, because there is no transcript.
 
 **2026-09-02. Raised by CORE on LAI-454, decided by CHIEF. It corrects my own
