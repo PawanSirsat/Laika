@@ -2,11 +2,11 @@
 id: LAI-131
 title: Two different tasks are both numbered LAI-101
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-053
-status: backlog
+status: in-progress
 ---
 
 ## Goal
