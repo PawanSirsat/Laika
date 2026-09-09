@@ -2,11 +2,12 @@
 id: LAI-163
 title: '`schema-spec-drift` compares column names, so a `NOT NULL` can change silently'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-449
-status: backlog
+status: in-progress
+started: 2026-09-02T01:45:00Z
 ---
 
 ## Goal

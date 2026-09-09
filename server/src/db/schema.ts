@@ -162,6 +162,16 @@ export const orgs = sqliteTable(
     aiKeyLast4: text('ai_key_last4'),
     smtpJsonEnc: text('smtp_json_enc'),
     githubWebhookSecretEnc: text('github_webhook_secret_enc'),
+    /**
+     * §10.2's shared secret, encrypted (§12, D-052, LAI-450).
+     *
+     * **Its own column, not GitHub's reused.** One secret for two integrations
+     * means revoking either breaks both, and a leak of one hands over the
+     * other. It also has its own `SecretPurpose`, so the derived keys differ —
+     * which is the property LAI-161 said could not be retrofitted, meeting the
+     * first thing that would have needed it.
+     */
+    transcriptWebhookSecretEnc: text('transcript_webhook_secret_enc'),
     createdAt,
     updatedAt,
   },

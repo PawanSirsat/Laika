@@ -2,7 +2,9 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { type Db } from '../db/client.ts';
 import { orgs } from '../db/schema.ts';
 import { appendActivity } from '../db/activity.ts';
-import { decryptSecret } from '../secrets.ts';
+import { ApiError } from '../errors.ts';
+import { decryptSecret, type SecretPurpose } from '../secrets.ts';
+import { httpProviderClient, type ProviderClient } from './provider.ts';
 import { eq } from 'drizzle-orm';
 import { type ServiceCaller } from '../auth/resolve-actor.ts';
 import { type TaskStatus } from '../db/enums.ts';
@@ -41,10 +43,32 @@ const DIGEST_HEX_LENGTH = 64;
  */
 export function githubWebhookSecret(db: Db, serverSecret: string): string | null {
   const row = db.select({ enc: orgs.githubWebhookSecretEnc }).from(orgs).limit(1).get();
-  const enc = row?.enc ?? null;
+
+  return storedSecret(row?.enc ?? null, serverSecret, 'github_webhook_secret');
+}
+
+/**
+ * §10.2's secret (D-052, LAI-450).
+ *
+ * **A different column and a different `SecretPurpose` from §10.1's.** One secret
+ * for two integrations means revoking either breaks both, and a leak of one
+ * hands over the other — so the ciphertexts are not interchangeable either, and
+ * a row written for one purpose will not decrypt under the other.
+ */
+export function transcriptWebhookSecret(db: Db, serverSecret: string): string | null {
+  const row = db.select({ enc: orgs.transcriptWebhookSecretEnc }).from(orgs).limit(1).get();
+
+  return storedSecret(row?.enc ?? null, serverSecret, 'transcript_webhook_secret');
+}
+
+function storedSecret(
+  enc: string | null,
+  serverSecret: string,
+  purpose: SecretPurpose,
+): string | null {
   if (enc === null || enc === '') return null;
 
-  return decryptSecret(enc, serverSecret, 'github_webhook_secret');
+  return decryptSecret(enc, serverSecret, purpose);
 }
 
 /**
@@ -64,7 +88,7 @@ export function githubWebhookSecret(db: Db, serverSecret: string): string | null
  * length mismatch rather than returning false, so the length check has to happen
  * first regardless.
  */
-export function verifyGithubSignature(
+export function verifySignature(
   rawBody: string,
   header: string | null | undefined,
   secret: string,
@@ -347,4 +371,68 @@ export function handleIssueComment(
   );
 
   return { handled: true, taskId: resolved.taskId };
+}
+
+/**
+ * §10.2's monthly cap, per D-052.
+ *
+ * **A rate limit is not sufficient.** §6.3's limiter answers "you are going too
+ * fast"; an authenticated integration gone wrong spends money at a perfectly
+ * legal rate and never trips it. The cap is the bound that notices.
+ *
+ * A rolling 30 days rather than a calendar month: a calendar boundary hands an
+ * attacker a fresh budget at a predictable moment, and an org that starts using
+ * this on the 28th should not get two days of quota.
+ *
+ * In memory, like `DeliveryLog` and for the same reason — one process, one file
+ * (D-002) — **and with the same cost stated**: a restart forgives the count. For
+ * a bound that exists to stop a runaway integration that is the wrong direction
+ * to be wrong in, so it is worth a task if this ever guards real spend. It is
+ * not one today: nothing calls a provider until §10.2 has a configured one.
+ */
+export const MONTHLY_SUBMISSION_CAP = 200;
+const CAP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+export class SubmissionCounter {
+  private readonly at: number[] = [];
+
+  /** Record this submission and return how many are inside the window. */
+  recordAndCount(now: number): number {
+    this.at.push(now);
+    while (this.at.length > 0 && now - (this.at[0] ?? 0) > CAP_WINDOW_MS) this.at.shift();
+
+    return this.at.length;
+  }
+}
+
+/**
+ * The org's configured provider, or a refusal.
+ *
+ * `unavailable` rather than `unprocessable`: an org with no provider configured
+ * cannot do this **yet**, which is a state of the instance rather than a problem
+ * with the request — and it is the same word §6.3 uses for a dependency that is
+ * not there.
+ */
+export function providerFor(db: Db, serverSecret: string): ProviderClient {
+  const row = db
+    .select({
+      provider: orgs.aiProvider,
+      baseUrl: orgs.aiBaseUrl,
+      keyEnc: orgs.aiApiKeyEnc,
+    })
+    .from(orgs)
+    .limit(1)
+    .get();
+
+  if (row?.provider == null) {
+    throw new ApiError('unavailable', 'This org has no AI provider configured', {
+      reason: 'no_provider',
+    });
+  }
+
+  return httpProviderClient({
+    provider: row.provider,
+    baseUrl: row.baseUrl,
+    apiKey: row.keyEnc === null ? null : decryptSecret(row.keyEnc, serverSecret, 'ai_api_key'),
+  });
 }

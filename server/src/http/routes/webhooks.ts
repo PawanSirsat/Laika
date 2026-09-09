@@ -2,14 +2,20 @@ import { Hono } from 'hono';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import { systemPrincipal } from '../../policy/can.ts';
+import { parseBody, strictObject, z } from '../validation.ts';
+import { storeTranscriptReview } from '../../services/meeting-reviews.ts';
 import {
   DeliveryLog,
   githubWebhookSecret,
+  MONTHLY_SUBMISSION_CAP,
+  providerFor,
+  SubmissionCounter,
+  transcriptWebhookSecret,
   handlePullRequest,
   handleIssueComment,
   handlePush,
   SIGNATURE_HEADER,
-  verifyGithubSignature,
+  verifySignature,
 } from '../../services/webhooks.ts';
 import { type AppEnv } from '../context.ts';
 
@@ -27,13 +33,28 @@ export interface WebhookRouteOptions {
   serverSecret: string;
   /** Injectable so a test can drive the 24h window without waiting a day. */
   deliveries?: DeliveryLog;
+  /** Injectable so a test can reach the cap without two hundred requests. */
+  submissions?: SubmissionCounter;
   now?: () => number;
 }
+
+/**
+ * §10.2's body. `source` is free text — a recorder name, not a vocabulary —
+ * because §4.12 stores it as `text` and §10.2 lists no values.
+ */
+const TranscriptBody = strictObject({
+  project_slug: z.string().trim().min(1).max(120),
+  // Bounded because it is sent to a paid provider, and an unbounded body is an
+  // unbounded bill. Generous enough for a long meeting.
+  transcript: z.string().trim().min(1).max(200_000),
+  source: z.string().trim().min(1).max(120),
+});
 
 export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> {
   const app = new Hono<AppEnv>();
   const { db, serverSecret } = options;
   const deliveries = options.deliveries ?? new DeliveryLog();
+  const submissions = options.submissions ?? new SubmissionCounter();
   const clock = options.now ?? Date.now;
 
   app.post('/github', async (c) => {
@@ -61,7 +82,7 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
       throw refuse(c, 'no webhook secret is configured');
     }
 
-    if (!verifyGithubSignature(raw, c.req.header(SIGNATURE_HEADER), secret)) {
+    if (!verifySignature(raw, c.req.header(SIGNATURE_HEADER), secret)) {
       throw refuse(c, 'signature did not verify');
     }
 
@@ -95,6 +116,54 @@ export function githubWebhookRoutes(options: WebhookRouteOptions): Hono<AppEnv> 
     // **Acknowledged and ignored** (§10.1) — a `200` for an event Laika does not
     // handle, so GitHub stops retrying something that will never be handled.
     return c.json({ ok: true, ...outcome });
+  });
+
+  /**
+   * `POST /webhooks/transcript` (§10.2, D-052, LAI-450).
+   *
+   * **Its own secret and its own HMAC**, not §10.1's. One secret for two
+   * integrations means revoking either breaks both, and a leak of one hands over
+   * the other — so the column, the `SecretPurpose` and therefore the derived key
+   * all differ.
+   *
+   * §10.2 was specified with **no authentication at all** (LAI-164): as written,
+   * anyone reachable could choose which project's open tasks and `context_md`
+   * left the instance, on the org's bill. D-052 settled it as this.
+   */
+  app.post('/transcript', async (c) => {
+    // Same ordering as §10.1 and for the same two reasons: no unauthenticated
+    // parse, and a malformed body cannot answer differently from a bad signature.
+    const raw = await c.req.text();
+
+    const secret = transcriptWebhookSecret(db, serverSecret);
+    if (secret === null) throw refuse(c, 'no transcript secret is configured');
+    if (!verifySignature(raw, c.req.header(SIGNATURE_HEADER), secret)) {
+      throw refuse(c, 'signature did not verify');
+    }
+
+    // **A cap, not only a rate** (D-052). An authenticated integration gone
+    // wrong spends money at a perfectly legal rate, so the limiter cannot see
+    // it — and reaching the cap answers *distinctly*, because "you have used
+    // this month's budget" and "you are going too fast" want different actions
+    // from whoever reads it.
+    const spent = submissions.recordAndCount(clock());
+    if (spent > MONTHLY_SUBMISSION_CAP) {
+      throw new ApiError('rate_limited', 'This org has reached its monthly transcript cap', {
+        cap: MONTHLY_SUBMISSION_CAP,
+        reason: 'monthly_cap',
+      });
+    }
+
+    const body = parseBody(TranscriptBody, JSON.parse(raw || 'null'));
+    const stored = await storeTranscriptReview(
+      db,
+      providerFor(db, serverSecret),
+      { projectSlug: body.project_slug, transcript: body.transcript, source: body.source },
+      clock(),
+    );
+
+    // `202`, per §10.2: the proposals exist and a human has not seen them.
+    return c.json({ id: stored.id, proposals: stored.proposals }, 202);
   });
 
   return app;
