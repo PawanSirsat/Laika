@@ -2,11 +2,12 @@
 id: LAI-467
 title: 'The transcript spend cap lives in memory, so a restart forgives the count'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-450]
 discovered-from: LAI-450
-status: backlog
+status: in-progress
+started: 2026-09-10T00:05:00Z
 ---
 
 ## Goal
