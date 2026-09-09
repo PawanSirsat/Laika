@@ -35,13 +35,18 @@ import { declaredSchema } from '../helpers/declared-schema.ts';
  * **Names, in both directions — and nullability only where §4 states it**
  * (LAI-163). A column is a name plus what it promises, and until LAI-163 this
  * file compared the name alone: §4 could call a column nullable while the schema
- * made it required, indefinitely, with the gate green. That is not hypothetical
- * — LAI-449 changed `comments.author_id`'s nullability and nothing here moved.
+ * made it required, indefinitely, with the gate green.
  *
- * The nullability half is bounded by what the document says out loud — **29 of
- * the schema's 191 columns when this was written**, a snapshot rather than a
- * live claim; the block at the bottom of this file explains why silence cannot
- * be read as *required*.
+ * The nullability half is bounded by what the document says out loud — **30 of
+ * the schema's 191 columns on 2026-09-09**, a snapshot and not a live claim; the
+ * block at the bottom of this file explains why silence cannot be read as
+ * *required*.
+ *
+ * **That number is a measurement of §4, not a property of this file** (LAI-462).
+ * It went 29 → 30 with no code change here, when §4.2 gained a row for
+ * `orgs.transcript_webhook_secret_enc`. So *"should the reach be wider?"* is a
+ * question for `docs/`, and widening it is not work anybody would do in this
+ * file.
  * **Types are still not compared at all.** `text` versus `integer` is a larger
  * job and §4 is less consistent about it — so a type can still drift here
  * without this file noticing, and `schema-migration-drift.test.ts`'s *"columns
@@ -313,25 +318,42 @@ const REPO_ROOT = join(SERVER_ROOT, '..');
  *
  * ## What this can and cannot check
  *
- * §4 uses the word `nullable` 27 times and `not null` once, and says nothing for
- * most columns. So this is a check on **what the document states**, not on every
- * column — and that is the honest reach, not a first version.
+ * §4 uses the word `nullable` 28 times and `not null` once (measured
+ * 2026-09-09), and says nothing for most columns. So this is a check on **what
+ * the document states**, not on every column.
  *
- * **It would not have caught what it was filed for.** LAI-449 changed
- * `comments.author_id` from `NOT NULL` to nullable and no drift fired; the reason
- * is that §4.7 said neither word about it, and silence cannot be compared. A
- * check that inferred *required* from silence would fail on every column §4
- * simply lists, which is most of them.
+ * **`comments.author_id` — the change this was filed for — is covered.** §4.7
+ * says `` `author_id` (**nullable**) ``, this parser reads it, and mutating the
+ * column to `.notNull()` gives *"author_id: §4 says nullable and schema.ts says
+ * the opposite"*.
  *
- * What it does catch is the direction that **is** written down: a column §4
+ * This docblock said the opposite for a day (LAI-462), and the correction is
+ * worth more than the sentence: **it was never true.** §4.7 already carried the
+ * word at the commit before LAI-163 landed — I wrote a claim about a section I
+ * had read once at the start of the task and not reopened. **A docblock that
+ * under-claims sends the next reader to build a second guard for a case already
+ * covered**, and they will not check, because a confession reads as verified.
+ *
+ * **A genuinely uncovered column, verified rather than assumed:** `tasks.title`.
+ * §4.5's row is `` | `title`, `description_md` | | `` — one row, two columns, an
+ * empty description cell. Making `title` nullable in `schema.ts` leaves this
+ * file **green**. And that row is the sharp case rather than a stray one: the
+ * two columns it names genuinely differ, `title` being required and
+ * `description_md` nullable, so §4 could not state them in that shape without
+ * splitting the row.
+ *
+ * What this does catch is the direction that **is** written down: a column §4
  * calls nullable that the schema makes required, or the reverse. Those
  * statements were being enforced by nobody.
+ *
+ * A check that inferred *required* from silence would fail on every column §4
+ * simply lists, which is most of them.
  *
  * ## Two shapes, and why they read parentheses in opposite ways
  *
  * A table row describes the columns its **first cell** names, so the names come
- * from `fieldsIn` — the same reader `parseSpecTables` uses one screen up — and
- * the nullability word is looked for in the rest of the row. Sharing that reader
+ * from `fieldsIn` — the same reader `parseSpecTables` uses — and the nullability
+ * word is looked for in the rest of the row. Sharing that reader
  * is the point: a row whose first cell names several columns
  * (`| \`last_used_at\`, \`expires_at\`, \`revoked_at\` | nullable |`) is one
  * statement about three columns, and a second opinion here about what a row
@@ -918,11 +940,17 @@ describe('§4 and the schema agree about nullability (LAI-163)', () => {
   });
 
   it('reads a row whose first cell names several columns as a statement about each', () => {
-    // §4.5 states three at once: `| `last_used_at`, `expires_at`, `revoked_at` |
-    // nullable |`. This is why the row half shares `fieldsIn` with
-    // `parseSpecTables` instead of matching a single name — a stricter regex
-    // silently skipped this row and §4.6's `started_at`, `completed_at`, so five
-    // columns were checked for existence and not for nullability.
+    // **§4.9** (`tokens`) states three at once:
+    // `| `last_used_at`, `expires_at`, `revoked_at` | nullable |`. This is why
+    // the row half shares `fieldsIn` with `parseSpecTables` instead of matching
+    // a single name — a stricter regex silently skipped this row and **§4.5**
+    // (`tasks`) `started_at`, `completed_at`, so five columns were checked for
+    // existence and not for nullability.
+    //
+    // Those two numbers were §4.5 and §4.6 until LAI-462: swapped, and both
+    // wrong. `tasks` is §4.5, `task_dependencies` is §4.6, `tokens` is §4.9.
+    // A section number in a comment is checkable in one grep and reads as
+    // authoritative to whoever does not run it.
     for (const column of ['last_used_at', 'expires_at', 'revoked_at']) {
       expect(stated.get(`tokens.${column}`), `tokens.${column}`).toBe(true);
     }
