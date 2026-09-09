@@ -481,7 +481,8 @@ Types: `org.created`, `task.created`, `task.updated`, `task.status_changed`,
 `unlisted.promoted`, `unlisted.dismissed`, `project.context_updated`,
 `sprint.created`, `sprint.updated`, `sprint.deleted`, `sprint.tasks_changed`,
 `user.deactivated`, `user.reactivated`, `task.stale_flagged`,
-`heartbeat.pruned`, `invite.expired`, `meeting_review.expired`.
+`heartbeat.pruned`, `invite.expired`, `meeting_review.expired`,
+`meeting_review.discarded`.
 
 **The nine verbs added 2026-09-01 are the same argument, four more times.**
 Sprints, the project context document, unlisted-work triage and deactivation
@@ -595,7 +596,7 @@ prompts, or transcript content (D-005). Cron deletes rows older than 30 days.
 ### 4.12 `meeting_reviews`
 
 `id`, `project_id`, `source`, `transcript_hash`, `proposals_json` (§10.2),
-`status` (`pending` \| `applied` \| `expired`), `reviewed_by`, `reviewed_at`,
+`status` (`pending` \| `applied` \| `discarded` \| `expired`), `reviewed_by`, `reviewed_at`,
 `created_at`, `expires_at`. Proposals expire unreviewed after 7 days.
 
 ### 4.13 Indexes that must exist
@@ -1489,9 +1490,12 @@ anything missing sends the task back.
   `presence_enabled = 0`.
 - **Dashboard** — progress by status; activity feed with an **agent/human
   filter**; stale warnings; throughput and cycle time; read-only for Viewer.
-- **Meeting review** — transcript on one side, proposals on the other tagged
-  **NEW / CHANGED / DEAD / DECISION**; each proposal shows its transcript quote;
+- **Meeting review** — the proposals, tagged **NEW / CHANGED / DEAD /
+  DECISION**, each shown **with the transcript quote it was reacting to**;
   per-line accept and reject; apply acts only on accepted items; discard the set.
+  **There is no transcript pane, because there is no transcript** (D-056): §4.12
+  keeps a `transcript_hash` and never the words. The quotes are what makes a
+  proposal reviewable, and they are all that is kept.
 
 #### 11.4.3 Timeline view
 

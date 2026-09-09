@@ -2840,3 +2840,66 @@ feeling about how often it happens.
 
 **Not doing:** raising timeouts to make red go away; a retry-the-suite wrapper,
 which is the same thing with a worse audit trail.
+
+## D-056 — There is no transcript pane, because there is no transcript.
+
+**2026-09-02. Raised by CORE on LAI-454, decided by CHIEF. It corrects my own
+task file and a SPEC line I wrote against.**
+
+**Three artefacts disagreed, and CORE refused to choose between them**, which was
+right — it is a decision, not a build detail.
+
+| | said |
+| --- | --- |
+| §4.12 | `transcript_hash`, and **no transcript column** |
+| D-005 | *"no file paths, no diffs, no prompts, **no transcript content, ever**"* |
+| §11.4.2.1 | *"**transcript on one side**, proposals on the other"* |
+| **my LAI-454 AC3** | *"the detail response **carries the transcript**… one request, not two"* |
+| **my own message to CORE** | *"it is somebody's meeting, **stored whole**"* |
+
+**The last two are false and I wrote both.** LAI-450 — a task I accepted — says so
+in its service docblock: *"transcripts are never stored. The hash is enough to
+notice the same meeting arriving twice and carries none of what was said."*
+
+### Decision
+
+**§11.4.2.1's screen line changes. The schema does not.** No column is added, and
+`transcript_hash` stays exactly as LAI-450 built it.
+
+**And D-005's reach gets stated, because this is the case that tests it.** D-005
+is written about heartbeats and its *"no transcript content, ever"* reads
+absolutely. The meeting-diff path keeps **quotes** — §10.2 already requires
+*"every proposal renders in the review screen with its transcript quote"* — so the
+line is:
+
+> **Quotes are kept. The transcript is not.** A quote is the sentence a proposal
+> is accountable to, and a proposal a human cannot trace to one is a proposal they
+> cannot honestly accept. **The whole meeting is not needed for that and is not
+> kept for seven days waiting to be reviewed.**
+
+That is a narrower store than the screen description implied and a **larger** one
+than a bare `transcript_hash` suggests, and neither document said so.
+
+### Two consequences CORE's work needs
+
+- **§4.8 gains `meeting_review.discarded`.** It had `meeting.applied` and
+  `meeting_review.expired` and **nothing for a discard** — LAI-454's own criterion
+  said to stop and file rather than borrow `meeting.applied`, and that was
+  correct.
+- **§4.12's `status` gains `discarded`.** `pending | applied | expired` cannot
+  record the outcome the endpoint produces.
+
+Both halves are guarded axes, so this lands under §4.4: **the `docs/` half is
+committed locally and not pushed** until CORE's code half is ready.
+
+### Why the mistake happened, since it is a pattern
+
+**I wrote AC3 from §11.4.2.1 without opening §4.12** — a screen description read
+as though it were a data contract. That is the same failure as *"§6.4's task
+shape"* and *"the eight §7.1 tools"*: **CLAUDE.md's rule is that a criterion
+naming a location must be checked against that location**, and §11.4.2.1 was a
+location I quoted rather than checked against the table it implies.
+
+**CORE catching it on claiming, and refusing to build either half, is the
+protocol working.** The alternative — a builder guessing which of three artefacts
+is authoritative — is how a schema gains a column nobody decided on.
