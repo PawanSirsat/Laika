@@ -2,11 +2,13 @@
 id: LAI-130
 title: SPEC §4.5 and §6.4 should carry the task acceptance field
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: [LAI-092]
 discovered-from: LAI-092
-status: backlog
+status: in-progress
+started: 2026-09-02T23:10:00Z
+finished:
 ---
 
 ## Goal
