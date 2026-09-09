@@ -2,11 +2,12 @@
 id: LAI-452
 title: '`unconfigured is silent, not broken` fails intermittently in the root gate'
 area: cli
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-418]
 discovered-from: LAI-158
-status: backlog
+started: 2026-09-09T18:21:07+05:30
+status: in-progress
 ---
 
 ## Goal
