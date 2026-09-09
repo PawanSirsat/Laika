@@ -107,14 +107,45 @@ of a task file. Builders have no equivalent exception.
    in `.tasks/done/` **on `master`**.
 2. Take the latest integrated state first: `git merge master`.
 3. **Check every branch, not just your own** — sessions work on separate
-   branches, so a rival claim will not be in your working tree:
+   branches, so a rival claim will not be in your working tree. **Ask where the
+   file is *now* on each branch, not what the history says:**
    ```bash
-   git log --all --oneline -- '.tasks/in-progress/LAI-00X*' \
-                              '.tasks/review/LAI-00X*' '.tasks/done/LAI-00X*'
+   for ref in master core shell; do
+     printf '%-7s ' "$ref"
+     git ls-tree -r --name-only "$ref" .tasks/ | grep LAI-00X || echo '(absent)'
+   done
    ```
-   Any output means someone has already claimed, finished, or closed it. **Pick a
-   different task.** This check is instant and exact — all worktrees share one
-   object database (§4.2), so there is nothing to fetch and no excuse to skip it.
+   **Anything outside `.tasks/backlog/` on any branch means it is taken.** Pick a
+   different task. This is instant and exact — all worktrees share one object
+   database (§4.2), so there is nothing to fetch and no excuse to skip it.
+
+   **`(absent)` is not `free`.** It means that branch has not merged `master`
+   since the file was created. **It is no information at all**, and the branch
+   that shows the file furthest from `backlog/` is the one to believe.
+
+   Measured, mid-session, on three real tasks:
+
+   ```
+   LAI-452   master  .tasks/backlog/…      core (absent)   shell .tasks/in-progress/…
+   LAI-163   master  .tasks/in-progress/…  core …          shell …
+   LAI-451   master  .tasks/backlog/…      core …          shell …
+   ```
+
+   **LAI-452 is why this is a `ls-tree` and not a `log`.** `master` said
+   `backlog/` — free — and SHELL had it. `core` said nothing at all.
+
+   ~~`git log --all --oneline -- '.tasks/in-progress/LAI-00X*' …`~~ **was wrong in
+   both directions.** It reports *"already claimed"* from history, so a task a
+   builder **released** stays invisible for ever — stranded, not free (LAI-221,
+   observed on LAI-086). And it reports nothing for a task whose only claim is a
+   commit on a branch it was told not to look at. **History says who touched it;
+   only the current path says who has it.**
+
+   **This is why a release needs no new rule for the builder.** They `git mv`
+   back to `.tasks/backlog/`, reset `assignee`, and commit — as they always did.
+   `master` may carry the stale claim until CHIEF next merges them, and **the
+   check above already reads through it**, because the builder's branch is the one
+   that moved the file last. Fixing the instrument beat adding a procedure.
 4. `git mv .tasks/backlog/LAI-00X-*.md .tasks/in-progress/`
 5. **Then** edit its frontmatter: `assignee: <your-session>`,
    `status: in-progress`, `started: <ISO-8601 timestamp>`. Move first — `git mv`

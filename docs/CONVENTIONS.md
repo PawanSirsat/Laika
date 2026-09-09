@@ -183,6 +183,36 @@ fine.
 `format-fix.test.ts` builds a real git repo. Prefer this over adding a lint
 plugin: it needs no dependency, and the failure message can explain itself.
 
+### Do not put a count in a name or a comment when the code holds the list
+
+**The list is the fact. The number is a copy of it that nothing checks.**
+
+Three instances of this landed on 2026-09-02, in three unrelated files, from
+three unrelated causes:
+
+| | said | was |
+| --- | --- | --- |
+| `CLAUDE.md` §2 | *"ten listed and eleven served"* | eleven and eleven, since LAI-433 |
+| LAI-436's sprint fixture | *"now is pinned by the sprint that contains today"* | `now` was never pinned |
+| `task-file-state.test.ts` | *"beyond the **three** recorded"* | `KNOWN_COLLISIONS` holds two |
+
+**The third is the instructive one.** Its companion test goes red the moment a
+recorded collision is resolved and not removed — so the guard worked, somebody
+removed the third entry, the suite went green, **and the sentence describing the
+guard went stale in the same commit.** A number in prose has no guard, precisely
+because the thing it describes does.
+
+Write *"beyond the recorded collisions"*. Write *"the §7.1 tools"*, not *"the ten
+§7.1 tools"*. **And do not fix it by writing the right number** — that is the same
+defect with a fresh expiry date.
+
+**Nor by asserting the count.** A test that checks `LIST.length === 2` is a second
+copy of the number and the one that fails when the list legitimately changes. The
+fix is to stop writing it.
+
+**The same rule is why a cross-side check asserts names and not counts** (LAI-419):
+a count in prose drifts silently; a name that disappears fails.
+
 ### A fixture may not be pinned to the calendar
 
 **If the code reads `Date.now()`, the fixture is anchored to today — never to a
