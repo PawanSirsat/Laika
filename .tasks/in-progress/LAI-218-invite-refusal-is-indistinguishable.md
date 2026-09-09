@@ -2,12 +2,12 @@
 id: LAI-218
 title: Decide whether an expired invite may be told apart from a used one
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-077
-status: backlog
-started:
+status: in-progress
+started: 2026-09-02T19:05:00Z
 finished:
 ---
 
