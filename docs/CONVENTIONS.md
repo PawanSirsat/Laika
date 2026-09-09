@@ -183,6 +183,43 @@ fine.
 `format-fix.test.ts` builds a real git repo. Prefer this over adding a lint
 plugin: it needs no dependency, and the failure message can explain itself.
 
+### A fixture may not be pinned to the calendar
+
+**If the code reads `Date.now()`, the fixture is anchored to today — never to a
+date.** Write `today + 3 days`, not `2026-09-06`.
+
+This cost `master` a red gate on 2026-09-02. LAI-436's sprint fixture pinned S3
+to **24 August – 6 September** and marked it `active`, and the Timeline decides
+which sprint is *current* by comparing its range to `Date.now()`. **On the 7th,
+three assertions failed with nobody having touched the code.**
+
+Its comment read:
+
+> *"Fixed dates, and `now` is pinned by the sprint that contains today."*
+
+**Only the first half was true.** `now` was never pinned; the fixture merely
+happened to sit inside it on the day it was written — and the sentence saying so
+is what stopped anyone looking. Same defect as §5's *a comment may not claim more
+than the assertion under it proves*, with a fuse on it.
+
+**It is worse than a random flake.** A flaky test is red once and green on the
+re-run, which is bad because it teaches people to re-run. A calendar-pinned one
+**fires once and then stays red** — so it arrives looking like a regression in
+whatever landed that morning, and the first hour goes to the innocent commit.
+
+The two shapes to watch for:
+
+| shape | why it expires |
+| --- | --- |
+| a literal date in a fixture the code compares against `now` | the date arrives |
+| a duration assumed longer than the gap between writing and running | *"the sprint runs another fortnight"* is true for a fortnight |
+
+**Anchoring is not a workaround for the clock — it is what the fixture always
+meant.** A fixture saying *"the sprint containing today"* states the precondition
+the screen actually reads; one saying *"24 August"* states a fact that was true in
+August. If a test genuinely needs a fixed instant, **pin `now` too** — inject the
+clock rather than hoping the calendar cooperates.
+
 ### Assert absences, do not merely omit them
 
 When a rule says something must **not** exist — no barrel files, no `SYSTEM`
