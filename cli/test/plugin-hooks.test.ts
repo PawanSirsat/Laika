@@ -151,10 +151,27 @@ interface Run {
  */
 const TRANSIENT_SPAWN_ERRORS = new Set(['EAGAIN', 'ENOMEM']);
 
-function runHook(
-  mode: string,
-  options: { cwd: string; url?: string; token?: string; state?: string; path?: string },
-): Promise<Run> {
+interface HookOptions {
+  cwd: string;
+  url?: string;
+  token?: string;
+  state?: string;
+  path?: string;
+  /** The script to run. Overridden only to drive the failure-to-start path. */
+  hook?: string;
+}
+
+/**
+ * One spawn, classified — **exposed so the classification itself can be tested**
+ * (LAI-464).
+ *
+ * LAI-452 proved by hand that a path which does not exist yields `ENOENT` and
+ * maps to a bare `code: 1`; that demonstration was performed and never written
+ * down, so the fix for it had no guard. This is the seam the guard needs: the
+ * caller below adds retries, and a test can ask this one what a failed spawn
+ * looks like without stubbing `execFile` into a fixture of itself.
+ */
+function spawnOnce(mode: string, options: HookOptions): Promise<Run & { spawnError?: string }> {
   const env: Record<string, string> = {
     PATH: options.path ?? process.env.PATH ?? '',
     HOME: process.env.HOME ?? '',
@@ -163,38 +180,31 @@ function runHook(
   if (options.url !== undefined) env.LAIKA_URL = options.url;
   if (options.token !== undefined) env.LAIKA_TOKEN = options.token;
 
+  const script = options.hook ?? HOOK;
   const started = Date.now();
 
-  /**
-   * One attempt. `spawnError` is set only when the process never ran.
-   *
-   * **No timeout.** The hook is ~115ms and the previous 20s bound could only
-   * ever convert a slow machine into a failed assertion — measured at 109–125ms
-   * under 20 spinners on 10 cores, so the bound was never protecting anything
-   * this suite could hit. `node --test`'s own timeout still catches a genuine
-   * hang, and a hang there is a defect worth surfacing rather than hiding.
-   */
-  const attempt = (): Promise<Run & { spawnError?: string }> =>
-    new Promise((resolve) => {
-      const child = execFile(HOOK, [mode], { cwd: options.cwd, env }, (error, stdout, stderr) => {
-        const ms = Date.now() - started;
-        if (error === null) {
-          resolve({ code: 0, stdout, stderr, ms });
-          return;
-        }
-        // A numeric `code` is the process's exit status. Anything else — a
-        // string errno, or nothing at all — means it never ran.
-        if (typeof error.code === 'number') {
-          resolve({ code: error.code, stdout, stderr, ms });
-          return;
-        }
-        resolve({ code: -1, stdout, stderr, ms, spawnError: error.code ?? 'unknown' });
-      });
-      // What Claude Code actually writes to a hook. Nothing in the script may
-      // consume it, and a script that exits without reading it must not care.
-      child.stdin?.end(JSON.stringify({ session_id: 'abc', hook_event_name: 'PostToolUse' }));
+  return new Promise((resolve) => {
+    const child = execFile(script, [mode], { cwd: options.cwd, env }, (error, stdout, stderr) => {
+      const ms = Date.now() - started;
+      if (error === null) {
+        resolve({ code: 0, stdout, stderr, ms });
+        return;
+      }
+      // A numeric `code` is the process's exit status. Anything else — a
+      // string errno, or nothing at all — means it never ran.
+      if (typeof error.code === 'number') {
+        resolve({ code: error.code, stdout, stderr, ms });
+        return;
+      }
+      resolve({ code: -1, stdout, stderr, ms, spawnError: error.code ?? 'unknown' });
     });
+    // What Claude Code actually writes to a hook. Nothing in the script may
+    // consume it, and a script that exits without reading it must not care.
+    child.stdin?.end(JSON.stringify({ session_id: 'abc', hook_event_name: 'PostToolUse' }));
+  });
+}
 
+function runHook(mode: string, options: HookOptions): Promise<Run> {
   /**
    * Retry **only** a failure to start, and only a transient one.
    *
@@ -204,23 +214,88 @@ function runHook(
    * condition unnecessary* rather than waiting it out. `ENOENT` — a genuinely
    * missing hook — is **not** retried and surfaces as itself.
    */
-  const withRetries = async (left: number): Promise<Run> => {
-    const run = await attempt();
+  const withRetries = async (left: number, attempts: number): Promise<Run> => {
+    const run = await spawnOnce(mode, options);
     if (run.spawnError === undefined) return run;
-    if (left > 0 && TRANSIENT_SPAWN_ERRORS.has(run.spawnError)) return withRetries(left - 1);
+    if (left > 0 && TRANSIENT_SPAWN_ERRORS.has(run.spawnError)) {
+      return withRetries(left - 1, attempts + 1);
+    }
     throw new Error(
-      `the hook could not be started (${run.spawnError}). This is the machine, not the hook — ` +
+      `the hook could not be started (${run.spawnError}) after ${String(attempts)} ` +
+        `${attempts === 1 ? 'attempt' : 'attempts'}. This is the machine, not the hook — ` +
         'reporting it as an exit code is what LAI-452 was filed on.',
     );
   };
 
-  return withRetries(3);
+  return withRetries(3, 1);
 }
 
 /** Wait for the board to have finished handling everything the hook sent. */
 async function settle(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 150));
 }
+
+/**
+ * A failure to **start** the hook must not read as the hook exiting (LAI-464).
+ *
+ * This is the demonstration LAI-452 performed by hand and did not write down.
+ * Restoring the pre-LAI-452 one-liner —
+ *
+ * ```ts
+ * const code = error === null ? 0 : typeof error.code === 'number' ? error.code : 1;
+ * ```
+ *
+ * — left the suite at **72 passing, 0 failing** with the flake's cause back in
+ * place, because every other test asks *"did the hook exit 0?"* and a failed
+ * spawn answers that question with a plausible lie: `code: 1`, both streams
+ * empty, which is exactly what a hook exiting 1 silently looks like.
+ *
+ * **A real path that does not exist, never a stubbed errno.** Handing the mapping
+ * a fake `error.code` would test it against a fixture of itself; the point is
+ * that the operating system produces this shape, and it costs nothing to ask it.
+ */
+void describe('a failed spawn is not a hook exit code', () => {
+  const missing = `${HOOK}.does-not-exist`;
+
+  void test('the probe is pointed at something genuinely absent', () => {
+    // Otherwise every assertion below could be satisfied by a hook that ran.
+    assert.ok(!existsSync(missing), `${missing} exists — this suite would prove nothing`);
+    assert.ok(existsSync(HOOK), 'the real hook is missing; the contrast is meaningless');
+  });
+
+  void test('it reports ENOENT, and a code that is not an exit status', () => {
+    const run = spawnOnce('session-start', { cwd: repo(), hook: missing });
+    return run.then((result) => {
+      assert.equal(result.spawnError, 'ENOENT', 'the failure to start was not identified');
+      // **`1` is the whole bug.** The old mapping produced it here, and `1` is a
+      // real exit status a hook could return, so nothing downstream could tell
+      // the two apart.
+      assert.notEqual(result.code, 1, 'a failed spawn is reporting itself as exit 1 again');
+      assert.equal(result.code, -1, 'a never-ran result must not carry an exit status');
+      assert.equal(result.stdout, '', 'a process that never ran cannot have written anything');
+      assert.equal(result.stderr, '');
+    });
+  });
+
+  void test('it names the machine rather than the hook, and does not retry ENOENT', async () => {
+    let thrown: unknown;
+    try {
+      await runHook('session-start', { cwd: repo(), hook: missing });
+    } catch (error: unknown) {
+      thrown = error;
+    }
+
+    assert.ok(thrown instanceof Error, 'a hook that cannot start resolved as if it had run');
+    assert.match(thrown.message, /could not be started \(ENOENT\)/);
+    assert.match(thrown.message, /the machine, not the hook/);
+
+    // **One attempt.** `ENOENT` is the one errno here that is a real fault — a
+    // hook that is genuinely missing must stay loud rather than being retried
+    // three times and then reported. Adding it to `TRANSIENT_SPAWN_ERRORS`
+    // turns this line red.
+    assert.match(thrown.message, /after 1 attempt\b/, 'ENOENT was retried');
+  });
+});
 
 void describe('the hook exists and is runnable at all', () => {
   void test('heartbeat.sh is present and executable', () => {

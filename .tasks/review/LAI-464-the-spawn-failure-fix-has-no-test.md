@@ -7,7 +7,8 @@ priority: p2
 depends-on: [LAI-452]
 discovered-from: LAI-452
 started: 2026-09-09T23:00:19+05:30
-status: in-progress
+finished: 2026-09-09T23:04:49+05:30
+status: review
 ---
 
 ## Goal
@@ -46,19 +47,19 @@ not written down.**
 
 ## Acceptance criteria
 
-- [ ] A test drives the runner at a **path that does not exist** and asserts the
+- [x] A test drives the runner at a **path that does not exist** and asserts the
       three things that distinguish the two outcomes: `code` is **not** `1`,
       `spawnError` is `'ENOENT'`, and the thrown message names the machine rather
       than the hook.
-- [ ] **`ENOENT` is asserted not to be retried.** It is the one errno in this path
+- [x] **`ENOENT` is asserted not to be retried.** It is the one errno in this path
       that is a real fault, and the retry list is what keeps it that way — assert
       **one** attempt, so adding `ENOENT` to `TRANSIENT_SPAWN_ERRORS` goes red.
-- [ ] **Prove it by restoring the old one-liner** and watching this test — not the
+- [x] **Prove it by restoring the old one-liner** and watching this test — not the
       suite — go red. Say so in the log.
-- [ ] **Do not simulate the errno.** Stubbing `execFile` to hand back a fake
+- [x] **Do not simulate the errno.** Stubbing `execFile` to hand back a fake
       `error.code` tests the mapping against a fixture of itself. A real path that
       does not exist costs nothing and is the actual mechanism.
-- [ ] Full gate green — **`EXIT 0`**, repo root.
+- [x] Full gate green — **`EXIT 0`**, repo root.
 
 ## Notes / context
 
@@ -73,3 +74,56 @@ mechanism working rather than a gap in it.
 **`EAGAIN` cannot be provoked reliably and should not be attempted.** `ENOENT`
 exercises the same branch and is deterministic; the retry list is asserted
 separately.
+
+
+---
+
+## Submitted — SHELL
+
+Root gate `EXIT 0` — 1871 server, 644 web, **75** cli.
+
+### AC3, which is the criterion this task turns on
+
+Restoring the **exact** pre-LAI-452 one-liner:
+
+| mutation | this guard | whole file |
+| --- | --- | --- |
+| **the pre-LAI-452 one-liner restored** | **RED** | red |
+| `ENOENT` added to `TRANSIENT_SPAWN_ERRORS` | **RED** | red |
+| the message stops naming the machine | **RED** | red |
+| the attempt count dropped from the message | **RED** | red |
+
+**Before this task, the first row was `72 passing, 0 failing`.**
+
+### A real absent path, never a stubbed errno
+
+`spawnOnce` is extracted so the classification can be asked what the operating
+system actually produces. Nothing fakes an `error.code`: the test points at
+`heartbeat.sh.does-not-exist` and asserts what comes back — `spawnError:
+'ENOENT'`, `code: -1`, both streams empty.
+
+**And it checks the probe first**: that the missing path is genuinely missing and
+the real hook is genuinely present. Otherwise every assertion could be satisfied
+by a hook that ran.
+
+### `code` is asserted **not to be 1**, explicitly
+
+`1` is the whole bug — a real exit status a hook could return, which is why
+nothing downstream could tell the two apart. So the assertion names it rather
+than only checking for `-1`.
+
+### One attempt, and why the count is in the message
+
+`ENOENT` is the one errno on this path that is a real fault, and the retry list is
+what keeps it loud. The thrown message carries the attempt count, so **adding
+`ENOENT` to the transient set turns `after 1 attempt` red** rather than silently
+retrying a missing hook three times before reporting it.
+
+### One correction on the way
+
+My third mutation came back **green** and it was the mutation that was wrong, not
+the test: it replaced the message's trailing sentence while the assertion checks
+`the machine, not the hook`, which is earlier in the string. Re-aimed at the text
+the assertion actually reads, it is red. **A mutation that misses is a green that
+means nothing** — the same failure this repo has now hit in a harness, a fixture,
+and a soak.
