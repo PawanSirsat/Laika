@@ -1,6 +1,6 @@
 ---
 id: LAI-168
-title: '§4.8 has no verb for discarding a meeting review'
+title: 'Discarding a meeting review has nowhere to record itself — §4.8 and §4.12'
 area: docs
 assignee: unclaimed
 priority: p2
@@ -45,8 +45,32 @@ applies without explicit human acceptance"*; the audit trail records the
 acceptances and would be silent on the rejections, so the table would show only
 the times somebody said yes.
 
+## And §4.12 has no status for it either
+
+The same gap, one section over. **§4.12: `status` (`pending` | `applied` |
+`expired`)** — there is no `discarded`, so a discarded review has no state to be
+in. §6.4 nonetheless specifies the endpoint:
+
+```
+POST /api/v1/meeting-reviews/:id/discard   reject the whole set without applying anything
+```
+
+**Do not let it borrow `expired`.** That conflates *"nobody looked for seven
+days"* with *"a human read this and said no"* — which are opposite facts about
+the same row, and §11.6's sweep writes the first one. It is the identical
+borrowing this task's other half refuses for the activity verb, one layer down,
+and it would be invisible: the row would look swept.
+
+**Note nothing currently checks this pair.** `schema-spec-drift.test.ts`
+compares column *names* and, since LAI-163, *nullability* — **not the values
+inside an enum column's description.** So a schema whose `status` accepts a
+fourth value §4.12 does not list is a disagreement no guard would report. That
+is a second finding and probably its own task.
+
 ## Acceptance criteria
 
+- [ ] **§4.12's `status` list gains `discarded`**, and §11.6 says the expiry
+      sweep does not touch a discarded row.
 - [ ] §4.8's type list gains a verb for it — `meeting.discarded` unless there is
       a better name — with the payload it carries.
 - [ ] The server half lands with it: `ACTIVITY_TYPES` in
@@ -59,6 +83,15 @@ the times somebody said yes.
 
 ## Notes
 
-Found by CORE on LAI-454, which is being built without the activity row and will
-come back with its AC8 unticked and this task named — exactly as that criterion
-asks.
+Found by CORE on LAI-454, checked against both lists rather than from memory.
+
+**LAI-454 is shipping discard anyway**, under CLAUDE.md §4.4's two-owner
+procedure: `MEETING_REVIEW_STATUSES` and `ACTIVITY_TYPES` gain their values in
+`server/`, carried by **one `ACTIVITY_TYPE_EXEMPTIONS` entry naming this task**,
+whose staleness guard fails the moment §4.8 catches up and forces the entry back
+out. That is the mechanism §4.4 step 2 describes and the list lives in CORE's
+area, so nothing crosses.
+
+**The `status` half has no exemption to take**, because no guard compares enum
+values against §4.12 — so it lands unguarded and this task is the only thing
+recording that it must. Which is the finding above.
