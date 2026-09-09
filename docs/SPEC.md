@@ -1018,6 +1018,20 @@ GET    /api/v1/health
 and `acceptance_md` and `assignee_id` both draw the distinction. `tags` replaces
 the whole set.
 
+**A task's read shape is §4.5's columns**, and `TaskView` adds six that are not
+stored there — **derived at read time, so a reader who looks for them in §4 will
+not find them and should not**:
+
+| field | where it comes from |
+| --- | --- |
+| `key` | `project.key` + `number` — the display key an agent works in (§7) |
+| `tags` | `task_tags` (§4.16), the whole set |
+| `comment_count` | `comments`, excluding soft-deleted |
+| `created_by_client` | the token's name, when a token created it (LAI-093) |
+| `blocked_by`, `blocks` | **both directions of §4.6** — see §4.5. `ready` depends only on `blocked_by` |
+
+`created_at` and `updated_at` are on every view and are not listed per endpoint.
+
 **`status` is not on `PATCH`.** It moves through `POST /tasks/:id/status`, which
 writes `task.status_changed` with `{ from, to }`. The body is `strictObject`, so
 a `PATCH` carrying `status` is refused `422` rather than quietly ignored — this
