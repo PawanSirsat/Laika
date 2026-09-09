@@ -6,7 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-053
-status: in-progress
+status: done
+started: 2026-09-02T20:45:00Z
+finished: 2026-09-02T20:50:00Z
 ---
 
 ## Goal
@@ -25,14 +27,17 @@ is in **CORE's** range (100-199); the new task came from CHIEF, whose range is
 
 ## Acceptance criteria
 
-- [ ] **The new task is renumbered, not the old one.** CLAUDE.md §3 is explicit —
+- [x] **The new task was renumbered, not the old one.** CLAUDE.md §3 is explicit —
       never renumber an existing task, because ids are referenced by
       `depends-on`, `discovered-from` and commit messages. The format-fix task
       has four references; the activity-payload one has none yet, so moving it
       costs nothing today and will cost something tomorrow.
-- [ ] The new id comes from **CHIEF's range** (001-099), per D-017.
-- [ ] Nothing else references the new id first. Check with
-      `git log --all --name-only --format= -- .tasks/ | grep -o 'LAI-[0-9]*' | sort -u`.
+- [x] The new id came from **CHIEF's range** — **`LAI-045`**, and it is closed.
+      `LAI-101-format-fix-misses-committed-work.md` kept its number and its four
+      references, and is in `.tasks/done/`.
+- [x] Verified across every branch: **`LAI-101` now names exactly one task**, and
+      `KNOWN_COLLISIONS` in `task-file-state.test.ts` does not list it — so the
+      guard agrees, not just the directory listing.
 
 ## Notes / context
 
@@ -72,3 +77,38 @@ number in your own range, checked across every branch" is a discipline with no
 guard behind it, and D-036 filling CHIEF's first block made it worse — I wrote
 that decision and then still reached into the exhausted range out of habit.
 **LAI-415 now carries the check**; this task is the record of what it will find.
+
+---
+
+## Closed — CHIEF, 2026-09-02. **Already resolved; verified rather than assumed.**
+
+The activity-payload task became **`LAI-045`** — CHIEF's range, per D-017 — and is
+in `.tasks/done/`. `LAI-101` names one task across every branch, and
+`KNOWN_COLLISIONS` is `['LAI-046', 'LAI-100']`, which does not include it. **The
+guard agrees with the directory listing**, which is the check worth doing rather
+than trusting either alone.
+
+### And the guard turned up a fresh instance of today's recurring defect
+
+```ts
+const KNOWN_COLLISIONS = ['LAI-046', 'LAI-100'];   //  two
+it('has no collision beyond the three recorded', …) //  three
+```
+
+**The companion test `still has every collision the exemption claims` proves no
+*entry* is stale** — it goes red the moment a recorded collision is resolved and
+not removed. So the list is provably current, **and the sentence describing it
+went stale at precisely the moment the guard did its job.**
+
+That is the third time today, in three unrelated files:
+
+| | said | was |
+| --- | --- | --- |
+| `CLAUDE.md` §2 | *"ten listed and eleven served"* | eleven and eleven, since LAI-433 |
+| LAI-436's fixture comment | *"now is pinned by the sprint that contains today"* | now was never pinned |
+| this test name | *"the three recorded"* | two |
+
+**The generalisation is now in `CONVENTIONS.md` §4** and it is narrower and more
+useful than "keep comments up to date": **do not put a count in a name or a
+comment when the code holds the list.** The list is the fact; the number is a copy
+of it that nothing checks. `LAI-461` files the one-word fix.
