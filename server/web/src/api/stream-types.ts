@@ -32,6 +32,12 @@ export const STREAM_TYPES: readonly string[] = [
   'webhook.commit',
   'webhook.received',
   'meeting.applied',
+  // A human read a proposal set and said no (D-056, LAI-454). Sits here rather
+  // than at the end because **this list is compared to `ACTIVITY_TYPES` in
+  // order**, and `enums.ts` puts it beside the verb it is most confused with.
+  // §4.8's prose lists it last; the two agree on membership and not on
+  // position, and the ordered comparison is against the enum.
+  'meeting_review.discarded',
   'unlisted.logged',
   'sprint.created',
   'sprint.updated',
