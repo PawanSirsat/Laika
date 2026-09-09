@@ -304,8 +304,8 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `invite_only` | integer, default **1** (D-004) |
 | `presence_enabled` | integer, default **1** — org-wide off switch for heartbeats. When 0, `POST /heartbeats` returns `202` and discards, and Presence/Capacity show a disabled state rather than an empty one. D-005 makes the product's privacy claim; this makes it enforceable by the org, not just promised by us. |
 | `ai_provider` | `anthropic` \| `openai_compatible` \| `null` |
-| `ai_base_url` | for Ollama / vLLM |
-| `ai_api_key_enc` | AES-256-GCM, key derived from `LAIKA_SECRET` (§12) |
+| `ai_base_url` | **nullable** — for Ollama / vLLM; null means the provider's own default endpoint |
+| `ai_api_key_enc` | **nullable** — AES-256-GCM, key derived from `LAIKA_SECRET` (§12). **Null is how "no provider configured" is recorded**; there is no separate flag, so §10.2 and the Assistant both read this column to decide whether they can run at all |
 | `ai_key_last4` | the key's last four characters, **stored at set time, never derived** — building a response must not require decrypting the key (LAI-447) |
 | `smtp_json_enc` | nullable, same encryption |
 | `github_webhook_secret_enc` | nullable, same encryption |
@@ -417,7 +417,10 @@ finishes.
 ### 4.7 `comments`
 
 `id`, `task_id`, `author_id` (**nullable**), `body_md`, `created_via` (same enum
-as tasks), `edited_at`, `deleted_at` (soft), `created_at`, `updated_at`.
+as tasks), `edited_at` (**nullable** — null means never edited, and it is what
+the UI reads to decide whether to show *"edited"*), `deleted_at` (**nullable**,
+soft — null means not deleted, so **every read path must filter on it** and one
+that forgets serves deleted comments), `created_at`, `updated_at`.
 
 **A null `author_id` means the comment has no Laika author** (LAI-449) — it was
 mirrored from somewhere else, and `created_via` says where. Today that is
@@ -555,6 +558,7 @@ where the instance itself was created.
 | `prefix` | first 8 chars, shown in the UI so a token is identifiable |
 | `token_hash` | SHA-256 of the full secret |
 | `scope` | `full` \| `read_only` (forced `read_only` for org viewers) |
+| `project_ids_json` | **nullable, and `null` is the *wider* value** — an unscoped token reaches every project the user may reach. A JSON array scopes it to those projects and nothing else. **The absent value is the permissive one**, which is the opposite of the usual reading, so a migration or a bug that loses this column widens every token it touches. |
 | `project_ids_json` | null = all the user's projects |
 | `last_used_at`, `expires_at`, `revoked_at` | nullable |
 
@@ -581,7 +585,9 @@ column** rather than copied onto `tasks`. So:
 
 ### 4.10 `heartbeats`
 
-`id`, `user_id`, `token_id`, `repo`, `branch`, `matched_task_id` (nullable,
+`id`, `user_id`, `token_id` (**nullable** — null when the heartbeat came from a
+signed-in session rather than a token, which is how a human's own editor is told
+apart from an agent's), `repo`, `branch`, `matched_task_id` (nullable,
 resolved server-side from the branch — §9.2), `created_at`.
 
 **Metadata only**: repo name, branch name, timestamp. Never file paths, diffs,
@@ -591,12 +597,17 @@ prompts, or transcript content (D-005). Cron deletes rows older than 30 days.
 
 `id`, `org_id`, `email` (nullable for link invites), `org_role`, `project_id`
 (nullable), `project_role` (nullable), `token_hash`, `created_by`, `expires_at`,
-`accepted_by`, `accepted_at`, `created_at`.
+`accepted_by` (**nullable**), `accepted_at` (**nullable** — the pair is null
+exactly while the invite is still pending, and **that is the only record of
+pending there is**; there is no `status` column), `created_at`.
 
 ### 4.12 `meeting_reviews`
 
 `id`, `project_id`, `source`, `transcript_hash`, `proposals_json` (§10.2),
-`status` (`pending` \| `applied` \| `discarded` \| `expired`), `reviewed_by`, `reviewed_at`,
+`status` (`pending` \| `applied` \| `discarded` \| `expired`), `reviewed_by`
+(**nullable**), `reviewed_at` (**nullable** — both stay null for a review that
+expired, because nobody reviewed it; `status` is what distinguishes *expired* from
+*pending*, and the pair says **who acted**, never *whether the row is finished*),
 `created_at`, `expires_at`. Proposals expire unreviewed after 7 days.
 
 ### 4.13 Indexes that must exist
@@ -617,8 +628,8 @@ reads from the tag side, so the join needs an index from that end too.
 Appended after §4.13 rather than inserted before it, so the Indexes section keeps
 its number (D-011 — LAI-003 cites `§4.13`).
 
-`id`, `user_id`, `token_id`, `repo`, `note`, `promoted_task_id` (nullable),
-`dismissed_at` (nullable), `created_at`.
+`id`, `user_id`, `token_id` (**nullable**, same meaning as §4.10's), `repo`,
+`note`, `promoted_task_id` (nullable), `dismissed_at` (nullable), `created_at`.
 
 Written **only** by the `log_unlisted_work` MCP tool (§7.1): an agent noticing
 work that belongs to no project records it here instead of inventing a task.
