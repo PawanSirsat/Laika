@@ -2,11 +2,13 @@
 id: LAI-463
 title: '§4 states nullability for 29 of 191 columns — raise it where it carries meaning'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: [LAI-163]
 discovered-from: LAI-163
-status: backlog
+status: in-progress
+started: 2026-09-03T00:05:00Z
+finished:
 ---
 
 ## Goal
