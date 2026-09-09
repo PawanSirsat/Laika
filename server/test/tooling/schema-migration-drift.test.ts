@@ -238,10 +238,10 @@ function liveChecks(sqlite: Database.Database, table: string): LiveCheck[] {
 /**
  * Describe how two CHECK bodies differ.
  *
- * A closed vocabulary produces a twenty-value `IN (…)` list, and printing both
- * sides in full buries one changed word in four hundred characters. When both
- * sides are that shape, report the difference instead — which is the whole
- * actionable content.
+ * A closed vocabulary produces an `IN (…)` list with a value per verb —
+ * `activity_type_check` is the big one — and printing both sides in full buries
+ * one changed word in several hundred characters. When both sides are that
+ * shape, report the difference instead, which is the whole actionable content.
  */
 function describeCheckDifference(declaredExpr: string, liveExpr: string): string {
   const literals = (expression: string): string[] =>
