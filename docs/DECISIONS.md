@@ -2710,3 +2710,59 @@ whoever builds §12, rather than rediscovered.**
   here.
 - **No task is filed against `server/`.** Options 2 and 3 are declined, not
   deferred.
+
+## D-054 — Watching lives on Task detail and the Board. There is no Watching
+## screen.
+
+**2026-09-02. CHIEF, found while sweeping §11.4.2 against what the client calls.**
+
+**Five endpoints are built, tested and served, and nothing in the product can
+reach them:**
+
+```
+PUT    /tasks/:id/watch          DELETE /tasks/:id/watch
+GET    /tasks/:id/watchers       GET    /watching
+GET    /projects/:slug/mentionable
+```
+
+LAI-143 and LAI-094 are both `area: server` and both closed. **No UI task was
+ever filed, and §11.4.2 was never updated**, so the endpoints had no screen to be
+missing from — which is why nothing caught it. Now placed:
+
+| endpoint | where |
+| --- | --- |
+| `PUT`/`DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers` | **Task detail** |
+| `GET /projects/:slug/mentionable` | **Task detail** — the comment box's `@` |
+| `GET /watching` | **the Board**, as a filter |
+
+### No new screen, and that is the decision
+
+A *Watching* screen is the obvious alternative and it is wrong here. **Watching
+is not a place you go; it is an attribute of a task you are already looking at.**
+The toggle belongs where the task is, and *"what am I watching"* is a question
+about the board — the same shape as filtering by assignee or tag, which the Board
+already does. A screen would add a nav destination whose whole content is a
+filtered board.
+
+**`GET /watching` as a Board filter also keeps one list implementation.** A
+separate screen means a second place that renders tasks, which is a second place
+for the card to drift.
+
+### The `@` list is the server's, restated because it is the easy one to get wrong
+
+D-047 settled that **the server says who is mentionable**. The tempting shortcut
+is to feed the autocomplete from `GET /projects/:slug/members`, which is already
+loaded on the Board — and it is wrong, because mentionability is not membership:
+a deactivated member is a member. **Reapplying the rule client-side means two
+rules, and the client's is the one that will be stale.**
+
+### Consequences
+
+- §11.4.2's **Task detail** and **Board** rows now list these endpoints; §11.4.2.1's
+  Task detail bullet says what they look like.
+- **LAI-458** files the UI, `area: web`.
+- **This is the second gap of its kind found in one sweep** — LAI-457 is the
+  Dashboard never calling `/metrics`. Both are *server built, client silent, SPEC
+  quiet*, and neither is visible from either side alone. **The sweep that finds
+  them is client-called endpoints versus served endpoints**, and it is worth
+  running again rather than trusting that two was all of them.
