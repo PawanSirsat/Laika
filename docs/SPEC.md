@@ -309,6 +309,7 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `ai_key_last4` | the key's last four characters, **stored at set time, never derived** — building a response must not require decrypting the key (LAI-447) |
 | `smtp_json_enc` | nullable, same encryption |
 | `github_webhook_secret_enc` | nullable, same encryption |
+| `transcript_webhook_secret_enc` | nullable, same encryption — **its own secret, not GitHub's** (D-052). One secret for two integrations means revoking either breaks both, and a leak of one hands over the other. |
 
 **Single-org deployment**: one row, created by the first-run wizard. Other tables
 still carry `org_id` where it matters, so the constraint is data-level and a
@@ -1282,6 +1283,21 @@ Handled: `push` (branch → task, `webhook.commit` activity), `pull_request`
 ignored. Delivery ids are deduplicated for 24h.
 
 ### 10.2 `POST /webhooks/transcript`
+
+**HMAC-SHA256 verified against the org's transcript secret, constant-time,
+before the body is parsed** — the same shape as §10.1 and for the same reasons
+(D-052). Unverified requests get `401`.
+
+`/webhooks/*` is for machines: a transcript source is a recorder or a meeting
+bot, never a session. **This is the one endpoint in Laika where a caller chooses
+which data leaves the instance** — the prompt below carries the project's open
+tasks and its whole `context_md`, and the caller picks the project — so it is
+authenticated before anything is read, not after.
+
+**A rate limit is not sufficient.** Each submission is a paid provider call, so
+the org carries a **cap** as well as a rate, and reaching it answers distinctly
+rather than as a generic `429`: an authenticated integration gone wrong spends
+money at a perfectly legal rate.
 
 Body `{ project_slug, transcript, source }` → `202`, creating a
 `meeting_reviews` row.

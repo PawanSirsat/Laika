@@ -6,7 +6,7 @@ assignee: core
 priority: p2
 depends-on: [LAI-447, LAI-164]
 discovered-from:
-status: review
+status: done
 started: 2026-09-02T00:30:00Z
 finished: 2026-09-02T01:40:00Z
 ---
@@ -55,6 +55,14 @@ part of it can mutate the board, the task is wrong however green it is.
       so decide what authorises a transcript submission and write it down. **If
       that turns out to be a §3 or §10 sentence, stop and file it** rather than
       inventing an answer (D-050's precedent).
+- [x] **HMAC-SHA256 against the org's transcript secret, constant-time, before
+      the body is parsed** (D-052, closing AC7) — its **own** `SecretPurpose`,
+      not GitHub's, and a new §4.2 column. **Added after CORE claimed**, so it
+      arrives here rather than in the criteria they built against; met either
+      way, and the separation is falsifiable — a body signed with the **GitHub**
+      secret is refused.
+- [x] **A cap, not only a rate.** Each submission is a paid outbound call, so
+      §6.3's bucket is the wrong instrument even once the caller is known.
 - [x] Full gate green — **`EXIT 0`**.
 
 ## Notes / context
@@ -156,3 +164,62 @@ Root `pnpm test` **EXIT=0**, zero unhandled errors. `server` **1865/1865**,
 `web` 604/604, `cli` 49/49, lint and format EXIT=0.
 
 **LAI-451 is the half that mutates** and is deliberately not here.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0` after both halves — server **1865**, web 644,
+cli 71.
+
+**Four mutations, all red**, each pointed at a claim rather than at a line:
+
+| mutation | caught by |
+| --- | --- |
+| verify the transcript body against the **GitHub** secret | the separation test |
+| put a task's `description` into the prompt | the absence assertion |
+| drop `inArray(status, OPEN_STATUSES)` — finished tasks leak | the absence assertion |
+| drop `eq(projectId, …)` — another project's tasks leak | the absence assertion |
+
+**The last two are the ones that matter**, and they are caught because you wrote
+the assertions as *absence*. A prompt test that checks the right tasks are
+present passes both of those mutations.
+
+> *"For the one place data leaves the instance, **'and nothing else' is the
+> property**, and only absence assertions can hold it."*
+
+### The retrofit met the first thing that needed it
+
+> *"A body signed with the **GitHub** secret is refused. That is 'revoking either
+> breaks both' made falsifiable — and it works because LAI-161 keys per purpose.
+> **That is the retrofit I said was impossible**, meeting the first thing that
+> needed it, three tasks later."*
+
+**And LAI-161's rotation test walks every `SecretPurpose`, so adding a fourth was
+a compile error.** Exhaustive by construction rather than by anyone remembering —
+which is the only kind that survives the person who wrote it.
+
+### Two fakes that were wrong, and the signal was a *slow* test
+
+> *"One answered an Anthropic envelope to an `openai_compatible` client… the
+> other **ignored the abort signal**, so the timeout test sat until vitest's own
+> five-second limit, **passing nothing and proving nothing about the abort**."*
+
+**A fake that does not model the one behaviour the code depends on** is the
+fixture defect one layer out, and this is the second time in a day that a *slow*
+test rather than a failing one was the tell. Worth remembering as an instrument:
+**a timeout test that takes the full timeout is not passing, it is not running.**
+
+### The cap, written down rather than discovered
+
+*"In memory, and a restart forgives the count — for a **spend** bound, the wrong
+direction to be wrong in."* Agreed, and **saying so beats a comment claiming it
+is durable.** Filed as a follow-on when this guards real money; not now.
+
+### The exemption expired, and I dropped it
+
+`orgs.transcript_webhook_secret_enc` came out of `COLUMNS_NOT_IN_SPEC` **in this
+merge**, under D-034 — one named entry, named in this task file in advance, made
+stale by my own §4.2 row. **The staleness guard is what proved it**, by going red
+until it was gone and green after. That is §4.4 step 2 working exactly as
+written, with the retiring commit doing the retiring.
