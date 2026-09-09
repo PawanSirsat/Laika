@@ -537,7 +537,25 @@ wait.**
 is why "co-ordinate the merge" beats every alternative that was tried first.
 
 **Three owners works the same way**, one round more: both builders in review
-before CHIEF merges either. If a change needs more than three, it is too large
+before CHIEF merges either.
+
+**And you will not always see the third owner coming.** D-056 added one verb to
+§4.8. CHIEF wrote the SPEC row, CORE wrote `enums.ts` and the CHECK, both agreed
+— **and two `server/web/` assertions went red**, because the client mirrors
+`ACTIVITY_TYPES` and the dashboard carries wording for every verb. **The third
+half only became visible once the enum value existed**, so neither of the first
+two could have predicted it from their own side.
+
+The rule that falls out, and it is worth memorising rather than rediscovering:
+
+> **A verb added to `ACTIVITY_TYPES` is always three owners**, because the client
+> mirrors the list and the dashboard needs wording for it.
+
+**When the third half appears mid-flight, nobody reaches across.** Both of those
+exemption lists live in `server/web/` — §4.4's `clientOmits` case, where there is
+**no entry a builder could take that is not a crossing.** CORE held their branch
+unpushed and filed the third half at p1 instead, which is the whole procedure
+behaving correctly with an owner nobody counted. If a change needs more than three, it is too large
 and wants splitting before it wants a procedure.
 
 **What this is not.** It is not permission to edit another area because the merge
