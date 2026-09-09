@@ -77,6 +77,19 @@ export const ACTIVITY_TYPES = [
   'webhook.commit',
   'webhook.received',
   'meeting.applied',
+  // **Not `meeting.applied` with a flag, and not `meeting_review.expired`**
+  // (LAI-454). A discard is a human reading a proposal set and saying no; an
+  // expiry is nobody looking for seven days. §11.6's sweep writes the second,
+  // so sharing a verb would make a rejected set look swept — opposite facts
+  // about the same row, distinguishable only by a payload nobody filters on.
+  //
+  // §4.8's own test: could a reader answer "when did this happen?" without
+  // inspecting a payload? "When was that meeting thrown away, and by whom?"
+  // could not. The `unlisted.dismissed` precedent is the identical shape.
+  //
+  // **Ahead of §4.8's list**, carried by one `ACTIVITY_TYPE_EXEMPTIONS` entry
+  // that LAI-168 retires (CLAUDE.md §4.4).
+  'meeting_review.discarded',
   'unlisted.logged',
   // ## Growing this list never rewrites what is already written
   //
@@ -136,7 +149,21 @@ export type TokenScope = (typeof TOKEN_SCOPES)[number];
 export const AI_PROVIDERS = ['anthropic', 'openai_compatible'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
-export const MEETING_REVIEW_STATUSES = ['pending', 'applied', 'expired'] as const;
+/**
+ * §4.12's statuses, **plus `discarded`** (LAI-454).
+ *
+ * §4.12 lists three; §6.4 specifies `POST /meeting-reviews/:id/discard`
+ * — *"reject the whole set without applying anything"* — and there is no state
+ * for the result. `expired` is the tempting home and the wrong one: it is what
+ * §11.6's sweep writes when nobody looked, and a set a human rejected would
+ * become indistinguishable from one nobody opened.
+ *
+ * **This value is ahead of §4.12 and nothing guards the gap.**
+ * `schema-spec-drift.test.ts` compares column names and nullability, not the
+ * values inside an enum column's prose. LAI-168 carries the §4.12 row and is
+ * the only thing recording that this is owed.
+ */
+export const MEETING_REVIEW_STATUSES = ['pending', 'applied', 'expired', 'discarded'] as const;
 export type MeetingReviewStatus = (typeof MEETING_REVIEW_STATUSES)[number];
 
 export const SPRINT_STATUSES = ['planned', 'active', 'completed'] as const;

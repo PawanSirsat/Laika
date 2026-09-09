@@ -8,6 +8,9 @@ import { ProviderResponseError, type ProviderClient } from '../../src/services/p
 import {
   appendDecision,
   applyMeetingReview,
+  discardMeetingReview,
+  getMeetingReview,
+  listMeetingReviews,
   buildPrompt,
   parseProposals,
   storeTranscriptReview,
@@ -639,5 +642,271 @@ describe('a decision is appended to context_md with its date (§11.4.2)', () => 
       .where(eq(projects.id, s.projectId))
       .get()?.contextMd;
     expect(context).toBe(appendDecision('', 'We are dropping the export screen', JAN));
+  });
+});
+
+// ------------------------------------ reading and discarding (LAI-454)
+
+describe('reading a review, and discarding one (§11.4.2)', () => {
+  const NOW = Date.UTC(2026, 8, 9);
+
+  const KINDS = ['new', 'change', 'dead', 'decision'] as const;
+
+  function owner(): ResolvedActor {
+    const loaded = loadActor(t.db, s.userId);
+    if (loaded === null) throw new Error('no owner');
+    return loaded;
+  }
+
+  function makeUser(orgRole: 'admin' | 'member'): string {
+    const id = newId();
+    t.db
+      .insert(users)
+      .values({
+        id,
+        email: `${id}@example.test`,
+        name: 'Person',
+        orgRole,
+        createdAt: new Date(NOW),
+        updatedAt: new Date(NOW),
+      })
+      .run();
+    return id;
+  }
+
+  function actorFor(userId: string): ResolvedActor {
+    const loaded = loadActor(t.db, userId);
+    if (loaded === null) throw new Error('no such user');
+    return loaded;
+  }
+
+  function review(
+    proposals: readonly Record<string, unknown>[],
+    over: Partial<typeof meetingReviews.$inferInsert> = {},
+  ): string {
+    const id = newId();
+    t.db
+      .insert(meetingReviews)
+      .values({
+        id,
+        projectId: s.projectId,
+        source: 'recorder',
+        transcriptHash: 'abc',
+        proposalsJson: JSON.stringify(
+          proposals.map((p) => ({
+            id: newId(),
+            kind: 'change',
+            task: null,
+            title: null,
+            description: null,
+            changes: null,
+            reason: null,
+            quote: 'said in the meeting',
+            ...p,
+          })),
+        ),
+        status: 'pending',
+        reviewedBy: null,
+        reviewedAt: null,
+        expiresAt: NOW + REVIEW_TTL_MS,
+        createdAt: NOW,
+        ...over,
+      })
+      .run();
+    return id;
+  }
+
+  it('all four kinds survive the round trip, asserted by name', () => {
+    // By name, not by count — LAI-419's rule. A count of four passes on four
+    // copies of `new`, which is the failure that rule exists for.
+    const id = review(KINDS.map((kind) => ({ kind, quote: `they said ${kind}` })));
+
+    const detail = getMeetingReview(t.db, owner(), id);
+    const kinds = detail.proposals.map((p) => p.kind);
+
+    for (const kind of KINDS) expect(kinds, `${kind} did not survive`).toContain(kind);
+    expect(kinds).toHaveLength(4);
+  });
+
+  it('every proposal carries its quote', () => {
+    // §11.4.2: "each proposal shows its transcript quote". A proposal a human
+    // cannot trace to a sentence is one they cannot honestly accept.
+    const id = review(KINDS.map((kind) => ({ kind, quote: `they said ${kind}` })));
+
+    for (const p of getMeetingReview(t.db, owner(), id).proposals) {
+      expect(p.quote, `${p.kind} lost its quote`).toBe(`they said ${p.kind}`);
+    }
+  });
+
+  it('the list carries a count, never the proposals or their quotes', () => {
+    // The transcript is not stored (§4.12, D-005) — but a `quote` is verbatim
+    // transcript content, so a list returning proposals would hand a broad read
+    // the quoted parts of every meeting. LAI-454's Notes, on the real premise.
+    review([{ kind: 'new', title: 'A task', quote: 'a sentence somebody said aloud' }]);
+
+    const page = listMeetingReviews(t.db, owner(), 'laika', { limit: 20, cursor: null });
+
+    expect(page).toHaveLength(1);
+    expect(page[0]?.proposal_count).toBe(1);
+    expect(JSON.stringify(page)).not.toContain('a sentence somebody said aloud');
+    expect(page[0]).not.toHaveProperty('proposals');
+  });
+
+  it('a reader who cannot see the project gets not_found, not forbidden', () => {
+    // LAI-454's criterion. Note this differs from `getProject` and
+    // `listSprints`, which answer `forbidden` — flagged in the task file.
+    review([{ kind: 'new', title: 'A task' }]);
+    const outsider = actorFor(makeUser('member'));
+
+    let listed: unknown;
+    try {
+      listMeetingReviews(t.db, outsider, 'laika', { limit: 20, cursor: null });
+    } catch (e) {
+      listed = e;
+    }
+    expect((listed as ApiError).code).toBe('not_found');
+  });
+
+  it('a review in a project the reader cannot see reads as not_found', () => {
+    const id = review([{ kind: 'new', title: 'A task' }]);
+    const outsider = actorFor(makeUser('member'));
+
+    let caught: unknown;
+    try {
+      getMeetingReview(t.db, outsider, id);
+    } catch (e) {
+      caught = e;
+    }
+    // Not `forbidden`: that would confirm the review exists to somebody who may
+    // not know the project does.
+    expect((caught as ApiError).code).toBe('not_found');
+  });
+
+  it('an expired review still reads, and says it is expired', () => {
+    // Expiry stops it being applied (§11.6); a human must still see what they
+    // missed. The row does not vanish.
+    const id = review([{ kind: 'new', title: 'A task' }], {
+      status: 'expired',
+      expiresAt: NOW - 1,
+    });
+
+    const detail = getMeetingReview(t.db, owner(), id);
+    expect(detail.status).toBe('expired');
+    expect(detail.proposals).toHaveLength(1);
+  });
+
+  it('a discarded review cannot then be applied', () => {
+    const id = review([{ kind: 'new', title: 'MUST NOT EXIST' }]);
+    const proposalId = getMeetingReview(t.db, owner(), id).proposals[0]!.id;
+
+    expect(discardMeetingReview(t.db, owner(), id, NOW).status).toBe('discarded');
+
+    let caught: unknown;
+    try {
+      applyMeetingReview(t.sqlite, t.db, owner(), id, {
+        accepted_proposal_ids: [proposalId],
+        now: NOW,
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect((caught as ApiError).code).toBe('conflict');
+    expect(t.db.select().from(tasks).all()).toHaveLength(0);
+  });
+
+  it('an applied review cannot be discarded', () => {
+    const id = review([{ kind: 'new', title: 'A task' }]);
+    const proposalId = getMeetingReview(t.db, owner(), id).proposals[0]!.id;
+
+    applyMeetingReview(t.sqlite, t.db, owner(), id, {
+      accepted_proposal_ids: [proposalId],
+      now: NOW,
+    });
+
+    let caught: unknown;
+    try {
+      discardMeetingReview(t.db, owner(), id, NOW);
+    } catch (e) {
+      caught = e;
+    }
+    expect((caught as ApiError).code).toBe('conflict');
+    expect(t.db.select().from(meetingReviews).where(eq(meetingReviews.id, id)).get()?.status).toBe(
+      'applied',
+    );
+  });
+
+  it('discard is a write, so a viewer cannot do it', () => {
+    // `meeting_proposal.apply`, not `project.read`: discarding ends a review
+    // nobody else can then act on. A viewer may look and not throw away.
+    const id = review([{ kind: 'new', title: 'A task' }]);
+    const viewerId = makeUser('member');
+    addMember(t.db, owner(), 'laika', viewerId, 'viewer');
+
+    // They can read it...
+    expect(getMeetingReview(t.db, actorFor(viewerId), id).proposal_count).toBe(1);
+
+    // ...and not discard it.
+    let caught: unknown;
+    try {
+      discardMeetingReview(t.db, actorFor(viewerId), id, NOW);
+    } catch (e) {
+      caught = e;
+    }
+    expect((caught as ApiError).code).toBe('forbidden');
+    expect(t.db.select().from(meetingReviews).where(eq(meetingReviews.id, id)).get()?.status).toBe(
+      'pending',
+    );
+  });
+
+  it('discard records who and when, in its own verb', () => {
+    const id = review([
+      { kind: 'new', title: 'A task' },
+      { kind: 'dead', task: 'LAI-1' },
+    ]);
+
+    discardMeetingReview(t.db, owner(), id, NOW);
+
+    const row = t.db
+      .select()
+      .from(activity)
+      .all()
+      .find((r) => r.type === 'meeting_review.discarded');
+    // §4.8's test: a reader answers "when did this happen, and who" from the
+    // verb and the row, without inspecting a payload.
+    expect(row?.actorId).toBe(s.userId);
+    expect(row?.createdAt).toBe(NOW);
+    expect(JSON.parse(row?.payloadJson ?? '{}')).toMatchObject({
+      review_id: id,
+      proposals_total: 2,
+    });
+
+    const stored = t.db.select().from(meetingReviews).where(eq(meetingReviews.id, id)).get();
+    expect(stored?.reviewedBy).toBe(s.userId);
+    expect(stored?.reviewedAt).toBe(NOW);
+  });
+
+  it('the list is newest first and pages', () => {
+    const older = review([{ kind: 'new', title: 'A' }], { createdAt: NOW - 1000 });
+    const newer = review([{ kind: 'new', title: 'B' }], { createdAt: NOW });
+
+    const all = listMeetingReviews(t.db, owner(), 'laika', { limit: 20, cursor: null });
+    expect(all.map((r) => r.id)).toEqual([newer, older]);
+
+    // One over the limit, so `buildPage` can tell there is another page.
+    expect(listMeetingReviews(t.db, owner(), 'laika', { limit: 1, cursor: null })).toHaveLength(2);
+  });
+
+  it('the list filters by status', () => {
+    review([{ kind: 'new', title: 'A' }]);
+    const discarded = review([{ kind: 'new', title: 'B' }]);
+    discardMeetingReview(t.db, owner(), discarded, NOW);
+
+    const only = listMeetingReviews(t.db, owner(), 'laika', {
+      limit: 20,
+      cursor: null,
+      status: 'discarded',
+    });
+
+    expect(only.map((r) => r.id)).toEqual([discarded]);
   });
 });

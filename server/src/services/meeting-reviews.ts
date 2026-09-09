@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, lt, or } from 'drizzle-orm';
 import { activityActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
@@ -15,7 +15,7 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { meetingReviews, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { assertCan } from '../policy/can.ts';
+import { assertCan, can } from '../policy/can.ts';
 import { updateProjectContext } from './projects.ts';
 import { type ProviderClient, ProviderResponseError } from './provider.ts';
 import {
@@ -44,6 +44,12 @@ import {
  * stored"*. The hash is enough to notice the same meeting arriving twice and
  * carries none of what was said.
  */
+
+// Re-exported so `http/routes/` can validate a `?status=` filter without
+// importing `db/` — routes are transport and reach data through services
+// (CONVENTIONS §2), which the lint rule enforces. `services/tasks.ts` does the
+// same for `TASK_STATUSES`.
+export { MEETING_REVIEW_STATUSES } from '../db/enums.ts';
 
 /** §10.2's four kinds. A proposal outside them is not storable. */
 const PROPOSAL_KINDS = ['new', 'change', 'dead', 'decision'] as const;
@@ -551,16 +557,25 @@ export function applyMeetingReview(
 ): ApplyReviewResult {
   const now = input.now ?? Date.now();
 
-  const review = db.select().from(meetingReviews).where(eq(meetingReviews.id, reviewId)).get();
-  if (review === undefined) throw ApiError.notFound(`No meeting review ${reviewId}`);
-
-  const project = db.select().from(projects).where(eq(projects.id, review.projectId)).get();
-  if (project === undefined) throw ApiError.notFound(`No meeting review ${reviewId}`);
+  // Same disclosure rule as the reads, through the same helper: a caller who may
+  // not see this project is told the review does not exist, so `apply` cannot
+  // leak by a different code than `GET` does.
+  const { row: review, project } = requireReadableReview(db, actor, reviewId);
 
   const scoped = withProject(actor, project.id);
   // The right to use this endpoint at all. Every individual change is decided
   // again, by the service that performs it, against §3.2's own row.
   assertCan(scoped, 'meeting_proposal.apply', { projectId: project.id });
+
+  // A set a human threw away does not come back. `discard` is the other half of
+  // §10.2's gate — the explicit *no* to its explicit *yes* — so applying after
+  // one would make the rejection meaningless.
+  if (review.status === 'discarded') {
+    throw new ApiError('conflict', 'That meeting review was discarded', {
+      review_id: reviewId,
+      status: review.status,
+    });
+  }
 
   // §11.6's expiry, and **distinctly from not-found** — a review that existed
   // and lapsed is a different thing to tell a person than one that never was,
@@ -657,4 +672,230 @@ export function applyMeetingReview(
 /** A stored proposal plus the stamp that makes a repeat apply a no-op. */
 interface AppliedRecord extends StoredProposal {
   applied_at?: number;
+}
+
+// -------------------------------------- reading and discarding (§11.4.2)
+
+/**
+ * A review in a list, **without its proposals** (LAI-454).
+ *
+ * ## Why the list does not carry the proposal set
+ *
+ * The obvious reason is size. The real one is that **every proposal carries a
+ * `quote`, and a quote is transcript content** — a verbatim sentence somebody
+ * said in a meeting. §10.2 calls the submitting endpoint *"the one endpoint in
+ * Laika where a caller chooses which data leaves the instance"*; a paginated
+ * list that returns every proposal of every review would hand a broad read the
+ * quoted parts of every meeting the project ever recorded.
+ *
+ * So the quotes live behind `GET /meeting-reviews/:id`, which is a `can()` on
+ * one review. `proposal_count` is what a list needs to say *"there are six
+ * things here"*, and it is a number rather than a sentence.
+ *
+ * **The transcript itself is not in either response, because it is not
+ * stored** — §4.12 keeps only `transcript_hash` (D-005, LAI-450). §11.4.2's
+ * screen line says *"transcript on one side"*; that is a contradiction between
+ * three artefacts rather than a gap in this code, and it is **LAI-167**.
+ */
+export interface MeetingReviewView {
+  // Named `...View` rather than `...Summary` deliberately: that suffix is what
+  // `response-type-coverage.test.ts` uses to find served types, so a response
+  // type named anything else is invisible to the census by construction.
+  id: string;
+  project_id: string;
+  source: string;
+  status: MeetingReviewStatus;
+  proposal_count: number;
+  reviewed_by: string | null;
+  reviewed_at: number | null;
+  expires_at: number;
+  created_at: number;
+}
+
+/** One proposal as a reviewer sees it, including whether it already landed. */
+export interface ProposalView extends StoredProposal {
+  applied_at: number | null;
+}
+
+export interface MeetingReviewDetailView extends MeetingReviewView {
+  /**
+   * §11.4.2: *"each proposal shows its transcript quote"*. A proposal a human
+   * cannot trace back to a sentence is one they cannot honestly accept, so the
+   * quote is not optional and `parseProposals` refuses to store one without it.
+   */
+  proposals: ProposalView[];
+}
+
+function summarise(
+  row: typeof meetingReviews.$inferSelect,
+  proposals: readonly unknown[],
+): MeetingReviewView {
+  return {
+    id: row.id,
+    project_id: row.projectId,
+    source: row.source,
+    status: row.status,
+    proposal_count: proposals.length,
+    reviewed_by: row.reviewedBy,
+    reviewed_at: row.reviewedAt,
+    expires_at: row.expiresAt,
+    created_at: row.createdAt,
+  };
+}
+
+function storedProposals(row: typeof meetingReviews.$inferSelect): AppliedRecord[] {
+  return JSON.parse(row.proposalsJson) as AppliedRecord[];
+}
+
+export interface ListMeetingReviewsOptions {
+  limit: number;
+  cursor: { sortKey: string | number; id: string } | null;
+  status?: MeetingReviewStatus | undefined;
+}
+
+/**
+ * A project's meeting reviews, newest first.
+ *
+ * **Unreadable answers `not_found`, not `forbidden`** — LAI-454's criterion.
+ * Note this differs from `getProject` and `listSprints`, which answer
+ * `forbidden`; the inconsistency is real and flagged in the task rather than
+ * silently resolved either way.
+ */
+export function listMeetingReviews(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  options: ListMeetingReviewsOptions,
+): MeetingReviewView[] {
+  const project = db.select().from(projects).where(eq(projects.slug, slug)).get();
+
+  // Existence and permission answered together, and identically: a reader who
+  // may not see this project learns nothing about whether it exists.
+  if (
+    project === undefined ||
+    !can(withProject(actor, project.id), 'project.read', {
+      projectId: project.id,
+    })
+  ) {
+    throw ApiError.notFound(`No project "${slug}"`);
+  }
+
+  const conditions = [eq(meetingReviews.projectId, project.id)];
+  if (options.status !== undefined) conditions.push(eq(meetingReviews.status, options.status));
+  if (options.cursor !== null) {
+    const key = Number(options.cursor.sortKey);
+    conditions.push(
+      or(
+        lt(meetingReviews.createdAt, key),
+        and(eq(meetingReviews.createdAt, key), gt(meetingReviews.id, options.cursor.id)),
+      )!,
+    );
+  }
+
+  return db
+    .select()
+    .from(meetingReviews)
+    .where(and(...conditions))
+    .orderBy(desc(meetingReviews.createdAt), asc(meetingReviews.id))
+    .limit(options.limit + 1)
+    .all()
+    .map((row) => summarise(row, storedProposals(row)));
+}
+
+/**
+ * Find a review and answer the same way for "no such row" and "not yours".
+ *
+ * One helper for all three endpoints, so `discard` cannot disclose by a
+ * different code than `apply` does.
+ */
+function requireReadableReview(
+  db: Db,
+  actor: ResolvedActor,
+  reviewId: string,
+): { row: typeof meetingReviews.$inferSelect; project: typeof projects.$inferSelect } {
+  const row = db.select().from(meetingReviews).where(eq(meetingReviews.id, reviewId)).get();
+  const project =
+    row === undefined
+      ? undefined
+      : db.select().from(projects).where(eq(projects.id, row.projectId)).get();
+
+  if (row === undefined || project === undefined) {
+    throw ApiError.notFound(`No meeting review ${reviewId}`);
+  }
+  if (!can(withProject(actor, project.id), 'project.read', { projectId: project.id })) {
+    throw ApiError.notFound(`No meeting review ${reviewId}`);
+  }
+
+  return { row, project };
+}
+
+/**
+ * One review with its proposals and their quotes.
+ *
+ * **An expired review still reads.** §11.6's expiry stops it being *applied*; a
+ * person must still be able to open it and see what they missed and why nothing
+ * landed. The row does not vanish and `status` comes back `expired`, which is
+ * the honest answer and the one a screen can render.
+ *
+ * **`proposals_json` is read, never recomputed** — §4.12 stores the set and the
+ * provider is not called again. A read path that could reach the provider is a
+ * read path that spends money and sends the transcript out a second time, on a
+ * `GET`, which is not a thing a caller can be expected to guard against.
+ */
+export function getMeetingReview(
+  db: Db,
+  actor: ResolvedActor,
+  reviewId: string,
+): MeetingReviewDetailView {
+  const { row } = requireReadableReview(db, actor, reviewId);
+  const proposals = storedProposals(row);
+
+  return {
+    ...summarise(row, proposals),
+    proposals: proposals.map((p) => ({ ...p, applied_at: p.applied_at ?? null })),
+  };
+}
+
+/**
+ * Reject the whole set without applying anything (§6.4).
+ *
+ * **`meeting_proposal.apply`, not `project.read`.** Discarding is a write: it
+ * ends a review nobody else can then act on. Grading it as a read would let a
+ * viewer throw away a proposal set they are only allowed to look at.
+ */
+export function discardMeetingReview(
+  db: Db,
+  actor: ResolvedActor,
+  reviewId: string,
+  now: number = Date.now(),
+): MeetingReviewView {
+  const { row, project } = requireReadableReview(db, actor, reviewId);
+  assertCan(withProject(actor, project.id), 'meeting_proposal.apply', { projectId: project.id });
+
+  // An applied set is not discardable and a discarded one is not re-discardable.
+  // `conflict`, not `not_found`: the review is right there and the caller can
+  // see why, which is what makes the message actionable.
+  if (row.status !== 'pending') {
+    throw new ApiError('conflict', `That meeting review is already ${row.status}`, {
+      review_id: reviewId,
+      status: row.status,
+    });
+  }
+
+  db.update(meetingReviews)
+    .set({ status: 'discarded', reviewedBy: actor.userId, reviewedAt: now })
+    .where(eq(meetingReviews.id, reviewId))
+    .run();
+
+  appendActivity(db, {
+    orgId: project.orgId,
+    projectId: project.id,
+    ...activityActor(actor),
+    type: 'meeting_review.discarded',
+    payload: { review_id: reviewId, proposals_total: storedProposals(row).length },
+    now,
+  });
+
+  const after = db.select().from(meetingReviews).where(eq(meetingReviews.id, reviewId)).get()!;
+  return summarise(after, storedProposals(after));
 }

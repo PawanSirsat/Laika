@@ -174,6 +174,12 @@ const UNPAIRED = new Map<string, string>([
   // `CapacityView` and `PresenceView` left this group in LAI-439, which built the
   // screen and therefore the mirror.
   ['AvatarView', 'no client type exists'],
+  // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
+  // three leave this group the same way `CapacityView` and `PresenceView` did —
+  // when the screen exists, and therefore the mirror.
+  ['MeetingReviewView', 'no client type exists'],
+  ['MeetingReviewDetailView', 'no client type exists'],
+  ['ProposalView', 'no client type exists'],
   ['HeartbeatView', 'no client type exists'],
   ['MetricsView', 'no client type exists'],
   ['OrgAiView', 'no client type exists'],
