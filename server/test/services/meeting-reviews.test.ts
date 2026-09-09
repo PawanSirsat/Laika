@@ -1,12 +1,19 @@
+import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { meetingReviews, projects, tasks } from '../../src/db/schema.ts';
+import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { activity, meetingReviews, projects, tasks, users } from '../../src/db/schema.ts';
 import { newId } from '../../src/db/ids.ts';
+import { ApiError } from '../../src/errors.ts';
 import { ProviderResponseError, type ProviderClient } from '../../src/services/provider.ts';
 import {
+  appendDecision,
+  applyMeetingReview,
   buildPrompt,
   parseProposals,
   storeTranscriptReview,
+  REVIEW_TTL_MS,
 } from '../../src/services/meeting-reviews.ts';
+import { addMember } from '../../src/services/projects.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -266,5 +273,371 @@ describe('the prompt contains only what §10.2 lists', () => {
       .run();
 
     expect(buildPrompt(t.db, s.projectId, 'LAI', 'x')).not.toContain('ANOTHER-PROJECTS-TASK');
+  });
+});
+
+// ------------------------------------------------ applying a set (LAI-451)
+
+/**
+ * §10.2's *"Nothing applies without explicit human acceptance"*, made testable.
+ *
+ * Every test below is that sentence somewhere: only what was accepted, only
+ * from this review, only what this human may do, only once, and never half.
+ */
+describe('applying only what a human accepted (§10.2)', () => {
+  const NOW = Date.UTC(2026, 8, 9);
+
+  /** A review row holding `proposals`, written the way the store path writes one. */
+  function review(
+    proposals: readonly Record<string, unknown>[],
+    over: Partial<typeof meetingReviews.$inferInsert> = {},
+  ): { id: string; ids: string[] } {
+    const stored = proposals.map((p) => ({
+      id: newId(),
+      kind: 'change',
+      task: null,
+      title: null,
+      description: null,
+      changes: null,
+      reason: null,
+      quote: 'said in the meeting',
+      ...p,
+    }));
+    const id = newId();
+    t.db
+      .insert(meetingReviews)
+      .values({
+        id,
+        projectId: s.projectId,
+        source: 'recorder',
+        transcriptHash: 'abc',
+        proposalsJson: JSON.stringify(stored),
+        status: 'pending',
+        reviewedBy: null,
+        reviewedAt: null,
+        expiresAt: NOW + REVIEW_TTL_MS,
+        createdAt: NOW,
+        ...over,
+      })
+      .run();
+
+    return { id, ids: stored.map((p) => p.id) };
+  }
+
+  function owner(): ResolvedActor {
+    const loaded = loadActor(t.db, s.userId);
+    if (loaded === null) throw new Error('no owner');
+    return loaded;
+  }
+
+  function makeUser(orgRole: 'admin' | 'member'): string {
+    const id = newId();
+    t.db
+      .insert(users)
+      .values({
+        id,
+        email: `${id}@example.test`,
+        name: 'Person',
+        orgRole,
+        createdAt: new Date(NOW),
+        updatedAt: new Date(NOW),
+      })
+      .run();
+    return id;
+  }
+
+  function actorFor(userId: string): ResolvedActor {
+    const loaded = loadActor(t.db, userId);
+    if (loaded === null) throw new Error('no such user');
+    return loaded;
+  }
+
+  function apply(actor: ResolvedActor, id: string, ids: readonly string[]) {
+    return applyMeetingReview(t.sqlite, t.db, actor, id, {
+      accepted_proposal_ids: ids,
+      now: NOW,
+    });
+  }
+
+  it('applies exactly the accepted proposals and leaves the rest alone', () => {
+    // AC1, from both directions: the two happened, the three did not.
+    addTask('Rename me', 'todo', 1);
+    addTask('Kill me', 'todo', 2);
+    addTask('Leave me', 'todo', 3);
+
+    const { id, ids } = review([
+      { kind: 'change', task: 'LAI-1', changes: { title: 'Renamed' } },
+      { kind: 'dead', task: 'LAI-2' },
+      { kind: 'change', task: 'LAI-3', changes: { title: 'MUST NOT HAPPEN' } },
+      { kind: 'new', title: 'MUST NOT EXIST' },
+      { kind: 'decision', description: 'MUST NOT BE RECORDED' },
+    ]);
+
+    const result = apply(owner(), id, [ids[0]!, ids[1]!]);
+
+    expect(result.applied).toHaveLength(2);
+
+    const rows = t.db.select().from(tasks).all();
+    // The two that were accepted.
+    expect(rows.find((r) => r.number === 1)?.title).toBe('Renamed');
+    expect(rows.find((r) => r.number === 2)?.status).toBe('cancelled');
+    // The three that were not — by content and by count.
+    expect(rows.find((r) => r.number === 3)?.title).toBe('Leave me');
+    expect(rows).toHaveLength(3);
+    expect(
+      t.db.select().from(projects).where(eq(projects.id, s.projectId)).get()?.contextMd,
+    ).not.toContain('MUST NOT BE RECORDED');
+  });
+
+  it('refuses an id that is not in this review, and one from a different review', () => {
+    // AC2. A stable id (D-024) is only worth having if it is checked, and the
+    // second case is the one a stale review tab actually produces.
+    addTask('A task', 'todo', 1);
+    const mine = review([{ kind: 'change', task: 'LAI-1', changes: { title: 'X' } }]);
+    const other = review([{ kind: 'change', task: 'LAI-1', changes: { title: 'Y' } }]);
+
+    expect(() => apply(owner(), mine.id, ['not-a-real-id'])).toThrow(/not in this review/);
+    expect(() => apply(owner(), mine.id, [other.ids[0]!])).toThrow(/not in this review/);
+
+    // And neither attempt applied anything.
+    expect(t.db.select().from(tasks).all()[0]?.title).toBe('A task');
+  });
+
+  it('decides each proposal against the applying human, not once for the request', () => {
+    // AC3, and the concrete case §3.2 creates: `meeting_proposal.apply` is
+    // member-and-up, but a `decision` writes `context_md`, which is lead-only.
+    // A member may therefore apply one proposal in a review and not another —
+    // which is exactly why the check cannot be per request.
+    const memberId = makeUser('member');
+    addMember(t.db, owner(), 'laika', memberId, 'member');
+    addTask('A task', 'todo', 1);
+
+    const { id, ids } = review([
+      { kind: 'change', task: 'LAI-1', changes: { priority: 'p1' } },
+      { kind: 'decision', description: 'We are dropping the export screen' },
+    ]);
+
+    // The task change: allowed for a member.
+    expect(apply(actorFor(memberId), id, [ids[0]!]).applied).toHaveLength(1);
+
+    // The decision: refused for the same member, in the same review.
+    expect(() => apply(actorFor(memberId), id, [ids[1]!])).toThrow(ApiError);
+    expect(
+      t.db.select().from(projects).where(eq(projects.id, s.projectId)).get()?.contextMd,
+    ).not.toContain('export screen');
+
+    // And allowed for the owner — so the refusal above is about the role and
+    // not about the proposal being unapplicable.
+    expect(apply(owner(), id, [ids[1]!]).applied).toHaveLength(1);
+    expect(
+      t.db.select().from(projects).where(eq(projects.id, s.projectId)).get()?.contextMd,
+    ).toContain('export screen');
+  });
+
+  it('applying twice does not double', () => {
+    // AC4. The case this exists for is a client that posted, lost the
+    // response, and retried — so the second call is byte-identical.
+    const { id, ids } = review([{ kind: 'new', title: 'A new task' }]);
+
+    const first = apply(owner(), id, ids);
+    const second = apply(owner(), id, ids);
+
+    expect(first.applied).toHaveLength(1);
+    expect(second.applied).toHaveLength(0);
+    expect(second.already_applied).toEqual(ids);
+
+    expect(t.db.select().from(tasks).all()).toHaveLength(1);
+    expect(
+      t.db
+        .select()
+        .from(activity)
+        .all()
+        .filter((r) => r.type === 'meeting.applied'),
+    ).toHaveLength(1);
+  });
+
+  it('writes meeting.applied naming which proposals, not that a meeting happened', () => {
+    // AC5. The payload is the whole point: an audit row saying only "a meeting
+    // was applied" is the one §4.8's vocabulary exists to prevent.
+    addTask('Kill me', 'todo', 1);
+    const { id, ids } = review([
+      { kind: 'dead', task: 'LAI-1' },
+      { kind: 'new', title: 'Unaccepted' },
+    ]);
+
+    apply(owner(), id, [ids[0]!]);
+
+    const row = t.db
+      .select()
+      .from(activity)
+      .all()
+      .find((r) => r.type === 'meeting.applied');
+    const payload = JSON.parse(row?.payloadJson ?? '{}') as {
+      review_id: string;
+      applied: { proposal_id: string; kind: string; effect: string }[];
+      proposals_total: number;
+    };
+
+    expect(payload.review_id).toBe(id);
+    expect(payload.proposals_total).toBe(2);
+    expect(payload.applied).toHaveLength(1);
+    expect(payload.applied[0]).toMatchObject({
+      proposal_id: ids[0],
+      kind: 'dead',
+      effect: 'task.status_changed',
+    });
+    // The one nobody accepted is not in the audit row either.
+    expect(JSON.stringify(payload)).not.toContain(ids[1]!);
+  });
+
+  it('a partial failure is not a partial apply', () => {
+    // AC6. Proposal three is unapplicable, so one and two must not have landed.
+    addTask('Rename me', 'todo', 1);
+    addTask('Kill me', 'todo', 2);
+
+    const { id, ids } = review([
+      { kind: 'change', task: 'LAI-1', changes: { title: 'Renamed' } },
+      { kind: 'dead', task: 'LAI-2' },
+      { kind: 'change', task: 'LAI-99', changes: { title: 'no such task' } },
+    ]);
+
+    expect(() => apply(owner(), id, ids)).toThrow(/no task LAI-99/);
+
+    const rows = t.db.select().from(tasks).all();
+    expect(rows.find((r) => r.number === 1)?.title).toBe('Rename me');
+    expect(rows.find((r) => r.number === 2)?.status).toBe('todo');
+    expect(
+      t.db
+        .select()
+        .from(activity)
+        .all()
+        .filter((r) => r.type === 'meeting.applied'),
+    ).toEqual([]);
+
+    // And the review is still applyable — the rollback took the `applied_at`
+    // stamps with it, so a corrected set is not blocked by the failed attempt.
+    const stored = JSON.parse(
+      t.db.select().from(meetingReviews).where(eq(meetingReviews.id, id)).get()?.proposalsJson ??
+        '[]',
+    ) as { applied_at?: number }[];
+    expect(stored.every((p) => p.applied_at === undefined)).toBe(true);
+  });
+
+  it('an expired review applies nothing, and says so distinctly from not found', () => {
+    // AC7. `404` for both would have the review screen say "no such meeting"
+    // about a meeting the person attended.
+    addTask('A task', 'todo', 1);
+    const { id, ids } = review([{ kind: 'dead', task: 'LAI-1' }], {
+      expiresAt: NOW - 1,
+    });
+
+    let expired: unknown;
+    try {
+      apply(owner(), id, ids);
+    } catch (e) {
+      expired = e;
+    }
+    expect(expired).toBeInstanceOf(ApiError);
+    expect((expired as ApiError).code).toBe('conflict');
+
+    let missing: unknown;
+    try {
+      apply(owner(), newId(), ids);
+    } catch (e) {
+      missing = e;
+    }
+    expect((missing as ApiError).code).toBe('not_found');
+
+    expect(t.db.select().from(tasks).all()[0]?.status).toBe('todo');
+  });
+
+  it('lapsed by the clock counts as expired even before the cron flips status', () => {
+    // §11.6's sweep runs on a schedule, so between lapse and sweep the row
+    // still says `pending`. The timestamp is the truth.
+    addTask('A task', 'todo', 1);
+    const { id, ids } = review([{ kind: 'dead', task: 'LAI-1' }], { expiresAt: NOW - 1 });
+
+    expect(t.db.select().from(meetingReviews).where(eq(meetingReviews.id, id)).get()?.status).toBe(
+      'pending',
+    );
+    expect(() => apply(owner(), id, ids)).toThrow(/expired/);
+  });
+});
+
+describe('a decision is appended to context_md with its date (§11.4.2)', () => {
+  const JAN = Date.UTC(2026, 0, 15);
+
+  it('starts a Decisions list on an empty document', () => {
+    expect(appendDecision('', 'We are dropping the export screen', JAN)).toBe(
+      '## Decisions\n\n- 2026-01-15 — We are dropping the export screen\n',
+    );
+  });
+
+  it('keeps one list rather than a heading per meeting', () => {
+    // Two meetings a week apart must not produce two `## Decisions` headings —
+    // §11.4.2 wants a document that stays readable as it is fed, and a heading
+    // per decision is how it stops being one.
+    const first = appendDecision('# Laika\n\nA board.', 'We use SQLite', JAN);
+    const second = appendDecision(first, 'We drop the export screen', JAN + 7 * 86_400_000);
+
+    expect(second.match(/## Decisions/g)).toHaveLength(1);
+    expect(second).toContain('- 2026-01-15 — We use SQLite');
+    expect(second).toContain('- 2026-01-22 — We drop the export screen');
+    // The prose above it survives.
+    expect(second.startsWith('# Laika\n\nA board.')).toBe(true);
+  });
+
+  it('the date is the day, not a timestamp or a locale', () => {
+    // A document read by whoever opens it, in whatever timezone. `2026-01-15`
+    // means the same thing to all of them; `15/01/2026` does not.
+    expect(appendDecision('', 'A decision', Date.UTC(2026, 0, 15, 23, 59))).toContain('2026-01-15');
+  });
+
+  it('an applied decision goes through the same function', () => {
+    // So the shape above is the shape that lands, rather than two spellings of
+    // "append with the date" that can drift.
+    const owner = loadActor(t.db, s.userId);
+    if (owner === null) throw new Error('no owner');
+
+    const id = newId();
+    const proposalId = newId();
+    t.db
+      .insert(meetingReviews)
+      .values({
+        id,
+        projectId: s.projectId,
+        source: 'recorder',
+        transcriptHash: 'abc',
+        proposalsJson: JSON.stringify([
+          {
+            id: proposalId,
+            kind: 'decision',
+            task: null,
+            title: null,
+            description: 'We are dropping the export screen',
+            changes: null,
+            reason: null,
+            quote: 'drop it',
+          },
+        ]),
+        status: 'pending',
+        reviewedBy: null,
+        reviewedAt: null,
+        expiresAt: JAN + REVIEW_TTL_MS,
+        createdAt: JAN,
+      })
+      .run();
+
+    applyMeetingReview(t.sqlite, t.db, owner, id, {
+      accepted_proposal_ids: [proposalId],
+      now: JAN,
+    });
+
+    const context = t.db
+      .select()
+      .from(projects)
+      .where(eq(projects.id, s.projectId))
+      .get()?.contextMd;
+    expect(context).toBe(appendDecision('', 'We are dropping the export screen', JAN));
   });
 });
