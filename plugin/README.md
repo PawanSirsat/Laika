@@ -78,18 +78,38 @@ variables to set.
 whether it carries the expected `lai_` prefix, and its length — enough to catch
 a truncated paste, not enough to be worth stealing.
 
-## What is not built yet
+## Silence when unconfigured is deliberate
 
-| | Milestone | Waiting on |
-| --- | --- | --- |
-| MCP tools (`list_ready_tasks`, `start_working`, …) | M3 | the `/mcp` endpoint — SPEC §4 |
-| Heartbeat hooks | M4 wiring / M5 endpoint | `POST /api/v1/heartbeats` — see [LAI-013](../.tasks/) |
-| Agent protocol skill | M4 | — |
-| `/laika:setup`, `/laika:tasks`, `/laika:standup` | M4 | tokens (M3), CLI (M4) |
-| `npx laika init` | M4 | `cli/` — not started |
+Measured against a real session with neither variable set (LAI-419): Claude Code
+starts, the session runs, and **nothing is printed at all** — no warning, no
+connection error, no mention of the MCP server.
 
-Declaring the MCP server now is intentional: it fails to connect until a board
-exists, which is the correct behaviour and costs nothing.
+That is the intended behaviour and not merely what happens to occur. The only
+lever a plugin has for saying something unprompted is a `SessionStart` hook,
+which fires in **every repository you open** — and a plugin that announces itself
+in every repository that has never heard of Laika is the defect
+[LAI-418](../.tasks/)'s criteria name for the heartbeat. This repo has already
+decided that question once, in this direction.
+
+So the message exists and you pull it: **`/laika:status`** names both variables
+and how to set them, and it never prints your token.
+
+## What is built
+
+| | Status |
+| --- | --- |
+| MCP tools — **eleven**, §7.1 | ✅ served at `${LAIKA_URL}/mcp` |
+| Heartbeat hooks | ✅ LAI-418 — `SessionStart`, `Stop`, throttled `PostToolUse` |
+| `npx laika init` | ✅ LAI-422 — writes both variables to `~/.claude/settings.json` |
+| `/laika:status` | ✅ |
+| `/laika:setup`, `/laika:tasks`, `/laika:standup` | LAI-420 |
+| Agent protocol skill | LAI-421 |
+
+**Eleven tools, not ten and not eight.** §7.1's table lists eleven and
+`server/src/mcp/` registers eleven; both smaller numbers have appeared in task
+files and in `CLAUDE.md`, and the count is asserted in
+`cli/test/plugin-mcp.test.ts` against the spec and the registry so the next drift
+is loud rather than repeated.
 
 ## Working on this plugin
 

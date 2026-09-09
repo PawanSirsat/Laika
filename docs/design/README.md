@@ -102,6 +102,7 @@ The prototype contains mistakes and placeholders. Reproducing them is a bug.
 | Overlapping labels / floating pills | scattered | Layout artifacts of the mockup tool. Lay out properly; do not pixel-match a collision. |
 | **`v0.4.2` version badge** | First boot, sidebar | No endpoint returns a product version. Show it only if one does — otherwise omit rather than invent (LAI-064). |
 | **`migrations 41/41 applied`** | First boot, status rail | Laika has single-digit migrations. Render the real count or omit the line (LAI-206). |
+| **"This invite has expired"**, and the inviter's name beside it | `5a`, invite accept | The server answers **unknown, expired and already-spent identically** — deliberately, so `GET /invites/:token` is not an oracle (**D-053**). For a refused token there is no expiry and no inviter to render. Ship *"invalid, expired, or already used"* in the design's amber clock styling. **This is a divergence with a reason, not an omission**, and it reopens if §12's invite mail ever lands. |
 | Hardcoded people and counts | everywhere | Mira Kellner, Sana Verma, `laika.kvelld.internal`, "13/34 done" are fixtures. **Never hardcode mockup data** — every number comes from the API. |
 
 ## What the design assumes that the spec does not yet define

@@ -73,6 +73,49 @@ esac
 if [ -z "$TOKEN" ]; then
   printf '\n  A board URL without a token gets 401 on every call. Create one under\n'
   printf '  Settings -> Tokens and export it as LAIKA_TOKEN.\n'
+  exit 0
 fi
+
+# --- own capacity, from the board (§8, LAI-420) ------------------------------
+# **This is the part that talks to the network**, and everything above still
+# works without it. `GET /api/v1/capacity` is live (LAI-432); the task file's
+# hedge that capacity is M5 was stale by the time this was written.
+#
+# Nothing is computed here. `active_sessions`, the task counts and `unlisted`
+# arrive decided; this prints the row belonging to the person whose token it is.
+# shellcheck source=/dev/null
+. "$(dirname "${BASH_SOURCE[0]}")/laika-common.sh"
+
+printf '\n'
+ME="$(laika_get "/api/v1/me")" || exit 0
+CAPACITY="$(laika_get "/api/v1/capacity")" || exit 0
+
+LAIKA_ME="$ME" LAIKA_CAPACITY="$CAPACITY" python3 - <<'PY'
+import json, os
+
+me = json.loads(os.environ["LAIKA_ME"])
+cap = json.loads(os.environ["LAIKA_CAPACITY"])
+
+if not cap.get("enabled", True):
+    # `enabled: false` and an empty list are opposite claims (§4.2): this org
+    # records nothing, which is not the same as nobody working.
+    print("  Capacity    presence is off for this organisation")
+    raise SystemExit(0)
+
+mine = next((p for p in cap.get("people", []) if p.get("user_id") == me.get("id")), None)
+if mine is None:
+    print("  Capacity    no row for you on this board")
+    raise SystemExit(0)
+
+print(f"  Signed in   {me.get('name')} ({me.get('org_role')})")
+print(f"  Sessions    {mine.get('active_sessions', 0)}")
+print(f"  In progress {len(mine.get('in_progress_tasks', []))}")
+print(f"  In review   {len(mine.get('tasks_in_review', []))}")
+
+# **Absent, not empty** for a reader without `audit_log.export`. Printing `0`
+# would claim they have logged nothing, which is a different statement.
+if "unlisted" in mine:
+    print(f"  Unlisted    {len(mine['unlisted'])}")
+PY
 
 exit 0

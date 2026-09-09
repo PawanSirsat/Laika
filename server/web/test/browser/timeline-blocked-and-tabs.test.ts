@@ -20,13 +20,33 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, type ApiStub } from './harness.ts';
 
-const d = (y: number, m: number, day: number): number => Date.UTC(y, m, day);
+const DAY = 86_400_000;
 
-/** Fixed dates, and `now` is pinned by the sprint that contains today. */
+/**
+ * Midnight UTC, `days` from today.
+ *
+ * **The fixture is anchored to today and the first version was not.** It used
+ * fixed calendar dates with S3 running to 6 September — and the screen decides
+ * "current" by comparing the sprint's range to `Date.now()`, so on the 7th the
+ * active sprint became S4 and three assertions failed. **A six-day shelf life,
+ * and it expired in the gate rather than in review.**
+ *
+ * Anchoring here is not a workaround for a clock: it is what the fixture always
+ * meant. "A sprint that contains today" is the *property* these tests are about,
+ * and spelling it as a date only happened to be that in the week it was written.
+ */
+const day = (days: number): number => {
+  const now = new Date();
+  return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) + days * DAY;
+};
+
 const SPRINTS = [
-  { id: 's1', name: 'S1', starts_on: d(2026, 6, 13), ends_on: d(2026, 6, 26), status: 'completed' },
-  { id: 's3', name: 'S3', starts_on: d(2026, 7, 24), ends_on: d(2026, 8, 6), status: 'active' },
-  { id: 's4', name: 'S4', starts_on: d(2026, 8, 7), ends_on: d(2026, 8, 20), status: 'planned' },
+  // Over: it ended a fortnight ago.
+  { id: 's1', name: 'S1', starts_on: day(-28), ends_on: day(-15), status: 'completed' },
+  // Contains today, wherever today falls — which is the whole point of it.
+  { id: 's3', name: 'S3', starts_on: day(-7), ends_on: day(6), status: 'active' },
+  // Not yet begun.
+  { id: 's4', name: 'S4', starts_on: day(7), ends_on: day(20), status: 'planned' },
 ].map((s) => ({
   ...s,
   project_id: 'p1',
@@ -65,8 +85,8 @@ function task(over: Record<string, unknown>): Record<string, unknown> {
     external_ref: null,
     started_at: null,
     completed_at: null,
-    created_at: d(2026, 7, 24),
-    updated_at: d(2026, 7, 24),
+    created_at: day(-7),
+    updated_at: day(-7),
     ...over,
   };
 }
@@ -79,8 +99,8 @@ const DONE_IN_S1 = task({
   title: 'Finished in the first sprint',
   sprint_id: 's1',
   status: 'done',
-  started_at: d(2026, 6, 14),
-  completed_at: d(2026, 6, 20),
+  started_at: day(-27),
+  completed_at: day(-21),
 });
 
 const PROJECT = {

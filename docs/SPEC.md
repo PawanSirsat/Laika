@@ -309,6 +309,7 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `ai_key_last4` | the key's last four characters, **stored at set time, never derived** — building a response must not require decrypting the key (LAI-447) |
 | `smtp_json_enc` | nullable, same encryption |
 | `github_webhook_secret_enc` | nullable, same encryption |
+| `transcript_webhook_secret_enc` | nullable, same encryption — **its own secret, not GitHub's** (D-052). One secret for two integrations means revoking either breaks both, and a leak of one hands over the other. |
 
 **Single-org deployment**: one row, created by the first-run wizard. Other tables
 still carry `org_id` where it matters, so the constraint is data-level and a
@@ -1283,6 +1284,21 @@ ignored. Delivery ids are deduplicated for 24h.
 
 ### 10.2 `POST /webhooks/transcript`
 
+**HMAC-SHA256 verified against the org's transcript secret, constant-time,
+before the body is parsed** — the same shape as §10.1 and for the same reasons
+(D-052). Unverified requests get `401`.
+
+`/webhooks/*` is for machines: a transcript source is a recorder or a meeting
+bot, never a session. **This is the one endpoint in Laika where a caller chooses
+which data leaves the instance** — the prompt below carries the project's open
+tasks and its whole `context_md`, and the caller picks the project — so it is
+authenticated before anything is read, not after.
+
+**A rate limit is not sufficient.** Each submission is a paid provider call, so
+the org carries a **cap** as well as a rate, and reaching it answers distinctly
+rather than as a generic `429`: an authenticated integration gone wrong spends
+money at a perfectly legal rate.
+
 Body `{ project_slug, transcript, source }` → `202`, creating a
 `meeting_reviews` row.
 
@@ -1407,8 +1423,8 @@ call MCP; agents do.
 | **First boot** | 1 | `GET /setup/status`, `POST /setup`, `GET /health` | — | ✅ |
 | **Login & invite** | 1–2 | `POST /auth/*`, `GET /invites/:token`, `POST /invites/accept`, `GET /me` | — | ✅ |
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
-| **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
-| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity` | `add_comment`, `get_task_context` | ✅ |
+| **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
+| **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
@@ -1450,6 +1466,10 @@ anything missing sends the task back.
 - **Task detail** — description, dependencies with **BLOCKED BY** relations and
   their statuses, comments distinguishing human from agent, activity trail,
   `created_via` provenance, claim/status controls, `discovered-from` link.
+  **A watch toggle and who else is watching** (D-047, D-054), and an
+  **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
+  — never by the member list**, because who may be mentioned is the server's
+  answer and not a filter the client reapplies.
 - **Sprints** — sprint list with dates, goal and status; active-sprint emphasis;
   task assignment in and out; counts by status; the one-active and no-overlap
   rules surfaced as errors, not silent failures.
@@ -1688,8 +1708,12 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
    the limit and the actual length.
 8. **Manager dashboard metrics** — which numbers actually answer "where are we"?
    Throughput and cycle time are the obvious ones and may be the wrong ones.
-   `GET /projects/:slug/metrics` (§6.4) reserves the surface; the payload is not
-   yet defined. Needs shaping before M5.
+   **The payload is now defined and served** (LAI-124): daily throughput buckets,
+   and cycle time as `p50`/`p75`/`p90` over completed tasks that had a
+   `started_at`, with the unmeasured ones counted separately rather than assumed.
+   **The open question is narrower than it was, and it is the one that matters:**
+   are these the right two numbers? **Nothing on the Dashboard renders them yet**
+   — LAI-457 — so the question has not been tested against a real board.
 9. **Laika Assistant — three questions, all due before Phase 6** (D-015). Until
    all three are answered the screen has no endpoints and cannot be scheduled
    into a task:

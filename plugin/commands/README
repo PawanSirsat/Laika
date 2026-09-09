@@ -11,23 +11,32 @@ one here that is not meant to be a command.
 
 ## Here now
 
-| Command | File | Landed in |
-| --- | --- | --- |
-| `/laika:status` | `status.md` | **LAI-012** (M1) |
+| Command | File | Script | Landed in |
+| --- | --- | --- | --- |
+| `/laika:status` | `status.md` | `laika-status.sh` | LAI-012, capacity in LAI-420 |
+| `/laika:setup` | `setup.md` | `laika-setup.sh` | LAI-420 |
+| `/laika:tasks` | `tasks.md` | — (MCP tool) | LAI-420 |
+| `/laika:standup` | `standup.md` | `laika-standup.sh` | LAI-420 |
 
-`/laika:status` is the vertical slice: it proves the manifest, the command
-loader, `${CLAUDE_PLUGIN_ROOT}`, and the `scripts/` directory are wired together
-correctly. It reads only the environment, never the network, so it works before
-any server exists.
+All four of SPEC §8's commands are here.
 
-## Filled in M4
+**`/laika:tasks` runs no script.** It calls the `list_ready_tasks` MCP tool,
+which already returns markdown sorted by §4.5's rule. A script would re-sort what
+the server sorted — a second definition of "ready" that can disagree with the
+board's own column.
 
-| Command | Needs | Blocked until |
-| --- | --- | --- |
-| `/laika:setup` | token mint + `npx laika init` | M3 (tokens), M4 (CLI) |
-| `/laika:tasks` | MCP `list_ready_tasks` | M3 |
-| `/laika:standup` | activity feed for the actor | M3 |
+**`/laika:setup` configures nothing** (D-046). `npx laika init` owns
+configuration; this reports what is set and prints the command. A second minting
+path would make LAI-422's idempotence criterion unprovable rather than merely
+unmet — "already configured" would mean "configured somewhere I happen to look".
 
-Do not stub these against endpoints that do not exist yet — a command that
-always fails is worse than a command that is absent. See SPEC §5 for the
-intended behaviour of each.
+**`/laika:standup` says what it is showing.** There is no per-actor activity
+endpoint, so it reads the org feed for 24 hours and selects the caller's rows;
+when the window returns a full page it says older rows were not read, rather than
+implying the list is complete.
+
+Every script shares `scripts/laika-common.sh`, which holds the two messages that
+would otherwise be written three times: **which variable is missing**, and
+**your token was refused** as distinct from **the board is unreachable**
+(LAI-224's lesson, in the plugin). Each exits 0 — a command that explains itself
+beats one that hands the agent an error to interpret.

@@ -107,14 +107,45 @@ of a task file. Builders have no equivalent exception.
    in `.tasks/done/` **on `master`**.
 2. Take the latest integrated state first: `git merge master`.
 3. **Check every branch, not just your own** — sessions work on separate
-   branches, so a rival claim will not be in your working tree:
+   branches, so a rival claim will not be in your working tree. **Ask where the
+   file is *now* on each branch, not what the history says:**
    ```bash
-   git log --all --oneline -- '.tasks/in-progress/LAI-00X*' \
-                              '.tasks/review/LAI-00X*' '.tasks/done/LAI-00X*'
+   for ref in master core shell; do
+     printf '%-7s ' "$ref"
+     git ls-tree -r --name-only "$ref" .tasks/ | grep LAI-00X || echo '(absent)'
+   done
    ```
-   Any output means someone has already claimed, finished, or closed it. **Pick a
-   different task.** This check is instant and exact — all worktrees share one
-   object database (§4.2), so there is nothing to fetch and no excuse to skip it.
+   **Anything outside `.tasks/backlog/` on any branch means it is taken.** Pick a
+   different task. This is instant and exact — all worktrees share one object
+   database (§4.2), so there is nothing to fetch and no excuse to skip it.
+
+   **`(absent)` is not `free`.** It means that branch has not merged `master`
+   since the file was created. **It is no information at all**, and the branch
+   that shows the file furthest from `backlog/` is the one to believe.
+
+   Measured, mid-session, on three real tasks:
+
+   ```
+   LAI-452   master  .tasks/backlog/…      core (absent)   shell .tasks/in-progress/…
+   LAI-163   master  .tasks/in-progress/…  core …          shell …
+   LAI-451   master  .tasks/backlog/…      core …          shell …
+   ```
+
+   **LAI-452 is why this is a `ls-tree` and not a `log`.** `master` said
+   `backlog/` — free — and SHELL had it. `core` said nothing at all.
+
+   ~~`git log --all --oneline -- '.tasks/in-progress/LAI-00X*' …`~~ **was wrong in
+   both directions.** It reports *"already claimed"* from history, so a task a
+   builder **released** stays invisible for ever — stranded, not free (LAI-221,
+   observed on LAI-086). And it reports nothing for a task whose only claim is a
+   commit on a branch it was told not to look at. **History says who touched it;
+   only the current path says who has it.**
+
+   **This is why a release needs no new rule for the builder.** They `git mv`
+   back to `.tasks/backlog/`, reset `assignee`, and commit — as they always did.
+   `master` may carry the stale claim until CHIEF next merges them, and **the
+   check above already reads through it**, because the builder's branch is the one
+   that moved the file last. Fixing the instrument beat adding a procedure.
 4. `git mv .tasks/backlog/LAI-00X-*.md .tasks/in-progress/`
 5. **Then** edit its frontmatter: `assignee: <your-session>`,
    `status: in-progress`, `started: <ISO-8601 timestamp>`. Move first — `git mv`
@@ -195,7 +226,14 @@ This has now cost two tasks (LAI-070, LAI-224). The same trap applies to the
 **A criterion that names a location must be checked against that location.**
 Three of CHIEF's failed this on one day: an AC pointing at *"§6.4's task shape"*
 when §6.4 is an endpoint list with no task shape; *"the eight §7.1 tools"* when
-there are ten listed and eleven served; and *"claim LAI-147, it is fifteen
+§7.1 lists **eleven** and the server serves eleven — it was ten and
+eleven when that criterion was written, and **this sentence said so for a day
+after LAI-433 made both numbers agree**, in the passage citing this exact
+failure. A grep of §7.1 for backticked identifiers returns **22**, because the
+later columns name fields; the first column returns 11. **Every wrong number
+here was a grep that counted the wrong cells** — which is why the check that
+replaced it asserts **names from both sides**, never a count; and *"claim
+LAI-147, it is fifteen
 minutes"* when the file existed only on the builder's branch and there was
 nothing on `master` to `git mv`. Each cost a round trip, each was one `grep`
 away, and **each read as authoritative to the person receiving it** — which is
@@ -618,7 +656,10 @@ file. The rules below are the ones that are true of every line of code.
   grep -E "Unhandled|Errors|Failed|not ok|✗" /tmp/gate.txt
   ```
 
-  **`EXIT 0` is the claim. A count is not.**
+  **`EXIT 0` is the claim. A count is not.** **And read it** — CHIEF pushed on an
+  `EXIT 1` run without looking, because the command after it was chained with
+  `&&` to the commit rather than to the result. A gate you do not read is a gate
+  you did not run.
 
   **And gate *after* the last edit, not before it.** CHIEF reddened `origin/master`
   a second time on 2026-09-01 by running the gate, then applying a SPEC row that

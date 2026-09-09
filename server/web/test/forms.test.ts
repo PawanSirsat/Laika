@@ -164,16 +164,34 @@ void describe('the things the criteria forbid (AC7)', () => {
     for (const phrase of ['postgres', 'Postgres', 'PostgreSQL']) {
       assert.ok(!status.includes(phrase), 'the mockup artifact must not be reproduced');
     }
-    // Case-insensitive: the criterion is that the panel names the engine it
-    // actually uses, not how it is capitalised. LAI-075 sets the status lines in
-    // mono lowercase to match design 6a, where the engine reads `postgres 16`.
-    assert.match(status, /sqlite/i, 'the panel must name the database it actually uses');
   });
 
-  void test('migration and SMTP state are props, not fixtures', () => {
-    assert.ok(status.includes('migrationsApplied') && status.includes('migrationsTotal'));
-    assert.ok(status.includes('smtpConfigured'));
+  void test('the engine is read from the instance, not written here', () => {
+    // **This assertion used to require the literal `sqlite` in the source**, and
+    // LAI-158 is what made that wrong: the string now comes from the live
+    // connection's PRAGMAs (§6.4), so the panel names the engine it *actually*
+    // uses rather than the one somebody typed. The old test pinned the
+    // mechanism; the criterion was always about the property.
+    assert.match(status, /system\.database/, 'the database line is not read from the response');
+    assert.ok(
+      !/['"`]sqlite/i.test(status),
+      'the engine name is hardcoded again — a panel confidently wrong about the one thing it reports',
+    );
+  });
+
+  void test('migration and SMTP state come from the response, not fixtures', () => {
+    assert.match(status, /system\.migrations_applied/);
+    assert.match(status, /system\.smtp_configured/);
     assert.ok(!status.includes('41/41'), 'the prototype count is a fixture');
+    // **No total** (LAI-158). `index.ts` runs the migrator before it binds the
+    // port and the migrator throws rather than continuing, so a server that can
+    // answer this request has applied all of them — a denominator that can never
+    // differ from the numerator is decoration with a chance of being wrong.
+    assert.ok(
+      !status.includes('migrationsTotal'),
+      'a total is back; it can only ever equal the numerator',
+    );
+    assert.ok(!/\{[^}]*\}\s*\/\s*\{/.test(status), 'the slash is back');
   });
 
   void test('no mockup people or hosts anywhere', () => {
