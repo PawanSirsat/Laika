@@ -133,6 +133,24 @@ interface Run {
 }
 
 /** Run the hook the way a hook runner does: with JSON on stdin and no tty. */
+/**
+ * Errors that mean **the operating system could not start the process**, not
+ * that the hook did anything (LAI-452).
+ *
+ * `execFile` reports a failure to spawn through the same callback as a non-zero
+ * exit, and `error.code` is then a *string* errno rather than a number — so the
+ * old mapping turned every one of them into `code: 1` **with empty stdout and
+ * stderr**, which is exactly what a hook exiting 1 silently looks like.
+ *
+ * Measured rather than reasoned: spawning a path that does not exist yields
+ * `error.code = 'ENOENT'` and maps to `1` with both streams empty. Under a
+ * loaded machine the same shape arrives as `EAGAIN` — the fork limit — and the
+ * failure surfaces as *"expected 0, actual 1"* on whichever test happened to
+ * run at that moment. **That is why LAI-452 saw it on one test and reproducing
+ * it produced another.**
+ */
+const TRANSIENT_SPAWN_ERRORS = new Set(['EAGAIN', 'ENOMEM']);
+
 function runHook(
   mode: string,
   options: { cwd: string; url?: string; token?: string; state?: string; path?: string },
@@ -146,20 +164,57 @@ function runHook(
   if (options.token !== undefined) env.LAIKA_TOKEN = options.token;
 
   const started = Date.now();
-  return new Promise((resolve) => {
-    const child = execFile(
-      HOOK,
-      [mode],
-      { cwd: options.cwd, env, timeout: 20_000 },
-      (error, stdout, stderr) => {
-        const code = error === null ? 0 : typeof error.code === 'number' ? error.code : 1;
-        resolve({ code, stdout, stderr, ms: Date.now() - started });
-      },
+
+  /**
+   * One attempt. `spawnError` is set only when the process never ran.
+   *
+   * **No timeout.** The hook is ~115ms and the previous 20s bound could only
+   * ever convert a slow machine into a failed assertion — measured at 109–125ms
+   * under 20 spinners on 10 cores, so the bound was never protecting anything
+   * this suite could hit. `node --test`'s own timeout still catches a genuine
+   * hang, and a hang there is a defect worth surfacing rather than hiding.
+   */
+  const attempt = (): Promise<Run & { spawnError?: string }> =>
+    new Promise((resolve) => {
+      const child = execFile(HOOK, [mode], { cwd: options.cwd, env }, (error, stdout, stderr) => {
+        const ms = Date.now() - started;
+        if (error === null) {
+          resolve({ code: 0, stdout, stderr, ms });
+          return;
+        }
+        // A numeric `code` is the process's exit status. Anything else — a
+        // string errno, or nothing at all — means it never ran.
+        if (typeof error.code === 'number') {
+          resolve({ code: error.code, stdout, stderr, ms });
+          return;
+        }
+        resolve({ code: -1, stdout, stderr, ms, spawnError: error.code ?? 'unknown' });
+      });
+      // What Claude Code actually writes to a hook. Nothing in the script may
+      // consume it, and a script that exits without reading it must not care.
+      child.stdin?.end(JSON.stringify({ session_id: 'abc', hook_event_name: 'PostToolUse' }));
+    });
+
+  /**
+   * Retry **only** a failure to start, and only a transient one.
+   *
+   * This is not a timing fix with a longer fuse (LAI-452 AC3): nothing is slept
+   * on and nothing is given more time. A machine that cannot fork right now is
+   * not a fact about the hook, and re-asking immediately is *making the
+   * condition unnecessary* rather than waiting it out. `ENOENT` — a genuinely
+   * missing hook — is **not** retried and surfaces as itself.
+   */
+  const withRetries = async (left: number): Promise<Run> => {
+    const run = await attempt();
+    if (run.spawnError === undefined) return run;
+    if (left > 0 && TRANSIENT_SPAWN_ERRORS.has(run.spawnError)) return withRetries(left - 1);
+    throw new Error(
+      `the hook could not be started (${run.spawnError}). This is the machine, not the hook — ` +
+        'reporting it as an exit code is what LAI-452 was filed on.',
     );
-    // What Claude Code actually writes to a hook. Nothing in the script may
-    // consume it, and a script that exits without reading it must not care.
-    child.stdin?.end(JSON.stringify({ session_id: 'abc', hook_event_name: 'PostToolUse' }));
-  });
+  };
+
+  return withRetries(3);
 }
 
 /** Wait for the board to have finished handling everything the hook sent. */

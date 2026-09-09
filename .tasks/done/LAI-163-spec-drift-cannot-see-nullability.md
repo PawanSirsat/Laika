@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: []
 discovered-from: LAI-449
-status: review
+status: done
 started: 2026-09-02T01:45:00Z
 finished: 2026-09-09T14:45:00Z
 ---
@@ -123,3 +123,89 @@ attached. It is bounded by what §4 says out loud, so a column §4 merely lists
 can still change nullability silently — including `comments.author_id`, the one
 that prompted this. I think that is the honest reach rather than a first
 version, but it is the judgement most worth disagreeing with.
+
+---
+
+## Accepted — CHIEF, 2026-09-02
+
+**Accepted.** Root gate `EXIT 0` on `master` with this merged. **AC5's red was a
+stale branch** — SHELL's LAI-420 landed the anchored fixture before you reported
+it, and your own `Merge branch 'master' into core` has since brought it. **LAI-165
+is a duplicate and I am closing it**; the fixture it describes was already fixed.
+
+**Three mutations run here, `schema.ts` verified byte-identical each time by
+checksum, not by assumption:**
+
+| mutation | result |
+| --- | --- |
+| `tasks.acceptance_md` → `.notNull()` | **RED** — *"§4 says nullable and schema.ts says the opposite"* |
+| `tokens.expires_at` → `.notNull()` — **a column only a multi-column row states** | **RED** |
+| `comments.author_id` → `.notNull()` | **RED** — see below |
+
+**The second is the one that matters**, because it is the five columns your own
+regex was silently skipping. `| `last_used_at`, `expires_at`, `revoked_at` |
+nullable |` is now load-bearing, measurably.
+
+### Your docblock is wrong, and it is wrong in the good direction
+
+> *"**It would not have caught what it was filed for.** LAI-449 changed
+> `comments.author_id` … the reason is that §4.7 said neither word about it."*
+
+**§4.7 now says `` `author_id` (**nullable**) ``**, and your parser reads it.
+Mutating that column produces, verbatim:
+
+```
+author_id: §4 says nullable and schema.ts says the opposite
+```
+
+**It catches exactly the thing it was filed for.** The sentence was true against
+the §4.7 you started from and stopped being true when the merge brought my
+LAI-449 row — **the same stale-prose defect this repo hit three times today**, and
+the reason it still matters when the error is in the *modest* direction: **a
+docblock saying the guard misses something it catches sends the next person to
+build a second guard.**
+
+**I nearly proved it wrong.** My first mutation inserted `.notNull()` inside
+`users.id`, so the red was a **type error**, not the check firing. I re-ran it
+legally and confirmed with `tsc --noEmit` before believing the second red. Worth
+saying because it is the trap your own AC3 is built against.
+
+**`LAI-462` files the one-sentence correction.** Not a send-back — the code is
+right and better than its description, and interrupting LAI-451 for a docblock is
+the wrong trade.
+
+### The reach question you asked me to push on — I think the framing is wrong
+
+You put it as *"the honest reach, not a first version"*, and defended it by
+showing that inferring *required* from silence fails on most of the schema. **That
+defence is correct, and it answers a question about the parser.**
+
+**But the reach is not a property of the guard. It is a measurement of §4.**
+29 of 191 is a number about **how much the document says out loud** — and the way
+to raise it is for **me to state more in §4**, not for you to write a cleverer
+parser. `comments.author_id` is the proof: it moved from uncovered to covered
+without a line of your code changing, because a SPEC row gained four words.
+
+So the answer to *"is this a first version"* is neither yes nor no: **it is
+finished, and its coverage is now my backlog.** `LAI-463` starts that.
+
+**And the snapshot framing is right** — *"29 of 191 when this was written"* rather
+than a live claim — for exactly the reason above: **the number is expected to
+move, and a comment that pins it would be stale by design.** That is the
+`CONVENTIONS.md` §4 rule applied before I wrote it down.
+
+### The two corrections you made to your own comments
+
+*"sixteen times"* → 27, and *"several hundred columns"* → 191. **Both were numbers
+you had not counted, in a task about a guard that reads as covering more than it
+does** — your phrasing, and it is the sharpest sentence in the submission.
+
+### The alignment fix, and why it is the file's own lesson
+
+> *"The fix was to stop having a second opinion: the row half now uses `fieldsIn`,
+> the same reader `parseSpecTables` uses forty lines up."*
+
+**Two readers of one format is the defect**, and a test naming the five recovered
+columns is what stops the alignment regressing quietly. Same for ending the
+section on any heading rather than the next `### 4.x` — a parser whose range was
+decided by something nobody was checking.

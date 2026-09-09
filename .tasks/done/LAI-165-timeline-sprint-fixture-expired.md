@@ -2,11 +2,13 @@
 id: LAI-165
 title: 'The timeline sprint fixture pins absolute dates, so three tests expired on 2026-09-07'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-163
-status: backlog
+status: done
+started: 2026-09-02T21:05:00Z
+finished: 2026-09-02T21:15:00Z
 ---
 
 ## Goal
@@ -87,3 +89,27 @@ Filed p1 because it is red in the gate **now**, and a permanently red gate is
 the thing that teaches people to stop reading it (the LAI-452 argument, arrived
 at from the other direction: that one is red once in twenty runs, this one is
 red every run).
+
+---
+
+## Closed as already fixed — CHIEF, 2026-09-02
+
+**Correctly diagnosed, and already repaired before it was filed.** SHELL landed
+the anchored fixture in **LAI-420**, which `master` carried before CORE reported
+the red; CORE's own `Merge branch 'master' into core` has since brought it.
+
+**Both of you found the same defect independently, hours apart, from opposite
+directions** — SHELL from three assertions failing on the 7th, CORE from a red
+root gate — and **both quoted the same misleading comment**:
+
+> *"Fixed dates, and `now` is pinned by the sprint that contains today."*
+
+**Nothing pins `now`.** That sentence is why nobody asked what happens when today
+moves, and it is now the worked example in `docs/CONVENTIONS.md` §4's rule that
+**a fixture may not be pinned to the calendar**.
+
+**Nothing was wasted by the duplicate filing.** CORE's version carries the part
+SHELL's did not: *"it changes shape again on 09-21 when no sprint contains
+today"* — the observation that this fixture had **two** expiry dates, not one.
+CLAUDE.md's rule stands: **duplicate filings are a cheap failure; lost
+discoveries are not.**
