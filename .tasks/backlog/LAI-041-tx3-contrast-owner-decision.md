@@ -68,6 +68,24 @@ D-020. It was rejected on process, not on the numbers, and the numbers should no
 be taken as settling the question — an accessibility ratio is one input to a
 design decision, not the whole of it.
 
-**Nothing is blocked by this.** No screen uses `--tx3` yet. It becomes expensive
+~~**Nothing is blocked by this.** No screen uses `--tx3` yet. It becomes expensive
 once LAI-019/020/021 build screens on it, so it is worth answering before then —
-but "leave it" is a complete answer and needs no follow-up work.
+but "leave it" is a complete answer and needs no follow-up work.~~
+
+**That paragraph is stale, and the moment it warned about has passed.** Measured
+2026-09-03: **`var(--tx3)` appears 122 times across the shipped UI**, in every
+screen — board 13, timeline 11, meeting review 11, capacity 9, board rail 9, auth
+9, sprints 6, project context 6, and the rest.
+
+**This does not change the options; it changes their cost.** Option 2 is still a
+two-value edit in `tokens.css` plus `tokens.test.ts` — **the token is a variable
+and 122 call sites do not each need touching.** What has changed is that the
+result is now visible on every screen at once rather than on none, so it wants a
+look in both themes after the edit rather than before the screens existed.
+
+**Option 1 — "leave it" — is still a complete answer**, and M7's accessibility
+pass is where it would be revisited.
+
+**The estimate that ages worst in a task file is the one about how expensive a
+decision will be later.** This one was written when the answer was *free* and read
+as *still free* for two weeks after it stopped being.
