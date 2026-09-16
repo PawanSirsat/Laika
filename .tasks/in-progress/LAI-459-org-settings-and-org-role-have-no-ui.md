@@ -2,11 +2,12 @@
 id: LAI-459
 title: 'Org settings and org-role management have no UI — `GET/PATCH /org` and `PATCH /users/:id` are never called'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-222, LAI-442]
 discovered-from: LAI-441
-status: backlog
+started: 2026-09-16T15:26:54+05:30
+status: in-progress
 ---
 
 ## Goal
