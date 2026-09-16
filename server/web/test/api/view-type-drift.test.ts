@@ -58,6 +58,19 @@ interface Pair {
 
 const PAIRS: readonly Pair[] = [
   {
+    // Only the `*View`. `ApplyReviewResult` and `ProposalView` are the shapes
+    // that matter most on this screen and **neither can be paired here**: the
+    // census derives served types from `*View` exports and `c.json<…>`, so a
+    // pair naming anything else turns `PAIRS names a server type that no longer
+    // exists` red. Same wall as `PresenceEntry` in LAI-439, and the same answer
+    // — `meeting-reviews.test.ts` compares those two directly, and checks
+    // optionality, which this check cannot see either.
+    server: 'MeetingReviewView',
+    serverFile: 'services/meeting-reviews.ts',
+    client: 'MeetingReview',
+    clientFile: 'meeting-reviews.ts',
+  },
+  {
     // Paired the moment the mirror existed (LAI-439). The census listed both as
     // "no client type exists"; creating the client type is what made that reason
     // false, so the rows came out of `UNPAIRED` in the same change.
