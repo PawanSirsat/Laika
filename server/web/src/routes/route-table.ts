@@ -126,6 +126,16 @@ export const ROUTES: readonly Route[] = [
     phase: 'Phase 5',
   },
 
+  {
+    path: '/meeting-review',
+    label: 'Meeting review',
+    group: 'REVIEW',
+    // Offered now that there is a screen behind it (LAI-455) — the same rule
+    // that gave `Tokens` and `Capacity` their places back.
+    status: 'ready',
+    phase: 'Phase 6',
+  },
+
   // SETTINGS
   // SETTINGS order follows the prototype: Tokens, then Organisation.
   {
@@ -148,7 +158,6 @@ export const ROUTES: readonly Route[] = [
   // Routed and reachable by URL, but not offered in the nav: no screen behind
   // them yet, so an entry would be a dead link. They come back the moment they
   // have a `status`.
-  { path: '/meeting-review', label: 'Meeting review', group: 'REVIEW', phase: 'Phase 6' },
 
   // Reached from a project rather than the nav.
   { path: '/members', label: 'Members', group: null, status: 'ready', phase: 'Phase 2' },

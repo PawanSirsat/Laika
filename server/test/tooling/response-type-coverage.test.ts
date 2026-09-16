@@ -177,8 +177,10 @@ const UNPAIRED = new Map<string, string>([
   // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
   // three leave this group the same way `CapacityView` and `PresenceView` did —
   // when the screen exists, and therefore the mirror.
-  ['MeetingReviewView', 'no client type exists'],
-  ['MeetingReviewDetailView', 'no client type exists'],
+  // `MeetingReviewView` is paired by LAI-455. `MeetingReviewDetailView` extends
+  // it and adds `proposals`, and the drift check resolves `extends` — so it is
+  // covered through its base, exactly as `ProjectView` is (LAI-160).
+  ['MeetingReviewDetailView', 'MeetingReviewDetail'],
   ['ProposalView', 'no client type exists'],
   ['HeartbeatView', 'no client type exists'],
   ['MetricsView', 'no client type exists'],
