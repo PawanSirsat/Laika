@@ -2,11 +2,12 @@
 id: LAI-455
 title: 'The Meeting review screen — transcript beside proposals, accepted per line'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-451, LAI-454]
 discovered-from: LAI-450
-status: backlog
+started: 2026-09-16T14:43:02+05:30
+status: in-progress
 ---
 
 ## Goal
