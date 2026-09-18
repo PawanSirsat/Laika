@@ -2,11 +2,12 @@
 id: LAI-242
 title: 'The theme control becomes one animated sun/moon icon, in all three places'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-019
-status: backlog
+started: 2026-09-18T12:41:05+05:30
+status: in-progress
 ---
 
 ## Goal
