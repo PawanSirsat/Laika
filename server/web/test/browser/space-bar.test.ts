@@ -57,7 +57,29 @@ const STUB: ApiStub = {
     memberships: [{ project_id: 'laika-core', role: 'lead' }],
   },
   '/api/v1/projects': { data: [CORE], next_cursor: null },
-  '/api/v1/projects/laika-core': CORE,
+  /*
+   * **The by-slug response, as the server really sends it** (LAI-259).
+   *
+   * `task_counts`, `blocked_count`, `member_count`, `members` and
+   * `last_activity_at` are derived by the *list* endpoint; `GET
+   * /projects/:slug` returns the plain §4.3 row. This fixture used to be
+   * `CORE` — the list shape — and that is exactly why "No space" reached a
+   * real instance: the bar built a `Space` from fields only the list carries,
+   * threw, and the fixture was generous enough to hide it.
+   */
+  '/api/v1/projects/laika-core': {
+    id: CORE.id,
+    slug: CORE.slug,
+    prefix: CORE.prefix,
+    name: CORE.name,
+    description: null,
+    repo: null,
+    visibility: 'private',
+    context_md: '',
+    archived_at: null,
+    created_at: CORE.created_at,
+    updated_at: CORE.updated_at,
+  },
   '/api/v1/projects/laika-core/tasks': { data: [], next_cursor: null },
   '/api/v1/projects/laika-core/members': { members: MEMBERS },
   '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
@@ -116,6 +138,25 @@ void describe('the space bar', () => {
 
       const bar = await h.page.locator('#sidebar').innerText();
       assert.doesNotMatch(bar, /Mira Kellner/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('names the space from the by-slug response, not the list', async () => {
+    // The regression: the headline read "No space" over a project that
+    // plainly existed, on every screen, because the bar wanted list-only
+    // fields. Asserted against a fixture shaped like the real endpoint.
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      const name = h.page.locator('.space-name');
+      await name.waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(
+        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
+        undefined,
+        { timeout: 10_000 },
+      );
+      assert.equal(await name.innerText(), 'Laika Core');
     } finally {
       await h.close();
     }

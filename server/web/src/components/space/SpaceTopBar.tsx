@@ -5,10 +5,14 @@ import { useTheme } from '../../theme/use-theme.ts';
 import { useLive } from './SpaceLive.tsx';
 import { agentCount, cluster, nextPriority, priorityLabel } from './top-bar-derive.ts';
 import type { Member, TaskPriority } from '../../api/tasks.ts';
-import type { Space } from '../../routes/spaces.ts';
 
 export interface SpaceTopBarProps {
-  readonly space: Space | undefined;
+  /**
+   * What to call this space. The project's `name`, falling back to its slug
+   * while the request is in flight — never a `Space` built from list-only
+   * fields the by-slug response does not carry (LAI-259).
+   */
+  readonly spaceName: string | undefined;
   readonly members: readonly Member[];
   /** Live filter state, read from and written back to the URL. */
   readonly query: string;
@@ -32,7 +36,7 @@ export interface SpaceTopBarProps {
  * forbids. Space settings arrive with a screen to put behind them.
  */
 export function SpaceTopBar({
-  space,
+  spaceName,
   members,
   query,
   priority,
@@ -94,7 +98,7 @@ export function SpaceTopBar({
             <path d="M5 20V9M12 20V4M19 20v-7" />
           </svg>
         </span>
-        <h1 className="space-name">{space?.name ?? 'No space'}</h1>
+        <h1 className="space-name">{spaceName ?? 'No space'}</h1>
 
         {/* Real members, never the design's four fixtures. Absent rather than
             a placeholder while the list is still loading. */}

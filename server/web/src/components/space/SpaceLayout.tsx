@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useShell } from '../shell/shell-context.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { listMembers, type Member } from '../../api/tasks.ts';
-import { toSpace, type Space } from '../../routes/spaces.ts';
 import { getProject } from '../../api/projects.ts';
 import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
 import { PresenceStrip } from './PresenceStrip.tsx';
@@ -73,12 +72,20 @@ function SpaceFrame({
   children,
 }: SpaceFrameProps) {
   const { presence } = useLive();
-  const [space, setSpace] = useState<Space | undefined>(undefined);
+  /**
+   * The space's display name.
+   *
+   * **A name, not a `Space`** (LAI-259). `toSpace()` reads `task_counts` and
+   * `member_count`, which the *list* endpoint derives and the by-slug response
+   * does not carry — so building one here threw, the `catch` below swallowed
+   * it, and the bar read "No space" over a project that plainly existed.
+   */
+  const [spaceName, setSpaceName] = useState<string | undefined>(undefined);
   const [members, setMembers] = useState<readonly Member[]>([]);
 
   useEffect(() => {
     if (slug === undefined) {
-      setSpace(undefined);
+      setSpaceName(undefined);
       setMembers([]);
       return;
     }
@@ -87,11 +94,18 @@ function SpaceFrame({
 
     getProject(slug, controller.signal)
       .then((project) => {
-        if (!controller.signal.aborted) setSpace(toSpace(project));
+        if (!controller.signal.aborted) setSpaceName(project.name);
       })
-      .catch(() => {
-        // The bar falls back to the slug rather than failing the whole view;
-        // the screen below has its own error state for a project that is gone.
+      .catch((cause: unknown) => {
+        /*
+         * **Only an unreachable endpoint belongs here.** This `catch` used to
+         * sit around a `toSpace()` call that could throw a `TypeError`, and it
+         * absorbed it — which is how "No space" survived review (LAI-259). The
+         * `.then` above now does nothing that can fail, so anything arriving
+         * here is a request that did not land, and the bar falls back to the
+         * slug while the screen below shows its own error state.
+         */
+        if (cause instanceof TypeError) throw cause;
       });
 
     listMembers(slug, controller.signal)
@@ -121,7 +135,7 @@ function SpaceFrame({
     <div className="space">
       <div className="space-bar">
         <SpaceTopBar
-          space={space}
+          spaceName={spaceName ?? slug}
           members={members}
           query={params.get('q') ?? ''}
           priority={(params.get('priority') ?? undefined) as TaskPriority | undefined}
