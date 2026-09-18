@@ -170,14 +170,18 @@ void describe('the task drawer', () => {
       await h.page.setViewportSize({ width: 1600, height: 700 });
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
 
-      // The page is the scroller here, not the lane — the lanes grow and the
-      // document scrolls (the prototype's shell does not, which is what the
-      // drawer's `fixed` positioning is about).
-      await h.page.evaluate(() => {
-        window.scrollTo(0, 400);
+      /*
+       * **The lane is the scroller since LAI-270**, not the page: columns are
+       * one height and scroll their own cards, which is what the reference
+       * does. This test used to scroll the window; with the board no longer
+       * growing the document there is nothing there to move.
+       */
+      const lane = h.page.locator('.lane-body').first();
+      await lane.evaluate((el) => {
+        el.scrollTop = 200;
       });
-      const before = await h.page.evaluate(() => window.scrollY);
-      assert.ok(before > 0, 'the page did not scroll — this proves nothing');
+      const before = await lane.evaluate((el) => el.scrollTop);
+      assert.ok(before > 0, 'the lane did not scroll — this proves nothing');
 
       await h.page.locator('.card').nth(3).click();
       await h.page.locator('.drawer').waitFor({ timeout: 10_000 });
@@ -194,7 +198,7 @@ void describe('the task drawer', () => {
       await h.page.keyboard.press('Escape');
       await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 10_000 });
 
-      const after = await h.page.evaluate(() => window.scrollY);
+      const after = await lane.evaluate((el) => el.scrollTop);
       assert.equal(after, before, 'the board was rebuilt underneath the drawer');
     } finally {
       await h.close();

@@ -46,10 +46,12 @@ export interface ScreenEntry {
 
 function BoardRoute() {
   const {
-    route: { params, setParams },
+    route: { params, setParams, path },
     me,
   } = useShell();
-  return <BoardScreen params={params} onParamsChange={setParams} me={me} />;
+  // `/board` and `/list` are the same screen in two modes — the design makes
+  // them sibling tabs, so the route is what chooses (LAI-270).
+  return <BoardScreen params={params} onParamsChange={setParams} me={me} path={path} />;
 }
 
 function ProjectsRoute() {
@@ -132,6 +134,7 @@ function MembersRoute() {
  */
 export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/board': { Component: BoardRoute, layout: 'space' },
+  '/list': { Component: BoardRoute, layout: 'space' },
   '/timeline': { Component: TimelineScreen, layout: 'space' },
   '/sprints': { Component: SprintsScreen, layout: 'space' },
   '/dashboard': { Component: DashboardScreen, layout: 'space' },

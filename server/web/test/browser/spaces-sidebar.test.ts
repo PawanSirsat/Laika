@@ -160,6 +160,7 @@ void describe('the view tabs', () => {
       );
       assert.deepEqual(labels, [
         'Board',
+        'List',
         'Timeline',
         'Sprints',
         'Capacity',

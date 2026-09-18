@@ -129,6 +129,13 @@ export const ROUTES: readonly Route[] = [
     phase: 'Phase 2',
   },
   {
+    path: '/list',
+    label: 'List',
+    group: null /* a space tab */,
+    status: 'ready',
+    phase: 'Phase 2',
+  },
+  {
     path: '/timeline',
     label: 'Timeline',
     group: null /* a space tab */,
@@ -253,6 +260,7 @@ export const ROUTES: readonly Route[] = [
  */
 export const SPACE_TAB_PATHS: readonly string[] = [
   '/board',
+  '/list',
   '/timeline',
   '/sprints',
   '/capacity',

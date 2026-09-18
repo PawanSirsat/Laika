@@ -21,6 +21,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'Nothing in this lane',
     body: 'The board shows backlog, to do, in progress, review and done for one project. It fills in once projects and tasks exist.',
   },
+  '/list': {
+    headline: 'No tasks to list',
+    body: 'The list is the board as a table — same tasks, same filters, one row each. It fills in once the project has tasks.',
+  },
   '/timeline': {
     headline: 'No sprints to lay out yet',
     body: 'The timeline draws sprints against dates once a project has them.',

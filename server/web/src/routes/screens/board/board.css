@@ -157,7 +157,13 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(12.875rem, 1fr));
   gap: 0.6875rem;
-  align-items: start;
+  /*
+   * **Stretch, not start** (LAI-270). `start` sized every column to its own
+   * cards, so five columns of different lengths left the ragged row the owner
+   * saw beside the reference, where all five are the same height and scroll
+   * their own contents.
+   */
+  align-items: stretch;
 }
 
 .lane {
@@ -1078,4 +1084,89 @@
   font-weight: var(--weight-semibold);
   color: var(--tx3);
   white-space: nowrap;
+}
+
+/* ------------------------------------------------- the reference's columns (LAI-270) */
+
+/*
+ * **Equal-height panels that scroll their own cards.**
+ *
+ * They grew to fit before, so five columns of different lengths left a ragged
+ * row and the *page* scrolled instead of the column. The reference's columns
+ * are the same height, scroll internally, and keep `+ Add task` at the bottom
+ * where it does not drift away from the cards it belongs to.
+ *
+ * `100dvh` minus the chrome above: the sidebar is `100vh` already, and this is
+ * the same idea applied to the lane.
+ */
+.kanban .lane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /* One height for every column, and the body inside it scrolls. */
+  height: calc(100dvh - 19rem);
+}
+
+.kanban .lane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* The thin scrollbar the reference shows on a full column. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--bd2) transparent;
+}
+
+.kanban .lane-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.kanban .lane-body::-webkit-scrollbar-thumb {
+  background: var(--bd2);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Pinned: it is the column's footer, not the last card's neighbour. */
+.kanban .lane-add {
+  flex: none;
+  margin-top: var(--space-2);
+}
+
+/*
+ * **The status select is keyboard-only now.**
+ *
+ * The reference has no per-card control, and a `Backlog ⌄` bar under every
+ * card was the loudest difference between the two boards. It is not deleted:
+ * dragging is the only other way to move a task, and drag has no keyboard
+ * story — so it is out of the visual flow until it is focused, at which point
+ * it appears where it always was.
+ */
+.lane-move {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lane-move:focus-within {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+}
+
+/* A rule between the tags and the footer, as the reference draws it. */
+.card-foot {
+  border-top: 1px solid var(--bd);
+  padding-top: 0.5625rem;
+  margin-top: 0.125rem;
 }

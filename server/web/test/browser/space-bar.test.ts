@@ -204,8 +204,12 @@ void describe('the space bar', () => {
         timeout: 5000,
       });
 
-      const priority = h.page.locator('.space-chip', { hasText: /Any priority|^P\d$/ });
-      await priority.click();
+      // **A dropdown since LAI-270**, as the reference has it — selecting is
+      // what writes the URL now, not pressing a button until it cycles round.
+      await h.page
+        .locator('.space-select', { hasText: 'Priority' })
+        .locator('select')
+        .selectOption('p1');
       await h.page.waitForFunction(
         () => window.location.search.includes('priority=p1'),
         undefined,

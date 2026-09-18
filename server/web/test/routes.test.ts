@@ -91,7 +91,7 @@ void describe('sidebar groups (AC1)', () => {
       // The prototype's strip, minus `Calendar` — absent until it has a route
       // of its own; a tab pointing at nothing is worse than none. `List` joins
       // in its own task. Capacity is here by the owner's decision (LAI-251).
-      ['Board', 'Timeline', 'Sprints', 'Capacity', 'Dashboard', 'Meeting review'],
+      ['Board', 'List', 'Timeline', 'Sprints', 'Capacity', 'Dashboard', 'Meeting review'],
     );
   });
 });

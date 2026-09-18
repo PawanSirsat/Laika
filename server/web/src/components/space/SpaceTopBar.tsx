@@ -3,8 +3,8 @@ import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useLive } from './SpaceLive.tsx';
-import { agentCount, cluster, nextPriority, priorityLabel } from './top-bar-derive.ts';
-import type { Member, TaskPriority } from '../../api/tasks.ts';
+import { agentCount, cluster } from './top-bar-derive.ts';
+import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
 
 export interface SpaceTopBarProps {
   /**
@@ -18,6 +18,14 @@ export interface SpaceTopBarProps {
   readonly query: string;
   readonly priority: TaskPriority | undefined;
   readonly agentOnly: boolean;
+  /** The project's own tag vocabulary, for the tag filter. */
+  readonly tags: readonly { readonly name: string; readonly task_count: number }[];
+  readonly tag: string | undefined;
+  readonly assignee: string | undefined;
+  readonly ready: boolean;
+  readonly onTag: (value: string | undefined) => void;
+  readonly onAssignee: (value: string | undefined) => void;
+  readonly onReady: (value: boolean) => void;
   readonly onQuery: (value: string) => void;
   readonly onPriority: (value: TaskPriority | undefined) => void;
   readonly onAgentOnly: (value: boolean) => void;
@@ -41,9 +49,16 @@ export function SpaceTopBar({
   query,
   priority,
   agentOnly,
+  tags,
+  tag,
+  assignee,
+  ready,
   onQuery,
   onPriority,
   onAgentOnly,
+  onTag,
+  onAssignee,
+  onReady,
   onCreate,
 }: SpaceTopBarProps) {
   const { theme } = useTheme();
@@ -190,15 +205,76 @@ export function SpaceTopBar({
           Agents {agents}
         </button>
 
+        {/*
+          **A dropdown, not a cycler** (LAI-270). The reference reads
+          `Priority: all` and opens; a button you press repeatedly to reach p3
+          hides its own options.
+        */}
+        <label className={priority === undefined ? 'space-select' : 'space-select space-chip-on'}>
+          <span className="visually-hidden">Priority</span>
+          <select
+            value={priority ?? ''}
+            onChange={(event) => {
+              onPriority(
+                event.target.value === '' ? undefined : (event.target.value as TaskPriority),
+              );
+            }}
+          >
+            <option value="">Priority: all</option>
+            {PRIORITIES.map((p) => (
+              <option key={p} value={p}>
+                Priority: {p.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        {tags.length > 0 && (
+          <label className={tag === undefined ? 'space-select' : 'space-select space-chip-on'}>
+            <span className="visually-hidden">Tag</span>
+            <select
+              value={tag ?? ''}
+              onChange={(event) => {
+                onTag(event.target.value === '' ? undefined : event.target.value);
+              }}
+            >
+              <option value="">Any tag</option>
+              {tags.map((t) => (
+                <option key={t.name} value={t.name}>
+                  {t.name} ({t.task_count})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        <label className={assignee === undefined ? 'space-select' : 'space-select space-chip-on'}>
+          <span className="visually-hidden">Assignee</span>
+          <select
+            value={assignee ?? ''}
+            onChange={(event) => {
+              onAssignee(event.target.value === '' ? undefined : event.target.value);
+            }}
+          >
+            <option value="">Anyone</option>
+            <option value="none">Unassigned</option>
+            {members.map((m) => (
+              <option key={m.user_id} value={m.user_id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
         <button
           type="button"
-          className={priority === undefined ? 'space-chip' : 'space-chip space-chip-on'}
-          title="Filter by priority"
+          className={ready ? 'space-chip space-chip-on' : 'space-chip'}
+          aria-pressed={ready}
           onClick={() => {
-            onPriority(nextPriority(priority));
+            onReady(!ready);
           }}
         >
-          {priorityLabel(priority)}
+          Ready only
         </button>
 
         <button type="button" className="space-create" onClick={onCreate}>

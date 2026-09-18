@@ -124,6 +124,123 @@ void after(async () => {
   await closeBrowser();
 });
 
+void describe('the board matches the reference (LAI-270)', () => {
+  void test('the tabs are the design’s, and the badge is on Meeting review', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
+      const labels = (await h.page.locator('.view-tab').allInnerTexts()).map(
+        (t) => t.split('\n')[0],
+      );
+      assert.ok(labels.includes('List'), `List is not a tab — saw ${labels.join(', ')}`);
+      assert.equal(labels[0], 'Board');
+      assert.equal(labels[1], 'List', 'List sits beside Board, as the reference has it');
+
+      // The badge belongs to Meeting review, not Sprints.
+      const sprints = h.page.locator('.view-tab', { hasText: 'Sprints' });
+      assert.equal(await sprints.locator('.view-tab-count').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('there is no second filter row — the filters are in the bar', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+
+      /*
+       * The reference has no band under the tabs. Ours carried `Any tag`,
+       * `Anyone`, `Ready only` and a Board/List toggle; they moved to the top
+       * bar and Board/List became tabs.
+       */
+      const slot = h.page.locator('.space-slot');
+      assert.ok(
+        !(await slot.isVisible()),
+        'the second row is back — the slot should be empty with no filter active',
+      );
+
+      // And the filters really are in the bar, not merely gone.
+      assert.ok((await h.page.locator('.space-select').count()) >= 2, 'the filters vanished');
+      assert.match(
+        await h.page.locator('.space-select').first().innerText(),
+        /Priority/,
+        'priority must read as a named dropdown, not a cycling button',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the columns are one height and scroll their own cards', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 900 });
+      await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
+
+      const heights = await h.page
+        .locator('.lane')
+        .evaluateAll((els: Element[]) =>
+          els.map((e) => Math.round(e.getBoundingClientRect().height)),
+        );
+      assert.equal(
+        new Set(heights).size,
+        1,
+        `the columns are ragged: ${heights.join(', ')} — the reference's are equal`,
+      );
+
+      // The body scrolls, and `+ Add task` is outside it so it stays put.
+      const bodyScrolls = await h.page
+        .locator('.lane-body')
+        .first()
+        .evaluate((el) => getComputedStyle(el).overflowY);
+      assert.equal(bodyScrolls, 'auto');
+      const addInsideBody = await h.page.locator('.lane-body .lane-add').count();
+      assert.equal(addInsideBody, 0, '“Add task” scrolls away with the cards');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a card has a rule between its tags and its footer', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.card-foot').first().waitFor({ timeout: 20_000 });
+      const border = await h.page
+        .locator('.card-foot')
+        .first()
+        .evaluate((el) => getComputedStyle(el).borderTopWidth);
+      assert.equal(border, '1px', 'the footer rule the reference draws is missing');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the per-card status select is out of the way but reachable', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+
+      // Clipped to a point — the reference has no such control on a card.
+      const box = await h.page.locator('.lane-move').first().boundingBox();
+      assert.ok(box !== null && box.height <= 2, `the select is ${String(box?.height)}px tall`);
+
+      /*
+       * **But still operable**: drag has no keyboard story, so this is the only
+       * way a keyboard user moves a task. Focusing it brings it back.
+       */
+      await h.page.locator('.lane-move-select').first().focus();
+      const focused = await h.page.locator('.lane-move').first().boundingBox();
+      assert.ok(
+        focused !== null && focused.height > 2,
+        'focusing the select did not bring it back — the keyboard route is gone',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the sprint strip', () => {
   void test('is a single row of pills and figures', async () => {
     const h = await open('/board?project=laika-core', STUB);

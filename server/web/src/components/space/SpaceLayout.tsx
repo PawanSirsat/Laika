@@ -3,6 +3,8 @@ import { useShell } from '../shell/shell-context.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { listMembers, type Member } from '../../api/tasks.ts';
 import { getProject } from '../../api/projects.ts';
+import { listMeetingReviews } from '../../api/meeting-reviews.ts';
+import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
 import { PresenceStrip } from './PresenceStrip.tsx';
 import { SpaceLive, useLive } from './SpaceLive.tsx';
@@ -28,7 +30,6 @@ export function SpaceLayout({ children }: SpaceLayoutProps) {
   const {
     route: { path, params, setParams, navigate },
     me,
-    sprintCount,
   } = useShell();
 
   const slug = params.get('project') ?? undefined;
@@ -42,7 +43,6 @@ export function SpaceLayout({ children }: SpaceLayoutProps) {
         setParams={setParams}
         navigate={navigate}
         orgRole={me?.org_role}
-        sprintCount={sprintCount}
       >
         {children}
       </SpaceFrame>
@@ -57,7 +57,6 @@ interface SpaceFrameProps {
   readonly setParams: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
   readonly navigate: (to: string) => void;
   readonly orgRole: string | undefined;
-  readonly sprintCount: number | undefined;
   readonly children: ReactNode;
 }
 
@@ -68,7 +67,6 @@ function SpaceFrame({
   setParams,
   navigate,
   orgRole,
-  sprintCount,
   children,
 }: SpaceFrameProps) {
   const { presence } = useLive();
@@ -82,6 +80,13 @@ function SpaceFrame({
    */
   const [spaceName, setSpaceName] = useState<string | undefined>(undefined);
   const [members, setMembers] = useState<readonly Member[]>([]);
+  /**
+   * The Meeting review tab's badge — **the design puts it there**, not on
+   * Sprints (LAI-270). A review that is still `pending` is one somebody has to
+   * look at; anything applied or discarded is done with.
+   */
+  const [pendingReviews, setPendingReviews] = useState<number | undefined>(undefined);
+  const [tags, setTags] = useState<readonly ProjectTag[]>([]);
 
   useEffect(() => {
     if (slug === undefined) {
@@ -116,6 +121,23 @@ function SpaceFrame({
         // No cluster beats a wrong one.
       });
 
+    listMeetingReviews(slug, controller.signal)
+      .then((page) => {
+        if (controller.signal.aborted) return;
+        setPendingReviews(page.data.filter((r) => r.status === 'pending').length);
+      })
+      .catch(() => {
+        // No badge beats a wrong badge — the same rule the sprint count follows.
+      });
+
+    listProjectTags(slug, controller.signal)
+      .then((list) => {
+        if (!controller.signal.aborted) setTags(list);
+      })
+      .catch(() => {
+        // The tag filter simply does not offer itself.
+      });
+
     return () => {
       controller.abort();
     };
@@ -140,6 +162,10 @@ function SpaceFrame({
           query={params.get('q') ?? ''}
           priority={(params.get('priority') ?? undefined) as TaskPriority | undefined}
           agentOnly={params.get('agent') === 'true'}
+          tags={tags}
+          tag={params.get('tag') ?? undefined}
+          assignee={params.get('assignee') ?? undefined}
+          ready={params.get('ready') === 'true'}
           onQuery={(value) => {
             setParam('q', value);
           }}
@@ -148,6 +174,15 @@ function SpaceFrame({
           }}
           onAgentOnly={(value) => {
             setParam('agent', value ? 'true' : undefined);
+          }}
+          onTag={(value) => {
+            setParam('tag', value);
+          }}
+          onAssignee={(value) => {
+            setParam('assignee', value);
+          }}
+          onReady={(value) => {
+            setParam('ready', value ? 'true' : undefined);
           }}
           onCreate={() => {
             // The board owns task creation; Create from any view goes there
@@ -165,7 +200,7 @@ function SpaceFrame({
           projectSlug={slug}
           onNavigate={navigate}
           holds={permissionHolder(orgRole)}
-          counts={{ '/sprints': sprintCount }}
+          counts={{ '/meeting-review': pendingReviews }}
         />
 
         {/* Where each view puts its own context line and controls. */}

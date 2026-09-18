@@ -13,7 +13,6 @@ import { BoardRail } from './board/BoardRail.tsx';
 import { getPresence, type PresenceView } from '../../api/presence.ts';
 import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
-import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
@@ -43,6 +42,8 @@ export interface BoardScreenProps {
   /** Filter and view state, owned by the URL so a filtered board is linkable. */
   readonly params: URLSearchParams;
   readonly onParamsChange: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
+  /** The route being rendered — `/board` or `/list` (LAI-270). */
+  readonly path?: string;
 }
 
 /**
@@ -54,7 +55,7 @@ export interface BoardScreenProps {
  * that someone has to find and remove later, and a visible button is honest
  * about the board being a snapshot.
  */
-export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
+export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
   const { theme } = useTheme();
 
   /**
@@ -116,7 +117,6 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const openTaskId = params.get('task') ?? undefined;
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
-  const [projectTags, setProjectTags] = useState<readonly ProjectTag[]>([]);
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   const [creating, setCreating] = useState(false);
@@ -129,7 +129,14 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
    */
   const query = params.get('q') ?? '';
 
-  const view: BoardViewMode = params.get('view') === 'list' ? 'list' : 'kanban';
+  /**
+   * Kanban or list, **from the path** (LAI-270).
+   *
+   * The design makes List a tab beside Board, not a toggle inside the board —
+   * so the route decides. `?view=list` still works, because links carrying it
+   * predate the tab.
+   */
+  const view: BoardViewMode = path === '/list' || params.get('view') === 'list' ? 'list' : 'kanban';
   const priority = (params.get('priority') ?? undefined) as TaskPriority | undefined;
   const assignee = params.get('assignee') ?? undefined;
   const readyParam = params.get('ready');
@@ -284,15 +291,8 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         setSprints([]);
       });
 
-    // The project's tag vocabulary, for the filter. Re-read on `attempt` with
-    // everything else, so applying a brand-new tag adds it to the list without
-    // a reload.
-    listProjectTags(slug, controller.signal)
-      .then(setProjectTags)
-      .catch(() => {
-        // Only the filter's options are lost; the board itself is unaffected.
-        setProjectTags([]);
-      });
+    // The tag filter moved to the space bar with the rest of them (LAI-270),
+    // and the bar fetches its own vocabulary.
 
     listTasks(slug, { limit: 200 }, controller.signal)
       .then((page) => {
@@ -438,6 +438,12 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         The stream pill went the same way: one LIVE indicator per space, in the
         bar, rather than one per screen.
       */}
+      {/*
+        **No second row** (LAI-270). The design has none: tag, assignee,
+        priority and ready-only live in the space bar beside Search, and
+        Board/List are tabs. The only thing left for the slot is the scope
+        line, and only when a filter is actually hiding something.
+      */}
       <SpaceSlot
         context={
           shownCount === board.byId.size
@@ -446,85 +452,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
                 board.byId.size === 1 ? 'task' : 'tasks'
               } match`
         }
-      >
-        {projectTags.length > 0 && (
-          <label className="bar-control">
-            <span className="visually-hidden">Tag</span>
-            <select
-              value={tagScope ?? ''}
-              onChange={(e) => {
-                setParam('tag', e.target.value);
-              }}
-            >
-              <option value="">Any tag</option>
-              {projectTags.map((tag) => (
-                <option key={tag.name} value={tag.name}>
-                  {tag.name} ({tag.task_count})
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <label className="bar-control">
-          <span className="visually-hidden">Assignee</span>
-          <select
-            value={assignee ?? ''}
-            onChange={(e) => {
-              setParam('assignee', e.target.value);
-            }}
-          >
-            <option value="">Anyone</option>
-            <option value="none">Unassigned</option>
-            {[...members.values()].map((m) => (
-              <option key={m.user_id} value={m.user_id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className={ready === true ? 'bar-control bar-control-on' : 'bar-control'}>
-          <input
-            type="checkbox"
-            checked={ready === true}
-            onChange={(e) => {
-              setParam('ready', e.target.checked ? 'true' : undefined);
-            }}
-          />
-          Ready only
-        </label>
-
-        <div className="board-views" role="group" aria-label="View">
-          {(['kanban', 'list'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={view === mode ? 'board-view board-view-on' : 'board-view'}
-              aria-pressed={view === mode}
-              onClick={() => {
-                setParam('view', mode === 'kanban' ? undefined : 'list');
-              }}
-            >
-              {mode === 'kanban' ? 'Board' : 'List'}
-            </button>
-          ))}
-        </div>
-
-        {filtered && (
-          <button
-            type="button"
-            className="bar-control"
-            onClick={() => {
-              const next = new URLSearchParams(params);
-              for (const key of ['priority', 'assignee', 'ready', 'agent']) next.delete(key);
-              onParamsChange(next);
-            }}
-          >
-            Clear
-          </button>
-        )}
-      </SpaceSlot>
+      />
 
       {/*
         Mounted here rather than in the shell: it reports the state of *this*
