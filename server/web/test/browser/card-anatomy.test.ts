@@ -120,6 +120,66 @@ void after(async () => {
   await closeBrowser();
 });
 
+void describe('the column header and the board’s air (LAI-272)', () => {
+  /**
+   * **Dot, name and count read as one group on the left.**
+   *
+   * A pre-rebuild `.lane-head` carried `justify-content: space-between` and the
+   * rebuilt rule below it set none, so the count drifted to the far edge of the
+   * column and the name floated in the middle. Measured by position, because
+   * both arrangements contain exactly the same three elements.
+   */
+  void test('groups the dot, name and count to the left', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.lane-head').first().waitFor({ timeout: 20_000 });
+      const head = h.page.locator('.lane-head').first();
+
+      const lane = (await head.boundingBox())?.width ?? 0;
+      const title = await head.locator('.lane-title').boundingBox();
+      const count = await head.locator('.lane-count').boundingBox();
+      assert.ok(lane > 0 && title !== null && count !== null, 'the header is missing a part');
+
+      // The count begins just after the name ends, rather than at the far edge.
+      const gap = count.x - (title.x + title.width);
+      assert.ok(gap < 14, `the count is ${String(Math.round(gap))}px adrift of the name`);
+
+      /*
+       * And the column's slack is to the **right** of the group, not inside it.
+       * `space-between` puts the count hard against the right edge, so this is
+       * the assertion that tells the two layouts apart at any column width —
+       * a fraction-of-the-width bound is not, because a narrow column can be
+       * more than half full of a correctly grouped header.
+       */
+      const headBox = (await head.boundingBox())!;
+      const slack = headBox.x + headBox.width - (count.x + count.width);
+      assert.ok(slack > 20, `only ${String(Math.round(slack))}px right of the count — it is flush`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  /**
+   * **The gap above the tubs**, which the owner reported missing against the
+   * reference: our columns began on the band's own border, with nothing
+   * between them.
+   */
+  void test('leaves air between the band above and the first tub', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
+      const main = await h.page.locator('.board-main').boundingBox();
+      const lane = await h.page.locator('.lane').first().boundingBox();
+      assert.ok(main !== null && lane !== null);
+
+      const air = lane.y - main.y;
+      assert.ok(air >= 12, `the tubs start ${String(Math.round(air))}px in — they are flush`);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the card', () => {
   void test('carries the design’s padding and title', async () => {
     const h = await open('/board?project=laika-core', STUB);

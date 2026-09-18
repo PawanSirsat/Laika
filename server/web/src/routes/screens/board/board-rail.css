@@ -321,11 +321,16 @@
    */
   position: relative;
   /*
-   * Clearance for the scrollbar, so it never paints over the last card in the
-   * tallest lane. `scrollbar-gutter` alone would not do it: macOS overlay
-   * scrollbars reserve nothing and appear *on* the content while scrolling.
+   * **Air above the tubs.** The design sets `14px 18px 18px` on this pane; ours
+   * had no top padding, so the columns began on the WORKING NOW border with the
+   * band and the first tub touching — the gap the owner reported missing.
+   *
+   * The bottom is also clearance for the scrollbar, so it never paints over the
+   * last card in the tallest lane. `scrollbar-gutter` alone would not do it:
+   * macOS overlay scrollbars reserve nothing and appear *on* the content.
    */
-  padding-bottom: var(--space-2);
+  padding-top: 0.875rem;
+  padding-bottom: 1.125rem;
 }
 
 .board-main > .kanban,
