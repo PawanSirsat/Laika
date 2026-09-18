@@ -3,14 +3,13 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { TokenRow } from '../../../components/TokenRow.tsx';
 import {
   createToken,
   forcedTokenScope,
-  lastUsedLabel,
   listTokens,
   mayChooseScope,
   revokeToken,
-  tokenState,
   type CreatedToken,
   type TokenScope,
   type TokenView,
@@ -292,55 +291,9 @@ export function TokensScreen({ me }: TokensScreenProps) {
         />
       ) : (
         <ul className="tok-list">
-          {tokens.map((token) => {
-            const state = tokenState(token, now);
-            return (
-              <li key={token.id} className={`tok-row tok-row-${state}`}>
-                <div className="tok-row-main">
-                  <span className="tok-name">{token.name}</span>
-                  <code className="tok-prefix">{token.prefix}</code>
-                  <span className={`marker marker-${token.scope === 'full' ? 'agent' : 'ready'}`}>
-                    {token.scope === 'full' ? 'full' : 'read only'}
-                  </span>
-                  {state !== 'active' && <span className="tok-state">{state}</span>}
-                </div>
-
-                <div className="tok-row-meta">
-                  <span>{lastUsedLabel(token.last_used_at, now)}</span>
-                  <span>
-                    {token.project_ids === null
-                      ? 'All projects'
-                      : `${String(token.project_ids.length)} project${
-                          token.project_ids.length === 1 ? '' : 's'
-                        }`}
-                  </span>
-                  <span>
-                    {token.expires_at === null
-                      ? 'No expiry'
-                      : `Expires ${new Date(token.expires_at).toLocaleDateString()}`}
-                  </span>
-                </div>
-
-                {/* A revoked token stays on the list — it is audit history, and
-                    removing it would hide that it ever existed. */}
-                {state === 'revoked' ? (
-                  <span className="tok-revoked-at">
-                    Revoked {new Date(token.revoked_at ?? 0).toLocaleDateString()}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    className="tok-revoke"
-                    onClick={() => {
-                      revoke(token);
-                    }}
-                  >
-                    Revoke
-                  </button>
-                )}
-              </li>
-            );
-          })}
+          {tokens.map((token) => (
+            <TokenRow key={token.id} token={token} now={now} onRevoke={revoke} />
+          ))}
         </ul>
       )}
     </div>

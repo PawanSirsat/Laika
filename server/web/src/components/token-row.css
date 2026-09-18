@@ -1,0 +1,102 @@
+/**
+ * One token, rendered the same way wherever it appears (LAI-238).
+ *
+ * Lifted verbatim out of `routes/screens/tokens/tokens.css`, which owned it
+ * while personal settings was the only screen showing a token. The Organisation
+ * screen now shows somebody else's, and two copies of a security-relevant row is
+ * how one of them quietly stops matching the other.
+ *
+ * **`.tok-revoke`'s geometry is written out here rather than left behind.** On
+ * the Tokens screen it came from a rule grouping it with `.tok-copy` and
+ * `.tok-dismiss` — two buttons that stay on that screen and have nothing to do
+ * with a token row. Splitting the group is the price of the move; the grouping
+ * was convenience, not a relationship.
+ */
+
+.tok-list {
+  margin: 0 var(--space-4) var(--space-4);
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tok-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+}
+
+/* Still listed, visibly spent. Removing it would hide that it ever existed. */
+.tok-row-revoked,
+.tok-row-expired {
+  opacity: 0.6;
+}
+
+.tok-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.tok-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.tok-prefix {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.tok-state {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--tx3);
+}
+
+/* `flex-wrap` is the narrow-screen half and it is not cosmetic: these three
+   facts are a fixed width that `margin-left: auto` pins to the right edge, so
+   without wrapping the last one leaves the card rather than moving down. */
+.tok-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+@media (max-width: 40rem) {
+  .tok-row-meta {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}
+
+.tok-revoke {
+  flex: none;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-sm);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+}
+
+.tok-revoked-at {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
