@@ -2,11 +2,12 @@
 id: LAI-240
 title: 'A deactivated person vanishes from the Organisation screen — the client never asks for them'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-459
-status: backlog
+started: 2026-09-18T10:07:44+05:30
+status: in-progress
 ---
 
 ## Goal
