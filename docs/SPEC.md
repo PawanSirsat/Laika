@@ -1474,7 +1474,7 @@ rewritten against the refreshed design:
 
 | D-059 | |
 | --- | --- |
-| the sidebar | **SPACES** — three recent spaces, *More spaces*, SETTINGS. A space is a project with a two-letter key, a count and a colour |
+| the sidebar | **SPACES** — two recent spaces, *More spaces*, SETTINGS. A space is a project with a two-letter key, a count and a colour |
 | Task detail | a **840px drawer over a dimmed board**, dismissed by the scrim — not a screen |
 | Timeline, Calendar, Capacity, Dashboard, Meeting review | **tabs across the top of a space** |
 

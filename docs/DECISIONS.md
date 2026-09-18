@@ -3187,3 +3187,59 @@ here so it is tested rather than discovered.
 
 A project's task count makes a whole-project sequence expensive to rebalance, or
 the owner asks for a per-sprint order that differs from the board's.
+
+---
+
+## D-061 — The sidebar shows two spaces, not three. It amends D-059.1 and
+## nothing else.
+
+**2026-09-18. Owner's decision, with a screenshot of the shipped sidebar:**
+*"here only show 2 projects not three in sidebar other in more spaces"*.
+
+**D-059.1 said three** — *"Three most-recent spaces, then More spaces, then
+SETTINGS"* — taken from the live design. The owner is overriding their own
+earlier reading of it, which is theirs to do. **D-059's other three points are
+untouched** and remain in force.
+
+### What changes, and what deliberately does not
+
+**One constant.** `server/web/src/routes/spaces.ts` — `RECENT_LIMIT = 3 → 2`.
+Both the display slice and `promote()`'s storage cap already read it, so the
+change is genuinely one value rather than a hunt.
+
+**SPEC §11.4.2.1's sidebar row is edited to match**, by CHIEF, in the same
+breath. **No guard binds that row to the constant** — it is prose in a table
+nothing parses, unlike §4's schema tables — so this is **not** a §4.4 two-owner
+change and neither half reddens the gate alone. It is recorded here because a
+spec line that nobody's test can falsify is exactly the kind that goes stale
+silently.
+
+**`More spaces` keeps every project, including the two on display.** It is the
+directory, not the remainder, and it was already unconditional. Making it
+conditional on there being something left over is a different question nobody
+has asked.
+
+**Recency still chooses the set; it still does not choose the order.** That is
+LAI-260 and the owner's *"seque must not be change"*, and **this decision must
+not be read as reopening it.** Fewer slots makes the stable-order property more
+valuable, not less.
+
+### The consequence, stated so it is chosen rather than discovered
+
+**The space you are in always occupies one of the two slots** — `recentSpaces()`
+puts `current` first, by design, so that opening a space from the popover cannot
+leave it invisible. **So the sidebar now reads as "where I am, plus one".**
+
+With the owner's three projects, **one is always in the popover**, and which one
+changes as they work. That is the point of the request rather than a side
+effect, but it is the property to check against the real board before calling it
+right: a two-slot list churns more often than a three-slot one, and the value of
+a short list is that the rows stop moving.
+
+**If that churn is the thing that grates, the answer is not a third slot** — it
+is pinning, which is a feature nobody has asked for and which this decision does
+not pre-empt.
+
+### Revisit when
+
+The owner works in more than three projects regularly, or asks to pin a space.
