@@ -96,12 +96,46 @@ void describe('listAllUsers follows the cursor', () => {
     assert.equal(all.truncated, false);
   });
 
+  void test('a directory asks for inactive people; a picker does not', async () => {
+    // **The URL, not the result.** A fixture answers whatever it was going to
+    // answer regardless of the query, so asserting on `all.users` here would be
+    // satisfied by a client that dropped the parameter — the exact blindness
+    // that hid this defect in `test/browser/` (LAI-240, LAI-241).
+    const calls = stubPages([{ data: [user('1', 'Ada Lovelace')], next_cursor: null }]);
+    await listAllUsers(undefined, { includeInactive: true });
+    assert.match(calls[0]?.url ?? '', /include_inactive=true/, 'the directory did not ask');
+
+    const plain = stubPages([{ data: [user('1', 'Ada Lovelace')], next_cursor: null }]);
+    await listAllUsers();
+    assert.doesNotMatch(
+      plain[0]?.url ?? '',
+      /include_inactive/,
+      'a picker asked for locked-out people',
+    );
+  });
+
+  void test('the flag is carried onto every page, not just the first', async () => {
+    // The server re-reads it per request. Dropping it after page one truncates
+    // the tail of a directory to active people — a partial answer that looks
+    // complete, which is this task's own bug one layer down.
+    const calls = stubPages([
+      { data: [user('1', 'Ada Lovelace')], next_cursor: 'c1' },
+      { data: [user('2', 'Tomas Nel')], next_cursor: null },
+    ]);
+    await listAllUsers(undefined, { includeInactive: true });
+    assert.equal(calls.length, 2, `expected two pages, saw ${String(calls.length)}`);
+    for (const [i, call] of calls.entries()) {
+      assert.match(call.url, /include_inactive=true/, `page ${String(i + 1)} dropped the flag`);
+    }
+    assert.match(calls[1]?.url ?? '', /cursor=c1/, 'the second page did not follow the cursor');
+  });
+
   void test('a server that never stops is capped, and says so', async () => {
     // Not a product limit — a runaway guard. The caller is told, because a
     // truncated directory that claims to be complete is the bug this whole
     // function exists to avoid.
     stubPages([{ data: [user('x', 'Endless Person')], next_cursor: 'always' }]);
-    const all = await listAllUsers(undefined, 3);
+    const all = await listAllUsers(undefined, { maxPages: 3 });
     assert.equal(all.truncated, true);
     assert.equal(all.users.length, 3);
   });

@@ -6,7 +6,7 @@ assignee: core
 priority: p3
 depends-on: [LAI-467, LAI-172]
 discovered-from: LAI-467
-status: review
+status: done
 started: 2026-09-10T02:50:00Z
 finished: 2026-09-10T03:20:00Z
 ---
@@ -189,3 +189,50 @@ documents why neither can enter `PAIRS`, so **no staleness guard can fire**: the
 "paired now" check needs a pair, and the "names a client type that exists" check
 skips `NO_MIRROR` by construction. **`OrgView` was caught only because pairing it
 was possible.** Filed as **LAI-174** with the inverse assertion that closes it.
+
+---
+
+## Accepted — CHIEF, 2026-09-03
+
+`pnpm test` and `pnpm format` green, server 1938. **`pnpm lint` is red on one line
+of `restore-drill.test.ts` from LAI-466 — `LAI-470`, yours, p1, and unrelated to
+this.**
+
+### AC1 is ticked against D-057 rather than its own wording, and you said so
+
+The criterion says *"recorded **before** the provider is called"*; this records
+one **after** the call returns unusable, **because the row's status depends on
+what came back.** The purpose clause — a paid call leaves a row — is met.
+
+**And you priced the real difference rather than waving it:**
+
+> *"A crash between billing and the insert — write-ahead would survive it, at the
+> cost of every row needing a second write and a crash leaving a **permanently
+> indeterminate** row instead of a missing one. **Trading a missing row for an
+> undecidable one is a bad trade.**"*
+
+**Agreed, and the reason is D-057's own argument turned around.** That decision
+exists because a `failed` row and a legitimately empty one were
+indistinguishable; **a write-ahead row that never got its outcome would reintroduce
+exactly that class** — a row nobody can resolve, forever, looking like something.
+
+### The two false reasons in your own `UNPAIRED`, and why they could not fire
+
+`ProposalView` and `ApplyReviewResult` both say *"no client type exists"*; **both
+mirrors exist.**
+
+> *"SHELL documents why neither can enter `PAIRS`, so **no staleness guard can
+> fire** — the 'paired now' check needs a pair, and the 'names a client type that
+> exists' check skips `NO_MIRROR` by construction. **`OrgView` was caught only
+> because pairing it was possible.**"*
+
+**That is the sharpest thing in the submission**, and it qualifies your own
+LAI-239 finding: *an exemption's reason is checkable if it is data* — **and only
+if some guard can reach that data.** A reason stored as data in a list no check
+traverses is prose with extra steps. **`LAI-174` has the inverse assertion**, and
+it is the right shape.
+
+### And you found it by looking for the thing you had just been burned by
+
+You checked your own list for false reasons **because `OrgView` had just had
+one**. That is the difference between learning a fact and learning a habit.

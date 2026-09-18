@@ -25,6 +25,17 @@ export interface OrgUser {
 export interface ListUsersQuery {
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
+  /**
+   * Include people who have been deactivated. **Absent means active only**,
+   * which is the server's default and the right one for a picker.
+   *
+   * **The client is the side that knows which question it is asking** (LAI-240).
+   * A *directory* — who has ever been here, so history keeps its author — wants
+   * them; an *assignee picker* does not, because you cannot hand work to
+   * somebody who is locked out. Making the two uniform would break one of them,
+   * and which one depends on a caller's intent the endpoint cannot see.
+   */
+  readonly includeInactive?: boolean | undefined;
 }
 
 export function listUsers(
@@ -34,6 +45,11 @@ export function listUsers(
   const params = new URLSearchParams();
   if (query.cursor !== undefined) params.set('cursor', query.cursor);
   if (query.limit !== undefined) params.set('limit', String(query.limit));
+  // Sent only when true. The route parses `true`/`false` and `400`s on anything
+  // else, so an explicit `false` is legal — but absent already means active
+  // only, and a parameter that restates the default is one more thing that can
+  // disagree with it.
+  if (query.includeInactive === true) params.set('include_inactive', 'true');
 
   const search = params.toString();
   return request<Page<OrgUser>>(
@@ -60,12 +76,22 @@ export interface AllUsers {
   readonly truncated: boolean;
 }
 
-export async function listAllUsers(signal?: AbortSignal, maxPages = 20): Promise<AllUsers> {
+export async function listAllUsers(
+  signal?: AbortSignal,
+  options: { readonly includeInactive?: boolean; readonly maxPages?: number } = {},
+): Promise<AllUsers> {
+  const { includeInactive = false, maxPages = 20 } = options;
   const users: OrgUser[] = [];
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page += 1) {
-    const q: ListUsersQuery = cursor === undefined ? {} : { cursor };
+    // Carried on **every** page, not just the first: the server re-reads it per
+    // request, so dropping it after page one would silently truncate the tail of
+    // a directory to active people — a partial answer that looks complete.
+    const q: ListUsersQuery = {
+      ...(cursor === undefined ? {} : { cursor }),
+      ...(includeInactive ? { includeInactive: true } : {}),
+    };
     const result = await listUsers(q, signal);
     users.push(...result.data);
     if (result.next_cursor === null || result.next_cursor === undefined) {

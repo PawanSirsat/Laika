@@ -122,23 +122,52 @@
 /* --------------------------------------------------------------- kanban */
 
 /*
- * `repeat(5, minmax(0, 1fr))`, as the design has it — five equal columns that
- * shrink. A `minmax(13rem, …)` floor forced the grid past 1100px, so once the
- * rail took its 266px the last column ran underneath it.
+ * Five lanes that keep their width and scroll (LAI-175, asked for by the owner:
+ * *"don't decrease the card width here, add the left-right scroll"*).
+ *
+ * **`12.875rem` is measured from the prototype, not chosen to stop the
+ * wrapping.** Rendering `docs/design/Laika Prototype.dc.html` gives a 1074px
+ * grid of `206px 206px 206px 206px 206px` with an 11px gap — 206px is 12.875rem.
+ *
+ * ## The trap this rule used to work around, and why the floor is back
+ *
+ * The previous comment said a `minmax(13rem, …)` floor *"forced the grid past
+ * 1100px, so once the rail took its 266px the last column ran underneath it."*
+ * **The floor was never the bug.** 13rem is 208px — the design's own number, to
+ * within rounding. The bug was a floor with **nowhere to overflow to**: the grid
+ * grew past its flex box and painted under `BoardRail`, which shares the row.
+ *
+ * `overflow-x: auto` here is what was missing, **and it is what carries the
+ * property on its own.** This box is sized by the space the rail leaves and the
+ * tracks scroll inside it, so it never grows and can never reach the rail.
+ *
+ * **Not `min-width: 0`, though that is next to it in board-rail.css.** Measured,
+ * because the first version of this comment credited it: removing that
+ * declaration changes nothing — `min-width` computes to `0px` either way, since
+ * a flex item that is a scroll container resolves `min-width: auto` to zero. The
+ * declaration is harmless and worth keeping for anyone who later removes
+ * `overflow-x`, but it is not the guard.
+ *
+ * The guard is `test/browser/board-lane-scroll.test.ts`, which measures the
+ * strip's right edge against the rail's left edge — because a comment is not a
+ * guard, which is how this collision happened the first time.
+ *
+ * The `max-width: 1100px` special case is gone rather than narrowed: scrolling
+ * is now the behaviour at every width, so there is no second case to keep in
+ * step with this one.
  */
 .kanban {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(12.875rem, 1fr));
   gap: 0.6875rem;
   align-items: start;
-}
-
-/* Below this the five columns stop being readable; scroll them instead. */
-@media (max-width: 1100px) {
-  .kanban {
-    grid-template-columns: repeat(5, minmax(11rem, 1fr));
-    overflow-x: auto;
-  }
+  overflow-x: auto;
+  /*
+   * Clearance for the scrollbar, so it never paints over the last card in the
+   * tallest lane. `scrollbar-gutter` alone would not do it: macOS overlay
+   * scrollbars reserve nothing and appear *on* the content while scrolling.
+   */
+  padding-bottom: var(--space-2);
 }
 
 .lane {
@@ -480,12 +509,6 @@
 }
 .list-priority-p3 {
   color: var(--tx2);
-}
-
-@media (max-width: 1100px) {
-  .kanban {
-    grid-template-columns: repeat(5, minmax(12rem, 1fr));
-  }
 }
 
 /* Opens the detail panel. A button so it is focusable and keyboard-activatable;
