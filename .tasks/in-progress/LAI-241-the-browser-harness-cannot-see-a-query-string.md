@@ -2,11 +2,12 @@
 id: LAI-241
 title: 'No browser test can assert a query string — the harness matches on path alone'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-459
-status: backlog
+started: 2026-09-18T10:41:19+05:30
+status: in-progress
 ---
 
 ## Goal
