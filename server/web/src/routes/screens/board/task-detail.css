@@ -1,20 +1,16 @@
-/* The task detail slide-over (LAI-056). Tokens only. */
-
-.panel-backdrop {
-  position: fixed;
-  inset: 0;
-  background: var(--bd2);
-  z-index: 20;
-}
+/*
+ * The task detail (LAI-056). Tokens only.
+ *
+ * **Content, not chrome, since LAI-252.** The scrim, the 840px width, the
+ * slide and the border-left belong to `components/drawer/drawer.css`; this
+ * fills the frame that provides them. Its own `position: fixed` shell is gone
+ * — two overlays for one drawer is how the geometry drifts apart.
+ */
 
 .panel {
-  position: fixed;
-  inset: 0 0 0 auto;
-  width: min(34rem, 100vw);
-  z-index: 21;
-  background: var(--page);
-  border-left: 1px solid var(--bd);
-  box-shadow: var(--shadow);
+  flex: 1;
+  min-height: 0;
+  background: var(--card);
   display: flex;
   flex-direction: column;
 }

@@ -70,7 +70,17 @@ function AppFrame() {
   const ownsChrome = path === '/setup';
 
   return (
-    <div className={signedIn ? 'shell' : 'shell shell-preauth'}>
+    <div
+      className={[
+        'shell',
+        signedIn ? '' : 'shell-preauth',
+        // The rail's width is a shell fact the task drawer's scrim reads
+        // (LAI-252) — see `--rail-width` in app-shell.css.
+        signedIn && navCollapsed ? 'shell-rail-mini' : '',
+      ]
+        .filter((c) => c !== '')
+        .join(' ')}
+    >
       <a className="skip-link" href="#main">
         Skip to content
       </a>

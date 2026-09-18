@@ -26,7 +26,14 @@ export interface UseRoute {
    * filter changes the way people expect.
    */
   readonly params: URLSearchParams;
-  readonly setParams: (next: URLSearchParams) => void;
+  /**
+   * Write the query string.
+   *
+   * `push` opts a change **into** the history stack. The default is `replace`
+   * — see below — but opening something the reader expects Back to close is
+   * the case that needs an entry of its own (LAI-252).
+   */
+  readonly setParams: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
 }
 
 function currentPath(): string {
@@ -55,12 +62,18 @@ export function useRoute(): UseRoute {
    * Pushing would make Back step through every checkbox toggle before leaving
    * the screen, which is the thing everyone hates about filter UIs.
    */
-  const setParams = useCallback((next: URLSearchParams): void => {
-    const query = next.toString();
-    const url = query === '' ? window.location.pathname : `${window.location.pathname}?${query}`;
-    window.history.replaceState({}, '', url);
-    setSearch(query === '' ? '' : `?${query}`);
-  }, []);
+  const setParams = useCallback(
+    (next: URLSearchParams, options?: { readonly push?: boolean }): void => {
+      const query = next.toString();
+      const url = query === '' ? window.location.pathname : `${window.location.pathname}?${query}`;
+      // `push` for a state the reader will want Back to undo — opening a task
+      // drawer is the case. Everything else replaces, per the rule above.
+      if (options?.push === true) window.history.pushState({}, '', url);
+      else window.history.replaceState({}, '', url);
+      setSearch(query === '' ? '' : `?${query}`);
+    },
+    [],
+  );
 
   // Back and forward buttons. Without this the URL changes and the view does
   // not, which is the classic hand-rolled-router bug.

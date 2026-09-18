@@ -16,6 +16,7 @@ import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
+import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard } from '../../api/use-board.ts';
 import type { BoardColumn } from '../../api/board-derive.ts';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -41,7 +42,7 @@ export interface BoardScreenProps {
   readonly me?: MeProfile | undefined;
   /** Filter and view state, owned by the URL so a filtered board is linkable. */
   readonly params: URLSearchParams;
-  readonly onParamsChange: (next: URLSearchParams) => void;
+  readonly onParamsChange: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
 }
 
 /**
@@ -355,14 +356,21 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const openTask = openTaskId === undefined ? undefined : board.byId.get(openTaskId);
 
   const openTaskInUrl = (taskId: string): void => {
-    setParam('task', taskId);
+    // **A history entry, unlike every other filter** (LAI-252): opening a task
+    // is a state the reader expects Back to undo. Closing replaces, or Back
+    // from a closed drawer would re-open it.
+    setParam('task', taskId, { push: true });
   };
 
-  const setParam = (key: string, value: string | undefined): void => {
+  const setParam = (
+    key: string,
+    value: string | undefined,
+    options?: { readonly push?: boolean },
+  ): void => {
     const next = new URLSearchParams(params);
     if (value === undefined || value === '') next.delete(key);
     else next.set(key, value);
-    onParamsChange(next);
+    onParamsChange(next, options);
   };
 
   if (projectError !== null) {
@@ -606,27 +614,29 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         change them, rather than a control that answers 403.
       */}
       {openTask !== undefined && (
-        <TaskDetailPanel
-          slug={slug}
-          meId={me?.id}
-          mayAssign={mayCreate}
-          mayEdit={mayCreate}
-          onTagsChanged={() => {
-            board.reload();
-          }}
-          onAssigned={board.reload}
-          task={openTask}
-          byId={board.byId}
-          members={members}
-          moving={board.movingId === openTask.id}
-          moveError={board.moveError}
-          onMove={(id, to) => {
-            void board.move(id, to);
-          }}
-          onClose={() => {
-            setParam('task', undefined);
-          }}
-        />
+        <TaskDrawerContent>
+          <TaskDetailPanel
+            slug={slug}
+            meId={me?.id}
+            mayAssign={mayCreate}
+            mayEdit={mayCreate}
+            onTagsChanged={() => {
+              board.reload();
+            }}
+            onAssigned={board.reload}
+            task={openTask}
+            byId={board.byId}
+            members={members}
+            moving={board.movingId === openTask.id}
+            moveError={board.moveError}
+            onMove={(id, to) => {
+              void board.move(id, to);
+            }}
+            onClose={() => {
+              setParam('task', undefined);
+            }}
+          />
+        </TaskDrawerContent>
       )}
     </div>
   );

@@ -7,6 +7,10 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Positioned so anything inside it that needs a containing block has one —
+     and so a future scroller here cannot strand an absolutely-positioned child
+     outside its clip (LAI-245). */
+  position: relative;
 }
 
 /* --------------------------------------------------------------- the bar */

@@ -4,6 +4,7 @@ import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { listMembers, type Member } from '../../api/tasks.ts';
 import { toSpace, type Space } from '../../routes/spaces.ts';
 import { getProject } from '../../api/projects.ts';
+import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
 import { PresenceStrip } from './PresenceStrip.tsx';
 import { SpaceLive, useLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
@@ -54,7 +55,7 @@ interface SpaceFrameProps {
   readonly path: string;
   readonly slug: string | undefined;
   readonly params: URLSearchParams;
-  readonly setParams: (next: URLSearchParams) => void;
+  readonly setParams: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
   readonly navigate: (to: string) => void;
   readonly orgRole: string | undefined;
   readonly sprintCount: number | undefined;
@@ -166,6 +167,21 @@ function SpaceFrame({
       />
 
       {children}
+
+      {/*
+        The task drawer, over the view and inside it (LAI-252). Mounted here so
+        the screen underneath keeps its scroll and its data — a drawer that
+        replaced the view would have to rebuild the board on every close.
+      */}
+      {params.get('task') !== null && (
+        <TaskDrawer
+          onClose={() => {
+            // `push`ed open, so Back closes it; closing is a replace, or Back
+            // from here would step through the open state again.
+            setParam('task', undefined);
+          }}
+        />
+      )}
     </div>
   );
 }

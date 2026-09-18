@@ -1,13 +1,37 @@
 /* The app shell (LAI-019). Every value is a token.
    The sidebar's own styles moved to `sidebar/sidebar.css` (LAI-249). */
 
+/*
+ * `--rail-width` is the shell's contract with anything that overlays the view
+ * (LAI-252). The task drawer's scrim dims the space and leaves the sidebar
+ * usable, which it can only do if it knows where the sidebar ends. Declared
+ * here, beside the rail it describes, rather than guessed at by the overlay.
+ */
 .shell {
+  --rail-width: 13.25rem;
   display: flex;
   min-height: 100vh;
   background: var(--page);
   color: var(--tx);
   font-family: var(--font-ui);
   font-size: var(--text-base);
+}
+
+/* The 56px rail, and the pre-auth pages, which have none. */
+.shell-rail-mini {
+  --rail-width: 3.5rem;
+}
+
+.shell-preauth {
+  --rail-width: 0px;
+}
+
+/* Off-canvas below 900px: there is no rail to spare. */
+@media (max-width: 900px) {
+  .shell,
+  .shell-rail-mini {
+    --rail-width: 0px;
+  }
 }
 
 /* Hidden until focused. A keyboard user should not have to tab the whole nav
