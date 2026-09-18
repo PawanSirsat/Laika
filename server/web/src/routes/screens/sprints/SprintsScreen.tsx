@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -125,7 +125,7 @@ export function SprintsScreen() {
 
   return (
     <div className="sprints">
-      <ScreenHeader title="Sprints" context={headerContext}>
+      <SpaceSlot context={headerContext}>
         {canManage && !formOpen && (
           <button
             type="button"
@@ -138,7 +138,7 @@ export function SprintsScreen() {
             New sprint
           </button>
         )}
-      </ScreenHeader>
+      </SpaceSlot>
 
       {sprints.actionError !== undefined && (
         <p className="sprint-alert" role="alert">

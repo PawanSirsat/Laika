@@ -1,12 +1,11 @@
-import { PresencePerson } from '../../../components/PresencePerson.tsx';
-import type { PresenceView } from '../../../api/presence.ts';
-import type { Theme } from '../../../theme/theme.ts';
+import { PresencePerson } from '../PresencePerson.tsx';
+import { useTheme } from '../../theme/use-theme.ts';
+import type { PresenceView } from '../../api/presence.ts';
 import './presence-strip.css';
 
 export interface PresenceStripProps {
   /** `undefined` while the first request is in flight. */
   readonly presence: PresenceView | undefined;
-  readonly theme: Theme;
   /** The member currently filtering the board, if any. */
   readonly assignee: string | undefined;
   readonly onFilter: (userId: string | undefined) => void;
@@ -34,8 +33,15 @@ export interface PresenceStripProps {
  *
  * Clicking a person still filters the board by assignee, which is real and
  * always was.
+ *
+ * **Moved out of `board/` by LAI-251.** The design puts this band under the
+ * space bar, above whichever view is showing — it is about the space, not
+ * about the board.
  */
-export function PresenceStrip({ presence, theme, assignee, onFilter }: PresenceStripProps) {
+export function PresenceStrip({ presence, assignee, onFilter }: PresenceStripProps) {
+  // Read here rather than passed in: a stale `theme` prop keeps the previous
+  // palette after a flip, which is the trap `theme/use-theme.ts` documents.
+  const { theme } = useTheme();
   // `enabled: false` is a fact from the response, never inferred from an empty
   // list — the two are opposite claims (§4.2, LAI-150).
   if (presence !== undefined && !presence.enabled) return null;

@@ -1,5 +1,6 @@
 import type { ComponentType } from 'react';
 import { useShell } from './shell-context.ts';
+import { SpaceLayout } from '../space/SpaceLayout.tsx';
 import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
 import { CapacityScreen } from '../../routes/screens/capacity/CapacityScreen.tsx';
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
@@ -136,7 +137,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/dashboard': { Component: DashboardScreen, layout: 'space' },
   '/meeting-review': { Component: MeetingReviewRoute, layout: 'space' },
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
-  '/capacity': { Component: CapacityRoute, layout: 'plain' },
+  '/capacity': { Component: CapacityRoute, layout: 'space' },
   '/unlisted': { Component: UnlistedRoute, layout: 'plain' },
   '/tokens': { Component: TokensRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
@@ -169,8 +170,17 @@ export function ScreenOutlet() {
   // ever does.
   if (entry === undefined) return <NotFoundRoute />;
 
-  const { Component } = entry;
-  return <Component />;
+  const { Component, layout } = entry;
+  // The space frame belongs to the views of a project, and nothing else gets
+  // it — `layout` is the registry's answer, checked against `SPACE_TAB_PATHS`
+  // in screen-registry.test.ts.
+  return layout === 'space' ? (
+    <SpaceLayout>
+      <Component />
+    </SpaceLayout>
+  ) : (
+    <Component />
+  );
 }
 
 function NotFoundRoute() {

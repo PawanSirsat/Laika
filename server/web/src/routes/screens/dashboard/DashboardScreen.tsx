@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -124,7 +124,7 @@ export function DashboardScreen() {
       <div className="dash">
         {/* No context while loading: the counts it would describe are not
             known yet, and a header that guesses is worse than a quiet one. */}
-        <ScreenHeader title="Dashboard">{rangeControl}</ScreenHeader>
+        <SpaceSlot>{rangeControl}</SpaceSlot>
         <LoadingState shape="card" count={3} label="Loading dashboard" />
       </div>
     );
@@ -158,8 +158,7 @@ export function DashboardScreen() {
 
   return (
     <div className="dash">
-      <ScreenHeader
-        title="Dashboard"
+      <SpaceSlot
         /* What the numbers below actually cover. `truncated` means the lists
            hit their page cap, so the totals are a floor and the context says
            so rather than presenting them as complete. */
@@ -168,7 +167,7 @@ export function DashboardScreen() {
         } · ${String(members.size)} ${members.size === 1 ? 'member' : 'members'}`}
       >
         {rangeControl}
-      </ScreenHeader>
+      </SpaceSlot>
 
       {truncated && (
         <p className="dash-note" role="status">

@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './board/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
-import { ScreenHeader } from '../../components/ScreenHeader.tsx';
+import { SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
-import { showsUnreachableBanner, streamPillLabel } from './board/stream-presentation.ts';
+import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { BoardRail } from './board/BoardRail.tsx';
-import { PresenceStrip } from './board/PresenceStrip.tsx';
 import { getPresence, type PresenceView } from '../../api/presence.ts';
 import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
@@ -105,8 +104,14 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   const [creating, setCreating] = useState(false);
-  const [query, setQuery] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
+  /**
+   * The search text, from the URL (LAI-251).
+   *
+   * Local state until the space bar took the input over: the control is in the
+   * bar now and writes `?q=`, so a board holding its own copy would filter by
+   * something the field no longer reflects.
+   */
+  const query = params.get('q') ?? '';
 
   const view: BoardViewMode = params.get('view') === 'list' ? 'list' : 'kanban';
   const priority = (params.get('priority') ?? undefined) as TaskPriority | undefined;
@@ -187,35 +192,12 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
     };
   }, [slug]);
 
-  /**
-   * `/` focuses search — but never while someone is typing.
-   *
-   * Without the guard this steals the key from every text field on the screen,
-   * including the new-task title, and a shortcut that eats your input is worse
-   * than no shortcut.
+  /*
+   * The `/` shortcut moved to `SpaceTopBar` with the input it focuses
+   * (LAI-251). A shortcut that reaches across components into another's DOM
+   * node is the kind of coupling that survives exactly until someone renames
+   * an id.
    */
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
-          return;
-        }
-      }
-
-      event.preventDefault();
-      searchRef.current?.focus();
-      searchRef.current?.select();
-    };
-
-    addEventListener('keydown', onKey);
-    return () => {
-      removeEventListener('keydown', onKey);
-    };
-  }, []);
 
   // Assignee names for the cards. A failure here is not a board failure — the
   // cards fall back to showing the raw id rather than the whole screen erroring.
@@ -324,11 +306,6 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
    */
   const needle = query.trim().toLowerCase();
 
-  const agentCount = useMemo(
-    () => board.state.tasks.filter((t) => t.created_via === AGENT_VIA).length,
-    [board.state.tasks],
-  );
-
   const matches = useMemo(() => {
     return (task: Task): boolean => {
       if (agentOnly && task.created_via !== AGENT_VIA) return false;
@@ -429,89 +406,27 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         }}
       />
 
-      <ScreenHeader
-        title="Board"
+      {/*
+        The board's own filters, in the space bar's slot (LAI-251).
+
+        **Search, the agent toggle, the priority cycler and Create are gone
+        from here**: the design puts them in the space bar and they now live in
+        `SpaceTopBar`, writing the same `?q=`, `?agent=`, `?priority=` this
+        screen already read. What is left is the board's alone — the design has
+        no tag, assignee, ready or view control anywhere.
+
+        The stream pill went the same way: one LIVE indicator per space, in the
+        bar, rather than one per screen.
+      */}
+      <SpaceSlot
         context={
-          <>
-            {project?.slug}
-            <span className={`live live-${stream.status}`} title={`Event stream: ${stream.status}`}>
-              <span className="live-dot" aria-hidden="true" />
-              {streamPillLabel(stream.status)}
-            </span>
-          </>
+          shownCount === board.byId.size
+            ? undefined
+            : `${String(shownCount)} of ${String(board.byId.size)} loaded ${
+                board.byId.size === 1 ? 'task' : 'tasks'
+              } match`
         }
       >
-        <label className="board-search">
-          <span className="visually-hidden">Search tasks</span>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" strokeLinecap="round" />
-          </svg>
-          <input
-            id="board-search-input"
-            ref={searchRef}
-            type="search"
-            placeholder="Search tasks…"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setQuery('');
-            }}
-          />
-          {/* The prototype puts the shortcut inside the field, where it reads as
-              part of the control rather than as prose underneath it. */}
-          <kbd aria-hidden="true">/</kbd>
-        </label>
-
-        {/*
-          Agent work is **real**, not sample data: `created_via` ships on every
-          task and `mcp` is what an agent writes through. Filtered client-side
-          over the loaded page, like search.
-        */}
-        <button
-          type="button"
-          className={agentOnly ? 'bar-control bar-control-agent' : 'bar-control'}
-          aria-pressed={agentOnly}
-          onClick={() => {
-            setParam('agent', agentOnly ? undefined : 'true');
-          }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            strokeWidth="2"
-            aria-hidden="true"
-            width="13"
-            height="13"
-          >
-            <rect x="4" y="8" width="16" height="12" rx="3" />
-            <path d="M12 4v4M9 14h.01M15 14h.01" strokeLinecap="round" />
-          </svg>
-          Agent work
-          {agentCount > 0 && <span className="bar-count">{agentCount}</span>}
-        </button>
-
-        {/* One button cycling all → p1 → p2 → p3, as the prototype does. */}
-        <button
-          type="button"
-          className={priority === undefined ? 'bar-control' : 'bar-control bar-control-on'}
-          onClick={() => {
-            const order: readonly (TaskPriority | undefined)[] = [undefined, 'p1', 'p2', 'p3'];
-            const next = order[(order.indexOf(priority) + 1) % order.length];
-            setParam('priority', next);
-          }}
-        >
-          {priority === undefined ? 'Priority: all' : `${priority.toUpperCase()} only`}
-        </button>
-
-        {/*
-          The tag filter sits with the other filters rather than on the cards:
-          this is where a reader already looks for "show me less". The counts
-          come from the same endpoint the picker uses, so the list is the
-          project's real vocabulary and not whatever happens to be on screen.
-        */}
         {projectTags.length > 0 && (
           <label className="bar-control">
             <span className="visually-hidden">Tag</span>
@@ -589,19 +504,7 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
             Clear
           </button>
         )}
-
-        {mayCreate && (
-          <button
-            type="button"
-            className="bar-control bar-control-primary"
-            onClick={() => {
-              setCreating(true);
-            }}
-          >
-            + New task
-          </button>
-        )}
-      </ScreenHeader>
+      </SpaceSlot>
 
       {/*
         Mounted here rather than in the shell: it reports the state of *this*
@@ -619,14 +522,8 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         />
       )}
 
-      <PresenceStrip
-        presence={presence}
-        theme={theme}
-        assignee={assignee}
-        onFilter={(id) => {
-          setParam('assignee', id);
-        }}
-      />
+      {/* WORKING NOW moved up to the space bar in LAI-251: it is about the
+          space, not about the board, and every view of a space shows it. */}
 
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">

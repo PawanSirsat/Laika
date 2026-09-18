@@ -31,9 +31,11 @@
  * space** rather than a flat list beside it.
  *
  * **`ORG` is ours, not the design's.** The design is single-project, so
- * "inside a space" and "across the org" are the same place there. Capacity and
- * Unlisted work read across every project (`orgLevel`, LAI-423) and a tab under
- * `laika-core` would claim otherwise.
+ * "inside a space" and "across the org" are the same place there. Unlisted
+ * work reads across every project (`orgLevel`, LAI-423) and has no tab in the
+ * design to inherit. **Capacity left this group in LAI-251**: the design's
+ * strip carries it, and a route's scope lives in its link rather than in the
+ * bar it is offered from.
  */
 export const NAV_GROUPS = ['ORG', 'SETTINGS'] as const;
 export type NavGroup = (typeof NAV_GROUPS)[number];
@@ -168,18 +170,18 @@ export const ROUTES: readonly Route[] = [
     mini: 'UW',
   },
 
-  // **REVIEW, not WORK** (LAI-439 AC1). It sat in `WORK` while it was a stub;
-  // the criterion names the group, and it reads with Dashboard and Unlisted work
-  // — screens you open to see how things stand rather than to move a task.
-  // Capacity is read across every project at once, not within one.
+  // **A space tab since LAI-251**, by the owner's exact-match decision — the
+  // design's strip carries Capacity. It stays `orgLevel`, so its link still
+  // drops `?project=` (LAI-423): the tab is where you reach it, the URL is
+  // what it reads. `group: null` because it is no longer a sidebar row, and
+  // offering it in both places would be two answers to one question.
   {
     orgLevel: true,
     path: '/capacity',
     label: 'Capacity',
-    group: 'ORG' /* reads across every project */,
+    group: null /* a space tab */,
     status: 'ready',
     phase: 'Phase 5',
-    mini: 'CA',
   },
 
   {
@@ -239,9 +241,13 @@ export const ROUTES: readonly Route[] = [
 /**
  * The views that live **inside** a space, in the order the tab bar shows them.
  *
- * Every one carries `?project=`: these are views *of* a project, which is what
- * makes a tab bar honest. A route marked `orgLevel` may never appear here —
- * `spaceTabs()` asserts it rather than trusting the list.
+ * **The design's own strip, Capacity included** — the owner's exact-match
+ * decision (2026-09-18), which supersedes LAI-248's deviation. That task put
+ * Capacity in an `ORG` sidebar group because it is `orgLevel` and reads across
+ * every project, and the reasoning was right about the data: what it got wrong
+ * is that a tab's *scope* is a property of its link, not of the strip it sits
+ * in. `navHref` still drops `?project=` for an `orgLevel` route, so the URL
+ * stays honest while the strip matches the design.
  *
  * `Calendar` is deliberately absent until it has a route (its own task).
  */
@@ -249,6 +255,7 @@ export const SPACE_TAB_PATHS: readonly string[] = [
   '/board',
   '/timeline',
   '/sprints',
+  '/capacity',
   '/dashboard',
   '/meeting-review',
 ];
@@ -262,11 +269,6 @@ export function spaceTabs(holds?: (permission: string) => boolean): readonly Rou
     const route = ROUTES.find((r) => r.path === path);
     if (route === undefined) {
       throw new Error(`SPACE_TAB_PATHS names ${path}, which is not in ROUTES`);
-    }
-    // A tab is a view of one project. An org-level route dropped `?project=` on
-    // purpose, so showing it under a space would misstate what it reads.
-    if (route.orgLevel === true) {
-      throw new Error(`${path} is orgLevel and cannot be a space tab`);
     }
     return route;
   }).filter(

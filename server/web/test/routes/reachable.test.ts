@@ -21,6 +21,7 @@ import {
   routesInGroup,
   spaceTabs,
 } from '../../src/routes/route-table.ts';
+import { navHref } from '../../src/routes/nav-url.ts';
 
 /** Reachable from a screen rather than from the chrome. Each names the screen. */
 const REACHED_FROM: Readonly<Record<string, string>> = {
@@ -30,6 +31,7 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   // The SPACES section is built from the project list rather than from
   // `ROUTES`, so these two are reachable without being in any group.
   '/board': 'the SPACES section — every space row opens its board',
+  '/capacity': 'the space tab strip — an org-level view, reached from any space (LAI-251)',
   '/projects': 'the SPACES section — the *More spaces* row',
 };
 
@@ -83,28 +85,49 @@ void describe('every shipped route is reachable', () => {
 
 void describe('the tab bar is honest about scope', () => {
   /**
-   * **A tab under `laika-core` claims to be about `laika-core`.** An `orgLevel`
-   * route deliberately drops `?project=` (LAI-423), so putting one in the bar
-   * would misstate what it reads. `spaceTabs()` throws rather than allowing it;
-   * this asserts the guard actually fires.
+   * **Scope lives in the link, not in the bar** (LAI-251, the owner's
+   * exact-match decision).
+   *
+   * LAI-248 asserted the opposite — no `orgLevel` route in the strip — on the
+   * reasoning that a tab under `laika-core` claims to be about `laika-core`.
+   * The design's strip carries Capacity, and the resolution is that
+   * `navHref` still drops `?project=` for an `orgLevel` route: the tab is
+   * where you reach it, the URL is what it reads. **That is the property to
+   * assert**, and it is stronger than the old absence.
    */
-  void test('no space tab is an org-level route', () => {
-    for (const path of SPACE_TAB_PATHS) {
-      const route = ROUTES.find((r) => r.path === path);
-      assert.ok(route, `${path} is not in ROUTES`);
-      assert.notEqual(
-        route.orgLevel,
-        true,
-        `${path} is orgLevel and must not be a space tab — Capacity and Unlisted work are in the ORG group for this reason`,
+  void test('an org-level tab does not claim a project in its link', () => {
+    const orgLevelTabs = SPACE_TAB_PATHS.filter(
+      (path) => ROUTES.find((r) => r.path === path)?.orgLevel === true,
+    );
+    // Or the loop proves nothing: today `/capacity` is the only one.
+    assert.deepEqual(orgLevelTabs, ['/capacity']);
+
+    for (const path of orgLevelTabs) {
+      assert.equal(
+        navHref(path, 'laika-core'),
+        path,
+        `${path} is orgLevel, so its tab must not carry ?project=`,
       );
     }
   });
 
-  void test('Capacity and Unlisted work are in ORG, not in the tabs', () => {
+  void test('a project-scoped tab does carry the project', () => {
+    const scoped = SPACE_TAB_PATHS.filter(
+      (path) => ROUTES.find((r) => r.path === path)?.orgLevel !== true,
+    );
+    assert.ok(scoped.length > 0);
+    for (const path of scoped) {
+      assert.match(
+        navHref(path, 'laika-core'),
+        /project=laika-core/,
+        `${path} dropped the project`,
+      );
+    }
+  });
+
+  void test('Unlisted work stays in ORG — the design has no tab for it', () => {
     const org = new Set(routesInGroup('ORG', holds).map((r) => r.path));
-    assert.ok(org.has('/capacity'), 'Capacity left the sidebar without becoming a tab');
     assert.ok(org.has('/unlisted'), 'Unlisted work left the sidebar without becoming a tab');
-    assert.ok(!SPACE_TAB_PATHS.includes('/capacity'));
     assert.ok(!SPACE_TAB_PATHS.includes('/unlisted'));
   });
 });

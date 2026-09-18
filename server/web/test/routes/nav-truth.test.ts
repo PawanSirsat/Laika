@@ -125,7 +125,8 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // arriving somewhere else.
       // `Unlisted work` is gated on `audit_log.export` and `navRoutes()` here
       // takes no predicate, so it is absent by the same rule it always was.
-      ['Capacity', 'Tokens', 'Organisation'],
+      // **Capacity left in LAI-251** — the design's tab strip carries it.
+      ['Tokens', 'Organisation'],
     );
   });
 
@@ -151,8 +152,16 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // today**, which means the filter above is currently guarding nothing
     // observable; it stays because the next hidden route re-creates the case,
     // and the rule is what matters rather than today's list.
+    // **`ORG` is genuinely empty without a predicate since LAI-251**, and that
+    // is the filter's first real customer rather than a defect: its only
+    // member is gated, so a reader without `audit_log.export` must not see the
+    // heading. Asserted as the specific expected case, not waved through.
     const empty = NAV_GROUPS.filter((g) => routesInGroup(g).length === 0);
-    assert.deepEqual(empty, [], 'a nav group has gone empty — the sidebar must still skip it');
+    assert.deepEqual(empty, ['ORG'], 'only ORG may be empty, and only when ungated');
+    assert.ok(
+      routesInGroup('ORG', () => true).length > 0,
+      'ORG must have a member for a reader who holds the permission',
+    );
   });
 
   void test('the screens Builder-A owns are registered and routed', () => {
@@ -208,7 +217,9 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
     // not nav routes since LAI-248 — Board and Dashboard are space tabs,
     // Projects is the SPACES section's *More spaces* row. Naming them now would
     // assert that gating does not hide things that were never offered.
-    for (const label of ['Capacity', 'Tokens', 'Organisation']) {
+    // **Capacity left with LAI-251** — it is a space tab now, so naming it
+    // here would assert that gating does not hide something never offered.
+    for (const label of ['Tokens', 'Organisation']) {
       assert.ok(withNone.includes(label), `${label} was hidden by an unrelated permission check`);
     }
   });

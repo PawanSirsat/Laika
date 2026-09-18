@@ -31,24 +31,43 @@ void describe('the sprint strip comes before the board header', () => {
     const src = await readFile(new URL(BOARD, import.meta.url), 'utf8');
 
     const strip = src.indexOf('<SprintStrip');
-    const header = src.indexOf('<ScreenHeader');
+    // **`<SpaceSlot>` since LAI-251.** The board's header band became the
+    // space bar's slot — same band, one level up — and the ordering this file
+    // exists to protect is unchanged: the strip is rendered before it.
+    const header = src.indexOf('<SpaceSlot');
     assert.ok(strip > 0, 'the board no longer renders a SprintStrip');
-    assert.ok(header > 0, 'the board no longer renders a ScreenHeader');
+    assert.ok(header > 0, 'the board no longer renders its header band');
     assert.ok(
       strip < header,
       'the board header is rendered before the sprint strip — the LAI-425 inversion',
     );
   });
 
-  void test('WORKING NOW still follows the header, and the lanes follow that', async () => {
-    // The other two bands were already right; pinning them means a future
-    // reorder cannot fix one pair by breaking another.
-    const src = await readFile(new URL(BOARD, import.meta.url), 'utf8');
-    const header = src.indexOf('<ScreenHeader');
+  void test('WORKING NOW still follows the bar, and the view follows that', async () => {
+    /*
+     * **The band order is the space layout's property since LAI-251.**
+     * WORKING NOW is about the space rather than the board — every view of a
+     * space shows it — so it moved out of `BoardScreen`, and pinning the order
+     * against the board would now pass by finding neither band.
+     */
+    const file = await readFile(
+      new URL('../../../src/components/space/SpaceLayout.tsx', import.meta.url),
+      'utf8',
+    );
+    // Scoped to the frame that renders the bands. The outer component passes
+    // `children` through before the frame draws anything, so scanning the
+    // whole file finds that hand-off and reads it as the view's position.
+    const at = file.indexOf('function SpaceFrame');
+    assert.ok(at > 0, 'SpaceFrame is gone — this test is pointed at nothing');
+    const src = file.slice(at);
+    const bar = src.indexOf('<SpaceTopBar');
+    const tabs = src.indexOf('<ViewTabs');
     const presence = src.indexOf('<PresenceStrip');
-    const lanes = src.indexOf('className="board-main"');
+    const view = src.indexOf('{children}');
 
-    assert.ok(header < presence, 'WORKING NOW rose above the board header');
-    assert.ok(presence < lanes, 'the lanes rose above WORKING NOW');
+    assert.ok(bar > 0 && tabs > 0 && presence > 0 && view > 0, 'a band is missing entirely');
+    assert.ok(bar < tabs, 'the tabs rose above the space bar');
+    assert.ok(tabs < presence, 'WORKING NOW rose above the tabs');
+    assert.ok(presence < view, 'the view rose above WORKING NOW');
   });
 });

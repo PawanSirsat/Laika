@@ -4,7 +4,7 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
-import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { useSprints } from '../sprints/use-sprints.ts';
 import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
@@ -214,8 +214,7 @@ export function TimelineScreen() {
 
   return (
     <div className="timeline">
-      <ScreenHeader
-        title="Timeline"
+      <SpaceSlot
         /* Derived, never a fixture: the axis the chart actually drew and the
            sprints actually on it. */
         context={`${formatRange(range.from, range.to)} · ${String(rows.length)} ${

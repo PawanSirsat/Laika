@@ -73,15 +73,11 @@ void describe('sidebar groups (AC1)', () => {
     // (`SPACE_TAB_PATHS`). What is left beside the spaces is genuinely org-wide.
     assert.deepEqual(
       routesInGroup('ORG').map((r) => r.label),
-      // Both members of `ORG` are `orgLevel` — they drop `?project=` on purpose
-      // (LAI-423) and read across every project, so a tab under one space would
-      // misstate them. `reachable.test.ts` asserts that reasoning holds.
-      //
-      // **`Unlisted work` is absent here because no predicate was passed**, not
-      // because it left the group: it requires `audit_log.export`, and an
-      // absent predicate grants nothing. The gated case is asserted in
-      // `nav-truth.test.ts`.
-      ['Capacity'],
+      // **Empty without a predicate, since LAI-251.** `Unlisted work` is the
+      // group's only member now — Capacity became a space tab — and it
+      // requires `audit_log.export`, which an absent predicate never grants.
+      // The gated case is asserted in `nav-truth.test.ts`.
+      [],
     );
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
@@ -92,9 +88,10 @@ void describe('sidebar groups (AC1)', () => {
   void test("the views are tabs, in the design's order", () => {
     assert.deepEqual(
       spaceTabs().map((r) => r.label),
-      // Board first, then the prototype's order. `Calendar` is absent until it
-      // has a route of its own; a tab pointing at nothing is worse than none.
-      ['Board', 'Timeline', 'Sprints', 'Dashboard', 'Meeting review'],
+      // The prototype's strip, minus `Calendar` — absent until it has a route
+      // of its own; a tab pointing at nothing is worse than none. `List` joins
+      // in its own task. Capacity is here by the owner's decision (LAI-251).
+      ['Board', 'Timeline', 'Sprints', 'Capacity', 'Dashboard', 'Meeting review'],
     );
   });
 });

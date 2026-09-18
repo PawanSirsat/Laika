@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { SpaceTabs } from './SpaceTabs.tsx';
 import { ScreenOutlet } from './shell/ScreenOutlet.tsx';
 import { ShellHeader } from './shell/ShellHeader.tsx';
 import { ShellSidebar } from './shell/ShellSidebar.tsx';
@@ -7,7 +6,6 @@ import { SessionGate } from './shell/SessionGate.tsx';
 import { ShellProvider } from './shell/ShellProvider.tsx';
 import { useShell } from './shell/shell-context.ts';
 import { showsAppNav } from './shell-chrome.ts';
-import { permissionHolder } from '../routes/nav-permissions.ts';
 import './app-shell.css';
 
 /**
@@ -34,10 +32,8 @@ export function AppShell() {
 
 function AppFrame() {
   const {
-    route: { path, navigate, params },
+    route: { path },
     session,
-    me,
-    sprintCount,
   } = useShell();
 
   const [navOpen, setNavOpen] = useState(false);
@@ -72,8 +68,6 @@ function AppFrame() {
   // A full-page screen that draws its own brand and theme control gets no
   // header on top of it (LAI-075).
   const ownsChrome = path === '/setup';
-
-  const projectSlug = params.get('project') ?? undefined;
 
   return (
     <div className={signedIn ? 'shell' : 'shell shell-preauth'}>
@@ -118,23 +112,11 @@ function AppFrame() {
         )}
 
         {/*
-          The views of the space you are in (LAI-248). Above `<main>`, not
-          inside it, because it belongs to the shell rather than to whichever
-          screen happens to be showing — and it is the same bar across all of
-          them, which is what makes them read as views of one thing.
-
-          `SpaceTabs` renders nothing without a project, so org-level screens
-          and the pre-auth routes get no bar: there is no space to be inside of.
+          The space bar — identity, tabs, presence — belongs to the views of a
+          space, so `SpaceLayout` renders it around them (LAI-251). It was here
+          while it was only a tab strip; a bar that knows which project it is
+          about cannot live above the screen that chose the project.
         */}
-        {signedIn && (
-          <SpaceTabs
-            currentPath={path}
-            projectSlug={projectSlug}
-            onNavigate={navigate}
-            holds={permissionHolder(me?.org_role)}
-            counts={{ '/sprints': sprintCount }}
-          />
-        )}
 
         <main id="main" className="shell-main" tabIndex={-1}>
           <SessionGate>

@@ -120,9 +120,12 @@ void describe('the SPACES section', () => {
       for (const group of ['WORK', 'REVIEW']) {
         assert.doesNotMatch(sidebar, new RegExp(group), `${group} is still a sidebar group`);
       }
-      // Capacity stays — it reads across every project and is not a space view.
-      assert.match(sidebar, /Capacity/);
+      // **Capacity left the sidebar in LAI-251** — the design's tab strip
+      // carries it. `ORG` remains for Unlisted work, which has no tab in the
+      // design to inherit; this reader is an owner, so the group renders.
+      assert.doesNotMatch(sidebar, /Capacity/, 'Capacity is offered twice');
       assert.match(sidebar, /ORG/);
+      assert.match(sidebar, /Unlisted work/);
     } finally {
       await h.close();
     }
@@ -133,33 +136,60 @@ void describe('the view tabs', () => {
   void test('are the project-scoped views, and every one carries the project', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-tab').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
 
-      const labels = (await h.page.locator('.space-tab').allInnerTexts()).map(
+      const labels = (await h.page.locator('.view-tab').allInnerTexts()).map(
         (s) => s.split('\n')[0],
       );
-      assert.deepEqual(labels, ['Board', 'Timeline', 'Sprints', 'Dashboard', 'Meeting review']);
+      assert.deepEqual(labels, [
+        'Board',
+        'Timeline',
+        'Sprints',
+        'Capacity',
+        'Dashboard',
+        'Meeting review',
+      ]);
 
-      // **The project travels with every tab.** A bare path drops `?project=`
-      // and the destination falls back to a different project (LAI-423).
-      for (const href of await h.page
-        .locator('.space-tab')
-        .evaluateAll((els: Element[]) => els.map((e) => e.getAttribute('href') ?? ''))) {
+      /*
+       * **The project travels with every project-scoped tab.** A bare path
+       * drops `?project=` and the destination falls back to a different
+       * project (LAI-423).
+       *
+       * `/capacity` is the deliberate exception and is asserted on its own
+       * below: it is `orgLevel`, reads across every project, and a link
+       * claiming otherwise would be the same defect pointed the other way.
+       */
+      const hrefs = await h.page
+        .locator('.view-tab')
+        .evaluateAll((els: Element[]) => els.map((e) => e.getAttribute('href') ?? ''));
+      for (const href of hrefs.filter((h2) => !h2.startsWith('/capacity'))) {
         assert.match(href, /project=laika-core/, `a tab drops the project: ${href}`);
       }
+      // Or the filter above could hide every tab and the loop prove nothing.
+      assert.ok(hrefs.length >= 5, `only ${String(hrefs.length)} tabs rendered`);
     } finally {
       await h.close();
     }
   });
 
-  void test('Capacity is not a tab — it is not a view of one space', async () => {
+  /**
+   * **Capacity is a tab, and its link is still org-level** (LAI-251).
+   *
+   * LAI-248 asserted the opposite — Capacity absent from the strip — because
+   * an `orgLevel` route drops `?project=` and a tab under `laika-core` would
+   * claim to be about it. The owner's exact-match decision put the design's
+   * strip back; the honesty it was protecting now lives in the link, which is
+   * where it belongs, so that is what this asserts.
+   */
+  void test('the Capacity tab does not claim this project in its link', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-tab').first().waitFor({ timeout: 20_000 });
-      const labels = await h.page.locator('.space-tab').allInnerTexts();
-      assert.ok(
-        !labels.some((l) => l.includes('Capacity')),
-        'Capacity is a tab, which claims it is about this project',
+      const tab = h.page.locator('.view-tab', { hasText: 'Capacity' });
+      await tab.waitFor({ timeout: 20_000 });
+      assert.equal(
+        await tab.getAttribute('href'),
+        '/capacity',
+        'the Capacity tab carries a project it does not read',
       );
     } finally {
       await h.close();
@@ -254,13 +284,13 @@ void describe('the new chrome fits', () => {
   void test('no page overflow with the spaces sidebar and the tab bar', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-tab').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
       for (const theme of ['light', 'dark'] as const) {
         await h.page.evaluate((t: string) => {
           localStorage.setItem('laika.theme', t);
         }, theme);
         await h.page.reload();
-        await h.page.locator('.space-tab').first().waitFor({ timeout: 20_000 });
+        await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
         const dark = await h.page.evaluate(() => document.documentElement.classList.contains('dk'));
         assert.equal(dark, theme === 'dark', `the ${theme} theme did not apply`);
 

@@ -76,13 +76,44 @@ void describe('the header band is not optional', () => {
     }
   });
 
-  void test('every in-app screen renders ScreenHeader', () => {
+  void test('every in-app screen contributes a header band', () => {
+    /*
+     * **Two spellings since LAI-251, and every screen uses exactly one.**
+     * A view of a space cannot draw its own band — the space bar is the one
+     * bar — so it hands its context line up through `<SpaceSlot>`; every other
+     * screen still renders `<ScreenHeader>` itself.
+     *
+     * The property is unchanged and now stated in both directions: no screen
+     * is without a band, and none has two.
+     */
     const missing = screenFiles()
       .filter((s) => !PRE_AUTH.has(s.name))
-      .filter((s) => !s.body.includes('<ScreenHeader'))
+      .filter((s) => !s.body.includes('<ScreenHeader') && !s.body.includes('<SpaceSlot'))
       .map((s) => s.name);
 
     assert.deepEqual(missing, [], `these render no header band: ${missing.join(', ')}`);
+  });
+
+  void test('no screen renders both spellings of the band', () => {
+    const both = screenFiles()
+      .filter((s) => s.body.includes('<ScreenHeader') && s.body.includes('<SpaceSlot'))
+      .map((s) => s.name);
+
+    assert.deepEqual(both, [], `these would render two bands: ${both.join(', ')}`);
+  });
+
+  void test('both spellings are actually in use, or the rule above is half dead', () => {
+    // A rule with an `||` passes forever once one side disappears. Naming the
+    // two populations means a migration that emptied either is visible here.
+    const inApp = screenFiles().filter((s) => !PRE_AUTH.has(s.name));
+    assert.ok(
+      inApp.some((s) => s.body.includes('<SpaceSlot')),
+      'no screen uses the space slot — did the space layout go?',
+    );
+    assert.ok(
+      inApp.some((s) => s.body.includes('<ScreenHeader')),
+      'no screen renders its own band — did every screen become a space view?',
+    );
   });
 
   void test('no in-app screen renders its own top-level heading', () => {

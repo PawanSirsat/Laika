@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import {
   getCapacity,
   getPresence,
@@ -126,8 +126,7 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
 
   return (
     <div className="cap">
-      <ScreenHeader
-        title="Capacity"
+      <SpaceSlot
         context={`${String(people.length)} ${people.length === 1 ? 'person' : 'people'} · updated every ${String(POLL_MS / 1000)}s`}
       />
 
