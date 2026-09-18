@@ -3,7 +3,7 @@ import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { KanbanView } from './board/KanbanView.tsx';
-import { ListView } from './board/ListView.tsx';
+import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
 import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
@@ -417,17 +417,21 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         am I in* versus *what am I filtering*. Measured against
         `docs/design/Laika Prototype.dc.html` at 1600×1100, not from memory.
       */}
-      {/* Above WORKING NOW, as the design has it (LAI-272). */}
-      <SpaceBand>
-        <SprintStrip
-          sprints={sprints}
-          tasks={allTasks}
-          selected={sprintScope}
-          onSelect={(id) => {
-            setParam('sprint', id);
-          }}
-        />
-      </SpaceBand>
+      {/* Above WORKING NOW, as the design has it (LAI-272) — and on the
+          board, which is the only screen the design gives the chips to
+          (`isBoard`, prototype line 146). Timeline draws its own set. */}
+      {view !== 'list' && (
+        <SpaceBand>
+          <SprintStrip
+            sprints={sprints}
+            tasks={allTasks}
+            selected={sprintScope}
+            onSelect={(id) => {
+              setParam('sprint', id);
+            }}
+          />
+        </SpaceBand>
+      )}
 
       {/*
         The board's own filters, in the space bar's slot (LAI-251).
@@ -514,8 +518,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               tasks={tasks}
               byId={board.byId}
               members={members}
+              sprintLabels={sprintLabels}
+              theme={theme}
               filtered={filtered}
+              canAdd={mayCreate}
               onOpen={openTaskInUrl}
+              onAdd={() => {
+                setCreating(true);
+              }}
             />
           ) : (
             <KanbanView
@@ -537,14 +547,21 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             />
           )}
 
-          <BoardRail
-            status={stream.status}
-            events={stream.recent}
-            gapped={stream.gapped}
-            tasks={allTasks}
-            members={members}
-            presence={presence}
-          />
+          {/*
+            **The board only.** The design puts the rail inside `boardLive`
+            (prototype line 2273) along with the presence strip and the grid;
+            List, Timeline and the rest are one full-width pane.
+          */}
+          {view !== 'list' && (
+            <BoardRail
+              status={stream.status}
+              events={stream.recent}
+              gapped={stream.gapped}
+              tasks={allTasks}
+              members={members}
+              presence={presence}
+            />
+          )}
         </div>
       )}
 

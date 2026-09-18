@@ -123,7 +123,22 @@ void describe('the space bar', () => {
   void test('renders the design’s identity row from real data', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
+      /*
+       * **Wait for the name, not for the element.**
+       *
+       * The bar renders `spaceName ?? slug`, so `.space-name` exists from the
+       * first paint carrying `laika-core`, and `GET /projects/:slug` replaces
+       * it a beat later. Waiting on the element therefore returns on the
+       * *fallback*, and this asserted against whichever of the two the machine
+       * happened to be showing — green most runs, red about one in two under
+       * load. The fallback is correct behaviour; the assertion was racing it.
+       */
       await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(
+        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
+        undefined,
+        { timeout: 15_000 },
+      );
 
       assert.equal(await h.page.locator('.space-name').innerText(), 'Laika Core');
 

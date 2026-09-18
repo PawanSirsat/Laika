@@ -213,14 +213,23 @@ function SpaceFrame({
       */}
       <div id={BAND_SLOT_ID} />
 
-      <PresenceStrip
-        presence={presence}
-        spaceSlug={slug}
-        assignee={assignee}
-        onFilter={(userId) => {
-          setParam('assignee', userId);
-        }}
-      />
+      {/*
+        **WORKING NOW belongs to the board.** The design wraps the presence
+        strip, the grid and the rail in one `boardLive` condition (prototype
+        line 2273); every other view of a space is a single full-width pane.
+        It sat on all of them, which is what made List and Timeline read as the
+        board with the middle swapped out.
+      */}
+      {path === '/board' && (
+        <PresenceStrip
+          presence={presence}
+          spaceSlug={slug}
+          assignee={assignee}
+          onFilter={(userId) => {
+            setParam('assignee', userId);
+          }}
+        />
+      )}
 
       {children}
 

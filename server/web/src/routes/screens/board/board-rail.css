@@ -333,10 +333,20 @@
   padding-bottom: 1.125rem;
 }
 
-.board-main > .kanban,
-.board-main > .list {
+.board-main > .kanban {
   flex: 1 1 0;
   min-width: min-content;
+}
+
+/*
+ * **The List pane must be allowed to shrink.** It scrolls its own table
+ * sideways, so `min-width: min-content` would floor it at the table's 940px
+ * and push the *page* instead — 18px of horizontal document scroll at 900px,
+ * which is the one thing every width test in this suite exists to catch.
+ */
+.board-main > .list-pane {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 @media (max-width: 1200px) {
@@ -346,11 +356,26 @@
     overflow-x: visible;
     padding-bottom: 0;
   }
-  .board-main > .kanban,
-  .board-main > .list {
+  .board-main > .kanban {
     /* Full width again once the rail is underneath rather than beside. */
     flex: 1 1 auto;
     width: 100%;
+  }
+
+  /*
+   * **`align-self: stretch`, not `width: 100%`.**
+   *
+   * Stacked, `.board-main` is a *column* flex container with
+   * `align-items: flex-start`, so an item's width shrink-wraps to max-content —
+   * the table's 940px floor, 96px past a 900px viewport. A declared `width:
+   * 100%` misses too: it resolves against a containing block wider than the
+   * pane's own slot and overhangs by the 18px margin. Stretch asks for the
+   * container's width, which is the thing actually wanted.
+   */
+  .board-main > .list-pane {
+    flex: 1 1 auto;
+    align-self: stretch;
+    min-width: 0;
   }
   .board-main > .kanban {
     /*
