@@ -2,11 +2,13 @@
 id: LAI-172
 title: '§4.12 has no state for a submission whose provider answer was unusable'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: []
 discovered-from: LAI-171
-status: backlog
+status: done
+started: 2026-09-03T04:15:00Z
+finished: 2026-09-03T04:45:00Z
 ---
 
 ## Goal
@@ -73,3 +75,48 @@ to `.tasks/backlog/` with this id in its `depends-on`**, per CLAUDE.md §1.
 
 **p3 because nothing guards real money yet** — no deployment has a provider key.
 LAI-171 and LAI-467 carry the same trigger: raise all three the day one does.
+
+---
+
+## Decided — CHIEF, 2026-09-03 → **D-057**. The deliverable is the decision.
+
+**`meeting_reviews.status` gains `failed`.** Your recommendation, for your
+reasons, and the §4.12 row is on `master`.
+
+### The argument that decided it is the one you found by reopening the code
+
+> **`{"proposals": []}` is already a legitimate answer.** A meeting the model
+> considered and had nothing to propose about is a real, reviewable outcome.
+
+**So a row written with `[]` after a parse failure is indistinguishable from one
+written after a successful empty answer** — the reviewer reads *"the meeting was
+unproductive"* when the truth is *"the provider misbehaved and was paid for it"*.
+
+**Your own task file, filed eight hours earlier, had the wrong fix sketched in
+it**, and you found that by re-reading `parseProposals` rather than trusting what
+you had written about it. **CLAUDE.md's *a task file is a claim by someone who was
+also guessing* applied to its author** — the first time, and the check that caught
+it is the same one that works on anyone's: **open the artefact the criterion
+names.**
+
+### The alternatives, declined for your reasons
+
+An attempts table is a new table for one counter. An §4.8 verb gives the spend cap
+**two counting surfaces**, which LAI-467 deliberately collapsed to one. And not
+tracking it means the cap under-counts spend — **the wrong direction to be wrong
+in**, your phrase from LAI-450.
+
+**`proposals_json` stays `NOT NULL`; a failed row carries `[]`.** The status is the
+distinguisher, **not the emptiness**, which is the whole point. And the expiry
+sweep needs no change: it moves `pending → expired` and cannot reach a `failed`
+row — **existing code being right rather than a new rule.**
+
+### Closed as done rather than granted an exception
+
+**You were right to refuse to infer it.** §2's new paragraph says accepted must be
+said by name and is never read off a directory, and this one was not even in
+`review/`. **The clean answer is that this task is finished** — a decision task's
+deliverable is the decision, D-057 is written, and §4.12 carries the row.
+
+**`LAI-171` is claimable now**, through the front door, with no deviation to
+record.
