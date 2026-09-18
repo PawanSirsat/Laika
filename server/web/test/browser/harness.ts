@@ -105,7 +105,21 @@ export function refuse(status: number, code: string, message: string): StubReply
  */
 export type StubRoute = unknown;
 
-/** Route → JSON. Anything unlisted 404s loudly rather than silently emptying. */
+/**
+ * Route → JSON. Anything unlisted 404s loudly rather than silently emptying.
+ *
+ * **A key may carry a query string, and then it is required** (LAI-241):
+ * `'/api/v1/users?include_inactive=true'` is served only to a request that
+ * actually sends it. Matching is by **subset** — the key names the parameters it
+ * cares about, and the request may carry others (`cursor` on a later page).
+ *
+ * **Opt in, not opt out.** A key with no `?` behaves exactly as it always did
+ * and ignores the query, which is right for most fixtures. But once *any* key
+ * for a path names a query, an unmatched request to that path **does not fall
+ * through to the path-only stub** — falling through is the very defect this
+ * exists to close, with an extra step. It is refused and recorded in
+ * {@link Harness.unmatched}.
+ */
 export type ApiStub = Readonly<Record<string, StubRoute>>;
 
 export interface Harness {
@@ -113,6 +127,12 @@ export interface Harness {
   readonly origin: string;
   /** Every `/api/` call the page made, in order. Live — read it after acting. */
   readonly calls: readonly StubCall[];
+  /**
+   * Requests refused because a query-keyed stub existed for the path and none
+   * matched, each as the **full URL that was actually requested** — the thing
+   * you need to see, and the thing a 404 body alone would hide from the test.
+   */
+  readonly unmatched: readonly string[];
   close: () => Promise<void>;
 }
 
@@ -152,10 +172,61 @@ function isReply(value: unknown): value is StubReply {
   return typeof value === 'object' && value !== null && REPLY in value;
 }
 
+interface Candidate {
+  readonly route: StubRoute;
+  /** The parameters this key demands. Empty for a path-only key. */
+  readonly required: readonly (readonly [string, string])[];
+}
+
+/**
+ * Which stub answers this request, or `'refused'` if a query-keyed one said no.
+ *
+ * **Subset matching, most specific first.** A key names the parameters it cares
+ * about and the request may carry others — `listAllUsers` adds `cursor` on a
+ * later page, and a fixture should not have to predict that. Sorting by how many
+ * a key demands means `?a=1&b=2` wins over `?a=1` when both fit, so a narrower
+ * fixture is never shadowed by a broader one declared earlier.
+ */
+function pick(
+  stub: ApiStub,
+  path: string,
+  query: URLSearchParams,
+): { route: StubRoute } | 'refused' | undefined {
+  const candidates: Candidate[] = [];
+  for (const [key, route] of Object.entries(stub)) {
+    const mark = key.indexOf('?');
+    if ((mark === -1 ? key : key.slice(0, mark)) !== path) continue;
+    candidates.push({
+      route,
+      required: mark === -1 ? [] : [...new URLSearchParams(key.slice(mark + 1)).entries()],
+    });
+  }
+  if (candidates.length === 0) return undefined;
+
+  const keyed = candidates.filter((c) => c.required.length > 0);
+  if (keyed.length === 0) {
+    // No key for this path mentions a query, so the old behaviour stands and the
+    // query is ignored. This is the common case, and it is the default.
+    return { route: candidates[0]!.route };
+  }
+
+  const fits = keyed
+    .filter((c) => c.required.every(([name, value]) => query.get(name) === value))
+    .sort((a, b) => b.required.length - a.required.length);
+
+  if (fits.length > 0) return { route: fits[0]!.route };
+
+  // **Deliberately not falling back to a path-only stub.** Once a fixture says a
+  // request must carry a query, answering one that does not is precisely the
+  // blindness this exists to remove — with an extra step.
+  return 'refused';
+}
+
 function serve(
   built: string,
   stub: ApiStub,
   calls: StubCall[],
+  unmatched: string[],
 ): Promise<{ server: Server; origin: string }> {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -179,15 +250,39 @@ function serve(
         const call: StubCall = { method: req.method ?? 'GET', path, body: sent };
         calls.push(call);
 
-        // Match on path alone: the stub is keyed by route, and a query string
-        // is the client's business rather than the fixture's.
-        const route = stub[path];
-        if (route === undefined) {
+        // Path alone by default — the stub is keyed by route, and a query
+        // string is usually the client's business rather than the fixture's.
+        // A key that *names* a query opts that path into caring (LAI-241).
+        const chosen = pick(stub, path, url.searchParams);
+
+        if (chosen === undefined) {
           res.writeHead(404, { 'content-type': 'application/json' });
           res.end(JSON.stringify({ error: { code: 'not_found', message: `no stub for ${path}` } }));
           return;
         }
 
+        if (chosen === 'refused') {
+          // **Loud, and naming what was actually requested.** A silent fall
+          // through to a path-only stub is the original defect; a 404 body alone
+          // would tell the browser and not the test, so it is recorded too.
+          const asked = req.url ?? path;
+          unmatched.push(asked);
+          const declared = Object.keys(stub).filter((k) => k.startsWith(`${path}?`));
+          res.writeHead(404, { 'content-type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              error: {
+                code: 'not_found',
+                message:
+                  `no stub matched ${asked} — this path has query-keyed stubs and none ` +
+                  `of them fits. Declared: ${declared.join(', ')}`,
+              },
+            }),
+          );
+          return;
+        }
+
+        const { route } = chosen;
         const answer =
           typeof route === 'function' ? (route as (c: StubCall) => unknown)(call) : route;
         const { status, body } = isReply(answer) ? answer : { status: 200, body: answer };
@@ -234,7 +329,8 @@ export async function closeBrowser(): Promise<void> {
 /** Open `path` in a real browser, against the built SPA and a stubbed API. */
 export async function open(path: string, stub: ApiStub): Promise<Harness> {
   const calls: StubCall[] = [];
-  const { server, origin } = await serve(ensureBuilt(), stub, calls);
+  const unmatched: string[] = [];
+  const { server, origin } = await serve(ensureBuilt(), stub, calls, unmatched);
   const page = await (await browser()).newPage();
   await page.goto(`${origin}${path}`);
 
@@ -242,6 +338,7 @@ export async function open(path: string, stub: ApiStub): Promise<Harness> {
     page,
     origin,
     calls,
+    unmatched,
     close: async () => {
       await page.close();
       await new Promise((done) => server.close(done));
