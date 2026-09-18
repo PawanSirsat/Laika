@@ -102,9 +102,16 @@ Write a new task file in `.tasks/backlog/` from `.tasks/TEMPLATE.md`:
 ```yaml
 id: LAI-0NN                 # lowest unused number IN YOUR OWN RANGE (D-017):
                             # CHIEF 001-099 · CORE 100-199 · SHELL 200-299
-                            # check across branches, not just your tree:
-                            #   git log --all --name-only --format= -- .tasks/ \
-                            #     | grep -o 'LAI-[0-9]*' | sort -u
+                            # check across branches, not just your tree —
+                            # and NOT with git log alone: it lists no files for
+                            # a merge commit, which is how another session's
+                            # filing reaches master. See CLAUDE.md §3.
+                            #   { for r in $(git for-each-ref \
+                            #        --format='%(refname)' refs/heads); do
+                            #       git ls-tree -r --name-only "$r" .tasks/
+                            #     done
+                            #     git log --all --name-only --format= -- .tasks/
+                            #   } | grep -o 'LAI-[0-9]\{3\}' | sort -u
 area: server                # where the work actually belongs, not where you found it
 assignee: unclaimed
 discovered-from: LAI-00X    # the task you are on right now

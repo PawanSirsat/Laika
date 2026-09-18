@@ -343,8 +343,13 @@ frontmatter, and mention it in your log entry.
 other's unmerged backlogs, so the same finding gets filed two or three times:
 
 ```bash
-git log --all --name-only --format= -- .tasks/ | grep -i '<keyword>'
+{ for ref in $(git for-each-ref --format='%(refname)' refs/heads); do
+    git ls-tree -r --name-only "$ref" .tasks/
+  done; git log --all --name-only --format= -- .tasks/; } | sort -u | grep -i '<keyword>'
 ```
+
+(`git log` alone misses any task file that arrived on a branch by merge — see
+the id sweep below for the measurement.)
 
 If someone already filed it, add what you know to your log and move on. **If you
 are not sure, file it anyway** — CHIEF closes duplicates in one review line, and a
@@ -371,8 +376,50 @@ number left — CHIEF's has none, so CHIEF files from `LAI-400`.
 Use the lowest unused number **in your own range**, checked across every branch:
 
 ```bash
-git log --all --name-only --format= -- .tasks/ | grep -o 'LAI-[0-9]*' | sort -u
+{ for ref in $(git for-each-ref --format='%(refname)' refs/heads); do
+    git ls-tree -r --name-only "$ref" .tasks/
+  done
+  git log --all --name-only --format= -- .tasks/
+  git log --all --format='%s'; } | grep -o 'LAI-[0-9]\{3\}' | sort -u
 ```
+
+**The `git log` half alone is blind, and it is the same blindness §2 already
+fixed for the claim check.** `git log --name-only` prints **no file list for a
+merge commit**, so a task file whose only arrival on a branch was a merge is
+invisible to it — and that is how every filing from another session reaches
+`master`.
+
+Measured on 2026-09-18, filing the two tasks for D-060:
+
+| sweep | ids | misses |
+| --- | --- | --- |
+| `git log` alone (what this said) | **315** | `LAI-416`, `LAI-453` |
+| `ls-tree` over every branch | **315** | `LAI-114`, `LAI-117` |
+| the union above | **317** | — |
+
+**The two `git log` missed were both tracked, both in `.tasks/backlog/` on
+`master`, and both taken.** CHIEF picked them as "lowest free", wrote two task
+files against them, and found out from `task-file-state.test.ts`'s id-collision
+check — the repo's own guard catching what the repo's own instructions had just
+recommended. The mechanism, on the commit that carried one of them:
+
+```
+git show --name-only 80bc7b4 | grep -c LAI-416   →  1
+git log  --name-only 80bc7b4 | grep -c LAI-416   →  0
+```
+
+**`ls-tree` asks where files *are*; `log` asks what was *touched*, and neither
+contains the other.** `ls-tree` alone misses `LAI-114` and `LAI-117`, whose files
+no longer exist under those ids. **Both halves earn their place; run both.**
+
+The `git log --all --format='%s'` half found **nothing the other two missed** —
+it is there for an id that reached a commit message without ever being a file,
+which §3's own renumber warning says can happen. **It is insurance, not a
+measurement**, and is recorded that way so the next reader does not credit it
+with a catch it has not made.
+
+**§2 step 3 learned this about claims — *"History says who touched it; only the
+current path says who has it"* — and this paragraph did not, for three weeks.**
 
 **"Lowest unused number" is not a lock against *yourself* either.** Two filings
 minutes apart, straddling a renumber, both take the same id — SHELL did it on
