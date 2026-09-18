@@ -7,7 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-248
 started: 2026-09-18T16:06:24+05:30
-status: in-progress
+finished: 2026-09-18T16:17:45+05:30
+status: review
 ---
 
 ## Goal
@@ -45,15 +46,15 @@ it only changes when a project is renamed or added.
 
 ## Acceptance criteria
 
-- [ ] Clicking any space leaves every row exactly where it was. Asserted in a
+- [x] Clicking any space leaves every row exactly where it was. Asserted in a
       browser test by reading the rendered order before and after a click and
       comparing them.
-- [ ] Opening a fourth space still replaces the least-recent one — membership
+- [x] Opening a fourth space still replaces the least-recent one — membership
       is unchanged, only the drawing order.
-- [ ] The order is stable across a reload with the same three spaces.
-- [ ] A unit test on `recentSpaces()` covers both halves: the *set* follows
+- [x] The order is stable across a reload with the same three spaces.
+- [x] A unit test on `recentSpaces()` covers both halves: the *set* follows
       recency, the *sequence* does not.
-- [ ] Full gate — all three `EXIT 0`, repo root.
+- [x] Full gate — all three `EXIT 0`, repo root.
 
 ## Notes / context
 

@@ -7,7 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-260
 started: 2026-09-18T16:13:40+05:30
-status: in-progress
+finished: 2026-09-18T16:17:45+05:30
+status: review
 ---
 
 ## Goal
@@ -46,13 +47,13 @@ project a one-click action, so a latent defect became the main path.
 
 ## Acceptance criteria
 
-- [ ] Clicking a space re-renders the board with that project's tasks, with no
+- [x] Clicking a space re-renders the board with that project's tasks, with no
       reload. Asserted in a browser test that clicks between two spaces with
       **different, identifiable task keys** and reads the cards after each.
-- [ ] The default-project resolution still works: a `/board` with no
+- [x] The default-project resolution still works: a `/board` with no
       `?project=` picks one and writes it into the URL (LAI-423).
-- [ ] Back and Forward across two spaces show each one's tasks.
-- [ ] Full gate — all three `EXIT 0`, repo root.
+- [x] Back and Forward across two spaces show each one's tasks.
+- [x] Full gate — all three `EXIT 0`, repo root.
 
 ## Notes / context
 
