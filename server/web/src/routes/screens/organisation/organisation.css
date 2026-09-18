@@ -73,8 +73,15 @@
  *
  * They still hold history — tasks they created, comments they wrote — and a
  * directory that omits them makes those references unattributable.
+ *
+ * **The dimming stops at the identity and never reaches the controls.** It was
+ * on the whole `li` and a screenshot caught what no assertion could: at 0.55 the
+ * `Reactivate` button reads as greyed-out, which is the exact thing this screen
+ * argues against elsewhere — the one control that is somebody's way back looking
+ * like it is not for you. `:not()` rather than a second rule resetting opacity,
+ * because nesting opacity multiplies and 0.55 × 1 is still 0.55.
  */
-.org-person-inactive {
+.org-person-inactive > *:not(.org-person-controls) {
   opacity: 0.55;
 }
 
@@ -202,4 +209,129 @@
   padding: var(--space-2);
   margin-bottom: var(--space-2);
   overflow-wrap: anywhere;
+}
+
+/* --- the org itself, and role management (LAI-459) ------------------------- */
+
+.org-facts {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.org-fact {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+}
+.org-fact dt {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.org-fact dd {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--tx);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.org-fact-note {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+/* The provider and the key tail are one sentence — `anthropic ···9f2a`.
+   **The wrapper is what puts them on one line, not this rule.** The `dd` is
+   `flex-direction: column`, so the tail span was a flex *item* and got its own
+   row; wrapping the pair makes the wrapper the item and the two inline again.
+   Deleting this rule leaves them correctly on one line — measured, and the
+   reason this comment does not claim the credit. What the rule supplies is the
+   spacing and the shared baseline, and `flex-wrap` so a long tail drops rather
+   than pushing the card. */
+.org-ai {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+.org-key {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--tx2);
+}
+
+@media (max-width: 40rem) {
+  /* One column rather than a squeezed label — the body must not scroll sideways. */
+  .org-fact {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+.org-person-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+
+.org-role-select {
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--bd);
+  background: var(--card);
+  color: var(--tx);
+}
+.org-role-select:disabled {
+  color: var(--tx3);
+}
+
+.org-deactivate,
+.org-reactivate {
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+/* Deactivating locks somebody out; reactivating does not. They read differently
+   because they are different actions (D-048), not one toggle. */
+.org-deactivate {
+  border: 1px solid var(--redb);
+  color: var(--red);
+}
+.org-deactivate:hover:not(:disabled) {
+  background: var(--reds);
+}
+.org-reactivate {
+  border: 1px solid var(--bd);
+  color: var(--tx2);
+}
+.org-reactivate:hover:not(:disabled) {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+.org-deactivate:disabled,
+.org-reactivate:disabled {
+  color: var(--tx3);
+  border-color: var(--bd);
+  cursor: default;
+}
+
+.org-error {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
 }
