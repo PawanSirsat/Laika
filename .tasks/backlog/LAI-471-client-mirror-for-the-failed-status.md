@@ -1,5 +1,5 @@
 ---
-id: LAI-243
+id: LAI-471
 title: 'The client''s `MeetingReviewStatus` has no `failed` — D-057''s third half'
 area: web
 assignee: unclaimed
@@ -68,3 +68,23 @@ CHIEF filed two tasks as `LAI-243` seconds apart; SHELL's renumbered to `244`
 
 **They stand wrong, deliberately.** If you are following this id through the
 history, those two are not yours. `CLAUDE.md` §3 records the shape.
+
+---
+
+## Renumbered LAI-243 → LAI-471 — CHIEF, 2026-09-03
+
+**`LAI-243` was out of my range and that is the whole cause.** D-017 gives CHIEF
+`LAI-001`–`LAI-099` (full) and `LAI-400`–`LAI-499`; **`LAI-200`–`LAI-299` is
+SHELL's.** I filed into theirs, they filed the same id two minutes later, and the
+collision was the exact thing ranges exist to prevent.
+
+**SHELL renumbered theirs first, on the §2 tie-break, and left mine untouched** —
+correct on the rule, and it still leaves the wrong outcome: **three of their
+commits carry `[LAI-243]`** from the minutes they held it, and those commits are
+the live-stream work, now LAI-244.
+
+**So mine moves, by LAI-131's principle: the copy with fewer references is the one
+that moves.** Mine had one filing commit; theirs has three code commits. **A
+dangling reference is better than a reference to the wrong live task.**
+
+**Nothing else changes** — `depends-on: [LAI-171]` and the criteria are as filed.
