@@ -222,7 +222,11 @@ void describe('the recent order survives a reload', () => {
       await h.page.reload();
       await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
       const keys = await h.page.locator('.space-key').allInnerTexts();
-      assert.deepEqual(keys, ['LC', 'LW', 'LI', 'MS'], `storage lost the order: ${keys.join(', ')}`);
+      assert.deepEqual(
+        keys,
+        ['LC', 'LW', 'LI', 'MS'],
+        `storage lost the order: ${keys.join(', ')}`,
+      );
     } finally {
       await h.close();
     }
@@ -247,9 +251,7 @@ void describe('the new chrome fits', () => {
         }, theme);
         await h.page.reload();
         await h.page.locator('.space-tab').first().waitFor({ timeout: 20_000 });
-        const dark = await h.page.evaluate(() =>
-          document.documentElement.classList.contains('dk'),
-        );
+        const dark = await h.page.evaluate(() => document.documentElement.classList.contains('dk'));
         assert.equal(dark, theme === 'dark', `the ${theme} theme did not apply`);
 
         for (const width of [1440, 1280, 420]) {

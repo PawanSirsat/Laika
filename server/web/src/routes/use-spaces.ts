@@ -50,10 +50,7 @@ export function useSpaces(
     // straight after the click read back nothing. Storage is the durable copy
     // and every write goes through this handler, so reading it back is reading
     // the same order the state holds.
-    const next = promote(
-      typeof localStorage === 'undefined' ? [] : readRecent(localStorage),
-      slug,
-    );
+    const next = promote(typeof localStorage === 'undefined' ? [] : readRecent(localStorage), slug);
     if (typeof localStorage !== 'undefined') writeRecent(localStorage, next);
     setRecent(next);
   }, []);
