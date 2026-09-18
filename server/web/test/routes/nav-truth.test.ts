@@ -82,10 +82,14 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // `/tokens` left this list when LAI-410 built the screen — it now has an
     // API and a screen, so by this file's own rule it is offered rather than
     // hidden. That is the rule working, not an exception to it.
-    // `/capacity` left this list with LAI-439 for the same reason `/tokens` did:
-    // it has an API — `GET /capacity`, `GET /presence` — and now a screen. The
-    // rule working, again, rather than an exception to it.
-    for (const path of ['/meeting-review']) {
+    // `/capacity` left this list with LAI-439 and `/meeting-review` with
+    // LAI-455, for the same reason `/tokens` did: each has an API and now a
+    // screen.
+    //
+    // **The list is empty, and the test stays.** Every route Laika mounts is
+    // offered — which is the state this file was written to move towards, not a
+    // reason to delete it. A new stub route belongs here on the day it is added.
+    for (const path of [] as string[]) {
       const route = ROUTES.find((r) => r.path === path);
       assert.notEqual(route, undefined, `${path} must still be routed`);
       assert.equal(isShipped(route!), false, `${path} has no API and must not be offered`);
@@ -105,7 +109,7 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // the change was finished, which is the only reason it is worth having.
       // `Tokens` joins with LAI-410: the screen exists, so it is offered.
       // `Capacity` joins with LAI-439 — M5's exit criterion; the screen exists,
-      // so it is offered.
+      // so it is offered. `Meeting review` joins with LAI-455, M6's.
       [
         'Board',
         'Timeline',
@@ -113,6 +117,7 @@ void describe('the sidebar offers nothing that does not exist', () => {
         'Projects',
         'Dashboard',
         'Capacity',
+        'Meeting review',
         'Tokens',
         'Organisation',
       ],

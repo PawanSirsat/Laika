@@ -76,3 +76,22 @@ export async function listAllUsers(signal?: AbortSignal, maxPages = 20): Promise
 
   return { users, truncated: true };
 }
+
+/**
+ * Change somebody's org role, or lock them out (§6.4, LAI-222).
+ *
+ * **One endpoint, two different sentences**, and the caller must say which it
+ * means: `PATCH` refuses a body carrying neither. `is_active: false` is
+ * deactivation and `true` is reactivation — D-048 gave those **two audit verbs**
+ * rather than one, because *"who was locked out, and when"* and *"who was let
+ * back in"* are different questions people actually ask.
+ *
+ * **Deactivation is not deletion.** §4.1 keeps the row so history keeps its
+ * author, and the person stays in the list wearing a `DEACTIVATED` chip.
+ */
+export function updateUser(
+  id: string,
+  patch: { readonly org_role?: string; readonly is_active?: boolean },
+): Promise<OrgUser> {
+  return request<OrgUser>(`/users/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch });
+}

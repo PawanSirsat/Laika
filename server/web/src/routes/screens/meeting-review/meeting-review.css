@@ -1,0 +1,392 @@
+/* Meeting review (§11.4.2, LAI-455). Tokens only — no literal colours. */
+
+.mr {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mr-body {
+  display: grid;
+  grid-template-columns: 17rem minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-4);
+  align-items: start;
+  min-height: 0;
+}
+
+@media (max-width: 60rem) {
+  /* One column rather than a sideways scroll: the page body must never scroll
+     horizontally, and the proposal text is the thing that must stay readable. */
+  .mr-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.mr-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mr-item {
+  font: inherit;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  cursor: pointer;
+}
+.mr-item:hover {
+  border-color: var(--bd2);
+}
+.mr-item:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+.mr-item-on {
+  background: var(--accs);
+  border-color: var(--accb);
+}
+
+.mr-item-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.mr-source {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mr-item-meta {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.mr-status {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+.mr-status-pending {
+  color: var(--acc);
+  background: var(--accs);
+}
+.mr-status-applied {
+  color: var(--grn);
+  background: var(--grns);
+}
+.mr-status-discarded {
+  color: var(--tx3);
+  background: var(--tub);
+}
+.mr-status-expired {
+  color: var(--amb);
+  background: var(--ambs);
+}
+
+.mr-detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.mr-blocked {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+}
+.mr-blocked-expired {
+  color: var(--amb);
+  background: var(--ambs);
+  border-color: var(--ambb);
+}
+
+.mr-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+}
+
+.mr-proposals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.mr-proposal {
+  border: 1px solid var(--bd);
+  border-left: 3px solid var(--bd2);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/*
+ * **The four tags carry different weight, and `DEAD` carries the most.**
+ *
+ * It proposes closing work somebody may be doing. A reader scanning quickly must
+ * not take it for another `NEW`, so it is the only one that also moves the card's
+ * left edge — colour alone would vanish for a colour-blind reader and in a
+ * screenshot, and the row says what it means in words besides.
+ */
+.mr-kind-new {
+  border-left-color: var(--grn);
+}
+.mr-kind-change {
+  border-left-color: var(--acc);
+}
+.mr-kind-dead {
+  border-left-color: var(--red);
+}
+.mr-kind-decision {
+  border-left-color: var(--pur);
+}
+
+.mr-proposal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.mr-tag {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.04em;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+.mr-tag-new {
+  color: var(--grn);
+  background: var(--grns);
+  border: 1px solid var(--grnb);
+}
+.mr-tag-change {
+  color: var(--acc);
+  background: var(--accs);
+  border: 1px solid var(--accb);
+}
+.mr-tag-dead {
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+}
+.mr-tag-decision {
+  color: var(--pur);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+}
+
+.mr-meaning {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.mr-task {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  margin-left: auto;
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-2);
+  cursor: pointer;
+}
+.mr-task:hover {
+  color: var(--tx);
+  border-color: var(--bd2);
+}
+
+.mr-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+}
+.mr-desc,
+.mr-reason {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--tx2);
+}
+.mr-reason {
+  font-style: italic;
+  color: var(--tx3);
+}
+
+.mr-changes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.mr-change {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+.mr-change-field {
+  color: var(--tx3);
+}
+.mr-change-from {
+  color: var(--tx3);
+  text-decoration: line-through;
+}
+.mr-change-arrow {
+  color: var(--tx3);
+}
+.mr-change-to {
+  color: var(--tx);
+  font-weight: var(--weight-bold);
+}
+
+/*
+ * The quote is the evidence, and there is no transcript behind it (D-056).
+ * It is never clamped to a line count: a proposal a reader cannot trace to a
+ * whole sentence is one they cannot honestly accept.
+ */
+.mr-quote {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-left: 2px solid var(--bd2);
+  background: var(--tub);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  overflow-wrap: anywhere;
+}
+
+.mr-proposal-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.mr-accept {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--tx2);
+  cursor: pointer;
+}
+.mr-accept input {
+  cursor: pointer;
+}
+
+.mr-landed {
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  color: var(--tx3);
+}
+.mr-landed-applied {
+  color: var(--grn);
+}
+.mr-landed-already {
+  color: var(--tx3);
+}
+/* Refused is **not** an error colour: a member accepting a lead-only decision is
+   the ordinary case, and red would tell them they did something wrong. */
+.mr-landed-refused {
+  color: var(--amb);
+}
+
+.mr-actions {
+  display: flex;
+  align-items: center;
+  /* Discard at one end, apply at the other. A destructive control within a
+     thumb's width of the ordinary one is how the wrong button gets pressed. */
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--bd);
+}
+
+.mr-apply-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-left: auto;
+}
+.mr-count {
+  font-size: var(--text-xs);
+  color: var(--tx3);
+}
+
+.mr-apply {
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accb);
+  background: var(--acc);
+  color: var(--card);
+  cursor: pointer;
+}
+.mr-apply:disabled {
+  background: var(--tub);
+  color: var(--tx3);
+  border-color: var(--bd);
+  cursor: default;
+}
+.mr-apply:focus-visible,
+.mr-discard:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.mr-discard {
+  font: inherit;
+  font-size: var(--text-sm);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--redb);
+  background: transparent;
+  color: var(--red);
+  cursor: pointer;
+}
+.mr-discard:hover {
+  background: var(--reds);
+}

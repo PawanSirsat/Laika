@@ -58,6 +58,19 @@ interface Pair {
 
 const PAIRS: readonly Pair[] = [
   {
+    // Only the `*View`. `ApplyReviewResult` and `ProposalView` are the shapes
+    // that matter most on this screen and **neither can be paired here**: the
+    // census derives served types from `*View` exports and `c.json<…>`, so a
+    // pair naming anything else turns `PAIRS names a server type that no longer
+    // exists` red. Same wall as `PresenceEntry` in LAI-439, and the same answer
+    // — `meeting-reviews.test.ts` compares those two directly, and checks
+    // optionality, which this check cannot see either.
+    server: 'MeetingReviewView',
+    serverFile: 'services/meeting-reviews.ts',
+    client: 'MeetingReview',
+    clientFile: 'meeting-reviews.ts',
+  },
+  {
     // Paired the moment the mirror existed (LAI-439). The census listed both as
     // "no client type exists"; creating the client type is what made that reason
     // false, so the rows came out of `UNPAIRED` in the same change.
@@ -82,6 +95,26 @@ const PAIRS: readonly Pair[] = [
     serverFile: 'services/presence.ts',
     client: 'CapacityView',
     clientFile: 'presence.ts',
+  },
+  {
+    // Paired the moment the mirror existed (LAI-459), the same way the presence
+    // rows were. Both are real `*View` exports, so neither hits the census wall
+    // that kept `PresenceEntry` and `ProposalView` out of this table.
+    //
+    // **`fieldsOf` cannot see optionality**, and `ai?` is the whole of §12's
+    // field-level gate — `org.test.ts` checks that separately, because a client
+    // declaring `ai` required would typecheck against a Viewer's response and
+    // then read `undefined.configured` at runtime.
+    server: 'OrgView',
+    serverFile: 'services/orgs.ts',
+    client: 'Org',
+    clientFile: 'org.ts',
+  },
+  {
+    server: 'OrgAiView',
+    serverFile: 'services/orgs.ts',
+    client: 'OrgAi',
+    clientFile: 'org.ts',
   },
   {
     server: 'AcceptedInviteBody',

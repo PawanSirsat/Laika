@@ -179,6 +179,30 @@ asking.~~
 **Exit:** paste a standup transcript, review the proposal, apply it, and the
 board reflects the meeting.
 
+**Exit met — 2026-09-03.** Every endpoint §11.4.2 names is served and called:
+`POST /webhooks/transcript` (LAI-450, HMAC-verified against its own secret under
+D-052), the two GETs and `discard` (LAI-454), `POST …/apply` (LAI-451), and the
+screen (LAI-455).
+
+**What the evidence is, and what it is not.** The transcript path is proven by
+tests, not by a live meeting — no deployment has a provider key, so **no real
+transcript has been through it end to end.** §12's provider config is built and
+unused. That is the honest state of this exit, and `LAI-467` records the one
+thing that changes when a key does appear: **the spend cap lives in memory and a
+restart forgives it.**
+
+**Three decisions shaped it.** **D-052** gave the transcript webhook its own
+secret, because one secret for two integrations means revoking either breaks
+both — provable now only because LAI-161 keys per purpose. **D-056** settled that
+**there is no transcript pane, because there is no transcript**: §4.12 keeps a
+`transcript_hash`, the quotes are what make a proposal reviewable, and they are
+all that is kept. **D-050** gave cron and webhooks a named system principal, so
+the nightly jobs stopped writing with no `can()` call at all.
+
+**The Laika Assistant is listed under M6 and is not part of this exit** — §14 q9's
+three questions are unanswered, so it has no endpoints and cannot be scheduled.
+**M6 closes on the meeting-diff path, which is what the exit criterion says.**
+
 ---
 
 ## M7 — Release polish

@@ -3,7 +3,7 @@ id: LAI-238
 title: An admin cannot see or revoke another user's tokens
 area: web
 assignee: unclaimed
-priority: p3
+priority: p2
 depends-on: [LAI-459]
 discovered-from: LAI-460
 status: backlog

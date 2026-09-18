@@ -61,12 +61,58 @@ const TYPES: Readonly<Record<string, string>> = {
   '.svg': 'image/svg+xml',
 };
 
+/** What the stub saw. Recorded for every `/api/` call, in arrival order. */
+export interface StubCall {
+  readonly method: string;
+  readonly path: string;
+  /** The parsed JSON body, or `undefined` for a request that sent none. */
+  readonly body: unknown;
+}
+
+const REPLY = Symbol('laika.stub.reply');
+
+interface StubReply {
+  readonly [REPLY]: true;
+  readonly status: number;
+  readonly body: unknown;
+}
+
+/**
+ * A non-200 answer from the stub.
+ *
+ * A symbol key rather than a `{status, body}` shape that a *fixture* could also
+ * have: `GET /health` legitimately returns something with a `status` field, and
+ * a marker that a plain fixture can accidentally wear is a stub that silently
+ * answers `503` because the response happened to look like a directive.
+ */
+export function reply(status: number, body: unknown): StubReply {
+  return { [REPLY]: true, status, body };
+}
+
+/** An API error envelope, the shape `toApiError` reads. */
+export function refuse(status: number, code: string, message: string): StubReply {
+  return reply(status, { error: { code, message } });
+}
+
+/**
+ * What a route answers with: a JSON fixture, a {@link reply}, or a function of
+ * the request returning either.
+ *
+ * Plain `unknown`, not a union with the function signature — a union containing
+ * `unknown` collapses to `unknown`, so spelling the alternatives out would read
+ * as precision the type does not have. The shape a caller needs is in this
+ * comment and in {@link StubCall}.
+ */
+export type StubRoute = unknown;
+
 /** Route → JSON. Anything unlisted 404s loudly rather than silently emptying. */
-export type ApiStub = Readonly<Record<string, unknown>>;
+export type ApiStub = Readonly<Record<string, StubRoute>>;
 
 export interface Harness {
   readonly page: Page;
   readonly origin: string;
+  /** Every `/api/` call the page made, in order. Live — read it after acting. */
+  readonly calls: readonly StubCall[];
   close: () => Promise<void>;
 }
 
@@ -102,22 +148,52 @@ export function cleanBuild(): void {
   BUILT = undefined;
 }
 
-function serve(built: string, stub: ApiStub): Promise<{ server: Server; origin: string }> {
+function isReply(value: unknown): value is StubReply {
+  return typeof value === 'object' && value !== null && REPLY in value;
+}
+
+function serve(
+  built: string,
+  stub: ApiStub,
+  calls: StubCall[],
+): Promise<{ server: Server; origin: string }> {
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const path = url.pathname;
 
     if (path.startsWith('/api/')) {
-      // Match on path alone: the stub is keyed by route, and a query string is
-      // the client's business rather than the fixture's.
-      const body = stub[path];
-      if (body === undefined) {
-        res.writeHead(404, { 'content-type': 'application/json' });
-        res.end(JSON.stringify({ error: { code: 'not_found', message: `no stub for ${path}` } }));
-        return;
-      }
-      res.writeHead(200, { 'content-type': 'application/json' });
-      res.end(JSON.stringify(body));
+      // Read the body before answering — a route function is allowed to decide
+      // on it, and `PATCH {is_active:false}` differs from `PATCH {org_role}`.
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk: Buffer) => chunks.push(chunk));
+      req.on('end', () => {
+        const raw = Buffer.concat(chunks).toString('utf8');
+        let sent: unknown;
+        try {
+          sent = raw === '' ? undefined : JSON.parse(raw);
+        } catch {
+          // Not JSON. Record it as it arrived rather than dropping the call:
+          // a request the stub cannot parse is itself worth being able to see.
+          sent = raw;
+        }
+        const call: StubCall = { method: req.method ?? 'GET', path, body: sent };
+        calls.push(call);
+
+        // Match on path alone: the stub is keyed by route, and a query string
+        // is the client's business rather than the fixture's.
+        const route = stub[path];
+        if (route === undefined) {
+          res.writeHead(404, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: { code: 'not_found', message: `no stub for ${path}` } }));
+          return;
+        }
+
+        const answer =
+          typeof route === 'function' ? (route as (c: StubCall) => unknown)(call) : route;
+        const { status, body } = isReply(answer) ? answer : { status: 200, body: answer };
+        res.writeHead(status, { 'content-type': 'application/json' });
+        res.end(JSON.stringify(body));
+      });
       return;
     }
 
@@ -157,13 +233,15 @@ export async function closeBrowser(): Promise<void> {
 
 /** Open `path` in a real browser, against the built SPA and a stubbed API. */
 export async function open(path: string, stub: ApiStub): Promise<Harness> {
-  const { server, origin } = await serve(ensureBuilt(), stub);
+  const calls: StubCall[] = [];
+  const { server, origin } = await serve(ensureBuilt(), stub, calls);
   const page = await (await browser()).newPage();
   await page.goto(`${origin}${path}`);
 
   return {
     page,
     origin,
+    calls,
     close: async () => {
       await page.close();
       await new Promise((done) => server.close(done));

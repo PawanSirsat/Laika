@@ -59,7 +59,9 @@ void describe('sidebar groups (AC1)', () => {
       // a screen behind it. It moved from `WORK` to `REVIEW` in that task —
       // AC1 names the group, and it reads with Dashboard rather than with the
       // screens you open to move a task.
-      ['Dashboard', 'Capacity'],
+      // `Meeting review` joins with LAI-455 — M6's exit criterion — by the rule
+      // that a route is offered once there is a screen behind it.
+      ['Dashboard', 'Capacity', 'Meeting review'],
     );
     // `SETTINGS` is no longer empty: LAI-086 built the Organisation screen, so
     // it earned its place back by the same rule that took it away — a route is

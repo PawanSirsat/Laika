@@ -1,19 +1,19 @@
 /**
- * The Organisation screen renders only what an endpoint serves (LAI-086).
+ * The Organisation screen renders only what an endpoint serves (LAI-086, LAI-459).
  *
- * Two of this task's six criteria could not be built, and the temptation in
- * both cases is a control that looks real:
+ * ## What changed, and why this file is now much smaller
  *
- * - **the org's name** — `GET /api/v1/org` is in SPEC §6.4 and is not mounted,
- *   and `/me` carries no org either, so the signed-in app cannot learn which
- *   organisation it is looking at. A literal here would be the fixture
- *   CLAUDE.md §5.1 forbids.
- * - **role changes and deactivation** — `PATCH`/`DELETE /users/:id` both answer
- *   `404`. A dropdown that cannot save is worse than none, because it looks
- *   like it did.
+ * Until LAI-459 this file's main job was asserting the **absence** of a role
+ * dropdown and a deactivate button, because `PATCH`/`DELETE /users/:id` both
+ * answered `404`. LAI-222 built them and LAI-447 built `GET /org`, so those
+ * assertions went red **for the change that satisfied their own task** — the
+ * LAI-158 shape, and the reason the replacements live in
+ * `test/browser/organisation-roles.test.ts` instead: what a person is offered is
+ * a property of the rendered page, and a file-reading test can only ever
+ * approximate it.
  *
- * The design also shows an AI provider block, a monthly spend cap and a danger
- * zone. None has an endpoint and the cap has no column, so none is rendered.
+ * What stays here is what source really is the right instrument for: that no
+ * fixture is hardcoded, and that nothing with no endpoint behind it is drawn.
  */
 
 import assert from 'node:assert/strict';
@@ -40,19 +40,22 @@ before(async () => {
 
 void describe('nothing is rendered that no endpoint serves', () => {
   void test('no organisation name is hardcoded', () => {
-    // The prototype's org is "Kvelld Dynamics". `docs/design/README.md` lists it
-    // as a fixture, and there is nowhere to read a real one from.
+    // The prototype's org is "Kvelld Dynamics". It is served now (`GET /org`),
+    // which is precisely why a literal would be invisible: the screen would
+    // look right against the demo instance and be wrong for everybody else.
     for (const fixture of ['Kvelld Dynamics', 'Kvelld', 'kvelld']) {
       assert.ok(!screen.includes(fixture), `hardcodes the org fixture "${fixture}"`);
     }
   });
 
-  void test('no AI provider, spend cap or danger zone', () => {
-    // Each is in the design and none has an endpoint; the cap has no column at
-    // all. Rendering any of them inert would be a settings screen that appears
-    // to save and does not — the worst thing on the list.
+  void test('no spend cap or danger zone', () => {
+    // Each is in the design and has no endpoint; the cap has no column at all.
+    // Rendering any of them inert would be a settings screen that appears to
+    // save and does not — the worst thing on the list.
+    //
+    // **AI provider is deliberately not in this list any more.** It was until
+    // LAI-459; `GET /org` carries it, gated field-level on `org.settings.edit`.
     for (const absent of [
-      /AI provider/i,
       /monthly cap/i,
       /danger zone/i,
       /rotate the webhook/i,
@@ -63,35 +66,12 @@ void describe('nothing is rendered that no endpoint serves', () => {
     }
   });
 
-  /**
-   * The people list only.
-   *
-   * Scoped, because the invite form legitimately has a `<select>` — you choose
-   * the role a *new* invite carries, and that endpoint exists. A file-wide
-   * search for a role dropdown flagged it, which would have meant either
-   * deleting a working control or loosening the guard until it caught nothing.
-   */
-  function peopleList(): string {
-    const match = /<ul className="org-people">[\s\S]*?<\/ul>/.exec(screen);
-    assert.ok(match, 'no people list found — the guard has nothing to check');
-    return match[0];
-  }
-
-  void test('no role dropdown or deactivate control on a person', () => {
-    // The design's role dropdowns are "live". Ours cannot be: nothing writes
-    // `org_role` or `is_active` — PATCH and DELETE on /users/:id both 404.
-    const list = peopleList();
-    for (const control of [/<select/i, /<button/i, /onRoleChange/i, /deactivate\s*[({]/i]) {
-      assert.ok(
-        !control.test(list),
-        `a person row has a control nothing can save: ${String(control)}`,
-      );
-    }
-
-    // …and the screen says why, rather than leaving the reader to wonder
-    // whether they simply lack permission.
-    assert.match(screen, /read-only/i, 'does not tell the reader why roles cannot be changed');
-    assert.match(screen, /LAI-222/, 'does not name the task that would enable it');
+  void test('the AI key is never rendered, only its tail and whether one is set', () => {
+    // §12 stores it as ciphertext and nothing decrypts it to build a response,
+    // so there is no key here to leak — this guards the direction of travel: a
+    // field named for the key itself appearing in the JSX is the defect.
+    assert.ok(!/\bai_api_key\b/.test(screen), 'the write-only key field reaches the screen');
+    assert.match(screen, /key_last4/, 'the recognisable tail is not rendered at all');
   });
 });
 
@@ -108,5 +88,20 @@ void describe('what it does render is gated the way the server is', () => {
     // exists. Someone who closes the panel assuming they can find it again has
     // to revoke and re-issue.
     assert.match(screen, /shown once/i);
+  });
+
+  /**
+   * The last-owner invariant is the server's, and this is the one assertion
+   * about it a source test can make better than a browser one: the *absence* of
+   * a re-implementation. A browser test can only prove the client agreed with
+   * the server on the cases it was given.
+   */
+  void test('no client-side last-owner rule', () => {
+    for (const invented of [/last\s*(active\s*)?owner/i, /ownerCount/i, /countOwners/i]) {
+      assert.ok(
+        !invented.test(screen),
+        `re-implements a server invariant the client cannot evaluate: ${String(invented)}`,
+      );
+    }
   });
 });
