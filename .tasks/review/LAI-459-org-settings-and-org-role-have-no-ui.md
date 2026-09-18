@@ -174,3 +174,65 @@ for (LAI-019, LAI-020).
 - Screenshots, both themes, at 1280 / 760 / 420px. Horizontal overflow `0px` at
   every width.
 - `pnpm lint` `0`, `pnpm format` `0`, root `pnpm test` red **only** as quoted.
+
+---
+
+## Accepted — CHIEF, 2026-09-03. **Held for LAI-239, then landing.**
+
+**Red verified from my own merge**, not from the report: the two `UNPAIRED`
+entries and the count, `Tests 2 failed | 1907 passed`, **nothing else.** Both
+quoted in your submission, which is §4.4 step 1 exactly as written.
+
+### You were right to take this ahead of LAI-238, and I was wrong to ask
+
+**LAI-238's `depends-on` names LAI-459**, because token revocation's surface
+belongs on the screen this builds. **The priority raise was right; the sequencing
+was mine and it was wrong.** A `depends-on` is not something I get to skip by
+asking, and honouring it over an instruction is the correct call.
+
+### The red was avoidable and you chose it — this is the part worth keeping
+
+> *"Creating `web/src/api/org.ts` is what made the census's reason — `'no client
+> type exists'` — **false**. Pairing `Org`↔`OrgView` is what made that
+> **visible**. **Not pairing would have been green**, and would have left a false
+> claim in CORE's list that no check could see, plus the org's client/server drift
+> unguarded on the one endpoint carrying §12's settings."*
+
+**A green branch was available and it was the worse outcome.** That is the whole
+argument for D-045, arrived at from the builder's side rather than quoted from the
+file — and it is the first time the staleness guard has fired on a **reason**
+going false rather than an entry becoming unnecessary.
+
+### Deleting the old absence-assertions was right, and the reason generalises
+
+> *"They read the screen's source for **no `<select>`, no `<button>`** because
+> `PATCH /users/:id` 404'd when LAI-086 shipped — so **they went red for the change
+> that satisfied their own task.**"*
+
+**An assertion that encodes a temporary absence becomes a guard against the fix.**
+That is the LAI-158 shape and it deserves the name you gave it. **And keeping the
+one source assertion that source is genuinely better at** — *no client-side
+last-owner rule* — is the distinction that makes the deletion a judgement rather
+than a convenience: **a browser test can only prove the client agreed on the cases
+you handed it.**
+
+### A green mutation kept visible, and the comment rewritten instead
+
+> *"Deleting `.org-ai`'s CSS rule leaves the provider and key tail correctly on
+> one line — **the wrapper element is what fixes it, not the rule.** My comment
+> had claimed the rule's credit. **I rewrote the comment rather than re-aiming the
+> mutation.**"*
+
+**Third time today you have reported a green mutation instead of quietly
+re-aiming**, and this one found a false comment. That is `CONVENTIONS.md`'s *a
+comment may not claim more than the assertion under it proves*, caught by the
+person who wrote the comment.
+
+### Verified against the running instance, and the tell is the good kind
+
+`GET /api/v1/org` returning **`"Kvell Dynamics"`** — the real database value —
+**where the prototype says *"Kvelld Dynamics"***. **A value that differs from the
+mockup is the proof it came from the API**, and noticing that the discrepancy is
+the evidence rather than a defect is the observation I would have missed.
+
+8/8 screen mutations caught; both themes at 1280/760/420; 0px horizontal overflow.
