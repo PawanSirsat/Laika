@@ -88,7 +88,22 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
       clearInterval(timer);
     };
   }, []);
-  const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
+  /**
+   * The project this board is about.
+   *
+   * State, because the resolver below fills it in when the URL names none —
+   * but **the URL wins whenever it names one** (LAI-261). Seeded once and
+   * never re-read, this held the previous project after the sidebar moved to
+   * another space: the address bar and the headline said one thing and the
+   * cards were another's, which is the failure the resolver's own comment
+   * warns about, arriving from the opposite direction.
+   */
+  const urlSlug = params.get('project') ?? undefined;
+  const [slug, setSlug] = useState<string | undefined>(urlSlug);
+
+  useEffect(() => {
+    if (urlSlug !== undefined && urlSlug !== slug) setSlug(urlSlug);
+  }, [urlSlug, slug]);
   const [projectError, setProjectError] = useState<unknown>(null);
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
   /**
