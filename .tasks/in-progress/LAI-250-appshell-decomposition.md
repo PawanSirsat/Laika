@@ -2,12 +2,18 @@
 id: LAI-250
 title: 'AppShell decomposes: SessionGate, ScreenOutlet, and a screen registry'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-248]
 discovered-from: LAI-248
-status: backlog
+started: 2026-09-18T12:24:28+05:30
+status: in-progress
 ---
+
+> **Claim deviation, flagged (§2).** `depends-on` names LAI-248, still in
+> `.tasks/review/`. Same ground as LAI-249's claim: the owner-approved rebuild
+> plan (2026-09-18) sequences Phase A on this branch back-to-back; if CHIEF
+> sends LAI-248 back, this task absorbs the rework.
 
 ## Goal
 
