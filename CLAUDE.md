@@ -486,6 +486,17 @@ git merge --no-ff core
 **Never** create a worktree, delete one, or check out another session's branch.
 If you think you need one, say so — that is a CHIEF decision.
 
+**Revert by name. Never `git checkout -- .` and never `git clean -fd`.** Both are
+**repo-wide**, and a worktree can have more than one session in it — during a
+hand-off, or when a task is reassigned mid-flight. *"Everything uncommitted
+happened to be mine — I checked first"* is **a race, not a guarantee**: anything
+the other session creates between the check and the clean goes with it, and
+`clean -fd` takes untracked files that no reflog can return.
+
+Restore the paths you touched by name, and delete the files you created by name.
+**Same end state, no blast radius.** SHELL declined a CHIEF-written script on
+exactly these grounds while standing down from LAI-242, and was right to.
+
 ### 4.3 Running instances — three sessions, one machine, one set of ports
 
 Worktrees keep our **files** apart. Nothing keeps our **ports** apart, and a
