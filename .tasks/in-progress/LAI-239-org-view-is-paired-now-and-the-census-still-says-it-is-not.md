@@ -3,8 +3,9 @@ id: LAI-239
 title: OrgView is paired now, and the census still says no client type exists
 area: server
 priority: p1
-status: backlog
-assignee: unclaimed
+status: in-progress
+started: 2026-09-10T01:00:00Z
+assignee: core
 depends-on: []
 discovered-from: LAI-459
 created: 2026-09-18
