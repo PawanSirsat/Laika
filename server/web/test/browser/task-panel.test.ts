@@ -215,6 +215,67 @@ void describe('the task panel', () => {
     }
   });
 
+  void test('the thread reads as a conversation, not a stack of cards', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await openSubject(h);
+      await h.page.locator('.cmt').first().waitFor({ timeout: 20_000 });
+
+      const m = await h.page.evaluate(() => {
+        const row = document.querySelector('.cmt');
+        const avatar = document.querySelector('.cmt-avatar');
+        if (row === null || avatar === null) return null;
+        const s2 = getComputedStyle(row);
+        return {
+          rows: document.querySelectorAll('.cmt').length,
+          border: s2.borderTopWidth,
+          background: s2.backgroundColor,
+          avatar: Math.round(avatar.getBoundingClientRect().width),
+          names: [...document.querySelectorAll('.cmt-who')].map((e) => e.textContent ?? ''),
+          badges: [...document.querySelectorAll('.cmt-agent')].map((e) => e.textContent ?? ''),
+          times: [...document.querySelectorAll('.cmt-when')].map((e) => e.textContent ?? ''),
+          bots: document.querySelectorAll('.cmt-bot').length,
+        };
+      });
+      assert.ok(m !== null, 'the thread did not render');
+      assert.equal(m.rows, 2, 'the fixture has two comments');
+
+      /*
+       * **No box per comment.** Four bordered cards read as four unrelated
+       * notices rather than a conversation — the owner's report, and the thing
+       * the design does differently.
+       */
+      assert.equal(m.border, '0px', 'a comment is boxed again');
+      assert.equal(m.background, 'rgba(0, 0, 0, 0)', 'a comment has a fill again');
+
+      // A face in a thread, not a tint on a row.
+      assert.equal(m.avatar, 36);
+
+      /*
+       * **`X's agent`, not `X`.** An agent comment was written by a tool
+       * running as somebody, and the possessive is the honest attribution.
+       */
+      assert.ok(
+        m.names.some((n) => n.endsWith("'s agent")),
+        `no agent attribution: ${m.names.join(', ')}`,
+      );
+      assert.ok(
+        m.names.some((n) => !n.endsWith("'s agent")),
+        'every comment claims to be an agent',
+      );
+
+      assert.deepEqual(m.badges, ['AGENT'], 'the badge is upper-case and only on the agent');
+      assert.equal(m.bots, 1, 'the bot mark rides on the agent’s avatar only');
+
+      // Short and relative, beside the name — never a timestamp to the second.
+      for (const t of m.times) {
+        assert.match(t, /^[0-9]+[mhdw] ago$|^just now ago$/, `a timestamp reads "${t}"`);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a comment’s fenced code is code, and an agent is badged', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
@@ -222,12 +283,18 @@ void describe('the task panel', () => {
 
       assert.equal(await h.page.locator('.comment-code').count(), 1, 'the fence did not render');
       assert.match(await h.page.locator('.comment-code').innerText(), /POST \/api\/v1/);
-      // The tag is upper-cased in CSS, so compare case-insensitively rather
-      // than pinning a presentational choice.
-      assert.match(await h.page.locator('.comment-code-lang').innerText(), /^http$/i);
+      /*
+       * **The language is an attribute, not a badge** (LAI-287). The design's
+       * code block carries no corner label — the fence's tag is metadata for a
+       * highlighter this app does not have, so a floating `HTTP` was a label
+       * with nothing behind it. It stays on the element for styling and for a
+       * reader who wants it.
+       */
+      assert.equal(await h.page.locator('.comment-code').getAttribute('data-language'), 'http');
+      assert.equal(await h.page.locator('.comment-code-lang').count(), 0);
 
       // `created_via === 'mcp'` is the fact; exactly one of the two comments has it.
-      assert.equal(await h.page.locator('.panel-comment .marker-agent').count(), 1);
+      assert.equal(await h.page.locator('.cmt-agent').count(), 1);
     } finally {
       await h.close();
     }

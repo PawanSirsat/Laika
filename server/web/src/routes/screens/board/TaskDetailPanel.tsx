@@ -29,7 +29,7 @@ import {
   DEMO_HANDOFF_ENABLED,
 } from '../../../demo/agent-runtime.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
-import { avatarColor } from '../../../theme/avatar-color.ts';
+import { avatarColorSolid } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import '../task/task-panel.css';
 import '../../../components/markers.css';
@@ -510,48 +510,76 @@ export function TaskDetailPanel({
                 {detail.comments.length === 0 ? (
                   <EmptyState headline="No comments yet" />
                 ) : (
-                  <ul className="panel-comments">
+                  <ul className="cmt-list">
                     {detail.comments.map((comment) => {
+                      const agent = isAgentComment(comment);
+                      const who = personName(comment.author_id, members);
                       const ink =
                         comment.author_id === null
                           ? undefined
-                          : avatarColor(comment.author_id, theme);
+                          : avatarColorSolid(comment.author_id, theme);
                       return (
-                        <li key={comment.id} className="panel-comment">
-                          <div className="panel-comment-head">
-                            <span
-                              className="comment-avatar"
-                              aria-hidden="true"
-                              {...(ink === undefined
-                                ? {}
-                                : { style: { background: ink.background, color: ink.foreground } })}
-                            >
-                              {initials(personName(comment.author_id, members))}
-                            </span>
-                            <span className="panel-comment-author">
-                              {personName(comment.author_id, members)}
-                            </span>
+                        <li key={comment.id} className="cmt">
+                          <span
+                            className="cmt-avatar"
+                            aria-hidden="true"
+                            {...(ink === undefined
+                              ? {}
+                              : { style: { background: ink.background, color: ink.foreground } })}
+                          >
+                            {initials(who)}
                             {/*
-                            **`AGENT`, from `created_via`.** A comment carries
-                            the channel it arrived by, so this is a fact rather
-                            than a guess — `mcp` is an agent and nothing else is.
-                          */}
-                            {isAgentComment(comment) && (
-                              <span className="marker marker-agent">agent</span>
+                              The bot mark rides on the avatar, as it does on a
+                              card and a presence chip — one treatment for one
+                              fact, everywhere.
+                            */}
+                            {agent && (
+                              <span className="cmt-bot" aria-hidden="true">
+                                <svg width="8" height="8" viewBox="0 0 24 24" fill="none">
+                                  <rect
+                                    x="4"
+                                    y="8"
+                                    width="16"
+                                    height="12"
+                                    rx="3"
+                                    stroke="#fff"
+                                    strokeWidth="3"
+                                  />
+                                  <path d="M12 4v4" stroke="#fff" strokeWidth="3" />
+                                </svg>
+                              </span>
                             )}
-                            {comment.edited_at !== null && (
-                              <span className="panel-muted panel-edited">edited</span>
-                            )}
-                            <time
-                              className="panel-time"
-                              dateTime={new Date(comment.created_at).toISOString()}
-                            >
-                              {new Date(comment.created_at).toLocaleString()}
-                            </time>
+                          </span>
+
+                          <div className="cmt-body">
+                            <p className="cmt-head">
+                              {/*
+                                **`Mira Kellner's agent`, not `Mira Kellner`.**
+                                An agent comment was written *by a tool running
+                                as* somebody; the possessive is the honest
+                                attribution and it is what the design writes.
+                              */}
+                              <span className="cmt-who">{agent ? `${who}'s agent` : who}</span>
+                              {agent && <span className="cmt-agent">AGENT</span>}
+                              {comment.edited_at !== null && (
+                                <span className="cmt-edited">edited</span>
+                              )}
+                              {/*
+                                Short and relative, beside the name — the design
+                                reads `5d ago`, not a timestamp to the second.
+                                The exact time stays in the `title`.
+                              */}
+                              <time
+                                className="cmt-when"
+                                dateTime={new Date(comment.created_at).toISOString()}
+                                title={new Date(comment.created_at).toLocaleString()}
+                              >
+                                {updatedAge(comment.created_at, now)} ago
+                              </time>
+                            </p>
+
+                            <CommentBody body={comment.body_md} />
                           </div>
-                          {/* Fenced code renders as code — the design quotes a
-                            `POST /tasks/…` line in a bordered box. */}
-                          <CommentBody body={comment.body_md} />
                         </li>
                       );
                     })}
@@ -569,6 +597,19 @@ export function TaskDetailPanel({
                     });
                   }}
                 >
+                  {meId !== undefined && (
+                    <span
+                      className="cmt-avatar cmt-avatar-me"
+                      aria-hidden="true"
+                      style={{
+                        background: avatarColorSolid(meId, theme).background,
+                        color: avatarColorSolid(meId, theme).foreground,
+                      }}
+                    >
+                      {initials(personName(meId, members))}
+                    </span>
+                  )}
+
                   <CommentComposer
                     slug={slug}
                     value={draft}

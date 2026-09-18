@@ -1361,3 +1361,158 @@
 .composer-send {
   margin-left: auto;
 }
+
+/* ===========================================================================
+ * The comment thread (LAI-287).
+ *
+ * The reference is a **conversation**, not a stack of notices: no box per
+ * comment, a solid avatar carrying the agent mark, the author's name with the
+ * time beside it, and the body indented to the name. Ours boxed every comment,
+ * used a pale 22px chip with no mark, and right-aligned a timestamp to the
+ * second — three things that made four replies read as four unrelated cards.
+ * ======================================================================== */
+
+.cmt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cmt {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Solid, 36px, white initials — a face in a thread, not a badge on a row. */
+.cmt-avatar {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.cmt-bot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  background: var(--pur);
+  border: 2px solid var(--card);
+}
+
+.cmt-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cmt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.25rem;
+}
+
+.cmt-who {
+  font-size: 0.875rem;
+  font-weight: var(--weight-bold);
+  line-height: 1.3;
+  color: var(--tx);
+}
+
+/* `AGENT`, upper-case and purple — the same purple the bot mark uses, so the
+   badge and the avatar say one thing rather than two. */
+.cmt-agent {
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.07em;
+  color: var(--pur);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+  border-radius: 6px;
+  padding: 0.25rem 0.4375rem;
+}
+
+.cmt-when,
+.cmt-edited {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+}
+
+.cmt-body .panel-comment-body,
+.cmt-body .comment-para {
+  margin-left: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--tx);
+}
+
+/* The code block, roomier and unlabelled — see the note in `CommentBody`. */
+.cmt-body .comment-code {
+  margin: 0.5rem 0 0;
+  padding: 0.6875rem 0.875rem;
+  border-radius: 9px;
+}
+
+.cmt-body .comment-code code {
+  font-size: 0.71875rem;
+  line-height: 1.7;
+}
+
+/* --------------------------------------------------------- the composer row */
+
+.panel-composer {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.cmt-avatar-me {
+  margin-top: 0.125rem;
+}
+
+.panel-composer .composer {
+  flex: 1;
+  min-width: 0;
+  /* Filled, as the design has it — a draft looks like a comment waiting to be
+     sent rather than a form bolted under the thread. */
+  background: var(--tub);
+  border-color: var(--bd);
+}
+
+.panel-composer .composer:focus-within {
+  background: var(--card);
+  border-color: var(--acc);
+}
+
+.panel-composer .composer-field {
+  background: none;
+  font-size: 0.875rem;
+  padding: 0.75rem 0.875rem 0.5rem;
+}
+
+.panel-composer .composer-tools {
+  padding: 0 0.75rem 0.75rem;
+}
+
+/* The bot mark carries the glyph, centred. */
+.cmt-bot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

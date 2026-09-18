@@ -24,10 +24,14 @@ export function CommentBody({ body }: CommentBodyProps) {
     <div className="panel-comment-body">
       {blocks.map((block, i) =>
         block.kind === 'code' ? (
-          <pre key={i} className="comment-code">
-            {block.language !== undefined && (
-              <span className="comment-code-lang">{block.language}</span>
-            )}
+          <pre key={i} className="comment-code" data-language={block.language}>
+            {/*
+              **No language tag.** The design's code block carries none — the
+              fence's tag is metadata for a highlighter we do not have, and a
+              floating `HTTP` in the corner is a label with nothing behind it.
+              It stays on the element for styling and for a reader using a
+              screen reader.
+            */}
             <code>{block.content}</code>
           </pre>
         ) : (
