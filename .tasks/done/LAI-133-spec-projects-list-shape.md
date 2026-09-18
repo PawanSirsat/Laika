@@ -6,9 +6,9 @@ assignee: chief
 priority: p3
 depends-on: [LAI-053]
 discovered-from: LAI-053
-status: in-progress
+status: done
 started: 2026-09-03T05:15:00Z
-finished:
+finished: 2026-09-03T05:30:00Z
 ---
 
 ## Goal
@@ -55,3 +55,45 @@ would otherwise get wrong:
   `task-lifecycle.ts`, which requires every dependency to be `done` and nothing
   else. Any other rule here would put a number on the card that the board's own
   `ready` flag contradicts.
+
+---
+
+## Done — CHIEF, 2026-09-03
+
+**§6.4 now carries the five fields §4.3 does not store**, in LAI-129's shape:
+say what is *not* in §4 and point at what is, rather than duplicating a list that
+two guarded artefacts already hold.
+
+| | |
+| --- | --- |
+| `task_counts` | **every status present, zero included** — a caller must not have to tell *"no tasks in review"* from *"the server did not say"* |
+| `blocked_count` | **`blocked_by` only**, never what a task blocks |
+| `member_count` | |
+| `members` | **first five by name**, `user_id` and `name` only — a row of avatars, deliberately not a member list |
+| `last_activity_at` | **null means no activity, not none visible to you** |
+
+**Each checked against `services/projects.ts`, not against this task file.**
+`AVATAR_LIMIT = 5`, the counts are grouped with no filter, `last_activity_at` is
+*"null if nothing has happened"*. **The task file described the shape correctly
+and I opened the service anyway** — which is the only reason the next paragraph
+exists.
+
+### Two comments in that service say more than the code does
+
+```ts
+/** Live tasks by §4.5 status. … */
+/** Tasks with at least one dependency that is not `done` (§4.5, derived). */
+```
+
+**§4.5 is `tasks`; §4.6 is `task_dependencies`.** And **`Live` describes a filter
+that does not exist** — the query counts every task in the project, `done` and
+`cancelled` included.
+
+**`Live` is the more dangerous**, because it reads as a deliberate choice: someone
+deciding whether to add a *"tasks remaining"* figure would take it as
+already-filtered. **`LAI-469`**, p3, with a sweep of the rest of
+`server/src/services/` attached.
+
+**This is the third file this week where a factual claim in a comment was wrong
+and the code was right.** The rule is in `CONVENTIONS.md` §4; what keeps finding
+them is opening the artefact rather than the description of it.

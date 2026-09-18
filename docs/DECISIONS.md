@@ -2980,3 +2980,49 @@ someone actually needing it, not by the shape looking incomplete.
 in `server/web/src/api/meeting-reviews.ts` and the screen's wording (SHELL)**.
 CLAUDE.md §4.4 predicts this; **D-056 discovered the third owner mid-flight and
 this one names them before anyone starts.**
+
+## D-058 — The theme control is a two-state sun/moon toggle. `System` goes.
+
+**2026-09-03. Owner's decision, asked and answered directly.** It reverses the
+reasoning in LAI-019 AC7, which is why it is written down rather than treated as
+a tweak.
+
+**The control becomes one animated icon** — sun ⇄ moon — **in all three places it
+appears**: the sidebar footer, the signed-out header, and first boot.
+
+### What it replaces, and why that reasoning does not survive
+
+`ThemeToggle` is a three-option radio group, and its docblock argues for it:
+
+> *"A radio group rather than a cycling button: **three states do not cycle
+> legibly**, and radios tell a screen reader which one is current without extra
+> ARIA."*
+
+**Both halves of that are still true.** The three-state cycle was offered and
+declined for exactly the reason the docblock gives — **you cannot predict the next
+click from the icon.** The argument did not fail; **its premise did.** With two
+states there is nothing to cycle illegibly, and a toggle's current state is
+expressible to a screen reader without a radio group.
+
+**And the prototype has no `System` at all** —
+`this.theme() === 'dark' ? 'light' : 'dark'`. The three-state control was a build
+decision, not a design one.
+
+### What is lost, stated rather than glossed
+
+**A user whose OS switches at sunset no longer follows it after their first
+click.** That is the cost the owner accepted, and it is real.
+
+### One thing the owner was not asked, so I am assuming it
+
+**`system` is never stored.** `theme.ts` removes the key rather than writing it —
+*"so a future change to the default…"* — so a System user's storage is **absent**,
+not set.
+
+**So: absent keeps meaning "follow the OS", and the first click pins.** Nobody
+loses OS-following without an action, an upgrade changes nothing visible, and the
+*control* is two-state exactly as asked. **The alternative — pin everyone at first
+paint — makes every current System user's theme snap on upgrade for no gain.**
+
+**This is an assumption, not an instruction.** If the owner wants following to
+stop outright, it is one line in `readPreference`.

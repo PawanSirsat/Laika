@@ -978,6 +978,7 @@ GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
 GET    /api/v1/projects                      POST /api/v1/projects   (admin+)
+       └ each entry adds five fields §4.3 does not store — see below
 GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
@@ -1027,6 +1028,18 @@ GET    /api/v1/health
 **`null` clears a field; absent leaves it alone** — they are different requests,
 and `acceptance_md` and `assignee_id` both draw the distinction. `tags` replaces
 the whole set.
+
+**A project in `GET /projects` is §4.3's columns plus five derived at read
+time** (LAI-053). None is stored, which is why §4.3 does not carry them and a
+reader should not go looking:
+
+| field | derived from |
+| --- | --- |
+| `task_counts` | tasks by §4.5 status. **Every status is present and zero is included** — a caller must not have to distinguish *"no tasks in review"* from *"the server did not say"* |
+| `blocked_count` | tasks with at least one dependency that is not `done` (§4.6). **`blocked_by` only** — never what a task blocks |
+| `member_count` | `project_memberships` |
+| `members` | the **first five by name**, `user_id` and `name` only — enough for a row of avatars, and deliberately not a member list |
+| `last_activity_at` | the newest `activity` row for the project; **nullable, and null means no activity rather than none visible to you** |
 
 **A task's read shape is §4.5's columns**, and `TaskView` adds six that are not
 stored there — **derived at read time, so a reader who looks for them in §4 will
