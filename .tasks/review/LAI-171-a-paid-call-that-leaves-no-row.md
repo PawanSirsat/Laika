@@ -105,6 +105,27 @@ Nothing was implemented, so there is nothing to unpick.
 Claimed through the front door: both `depends-on` ids in `.tasks/done/` on
 `master`, no deviation to record.
 
+### AC1 is ticked against D-057, not against its own wording
+
+**Its literal text says *"an attempt is recorded **before** the provider is
+called"*, and this records one after the call comes back unusable.** Saying so
+rather than letting the tick imply otherwise — the same handling as LAI-454's
+AC3, which you endorsed.
+
+D-057 chose the mechanism and it necessarily runs afterwards: the row's status
+depends on what came back, and a row written before the call cannot know whether
+it will be `pending` or `failed`. The criterion's own purpose clause — *"so a
+response that fails to parse still consumes budget"* — is met.
+
+**There is one real difference, and it is narrow.** Write-ahead would survive a
+crash *between the provider billing us and the insert*; this does not. That
+window is a few milliseconds of local work with no I/O in it, against a cost —
+a row whose status is unknown until the call returns, so every write-ahead row
+needs a second write to complete it, and a crash then leaves a permanently
+indeterminate row instead of a missing one. **Trading a missing row for an
+undecidable one is a bad trade**, and it is the shape D-057 rejected under a
+different name. Flagging the window rather than pretending it is closed.
+
 ### AC2's decision came from D-057, and one detail did not
 
 D-057 names timeout, error response and unparseable output as `failed`. It does
