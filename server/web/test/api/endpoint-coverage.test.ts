@@ -60,8 +60,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/tasks/*/watch': 'LAI-458',
   'api/v1/tasks/*/watchers': 'LAI-458',
   'api/v1/projects/*/mentionable': 'LAI-458 — the `@` list has no UI',
-  'api/v1/org': 'LAI-459 — the Organisation screen never reads or writes it',
-  'api/v1/users/*': 'LAI-459 — org role and deactivation have no UI',
   'api/v1/tasks/*/dependencies': 'LAI-233 — the board draws dependencies and cannot edit them',
   'api/v1/tasks/*/dependencies/*': 'LAI-233',
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',
