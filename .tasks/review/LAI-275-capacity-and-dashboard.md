@@ -3,11 +3,12 @@ id: LAI-275
 title: Capacity and the Dashboard to the design; the metrics endpoint gets a caller
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-274
 started: 2026-09-18T19:55:00Z
+finished: 2026-09-18T20:10:00Z
 ---
 
 ## Why
