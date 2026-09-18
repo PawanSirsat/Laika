@@ -228,6 +228,32 @@ fix is to stop writing it.
 **The same rule is why a cross-side check asserts names and not counts** (LAI-419):
 a count in prose drifts silently; a name that disappears fails.
 
+### An exemption's reason belongs in the data, not in a comment beside it
+
+**An exemption's justification is checkable if it is data, and unfalsifiable if it
+is prose** (CORE, LAI-239).
+
+Every exemption list in `server/test/tooling/` stores its reasons as **map
+values** — `['orgs.transcript_webhook_secret_enc', 'LAI-450, in flight: awaiting
+§4.2's row']` — rather than as a comment above the entry. **That is not a
+formatting choice.** A reason in the data can be compared against the codebase;
+a reason in a comment can only be read.
+
+**The case that proved it.** `OrgView` sat in `UNPAIRED` with the reason
+`'no client type exists'`. LAI-459 created `web/src/api/org.ts`, and **nothing
+about `OrgView` changed structurally** — what changed is that the reason stopped
+being a true sentence. The staleness guard caught it **in the same run** and
+printed the fix.
+
+**Contrast it with the prose version of the identical defect**: four wrong facts
+in `schema-spec-drift`'s docblock, including two section numbers swapped and both
+wrong, which took a dedicated task (LAI-462) to find and had misled every reader
+until then.
+
+**So when you write an exemption, ask what would make its reason false, and put
+the reason where a check can reach it.** If the reason cannot be expressed as
+data, that is a signal the exemption is doing something a guard cannot verify.
+
 ### A fixture may not be pinned to the calendar
 
 **If the code reads `Date.now()`, the fixture is anchored to today — never to a

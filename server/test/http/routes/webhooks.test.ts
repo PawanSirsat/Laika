@@ -1,7 +1,16 @@
 import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { activity, comments, orgs, projects, tasks } from '../../../src/db/schema.ts';
+import {
+  activity,
+  comments,
+  meetingReviews,
+  orgs,
+  projects,
+  tasks,
+} from '../../../src/db/schema.ts';
+import { newId } from '../../../src/db/ids.ts';
+import { MONTHLY_SUBMISSION_CAP } from '../../../src/services/webhooks.ts';
 import { encryptSecret } from '../../../src/secrets.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
@@ -236,6 +245,47 @@ describe('POST /webhooks/transcript (§10.2, D-052)', () => {
       body: raw,
     });
   }
+
+  it('answers the monthly cap distinctly from the rate limit (LAI-467)', async () => {
+    // D-052's point: an authenticated integration gone wrong spends money at a
+    // perfectly legal rate, so §6.3's limiter never sees it. The two refusals
+    // want different actions from whoever reads them — *"wait"* against
+    // *"you have spent this month's budget"* — so a generic 429 hides the one
+    // that costs money.
+    configure();
+
+    // The cap is counted from `meeting_reviews`, so filling it means rows.
+    const project = h.db.select({ id: projects.id }).from(projects).get();
+    for (let i = 0; i < MONTHLY_SUBMISSION_CAP; i++) {
+      const id = newId();
+      h.db
+        .insert(meetingReviews)
+        .values({
+          id,
+          projectId: project?.id ?? '',
+          source: 'recorder',
+          transcriptHash: `${id}-hash`,
+          proposalsJson: '[]',
+          status: 'pending',
+          reviewedBy: null,
+          reviewedAt: null,
+          expiresAt: Date.now() + 1000,
+          createdAt: Date.now() - i,
+        })
+        .run();
+    }
+
+    const res = await submit({ project_slug: 'laika', transcript: 'x', source: 'r' });
+
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as {
+      error: { code: string; details: { reason: string; cap: number } };
+    };
+    expect(body.error.code).toBe('rate_limited');
+    // **The distinguishing field**, and the reason this is not just a 429.
+    expect(body.error.details.reason).toBe('monthly_cap');
+    expect(body.error.details.cap).toBe(MONTHLY_SUBMISSION_CAP);
+  });
 
   it('refuses when no transcript secret is configured', async () => {
     // §10.2 was specified with no authentication at all (LAI-164). Absent means

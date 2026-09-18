@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { ACTIVITY_TYPES, ACTOR_KINDS } from '../../src/db/enums.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 import { declaredSchema } from '../helpers/declared-schema.ts';
+import { reportDiscovery } from '../helpers/discovery.ts';
 
 /**
  * SPEC §4 against `db/schema.ts` — in both directions (LAI-051).
@@ -929,7 +930,13 @@ describe('§4 and the schema agree about nullability (LAI-163)', () => {
     ),
   );
 
-  it('finds the statements it claims to check', () => {
+  it('finds the statements it claims to check, and says how many', () => {
+    reportDiscovery('§4 nullability', {
+      stated: stated.size,
+      declared: declared.size,
+      notNull: [...stated.values()].filter((nullable) => !nullable).length,
+    });
+
     // A parse that found nothing would make the comparison below vacuous — and
     // this file already has that failure written into two other guards. The
     // floor is deliberately not a count: a count of §4's `nullable` mentions is

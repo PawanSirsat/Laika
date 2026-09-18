@@ -4,6 +4,7 @@ import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
   applyMeetingReview,
+  type ApplyReviewResult,
   discardMeetingReview,
   getMeetingReview,
   listMeetingReviews,
@@ -117,7 +118,11 @@ export function meetingReviewRoutes(options: MeetingReviewRouteOptions): Hono<Ap
       accepted_proposal_ids: body.accepted_proposal_ids,
     });
 
-    return c.json(result);
+    // **Annotated, not bare** (LAI-465). `response-type-coverage` finds served
+    // types by a `View` suffix or a `c.json<T>`; `ApplyReviewResult` has neither
+    // spelling, so a bare `c.json(result)` made the one response body on this
+    // endpoint invisible to the census that exists to notice it.
+    return c.json<ApplyReviewResult>(result);
   });
 
   return app;
