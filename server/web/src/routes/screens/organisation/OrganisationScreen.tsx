@@ -6,6 +6,9 @@ import { Button } from '../../../components/forms/Button.tsx';
 import { canManageOrg, createInvite, revokeInvite, ORG_ROLES } from '../../../api/invites.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { getOrg, type Org } from '../../../api/org.ts';
+import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
+import { TokenRow } from '../../../components/TokenRow.tsx';
+import { useUserTokens } from './use-user-tokens.ts';
 import { updateUser } from '../../../api/users.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -94,6 +97,11 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
     undefined,
   );
 
+  /** Whose token panel is open, or `undefined` for none. One at a time. */
+  const [tokensFor, setTokensFor] = useState<string | undefined>(undefined);
+  const { state: tokens, reload: reloadTokens } = useUserTokens(tokensFor);
+  const [tokenError, setTokenError] = useState<string | undefined>(undefined);
+
   useEffect(() => {
     const controller = new AbortController();
     getOrg(controller.signal)
@@ -107,6 +115,31 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
       controller.abort();
     };
   }, []);
+
+  const revoke = (owner: { id: string; name: string }, token: TokenView): void => {
+    if (
+      !window.confirm(
+        `Revoke “${token.name}” for ${owner.name}? Anything using it — an agent, a script, ` +
+          `their editor — stops working immediately, and the token cannot be restored. ` +
+          `They can mint a new one themselves.`,
+      )
+    ) {
+      return;
+    }
+
+    setTokenError(undefined);
+    // **The owner's id, not just the token's.** The service refuses a token that
+    // does not belong to the user in the path, which is what stops an admin
+    // revoking anybody's token through anybody's URL — passing the id this token
+    // was listed under is what keeps that check meaningful rather than a formality.
+    revokeUserToken(owner.id, token.id)
+      .then(() => {
+        reloadTokens();
+      })
+      .catch((cause: unknown) => {
+        setTokenError(cause instanceof Error ? cause.message : 'Could not revoke that token.');
+      });
+  };
 
   const change = (id: string, patch: { org_role?: string; is_active?: boolean }): void => {
     setChanging(id);
@@ -297,6 +330,23 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
                       ))}
                     </select>
 
+                    {/* **`token.list_any` is the same grade as the controls
+                        beside it** — Owner and Admin (§3.1) — so it lives here
+                        rather than behind a second gate that would have to be
+                        kept in step with this one. */}
+                    <button
+                      type="button"
+                      className="org-tokens-toggle"
+                      aria-expanded={tokensFor === person.id}
+                      aria-controls={`tokens-${person.id}`}
+                      onClick={() => {
+                        setTokenError(undefined);
+                        setTokensFor((open) => (open === person.id ? undefined : person.id));
+                      }}
+                    >
+                      {tokensFor === person.id ? 'Hide tokens' : 'Tokens'}
+                    </button>
+
                     {/* **Two verbs, and the copy says which** (D-048).
                         `user.deactivated` and `user.reactivated` answer different
                         questions, and one button labelled "deactivate" doing both
@@ -324,6 +374,66 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
                   <span className="org-person-role">
                     {orgRoleLabel(person.org_role as OrgRole)}
                   </span>
+                )}
+
+                {tokensFor === person.id && (
+                  <div className="org-tokens" id={`tokens-${person.id}`}>
+                    <p className="org-tokens-head">
+                      {person.name}&rsquo;s tokens
+                      {/* Said on the screen, not only in a doc comment. An admin
+                          arriving to revoke a departed colleague's access is
+                          exactly the person who will look for the value, and the
+                          answer is that §4.9 stores a hash and there has never
+                          been one to show. */}
+                      <span className="org-tokens-note">
+                        The token itself is never shown — Laika stores only a hash of it. The prefix
+                        is there to tell them apart.
+                      </span>
+                    </p>
+
+                    {tokens?.status === 'loading' && (
+                      <LoadingState
+                        shape="row"
+                        count={2}
+                        label={`Loading ${person.name}'s tokens`}
+                      />
+                    )}
+
+                    {tokens?.status === 'error' && (
+                      <ApiErrorState
+                        error={tokens.error}
+                        resource="these tokens"
+                        scope="organisation"
+                        onRetry={reloadTokens}
+                      />
+                    )}
+
+                    {tokens?.status === 'ready' &&
+                      (tokens.tokens.length === 0 ? (
+                        <p className="org-tokens-empty">
+                          No tokens. Nothing of theirs is signed in to the API.
+                        </p>
+                      ) : (
+                        <ul className="tok-list org-tokens-list">
+                          {tokens.tokens.map((token) => (
+                            <TokenRow
+                              key={token.id}
+                              token={token}
+                              now={now}
+                              onRevoke={(revoked) => {
+                                revoke(person, revoked);
+                              }}
+                            />
+                          ))}
+                        </ul>
+                      ))}
+
+                    {tokenError !== undefined && (
+                      <p className="org-error" role="alert">
+                        {tokenError}
+                      </p>
+                    )}
+                  </div>
                 )}
               </li>
             );
