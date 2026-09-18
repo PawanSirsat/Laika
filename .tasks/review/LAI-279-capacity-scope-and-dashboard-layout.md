@@ -3,11 +3,12 @@ id: LAI-279
 title: Capacity keeps its space; the Dashboard takes the design's layout
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-275
 started: 2026-09-18T21:05:00Z
+finished: 2026-09-18T21:20:00Z
 ---
 
 ## Why
