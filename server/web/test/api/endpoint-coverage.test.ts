@@ -63,7 +63,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/tasks/*/dependencies/*': 'LAI-233',
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',
   'api/v1/projects/*/tags/*': 'LAI-235 — a tag cannot be removed from a project',
-  'api/v1/projects/*/join': 'LAI-236 — nothing offers to join a project',
   'api/v1/activity': 'LAI-237 — the org-wide feed; only the per-project one is read',
 };
 

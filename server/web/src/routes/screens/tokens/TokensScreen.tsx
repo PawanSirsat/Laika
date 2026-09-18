@@ -290,12 +290,73 @@ export function TokensScreen({ me }: TokensScreenProps) {
           body="Create one to point Claude Code or another tool at this board as you."
         />
       ) : (
-        <ul className="tok-list">
-          {tokens.map((token) => (
-            <TokenRow key={token.id} token={token} now={now} onRevoke={revoke} />
-          ))}
-        </ul>
+        <>
+          {/* The design's column headers (prototype line 940). Six unlabelled
+              columns of dates and words is a table nobody can read. */}
+          <div className="tok-head" aria-hidden="true">
+            <span className="tok-head-name">NAME</span>
+            <span className="tok-head-scope">SCOPE</span>
+            <span className="tok-head-used">LAST USED</span>
+            <span className="tok-head-scopeto">PROJECTS</span>
+            <span className="tok-head-expires">EXPIRES</span>
+            <span className="tok-head-act" />
+          </div>
+
+          <ul className="tok-list">
+            {tokens.map((token) => (
+              <TokenRow key={token.id} token={token} now={now} onRevoke={revoke} />
+            ))}
+          </ul>
+        </>
       )}
+
+      {/*
+        **The design's scope reference, with Laika's scopes** (prototype line
+        1010). The mockup lists `read:tasks`, `write:tasks`, `agent:session` and
+        `admin:org`; Laika has **two** — `TOKEN_SCOPES` in `db/enums.ts` — and
+        copying the mockup's four would document permissions that do not exist.
+      */}
+      <section className="tok-ref">
+        <h2 className="tok-ref-title">Scope reference</h2>
+        <dl className="tok-ref-list">
+          <div className="tok-ref-row">
+            <dt>
+              <code>full</code>
+            </dt>
+            <dd>
+              Everything you can do. A tool holding it can create, edit and move tasks, comment, and
+              run agent sessions as you.
+            </dd>
+          </div>
+          <div className="tok-ref-row">
+            <dt>
+              <code>read_only</code>
+            </dt>
+            <dd>
+              Reads anything you can see and writes nothing. A Viewer's token is forced to this by
+              the server, whatever is asked for here.
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      {/*
+        The design's CLI quick start (prototype line 1050). The host is read
+        from the address bar — a self-hosted board is not `laika.kvelld.internal`
+        and must never be told it is (§5.1).
+      */}
+      <section className="tok-cli">
+        <h2 className="tok-ref-title">CLI quick start</h2>
+        <pre className="tok-cli-block">
+          <code>
+            {`export LAIKA_URL=${window.location.origin}\nexport LAIKA_TOKEN=lai_…   # the secret shown once, above\nlaika whoami`}
+          </code>
+        </pre>
+        <p className="tok-cli-note">
+          The token carries your permissions, so treat it like your password. Revoking it here stops
+          it working immediately.
+        </p>
+      </section>
     </div>
   );
 }

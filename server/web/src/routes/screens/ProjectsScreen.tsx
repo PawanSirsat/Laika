@@ -9,7 +9,13 @@ import { Button } from '../../components/forms/Button.tsx';
 import { Select } from '../../components/forms/Select.tsx';
 import { TextInput } from '../../components/forms/TextInput.tsx';
 import { useProjects } from '../../api/use-projects.ts';
-import { createProject, slugify, suggestPrefix, type Project } from '../../api/projects.ts';
+import {
+  createProject,
+  joinProject,
+  slugify,
+  suggestPrefix,
+  type Project,
+} from '../../api/projects.ts';
 import { canEditProjectContext } from '../../api/project-context.ts';
 import { ProjectContextPanel } from './projects/ProjectContextPanel.tsx';
 import type { MeProfile } from '../../api/me.ts';
@@ -41,6 +47,43 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
   const [contextFor, setContextFor] = useState<Project | undefined>(undefined);
   const { theme } = useTheme();
   const list = useProjects();
+  /** The space a join is in flight for, so only its own button says so. */
+  const [joining, setJoining] = useState<string | undefined>(undefined);
+  const [joinError, setJoinError] = useState<string | undefined>(undefined);
+
+  /**
+   * Membership from `me.memberships`, never from the summary's `members`.
+   *
+   * That array is capped for drawing faces — a space with forty members sends a
+   * handful — so testing it would make a space you are already in look
+   * joinable once it grew past the cap.
+   */
+  const isMine = (project: Project): boolean =>
+    me?.memberships.some((m) => m.project_id === project.id) === true;
+
+  const mine = list.status === 'ready' ? list.projects.filter(isMine) : [];
+  const joinable =
+    list.status === 'ready'
+      ? list.projects.filter((p) => !isMine(p) && p.visibility === 'public')
+      : [];
+
+  const join = async (slug: string): Promise<void> => {
+    setJoining(slug);
+    setJoinError(undefined);
+    try {
+      await joinProject(slug);
+      // The list decides membership, so it has to be re-read — not patched
+      // locally, which would leave the card in a state the server never
+      // confirmed.
+      list.reload();
+    } catch (cause) {
+      setJoinError(
+        cause instanceof ApiError ? cause.message : 'Could not join that space. Try again.',
+      );
+    } finally {
+      setJoining(undefined);
+    }
+  };
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
@@ -98,16 +141,23 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
   return (
     <div className="projects">
       <ScreenHeader
-        title="Projects"
+        /*
+          **Spaces, not Projects** (D-059). The sidebar says SPACES, the view
+          tabs sit inside a space, and this screen — the one that lists them —
+          was the last place still calling them projects. Two words for one
+          thing is how a reader ends up wondering whether they are different.
+          The API's noun stays `project`; the product's noun is `space`.
+        */
+        title="Spaces"
         context={
           list.status === 'ready'
-            ? `${String(list.projects.length)} project${list.projects.length === 1 ? '' : 's'}`
+            ? `${String(list.projects.length)} space${list.projects.length === 1 ? '' : 's'}`
             : undefined
         }
       />
       <header className="projects-head">
         <p className="projects-sub">
-          Projects you can see. Opening one loads its board; the choice lives in the URL.
+          Spaces you can see. Opening one loads its board; the choice lives in the URL.
         </p>
         {!creating && (
           <Button
@@ -115,7 +165,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
               setCreating(true);
             }}
           >
-            New project
+            New space
           </Button>
         )}
       </header>
@@ -130,7 +180,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
             if (valid) void submit();
           }}
         >
-          <h2 className="projects-form-title">New project</h2>
+          <h2 className="projects-form-title">New space</h2>
 
           {/* A 403 here is a normal outcome, not a fault: a Member cannot create
               projects (§3.1). ApiErrorState renders that as permission-denied. */}
@@ -210,19 +260,19 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
       ) : list.status === 'error' ? (
         <ApiErrorState
           error={list.error}
-          resource="your projects"
+          resource="your spaces"
           scope="organisation"
           onRetry={list.reload}
         />
       ) : list.projects.length === 0 ? (
         <EmptyState
-          headline="No projects yet"
+          headline="No spaces yet"
           body="Create the first one and point it at a repo."
           {...(creating
             ? {}
             : {
                 action: {
-                  label: 'New project',
+                  label: 'New space',
                   onClick: () => {
                     setCreating(true);
                   },
@@ -232,12 +282,12 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
       ) : (
         <>
           <p className="projects-section">
-            <span>YOUR PROJECTS</span>
+            <span>YOUR SPACES</span>
             <span className="projects-rule" aria-hidden="true" />
           </p>
 
           <ul className="projects-list">
-            {list.projects.map((project) => (
+            {mine.map((project) => (
               <li key={project.id}>
                 <article className="project-card">
                   <header className="project-card-head">
@@ -303,6 +353,66 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
               </li>
             ))}
           </ul>
+
+          {/*
+            **PUBLIC IN THIS ORG** (prototype line 1345), closing LAI-236.
+
+            The directory listed public spaces a reader could see and offered no
+            way in, so the only route to membership was somebody adding you.
+            `POST /projects/:slug/join` has been served all along.
+
+            Membership is read from `me.memberships`, not from the truncated
+            `members` array on the summary — a space with forty members would
+            otherwise look joinable to someone already in it.
+          */}
+          {joinable.length > 0 && (
+            <>
+              <p className="projects-section">
+                <span>PUBLIC IN THIS ORG</span>
+                <span className="projects-rule" aria-hidden="true" />
+              </p>
+
+              <ul className="projects-list">
+                {joinable.map((project) => (
+                  <li key={project.id}>
+                    <article className="project-card">
+                      <header className="project-card-head">
+                        <h3 className="project-card-name">{project.name}</h3>
+                        <span className="project-chip project-chip-public">public</span>
+                      </header>
+
+                      <p className="project-card-meta">
+                        <code className="project-card-slug">{project.slug}</code>
+                        <span className="project-card-people">
+                          {project.member_count} {project.member_count === 1 ? 'person' : 'people'}
+                        </span>
+                      </p>
+
+                      <footer className="project-card-foot">
+                        <span className="project-card-keys">{project.prefix}-1</span>
+                        <button
+                          type="button"
+                          className="project-open"
+                          disabled={joining === project.slug}
+                          onClick={() => {
+                            void join(project.slug);
+                          }}
+                        >
+                          {joining === project.slug ? 'Joining…' : 'Join'}
+                        </button>
+                      </footer>
+                    </article>
+                  </li>
+                ))}
+              </ul>
+
+              {joinError !== undefined && (
+                <p className="projects-error" role="alert">
+                  {joinError}
+                </p>
+              )}
+            </>
+          )}
 
           {contextFor !== undefined && (
             <ProjectContextPanel
