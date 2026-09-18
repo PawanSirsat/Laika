@@ -3,6 +3,16 @@ import { createPortal } from 'react-dom';
 
 export const SLOT_ID = 'space-slot';
 
+/**
+ * The band between the space bar and WORKING NOW.
+ *
+ * The design's order is **tabs → sprints → working now → the view**, and the
+ * sprint strip belongs to the board while the presence strip belongs to the
+ * space — so without a slot here the board's strip could only render *below*
+ * presence, which is where it wrongly sat.
+ */
+export const BAND_SLOT_ID = 'space-band-slot';
+
 export interface SpaceSlotProps {
   /** A derived line about what this view is showing. Never a fixture. */
   readonly context?: ReactNode;
@@ -45,4 +55,26 @@ export function SpaceSlot({ context, children }: SpaceSlotProps) {
     </>,
     host,
   );
+}
+
+export interface SpaceBandProps {
+  readonly children: ReactNode;
+}
+
+/**
+ * A full-width band a view contributes above WORKING NOW — the sprint strip is
+ * the one the design has.
+ *
+ * A portal for the same reason `SpaceSlot` is one: the band belongs to the
+ * space's layout and its contents belong to the screen that has the data.
+ */
+export function SpaceBand({ children }: SpaceBandProps) {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHost(document.getElementById(BAND_SLOT_ID));
+  });
+
+  if (host === null) return null;
+  return createPortal(children, host);
 }

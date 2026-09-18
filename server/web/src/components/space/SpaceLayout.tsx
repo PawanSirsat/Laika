@@ -9,7 +9,7 @@ import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
 import { PresenceStrip } from './PresenceStrip.tsx';
 import { SpaceLive, useLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
-import { SLOT_ID } from './SpaceSlot.tsx';
+import { BAND_SLOT_ID, SLOT_ID } from './SpaceSlot.tsx';
 import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
 import './space.css';
@@ -206,6 +206,12 @@ function SpaceFrame({
         {/* Where each view puts its own context line and controls. */}
         <div id={SLOT_ID} className="space-slot" />
       </div>
+
+      {/*
+        Between the bar and WORKING NOW — the design's order is tabs, then
+        sprints, then who is working (LAI-272). The board fills this.
+      */}
+      <div id={BAND_SLOT_ID} />
 
       <PresenceStrip
         presence={presence}

@@ -5,7 +5,7 @@ import { LoadingState } from '../../components/LoadingState.tsx';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './board/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
-import { SpaceSlot } from '../../components/space/SpaceSlot.tsx';
+import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
@@ -417,14 +417,17 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         am I in* versus *what am I filtering*. Measured against
         `docs/design/Laika Prototype.dc.html` at 1600×1100, not from memory.
       */}
-      <SprintStrip
-        sprints={sprints}
-        tasks={allTasks}
-        selected={sprintScope}
-        onSelect={(id) => {
-          setParam('sprint', id);
-        }}
-      />
+      {/* Above WORKING NOW, as the design has it (LAI-272). */}
+      <SpaceBand>
+        <SprintStrip
+          sprints={sprints}
+          tasks={allTasks}
+          selected={sprintScope}
+          onSelect={(id) => {
+            setParam('sprint', id);
+          }}
+        />
+      </SpaceBand>
 
       {/*
         The board's own filters, in the space bar's slot (LAI-251).

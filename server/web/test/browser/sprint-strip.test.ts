@@ -113,11 +113,27 @@ const STUB: ApiStub = {
   '/api/v1/org': {
     id: 'o',
     name: 'Borealis Labs',
-    presence_enabled: false,
+    presence_enabled: true,
     created_at: 1,
     updated_at: 1,
   },
-  '/api/v1/presence': { enabled: false, present: [] },
+  // Presence **on**, with somebody in it: the band-order test needs WORKING NOW
+  // to render at all, and `enabled: false` makes the strip render nothing.
+  '/api/v1/presence': {
+    enabled: true,
+    present: [
+      {
+        user_id: 'u2',
+        name: 'Grace Hopper',
+        is_agent: true,
+        matched_task_id: null,
+        project_ids: ['laika-core'],
+        last_seen: NOW,
+        repo: 'kvelld/laika',
+        branch: 'lc-1',
+      },
+    ],
+  },
 };
 
 void after(async () => {
@@ -242,6 +258,42 @@ void describe('the board matches the reference (LAI-270)', () => {
   });
 });
 
+void describe('the bands are in the design’s order (LAI-272)', () => {
+  /**
+   * **Tabs → sprints → working now → the view.**
+   *
+   * Ours had the sprint strip *below* WORKING NOW, because the strip belongs to
+   * the board and the presence strip belongs to the space, so the board could
+   * only render underneath. Measured by position, which is the only thing that
+   * can tell the two arrangements apart — both render all four bands.
+   */
+  void test('the sprint strip sits above WORKING NOW', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.presence').waitFor({ timeout: 20_000 });
+
+      const top = async (selector: string) =>
+        (await h.page.locator(selector).first().boundingBox())?.y ?? -1;
+
+      const tabs = await top('.view-tabs');
+      const sprints = await top('.strip');
+      const working = await top('.presence');
+      const lanes = await top('.kanban');
+
+      assert.ok(tabs > 0 && sprints > 0 && working > 0 && lanes > 0, 'a band is missing');
+      assert.ok(tabs < sprints, `the tabs are below the sprints (${tabs} vs ${sprints})`);
+      assert.ok(
+        sprints < working,
+        `the sprint strip is below WORKING NOW (${sprints} vs ${working}) — the owner's report`,
+      );
+      assert.ok(working < lanes, `WORKING NOW is below the lanes (${working} vs ${lanes})`);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the sprint strip', () => {
   void test('is a single row of pills and figures', async () => {
     const h = await open('/board?project=laika-core', STUB);
@@ -270,7 +322,16 @@ void describe('the sprint strip', () => {
   void test('carries the reference’s three figures, from real counts', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.strip-stats').waitFor({ timeout: 20_000 });
+      /*
+       * **Wait for the tasks, not the element.** The figures render as `0/0`
+       * the moment the strip mounts and fill in when the board's tasks land —
+       * reading on the element's appearance is a race, and it read `0/0` once.
+       */
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(
+        () => /DONE\s*1/.test(document.querySelector('.strip-stats')?.textContent ?? ''),
+        { timeout: 10_000 },
+      );
       const stats = (await h.page.locator('.strip-stats').innerText()).replace(/\s+/g, ' ');
 
       // Two tasks, one done — the figures are the board's own, not a fixture.
