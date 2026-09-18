@@ -424,9 +424,6 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         onSelect={(id) => {
           setParam('sprint', id);
         }}
-        onOpenSprints={() => {
-          window.location.assign('/sprints');
-        }}
       />
 
       {/*

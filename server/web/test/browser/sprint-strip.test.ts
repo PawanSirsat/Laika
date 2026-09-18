@@ -1,0 +1,218 @@
+/**
+ * The sprint strip is one row (LAI-269).
+ *
+ * The owner supplied the Claude Design render: `[All sprints] [S1 …] [S2 …]
+ * [S3 …] [S4 …] [DONE x/y | BLK n | LEFT n] [›]`, on a single line. Ours had a
+ * second band carrying a percentage ring, the sprint's name, its dates and its
+ * goal — none of which the design has.
+ */
+
+import assert from 'node:assert/strict';
+import { after, describe, test } from 'node:test';
+import { closeBrowser, open, type ApiStub } from './harness.ts';
+
+const DAY = 86_400_000;
+const NOW = Date.now();
+
+const CORE = {
+  id: 'laika-core',
+  slug: 'laika-core',
+  prefix: 'LC',
+  name: 'Laika Core',
+  description: null,
+  repo: null,
+  visibility: 'private',
+  context_md: '',
+  archived_at: null,
+  created_at: 1,
+  updated_at: 1,
+  task_counts: { backlog: 1, todo: 0, in_progress: 0, review: 0, done: 1, cancelled: 0 },
+  blocked_count: 0,
+  member_count: 1,
+  members: [],
+  last_activity_at: 2,
+};
+
+const sprint = (id: string, name: string, status: string, from: number, to: number) => ({
+  id,
+  project_id: 'laika-core',
+  name,
+  goal: 'Ship it.',
+  status,
+  starts_on: NOW + from * DAY,
+  ends_on: NOW + to * DAY,
+  created_at: 1,
+  updated_at: 1,
+});
+
+const task = (id: string, key: string, status: string, sprintId: string | null) => ({
+  id,
+  key,
+  number: Number(key.split('-')[1]),
+  project_id: 'laika-core',
+  title: `Task ${key}`,
+  description_md: '',
+  acceptance_md: '',
+  status,
+  priority: 'p2',
+  assignee_id: null,
+  created_by: 'u1',
+  created_via: 'web',
+  sprint_id: sprintId,
+  tags: [],
+  comment_count: 0,
+  blocked_by: [],
+  blocks: [],
+  discovered_from: null,
+  stale_flagged_at: null,
+  created_at: 1,
+  updated_at: NOW,
+  started_at: null,
+  completed_at: null,
+});
+
+/** Four sprints, as the reference has. */
+const SPRINTS = [
+  sprint('s1', 'Event store & SSE', 'completed', -28, -15),
+  sprint('s2', 'Agent sessions', 'completed', -14, -1),
+  sprint('s3', 'Presence & capacity', 'active', 0, 13),
+  sprint('s4', 'Publish & harden', 'planned', 14, 27),
+];
+
+const STUB: ApiStub = {
+  '/api/v1/me': {
+    id: 'u1',
+    email: 'a@example.com',
+    name: 'Ada Lovelace',
+    org_role: 'owner',
+    is_active: true,
+    memberships: [{ project_id: 'laika-core', role: 'lead' }],
+  },
+  '/api/v1/projects': { data: [CORE], next_cursor: null },
+  '/api/v1/projects/laika-core': {
+    id: CORE.id,
+    slug: CORE.slug,
+    prefix: CORE.prefix,
+    name: CORE.name,
+    description: null,
+    repo: null,
+    visibility: 'private',
+    context_md: '',
+    archived_at: null,
+    created_at: 1,
+    updated_at: 1,
+  },
+  '/api/v1/projects/laika-core/tasks': {
+    data: [task('t1', 'LC-1', 'backlog', 's3'), task('t2', 'LC-2', 'done', 's3')],
+    next_cursor: null,
+  },
+  '/api/v1/projects/laika-core/sprints': { data: SPRINTS, next_cursor: null },
+  '/api/v1/projects/laika-core/members': { members: [] },
+  '/api/v1/projects/laika-core/activity': { data: [], next_cursor: null },
+  '/api/v1/projects/laika-core/tags': { tags: [] },
+  '/api/v1/org': {
+    id: 'o',
+    name: 'Borealis Labs',
+    presence_enabled: false,
+    created_at: 1,
+    updated_at: 1,
+  },
+  '/api/v1/presence': { enabled: false, present: [] },
+};
+
+void after(async () => {
+  await closeBrowser();
+});
+
+void describe('the sprint strip', () => {
+  void test('is a single row of pills and figures', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 1000 });
+      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
+
+      assert.equal(await h.page.locator('.strip-chip').count(), 4, 'one pill per sprint');
+
+      /*
+       * **One row.** A pill is ~38px; the band that used to sit under it took
+       * the strip past 100. Measuring the strip's height is what tells the two
+       * shapes apart — counting elements would not.
+       */
+      const height = (await h.page.locator('.strip').boundingBox())?.height ?? 0;
+      assert.ok(height < 80, `the strip is ${String(Math.round(height))}px tall — a row returned`);
+
+      // The band's parts are gone, not merely hidden.
+      assert.equal(await h.page.locator('.strip-ring').count(), 0, 'the ring survived');
+      assert.equal(await h.page.locator('.strip-summary').count(), 0, 'the second row survived');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('carries the reference’s three figures, from real counts', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.strip-stats').waitFor({ timeout: 20_000 });
+      const stats = (await h.page.locator('.strip-stats').innerText()).replace(/\s+/g, ' ');
+
+      // Two tasks, one done — the figures are the board's own, not a fixture.
+      assert.match(stats, /DONE/);
+      assert.match(stats, /1\s*\/\s*2/, `DONE should read 1/2 — saw "${stats}"`);
+      assert.match(stats, /BLK/);
+      assert.match(stats, /LEFT/);
+      assert.doesNotMatch(stats, /WIP/, 'WIP belongs on the In Progress header, not here');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the pager appears only when there are more sprints than fit', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 1000 });
+      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(400);
+      assert.equal(
+        await h.page.locator('.strip-pager').count(),
+        0,
+        'four pills fit at 1600px — a pager here would do nothing',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('and it does appear once there are', async () => {
+    /*
+     * **Many sprints, not a narrow window.** The pills share the row down to a
+     * floor, so shrinking the viewport makes them narrower rather than
+     * overflowing — the first version of this test resized to 900px and the
+     * pager never came, correctly. Twelve sprints is the real condition.
+     */
+    const many = Array.from({ length: 12 }, (_, i) =>
+      sprint(`s${String(i)}`, `Sprint number ${String(i)}`, 'planned', i * 14, i * 14 + 13),
+    );
+    const h = await open('/board?project=laika-core', {
+      ...STUB,
+      '/api/v1/projects/laika-core/sprints': { data: many, next_cursor: null },
+    });
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 1000 });
+      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(() => document.querySelectorAll('.strip-pager').length === 1, {
+        timeout: 10_000,
+      });
+
+      // And it does something: the row is further along than it was.
+      const before = await h.page.locator('.strip-chips').evaluate((el) => el.scrollLeft);
+      await h.page.locator('.strip-pager').click();
+      await h.page.waitForFunction(
+        (was: number) => (document.querySelector('.strip-chips')?.scrollLeft ?? 0) > was,
+        before,
+        { timeout: 5000 },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

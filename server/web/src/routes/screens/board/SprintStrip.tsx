@@ -1,4 +1,5 @@
-import { daysLeft, formatRange } from '../sprints/sprint-derive.ts';
+import { useEffect, useRef, useState } from 'react';
+import { daysLeft } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import type { Task } from '../../../api/tasks.ts';
 import './sprint-strip.css';
@@ -10,7 +11,6 @@ export interface SprintStripProps {
   /** The sprint the board is scoped to, or `undefined` for all sprints. */
   readonly selected: string | undefined;
   readonly onSelect: (sprintId: string | undefined) => void;
-  readonly onOpenSprints: () => void;
 }
 
 interface Counts {
@@ -46,23 +46,40 @@ function pct(done: number, total: number): number {
  * Selecting a sprint scopes the board through `?sprint=`, which the tasks
  * endpoint has always accepted.
  */
-export function SprintStrip({
-  sprints,
-  tasks,
-  selected,
-  onSelect,
-  onOpenSprints,
-}: SprintStripProps) {
+export function SprintStrip({ sprints, tasks, selected, onSelect }: SprintStripProps) {
   if (sprints.length === 0) return null;
 
   const now = Date.now();
   const current = sprints.find((s) => s.id === selected);
   const counts = countFor(tasks, selected);
-  const ring = pct(counts.done, counts.total);
   // Inclusive, and normalised to UTC midnight — see `daysLeft`. My first pass
   // used `ceil((ends_on - now) / DAY)`, which reported **0** on a sprint's last
   // day, when the honest answer is 1.
   const remaining = current === undefined ? undefined : daysLeft(current.ends_on, now);
+
+  /**
+   * Whether the pill row has more than fits, which is the only reason the
+   * pager exists. Measured rather than guessed from a sprint count: how many
+   * fit depends on their names and the viewport, not on how many there are.
+   */
+  const chips = useRef<HTMLDivElement>(null);
+  const [overflowing, setOverflowing] = useState(false);
+
+  useEffect(() => {
+    const el = chips.current;
+    if (el === null) return;
+
+    const measure = (): void => {
+      setOverflowing(el.scrollWidth > el.clientWidth + 1);
+    };
+    measure();
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+    };
+  }, [sprints.length]);
 
   return (
     <section className="strip" aria-label="Sprints">
@@ -78,7 +95,7 @@ export function SprintStrip({
           All sprints
         </button>
 
-        <div className="strip-chips">
+        <div className="strip-chips" ref={chips}>
           {sprints.map((sprint, index) => {
             const c = countFor(tasks, sprint.id);
             const on = sprint.id === selected;
@@ -110,36 +127,32 @@ export function SprintStrip({
           })}
         </div>
 
-        <button type="button" className="strip-detail" onClick={onOpenSprints}>
-          Sprint detail →
-        </button>
-      </div>
+        {/*
+          The reference's right-hand arrow is a **pager**, not a link: it
+          scrolls the pill row when there are more sprints than fit. Rendered
+          only when there is something to scroll — a control that cannot do
+          anything is what §5.1 forbids.
+        */}
+        {overflowing && (
+          <button
+            type="button"
+            className="strip-pager"
+            onClick={() => {
+              chips.current?.scrollBy({ left: 320, behavior: 'smooth' });
+            }}
+          >
+            <span className="visually-hidden">Show more sprints</span>
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" />
+            </svg>
+          </button>
+        )}
 
-      <div className="strip-summary">
-        {/* A conic ring, as the prototype draws it — no charting library. */}
-        <span
-          className="strip-ring"
-          style={{ background: `conic-gradient(var(--acc) ${String(ring)}%, var(--tub) 0)` }}
-          aria-hidden="true"
-        >
-          <span className="strip-ring-hole">{ring}%</span>
-        </span>
-
-        <div className="strip-what">
-          <p className="strip-title">
-            <span className={`strip-badge strip-badge-${current?.status ?? 'all'}`}>
-              {current === undefined ? 'ALL SPRINTS' : current.status.toUpperCase()}
-            </span>
-            <span className="strip-name">{current?.name ?? 'Every task in this project'}</span>
-            {current !== undefined && (
-              <span className="strip-dates">{formatRange(current.starts_on, current.ends_on)}</span>
-            )}
-          </p>
-          {current?.goal != null && current.goal !== '' && (
-            <p className="strip-goal">{current.goal}</p>
-          )}
-        </div>
-
+        {/*
+          The stats, inline — the design keeps them on the same row as the
+          pills. `WIP` is not among them: it is a property of a column, and the
+          design puts it on the In Progress header.
+        */}
         <dl className="strip-stats">
           <div className="strip-stat">
             <dt>DONE</dt>
@@ -149,17 +162,15 @@ export function SprintStrip({
             </dd>
           </div>
           <div className="strip-stat strip-stat-blocked">
-            <dt>BLOCKED</dt>
+            <dt>
+              BLK<span className="visually-hidden"> blocked</span>
+            </dt>
             <dd>{counts.blocked}</dd>
           </div>
-          {/* A count, not a limit. Nothing stores a per-column limit, so a
-              denominator here would be invented (LAI-067, LAI-069). */}
           <div className="strip-stat">
-            <dt>WIP</dt>
-            <dd>{counts.wip}</dd>
-          </div>
-          <div className="strip-stat">
-            <dt>DAYS LEFT</dt>
+            <dt>
+              LEFT<span className="visually-hidden"> days remaining</span>
+            </dt>
             <dd>{remaining === undefined ? '—' : Math.max(0, remaining)}</dd>
           </div>
         </dl>

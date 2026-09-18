@@ -16,7 +16,7 @@
 }
 
 .strip-all,
-.strip-detail {
+.strip-pager {
   flex: none;
   height: 2.125rem;
   padding: 0 0.6875rem;
@@ -38,7 +38,7 @@
 }
 
 .strip-all:focus-visible,
-.strip-detail:focus-visible,
+.strip-pager:focus-visible,
 .strip-chip:focus-visible {
   outline: 2px solid var(--acc);
   outline-offset: 1px;
@@ -49,12 +49,25 @@
   display: flex;
   gap: 0.375rem;
   min-width: 0;
+  /* Scrolls rather than squeezing past legibility — which is what the
+     reference's `›` pages through (LAI-269). */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-/* Each sprint is an equal share of the row, as the prototype lays them out. */
+.strip-chips::-webkit-scrollbar {
+  display: none;
+}
+
+/*
+ * Each sprint is an equal share of the row, as the prototype lays them out —
+ * **down to a floor**. Without one they shrink indefinitely and a name becomes
+ * an ellipsis, which is also why the pager never appeared: there was nothing
+ * to scroll, only narrower pills.
+ */
 .strip-chip {
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 0 11rem;
+  min-width: 11rem;
   height: 2.125rem;
   padding: 0 0.5625rem;
   display: flex;
@@ -139,115 +152,36 @@
 
 /* ------------------------------------------------------------- summary row */
 
-.strip-summary {
-  display: flex;
-  align-items: center;
-  gap: 0.6875rem;
-  padding-top: 0.5625rem;
-  border-top: 1px solid var(--bd);
-}
+/*
+ * The second row is gone (LAI-269) — the reference has one. The ring, the
+ * `ALL SPRINTS` badge, the sprint's name, dates and goal went with it: the
+ * ring duplicated the pill's own fraction, and the dates and goal are in each
+ * pill's `title`.
+ */
 
-.strip-ring {
-  width: 2.125rem;
-  height: 2.125rem;
-  flex: none;
-  border-radius: var(--radius-pill);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.strip-ring-hole {
-  width: 1.625rem;
-  height: 1.625rem;
-  border-radius: var(--radius-pill);
-  background: var(--card);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 0.53125rem;
-  font-weight: var(--weight-bold);
-  color: var(--tx2);
-}
-
-.strip-what {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.strip-title {
-  display: flex;
-  align-items: center;
-  gap: 0.4375rem;
-  margin: 0;
-  min-width: 0;
-}
-
-.strip-badge {
-  flex: none;
-  font-size: 0.53125rem;
-  font-weight: var(--weight-heavy);
-  letter-spacing: 0.07em;
-  padding: 0.25rem 0.375rem;
-  border-radius: var(--radius-sm);
-  background: var(--tub);
-  color: var(--tx2);
-}
-
-.strip-badge-active {
-  background: var(--purs);
-  color: var(--pur);
-}
-
-.strip-badge-completed {
-  background: var(--grns);
-  color: var(--grn);
-}
-
-.strip-name {
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
-  letter-spacing: -0.01em;
-  color: var(--tx);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.strip-dates {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: 0.59375rem;
-  font-weight: var(--weight-semibold);
-  color: var(--tx3);
-}
-
-.strip-goal {
-  margin: 0;
-  font-size: 0.65625rem;
-  font-weight: var(--weight-medium);
-  color: var(--tx2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* Inline at the right of the one row, in a bordered group as the reference
+   draws them. `flex: none` so the pills take the slack, not the figures. */
 .strip-stats {
   flex: none;
   display: flex;
+  align-items: center;
+  height: 2.125rem;
   margin: 0;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  overflow: hidden;
 }
 
 .strip-stat {
   padding: 0 0.6875rem;
-  border-left: 1px solid var(--bd);
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
   gap: 0.3125rem;
+}
+
+.strip-stat + .strip-stat {
+  border-left: 1px solid var(--bd);
 }
 
 .strip-stat dt {
@@ -263,13 +197,33 @@
 
 .strip-stat dd {
   margin: 0;
-  font-size: var(--text-base);
+  font-size: 0.8125rem;
   font-weight: var(--weight-heavy);
   color: var(--tx);
+}
+
+.strip-stat-blocked dd {
+  color: var(--red);
 }
 
 .strip-stat dd span {
   font-size: 0.59375rem;
   font-weight: var(--weight-semibold);
   color: var(--tx3);
+}
+
+/* The pager: a square button, the arrow only. */
+.strip-pager {
+  width: 2.125rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--tx2);
+}
+
+.strip-pager svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  stroke: currentColor;
 }
