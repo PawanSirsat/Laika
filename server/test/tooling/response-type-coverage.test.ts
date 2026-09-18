@@ -192,7 +192,10 @@ const UNPAIRED = new Map<string, string>([
 
   // No client type exists: the screens these feed are unbuilt.
   // `CapacityView` and `PresenceView` left this group in LAI-439, which built the
-  // screen and therefore the mirror.
+  // screen and therefore the mirror. **`OrgView` and `OrgAiView` left it the same
+  // way in LAI-239**, when LAI-459's Organisation screen created
+  // `web/src/api/org.ts` — and the staleness guard below is what noticed, by
+  // firing on a *reason* going false rather than on an entry going unnecessary.
   ['AvatarView', 'no client type exists'],
   // The meeting-review screen is SHELL's and unbuilt; §11.4.2 lists it. These
   // three leave this group the same way `CapacityView` and `PresenceView` did —
@@ -205,8 +208,6 @@ const UNPAIRED = new Map<string, string>([
   ['ApplyReviewResult', 'no client type exists'],
   ['HeartbeatView', 'no client type exists'],
   ['MetricsView', 'no client type exists'],
-  ['OrgAiView', 'no client type exists'],
-  ['OrgView', 'no client type exists'],
 ]);
 
 /**
