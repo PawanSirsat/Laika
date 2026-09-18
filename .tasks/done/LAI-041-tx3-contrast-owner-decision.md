@@ -2,11 +2,13 @@
 id: LAI-041
 title: '`--tx3` fails WCAG AA at every size the design uses it — owner decision'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-018
-status: backlog
+status: done
+started: 2026-09-03T06:00:00Z
+finished: 2026-09-03T06:10:00Z
 ---
 
 ## Goal
@@ -89,3 +91,35 @@ pass is where it would be revisited.
 **The estimate that ages worst in a task file is the one about how expensive a
 decision will be later.** This one was written when the answer was *free* and read
 as *still free* for two weeks after it stopped being.
+
+---
+
+## Closed by the owner — D-059, 2026-09-03
+
+**They answered it in the design itself**, which is the artefact D-020 reserves
+to them — **not by picking one of the four options above, but by changing the
+thing the options were about.**
+
+`--tx3` moves **`#8d94a4` → `#606775`** in light and **`#71717d` → `#9a9aa4`** in
+dark, with twelve other tokens lifted alongside. **That is option 3 in substance**
+— the ramp reworked as a whole rather than one token nudged — **arrived at by a
+designer rather than chosen from a list by me.**
+
+### What this task got right, and what it got wrong
+
+**Right: refusing to decide it.** CHIEF measured, recommended option 2, and was
+reverted for deciding. **The numbers sat here for two weeks and were the input the
+owner used.** That is what a measured-and-escalated task is for.
+
+**Wrong: the cost note.** *"Nothing is blocked by this. No screen uses `--tx3`
+yet"* stayed in the file until 2026-09-03, by which point it was used **122
+times**. **The estimate that ages worst in a task file is the one about how
+expensive a decision will be later** — and this one read as *still free* for two
+weeks after it stopped being.
+
+### What is left, and it is a measurement rather than a decision
+
+**Whether the new values clear AA at 8.5–12px.** `tokens.test.ts` asserts the
+current values and **fails until it is updated**, which is the guard working.
+**SHELL's token task carries it**; if the lifted `--tx3` still falls short at
+those sizes, that is a new finding for the owner and not a reopening of this one.

@@ -9,6 +9,33 @@ contain no Skynet branding.
 imported, bundled, or executed by the application. UI tasks implement functional
 React against the real API and match this *style*; they do not lift this markup.
 
+## ⚠ These files are behind the owner's live design (2026-09-03)
+
+**`Laika Prototype.dc.html` is dated 24 August and is 94 hunks / ~16.5 KB behind
+the design in the owner's tool.** `support.js` is byte-identical.
+
+**What is in the live copy and not here** (SHELL, reading it through the design
+MCP, D-059):
+
+- the **SPACES** sidebar, replacing WORK / REVIEW
+- a task as an **840px drawer over a dimmed board**, not a screen
+- **13 lifted colour tokens** — `--tx3 #8d94a4 → #606775`, `--acc #2f6bff →
+  #2158e0`, and the same for red / green / amber / purple; dark `--tx3 #71717d →
+  #9a9aa4`
+- **responsive rules**: rail hidden ≤1180px, secondary chrome ≤1000px, presence
+  ≤820px, grid `min-width` plus five tracks
+- `navMini` (a collapsible sidebar), a `list` screen, custom scrollbars
+- files this directory does not have at all: `Skynet Board v3 - Assignees.dc.html`
+  and `screenshots/`
+
+**Until these files are refreshed, the live design is canonical and these are
+history.** A builder working from this directory is working from August. **Say in
+the task which copy you built against** — SHELL is doing that.
+
+**The responsive rules are the case to be careful with**: the live design has its
+own answer to the board-width problem, and it **differs from what LAI-175 and
+LAI-244 shipped.** Neither is wrong yet; they were built against this copy.
+
 ## Which file is canonical
 
 **`Laika Prototype.dc.html` — use this one.** It is the newest, the most
