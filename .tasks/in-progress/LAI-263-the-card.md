@@ -2,11 +2,12 @@
 id: LAI-263
 title: 'The card: padding, type, comment count, timestamp, one-line blocked banner'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-251
-status: backlog
+started: 2026-09-18T17:02:58+05:30
+status: in-progress
 ---
 
 ## Goal
