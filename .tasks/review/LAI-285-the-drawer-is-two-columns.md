@@ -3,11 +3,12 @@ id: LAI-285
 title: The task drawer is two columns — the shape LAI-284 missed
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-284
 started: 2026-09-19T00:20:00Z
+finished: 2026-09-19T01:05:00Z
 ---
 
 ## Why
