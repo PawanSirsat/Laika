@@ -66,8 +66,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/projects/*/tags/*': 'LAI-235 — a tag cannot be removed from a project',
   'api/v1/projects/*/join': 'LAI-236 — nothing offers to join a project',
   'api/v1/activity': 'LAI-237 — the org-wide feed; only the per-project one is read',
-  'api/v1/users/*/tokens': "LAI-238 — an admin cannot see or revoke somebody else's tokens",
-  'api/v1/users/*/tokens/*': 'LAI-238',
 };
 
 /** `${...}`, removed with a scanner because a regex cannot match balanced braces. */

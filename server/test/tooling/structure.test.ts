@@ -98,6 +98,15 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'routes/screens/organisation/use-organisation.ts',
     'a React hook — no renderer in this package (CONVENTIONS §4)',
   ],
+  [
+    'routes/screens/organisation/use-user-tokens.ts',
+    // Not the boilerplate hook reason, because a better one is true here: the
+    // behaviour worth guarding is *when it fetches*, and `test/browser/
+    // organisation-tokens.test.ts` asserts that against a real browser — no
+    // request until a panel opens, exactly one when it does. A unit test of the
+    // hook could not see either, since both are properties of the mounted tree.
+    'a React hook; its lazy fetch is asserted in test/browser/organisation-tokens.test.ts',
+  ],
   ['theme/theme.ts', 'DOM-bound theme application; asserted in a browser under LAI-018'],
   ['theme/use-theme.ts', 'a React hook — no renderer in this package'],
   ['api/use-shell-context.ts', 'a React hook — no renderer in this package'],
