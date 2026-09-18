@@ -3,11 +3,12 @@ id: LAI-281
 title: Activity becomes a tab; the board goes plain
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-280
 started: 2026-09-18T22:05:00Z
+finished: 2026-09-18T22:22:00Z
 ---
 
 ## Why
