@@ -2,11 +2,12 @@
 id: LAI-256
 title: 'The List view becomes a tab of its own'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-254]
 discovered-from: LAI-248
-status: backlog
+status: in-progress
+started: 2026-09-18T18:40:00Z
 ---
 
 ## Goal
