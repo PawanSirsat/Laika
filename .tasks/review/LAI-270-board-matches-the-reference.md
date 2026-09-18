@@ -7,7 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-269
 started: 2026-09-18T17:31:07+05:30
-status: in-progress
+finished: 2026-09-18T17:42:17+05:30
+status: review
 ---
 
 ## Goal
@@ -31,21 +32,21 @@ obvious side by side, and all four are ours to fix.
 
 ## Acceptance criteria
 
-- [ ] `List` is a tab and `/list` is a route; the Board/List toggle leaves the
+- [x] `List` is a tab and `/list` is a route; the Board/List toggle leaves the
       board.
-- [ ] The count badge is on `Meeting review`, from its real pending count, and
+- [x] The count badge is on `Meeting review`, from its real pending count, and
       off `Sprints`.
-- [ ] The second filter band is gone. Tag, assignee, priority and ready-only
+- [x] The second filter band is gone. Tag, assignee, priority and ready-only
       live in the top bar beside Search, and priority reads `Priority: all` as
       a dropdown rather than a cycling button.
-- [ ] Columns are equal height, scroll internally past a threshold, and keep
+- [x] Columns are equal height, scroll internally past a threshold, and keep
       `+ Add task` pinned at the bottom.
-- [ ] The per-card status select is no longer a visible control **and the
+- [x] The per-card status select is no longer a visible control **and the
       keyboard can still move a task** — it is the only non-mouse way to, so it
       is hidden until focus rather than deleted.
-- [ ] A rule sits between a card's tags and its footer.
-- [ ] Both themes, widths 1440 / 1280 / 420, page overflow `0` at each.
-- [ ] Full gate — all three `EXIT 0`, repo root.
+- [x] A rule sits between a card's tags and its footer.
+- [x] Both themes, widths 1440 / 1280 / 420, page overflow `0` at each.
+- [x] Full gate — all three `EXIT 0`, repo root.
 
 ## Notes / context
 
@@ -57,3 +58,33 @@ placeholder). It arrives with the endpoint.
 only `Priority: all` because that prototype had one filter. Ours has four, and
 they go where the design puts filters — the top bar — rather than in a row the
 design does not have.
+
+## Completion notes
+
+Measured on the running instance: five lanes at **764px each**, equal; the
+second filter band is gone; the tab strip reads `Board · List · Timeline ·
+Sprints · Capacity · Dashboard · Meeting review`.
+
+**`align-items: start` was what made the columns ragged.** Each sized to its
+own cards. `stretch` plus one height on the lane, with the body scrolling
+inside it, is the reference's shape.
+
+**Four existing tests failed on this and all four were right to.** Each
+asserted the old arrangement, and each was repointed rather than loosened:
+
+- the priority cycler became a dropdown, so the test selects instead of
+  clicking;
+- two tab lists gained `List`;
+- `task-drawer`'s "the board underneath survives" scrolled the **window** —
+  the board no longer grows the document, so there was nothing to move. It
+  scrolls the lane now, which is the thing that scrolls.
+
+**The status select is clipped, not deleted.** Drag has no keyboard story and
+this is the only other way to move a task; it returns to the flow on focus, and
+a test asserts both halves — under 2px at rest, taller once focused.
+
+**Calendar is still not a tab**, for the reason in the Notes: no
+`tasks.due_date`, and a tab onto an empty screen is worse than none.
+
+**The Meeting review badge renders from the real pending count** and is absent
+here because the seeded instance has no reviews — a webhook creates them.
