@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
 import { COLUMN_LABELS, updatedAge } from '../../../api/board-derive.ts';
+import { avatarColor } from '../../../theme/avatar-color.ts';
+import { initials } from '../../../theme/initials.ts';
+import { useTheme } from '../../../theme/use-theme.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -47,6 +50,19 @@ import { withProjectParam } from '../../nav-url.ts';
  * rather than trimming a list client-side. That is what lets the empty state say
  * *"nothing in this range"* truthfully instead of implying the project is empty.
  */
+/**
+ * The avatar's colours for an actor.
+ *
+ * A `null` actor is Laika itself (the CHECK constraint makes that the only
+ * meaning), and it gets the neutral chip rather than a colour drawn from the
+ * string `"null"` — which is what colouring by a fallback id would do.
+ */
+function avatarStyle(actorId: string | null, theme: Parameters<typeof avatarColor>[1]) {
+  if (actorId === null) return undefined;
+  const ink = avatarColor(actorId, theme);
+  return { background: ink.background, color: ink.foreground, borderColor: ink.border };
+}
+
 /** A width for a segment of the release bar; `0%` rather than `NaN` when empty. */
 function pct(part: number, whole: number): string {
   return whole === 0 ? '0%' : `${String((part / whole) * 100)}%`;
@@ -62,6 +78,7 @@ function humanMs(ms: number): string {
 
 export function DashboardScreen() {
   const { params, setParams } = useRoute();
+  const { theme } = useTheme();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
 
@@ -253,6 +270,13 @@ export function DashboardScreen() {
     .map(([id, count]) => ({ id, count, name: members.get(id)?.name ?? id }))
     .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const blocked = blockedTasks(tasks);
+
+  /** How long the oldest blocked task has been waiting — the design's figure. */
+  const oldestBlocked =
+    blocked.length === 0
+      ? undefined
+      : updatedAge(Math.min(...blocked.map((row) => row.task.updated_at)), now);
+
   // The feed is edited; the counts are not. `byActorKind` still sees every
   // event, because "12 events, 3 by agents" is a claim about what happened —
   // hiding a verb from the list must not quietly change the arithmetic beside
@@ -416,26 +440,42 @@ export function DashboardScreen() {
         </section>
 
         <section className="dash-panel dash-decide" aria-label="Blocked work">
-          <h2 className="dash-panel-title">
-            Needs a decision
-            <span className="dash-panel-meta">{blocked.length}</span>
-          </h2>
+          <h2 className="dash-panel-label dash-decide-label">NEEDS A DECISION</h2>
+
+          {/*
+            The design leads with the figure and the age (prototype line 754):
+            *how many, and how long has the oldest been waiting* is the question,
+            and a list of keys does not answer it at a glance.
+          */}
+          <p className="dash-decide-figure">
+            <span className="dash-decide-n">{blocked.length}</span>
+            <span className="dash-decide-of">
+              blocked
+              {oldestBlocked !== undefined && ` · oldest ${oldestBlocked}`}
+            </span>
+          </p>
 
           {blocked.length === 0 ? (
             <p className="dash-empty">Nothing is waiting on an unfinished dependency.</p>
           ) : (
             <ul className="dash-blocked">
-              {blocked.map((row) => (
-                <li key={row.task.id} className="dash-blocked-row">
+              {/*
+                One line each, as the design writes them: `LAI-140 event store
+                cursor · Tomás`. Who it is with matters more than what it is
+                waiting on — that is the decision the panel is asking for.
+              */}
+              {blocked.slice(0, 4).map((row) => (
+                <li key={row.task.id} className="dash-blocked-row" title={row.task.title}>
                   <span className="dash-key">{row.task.key}</span>
                   <span className="dash-blocked-title">{row.task.title}</span>
-                  <span className="dash-blocked-by">
-                    waiting on {row.blockedBy.map((dep) => dep.key).join(', ')}
-                    {row.unknown.length > 0 &&
-                      `${row.blockedBy.length > 0 ? ', ' : ''}${String(row.unknown.length)} not loaded`}
+                  <span className="dash-blocked-who">
+                    · {row.task.assignee_id === null ? 'unassigned' : nameFor(row.task.assignee_id)}
                   </span>
                 </li>
               ))}
+              {blocked.length > 4 && (
+                <li className="dash-blocked-more">+{blocked.length - 4} more</li>
+              )}
             </ul>
           )}
         </section>
@@ -495,62 +535,102 @@ export function DashboardScreen() {
             </span>
           </h2>
 
-          {feed.length === 0 ? (
-            <EmptyState
-              headline={
-                /*
-                 * **Three reasons the list is empty, not two** (LAI-279). The
-                 * filter added a third — "nobody of this kind acted" — and
-                 * reporting it as "nothing worth showing" would blame the feed
-                 * for a choice the reader just made.
-                 */
-                actor !== 'all' && shown.length > 0
-                  ? `No ${actor === 'agent' ? 'agent' : 'person'} activity in this range`
-                  : events.length === 0
-                    ? `Nothing in the ${range.label.toLowerCase()}`
-                    : 'Nothing worth showing in this range'
-              }
-              body={
-                actor !== 'all' && shown.length > 0
-                  ? 'Switch back to All to see everything in this range.'
-                  : events.length === 0
-                    ? 'Widen the range to see older activity.'
-                    : /* The count beside this says how many events there were, and
+          {/*
+            **The list scrolls inside the card.** 193 rows ran the page to five
+            screens and left the rail beside a column of noise; the design's
+            panel is a card of fixed height whose contents move, not the page.
+          */}
+          <div className="dash-feed-scroll">
+            {feed.length === 0 ? (
+              <EmptyState
+                headline={
+                  /*
+                   * **Three reasons the list is empty, not two** (LAI-279). The
+                   * filter added a third — "nobody of this kind acted" — and
+                   * reporting it as "nothing worth showing" would blame the feed
+                   * for a choice the reader just made.
+                   */
+                  actor !== 'all' && shown.length > 0
+                    ? `No ${actor === 'agent' ? 'agent' : 'person'} activity in this range`
+                    : events.length === 0
+                      ? `Nothing in the ${range.label.toLowerCase()}`
+                      : 'Nothing worth showing in this range'
+                }
+                body={
+                  actor !== 'all' && shown.length > 0
+                    ? 'Switch back to All to see everything in this range.'
+                    : events.length === 0
+                      ? 'Widen the range to see older activity.'
+                      : /* The count beside this says how many events there were, and
                      it is not wrong — they are all verbs the feed declines
                      (`FEED_SILENT`). Saying "nothing happened" over a count of
                      52 is the contradiction; saying nothing worth *showing* is
                      the truth. */
-                      'Everything in this range is the kind of event this feed leaves out — tasks moved between sprints.'
-              }
-            />
-          ) : (
-            <ul className="dash-feed">
-              {feed.map((event) => {
-                const moved = statusChange(event);
+                        'Everything in this range is the kind of event this feed leaves out — tasks moved between sprints.'
+                }
+              />
+            ) : (
+              <ul className="dash-feed">
+                {feed.map((event) => {
+                  const moved = statusChange(event);
 
-                return (
-                  <li key={`${event.id}-${String(event.seq)}`} className="dash-event">
-                    <span className={`dash-kind dash-kind-${event.actor_kind}`}>
-                      {event.actor_kind}
-                    </span>
-                    <span className="dash-actor">{nameFor(event.actor_id)}</span>
-                    <span className="dash-what">
-                      {describeProjectEvent(event)}
-                      {moved !== undefined && (
-                        <span className="dash-move">
-                          {' '}
-                          {moved.from.replace('_', ' ')} → {moved.to.replace('_', ' ')}
+                  return (
+                    <li key={`${event.id}-${String(event.seq)}`} className="dash-event">
+                      {/*
+                      The design's row (prototype line 774): **when · who · what ·
+                      which task**, in that order. Ours led with a `USER` badge
+                      repeated down every row — a word that is the same on almost
+                      all of them, taking the position the eye reads first.
+
+                      The badge is gone; the avatar carries who, and the agent
+                      mark rides on it as it does everywhere else.
+                    */}
+                      <time
+                        className="dash-when"
+                        dateTime={new Date(event.created_at).toISOString()}
+                      >
+                        {relativeTime(event.created_at, now)}
+                      </time>
+
+                      <span
+                        className="dash-avatar"
+                        style={avatarStyle(event.actor_id, theme)}
+                        aria-hidden="true"
+                      >
+                        {initials(nameFor(event.actor_id))}
+                        {event.actor_kind === 'agent' && (
+                          <span className="dash-avatar-bot" aria-hidden="true" />
+                        )}
+                      </span>
+
+                      <span className="dash-what">
+                        <span className="dash-actor">{nameFor(event.actor_id)}</span>{' '}
+                        {describeProjectEvent(event)}
+                        {moved !== undefined && (
+                          <span className="dash-move">
+                            {' '}
+                            {moved.from.replace('_', ' ')} → {moved.to.replace('_', ' ')}
+                          </span>
+                        )}
+                        {/* Said in words too: the avatar's mark is not readable
+                          by a screen reader, and `actor_kind` is the fact. */}
+                        {event.actor_kind === 'agent' && (
+                          <span className="visually-hidden"> (by an agent)</span>
+                        )}
+                      </span>
+                      {/* The task the event is about, right-aligned as the
+                        design has it — a column the eye can run down. */}
+                      {event.task_id !== null && (
+                        <span className="dash-event-key">
+                          {tasks.find((t) => t.id === event.task_id)?.key ?? ''}
                         </span>
                       )}
-                    </span>
-                    <time className="dash-when" dateTime={new Date(event.created_at).toISOString()}>
-                      {relativeTime(event.created_at, now)}
-                    </time>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         </section>
 
         {/*

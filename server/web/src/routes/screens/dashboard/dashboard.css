@@ -677,3 +677,272 @@
 .dash-filter-on .dash-filter-count {
   color: var(--acc);
 }
+
+/* ===========================================================================
+ * The feed and the rail, to the reference (LAI-280).
+ *
+ * The owner's report: 193 activity rows ran the page to five screens and the
+ * rail floated beside a column of noise. The design's panel is a **card of
+ * fixed height** whose rows scroll inside it — everything on this screen stays
+ * on this screen.
+ * ======================================================================== */
+
+.dash-feed-panel {
+  /* The card owns its edges; the header and the list sit inside it. */
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-feed-panel .dash-panel-title {
+  margin: 0;
+  padding: 0.625rem 0.8125rem;
+  border-bottom: 1px solid var(--bd);
+}
+
+/*
+ * **The list scrolls, the page does not.**
+ *
+ * `max-height` rather than a row cap: a cap would hide activity with no way to
+ * reach it, and the owner asked for scrolling. The figure is about eight rows,
+ * which is what the design draws, and the panel keeps its shape whether there
+ * are three events or three hundred.
+ */
+.dash-feed-scroll {
+  flex: 1;
+  min-height: 0;
+  /*
+   * **Viewport-relative, not a fixed figure.** 24.5rem is about nine rows on a
+   * tall screen and taller than the whole window on a short one — on a 720px
+   * viewport a fixed cap still pushed the page to 930px. `min()` keeps the
+   * design's height where there is room and yields where there is not.
+   */
+  max-height: min(24.5rem, 42vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.125rem 0.8125rem 0.625rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bd2) transparent;
+}
+
+.dash-feed-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dash-feed-scroll::-webkit-scrollbar-thumb {
+  background: var(--bd2);
+  border-radius: 4px;
+}
+
+/* -------------------------------------------------------------- a feed row */
+
+.dash-event {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5625rem 0;
+  border-bottom: 1px solid var(--bd);
+  font-size: 0.75rem;
+  color: var(--tx);
+}
+
+.dash-feed > .dash-event:last-child {
+  border-bottom: none;
+}
+
+/* When, first — the design's 74px mono column, so the times line up. */
+.dash-event .dash-when {
+  flex: none;
+  width: 4.625rem;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx3);
+  text-align: left;
+}
+
+.dash-avatar {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  background: var(--tub);
+  color: var(--tx3);
+  border: 1px solid transparent;
+}
+
+/* The agent mark rides on the avatar, as it does on a card and a presence chip
+   — one treatment for one fact, everywhere. */
+.dash-avatar-bot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--pur);
+  border: 1.5px solid var(--card);
+}
+
+.dash-event .dash-what {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.75rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-event .dash-actor {
+  font-weight: var(--weight-bold);
+}
+
+.dash-event-key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx3);
+}
+
+/* ------------------------------------------- the rail's tinted card headers */
+
+.dash-stale,
+.dash-agentlog {
+  padding: 0;
+  overflow: hidden;
+}
+
+.dash-stale {
+  border-color: var(--ambb);
+}
+
+.dash-agentlog {
+  border-color: var(--purb);
+}
+
+.dash-stale > .dash-panel-title,
+.dash-agentlog > .dash-panel-title {
+  margin: 0;
+  padding: 0.5625rem 0.75rem;
+  font-size: 0.65625rem;
+  font-weight: var(--weight-heavy);
+}
+
+.dash-stale > .dash-panel-title {
+  background: var(--ambs);
+  border-bottom: 1px solid var(--ambb);
+}
+
+.dash-agentlog > .dash-panel-title {
+  background: var(--purs);
+  border-bottom: 1px solid var(--purb);
+}
+
+.dash-stale > *:not(.dash-panel-title),
+.dash-agentlog > *:not(.dash-panel-title) {
+  margin-left: 0.75rem;
+  margin-right: 0.75rem;
+}
+
+.dash-stale > .dash-empty,
+.dash-agentlog > .dash-empty,
+.dash-agentlog > .dash-agentlog-figures {
+  margin-top: 0.625rem;
+  margin-bottom: 0.625rem;
+}
+
+.dash-stale-list,
+.dash-agentlog-list {
+  margin-top: 0.625rem;
+  margin-bottom: 0.625rem;
+}
+
+/* ------------------------------------------------------- needs a decision */
+
+.dash-decide-label {
+  color: var(--red);
+}
+
+.dash-decide-figure {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.4375rem;
+  margin: 0.5625rem 0 0;
+}
+
+.dash-decide-n {
+  font-size: 1.6875rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: -0.025em;
+  color: var(--red);
+}
+
+.dash-decide-of {
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  color: var(--tx3);
+  padding-bottom: 3px;
+}
+
+.dash-decide .dash-blocked {
+  margin-top: 0.5625rem;
+  gap: 0.375rem;
+}
+
+/* One line each: key, title, who — the title is what gives way. */
+.dash-decide .dash-blocked-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 0.3125rem;
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+}
+
+.dash-decide .dash-blocked-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-decide .dash-blocked-who {
+  flex: none;
+  color: var(--tx3);
+}
+
+.dash-blocked-more {
+  font-size: 0.625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+}
+
+/*
+ * **No gap between feed rows.** `.dash-feed` is a grid with `gap: var(--space-2)`
+ * from when the rows were free-standing; now each row carries its own padding
+ * and a rule beneath it, so the gap stacked on top and made every row half as
+ * tall again as the design's.
+ */
+.dash-feed-scroll .dash-feed {
+  display: block;
+  gap: 0;
+}
