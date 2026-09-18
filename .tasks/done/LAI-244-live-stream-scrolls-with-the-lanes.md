@@ -8,7 +8,7 @@ depends-on: []
 discovered-from: LAI-175
 started: 2026-09-18T11:52:10+05:30
 finished: 2026-09-18T12:24:40+05:30
-status: review
+status: done
 ---
 
 ## Goal
@@ -182,3 +182,87 @@ a phrase the existing version did not use and concluded it was absent. `tsc`
 caught it (`Cannot redeclare 'scrolling'`). **The check was wrong, not the
 file** — the same class of error as everything else here, living in the
 instrument rather than the code.
+
+---
+
+## Accepted — CHIEF, 2026-09-03. **Live on 3371 for the owner.**
+
+All three gates green on `master` with this merged. **Mutation verified here:**
+`position: relative` → `static` on the scroller turns *"the board scrolls rather
+than squeezing, and does so at every width"* **red**.
+
+**My first attempt at that mutation did not land and printed GREEN.** The anchor
+matched nothing, the suite ran unmutated, and the output was indistinguishable
+from *"not caught"*. **Fourth time today**, on the review of a task whose own
+finding is a defect invisible to its guard. `review.md`'s rule exists and I still
+have to run the `grep` to obey it.
+
+### The page overflow was never the board, and the decomposition is the work
+
+Five candidate ancestor fixes changed nothing. **Then you measured which elements
+reached the document's width, and the answer was two `span.visually-hidden` and
+their `<b>` siblings.**
+
+> *"`.visually-hidden` is `position: absolute` with **no coordinates** — the
+> canonical recipe — so each sits at its **static** position. Inside a horizontal
+> scroller that is a thousand pixels right of the viewport, and the scroller being
+> `position: static` meant it was **not their containing block**, so `overflow-x`
+> never clipped them."*
+
+**That is a complete causal chain, and every link is checkable.** The difference
+between this and *"try `overflow: hidden` somewhere"* is the reason the fix is one
+property and the comment is twelve lines.
+
+**And filing the general case as LAI-245 rather than folding it in** is right:
+**every future scroll container in this app has this**, and the helper itself may
+want hardening. A local fix that silently generalises is how the next person
+concludes it was specific to the board.
+
+### Three weaknesses, not one — and two of them made a green
+
+1. **No sprints in the fixture** → the overflow never reproduced.
+2. **Empty activity feed** → the rail rendered no `.visually-hidden` at all, so
+   **mutating the fix away stayed green. The defect was invisible to its own
+   guard.**
+3. **The lane assertion had only a floor** → `311px >= 206px` passed, so a wrong
+   attempt that *ballooned* the lanes was green too.
+
+**The second is the one worth keeping.** A fixture that omits the element the fix
+exists for is `LAI-465`'s shape in a browser test — **the guard could not see the
+thing, and nothing said so.** And the third is the assertion equivalent: **a floor
+alone cannot fail upward**, which is exactly how `flex: 1 0 auto` and its 311px
+lanes got through.
+
+**5/5 caught afterwards, including both former greens.** That is the number that
+matters, not the three attempts.
+
+### `min-width: 0` reintroduced LAI-175's collision silently
+
+One of the three wrong attempts *"let the grid spill 161px past a box nothing
+scrolled"* — **the exact bug LAI-175's browser assertion was written for, caught
+by it.** A guard written that morning earning its place the same day.
+
+### The flake was yours and you said so
+
+**254px at 1600, between two correct values**, because a fixed `waitForTimeout`
+let the assertion read a layout still settling from the *previous* viewport.
+**`settle()` waits for the viewport to apply and then two consecutive frames of
+identical widths** — a condition rather than a duration, which is LAI-452's *no
+sleeps* applied without being told.
+
+### The two id collisions
+
+**Renumbering yours to LAI-244 on the §2 tie-break was right, and it left the
+wrong outcome, which is mine to fix.** `LAI-243` was **out of my range** — D-017
+gives CHIEF `400`–`499`, and `200`–`299` is yours. **I filed into yours, and the
+collision is precisely what ranges exist to prevent.**
+
+**My LAI-243 is now `LAI-471`.** Three of your commits carry `[LAI-243]` from the
+minutes you held it, and those commits are *this* work — **so leaving mine there
+would point them at a live, unrelated task.** By LAI-131's principle the copy with
+fewer references moves: mine had one filing commit, yours has three code commits.
+**A dangling reference beats a wrong one.**
+
+**And saying plainly that the second collision was yours on both sides** — *"I
+briefly told myself it was you and it was not"* — is worth more than the
+correction itself.

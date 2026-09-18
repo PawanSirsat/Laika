@@ -1462,9 +1462,25 @@ bulk edit. Columns are the status enum; when that is not enough, use the list.
 
 #### 11.4.2 UI screens → API coverage
 
-Every screen and the endpoints it cannot function without, checked against
-`docs/design/Laika Prototype.dc.html` (the canonical mockup — see
-`docs/design/README.md`).
+**D-059 changed the shape this table describes, and the table has not caught up.**
+The **endpoint column is still correct** — every row names what that surface
+cannot function without, and `endpoint-coverage.test.ts` (LAI-460) checks the
+served side against what the client calls. **The *nav* model is not**: there is no
+WORK / REVIEW sidebar, screens are not all routes, and five of these rows are now
+**tabs inside a space**.
+
+**Read the rows as surfaces, not as destinations**, until this section is
+rewritten against the refreshed design:
+
+| D-059 | |
+| --- | --- |
+| the sidebar | **SPACES** — three recent spaces, *More spaces*, SETTINGS. A space is a project with a two-letter key, a count and a colour |
+| Task detail | a **840px drawer over a dimmed board**, dismissed by the scrim — not a screen |
+| Timeline, Calendar, Capacity, Dashboard, Meeting review | **tabs across the top of a space** |
+
+Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
+and is behind the owner's live design.** `docs/design/README.md` says which copy
+is canonical.
 
 **The build rule:** a UI task carries `depends-on` for the API task(s) that
 define its endpoints, so no screen is built against an API that does not exist
@@ -1787,12 +1803,15 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
       read, the whole activity log? This determines both the permission model and
       whether the context window is workable at all.
 
-10. **Is there a Calendar screen?** The prototype's sidebar has
-    `WORK → Calendar` with a real render branch, and nothing else in the plan
-    mentions it — no decision, no endpoints, not in `FEATURES.md`. If it is a
-    date-grid over sprints it is nearly free like the Timeline (D-014); if it
-    implies per-task dates it reopens D-014. **Do not build it until this is
-    answered.**
+10. ~~**Is there a Calendar screen?**~~ **Answered by D-059: yes, as a tab
+    inside a space**, shipping with **visible demo data** in the D-032 shape — one
+    demo module, naming the endpoint that retires it, saying so on the screen, and
+    a test that no demo string reaches the bundle.
+
+    **It does imply per-task dates**, so it reopens D-014 exactly as this question
+    warned: the endpoint it waits for is **`tasks.due_date`**. Until that exists
+    the screen is demo-fed and says so. **The warning was right; the owner
+    accepted the cost rather than the question being wrong.**
 11. **Password reset and magic-link sign-in.** The login mockup shows "Forgot?"
     and "Email me a sign-in link". Neither exists in §6.1 or §6.4, and both need
     working SMTP. Either specify them (endpoints, token lifetimes, SMTP as a hard

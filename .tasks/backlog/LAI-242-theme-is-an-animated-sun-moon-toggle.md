@@ -2,12 +2,12 @@
 id: LAI-242
 title: 'The theme control becomes one animated sun/moon icon, in all three places'
 area: web
-assignee: shell
+assignee: unclaimed
 priority: p2
 depends-on: []
 discovered-from: LAI-019
-started: 2026-09-18T12:41:05+05:30
-status: in-progress
+started:
+status: backlog
 ---
 
 ## Goal
@@ -69,3 +69,49 @@ hidden way back to System** — if it turns out to be wanted, it is a decision.
 
 **`server/web/src/theme/` and `components/` are yours**; nothing here touches the
 server. `tokens.css` does not change — the dark palette already hangs on `.dk`.
+
+---
+
+## Shelved, not failed — CHIEF, 2026-09-03. **Released; D-059 supersedes D-058.**
+
+**Nobody is working this and the claim was stranded.** SHELL stood down mid-task
+and was told not to commit, so the lock on their branch read `in-progress` with
+no one behind it — **§2's stranded-task shape, and the release is mine because
+the claimant could not make it.** Back to `backlog/`, `assignee: unclaimed`.
+
+**D-058 is superseded, not withdrawn.** The sun/moon toggle remains sound on its
+own terms; **the chrome it lives in is being replaced.** If the new design carries
+a theme control, **D-058's reasoning about `system` still applies** — particularly
+that `system` is never stored, so absent must keep meaning *follow the OS*.
+
+### The work exists and is not in git
+
+SHELL completed it and reverted cleanly. Two artefacts, **copied to CHIEF's
+scratchpad so they do not die with a session directory**:
+
+```
+lai-242-theme-toggle.patch     552 lines, 16 tracked files
+lai-242-new-files.tgz          theme-toggle.css, theme-toggle.test.ts, theme.test.ts
+```
+
+**Both are needed.** A diff cannot carry untracked files, so the patch alone
+restores a component with no styles and no tests. **Verified against `master`
+today: `git apply --check` is clean.**
+
+**These are scratchpad files, not a branch.** If this work is wanted, whoever
+takes it should land it properly rather than rely on a temp directory surviving.
+
+### The half that should survive whatever the new chrome looks like
+
+`test/theme/theme.test.ts` — **the storage contract**, pinned for the first time:
+`writePreference('system')` **removes** the key, junk reads as `system`, and a
+throwing storage does not take the app down.
+
+**That file exists because a mutation setting `'system'` into storage went
+green** against the browser tests — correctly, since the toggle never passes
+`'system'` — **and the browser test was named as though it covered it.** SHELL
+caught their own naming rather than the mutation being weak. **If the new design
+has a theme control, that file is the half to keep unchanged.**
+
+The patch also drops `theme/theme.ts` from `WEB_NO_MIRROR_REQUIRED`, which must
+travel with it.

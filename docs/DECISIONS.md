@@ -3026,3 +3026,67 @@ paint — makes every current System user's theme snap on upgrade for no gain.**
 
 **This is an assumption, not an instruction.** If the owner wants following to
 stop outright, it is one line in `readPreference`.
+
+## D-059 — The shipped app follows the design's flow: spaces, a task drawer,
+## view tabs, and the lifted palette.
+
+**2026-09-03. Owner's decision, confirmed directly after SHELL relayed it.**
+**It supersedes D-058 and closes LAI-041.**
+
+The design in the owner's tool has moved a long way from
+`docs/design/Laika Prototype.dc.html`, which is dated **24 August** and whose
+tokens still match what shipped. **Every feature we have is kept; the flow
+around them changes.**
+
+### The four decisions
+
+1. **The sidebar is SPACES, not WORK / REVIEW.** Three most-recent spaces, then
+   *More spaces*, then SETTINGS. **A space is a project** carrying a two-letter
+   key (`LC`), a count (`34 tasks · 4 members`) and a colour.
+2. **A task is a 840px drawer over a dimmed board**, dismissed by clicking the
+   scrim. **Not a full screen** — the stale copy in `docs/` shows the old shape.
+3. **Timeline, Calendar, Capacity, Dashboard and Meeting review become tabs
+   across the top of a space.** They have handlers in the prototype and nothing
+   links to them; **the design is mid-iteration there, so this is the owner's
+   call rather than the file's** — SHELL was right to say so rather than infer
+   it.
+4. **All 13 lifted colour tokens are taken** — `--tx3 #8d94a4 → #606775`,
+   `--acc #2f6bff → #2158e0`, the same for red / green / amber / purple, and
+   dark `--tx3 #71717d → #9a9aa4`.
+
+### LAI-041 is closed by (4), and that is the right way for it to close
+
+**The contrast question was always the owner's** (D-020): CHIEF measured it,
+recommended, and was reverted for deciding it. **The owner has now answered it in
+the design itself**, which is the artefact D-020 reserves to them — **not by
+picking one of the four options CHIEF wrote, but by changing the thing the
+options were about.**
+
+`--tx3` at 8.5–12px against `--card` measured **3.04** and needed 4.5. The lift
+is in that direction. **Whether the new values clear AA at those sizes is a
+measurement, not a decision** — and `tokens.test.ts` asserts current values, so
+it fails until it is updated, which is the guard working.
+
+### D-058 is superseded, not withdrawn
+
+**The sun/moon toggle was decided an hour before this and remains a sound
+decision on its own terms.** It is superseded because the chrome it lives in is
+being replaced; **if the new design carries a theme control, D-058's reasoning
+about `system` still applies to it** — particularly that `system` is never
+stored, so absent must keep meaning *follow the OS*.
+
+**Do not read this as the toggle being wrong.** LAI-242 is shelved, not failed.
+
+### §14 q10 is answered
+
+*"Is there a Calendar screen?"* — **yes, as a tab, shipping with visible demo
+data** in the D-032 shape: one demo module, naming the endpoint that retires it,
+saying so on the screen, with a test that no demo string survives into the
+bundle. **The endpoint it waits for is `tasks.due_date`**, which SHELL is filing
+against `server/`.
+
+### What is not decided here
+
+**Multi-project stays.** The prototype hardcodes `laika-core`; that is a
+simplification of a mockup, **not a product decision**, and reading it as one
+would delete a feature nobody voted to remove.

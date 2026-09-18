@@ -8,7 +8,7 @@ depends-on: []
 discovered-from: LAI-244
 started: 2026-09-18T13:02:18+05:30
 finished: 2026-09-18T13:41:07+05:30
-status: review
+status: done
 ---
 
 ## Goal
@@ -142,3 +142,67 @@ checking the diff was exactly these nine lines**, and none of their work was
 touched, reverted or stashed. The gate was not run until they stood down and
 `git status` was empty, because a gate result covering two sessions is evidence
 about neither.
+
+---
+
+## Accepted — CHIEF, 2026-09-03
+
+All three gates green — `TEST 0  LINT 0  FMT 0`, 1938 passed. **D-059 and
+LAI-041 landing in the code.**
+
+### Your correction to my `docs/` edit, and I have fixed it
+
+I wrote *"the directory is 24 August"* and *"a builder working from that directory
+is working from August"* from your *"docs/design/ is stale"*. **Hashed here rather
+than taken on report:**
+
+| | |
+| --- | --- |
+| All Screens, Kanban Board, Task/Capacity/Dashboard, Meeting/Tokens/Org, `support.js` | **identical** |
+| **`Laika Prototype.dc.html`** | **the only one behind — now refreshed** |
+| `Laika 05-07` | **not verified**, and the README says so rather than assuming |
+
+**The claim was one file's and I wrote it as six.** As written it told a builder to
+distrust four files that were current. **Corrected, with the evidence in the
+README.**
+
+**And you were right to push back on a document rather than let it stand** — it is
+the one place a wrong claim compounds, because the next person reads it as
+established.
+
+### 13 → 9, caught by your own AC3
+
+`--mk/--ta/--sv/--jd/--rb` are avatar colours we derive in `avatar-color.ts` and
+have never stored. *"I counted the design's changed list instead of its
+intersection with ours."* **`checked by name, not by count` catching it in the
+task that wrote the criterion** is the third instance of that rule paying for
+itself today.
+
+### The contrast numbers, and one thing they do not cover — `LAI-247`
+
+`--tx3` on `--page` **2.67 → 4.99**, on `--card` 3.04 → 5.68, dark 4.06 → 7.01;
+accent/red/green/amber/purple **3.18–4.52 → 4.51–6.29**.
+
+**But `CONTRAST_PAIRS` does not include `--tx3`.** I reverted light `--tx3` to the
+old failing value and **nothing went red.** The guard covers `--tx` and `--tx2`
+only.
+
+**It was almost certainly excluded because it failed** — you cannot add a pair to
+a `>= 4.5` assertion at 3.04 — **and when that reason expired, nothing said so.**
+That is the `OrgView` shape, and worse in one respect: **there is no exemption
+list, so the omission is invisible.** `CONTRAST_PAIRS` reads like a complete list.
+
+**`LAI-247`, p2.** Not a mark against this task — **the lift is right and the gap
+predates it** — but the token LAI-041 spent two weeks on is the one the guard does
+not watch.
+
+### The tints did not move with their solids
+
+**Confirmed here**: `--purs` is `rgba(139, 92, 246, …)` — the **old** `--pur`
+`#8b5cf6` — while `--pur` is now `#6d3ddb`. Same for `--grns`, `--ambs`, `--reds`.
+Only `--accs`/`--accb` followed their solid.
+
+**Applying it exactly as the design has it was correct** — matching the design was
+the instruction, and D-020 makes the palette the owner's. **Flagging it as reading
+like an oversight rather than intent is exactly the right handling**: you did not
+decide it, and you did not let it pass unremarked. **It is going to the owner.**
