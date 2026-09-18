@@ -276,22 +276,76 @@
   margin-left: auto;
 }
 
-/* The rail sits beside the columns; below 1200px it drops under them. */
+/*
+ * The rail sits beside the columns; below 1200px it drops under them.
+ *
+ * **This row is the horizontal scroller, and the rail is inside it** (LAI-243).
+ * LAI-175 scrolled `.kanban` alone, which slid the lanes *underneath* a rail
+ * that never moved — the owner asked for the Live stream to travel with the
+ * board rather than stay pinned to the edge of the screen.
+ *
+ * **`flex: 1 1 0` with `min-width: min-content`, and the pair is the point.**
+ * `flex-basis: 0` sizes the strip from the *row*, so it grows into spare width
+ * on a wide screen. `min-content` — five `12.875rem` tracks plus four gaps,
+ * 1074px — stops it shrinking exactly where the lanes would start giving width
+ * back, so this row scrolls instead.
+ *
+ * **`flex: 1 0 auto` was the first attempt and was wrong**, measured: a
+ * `flex-basis: auto` grid sizes to its **max-content**, which `1fr` leaves
+ * unbounded, so lanes ballooned to 311px and the strip to 1602px before any
+ * scrolling was considered.
+ *
+ * **`min-width: 0` was the second, and was worse.** It stops the strip growing
+ * but lets the tracks overflow a box nothing scrolls — at 1440px the row
+ * reported no overflow while the grid spilled 161px past its own edge, which is
+ * the lanes-under-the-rail collision back again, silently.
+ */
 .board-main {
   display: flex;
   gap: 0.75rem;
   align-items: flex-start;
+  overflow-x: auto;
+  /*
+   * **A scroll container must be the containing block for what it scrolls.**
+   *
+   * Without this, absolutely-positioned descendants resolve against the page
+   * instead, so `overflow-x` never clips them and they extend the *document*.
+   * `.visually-hidden` is `position: absolute` with no coordinates (index.css,
+   * the canonical recipe), so each one sits at its static position — inside the
+   * scrolled-out part of the rail, a thousand pixels right of the viewport.
+   *
+   * Measured, and it is not a theory: the page gained a 146px horizontal
+   * scrollbar at 1280px while every box in the layout was correct, and the only
+   * elements whose right edge reached the document's width were two
+   * `span.visually-hidden` and their `<b>` siblings inside the rail's feed.
+   */
+  position: relative;
+  /*
+   * Clearance for the scrollbar, so it never paints over the last card in the
+   * tallest lane. `scrollbar-gutter` alone would not do it: macOS overlay
+   * scrollbars reserve nothing and appear *on* the content while scrolling.
+   */
+  padding-bottom: var(--space-2);
 }
 
 .board-main > .kanban,
 .board-main > .list {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 0;
+  min-width: min-content;
 }
 
 @media (max-width: 1200px) {
   .board-main {
     flex-direction: column;
+    /* Stacked, so there is no row to scroll and nothing to clear. */
+    overflow-x: visible;
+    padding-bottom: 0;
+  }
+  .board-main > .kanban,
+  .board-main > .list {
+    /* Full width again once the rail is underneath rather than beside. */
+    flex: 1 1 auto;
+    width: 100%;
   }
   .rail {
     width: 100%;
