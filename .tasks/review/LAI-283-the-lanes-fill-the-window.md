@@ -3,11 +3,12 @@ id: LAI-283
 title: The lanes fill the window instead of guessing at it
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-281
 started: 2026-09-18T22:40:00Z
+finished: 2026-09-18T22:52:00Z
 ---
 
 ## Why
