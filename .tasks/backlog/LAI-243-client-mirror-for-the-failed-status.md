@@ -56,3 +56,15 @@ This task is the instance, and it should not wait for it.
 **SHELL asked for this as a task rather than folding it into other work**, and
 the reason is the right one: *"precisely because 'nothing compares that list' is
 why it went unnoticed."* **A silent fix leaves no record of why it was needed.**
+
+---
+
+## A note on two commits that carry this id and are not this task
+
+**2026-09-03.** `aa845ca` and `45e685b` on `shell` are tagged `[LAI-243]` and
+belong to **LAI-244** (*the Live stream rail scrolls with the lanes*). SHELL and
+CHIEF filed two tasks as `LAI-243` seconds apart; SHELL's renumbered to `244`
+**after those commits had landed**, and §4 forbids rewriting them.
+
+**They stand wrong, deliberately.** If you are following this id through the
+history, those two are not yours. `CLAUDE.md` §3 records the shape.

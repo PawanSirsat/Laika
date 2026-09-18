@@ -374,6 +374,20 @@ Use the lowest unused number **in your own range**, checked across every branch:
 git log --all --name-only --format= -- .tasks/ | grep -o 'LAI-[0-9]*' | sort -u
 ```
 
+**"Lowest unused number" is not a lock against *yourself* either.** Two filings
+minutes apart, straddling a renumber, both take the same id — SHELL did it on
+2026-09-03: `LAI-243` collided with CHIEF's, renumbered to `244`, and a second
+task filed from a *"lowest free"* check taken **before that rename landed** took
+`244` as well. **Re-run the check immediately before each `git mv`, not once per
+sitting.**
+
+**And a renumber does not reach commits already made.** SHELL's two LAI-244
+commits still carry `[LAI-243]`, which now names a different task. **§4 forbids
+rewriting them and they stand wrong** — so the renumbered task records the stale
+ids, and **the task that inherited the number records that commits bearing it are
+not its own.** A reader following an id must be able to find that out from either
+end.
+
 Ids issued before 2026-08-24 (`LAI-001`–`LAI-026`) keep their numbers whoever
 created them. **Never renumber an existing task** — ids are referenced by
 `depends-on`, `discovered-from` and commit messages, and renumbering is what

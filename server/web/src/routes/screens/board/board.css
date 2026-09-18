@@ -137,20 +137,17 @@
  * within rounding. The bug was a floor with **nowhere to overflow to**: the grid
  * grew past its flex box and painted under `BoardRail`, which shares the row.
  *
- * `overflow-x: auto` here is what was missing, **and it is what carries the
- * property on its own.** This box is sized by the space the rail leaves and the
- * tracks scroll inside it, so it never grows and can never reach the rail.
+ * **The scroller is `.board-main`, not this element** (LAI-243). LAI-175 put
+ * `overflow-x: auto` here, which scrolled the lanes *under* a pinned rail — the
+ * owner asked for the rail to travel with them, so the scroll container is the
+ * row that holds both. See `board-rail.css`.
  *
- * **Not `min-width: 0`, though that is next to it in board-rail.css.** Measured,
- * because the first version of this comment credited it: removing that
- * declaration changes nothing — `min-width` computes to `0px` either way, since
- * a flex item that is a scroll container resolves `min-width: auto` to zero. The
- * declaration is harmless and worth keeping for anyone who later removes
- * `overflow-x`, but it is not the guard.
+ * What stays here is the floor. The tracks are wider than the row when five
+ * lanes plus the rail do not fit, and `.board-main` scrolls them as one.
  *
- * The guard is `test/browser/board-lane-scroll.test.ts`, which measures the
+ * The guard is `test/browser/board-lane-scroll.test.ts`, which measures the lane
  * strip's right edge against the rail's left edge — because a comment is not a
- * guard, which is how this collision happened the first time.
+ * guard, which is how the collision this rule used to cause happened at all.
  *
  * The `max-width: 1100px` special case is gone rather than narrowed: scrolling
  * is now the behaviour at every width, so there is no second case to keep in
@@ -161,13 +158,6 @@
   grid-template-columns: repeat(5, minmax(12.875rem, 1fr));
   gap: 0.6875rem;
   align-items: start;
-  overflow-x: auto;
-  /*
-   * Clearance for the scrollbar, so it never paints over the last card in the
-   * tallest lane. `scrollbar-gutter` alone would not do it: macOS overlay
-   * scrollbars reserve nothing and appear *on* the content while scrolling.
-   */
-  padding-bottom: var(--space-2);
 }
 
 .lane {
