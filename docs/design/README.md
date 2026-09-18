@@ -9,32 +9,50 @@ contain no Skynet branding.
 imported, bundled, or executed by the application. UI tasks implement functional
 React against the real API and match this *style*; they do not lift this markup.
 
-## ⚠ These files are behind the owner's live design (2026-09-03)
+## `Laika Prototype.dc.html` was refreshed 2026-09-03 — the rest were already current
 
-**`Laika Prototype.dc.html` is dated 24 August and is 94 hunks / ~16.5 KB behind
-the design in the owner's tool.** `support.js` is byte-identical.
+**Five of the six files are byte-identical to the owner's live design.** Only the
+prototype had moved, and it has now been replaced:
 
-**What is in the live copy and not here** (SHELL, reading it through the design
-MCP, D-059):
+| | |
+| --- | --- |
+| `Laika - All Screens.dc.html` | **identical** |
+| `Laika 01 - Kanban Board.dc.html` | **identical** |
+| `Laika 02-04 - Task, Capacity, Dashboard.dc.html` | **identical** |
+| `Laika 08-10 - Meeting, Tokens, Org.dc.html` | **identical** |
+| `support.js` | **identical** |
+| **`Laika Prototype.dc.html`** | **was 94 hunks behind — refreshed** |
+| `Laika 05-07 - Auth, Setup, Projects.dc.html` | **not verified** — the export returned it inline rather than persisting it, so it was never hashed |
+
+**Hashed here, not taken on report.** An earlier version of this warning said the
+whole directory was August-vintage; **that was broader than the evidence and told
+a builder to distrust four files that were current.** The claim was one file's and
+it was written as six.
+
+**`Laika 05-07` is the one open question.** It is the detailed source for login,
+first boot and project home (see below), and **"probably matches, like the other
+five" is a guess.** Treat it as current and say so if you build from it.
+
+### What the refresh brought in (D-059)
 
 - the **SPACES** sidebar, replacing WORK / REVIEW
 - a task as an **840px drawer over a dimmed board**, not a screen
-- **13 lifted colour tokens** — `--tx3 #8d94a4 → #606775`, `--acc #2f6bff →
-  #2158e0`, and the same for red / green / amber / purple; dark `--tx3 #71717d →
-  #9a9aa4`
+- **nine tokens we hold** lifted for contrast — `--tx3 #8d94a4 → #606775`,
+  `--acc #2f6bff → #2158e0`, and the same for red / green / amber / purple; dark
+  `--tx3 #71717d → #9a9aa4`. **Five more changed in the design and are not ours**
+  — `--mk/--ta/--sv/--jd/--rb` are avatar colours we derive in `avatar-color.ts`
+  and have never stored. **It is nine, not thirteen.**
 - **responsive rules**: rail hidden ≤1180px, secondary chrome ≤1000px, presence
   ≤820px, grid `min-width` plus five tracks
 - `navMini` (a collapsible sidebar), a `list` screen, custom scrollbars
-- files this directory does not have at all: `Skynet Board v3 - Assignees.dc.html`
-  and `screenshots/`
 
-**Until these files are refreshed, the live design is canonical and these are
-history.** A builder working from this directory is working from August. **Say in
-the task which copy you built against** — SHELL is doing that.
+**The responsive rules are the case to be careful with**: the design's answer to
+the board-width problem **differs from what LAI-175 and LAI-244 shipped.** Neither
+is wrong — they were built against the previous copy, and reconciling them is a
+decision, not a merge.
 
-**The responsive rules are the case to be careful with**: the live design has its
-own answer to the board-width problem, and it **differs from what LAI-175 and
-LAI-244 shipped.** Neither is wrong yet; they were built against this copy.
+**Known to exist and not exported**: `Skynet Board v3 - Assignees.dc.html` and
+`screenshots/`.
 
 ## Which file is canonical
 

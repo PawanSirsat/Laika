@@ -8,8 +8,8 @@
 <body>
 <x-dc>
 <helmet data-dc-atomics><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin=""><link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@500;600;700&amp;display=swap" rel="stylesheet"><style>
-:root{--page:#eef0f6;--tub:#e7e9f1;--card:#ffffff;--bd:rgba(15,23,42,.09);--bd2:rgba(15,23,42,.2);--tx:#171a21;--tx2:#5a6070;--tx3:#8d94a4;--acc:#2f6bff;--accs:rgba(47,107,255,.09);--accb:rgba(47,107,255,.34);--pur:#8b5cf6;--purs:rgba(139,92,246,.11);--purb:rgba(139,92,246,.36);--grn:#11996a;--grns:rgba(17,153,106,.1);--grnb:rgba(17,153,106,.3);--amb:#b6740b;--ambs:rgba(182,116,11,.1);--ambb:rgba(182,116,11,.3);--red:#d93a45;--reds:rgba(217,58,69,.08);--redb:rgba(217,58,69,.32);--shadow:0 1px 2px rgba(15,23,42,.07);--mk:#2f6bff;--ta:#0f7d63;--sv:#8b5cf6;--jd:#c2410c;--rb:#475569}
-.dk{--page:#0c0c0f;--tub:#141418;--card:#1b1b20;--bd:rgba(255,255,255,.08);--bd2:rgba(255,255,255,.2);--tx:#f3f3f5;--tx2:#a4a4ae;--tx3:#71717d;--acc:#5b8cff;--accs:rgba(91,140,255,.14);--accb:rgba(91,140,255,.4);--pur:#a78bfa;--purs:rgba(167,139,250,.14);--purb:rgba(167,139,250,.4);--grn:#2fd08a;--grns:rgba(47,208,138,.13);--grnb:rgba(47,208,138,.32);--amb:#f0ac47;--ambs:rgba(240,172,71,.13);--ambb:rgba(240,172,71,.34);--red:#f4636d;--reds:rgba(244,99,109,.12);--redb:rgba(244,99,109,.36);--shadow:0 1px 2px rgba(0,0,0,.3);--mk:#3d6fd6;--ta:#18916f;--sv:#8f6ee0;--jd:#cf5a24;--rb:#5b6a7f}
+:root{--page:#eef0f6;--tub:#e7e9f1;--card:#ffffff;--bd:rgba(15,23,42,.09);--bd2:rgba(15,23,42,.2);--tx:#171a21;--tx2:#5a6070;--tx3:#606775;--acc:#2158e0;--accs:rgba(33,88,224,.09);--accb:rgba(33,88,224,.34);--pur:#6d3ddb;--purs:rgba(139,92,246,.11);--purb:rgba(139,92,246,.36);--grn:#0d7d56;--grns:rgba(17,153,106,.1);--grnb:rgba(17,153,106,.3);--amb:#8f5a08;--ambs:rgba(182,116,11,.1);--ambb:rgba(182,116,11,.3);--red:#c42630;--reds:rgba(217,58,69,.08);--redb:rgba(217,58,69,.32);--shadow:0 1px 2px rgba(15,23,42,.07);--mk:#2558d6;--ta:#0c6b54;--sv:#6d3ddb;--jd:#a8380a;--rb:#475569}
+.dk{--page:#0c0c0f;--tub:#141418;--card:#1b1b20;--bd:rgba(255,255,255,.08);--bd2:rgba(255,255,255,.2);--tx:#f3f3f5;--tx2:#a4a4ae;--tx3:#9a9aa4;--acc:#5b8cff;--accs:rgba(91,140,255,.14);--accb:rgba(91,140,255,.4);--pur:#a78bfa;--purs:rgba(167,139,250,.14);--purb:rgba(167,139,250,.4);--grn:#2fd08a;--grns:rgba(47,208,138,.13);--grnb:rgba(47,208,138,.32);--amb:#f0ac47;--ambs:rgba(240,172,71,.13);--ambb:rgba(240,172,71,.34);--red:#f4636d;--reds:rgba(244,99,109,.12);--redb:rgba(244,99,109,.36);--shadow:0 1px 2px rgba(0,0,0,.3);--mk:#3d6fd6;--ta:#18916f;--sv:#8f6ee0;--jd:#cf5a24;--rb:#5b6a7f}
 body{margin:0;background:#e9e8e4;font-family:'Plus Jakarta Sans',system-ui,sans-serif}
 a{color:#2f6bff}a:hover{color:#1d4fd0}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
@@ -30,92 +30,199 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 .dv-next{margin:22px 0 0;font-size:12px;line-height:1.5;font-family:system-ui,sans-serif;color:rgba(0,0,0,.5)}
 .dv-bar{display:flex;align-items:center;gap:10px;margin:0 0 18px}
 .dv-btn{display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;border:1px solid rgba(0,0,0,.14);border-radius:8px;background:#fff;font-size:12px;font-weight:600;line-height:1;font-family:system-ui,sans-serif;color:#1a1a1a;cursor:pointer}
+
+*{scrollbar-width:thin;scrollbar-color:var(--bd2) transparent}
+@media (max-width:1180px){.lk-rail{display:none!important}.lk-grid{min-width:1010px!important;grid-template-columns:repeat(5,minmax(192px,1fr))!important}}
+@media (max-width:900px){.lk-grid{min-width:880px!important;grid-template-columns:repeat(5,minmax(166px,1fr))!important}}
+@media (max-width:1000px){.lk-sub{display:none!important}}
+@media (max-width:820px){.lk-presence{display:none!important}}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--bd2);border-radius:5px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--tx3);background-clip:content-box}
+::-webkit-scrollbar-corner{background:transparent}
 </style></helmet>
 
-<div class="{{ themeClass }}" style="width:1600px;min-height:1000px;background:var(--page);color:var(--tx);font-family:'Plus Jakarta Sans',system-ui,sans-serif;display:flex;overflow:hidden">
-<div style="width:212px;flex:none;box-sizing:border-box;background:var(--card);border-right:1px solid var(--bd);display:flex;flex-direction:column">
-<div style="padding:14px 13px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:9px">
-<div style="width:28px;height:28px;flex:none;border-radius:9px;background:var(--tx);display:flex;align-items:center;justify-content:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--card)" stroke-width="2"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path></svg></div>
-<div style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:14px;font-weight:800;line-height:1;letter-spacing:-.02em">Laika</span><span style="font-size:9px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">laika-core · v0.4</span></div>
+<div class="{{ themeClass }}" style="width:100%;height:100dvh;min-height:460px;position:relative;background:var(--page);color:var(--tx);font-family:'Plus Jakarta Sans',system-ui,sans-serif;display:flex;overflow:hidden">
+<div style="width:{{ navW }};flex:none;box-sizing:border-box;background:var(--card);border-right:1px solid var(--bd);display:flex;flex-direction:column;min-height:0;overflow:hidden;transition:width .16s ease">
+<div style="flex:none;padding:14px 12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:9px">
+<div onClick="{{ toggleNav }}" title="{{ navTip }}" style="width:28px;height:28px;flex:none;border-radius:9px;background:var(--tx);display:flex;align-items:center;justify-content:center;cursor:pointer"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--card)" stroke-width="2"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path></svg></div>
+<sc-if value="{{ navWide }}" hint-placeholder-val="{{ true }}"><div style="display:flex;flex-direction:column;gap:3px;min-width:0"><span style="font-size:14px;font-weight:800;line-height:1;letter-spacing:-.02em">Laika</span><span style="font-size:9px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Kvelld Dynamics</span></div></sc-if>
 </div>
-<div style="flex:1;padding:10px 8px;display:flex;flex-direction:column;gap:1px">
+<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:10px 8px;display:flex;flex-direction:column;gap:1px">
 <sc-for list="{{ nav }}" as="n" hint-placeholder-count="15">
-<sc-if value="{{ n.header }}" hint-placeholder-val="{{ false }}">
-<div style="padding:12px 8px 5px;font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.1em;color:var(--tx3)">{{ n.label }}</div>
+<sc-if value="{{ n.plainHead }}" hint-placeholder-val="{{ false }}">
+<div style="padding:12px 8px 5px;font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.1em;color:var(--tx3);white-space:nowrap;overflow:hidden">{{ n.label }}</div>
+</sc-if>
+<sc-if value="{{ n.isSpacesHead }}" hint-placeholder-val="{{ false }}">
+<div style="display:flex;align-items:center;gap:4px;margin:10px 0 3px;padding:0 4px 0 2px;height:26px">
+<div onClick="{{ n.toggleSection }}" title="{{ n.sectionTip }}" style="flex:1;min-width:0;display:flex;align-items:center;gap:5px;height:26px;padding:0 4px;border-radius:7px;cursor:pointer" style-hover="background:var(--tub)">
+<svg style="flex:none;color:var(--tx3)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="{{ n.caret }}"></path></svg>
+<span style="flex:1;min-width:0;font-size:11.5px;font-weight:700;line-height:1;color:var(--tx2);white-space:nowrap">Spaces</span>
+</div>
+<div title="Create space" style="flex:none;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--tx3);cursor:pointer" style-hover="background:var(--tub);color:var(--tx)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg></div>
+<div title="More actions" style="flex:none;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--tx3);cursor:pointer" style-hover="background:var(--tub);color:var(--tx)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><circle cx="5" cy="12" r="1.2"></circle><circle cx="12" cy="12" r="1.2"></circle><circle cx="19" cy="12" r="1.2"></circle></svg></div>
+</div>
+</sc-if>
+<sc-if value="{{ n.miniRule }}" hint-placeholder-val="{{ false }}">
+<div style="margin:8px 6px 5px;height:1px;background:var(--bd)"></div>
 </sc-if>
 <sc-if value="{{ n.item }}" hint-placeholder-val="{{ true }}">
-<div onClick="{{ n.go }}" style="display:flex;align-items:center;gap:8px;height:31px;padding:0 9px;border-radius:8px;background:{{ n.bg }};cursor:pointer" style-hover="background:var(--tub)">
+<div onClick="{{ n.go }}" title="{{ n.label }}" style="display:flex;align-items:center;gap:8px;height:31px;padding:0 9px;border-radius:8px;background:{{ n.bg }};cursor:pointer;overflow:hidden" style-hover="background:var(--tub)">
 <span style="width:4px;height:14px;border-radius:2px;background:{{ n.dot }};flex:none"></span>
+<sc-if value="{{ navWide }}" hint-placeholder-val="{{ true }}">
 <span style="flex:1;min-width:0;font-size:12px;font-weight:{{ n.wt }};line-height:1;color:{{ n.fg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ n.label }}</span>
+<sc-if value="{{ n.isMore }}" hint-placeholder-val="{{ false }}"><svg style="flex:none;color:var(--tx3)" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m9 6 6 6-6 6"></path></svg></sc-if>
 <span style="flex:none;font-size:9px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ n.badge }}</span>
+</sc-if>
+<sc-if value="{{ navMini }}" hint-placeholder-val="{{ false }}">
+<span style="flex:none;width:18px;text-align:center;font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ n.fg }}">{{ n.abbr }}</span>
+</sc-if>
 </div>
 </sc-if>
 </sc-for>
 </div>
-<div style="padding:11px 12px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:9px">
-<div onClick="{{ toggleTheme }}" style="display:flex;align-items:center;justify-content:center;height:29px;border:1px solid var(--bd);border-radius:8px;font-size:11px;font-weight:700;line-height:1;color:var(--tx2);cursor:pointer">{{ themeLabel }}</div>
-<div style="display:flex;align-items:center;gap:8px"><span style="width:26px;height:26px;flex:none;border-radius:50%;background:{{ meAv }};display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:{{ meFg }}">{{ meIni }}</span><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;font-weight:700;line-height:1">Mira Kellner</span><span style="font-size:8.5px;font-weight:700;line-height:1;letter-spacing:.05em;color:var(--pur)">ADMIN</span></span></div>
+<div style="flex:none;padding:11px 12px;border-top:1px solid var(--bd);display:flex;flex-direction:column;gap:9px">
+<div onClick="{{ toggleTheme }}" title="{{ themeLabel }}" style="display:flex;align-items:center;justify-content:center;height:29px;border:1px solid var(--bd);border-radius:8px;font-size:11px;font-weight:700;line-height:1;color:var(--tx2);cursor:pointer;overflow:hidden;white-space:nowrap">{{ themeBtn }}</div>
+<div style="display:flex;align-items:center;gap:8px"><span style="width:26px;height:26px;flex:none;border-radius:50%;background:{{ meAv }};display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:{{ meFg }}">{{ meIni }}</span><sc-if value="{{ navWide }}" hint-placeholder-val="{{ true }}"><span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;font-weight:700;line-height:1;white-space:nowrap">Mira Kellner</span><span style="font-size:8.5px;font-weight:700;line-height:1;letter-spacing:.05em;color:var(--pur)">ADMIN</span></span></sc-if></div>
 </div>
 </div>
-<div style="flex:1;min-width:0;display:flex;flex-direction:column">
+<sc-if value="{{ spacesPop }}" hint-placeholder-val="{{ false }}">
+<div onClick="{{ closePop }}" style="position:absolute;inset:0;z-index:40"></div>
+<div style="position:absolute;left:{{ popLeft }};top:132px;z-index:41;width:284px;background:var(--card);border:1px solid var(--bd2);border-radius:12px;box-shadow:0 18px 44px rgba(15,23,42,.28);padding:12px;display:flex;flex-direction:column;gap:10px;animation:pop .14s ease">
+<div style="display:flex;align-items:center;gap:8px">
+<span style="flex:1;min-width:0;font-size:13px;font-weight:800;line-height:1;letter-spacing:-.014em">Spaces</span>
+<div onClick="{{ closePop }}" style="flex:none;width:22px;height:22px;display:flex;align-items:center;justify-content:center;border-radius:6px;color:var(--tx2);cursor:pointer" style-hover="background:var(--tub)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M18 6 6 18M6 6l12 12"></path></svg></div>
+</div>
+<div style="display:flex;align-items:center;gap:8px;height:34px;padding:0 10px;border:1px solid var(--bd2);border-radius:9px;background:var(--page);color:var(--tx3)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span style="font-size:11.5px;font-weight:500;line-height:1">Search all spaces</span></div>
+<sc-if value="{{ popEmpty }}" hint-placeholder-val="{{ false }}">
+<div style="padding:16px 8px;font-size:11px;font-weight:500;line-height:1.5;color:var(--tx3);text-wrap:pretty">Every space is already pinned above. Search to find archived ones.</div>
+</sc-if>
+<div style="display:flex;flex-direction:column;gap:1px">
+<sc-for list="{{ popSpaces }}" as="s" hint-placeholder-count="3">
+<div onClick="{{ s.pick }}" style="display:flex;align-items:center;gap:9px;height:38px;padding:0 8px;border-radius:8px;cursor:pointer" style-hover="background:var(--tub)">
+<span style="flex:none;width:24px;height:24px;border-radius:7px;background:{{ s.c }};display:flex;align-items:center;justify-content:center;font-size:8.5px;font-weight:800;line-height:1;color:#fff">{{ s.key }}</span>
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px"><span style="font-size:12px;font-weight:700;line-height:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</span><span style="font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.meta }}</span></span>
+</div>
+</sc-for>
+</div>
+<div onClick="{{ viewAll }}" style="display:flex;align-items:center;gap:8px;height:34px;padding:0 8px;border-top:1px solid var(--bd);margin-top:2px;padding-top:10px;color:var(--tx2);cursor:pointer" style-hover="color:var(--tx)">
+<svg style="flex:none" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M4 7h13M4 12h16M4 17h9"></path></svg>
+<span style="flex:1;min-width:0;font-size:12px;font-weight:700;line-height:1">View all spaces</span>
+<svg style="flex:none;color:var(--tx3)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m9 6 6 6-6 6"></path></svg>
+</div>
+</div>
+</sc-if>
+<div style="flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;overflow:hidden">
+<sc-if value="{{ projectScoped }}" hint-placeholder-val="{{ true }}">
+<div style="flex:none;background:var(--card);border-bottom:1px solid var(--bd);padding:13px 18px 0;display:flex;flex-direction:column;gap:11px">
+<div style="display:flex;align-items:center;gap:10px;flex-wrap:nowrap">
+<div style="flex:none;display:flex;align-items:center;gap:10px;min-width:0">
+<span style="flex:none;width:26px;height:26px;border-radius:7px;background:var(--acc);display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"><path d="M5 20V9M12 20V4M19 20v-7"></path></svg></span>
+<span style="flex:none;font-size:19px;font-weight:800;line-height:1.1;letter-spacing:-.024em">{{ projName }}</span>
+<div title="4 members · 2 agents running" style="flex:none;display:flex;align-items:center;height:28px;padding:0 4px 0 3px;border:1px solid var(--bd);border-radius:8px;gap:0">
+<sc-for list="{{ members }}" as="m" hint-placeholder-count="4">
+<span style="width:21px;height:21px;border-radius:50%;background:{{ m.bg }};border:1.5px solid var(--card);margin-left:{{ m.ml }};display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:800;line-height:1;color:{{ m.fg }}">{{ m.ini }}</span>
+</sc-for>
+<span style="margin-left:5px;padding:0 4px;font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">+1</span>
+</div>
+<div title="Space settings" style="flex:none;width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--tx2);cursor:pointer" style-hover="background:var(--tub)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><circle cx="5" cy="12" r="1.3"></circle><circle cx="12" cy="12" r="1.3"></circle><circle cx="19" cy="12" r="1.3"></circle></svg></div>
+</div>
+<div style="flex:1;min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:8px;row-gap:8px;flex-wrap:wrap">
+<div style="flex:none;display:flex;align-items:center;gap:5px;padding:4px 8px 4px 6px;border-radius:20px;background:var(--grns);border:1px solid var(--grnb)"><span style="width:5px;height:5px;border-radius:50%;background:var(--grn);animation:pulse 2s ease-in-out infinite"></span><span style="font-size:9px;font-weight:700;line-height:1;letter-spacing:.06em;color:var(--grn)">LIVE</span></div>
+<div class="lk-sub" style="flex:none;display:flex;align-items:center;gap:7px;height:30px;width:132px;padding:0 10px;border:1px solid var(--bd);border-radius:9px;background:var(--page);color:var(--tx3)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span style="font-size:11.5px;font-weight:500;line-height:1">Search</span></div>
+<div onClick="{{ toggleAgentOnly }}" title="Show only agent-authored work" style="flex:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid {{ agentBd }};background:{{ agentBg }};border-radius:9px;font-size:11.5px;font-weight:700;line-height:1;color:{{ agentFg }};cursor:pointer" style-hover="border-color:var(--bd2)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9 14h.01M15 14h.01"></path></svg>Agents {{ agentCount }}</div>
+<div onClick="{{ cyclePrio }}" style="flex:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 10px;border:1px solid {{ prioBd }};background:{{ prioBg }};border-radius:9px;font-size:11.5px;font-weight:700;line-height:1;color:{{ prioFg }};cursor:pointer" style-hover="border-color:var(--bd2)">{{ prioLabel }}</div>
+<div style="flex:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:9px;background:var(--acc);color:#fff;font-size:12px;font-weight:700;line-height:1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"></path></svg>Create</div>
+</div>
+</div>
+<div style="display:flex;align-items:center;gap:2px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain">
+<sc-for list="{{ views }}" as="v" hint-placeholder-count="7">
+<div onClick="{{ v.go }}" style="flex:none;display:flex;align-items:center;gap:6px;height:34px;padding:0 11px;border-bottom:{{ v.bd }};color:{{ v.fg }};font-size:12.5px;font-weight:{{ v.wt }};line-height:1;cursor:pointer;white-space:nowrap" style-hover="color:var(--tx)">{{ v.label }}<sc-if value="{{ v.hasBadge }}" hint-placeholder-val="{{ false }}"><span style="font-size:8.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--pur);background:var(--purs);border-radius:4px;padding:3px 4px">{{ v.badge }}</span></sc-if></div>
+</sc-for>
+</div>
+</div>
+</sc-if>
 <sc-if value="{{ isBoard }}" hint-placeholder-val="{{ true }}">
-<div style="padding:10px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;flex-direction:column;align-items:stretch;gap:9px">
+<div style="flex:none;padding:10px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;flex-direction:column;align-items:stretch;gap:9px">
 <div style="display:flex;align-items:center;gap:10px">
 <div onClick="{{ pickAll }}" style="flex:none;display:flex;align-items:center;height:34px;padding:0 11px;border:1px solid {{ allBd }};background:{{ allBg }};border-radius:8px;font-size:11px;font-weight:700;line-height:1;color:{{ allFg }};cursor:pointer">All sprints</div>
-<div style="flex:1;min-width:0;display:flex;gap:6px">
+<div style="flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px">
 <sc-for list="{{ sprintChips }}" as="s" hint-placeholder-count="4">
 <div onClick="{{ s.pick }}" style="flex:1 1 0;min-width:0;box-sizing:border-box;height:34px;padding:0 9px;display:flex;flex-direction:column;justify-content:center;gap:4px;border-radius:8px;background:{{ s.bg }};border:1px solid {{ s.bd }};cursor:pointer" style-hover="border-color:var(--bd2)">
-<div style="display:flex;align-items:center;gap:5px;min-width:0"><span style="flex:none;font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.fg }}">{{ s.id }}</span><span style="flex:1;min-width:0;font-size:10px;font-weight:600;line-height:1;color:{{ s.nameFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</span><span style="flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.fg }}">{{ s.frac }}</span></div>
+<div style="display:flex;align-items:center;gap:5px;min-width:0"><span style="flex:none;font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.fg }}">{{ s.id }}</span><span title="{{ s.name }}" style="flex:1;min-width:0;font-size:10px;font-weight:600;line-height:1;color:{{ s.nameFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</span><span style="flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.fg }}">{{ s.frac }}</span></div>
 <div style="height:2px;border-radius:1px;background:var(--tub);overflow:hidden"><div style="height:100%;width:{{ s.pct }};background:{{ s.barFg }}"></div></div>
 </div>
 </sc-for>
 </div>
-<div onClick="{{ goSprints }}" style="flex:none;display:flex;align-items:center;gap:6px;height:34px;padding:0 11px;border:1px solid var(--bd);border-radius:8px;font-size:11px;font-weight:700;line-height:1;color:var(--tx2);cursor:pointer" style-hover="border-color:var(--bd2)">Sprint detail →</div>
+<div title="{{ sprintGoal }}" style="flex:none;display:flex;align-items:center;height:34px;border:1px solid var(--bd);border-radius:8px;overflow:hidden">
+<span style="padding:0 10px;display:flex;align-items:baseline;gap:5px"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">DONE</span><span style="font-size:12px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sDone }}<span style="font-size:9px;color:var(--tx3)">/{{ sTotal }}</span></span></span>
+<span style="padding:0 10px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--red)">BLK</span><span style="font-size:12px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--red)">{{ sBlocked }}</span></span>
+<span class="lk-sub" style="padding:0 10px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">LEFT</span><span style="font-size:12px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sDays }}</span></span>
 </div>
-<div style="display:flex;align-items:center;gap:11px;padding-top:9px;border-top:1px solid var(--bd)">
-<div style="width:34px;height:34px;flex:none;border-radius:50%;background:conic-gradient(var(--acc) {{ sRing }}, var(--tub) 0);display:flex;align-items:center;justify-content:center"><div style="width:26px;height:26px;border-radius:50%;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">{{ sPct }}</div></div>
-<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-<div style="display:flex;align-items:center;gap:7px"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.07em;padding:4px 6px;border-radius:5px;background:{{ sprintBadgeBg }};color:{{ sprintBadgeFg }}">{{ sprintBadge }}</span><span style="font-size:12px;font-weight:700;line-height:1;letter-spacing:-.01em">{{ sprintName }}</span><span style="font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ sprintDates }}</span></div>
-<div style="font-size:10.5px;font-weight:500;line-height:1.3;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ sprintGoal }}</div>
-</div>
-<div style="flex:none;display:flex;align-items:center">
-<div style="padding:0 11px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">DONE</span><span style="font-size:13px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sDone }}<span style="font-size:9.5px;color:var(--tx3)">/{{ sTotal }}</span></span></div>
-<div style="padding:0 11px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--red)">BLOCKED</span><span style="font-size:13px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--red)">{{ sBlocked }}</span></div>
-<div style="padding:0 11px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">WIP</span><span style="font-size:13px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sWip }}</span></div>
-<div style="padding:0 11px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">DAYS LEFT</span><span style="font-size:13px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sDays }}</span></div>
-</div>
+<div onClick="{{ goSprints }}" title="Sprint detail" style="flex:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:1px solid var(--bd);border-radius:8px;color:var(--tx2);cursor:pointer" style-hover="border-color:var(--bd2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m9 6 6 6-6 6"></path></svg></div>
 </div>
 </div></sc-if>
+<sc-if value="{{ isList }}" hint-placeholder-val="{{ false }}">
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page)">
+<div style="padding:14px 18px 18px">
+<div style="overflow-x:auto;overscroll-behavior-x:contain"><div style="min-width:940px;border:1px solid var(--bd);border-radius:12px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
+<div style="display:flex;align-items:center;padding:9px 14px;background:var(--page);border-bottom:1px solid var(--bd)">
+<span style="width:74px;flex:none;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">KEY</span>
+<span style="flex:1;min-width:0;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">SUMMARY</span>
+<span style="width:104px;flex:none;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">STATUS</span>
+<span style="width:42px;flex:none;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">PRI</span>
+<span style="width:150px;flex:none;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">ASSIGNEE</span>
+<span style="width:46px;flex:none;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">SPR</span>
+<span style="width:84px;flex:none;text-align:right;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">UPDATED</span>
+</div>
+<sc-for list="{{ listRows }}" as="r" hint-placeholder-count="8">
+<div onClick="{{ r.open }}" style="display:flex;align-items:center;padding:10px 14px;border-bottom:1px solid var(--bd);cursor:pointer" style-hover="background:var(--tub)">
+<span style="width:74px;flex:none;font-size:10.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">{{ r.key }}</span>
+<span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;padding-right:12px">
+<span style="display:flex;align-items:center;gap:7px;min-width:0"><sc-if value="{{ r.hasBlocked }}" hint-placeholder-val="{{ false }}"><span style="flex:none;font-size:9px;line-height:1">🔒</span></sc-if><span title="{{ r.title }}" style="flex:1;min-width:0;font-size:12.5px;font-weight:600;line-height:1.3;color:{{ r.titleFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.title }}</span></span>
+<span style="display:flex;align-items:center;gap:7px"><span style="font-size:9px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ r.labels }}</span><sc-if value="{{ r.hasBlocked }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;font-weight:700;line-height:1;color:var(--red)">{{ r.blockedBy }}</span></sc-if></span>
+</span>
+<span style="width:104px;flex:none"><span style="display:inline-flex;align-items:center;font-size:9px;font-weight:800;line-height:1;letter-spacing:.05em;color:{{ r.stFg }};background:{{ r.stBg }};border:1px solid {{ r.stBd }};border-radius:5px;padding:4px 6px">{{ r.status }}</span></span>
+<span style="width:42px;flex:none;font-size:10.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ r.prioFg }}">{{ r.prio }}</span>
+<span style="width:150px;flex:none;display:flex;align-items:center;gap:7px;min-width:0">
+<span style="position:relative;flex:none;width:22px;height:22px">
+<span style="display:flex;width:22px;height:22px;border-radius:50%;background:{{ r.avBg }};border:{{ r.avBd }};align-items:center;justify-content:center;font-size:8.5px;font-weight:800;line-height:1;color:{{ r.avFg }}">{{ r.ini }}</span>
+<sc-if value="{{ r.byAgent }}" hint-placeholder-val="{{ false }}"><span title="agent-authored" style="position:absolute;right:-3px;bottom:-3px;width:12px;height:12px;border-radius:4px;background:var(--pur);border:1.5px solid var(--card);display:flex;align-items:center;justify-content:center"><svg width="6" height="6" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.4"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4"></path></svg></span></sc-if>
+</span>
+<span title="{{ r.who }}" style="flex:1;min-width:0;font-size:11.5px;font-weight:600;line-height:1.2;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.who }}</span>
+</span>
+<span style="width:46px;flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ r.sprintTag }}</span>
+<span style="width:84px;flex:none;text-align:right;font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ r.updFg }}">{{ r.updated }}</span>
+</div>
+</sc-for>
+<div style="display:flex;align-items:center;gap:7px;padding:10px 14px;background:var(--page);font-size:10.5px;font-weight:600;line-height:1;color:var(--tx3)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>Create task</div>
+</div></div>
+</div>
+</div>
+</sc-if>
 <sc-if value="{{ isTimeline }}" hint-placeholder-val="{{ false }}">
-<div style="padding:10px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;flex-direction:column;align-items:stretch;gap:9px">
+<div style="flex:none;padding:10px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;flex-direction:column;align-items:stretch;gap:9px">
 <div style="display:flex;align-items:center;gap:10px">
 <div onClick="{{ pickAll }}" style="flex:none;display:flex;align-items:center;height:34px;padding:0 11px;border:1px solid {{ allBd }};background:{{ allBg }};border-radius:8px;font-size:11px;font-weight:700;line-height:1;color:{{ allFg }};cursor:pointer">All sprints</div>
-<div style="flex:1;min-width:0;display:flex;gap:6px">
+<div style="flex:1;min-width:0;display:flex;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px">
 <sc-for list="{{ sprintChips }}" as="s" hint-placeholder-count="4">
 <div onClick="{{ s.pick }}" style="flex:1 1 0;min-width:0;box-sizing:border-box;height:34px;padding:0 9px;display:flex;flex-direction:column;justify-content:center;gap:4px;border-radius:8px;background:{{ s.bg }};border:1px solid {{ s.bd }};cursor:pointer" style-hover="border-color:var(--bd2)">
-<div style="display:flex;align-items:center;gap:5px;min-width:0"><span style="flex:none;font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.fg }}">{{ s.id }}</span><span style="flex:1;min-width:0;font-size:10px;font-weight:600;line-height:1;color:{{ s.nameFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</span><span style="flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.fg }}">{{ s.frac }}</span></div>
+<div style="display:flex;align-items:center;gap:5px;min-width:0"><span style="flex:none;font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.fg }}">{{ s.id }}</span><span title="{{ s.name }}" style="flex:1;min-width:0;font-size:10px;font-weight:600;line-height:1;color:{{ s.nameFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ s.name }}</span><span style="flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ s.fg }}">{{ s.frac }}</span></div>
 <div style="height:2px;border-radius:1px;background:var(--tub);overflow:hidden"><div style="height:100%;width:{{ s.pct }};background:{{ s.barFg }}"></div></div>
 </div>
 </sc-for>
 </div>
-<div onClick="{{ goSprints }}" style="flex:none;display:flex;align-items:center;gap:6px;height:34px;padding:0 11px;border:1px solid var(--bd);border-radius:8px;font-size:11px;font-weight:700;line-height:1;color:var(--tx2);cursor:pointer" style-hover="border-color:var(--bd2)">Sprint detail →</div>
+<div title="{{ sprintGoal }}" style="flex:none;display:flex;align-items:center;height:34px;border:1px solid var(--bd);border-radius:8px;overflow:hidden">
+<span style="padding:0 10px;display:flex;align-items:baseline;gap:5px"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">DONE</span><span style="font-size:12px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sDone }}<span style="font-size:9px;color:var(--tx3)">/{{ sTotal }}</span></span></span>
+<span style="padding:0 10px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--red)">BLK</span><span style="font-size:12px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--red)">{{ sBlocked }}</span></span>
+<span class="lk-sub" style="padding:0 10px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">LEFT</span><span style="font-size:12px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sDays }}</span></span>
 </div>
-<div style="display:flex;align-items:center;gap:11px;padding-top:9px;border-top:1px solid var(--bd)">
-<div style="width:34px;height:34px;flex:none;border-radius:50%;background:conic-gradient(var(--acc) {{ sRing }}, var(--tub) 0);display:flex;align-items:center;justify-content:center"><div style="width:26px;height:26px;border-radius:50%;background:var(--card);display:flex;align-items:center;justify-content:center;font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">{{ sPct }}</div></div>
-<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:4px">
-<div style="display:flex;align-items:center;gap:7px"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.07em;padding:4px 6px;border-radius:5px;background:{{ sprintBadgeBg }};color:{{ sprintBadgeFg }}">{{ sprintBadge }}</span><span style="font-size:12px;font-weight:700;line-height:1;letter-spacing:-.01em">{{ sprintName }}</span><span style="font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ sprintDates }}</span></div>
-<div style="font-size:10.5px;font-weight:500;line-height:1.3;color:var(--tx2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ sprintGoal }}</div>
-</div>
-<div style="flex:none;display:flex;align-items:center">
-<div style="padding:0 11px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">DONE</span><span style="font-size:13px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sDone }}<span style="font-size:9.5px;color:var(--tx3)">/{{ sTotal }}</span></span></div>
-<div style="padding:0 11px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--red)">BLOCKED</span><span style="font-size:13px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--red)">{{ sBlocked }}</span></div>
-<div style="padding:0 11px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">WIP</span><span style="font-size:13px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sWip }}</span></div>
-<div style="padding:0 11px;display:flex;align-items:baseline;gap:5px;border-left:1px solid var(--bd)"><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx3)">DAYS LEFT</span><span style="font-size:13px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">{{ sDays }}</span></div>
-</div>
+<div onClick="{{ goSprints }}" title="Sprint detail" style="flex:none;width:34px;height:34px;display:flex;align-items:center;justify-content:center;border:1px solid var(--bd);border-radius:8px;color:var(--tx2);cursor:pointer" style-hover="border-color:var(--bd2)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m9 6 6 6-6 6"></path></svg></div>
 </div>
 </div></sc-if>
 <sc-if value="{{ archived }}" hint-placeholder-val="{{ false }}">
-<div style="padding:18px">
+<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box;padding:18px">
 <div style="border:1px dashed var(--bd2);border-radius:12px;padding:34px 18px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;background:var(--card)">
 <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--tx3)"><rect x="3" y="4" width="18" height="5" rx="1.5"></rect><path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M10 13h4"></path></svg>
 <div style="font-size:14px;font-weight:800;line-height:1.3">Closed sprint</div>
@@ -125,25 +232,14 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ boardLive }}" hint-placeholder-val="{{ true }}">
-<div style="width:100%;background:var(--page)">
-
-<div style="padding:12px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
-<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Board</span>
-<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">laika-core · v0.4 release</span>
-<div style="display:flex;align-items:center;gap:5px;padding:4px 8px 4px 6px;border-radius:20px;background:var(--grns);border:1px solid var(--grnb)"><span style="width:5px;height:5px;border-radius:50%;background:var(--grn);animation:pulse 2s ease-in-out infinite"></span><span style="font-size:9px;font-weight:700;line-height:1;letter-spacing:.06em;color:var(--grn)">LIVE · SSE</span></div>
-<div style="flex:1"></div>
-<div style="display:flex;align-items:center;gap:7px;height:31px;width:186px;padding:0 11px;border:1px solid var(--bd);border-radius:9px;background:var(--page);color:var(--tx3)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span style="font-size:11.5px;font-weight:500;line-height:1">Search tasks…</span><span style="margin-left:auto;font-size:9px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;border:1px solid var(--bd);border-radius:4px;padding:2px 4px">/</span></div>
-<div onClick="{{ toggleAgentOnly }}" style="display:flex;align-items:center;gap:6px;height:31px;padding:0 10px;border:1px solid {{ agentBd }};background:{{ agentBg }};border-radius:9px;font-size:11.5px;font-weight:700;line-height:1;color:{{ agentFg }};cursor:pointer" style-hover="border-color:var(--bd2)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9 14h.01M15 14h.01"></path></svg>Agent work {{ agentCount }}</div>
-<div onClick="{{ cyclePrio }}" style="display:flex;align-items:center;gap:6px;height:31px;padding:0 10px;border:1px solid {{ prioBd }};background:{{ prioBg }};border-radius:9px;font-size:11.5px;font-weight:700;line-height:1;color:{{ prioFg }};cursor:pointer" style-hover="border-color:var(--bd2)">{{ prioLabel }}</div>
-<div style="display:flex;align-items:center;gap:6px;height:31px;padding:0 12px;border-radius:9px;background:var(--acc);color:#fff;font-size:12px;font-weight:700;line-height:1"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"></path></svg>New task</div>
-</div>
+<div style="width:100%;flex:1;min-height:0;display:flex;flex-direction:column;overflow:hidden;background:var(--page)">
 
 <sc-if value="{{ showPresence }}" hint-placeholder-val="{{ true }}">
-<div style="padding:9px 18px;background:var(--page);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px">
+<div class="lk-presence" style="flex:none;height:48px;box-sizing:border-box;padding:7px 18px;background:var(--page);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:10px;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;white-space:nowrap">
 <span style="flex:none;font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">WORKING NOW</span>
-<div style="flex:1;display:flex;align-items:center;gap:7px;flex-wrap:wrap">
+<div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px">
 <sc-for list="{{ presence }}" as="p" hint-placeholder-count="5">
-<div onClick="{{ p.filter }}" title="{{ p.tip }}" style="display:flex;align-items:center;gap:8px;height:34px;padding:2px 11px 2px 3px;border-radius:20px;background:{{ p.chipBg }};border:1px solid {{ p.chipBd }};cursor:pointer" style-hover="border-color:var(--bd2)">
+<div onClick="{{ p.filter }}" title="{{ p.tip }}" style="flex:none;display:flex;align-items:center;gap:8px;height:32px;padding:2px 10px 2px 3px;border-radius:20px;background:{{ p.chipBg }};border:1px solid {{ p.chipBd }};cursor:pointer" style-hover="border-color:var(--bd2)">
 <span style="position:relative;width:27px;height:27px;flex:none">
 <span style="display:flex;width:27px;height:27px;border-radius:50%;background:{{ p.avBg }};align-items:center;justify-content:center;font-size:10px;font-weight:800;line-height:1;color:{{ p.avFg }}">{{ p.ini }}</span>
 <sc-if value="{{ p.agentLive }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:-3px;bottom:-3px;width:14px;height:14px;border-radius:5px;background:var(--pur);border:2px solid var(--page);display:flex;align-items:center;justify-content:center"><svg width="7" height="7" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4"></path></svg></span></sc-if>
@@ -156,24 +252,26 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </sc-for>
 </div>
 <sc-if value="{{ hasFilter }}" hint-placeholder-val="{{ false }}"><div onClick="{{ clearFilter }}" style="flex:none;display:flex;align-items:center;height:28px;padding:0 10px;border-radius:8px;border:1px solid var(--accb);background:var(--accs);font-size:11px;font-weight:700;line-height:1;color:var(--acc);cursor:pointer">{{ filterLabel }} ✕</div></sc-if>
-<span style="flex:none;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ presenceNote }}</span>
+<span class="lk-sub" style="flex:none;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3);white-space:nowrap">{{ presenceNote }}</span>
 </div>
 </sc-if>
 
-<div style="display:flex;gap:12px;padding:14px 18px 18px;align-items:flex-start">
-<div style="flex:1;min-width:0;display:grid;grid-template-columns:repeat(5,1fr);gap:11px">
+<div style="flex:1;min-height:0;display:flex;gap:12px;padding:14px 18px 18px;align-items:stretch;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain">
+<div class="lk-grid" style="flex:1;min-width:1300px;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(248px,1fr));gap:12px">
 <sc-for list="{{ columns }}" as="col" hint-placeholder-count="5">
-<div style="min-width:0;background:var(--tub);border-radius:12px;padding:11px 9px 11px;display:flex;flex-direction:column;gap:9px">
-<div style="display:flex;align-items:center;gap:6px;padding:0 3px">
+<div style="min-width:0;min-height:0;box-sizing:border-box;background:var(--tub);border-radius:12px;padding:12px 10px;display:flex;flex-direction:column;gap:10px;overflow:hidden">
+<div style="flex:none;display:flex;align-items:center;gap:7px;padding:0 4px">
 <span style="width:7px;height:7px;flex:none;border-radius:50%;background:{{ col.dot }}"></span>
-<span style="font-size:10.5px;font-weight:800;line-height:1;letter-spacing:.08em;color:{{ col.tc }};white-space:nowrap">{{ col.name }}</span>
-<span style="font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ col.cntFg }};background:{{ col.cntBg }};border:1px solid {{ col.cntBd }};border-radius:5px;padding:3px 5px">{{ col.n }}</span>
-<span style="margin-left:auto;flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ col.wipFg }}">{{ col.wip }}</span>
+<span style="flex:none;font-size:10.5px;font-weight:800;line-height:1;letter-spacing:.07em;color:{{ col.tc }};white-space:nowrap">{{ col.name }}</span>
+<span style="flex:none;font-size:9.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ col.cntFg }};background:{{ col.cntBg }};border:1px solid {{ col.cntBd }};border-radius:5px;padding:3px 4px">{{ col.n }}</span>
+<span style="flex:1;min-width:0"></span>
+<span title="{{ col.wip }}" style="flex:none;font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ col.wipFg }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:82px">{{ col.wip }}</span>
 </div>
 
+<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:9px;padding-right:2px">
 <sc-for list="{{ col.cards }}" as="c" hint-placeholder-count="3">
-<div onClick="{{ c.select }}" style="background:var(--card);border:1px solid {{ c.bd }};border-radius:10px;box-shadow:{{ c.glow }};animation:{{ c.anim }};opacity:{{ c.op }};padding:11px 11px 10px;display:flex;flex-direction:column;gap:8px;cursor:pointer" style-hover="border-color:var(--bd2)">
-<div title="{{ c.title }}" style="font-size:12.5px;font-weight:600;line-height:1.38;letter-spacing:-.005em;color:{{ c.titleFg }};text-wrap:pretty">{{ c.title }}</div>
+<div onClick="{{ c.select }}" style="background:var(--card);border:1px solid {{ c.bd }};border-radius:9px;box-shadow:{{ c.glow }};animation:{{ c.anim }};opacity:{{ c.op }};padding:13px 13px 11px;display:flex;flex-direction:column;gap:8px;cursor:pointer" style-hover="border-color:var(--bd2)">
+<div title="{{ c.title }}" style="font-size:13.5px;font-weight:600;line-height:1.4;letter-spacing:-.008em;color:{{ c.titleFg }};text-wrap:pretty;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">{{ c.title }}</div>
 <sc-if value="{{ c.hasLabels }}" hint-placeholder-val="{{ false }}">
 <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
 <sc-for list="{{ c.labels }}" as="l" hint-placeholder-count="1"><span style="font-size:8.5px;font-weight:700;line-height:1;color:{{ l.fg }};background:{{ l.bg }};border:1px solid {{ l.bd }};border-radius:4px;padding:3px 5px">{{ l.t }}</span></sc-for>
@@ -182,7 +280,8 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <sc-if value="{{ c.blocked }}" hint-placeholder-val="{{ false }}">
 <div style="display:flex;align-items:center;gap:5px;padding:5px 6px;border-radius:6px;background:var(--reds);border-left:2px solid var(--red)"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2.6"><rect x="4" y="11" width="16" height="10" rx="2"></rect><path d="M8 11V7a4 4 0 0 1 8 0v4"></path></svg><span title="{{ c.blockedBy }}" style="font-size:9px;font-weight:700;line-height:1.3;color:var(--red);text-wrap:pretty">{{ c.blockedBy }}</span></div>
 </sc-if>
-<div style="display:flex;align-items:center;gap:7px">
+<div style="display:flex;align-items:flex-end;gap:8px;flex-wrap:nowrap;min-width:0;padding-top:9px;border-top:1px solid var(--bd)">
+<div style="flex:1;min-width:0;display:flex;align-items:center;gap:7px;row-gap:6px;flex-wrap:wrap">
 <span title="{{ c.prioTip }}" style="flex:none;width:9px;height:9px;border-radius:50%;background:{{ c.prioBg }};border:1.5px solid {{ c.prioBd }}"></span>
 <span style="flex:none;font-size:10px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2);letter-spacing:.02em">{{ c.key }}</span>
 <span style="flex:none;font-size:8.5px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:{{ c.sprintFg }};background:{{ c.sprintBg }};border:1px solid {{ c.sprintBd }};border-radius:4px;padding:3px 4px">{{ c.sprintTag }}</span>
@@ -192,9 +291,9 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <sc-if value="{{ c.hasDeps }}" hint-placeholder-val="{{ false }}"><span style="display:flex;align-items:center;gap:3px"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 14 5 18a3.5 3.5 0 0 0 5 5l3-3M15 10l4-4a3.5 3.5 0 0 0-5-5l-3 3M9.5 14.5l5-5"></path></svg><span style="font-size:9px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace">{{ c.deps }}</span></span></sc-if>
 </span>
 </sc-if>
-<span style="flex:1"></span>
 <sc-if value="{{ c.justNow }}" hint-placeholder-val="{{ false }}"><span style="flex:none;font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.04em;color:var(--acc);white-space:nowrap">just now</span></sc-if>
-<span style="position:relative;flex:none;width:26px;height:26px">
+</div>
+<span style="position:relative;flex:none;width:26px;height:26px;margin-right:4px">
 <span style="display:flex;width:26px;height:26px;border-radius:50%;background:{{ c.avBg }};border:{{ c.avBd }};align-items:center;justify-content:center;font-size:9.5px;font-weight:800;line-height:1;color:{{ c.avFg }}">{{ c.ini }}</span>
 <sc-if value="{{ c.byAgent }}" hint-placeholder-val="{{ false }}"><span title="{{ c.agentTip }}" style="position:absolute;right:-4px;bottom:-4px;width:15px;height:15px;border-radius:5px;background:var(--pur);border:2px solid var(--card);display:flex;align-items:center;justify-content:center"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.8"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9.5 14h.01M14.5 14h.01"></path></svg></span></sc-if>
 </span>
@@ -205,13 +304,14 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
 <div style="border:1px dashed var(--bd2);border-radius:10px;padding:20px 10px;display:flex;flex-direction:column;align-items:center;gap:7px;text-align:center"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--tx3)"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M8 12h8"></path></svg><div style="font-size:10.5px;font-weight:600;line-height:1.4;color:var(--tx3);max-width:140px;text-wrap:pretty">{{ col.emptyText }}</div></div>
 </sc-if>
-<div style="display:flex;align-items:center;gap:6px;padding:3px 3px 0;font-size:10.5px;font-weight:600;line-height:1;color:var(--tx3)"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>Add task</div>
+</div>
+<div style="flex:none;display:flex;align-items:center;gap:6px;padding:5px 3px 0;font-size:10.5px;font-weight:600;line-height:1;color:var(--tx3);cursor:pointer"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"></path></svg>Add task</div>
 </div>
 </sc-for>
 </div>
 
 <sc-if value="{{ rail }}" hint-placeholder-val="{{ true }}">
-<div style="width:266px;flex:none;display:flex;flex-direction:column;gap:12px">
+<div class="lk-rail" style="width:252px;flex:none;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:12px;padding-right:2px">
 <div style="border:1px solid var(--bd);border-radius:11px;background:var(--card);overflow:hidden;box-shadow:var(--shadow)">
 <div style="display:flex;align-items:center;gap:6px;padding:9px 11px;border-bottom:1px solid var(--bd)"><span style="width:5px;height:5px;border-radius:50%;background:var(--grn);animation:pulse 1.8s ease-in-out infinite"></span><span style="font-size:10.5px;font-weight:800;line-height:1">Live stream</span><span style="margin-left:auto;font-size:8.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">/events</span></div>
 <div style="padding:5px 11px 8px;display:flex;flex-direction:column">
@@ -258,23 +358,12 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isTask }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
+<div style="width:100%;flex:1;min-height:0;position:relative;background:var(--page);overflow:hidden">
+<div onClick="{{ goBoard }}" style="position:absolute;inset:0;background:rgba(15,23,42,.45);cursor:pointer"></div>
 
-<div style="position:absolute;inset:0;padding:14px 16px;display:grid;grid-template-columns:repeat(4,1fr);gap:11px;opacity:.5">
-<sc-for list="{{ ghost }}" as="g" hint-placeholder-count="4">
-<div style="background:var(--tub);border-radius:12px;padding:10px 9px;display:flex;flex-direction:column;gap:8px">
-<div style="display:flex;align-items:center;gap:6px;padding:0 3px"><span style="width:7px;height:7px;border-radius:50%;background:{{ g.dot }}"></span><span style="font-size:10px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--tx2)">{{ g.name }}</span></div>
-<sc-for list="{{ g.cards }}" as="c" hint-placeholder-count="2">
-<div style="background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:8px"><div style="font-size:12px;font-weight:600;line-height:1.35;color:var(--tx2)">{{ c.t }}</div><div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--tx3)"></span><span style="font-size:9.5px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ c.k }}</span></div></div>
-</sc-for>
-</div>
-</sc-for>
-</div>
-<div style="position:absolute;inset:0;background:rgba(15,23,42,.45)"></div>
+<div style="position:absolute;top:0;right:0;bottom:0;width:min(840px,100%);background:var(--card);border-left:1px solid var(--bd);display:flex;flex-direction:column;min-height:0;overflow:hidden;box-shadow:-24px 0 60px rgba(15,23,42,.18);animation:slidein .2s ease">
 
-<div style="position:absolute;top:0;right:0;bottom:0;width:840px;background:var(--card);border-left:1px solid var(--bd);display:flex;flex-direction:column;box-shadow:-24px 0 60px rgba(15,23,42,.18)">
-
-<div style="display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--bd)">
+<div style="flex:none;display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--bd);flex-wrap:wrap">
 <span style="flex:none;font-size:12px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">LAI-142</span>
 <span style="flex:none;display:flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:6px;background:var(--accs);border:1px solid var(--accb)"><span style="width:6px;height:6px;border-radius:50%;background:var(--acc)"></span><span style="font-size:10px;font-weight:800;line-height:1;letter-spacing:.05em;color:var(--acc)">IN PROGRESS</span></span>
 <span style="flex:none;display:flex;align-items:center;gap:5px"><span style="width:9px;height:9px;border-radius:50%;background:var(--red);border:1.5px solid var(--red)"></span><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">P1</span></span>
@@ -285,8 +374,8 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <div onClick="{{ goBoard }}" style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:8px;color:var(--tx2);cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M18 6 6 18M6 6l12 12"></path></svg></div>
 </div>
 
-<div style="flex:1;display:flex;min-height:0">
-<div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--bd)">
+<div style="flex:1;display:flex;min-height:0;overflow:hidden">
+<div style="flex:1;min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column;border-right:1px solid var(--bd)">
 <div style="padding:15px 18px 0">
 <div style="font-size:20px;font-weight:800;line-height:1.25;letter-spacing:-.022em;text-wrap:pretty">Multi-agent conflict guard on task claim</div>
 <div style="display:flex;align-items:center;gap:7px;margin-top:9px;flex-wrap:wrap">
@@ -401,7 +490,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </div>
 
-<div style="width:264px;flex:none;background:var(--page);display:flex;flex-direction:column">
+<div style="width:264px;flex:none;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page);display:flex;flex-direction:column">
 <sc-for list="{{ meta }}" as="m" hint-placeholder-count="6">
 <div style="padding:11px 14px;border-bottom:1px solid var(--bd);display:flex;flex-direction:column;gap:7px">
 <div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">{{ m.label }}</div>
@@ -430,14 +519,8 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isTimeline }}" hint-placeholder-val="{{ false }}">
-<div style="padding:14px 18px 18px">
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Timeline</span>
-<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">13 Jul → 4 Sep · 4 sprints · day scale</span>
-<div style="flex:1"></div>
-<div onClick="{{ goBoard }}" style="display:flex;align-items:center;gap:6px;height:29px;padding:0 11px;border:1px solid var(--bd);border-radius:8px;font-size:11.5px;font-weight:700;line-height:1;color:var(--tx2);cursor:pointer">← Board</div>
-</div>
-<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--shadow);overflow:hidden">
+<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box;padding:14px 18px 18px">
+<div style="overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px"><div style="min-width:1080px;background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--shadow);overflow:hidden">
 <div style="background:var(--page);border-bottom:1px solid var(--bd)">
 <div style="display:flex;align-items:stretch;border-bottom:1px solid var(--bd)">
 <div style="width:250px;flex:none;box-sizing:border-box;padding:7px 12px;border-right:1px solid var(--bd);display:flex;align-items:center"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">13 JUL – 4 SEP 2026</span></div>
@@ -493,18 +576,11 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <span style="display:flex;align-items:center;gap:6px;font-size:10px;font-weight:600;line-height:1;color:var(--amb)"><span style="width:1px;height:11px;background:var(--amb)"></span>today</span>
 <span style="margin-left:auto;font-size:10px;font-weight:500;line-height:1.4;color:var(--tx3)">Grey columns are the gap between sprints. Tasks outside the selected sprint dim to 50%. Click a row to open it.</span>
 </div>
-</div>
+</div></div>
 </div></sc-if>
 <sc-if value="{{ isCalendar }}" hint-placeholder-val="{{ false }}">
-<div style="padding:14px 18px 18px">
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Calendar</span>
-<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">due dates · 27 Jul – 6 Sep · tinted days are the active sprint</span>
-<div style="flex:1"></div>
-<div onClick="{{ goTimeline }}" style="display:flex;align-items:center;height:29px;padding:0 11px;border:1px solid var(--bd);border-radius:8px;font-size:11.5px;font-weight:700;line-height:1;color:var(--tx2);cursor:pointer">Timeline →</div>
-<div onClick="{{ goBoard }}" style="display:flex;align-items:center;height:29px;padding:0 11px;border:1px solid var(--bd);border-radius:8px;font-size:11.5px;font-weight:700;line-height:1;color:var(--tx2);cursor:pointer">← Board</div>
-</div>
-<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--shadow);overflow:hidden">
+<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box;padding:14px 18px 18px">
+<div style="overflow-x:auto;overscroll-behavior-x:contain;padding-bottom:2px"><div style="min-width:960px;background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--shadow);overflow:hidden">
 <div style="display:flex;background:var(--page);border-bottom:1px solid var(--bd)">
 <div style="width:46px;flex:none;box-sizing:border-box;border-right:1px solid var(--bd)"></div>
 <sc-for list="{{ calDows }}" as="d" hint-placeholder-count="7">
@@ -543,18 +619,11 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <span style="display:flex;align-items:center;gap:6px;font-size:10px;font-weight:600;line-height:1;color:var(--tx2)"><span style="width:10px;height:10px;border-radius:3px;background:var(--pur)"></span>agent-owned</span>
 <span style="margin-left:auto;font-size:10px;font-weight:500;line-height:1.4;color:var(--tx3)">A task appears on the day it is due. Click one to open it.</span>
 </div>
-</div>
+</div></div>
 </div>
 </sc-if>
 <sc-if value="{{ isSprints }}" hint-placeholder-val="{{ false }}">
-<div style="padding:14px 18px 18px">
-<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Sprints</span>
-<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">v0.4 release · 4 sprints</span>
-<div style="flex:1"></div>
-<div onClick="{{ goTimeline }}" style="display:flex;align-items:center;height:29px;padding:0 11px;border:1px solid var(--bd);border-radius:8px;font-size:11.5px;font-weight:700;line-height:1;color:var(--tx2);cursor:pointer">Timeline →</div>
-<div style="display:flex;align-items:center;height:29px;padding:0 12px;border-radius:8px;background:var(--acc);color:#fff;font-size:11.5px;font-weight:700;line-height:1">+ New sprint</div>
-</div>
+<div style="flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box;padding:14px 18px 18px">
 <div style="display:flex;flex-direction:column;gap:9px">
 <sc-for list="{{ sprintRows }}" as="r" hint-placeholder-count="4">
 <div onClick="{{ r.pick }}" style="background:var(--card);border:1px solid {{ r.rowBd }};border-radius:11px;box-shadow:var(--shadow);padding:13px 14px;display:flex;align-items:center;gap:14px;cursor:pointer" style-hover="border-color:var(--bd2)">
@@ -576,20 +645,15 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <div style="margin-top:11px;font-size:10.5px;font-weight:500;line-height:1.5;color:var(--tx3);max-width:780px;text-wrap:pretty">Picking a sprint here sets it on the board, the timeline and the sprint strip. "All sprints" on the strip clears the scope and shows every task in the release.</div>
 </div></sc-if>
 <sc-if value="{{ isCapacity }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
-
-<div style="padding:13px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
-<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Capacity</span>
-<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">across 3 projects · updated live</span>
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page)">
+<div style="padding:14px 18px 18px;display:flex;flex-direction:column;gap:11px;min-width:1010px">
+<div style="display:flex;align-items:center;gap:0;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);padding:4px 0">
+<div style="padding:8px 15px;display:flex;align-items:baseline;gap:6px"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--tx3)">ACTIVE NOW</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">3</span></div>
+<div style="padding:8px 15px;display:flex;align-items:baseline;gap:6px;border-left:1px solid var(--bd)"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--pur)">AGENT SESSIONS</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--pur)">2</span></div>
+<div style="padding:8px 15px;display:flex;align-items:baseline;gap:6px;border-left:1px solid var(--bd)"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--amb)">UNLISTED WORK</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--amb)">{{ unlistedCount }}</span></div>
 <div style="flex:1"></div>
-<div style="display:flex;align-items:center;gap:9px">
-<div style="display:flex;align-items:baseline;gap:5px;padding:0 12px;border-right:1px solid var(--bd)"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--tx3)">ACTIVE NOW</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace">3</span></div>
-<div style="display:flex;align-items:baseline;gap:5px;padding:0 12px;border-right:1px solid var(--bd)"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--pur)">AGENT SESSIONS</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--pur)">2</span></div>
-<div style="display:flex;align-items:baseline;gap:5px;padding:0 12px"><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--amb)">UNLISTED WORK</span><span style="font-size:15px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--amb)">{{ unlistedCount }}</span></div>
+<span style="padding:0 15px;font-size:9.5px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">across 3 spaces · live</span>
 </div>
-</div>
-
-<div style="padding:14px 18px 18px;display:flex;flex-direction:column;gap:11px">
 <sc-for list="{{ capacity }}" as="p" hint-placeholder-count="5">
 <div style="background:var(--card);border:1px solid {{ p.bd }};border-radius:12px;box-shadow:var(--shadow);overflow:hidden">
 <div style="display:flex;align-items:stretch">
@@ -653,17 +717,17 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isDash }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page)">
 
 <div style="padding:13px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
-<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">laika-core · v0.4</span>
+<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">{{ projName }} · v0.4</span>
 <span style="display:flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:6px;background:var(--tub);border:1px solid var(--bd)"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--tx2)" stroke-width="2.2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"></path><circle cx="12" cy="12" r="3"></circle></svg><span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--tx2)">VIEWING AS RUE B. · VIEWER · READ-ONLY</span></span>
 <div style="flex:1"></div>
 <span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">week 32 · Mon 24 – Fri 28 Aug</span>
 </div>
 
-<div style="padding:14px 18px 0;display:flex;gap:11px">
-<div style="flex:1;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);padding:12px 14px">
+<div style="padding:14px 18px 0;display:flex;gap:11px;flex-wrap:wrap">
+<div style="flex:1;min-width:236px;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);padding:12px 14px">
 <div style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.08em;color:var(--tx3);margin-bottom:9px">RELEASE PROGRESS</div>
 <div style="display:flex;align-items:flex-end;gap:7px"><span style="font-size:27px;font-weight:800;line-height:1;letter-spacing:-.025em">38%</span><span style="font-size:10.5px;font-weight:600;line-height:1.4;color:var(--tx3);padding-bottom:3px">13 of 34 tasks</span></div>
 <div style="margin-top:9px;height:6px;border-radius:4px;background:var(--tub);overflow:hidden;display:flex"><span style="width:38%;background:var(--grn)"></span><span style="width:9%;background:var(--amb)"></span><span style="width:26%;background:var(--acc)"></span></div>
@@ -696,8 +760,8 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </div>
 
-<div style="padding:12px 18px 18px;display:flex;gap:11px;align-items:flex-start">
-<div style="flex:1;min-width:0;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
+<div style="padding:12px 18px 18px;display:flex;gap:11px;align-items:flex-start;flex-wrap:wrap">
+<div style="flex:1;min-width:420px;border:1px solid var(--bd);border-radius:11px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
 <div style="display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--bd)">
 <span style="font-size:11.5px;font-weight:800;line-height:1">Activity</span>
 <div style="flex:1"></div>
@@ -751,20 +815,20 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isMeeting }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page)">
 
 <div style="padding:12px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
 <div style="width:27px;height:27px;flex:none;border-radius:8px;background:var(--purs);border:1px solid var(--purb);display:flex;align-items:center;justify-content:center"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--pur)" stroke-width="2.2"><rect x="4" y="8" width="16" height="12" rx="3"></rect><path d="M12 4v4M9 14h.01M15 14h.01"></path></svg></div>
 <div style="display:flex;flex-direction:column;gap:3px">
 <span style="font-size:14.5px;font-weight:800;line-height:1;letter-spacing:-.016em">Sprint sync · Mon 24 Aug, 09:30</span>
-<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">42 min · 4 participants · transcript from Meet · laika-core</span>
+<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">42 min · 4 participants · transcript from Meet · {{ projName }}</span>
 </div>
 <div style="flex:1"></div>
 <span style="font-size:10.5px;font-weight:600;line-height:1;color:var(--tx2)">Proposals reviewed by</span>
 </div>
 
-<div style="display:flex;align-items:stretch;min-height:760px">
-<div style="width:430px;flex:none;box-sizing:border-box;background:var(--card);border-right:1px solid var(--bd);display:flex;flex-direction:column">
+<div style="display:flex;align-items:stretch;flex-wrap:wrap">
+<div style="flex:1;min-width:360px;max-width:460px;box-sizing:border-box;background:var(--card);border-right:1px solid var(--bd);display:flex;flex-direction:column">
 <div style="padding:11px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px">
 <span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">TRANSCRIPT</span>
 <span style="flex:1"></span>
@@ -782,8 +846,8 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </div>
 
-<div style="flex:1;min-width:0;display:flex;flex-direction:column">
-<div style="padding:11px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px">
+<div style="flex:1.6;min-width:520px;display:flex;flex-direction:column">
+<div style="padding:11px 16px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
 <span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">PROPOSALS</span>
 <span style="font-size:10px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ proposalCount }}</span>
 <div style="flex:1"></div>
@@ -865,7 +929,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isTokens }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page)">
 
 <div style="padding:13px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
 <span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Personal settings</span>
@@ -888,7 +952,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <div onClick="{{ openCreate }}" style="flex:none;display:flex;align-items:center;gap:6px;height:34px;padding:0 14px;border-radius:9px;background:var(--acc);color:#fff;font-size:12.5px;font-weight:700;line-height:1;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M12 5v14M5 12h14"></path></svg>Create token</div>
 </div>
 
-<div style="border:1px solid var(--bd);border-radius:12px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
+<div style="overflow-x:auto;overscroll-behavior-x:contain"><div style="min-width:880px;border:1px solid var(--bd);border-radius:12px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
 <div style="display:flex;align-items:center;padding:9px 14px;background:var(--page);border-bottom:1px solid var(--bd)">
 <span style="flex:1;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">NAME</span>
 <span style="width:210px;flex:none;font-size:9px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">SCOPES</span>
@@ -921,13 +985,13 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <svg style="flex:none;color:var(--tx3)" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v.01M11 12h1v4h1"></path></svg>
 <span style="flex:1;font-size:10.5px;font-weight:500;line-height:1.4;color:var(--tx2);text-wrap:pretty">Revoking is immediate and cannot be undone. Any agent session using that token stops at its next call.</span>
 </div>
-</div>
+</div></div>
 
 <div style="border:1px solid var(--bd);border-radius:12px;background:var(--card);box-shadow:var(--shadow);padding:14px;display:flex;gap:16px">
 <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:9px">
 <span style="font-size:11.5px;font-weight:800;line-height:1">Scope reference</span>
 <div style="display:flex;flex-direction:column;gap:7px">
-<div style="display:flex;align-items:baseline;gap:9px"><span style="flex:none;width:92px;font-size:10px;font-weight:700;line-height:1.4;font-family:'JetBrains Mono',monospace;color:var(--grn)">read:tasks</span><span style="flex:1;font-size:11px;font-weight:500;line-height:1.45;color:var(--tx2)">Read boards, tasks and comments in projects you can already see.</span></div>
+<div style="display:flex;align-items:baseline;gap:9px"><span style="flex:none;width:92px;font-size:10px;font-weight:700;line-height:1.4;font-family:'JetBrains Mono',monospace;color:var(--grn)">read:tasks</span><span style="flex:1;font-size:11px;font-weight:500;line-height:1.45;color:var(--tx2)">Read boards, tasks and comments in spaces you can already see.</span></div>
 <div style="display:flex;align-items:baseline;gap:9px"><span style="flex:none;width:92px;font-size:10px;font-weight:700;line-height:1.4;font-family:'JetBrains Mono',monospace;color:var(--acc)">write:tasks</span><span style="flex:1;font-size:11px;font-weight:500;line-height:1.45;color:var(--tx2)">Create, move and comment. Required for an agent to claim work.</span></div>
 <div style="display:flex;align-items:baseline;gap:9px"><span style="flex:none;width:92px;font-size:10px;font-weight:700;line-height:1.4;font-family:'JetBrains Mono',monospace;color:var(--pur)">agent:session</span><span style="flex:1;font-size:11px;font-weight:500;line-height:1.45;color:var(--tx2)">Start and stream an agent session, and report presence.</span></div>
 <div style="display:flex;align-items:baseline;gap:9px"><span style="flex:none;width:92px;font-size:10px;font-weight:700;line-height:1.4;font-family:'JetBrains Mono',monospace;color:var(--amb)">admin:org</span><span style="flex:1;font-size:11px;font-weight:500;line-height:1.45;color:var(--tx2)">Owner and Admin only. Manage members, invites and provider keys.</span></div>
@@ -962,7 +1026,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 <div style="display:flex;gap:11px">
 <div style="flex:1;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">Expires</span><div style="height:38px;display:flex;align-items:center;gap:7px;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--page);font-size:12.5px;font-weight:600;line-height:1"><span style="flex:1">90 days</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="2.6"><path d="m6 9 6 6 6-6"></path></svg></div></div>
-<div style="flex:1;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">Projects</span><div style="height:38px;display:flex;align-items:center;gap:7px;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--page);font-size:12.5px;font-weight:600;line-height:1"><span style="flex:1">laika-core only</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="2.6"><path d="m6 9 6 6 6-6"></path></svg></div></div>
+<div style="flex:1;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">Spaces</span><div style="height:38px;display:flex;align-items:center;gap:7px;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--page);font-size:12.5px;font-weight:600;line-height:1"><span style="flex:1">laika-core only</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="2.6"><path d="m6 9 6 6 6-6"></path></svg></div></div>
 </div>
 </div>
 <div style="padding:13px 18px;border-top:1px solid var(--bd);background:var(--page);display:flex;align-items:center;gap:10px">
@@ -1004,7 +1068,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isOrg }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page)">
 
 <div style="padding:13px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
 <span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Kvelld Dynamics</span>
@@ -1013,24 +1077,24 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <div style="flex:1"></div>
 </div>
 
-<div style="display:flex;align-items:stretch">
-<div style="width:186px;flex:none;box-sizing:border-box;background:var(--card);border-right:1px solid var(--bd);padding:12px 10px;display:flex;flex-direction:column;gap:2px">
+<div style="display:flex;align-items:stretch;flex-wrap:wrap">
+<div style="flex:none;width:186px;box-sizing:border-box;background:var(--card);border-right:1px solid var(--bd);padding:12px 10px;display:flex;flex-direction:column;gap:2px">
 <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="6">
 <div style="display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border-radius:8px;background:{{ n.bg }};font-size:12px;font-weight:{{ n.wt }};line-height:1;color:{{ n.fg }}">{{ n.label }}<sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><span style="margin-left:auto;font-size:9px;font-weight:800;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">{{ n.n }}</span></sc-if></div>
 </sc-for>
 </div>
 
-<div style="flex:1;min-width:0;padding:16px 18px 18px;display:flex;flex-direction:column;gap:14px">
+<div style="flex:1;min-width:640px;padding:16px 18px 18px;display:flex;flex-direction:column;gap:14px">
 
 <div style="border:1px solid var(--bd);border-radius:12px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
-<div style="padding:12px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:9px">
+<div style="padding:12px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:9px;flex-wrap:wrap">
 <span style="font-size:13px;font-weight:800;line-height:1">AI provider</span>
 <span style="display:flex;align-items:center;gap:5px;padding:4px 7px;border-radius:5px;background:var(--grns);border:1px solid var(--grnb)"><span style="width:5px;height:5px;border-radius:50%;background:var(--grn)"></span><span style="font-size:9px;font-weight:800;line-height:1;letter-spacing:.05em;color:var(--grn)">CONNECTED</span></span>
 <span style="flex:1"></span>
 <span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">last call 4m ago · 1.2M tokens this month</span>
 </div>
-<div style="padding:13px 14px;display:flex;gap:12px">
-<div style="flex:1;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">Provider</span><div style="height:38px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--page)"><span style="flex:1;font-size:12.5px;font-weight:600;line-height:1">Anthropic</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="2.6"><path d="m6 9 6 6 6-6"></path></svg></div></div>
+<div style="padding:13px 14px;display:flex;gap:12px;flex-wrap:wrap">
+<div style="flex:1;min-width:150px;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">Provider</span><div style="height:38px;display:flex;align-items:center;gap:8px;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--page)"><span style="flex:1;font-size:12.5px;font-weight:600;line-height:1">Anthropic</span><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--tx3)" stroke-width="2.6"><path d="m6 9 6 6 6-6"></path></svg></div></div>
 <div style="flex:1.6;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">API key</span><div style="height:38px;display:flex;align-items:center;gap:9px;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--page)"><span style="flex:1;min-width:0;font-size:12px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">sk-ant-••••••••••••••••3f9a</span><span style="flex:none;font-size:10.5px;font-weight:700;line-height:1;color:var(--acc)">Replace</span></div><span style="font-size:10px;font-weight:500;line-height:1.4;color:var(--tx3)">Stored encrypted. Never shown again after saving.</span></div>
 <div style="flex:1;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">Monthly cap</span><div style="height:38px;display:flex;align-items:center;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--page);font-size:12.5px;font-weight:600;line-height:1">$400</div><span style="font-size:10px;font-weight:500;line-height:1.4;color:var(--tx3)">Sessions pause at the cap.</span></div>
 <div style="flex:none;display:flex;flex-direction:column;gap:6px;justify-content:flex-end"><div style="display:flex;align-items:center;height:38px;padding:0 14px;border:1px solid var(--bd2);border-radius:9px;font-size:12px;font-weight:700;line-height:1;color:var(--tx)">Test connection</div></div>
@@ -1038,7 +1102,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 
 <div style="border:1px solid var(--bd);border-radius:12px;background:var(--card);box-shadow:var(--shadow);overflow:hidden">
-<div style="padding:12px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:9px">
+<div style="padding:12px 14px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:9px;flex-wrap:wrap">
 <span style="font-size:13px;font-weight:800;line-height:1">Members</span>
 <span style="font-size:10px;font-weight:700;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">5</span>
 <span style="flex:1"></span>
@@ -1085,7 +1149,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <div style="display:flex;align-items:flex-start;gap:12px;padding-top:11px;border-top:1px solid var(--bd)">
 <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">
 <span style="font-size:12px;font-weight:700;line-height:1.3">Delete this organisation</span>
-<span style="font-size:10.5px;font-weight:500;line-height:1.4;color:var(--tx2);text-wrap:pretty">Removes 3 projects, 79 tasks and the audit log. Type the org name to confirm.</span>
+<span style="font-size:10.5px;font-weight:500;line-height:1.4;color:var(--tx2);text-wrap:pretty">Removes 3 spaces, 79 tasks and the audit log. Type the org name to confirm.</span>
 <div style="height:34px;width:280px;display:flex;align-items:center;padding:0 11px;border:1px solid var(--bd2);border-radius:8px;background:var(--page);font-size:12px;font-weight:500;line-height:1;color:var(--tx3);font-family:'JetBrains Mono',monospace">Kvelld Dynamics</div>
 </div>
 <div style="flex:none;display:flex;align-items:center;height:31px;padding:0 13px;border-radius:8px;background:var(--red);color:#fff;font-size:11.5px;font-weight:700;line-height:1;opacity:.45">Delete org</div>
@@ -1098,9 +1162,9 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page);box-sizing:border-box;padding:24px;display:flex;gap:20px;flex-wrap:wrap;align-items:stretch">
 
-<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+<div style="flex:1;min-width:330px;display:flex;flex-direction:column;gap:12px">
 <div style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">SIGN IN</div>
 <div style="flex:1;background:var(--card);border:1px solid var(--bd);border-radius:14px;box-shadow:var(--shadow);padding:26px 26px 22px;display:flex;flex-direction:column;gap:17px">
 <div style="display:flex;align-items:center;gap:9px">
@@ -1132,14 +1196,14 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </div>
 
-<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:12px">
+<div style="flex:1;min-width:360px;display:flex;flex-direction:column;gap:12px">
 <div style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--pur)">ACCEPT INVITE</div>
 <div style="flex:1;background:var(--card);border:1px solid var(--purb);border-radius:14px;box-shadow:var(--shadow);padding:26px 26px 22px;display:flex;flex-direction:column;gap:16px">
 <div style="display:flex;align-items:center;gap:11px;padding:11px 12px;border-radius:11px;background:var(--purs);border:1px solid var(--purb)">
 <span style="flex:none;width:34px;height:34px;border-radius:50%;background:var(--mk);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;line-height:1;color:#fff">MK</span>
 <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:3px">
 <div style="font-size:12.5px;font-weight:700;line-height:1.3;text-wrap:pretty">Mira Kellner invited you to <span style="color:var(--pur)">Kvelld Dynamics</span></div>
-<div style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">expires in 6 days · 2 projects shared with you</div>
+<div style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx2)">expires in 6 days · 2 spaces shared with you</div>
 </div>
 </div>
 <div style="display:flex;flex-direction:column;gap:5px">
@@ -1170,7 +1234,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </div>
 
-<div style="width:340px;flex:none;display:flex;flex-direction:column;gap:12px">
+<div style="flex:1;min-width:300px;max-width:400px;display:flex;flex-direction:column;gap:12px">
 <div style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--red)">ERROR &amp; EDGE STATES</div>
 <div style="background:var(--card);border:1px solid var(--bd);border-radius:14px;box-shadow:var(--shadow);padding:16px;display:flex;flex-direction:column;gap:11px">
 <span style="font-size:10px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--tx3)">WRONG CREDENTIALS</span>
@@ -1202,9 +1266,9 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isSetup }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page);display:flex;flex-wrap:wrap;align-items:stretch">
 
-<div style="width:420px;flex:none;box-sizing:border-box;background:var(--tx);color:var(--page);padding:32px 30px;display:flex;flex-direction:column;gap:24px">
+<div style="flex:1;min-width:340px;max-width:460px;box-sizing:border-box;background:var(--tx);color:var(--page);padding:32px 30px;display:flex;flex-direction:column;gap:24px">
 <div style="display:flex;align-items:center;gap:9px">
 <div style="width:30px;height:30px;flex:none;border-radius:9px;background:var(--page);display:flex;align-items:center;justify-content:center"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#171a21" stroke-width="2"><circle cx="12" cy="12" r="4.5"></circle><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"></path></svg></div>
 <span style="font-size:17px;font-weight:800;line-height:1;letter-spacing:-.02em">Laika</span>
@@ -1226,7 +1290,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </div>
 
-<div style="flex:1;min-width:0;padding:32px 34px;display:flex;flex-direction:column;gap:20px">
+<div style="flex:1.4;min-width:460px;padding:32px 34px;display:flex;flex-direction:column;gap:20px">
 <div style="display:flex;align-items:baseline;gap:9px"><span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">FIRST BOOT</span><span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">laika.kvelld.internal</span></div>
 
 <div style="display:flex;flex-direction:column;gap:12px">
@@ -1249,7 +1313,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <div style="display:flex;align-items:center;gap:8px"><span style="font-size:13px;font-weight:800;line-height:1">Organisation</span><span style="flex:1;height:1px;background:var(--bd)"></span></div>
 <div style="display:flex;gap:12px">
 <div style="flex:1;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">Org name</span><div style="height:40px;display:flex;align-items:center;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--card);font-size:13px;font-weight:500;line-height:1">Kvelld Dynamics</div></div>
-<div style="flex:1;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">First project</span><div style="height:40px;display:flex;align-items:center;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--card);font-size:13px;font-weight:500;line-height:1">laika-core</div><span style="font-size:10px;font-weight:500;line-height:1.4;color:var(--tx3)">Private by default. You can add more later.</span></div>
+<div style="flex:1;display:flex;flex-direction:column;gap:6px"><span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx2)">First space</span><div style="height:40px;display:flex;align-items:center;padding:0 12px;border:1px solid var(--bd2);border-radius:9px;background:var(--card);font-size:13px;font-weight:500;line-height:1">laika-core</div><span style="font-size:10px;font-weight:500;line-height:1.4;color:var(--tx3)">Private by default. You can add more later.</span></div>
 </div>
 <div style="display:flex;align-items:center;gap:9px;padding:11px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--card)">
 <span style="flex:none;width:34px;height:19px;border-radius:12px;background:var(--acc);display:flex;align-items:center;padding:0 2px;justify-content:flex-end"><span style="width:15px;height:15px;border-radius:50%;background:#fff"></span></span>
@@ -1266,23 +1330,23 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 </sc-if>
 <sc-if value="{{ isProjects }}" hint-placeholder-val="{{ false }}">
-<div style="width:100%;background:var(--page)">
+<div style="width:100%;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;background:var(--page)">
 
 <div style="padding:13px 18px;background:var(--card);border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:11px">
-<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Projects</span>
-<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">Kvelld Dynamics · 5 people · 3 projects</span>
+<span style="font-size:15px;font-weight:800;line-height:1;letter-spacing:-.018em">Spaces</span>
+<span style="font-size:10px;font-weight:600;line-height:1;font-family:'JetBrains Mono',monospace;color:var(--tx3)">Kvelld Dynamics · 5 people · 3 spaces</span>
 <div style="flex:1"></div>
-<div style="display:flex;align-items:center;gap:7px;height:31px;width:200px;padding:0 11px;border:1px solid var(--bd);border-radius:9px;background:var(--page);color:var(--tx3)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span style="font-size:11.5px;font-weight:500;line-height:1">Search projects…</span></div>
-<div style="display:flex;align-items:center;gap:6px;height:31px;padding:0 12px;border-radius:9px;background:var(--acc);color:#fff;font-size:12px;font-weight:700;line-height:1">+ New project</div>
+<div style="display:flex;align-items:center;gap:7px;height:31px;width:200px;padding:0 11px;border:1px solid var(--bd);border-radius:9px;background:var(--page);color:var(--tx3)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg><span style="font-size:11.5px;font-weight:500;line-height:1">Search spaces…</span></div>
+<div style="display:flex;align-items:center;gap:6px;height:31px;padding:0 12px;border-radius:9px;background:var(--acc);color:#fff;font-size:12px;font-weight:700;line-height:1">Create space</div>
 </div>
 
 <div style="padding:15px 18px 18px;display:flex;flex-direction:column;gap:14px">
 <div style="display:flex;align-items:center;gap:8px">
-<span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">YOUR PROJECTS</span>
+<span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">YOUR SPACES</span>
 <span style="flex:1;height:1px;background:var(--bd)"></span>
 <span style="font-size:10.5px;font-weight:700;line-height:1;color:var(--tx3)">Sort: last activity</span>
 </div>
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:13px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(286px,1fr));gap:13px">
 <sc-for list="{{ projects }}" as="p" hint-placeholder-count="3">
 <div style="background:var(--card);border:1px solid {{ p.bd }};border-radius:12px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden">
 <div style="padding:13px 14px 11px;display:flex flex-direction:column;gap:9px;display:flex;flex-direction:column">
@@ -1321,7 +1385,7 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 <span style="font-size:9.5px;font-weight:800;line-height:1;letter-spacing:.09em;color:var(--tx3)">PUBLIC IN THIS ORG</span>
 <span style="flex:1;height:1px;background:var(--bd)"></span>
 </div>
-<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:13px">
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(286px,1fr));gap:13px">
 <div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--shadow);padding:13px 14px;display:flex;flex-direction:column;gap:9px">
 <div style="display:flex;align-items:center;gap:7px"><span style="font-size:14.5px;font-weight:800;line-height:1.2;letter-spacing:-.016em">laika-docs</span><span style="font-size:8.5px;font-weight:800;line-height:1;letter-spacing:.06em;color:var(--grn);background:var(--grns);border:1px solid var(--grnb);border-radius:4px;padding:3px 5px">PUBLIC</span></div>
 <div style="font-size:11.5px;font-weight:500;line-height:1.45;color:var(--tx2)">Self-host guides and API reference. Anyone in the org can join.</div>
@@ -1329,15 +1393,15 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </div>
 <div style="background:var(--card);border:1px dashed var(--bd2);border-radius:12px;padding:20px 16px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center">
 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="color:var(--tx3)"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M15 4v16"></path></svg>
-<div style="font-size:12.5px;font-weight:700;line-height:1.3">No other public projects</div>
-<div style="font-size:11px;font-weight:500;line-height:1.5;color:var(--tx2);max-width:250px;text-wrap:pretty">Make a project public in its settings and anyone in Kvelld Dynamics can join without an invite.</div>
+<div style="font-size:12.5px;font-weight:700;line-height:1.3">No other public spaces</div>
+<div style="font-size:11px;font-weight:500;line-height:1.5;color:var(--tx2);max-width:250px;text-wrap:pretty">Make a space public in its settings and anyone in Kvelld Dynamics can join without an invite.</div>
 </div>
 <div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--shadow);padding:16px;display:flex;flex-direction:column;gap:10px">
 <span style="font-size:10px;font-weight:800;line-height:1;letter-spacing:.07em;color:var(--tx3)">FIRST-RUN STATE</span>
 <div style="border:1px dashed var(--bd2);border-radius:10px;padding:18px 12px;display:flex;flex-direction:column;align-items:center;gap:9px;text-align:center">
-<div style="font-size:12.5px;font-weight:700;line-height:1.3">No projects yet</div>
+<div style="font-size:12.5px;font-weight:700;line-height:1.3">No spaces yet</div>
 <div style="font-size:11px;font-weight:500;line-height:1.5;color:var(--tx2);max-width:230px;text-wrap:pretty">Create the first one and point it at a repo. Presence and agent sessions start working immediately.</div>
-<div style="display:flex;align-items:center;height:30px;padding:0 13px;border-radius:8px;background:var(--acc);color:#fff;font-size:11.5px;font-weight:700;line-height:1">+ New project</div>
+<div style="display:flex;align-items:center;height:30px;padding:0 13px;border-radius:8px;background:var(--acc);color:#fff;font-size:11.5px;font-weight:700;line-height:1">Create space</div>
 </div>
 </div>
 </div>
@@ -1349,10 +1413,10 @@ a{color:#2f6bff}a:hover{color:#1d4fd0}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1600,&quot;height&quot;:1010},&quot;startTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;light&quot;,&quot;dark&quot;],&quot;default&quot;:&quot;light&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Global&quot;},&quot;botBadges&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Global&quot;},&quot;showRail&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;showPresence&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Board&quot;},&quot;wipLimit&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:4,&quot;min&quot;:1,&quot;max&quot;:10,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Board&quot;}}">
 const PEOPLE = [
-  { id: 'MK', name: 'Mira K.', full: 'Mira Kellner', role: 'Admin', bg: '#2f6bff', dbg: '#3d6fd6' },
-  { id: 'TA', name: 'Tomás A.', full: 'Tomás Adeyemi', role: 'Member', bg: '#0f7d63', dbg: '#18916f' },
-  { id: 'SV', name: 'Sana V.', full: 'Sana Verma', role: 'Member', bg: '#8b5cf6', dbg: '#8f6ee0' },
-  { id: 'JD', name: 'Joran D.', full: 'Joran Dahl', role: 'Member', bg: '#c2410c', dbg: '#cf5a24' },
+  { id: 'MK', name: 'Mira K.', full: 'Mira Kellner', role: 'Admin', bg: '#2558d6', dbg: '#3d6fd6' },
+  { id: 'TA', name: 'Tomás A.', full: 'Tomás Adeyemi', role: 'Member', bg: '#0c6b54', dbg: '#18916f' },
+  { id: 'SV', name: 'Sana V.', full: 'Sana Verma', role: 'Member', bg: '#6d3ddb', dbg: '#8f6ee0' },
+  { id: 'JD', name: 'Joran D.', full: 'Joran Dahl', role: 'Member', bg: '#a8380a', dbg: '#cf5a24' },
   { id: 'RB', name: 'Rue B.', full: 'Rue Baptiste', role: 'Viewer', bg: '#475569', dbg: '#5b6a7f' }
 ];
 const COLS = [
@@ -1367,7 +1431,7 @@ const TASKS = [
   ['LAI-161', 'backlog', 'Agent session cost caps per org', 'MK', 2, false, ['billing'], 0, 1, null, 4],
   ['LAI-166', 'backlog', 'Webhook retry with backoff', null, 3, true, [], 0, 0, null, 4],
   ['LAI-152', 'todo', 'SSE reconnect with last-event-id', 'TA', 1, false, ['core'], 4, 1, 'blocked by LAI-140 event store', 3],
-  ['LAI-155', 'todo', 'Token scopes: read-only project tokens', 'SV', 2, false, ['auth'], 1, 0, null, 3],
+  ['LAI-155', 'todo', 'Token scopes: read-only space tokens', 'SV', 2, false, ['auth'], 1, 0, null, 3],
   ['LAI-157', 'todo', 'Board: priority dots + bot badges', 'JD', 2, true, ['ui'], 3, 0, null, 3],
   ['LAI-142', 'progress', 'Multi-agent conflict guard on task claim', 'MK', 1, true, ['agent', 'core'], 5, 2, null, 3],
   ['LAI-147', 'progress', 'Capacity view: unlisted work detection', 'SV', 2, true, ['presence'], 2, 0, null, 3],
@@ -1414,7 +1478,7 @@ const ROLES = ['Owner', 'Admin', 'Member', 'Viewer'];
 class Component extends DCLogic {
 
   state = {
-    theme: 'light', screen: 'board', sprint: 3, sprintsOpen: false,
+    theme: 'light', screen: 'board', sprint: 3, sprintsOpen: false, navMini: null, proj: 'laika-core', spacesOpen: true, spacesPop: false, recent: ['laika-core', 'laika-web', 'laika-infra'],
     filter: null, agentOnly: false, prio: 0, sel: null, flash: 'LAI-147', tick: 0,
     tab: 'comments', feed: 'all', promoted: {},
     pw: false, joined: {}, docsJoined: false,
@@ -1455,7 +1519,13 @@ class Component extends DCLogic {
     ['JD', true, 'agent updated LAI-157 description']
   ];
 
+  navQuery = null;
+  syncNav = () => { if (this.state.navMini === null || this.autoNav) { this.autoNav = true; this.setState({ navMini: this.navQuery.matches }); } };
   componentDidMount() {
+    this.navQuery = window.matchMedia('(max-width:1180px)');
+    this.autoNav = true;
+    this.setState({ navMini: this.navQuery.matches });
+    this.navQuery.addEventListener('change', this.syncNav);
     this.timer = setInterval(() => this.setState(s => ({ tick: s.tick + 1, flash: TASKS[(s.tick + 6) % TASKS.length][0] })), 4200);
   }
   componentWillUnmount() { clearInterval(this.timer); }
@@ -1635,7 +1705,7 @@ class Component extends DCLogic {
     { label: 'ASSIGNEE', value: 'Mira Kellner', ini: 'MK', avatar: true, agent: true, sub: "agent has the claim lock until 14:32", chevron: true },
     { label: 'STATUS', value: 'In progress', chevron: true, sub: 'claimed 4m ago' },
     { label: 'PRIORITY', value: 'P1 · blocks the release', chevron: true, fg: 'var(--red)' },
-    { label: 'PROJECT', value: 'laika-core', sub: 'branch lai-142-claim-lock' },
+    { label: 'SPACE', value: null, sub: 'branch lai-142-claim-lock' },
     { label: 'CREATED VIA', value: 'Agent · mira-cli v0.4.2', sub: 'token “mira-laptop” · scope write:tasks' },
     { label: 'WATCHERS', value: 'Mira, Tomás, Rue', sub: '3 people · Rue is a Viewer' }
   ];
@@ -1736,7 +1806,7 @@ class Component extends DCLogic {
         kBg: a.kind === 'create' ? 'var(--purs)' : a.kind === 'status' ? 'var(--accs)' : 'var(--tub)'
       })),
       meta: this.metaRows.map(m => ({
-        label: m.label, value: m.value, sub: m.sub || '', hasSub: !!m.sub,
+        label: m.label, value: m.value === null ? this.state.proj : m.value, sub: m.sub || '', hasSub: !!m.sub,
         hasAvatar: !!m.avatar, byAgent: !!m.agent, ini: m.ini || '',
         avBg: m.ini ? this.avD(m.ini).bg : 'transparent',
         fg: m.fg || 'var(--tx)', chevron: !!m.chevron
@@ -1855,7 +1925,7 @@ class Component extends DCLogic {
           avatars: React.createElement('span', { style: { display: 'inline-flex' } }, p.members.map((m, i) => av(m, i))),
           canOpen: p.mine || joined,
           canJoin: !p.mine && !joined,
-          joinLabel: 'Join project',
+          joinLabel: 'Join space',
           joinBg: 'transparent', joinBd: 'var(--bd2)', joinFg: 'var(--tx)',
           join: () => this.setState(s => ({ joined: Object.assign({}, s.joined, { [p.name]: true }) }))
         };
@@ -1894,7 +1964,7 @@ class Component extends DCLogic {
       quote: "Kill it. It costs us a render path and we've never used it.", quoteWho: 'Mira Kellner', quoteAt: '11:44',
       conf: 'confidence 0.91' },
     { id: 'P4', kind: 'DECISION', title: 'Webhook failures: 3 retries, exponential backoff, then dead-letter',
-      body: 'Recorded as a decision on the project, not a task. LAI-166 already covers the implementation.',
+      body: 'Recorded as a decision on the space, not a task. LAI-166 already covers the implementation.',
       quote: 'Three retries with exponential backoff, then dead-letter it and surface it in the audit log.', quoteWho: 'Mira Kellner', quoteAt: '19:35',
       conf: 'confidence 0.86' }
   ];
@@ -1998,7 +2068,7 @@ class Component extends DCLogic {
       applyDetail: approved.length
         ? newCount + ' task created · ' + changedCount + ' updated · ' + rejected.length + ' rejected · ' + pending + ' still open'
         : 'Approve or reject each proposal. Rejections are kept with the transcript for the record.',
-      applyLabel: approved.length ? 'Apply ' + approved.length + ' to laika-core' : 'Apply',
+      applyLabel: approved.length ? 'Apply ' + approved.length + ' to ' + this.state.proj : 'Apply',
       applyBg: approved.length ? 'var(--grn)' : 'var(--tub)',
       applyFg: approved.length ? '#fff' : 'var(--tx3)',
       applyOp: approved.length ? 1 : 0.6,
@@ -2075,6 +2145,18 @@ class Component extends DCLogic {
     };
   }
 
+  allSpaces = [
+    { name: 'laika-core', key: 'LC', meta: '34 tasks · 4 members', c: 'var(--mk)' },
+    { name: 'laika-web', key: 'LW', meta: '31 tasks · 2 members', c: 'var(--ta)' },
+    { name: 'laika-infra', key: 'LI', meta: '14 tasks · public', c: 'var(--jd)' },
+    { name: 'laika-docs', key: 'LD', meta: '9 tasks · public', c: 'var(--sv)' }
+  ];
+
+  openSpace = (name) => this.setState(s => {
+    const rest = s.recent.filter(r => r !== name);
+    return { proj: name, screen: 'board', spacesPop: false, recent: [name].concat(rest).slice(0, 3) };
+  });
+
   DAYS = 54; TODAY = 36;
   sprintDefs = [
     { n: 1, s: 0, l: 12, name: 'Event store & SSE', dates: '13 – 24 Jul', st: 'closed', goal: 'Durable event store and a reconnecting SSE stream.', arch: { done: 11, total: 11 } },
@@ -2105,14 +2187,18 @@ class Component extends DCLogic {
   }
 
   r5() {
+    const mini = !!this.state.navMini;
     const sc = this.state.screen;
     const sel = this.state.sprint;
-    const nav = [
-      ['WORK', null], ['board', 'Board'], ['timeline', 'Timeline'], ['calendar', 'Calendar'], ['sprints', 'Sprints'], ['capacity', 'Capacity'],
-      ['REVIEW', null], ['dash', 'Dashboard'], ['meeting', 'Meeting review'],
-      ['SETTINGS', null], ['tokens', 'Tokens'], ['org', 'Organisation'],
-      ['SYSTEM', null], ['login', 'Login & invite'], ['setup', 'First boot'], ['projects', 'Projects']
-    ];
+    const shown = this.state.recent.slice(0, 3);
+    const spaceRows = shown.map(name => {
+      const s = this.allSpaces.find(x => x.name === name) || { name: name, key: name.slice(6, 8).toUpperCase() };
+      return ['@' + name, name, s.key, true];
+    });
+    const nav = [['SPACES', null]]
+      .concat(spaceRows)
+      .concat([['projects', 'More spaces', 'MS', false, true], ['SETTINGS', null],
+        ['tokens', 'Tokens', 'TK'], ['org', 'Organisation', 'OR'], ['login', 'Login & invite', 'LG'], ['setup', 'First boot', 'FB']]);
     const cur = this.sprintDefs.find(d => d.n === sel);
     const st = cur ? this.sprintStats(sel) : { total: TASKS.length, done: TASKS.filter(t => t[1] === 'done').length, blocked: 0, un: 0, wip: 0, pct: 0 };
     const stMap = { closed: ['var(--grns)', 'var(--grn)', 'CLOSED'], active: ['var(--purs)', 'var(--pur)', 'ACTIVE'], future: ['var(--tub)', 'var(--tx3)', 'PLANNED'] };
@@ -2156,6 +2242,33 @@ class Component extends DCLogic {
     }).sort((a, b) => a.pre - b.pre);
 
     return {
+      projectScoped: ['board', 'task', 'list', 'timeline', 'calendar', 'sprints', 'capacity', 'dash', 'meeting'].indexOf(sc) > -1,
+      isList: sc === 'list',
+      views: [
+        ['board', 'Board'], ['list', 'List'], ['timeline', 'Timeline'], ['calendar', 'Calendar'], ['sprints', 'Sprints'],
+        ['capacity', 'Capacity'], ['dash', 'Dashboard'], ['meeting', 'Meeting review']
+      ].map(v => {
+        const on = sc === v[0] || (v[0] === 'board' && sc === 'task');
+        return { label: v[1], badge: v[0] === 'meeting' ? '4' : '', hasBadge: v[0] === 'meeting',
+          fg: on ? 'var(--acc)' : 'var(--tx2)', wt: on ? 700 : 600,
+          bd: on ? '2px solid var(--acc)' : '2px solid transparent',
+          go: () => this.setState({ screen: v[0] }) };
+      }),
+      projName: this.state.proj,
+      members: [['MK', 'var(--mk)'], ['TA', 'var(--ta)'], ['SV', 'var(--sv)'], ['JD', 'var(--jd)']].map((m, i) => ({ ini: m[0], bg: m[1], fg: '#fff', ml: i === 0 ? '0px' : '-7px' })),
+      spacesPop: this.state.spacesPop,
+      popLeft: mini ? '64px' : '220px',
+      closePop: () => this.setState({ spacesPop: false }),
+      viewAll: () => this.setState({ spacesPop: false, screen: 'projects' }),
+      popSpaces: this.allSpaces.filter(s => shown.indexOf(s.name) === -1).map(s => Object.assign({}, s, {
+        pick: () => this.openSpace(s.name)
+      })),
+      popEmpty: this.allSpaces.filter(s => shown.indexOf(s.name) === -1).length === 0,
+      navMini: mini, navWide: !mini,
+      navW: mini ? '56px' : '212px',
+      navTip: mini ? 'Expand sidebar' : 'Collapse sidebar',
+      themeBtn: mini ? (this.theme() === 'dark' ? '☀' : '☾') : (this.theme() === 'dark' ? '☀ Switch to light' : '☾ Switch to dark'),
+      toggleNav: () => { this.autoNav = false; this.setState({ navMini: !mini }); },
       screen: sc,
       isBoard: sc === 'board', boardLive: sc === 'board' && !(cur && cur.arch), isTask: sc === 'task', isTimeline: sc === 'timeline', isSprints: sc === 'sprints',
       isCalendar: sc === 'calendar', isCapacity: sc === 'capacity', isDash: sc === 'dash', isMeeting: sc === 'meeting', isTokens: sc === 'tokens',
@@ -2167,14 +2280,26 @@ class Component extends DCLogic {
       goDash: () => this.setState({ screen: 'dash' }),
       goProjects: () => this.setState({ screen: 'projects' }),
       goSprints: () => this.setState({ screen: 'sprints' }),
-      nav: nav.map(n => {
-        if (!n[1]) return { header: true, item: false, label: n[0], bg: 'transparent', fg: 'var(--tx3)', wt: 800, dot: 'transparent', badge: '' };
-        const on = sc === n[0] || (n[0] === 'board' && sc === 'task');
-        return { header: false, item: true, label: n[1],
+      nav: nav.filter(n => this.state.spacesOpen || !(n[3] || n[4])).map(n => {
+        if (!n[1]) {
+          const isSpaces = n[0] === 'SPACES';
+          return { header: true, showHeader: !mini, miniRule: mini && n[0] !== 'SPACES', item: false, label: n[0],
+            isSpacesHead: isSpaces && !mini, plainHead: !isSpaces && !mini,
+            caret: this.state.spacesOpen ? 'M6 9l6 6 6-6' : 'M9 6l6 6-6 6',
+            sectionTip: this.state.spacesOpen ? 'Collapse spaces' : 'Expand spaces',
+            toggleSection: () => this.setState(s => ({ spacesOpen: !s.spacesOpen })),
+            bg: 'transparent', fg: 'var(--tx3)', wt: 800, dot: 'transparent', badge: '', abbr: '' };
+        }
+        const projectScreens = ['board', 'task', 'list', 'timeline', 'calendar', 'sprints', 'capacity', 'dash', 'meeting'];
+        const space = n[0].charAt(0) === '@' ? n[0].slice(1) : null;
+        const on = space ? (space === this.state.proj && projectScreens.indexOf(sc) > -1) : sc === n[0];
+        const isSpace = !!n[3];
+        const isMore = !!n[4];
+        return { header: false, showHeader: false, miniRule: false, item: true, label: n[1], abbr: n[2] || '', isSpace: isSpace, notSpace: !isSpace, isMore: isMore, notMore: !isMore,
           bg: on ? 'var(--accs)' : 'transparent', fg: on ? 'var(--acc)' : 'var(--tx2)', wt: on ? 700 : 600,
           dot: on ? 'var(--acc)' : 'transparent',
           badge: n[0] === 'meeting' ? '4' : n[0] === 'sprints' ? '4' : '',
-          go: () => this.setState({ screen: n[0] }) };
+          go: () => isMore ? this.setState(s => ({ spacesPop: !s.spacesPop })) : (space ? this.openSpace(space) : this.setState({ screen: n[0] })) };
       }),
       sprintChips: this.sprintDefs.map(d => {
         const s2 = this.sprintStats(d.n);
@@ -2199,6 +2324,30 @@ class Component extends DCLogic {
       sDays: cur && cur.st === 'active' ? '4' : '—',
       archived: !!(cur && cur.arch), archivedNote: cur && cur.arch ? 'Sprint ' + cur.n + ' is closed — its ' + cur.arch.total + ' tasks are archived. Switch to Sprint 3 or All sprints to see live work.' : '',
       tlMonths: this.months, tlTrack: track, tlRows: rows,
+      listRows: TASKS.filter(t => (!sel || t[10] === sel)).map(t => {
+        const col = COLS.find(c => c.id === t[1]);
+        const person = PEOPLE.find(x => x.id === t[3]);
+        const dk = this.theme() === 'dark';
+        const done = t[1] === 'done';
+        return {
+          key: t[0], title: t[2],
+          status: col.name, stFg: col.tc, stBg: t[1] === 'progress' ? 'var(--accs)' : done ? 'var(--grns)' : 'var(--tub)',
+          stBd: t[1] === 'progress' ? 'var(--accb)' : done ? 'var(--grnb)' : 'var(--bd)',
+          prio: 'P' + t[4],
+          prioFg: t[4] === 1 ? 'var(--red)' : t[4] === 2 ? 'var(--amb)' : 'var(--tx3)',
+          who: person ? person.full : 'Unassigned',
+          ini: t[3] || '—', avBg: person ? (dk ? person.dbg : person.bg) : 'transparent',
+          avFg: person ? '#fff' : 'var(--tx3)', avBd: person ? 'none' : '1.5px dashed var(--bd2)',
+          byAgent: t[5] && (this.props.botBadges ?? true),
+          sprintTag: 'S' + t[10],
+          labels: t[6].join(', '),
+          blocked: !!t[9], hasBlocked: !!t[9], blockedBy: t[9] ? (String(t[9]).indexOf('blocked by') === 0 ? String(t[9]) : 'blocked by ' + t[9]) : '',
+          updated: t[8] === 0 ? 'just now' : t[8] + 'd ago',
+          updFg: t[8] === 0 ? 'var(--acc)' : t[8] > 5 ? 'var(--amb)' : 'var(--tx3)',
+          titleFg: done ? 'var(--tx2)' : 'var(--tx)',
+          open: () => this.setState({ sel: t[0], screen: 'task' })
+        };
+      }),
       calWeeks: (() => {
         const base = new Date(2026, 6, 13);
         const dayName = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
