@@ -44,11 +44,18 @@ export function useSpaces(
   }, [enabled]);
 
   const open = useCallback((slug: string) => {
-    setRecent((previous) => {
-      const next = promote(previous, slug);
-      if (typeof localStorage !== 'undefined') writeRecent(localStorage, next);
-      return next;
-    });
+    // The write happens here, in the handler, not inside the updater. An
+    // updater must be pure (React's rule), and the first version's write-on-
+    // flush lost the order to any navigation that outran the flush — a reload
+    // straight after the click read back nothing. Storage is the durable copy
+    // and every write goes through this handler, so reading it back is reading
+    // the same order the state holds.
+    const next = promote(
+      typeof localStorage === 'undefined' ? [] : readRecent(localStorage),
+      slug,
+    );
+    if (typeof localStorage !== 'undefined') writeRecent(localStorage, next);
+    setRecent(next);
   }, []);
 
   return { spaces: recentSpaces(projects, recent, current), open };

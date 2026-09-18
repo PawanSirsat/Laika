@@ -347,6 +347,21 @@
     flex: 1 1 auto;
     width: 100%;
   }
+  .board-main > .kanban {
+    /*
+     * The row stopped scrolling, but the lanes' track floor did not shrink —
+     * so the grid must scroll itself. All three lines carry it: the base
+     * rule's `min-width: min-content` sizes the *box* to the tracks (1074px),
+     * so without `min-width: 0` the box overflows the page and `overflow-x`
+     * has nothing to clip; and `relative` because an unpositioned scroll
+     * container is not the containing block of absolutely-positioned
+     * descendants, so it cannot clip them — the LAI-245 lesson, inherited by
+     * every new scroller.
+     */
+    min-width: 0;
+    overflow-x: auto;
+    position: relative;
+  }
   .rail {
     width: 100%;
     flex-direction: row;

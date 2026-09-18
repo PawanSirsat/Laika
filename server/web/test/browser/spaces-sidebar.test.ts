@@ -157,6 +157,124 @@ void describe('the view tabs', () => {
   });
 });
 
+/**
+ * The same instance with laika-web's screens answerable, for tests that go
+ * there — and with an **adversarial server order**: `INFRA` before `WEB`, so
+ * the fill order and the remembered order disagree. That disagreement is the
+ * only thing that can tell "read back from storage" apart from "current
+ * project first, then whatever the server sent" — with the server's own order
+ * the two answers coincide.
+ */
+const WEB_STUB: ApiStub = {
+  ...STUB,
+  '/api/v1/projects': { data: [CORE, INFRA, WEB, DOCS], next_cursor: null },
+  '/api/v1/projects/laika-web': WEB,
+  '/api/v1/projects/laika-web/tasks': { data: [], next_cursor: null },
+  '/api/v1/projects/laika-web/members': { members: [] },
+  '/api/v1/projects/laika-web/sprints': { data: [], next_cursor: null },
+  '/api/v1/projects/laika-web/activity': { data: [], next_cursor: null },
+  '/api/v1/projects/laika-web/tags': { tags: [] },
+};
+
+void describe('a space row is active for any view of it', () => {
+  /**
+   * The design's `projectScreens` test lights the space row for the board,
+   * timeline, sprints, dashboard and meeting review alike. Asserted on a
+   * non-board view, because the board is the one place a slug-equality bug
+   * could not show.
+   */
+  void test('the row is current on /sprints, not only on the board', async () => {
+    const h = await open('/sprints?project=laika-core', STUB);
+    try {
+      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      const active = h.page.locator('.sidebar-link-active');
+      assert.equal(await active.count(), 1, 'exactly one row must be current');
+      assert.match(await active.innerText(), /Laika Core/);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the recent order survives a reload', () => {
+  /**
+   * Opening spaces writes the order; a fresh load must read it back.
+   *
+   * **A bare `/board` cannot be the probe**: the screen resolves a missing
+   * `?project=` to a real project and normalises the URL (LAI-423), so there
+   * is no load that reads storage alone. Instead the server order is
+   * adversarial (`LC, LI, LW`) and two clicks remember `[core, web]` — after
+   * a reload on core's board, `LW` before `LI` can only come from storage;
+   * losing it answers `LC, LI, LW`, the fill order.
+   */
+  void test('the order opened by clicks is read back on a fresh load', async () => {
+    const h = await open('/board?project=laika-core', WEB_STUB);
+    try {
+      const web = h.page.locator('.sidebar-link', { hasText: 'Laika Web' });
+      await web.waitFor({ timeout: 20_000 });
+      await web.click();
+      await h.page.waitForURL(/project=laika-web/, { timeout: 10_000 });
+
+      const core = h.page.locator('.sidebar-link', { hasText: 'Laika Core' });
+      await core.click();
+      await h.page.waitForURL(/project=laika-core/, { timeout: 10_000 });
+
+      await h.page.reload();
+      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      const keys = await h.page.locator('.space-key').allInnerTexts();
+      assert.deepEqual(keys, ['LC', 'LW', 'LI', 'MS'], `storage lost the order: ${keys.join(', ')}`);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the new chrome fits', () => {
+  /**
+   * Both themes at 1440 / 1280 / 420, page overflow 0 at each — the LAI-244
+   * lesson is that one width proves nothing and a floor alone is half an
+   * assertion. The theme is set through the app's own storage key so the dark
+   * half exercises `initTheme`, and the `dk` check proves the setup ran —
+   * a setup step with no assertion cannot fail at all.
+   */
+  void test('no page overflow with the spaces sidebar and the tab bar', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.space-tab').first().waitFor({ timeout: 20_000 });
+      for (const theme of ['light', 'dark'] as const) {
+        await h.page.evaluate((t: string) => {
+          localStorage.setItem('laika.theme', t);
+        }, theme);
+        await h.page.reload();
+        await h.page.locator('.space-tab').first().waitFor({ timeout: 20_000 });
+        const dark = await h.page.evaluate(() =>
+          document.documentElement.classList.contains('dk'),
+        );
+        assert.equal(dark, theme === 'dark', `the ${theme} theme did not apply`);
+
+        for (const width of [1440, 1280, 420]) {
+          await h.page.setViewportSize({ width, height: 1000 });
+          await h.page.waitForFunction(
+            (w: number) => document.documentElement.clientWidth === w,
+            width,
+            { timeout: 5000 },
+          );
+          const overflow = await h.page.evaluate(
+            () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          );
+          assert.equal(
+            overflow,
+            0,
+            `${theme} at ${String(width)}px overflows the page by ${String(overflow)}px`,
+          );
+        }
+      }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the fetch is gated on the session', () => {
   /**
    * `listProjects` needs a session. The shell renders on `/login` too, and an
