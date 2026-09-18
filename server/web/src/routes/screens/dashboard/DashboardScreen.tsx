@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
+import { COLUMN_LABELS, updatedAge } from '../../../api/board-derive.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -73,6 +74,14 @@ export function DashboardScreen() {
    * that fails leaves the panel saying so and every other panel intact.
    */
   const [metrics, setMetrics] = useState<MetricsView | undefined>(undefined);
+  /**
+   * Which actors the feed shows.
+   *
+   * Local, not a URL parameter: it is a way of reading the list already on
+   * screen, and the range — which changes what is *fetched* — is the thing
+   * that earns a place in the address bar.
+   */
+  const [actor, setActor] = useState<'all' | 'user' | 'agent'>('all');
 
   // Fixed per range change, not per render: every "3 hours ago" on the page is
   // measured from it, and a moving clock would make rows disagree with each other.
@@ -197,6 +206,40 @@ export function DashboardScreen() {
   const inReview = tasks.filter((t) => t.status === 'review').length;
   const inFlight = tasks.filter((t) => t.status === 'in_progress').length;
 
+  const nameFor = (id: string | null): string =>
+    id === null ? 'Laika' : (members.get(id)?.name ?? id);
+
+  /**
+   * **Quiet for five days or more**, oldest first.
+   *
+   * The same threshold the board's rail and the List's amber use, taken from
+   * the same `updated_at` — one definition of stale for the whole product, so
+   * two screens cannot disagree about whether something has gone quiet.
+   * Finished work is excluded: a done task is not stale, it is done.
+   */
+  const stale = tasks
+    .filter((t) => t.status !== 'done' && t.status !== 'cancelled')
+    .filter((t) => now - t.updated_at > 5 * 24 * 60 * 60 * 1000)
+    .sort((a, b) => a.updated_at - b.updated_at)
+    .slice(0, 5);
+
+  /**
+   * What the agents did in this window — a filter over the feed, not a second
+   * measurement of it. `actor_kind` is on every activity row (D-022).
+   */
+  const agentEvents = events.filter((e) => e.actor_kind === 'agent');
+  const agentTasks = new Set(agentEvents.map((e) => e.task_id).filter((id) => id !== null)).size;
+  const agentLog = [
+    ...agentEvents.reduce((map, event) => {
+      const who = nameFor(event.actor_id);
+      map.set(who, (map.get(who) ?? 0) + 1);
+      return map;
+    }, new Map<string, number>()),
+  ]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+    .slice(0, 5);
+
   /** In-progress work per person, heaviest first — the design's mini bars. */
   const load = [
     ...tasks
@@ -216,9 +259,12 @@ export function DashboardScreen() {
   // it (`FEED_SILENT` explains which verb and why).
   const kinds = byActorKind(events);
   const shown = events.filter((event) => shownInFeed(event.type));
-
-  const nameFor = (id: string | null): string =>
-    id === null ? 'Laika' : (members.get(id)?.name ?? id);
+  /*
+   * The counts above stay whole while the *list* narrows: "154 events, 4 by
+   * agents" is a claim about what happened, and a filter must not quietly
+   * change the arithmetic beside it.
+   */
+  const feed = actor === 'all' ? shown : shown.filter((event) => event.actor_kind === actor);
 
   return (
     <div className="dash">
@@ -245,120 +291,329 @@ export function DashboardScreen() {
         is the only figure on the screen a reader can act on without reading
         anything else.
       */}
-      <section className="dash-panel dash-release" aria-label="Release progress">
-        <h2 className="dash-panel-label">RELEASE PROGRESS</h2>
-        <div className="dash-release-body">
-          <span className="dash-release-pct">
-            {breakdown.live === 0
-              ? '—'
-              : `${String(Math.round((breakdown.done / breakdown.live) * 100))}%`}
-          </span>
-          <span className="dash-release-of">
-            {breakdown.done} of {breakdown.live} tasks
-          </span>
-        </div>
-
-        <div className="dash-release-bar" aria-hidden="true">
-          {/* Three real segments in one bar, so the eye reads finished, waiting
-              and moving as parts of one whole rather than three counts. */}
-          <span
-            className="dash-seg dash-seg-done"
-            style={{ width: pct(breakdown.done, breakdown.live) }}
-          />
-          <span
-            className="dash-seg dash-seg-review"
-            style={{ width: pct(inReview, breakdown.live) }}
-          />
-          <span
-            className="dash-seg dash-seg-wip"
-            style={{ width: pct(inFlight, breakdown.live) }}
-          />
-        </div>
-
-        <div className="dash-release-legend">
-          <span className="dash-leg dash-leg-done">done {breakdown.done}</span>
-          <span className="dash-leg dash-leg-review">review {inReview}</span>
-          <span className="dash-leg dash-leg-wip">in progress {inFlight}</span>
-        </div>
-      </section>
-
       {/*
+        **The design's layout, not a stack** (prototype lines 719–816).
+
+        Four panels across the top, then the activity feed beside a right rail.
+        Ours ran every panel full width down the page, so the four figures a
+        reader comes here for — progress, throughput, load, what is blocked —
+        could not be seen together, which is the whole point of a dashboard.
+      */}
+      <div className="dash-row">
+        <section className="dash-panel dash-release" aria-label="Release progress">
+          <h2 className="dash-panel-label">RELEASE PROGRESS</h2>
+          <div className="dash-release-body">
+            <span className="dash-release-pct">
+              {breakdown.live === 0
+                ? '—'
+                : `${String(Math.round((breakdown.done / breakdown.live) * 100))}%`}
+            </span>
+            <span className="dash-release-of">
+              {breakdown.done} of {breakdown.live} tasks
+            </span>
+          </div>
+
+          <div className="dash-release-bar" aria-hidden="true">
+            {/* Three real segments in one bar, so the eye reads finished, waiting
+              and moving as parts of one whole rather than three counts. */}
+            <span
+              className="dash-seg dash-seg-done"
+              style={{ width: pct(breakdown.done, breakdown.live) }}
+            />
+            <span
+              className="dash-seg dash-seg-review"
+              style={{ width: pct(inReview, breakdown.live) }}
+            />
+            <span
+              className="dash-seg dash-seg-wip"
+              style={{ width: pct(inFlight, breakdown.live) }}
+            />
+          </div>
+
+          <div className="dash-release-legend">
+            <span className="dash-leg dash-leg-done">done {breakdown.done}</span>
+            <span className="dash-leg dash-leg-review">review {inReview}</span>
+            <span className="dash-leg dash-leg-wip">in progress {inFlight}</span>
+          </div>
+        </section>
+
+        {/*
         **THROUGHPUT** (prototype line 733) — from `GET /projects/:slug/metrics`,
         which the server has served since LAI-124 and nothing called until now.
         Every bar is the server's own count of tasks completed that day; the
         server sends quiet days as explicit zeroes, so nothing is interpolated.
       */}
-      <section className="dash-panel" aria-label="Throughput">
-        <h2 className="dash-panel-title">
-          Throughput
-          <span className="dash-panel-meta">
-            {metrics === undefined
-              ? 'loading'
-              : `${String(metrics.throughput.reduce((n, b) => n + b.completed, 0))} completed`}
-          </span>
-        </h2>
+        <section className="dash-panel" aria-label="Throughput">
+          <h2 className="dash-panel-title">
+            Throughput
+            <span className="dash-panel-meta">
+              {metrics === undefined
+                ? 'loading'
+                : `${String(metrics.throughput.reduce((n, b) => n + b.completed, 0))} completed`}
+            </span>
+          </h2>
 
-        {metrics === undefined ? (
-          <p className="dash-empty">Loading throughput…</p>
-        ) : metrics.throughput.length === 0 ? (
-          <p className="dash-empty">Nothing has been completed in this window.</p>
-        ) : (
-          <>
-            <div className="dash-bars">
-              {metrics.throughput.map((bucket) => {
-                const peak = Math.max(...metrics.throughput.map((b) => b.completed), 1);
-                return (
-                  <span
-                    key={bucket.day}
-                    className={bucket.completed === 0 ? 'dash-bar dash-bar-zero' : 'dash-bar'}
-                    style={{ height: `${String(Math.max(2, (bucket.completed / peak) * 100))}%` }}
-                    title={`${bucket.day}: ${String(bucket.completed)} completed`}
-                  />
-                );
-              })}
-            </div>
+          {metrics === undefined ? (
+            <p className="dash-empty">Loading throughput…</p>
+          ) : metrics.throughput.length === 0 ? (
+            <p className="dash-empty">Nothing has been completed in this window.</p>
+          ) : (
+            <>
+              <div className="dash-bars">
+                {metrics.throughput.map((bucket) => {
+                  const peak = Math.max(...metrics.throughput.map((b) => b.completed), 1);
+                  return (
+                    <span
+                      key={bucket.day}
+                      className={bucket.completed === 0 ? 'dash-bar dash-bar-zero' : 'dash-bar'}
+                      style={{ height: `${String(Math.max(2, (bucket.completed / peak) * 100))}%` }}
+                      title={`${bucket.day}: ${String(bucket.completed)} completed`}
+                    />
+                  );
+                })}
+              </div>
 
-            {/* `null` is "nothing to measure", never a zeroed shape — so the
+              {/* `null` is "nothing to measure", never a zeroed shape — so the
                 screen says so instead of printing `p50 0m`. */}
-            <p className="dash-cycle">
-              {metrics.cycle_time === null
-                ? 'No completed task in this window had a start to measure from.'
-                : `cycle time p50 ${humanMs(metrics.cycle_time.p50_ms)} · p90 ${humanMs(
-                    metrics.cycle_time.p90_ms,
-                  )} · ${String(metrics.cycle_time.measured)} measured`}
-            </p>
-          </>
-        )}
-      </section>
+              <p className="dash-cycle">
+                {metrics.cycle_time === null
+                  ? 'No completed task in this window had a start to measure from.'
+                  : `cycle time p50 ${humanMs(metrics.cycle_time.p50_ms)} · p90 ${humanMs(
+                      metrics.cycle_time.p90_ms,
+                    )} · ${String(metrics.cycle_time.measured)} measured`}
+              </p>
+            </>
+          )}
+        </section>
 
-      {/*
+        {/*
         **WHO IS CARRYING WHAT** (prototype line 740). Counted from the tasks
         already loaded — the same list every other panel here counts.
       */}
-      <section className="dash-panel" aria-label="Who is carrying what">
-        <h2 className="dash-panel-title">
-          Who is carrying what
-          <span className="dash-panel-meta">{load.length} carrying work</span>
-        </h2>
+        <section className="dash-panel" aria-label="Who is carrying what">
+          <h2 className="dash-panel-title">
+            Who is carrying what
+            <span className="dash-panel-meta">{load.length} carrying work</span>
+          </h2>
 
-        {load.length === 0 ? (
-          <p className="dash-empty">Nothing in progress is assigned to anyone.</p>
-        ) : (
-          <ul className="dash-load">
-            {load.map((row) => (
-              <li key={row.id} className="dash-load-row">
-                <span className="dash-load-name">{row.name}</span>
-                <span className="dash-load-bars" aria-hidden="true">
-                  {Array.from({ length: row.count }, (_, i) => (
-                    <span key={i} className="dash-load-pip" />
-                  ))}
-                </span>
-                <span className="dash-load-count">{row.count}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+          {load.length === 0 ? (
+            <p className="dash-empty">Nothing in progress is assigned to anyone.</p>
+          ) : (
+            <ul className="dash-load">
+              {load.map((row) => (
+                <li key={row.id} className="dash-load-row">
+                  <span className="dash-load-name">{row.name}</span>
+                  <span className="dash-load-bars" aria-hidden="true">
+                    {Array.from({ length: row.count }, (_, i) => (
+                      <span key={i} className="dash-load-pip" />
+                    ))}
+                  </span>
+                  <span className="dash-load-count">{row.count}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="dash-panel dash-decide" aria-label="Blocked work">
+          <h2 className="dash-panel-title">
+            Needs a decision
+            <span className="dash-panel-meta">{blocked.length}</span>
+          </h2>
+
+          {blocked.length === 0 ? (
+            <p className="dash-empty">Nothing is waiting on an unfinished dependency.</p>
+          ) : (
+            <ul className="dash-blocked">
+              {blocked.map((row) => (
+                <li key={row.task.id} className="dash-blocked-row">
+                  <span className="dash-key">{row.task.key}</span>
+                  <span className="dash-blocked-title">{row.task.title}</span>
+                  <span className="dash-blocked-by">
+                    waiting on {row.blockedBy.map((dep) => dep.key).join(', ')}
+                    {row.unknown.length > 0 &&
+                      `${row.blockedBy.length > 0 ? ', ' : ''}${String(row.unknown.length)} not loaded`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+
+      <div className="dash-body">
+        {/*
+          **Not `dash-feed`** — that class already belongs to the `<ul>` of
+          events below (`display: grid; padding: 0`), so putting it on the
+          section stripped the panel's own padding and card. A class that reads
+          right and is already taken is the easiest kind of collision to miss.
+        */}
+        <section className="dash-panel dash-feed-panel" aria-label="Recent activity">
+          <h2 className="dash-panel-title">
+            Activity
+            {/*
+            **The design's All · People · Agents filter** (prototype line 745).
+
+            `actor_kind` is on every activity row (D-022), so this is a filter
+            over what is already loaded rather than a second request — and the
+            counts beside each name are the real split, which is what makes the
+            badge on a row mean something.
+          */}
+            <span className="dash-feed-filters" role="group" aria-label="Filter activity">
+              {(
+                [
+                  /*
+                   * **Counted from `shown`, not from `kinds`.**
+                   *
+                   * `kinds` tallies every event in the range, including the verbs
+                   * the feed declines (`FEED_SILENT`) — so it read `All 145` next
+                   * to `People 155`, a filter claiming to show more than
+                   * everything. A button's count must describe the list that
+                   * button produces.
+                   *
+                   * The panel's own "154 events · 4 by agents" is a different
+                   * claim — about what *happened*, not about what is listed — and
+                   * that one deliberately keeps the whole range.
+                   */
+                  ['all', 'All', shown.length],
+                  ['user', 'People', shown.filter((e) => e.actor_kind === 'user').length],
+                  ['agent', 'Agents', shown.filter((e) => e.actor_kind === 'agent').length],
+                ] as const
+              ).map(([id, label, count]) => (
+                <button
+                  key={id}
+                  type="button"
+                  className={actor === id ? 'dash-filter dash-filter-on' : 'dash-filter'}
+                  aria-pressed={actor === id}
+                  onClick={() => {
+                    setActor(id);
+                  }}
+                >
+                  {label} <span className="dash-filter-count">{count}</span>
+                </button>
+              ))}
+            </span>
+          </h2>
+
+          {feed.length === 0 ? (
+            <EmptyState
+              headline={
+                /*
+                 * **Three reasons the list is empty, not two** (LAI-279). The
+                 * filter added a third — "nobody of this kind acted" — and
+                 * reporting it as "nothing worth showing" would blame the feed
+                 * for a choice the reader just made.
+                 */
+                actor !== 'all' && shown.length > 0
+                  ? `No ${actor === 'agent' ? 'agent' : 'person'} activity in this range`
+                  : events.length === 0
+                    ? `Nothing in the ${range.label.toLowerCase()}`
+                    : 'Nothing worth showing in this range'
+              }
+              body={
+                actor !== 'all' && shown.length > 0
+                  ? 'Switch back to All to see everything in this range.'
+                  : events.length === 0
+                    ? 'Widen the range to see older activity.'
+                    : /* The count beside this says how many events there were, and
+                     it is not wrong — they are all verbs the feed declines
+                     (`FEED_SILENT`). Saying "nothing happened" over a count of
+                     52 is the contradiction; saying nothing worth *showing* is
+                     the truth. */
+                      'Everything in this range is the kind of event this feed leaves out — tasks moved between sprints.'
+              }
+            />
+          ) : (
+            <ul className="dash-feed">
+              {feed.map((event) => {
+                const moved = statusChange(event);
+
+                return (
+                  <li key={`${event.id}-${String(event.seq)}`} className="dash-event">
+                    <span className={`dash-kind dash-kind-${event.actor_kind}`}>
+                      {event.actor_kind}
+                    </span>
+                    <span className="dash-actor">{nameFor(event.actor_id)}</span>
+                    <span className="dash-what">
+                      {describeProjectEvent(event)}
+                      {moved !== undefined && (
+                        <span className="dash-move">
+                          {' '}
+                          {moved.from.replace('_', ' ')} → {moved.to.replace('_', ' ')}
+                        </span>
+                      )}
+                    </span>
+                    <time className="dash-when" dateTime={new Date(event.created_at).toISOString()}>
+                      {relativeTime(event.created_at, now)}
+                    </time>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+
+        {/*
+          The design's right rail (prototype lines 780–812): what has gone
+          quiet, and what the agents did today. Both are counted from the same
+          tasks and activity the panels above use — no second source, so they
+          cannot disagree with the feed beside them.
+        */}
+        <aside className="dash-rail" aria-label="Attention">
+          <section className="dash-panel dash-stale">
+            <h2 className="dash-panel-title">
+              Stale · 5+ days quiet
+              <span className="dash-panel-meta">{stale.length}</span>
+            </h2>
+            {stale.length === 0 ? (
+              <p className="dash-empty">Everything has moved in the last five days.</p>
+            ) : (
+              <ul className="dash-stale-list">
+                {stale.map((task) => (
+                  <li key={task.id} className="dash-stale-row">
+                    <span className="dash-stale-title">{task.title}</span>
+                    <span className="dash-stale-meta">
+                      <span className="dash-key">{task.key}</span>
+                      <span className="dash-stale-age">
+                        {updatedAge(task.updated_at, now)} quiet
+                      </span>
+                      <span className="dash-stale-status">
+                        {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
+                      </span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          <section className="dash-panel dash-agentlog">
+            <h2 className="dash-panel-title">Agent log · this window</h2>
+            {/*
+              **Counted, not estimated.** `actor_kind` is on every activity row
+              (D-022), so "what the agents did" is a filter over the feed rather
+              than a second measurement of it.
+            */}
+            <p className="dash-agentlog-figures">
+              <span className="dash-agentlog-n">{kinds.agent}</span> agent{' '}
+              {kinds.agent === 1 ? 'event' : 'events'} · {agentTasks}{' '}
+              {agentTasks === 1 ? 'task' : 'tasks'} touched
+            </p>
+            {agentLog.length === 0 ? (
+              <p className="dash-empty">No agent has acted in this window.</p>
+            ) : (
+              <ul className="dash-agentlog-list">
+                {agentLog.map((row) => (
+                  <li key={row.name} className="dash-agentlog-row">
+                    <span className="dash-agentlog-who">{row.name}</span>
+                    <span className="dash-agentlog-count">{row.count}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </aside>
+      </div>
 
       <section className="dash-panel" aria-label="Work by status">
         <h2 className="dash-panel-title">
@@ -384,90 +639,6 @@ export function DashboardScreen() {
                 <span className="dash-count-label">{entry.status.replace('_', ' ')}</span>
               </li>
             ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="dash-panel" aria-label="Blocked work">
-        <h2 className="dash-panel-title">
-          Blocked
-          <span className="dash-panel-meta">{blocked.length}</span>
-        </h2>
-
-        {blocked.length === 0 ? (
-          <p className="dash-empty">Nothing is waiting on an unfinished dependency.</p>
-        ) : (
-          <ul className="dash-blocked">
-            {blocked.map((row) => (
-              <li key={row.task.id} className="dash-blocked-row">
-                <span className="dash-key">{row.task.key}</span>
-                <span className="dash-blocked-title">{row.task.title}</span>
-                <span className="dash-blocked-by">
-                  waiting on {row.blockedBy.map((dep) => dep.key).join(', ')}
-                  {row.unknown.length > 0 &&
-                    `${row.blockedBy.length > 0 ? ', ' : ''}${String(row.unknown.length)} not loaded`}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="dash-panel" aria-label="Recent activity">
-        <h2 className="dash-panel-title">
-          Activity
-          <span className="dash-panel-meta">
-            {/* The agent/human split is why `actor_kind` is on every row (D-022);
-                without it the badge is decoration. */}
-            {events.length} event{events.length === 1 ? '' : 's'}
-            {kinds.agent > 0 && ` · ${String(kinds.agent)} by agents`}
-          </span>
-        </h2>
-
-        {shown.length === 0 ? (
-          <EmptyState
-            headline={
-              events.length === 0
-                ? `Nothing in the ${range.label.toLowerCase()}`
-                : 'Nothing worth showing in this range'
-            }
-            body={
-              events.length === 0
-                ? 'Widen the range to see older activity.'
-                : /* The count beside this says how many events there were, and
-                     it is not wrong — they are all verbs the feed declines
-                     (`FEED_SILENT`). Saying "nothing happened" over a count of
-                     52 is the contradiction; saying nothing worth *showing* is
-                     the truth. */
-                  'Everything in this range is the kind of event this feed leaves out — tasks moved between sprints.'
-            }
-          />
-        ) : (
-          <ul className="dash-feed">
-            {shown.map((event) => {
-              const moved = statusChange(event);
-
-              return (
-                <li key={`${event.id}-${String(event.seq)}`} className="dash-event">
-                  <span className={`dash-kind dash-kind-${event.actor_kind}`}>
-                    {event.actor_kind}
-                  </span>
-                  <span className="dash-actor">{nameFor(event.actor_id)}</span>
-                  <span className="dash-what">
-                    {describeProjectEvent(event)}
-                    {moved !== undefined && (
-                      <span className="dash-move">
-                        {' '}
-                        {moved.from.replace('_', ' ')} → {moved.to.replace('_', ' ')}
-                      </span>
-                    )}
-                  </span>
-                  <time className="dash-when" dateTime={new Date(event.created_at).toISOString()}>
-                    {relativeTime(event.created_at, now)}
-                  </time>
-                </li>
-              );
-            })}
           </ul>
         )}
       </section>

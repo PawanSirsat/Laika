@@ -85,30 +85,30 @@ void describe('every shipped route is reachable', () => {
 
 void describe('the tab bar is honest about scope', () => {
   /**
-   * **Scope lives in the link, not in the bar** (LAI-251, the owner's
-   * exact-match decision).
+   * **Every space tab carries the space** (LAI-279).
    *
-   * LAI-248 asserted the opposite — no `orgLevel` route in the strip — on the
-   * reasoning that a tab under `laika-core` claims to be about `laika-core`.
-   * The design's strip carries Capacity, and the resolution is that
-   * `navHref` still drops `?project=` for an `orgLevel` route: the tab is
-   * where you reach it, the URL is what it reads. **That is the property to
-   * assert**, and it is stronger than the old absence.
+   * LAI-251 exempted `/capacity`: it reads across the organisation, so its tab
+   * dropped `?project=` to avoid claiming otherwise. The honesty was right and
+   * the mechanism was wrong — the space bar then read **"No space"** over a
+   * screen still showing the space's tabs, which is not a scope statement, it
+   * is a screen that looks broken. The owner reported exactly that.
+   *
+   * The design draws Capacity inside the space and says its scope in words:
+   * *"across 3 spaces · live"* in its own summary bar (prototype line 656).
+   * `capacity.test.ts` asserts that sentence; this asserts the link.
    */
-  void test('an org-level tab does not claim a project in its link', () => {
-    const orgLevelTabs = SPACE_TAB_PATHS.filter(
-      (path) => ROUTES.find((r) => r.path === path)?.orgLevel === true,
-    );
-    // Or the loop proves nothing: today `/capacity` is the only one.
-    assert.deepEqual(orgLevelTabs, ['/capacity']);
+  void test('no space tab drops the project from its link', () => {
+    // Or the loop below proves nothing if the strip is ever emptied.
+    assert.ok(SPACE_TAB_PATHS.length >= 6, `only ${String(SPACE_TAB_PATHS.length)} tabs`);
 
-    for (const path of orgLevelTabs) {
-      assert.equal(
-        navHref(path, 'laika-core'),
-        path,
-        `${path} is orgLevel, so its tab must not carry ?project=`,
-      );
-    }
+    const dropped = SPACE_TAB_PATHS.filter(
+      (path) => !navHref(path, 'laika-core').includes('project='),
+    );
+    assert.deepEqual(dropped, [], `these tabs lose the space: ${dropped.join(', ')}`);
+  });
+
+  void test('Capacity in particular keeps it — the bar said "No space" without it', () => {
+    assert.match(navHref('/capacity', 'laika-core'), /^\/capacity\?project=laika-core$/);
   });
 
   void test('a project-scoped tab does carry the project', () => {

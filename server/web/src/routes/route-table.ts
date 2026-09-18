@@ -184,13 +184,26 @@ export const ROUTES: readonly Route[] = [
     mini: 'UW',
   },
 
-  // **A space tab since LAI-251**, by the owner's exact-match decision — the
-  // design's strip carries Capacity. It stays `orgLevel`, so its link still
-  // drops `?project=` (LAI-423): the tab is where you reach it, the URL is
-  // what it reads. `group: null` because it is no longer a sidebar row, and
-  // offering it in both places would be two answers to one question.
+  /*
+   * **A space tab, and it keeps the space** (LAI-279).
+   *
+   * LAI-251 made this `orgLevel` so its tab dropped `?project=` — the reasoning
+   * being that a tab sitting under `laika-core` must not claim to be about
+   * `laika-core`. The honesty was right; the mechanism was not. Dropping the
+   * parameter left the space bar reading **"No space"** over a screen still
+   * showing the space's tabs, which is not a scope statement, it is a screen
+   * that looks broken.
+   *
+   * The design settles it (prototype line 651): Capacity is drawn inside the
+   * space, and its summary bar says **"across N spaces · live"** in words. The
+   * scope belongs in a sentence a person reads, not in a missing query
+   * parameter nobody sees — and keeping `?project=` means switching back to
+   * Board returns you to the space you came from.
+   *
+   * `group: null` because it is not a sidebar row: two places to reach one
+   * screen is two answers to one question.
+   */
   {
-    orgLevel: true,
     path: '/capacity',
     label: 'Capacity',
     group: null /* a space tab */,

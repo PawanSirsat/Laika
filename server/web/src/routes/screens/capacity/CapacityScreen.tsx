@@ -11,6 +11,7 @@ import {
   type PresenceView,
 } from '../../../api/presence.ts';
 import { getTask, type Task } from '../../../api/tasks.ts';
+import { listProjects } from '../../../api/projects.ts';
 import { listUnlisted, type UnlistedWork } from '../../../api/unlisted.ts';
 import { UnlistedList } from '../unlisted/UnlistedList.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
@@ -64,6 +65,14 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
   const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
   const [unlisted, setUnlisted] = useState<readonly UnlistedWork[]>([]);
   const [tasks, setTasks] = useState<ReadonlyMap<string, Task>>(new Map());
+  /**
+   * How many spaces this screen reads across.
+   *
+   * A real count from `GET /projects`, and `undefined` until it lands — the bar
+   * then says how often it refreshes rather than "across 0 spaces", which would
+   * be a claim rather than a gap.
+   */
+  const [spaceCount, setSpaceCount] = useState<number | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
 
   const load = (signal?: AbortSignal): void => {
@@ -101,6 +110,23 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
         setUnlisted([]);
       });
   };
+
+  // Once, not on the poll: the number of spaces does not change every 20s, and
+  // re-reading it with the presence poll would be a request per tick for a
+  // figure nobody watches.
+  useEffect(() => {
+    const controller = new AbortController();
+    listProjects({}, controller.signal)
+      .then((page) => {
+        if (!controller.signal.aborted) setSpaceCount(page.data.length);
+      })
+      .catch(() => {
+        // The bar falls back to saying how often it refreshes.
+      });
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -162,7 +188,21 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
               <span className="cap-fig-label">UNLISTED WORK</span>
               <span className="cap-fig-value">{unlisted.length}</span>
             </span>
-            <span className="cap-summary-note">updated every {POLL_MS / 1000}s · live</span>
+            {/*
+              **The scope, in words** (LAI-279, prototype line 656).
+
+              This screen reads across the whole organisation while living
+              inside a space. That used to be said by stripping `?project=` from
+              its link, which left the space bar reading "No space" over a screen
+              still showing the space's tabs — not a scope statement, just a
+              screen that looks broken. A sentence is what the design uses and
+              what a reader can actually act on.
+            */}
+            <span className="cap-summary-note">
+              {spaceCount === undefined
+                ? `updated every ${String(POLL_MS / 1000)}s · live`
+                : `across ${String(spaceCount)} ${spaceCount === 1 ? 'space' : 'spaces'} · live`}
+            </span>
           </div>
 
           {/*

@@ -184,18 +184,15 @@ void describe('the view tabs', () => {
       ]);
 
       /*
-       * **The project travels with every project-scoped tab.** A bare path
-       * drops `?project=` and the destination falls back to a different
-       * project (LAI-423).
-       *
-       * `/capacity` is the deliberate exception and is asserted on its own
-       * below: it is `orgLevel`, reads across every project, and a link
-       * claiming otherwise would be the same defect pointed the other way.
+       * **The project travels with every tab, `/capacity` included** (LAI-279).
+       * A bare path drops `?project=` and the destination falls back to a
+       * different project (LAI-423) — or, for Capacity, to none at all, which
+       * is what left the space bar reading "No space".
        */
       const hrefs = await h.page
         .locator('.view-tab')
         .evaluateAll((els: Element[]) => els.map((e) => e.getAttribute('href') ?? ''));
-      for (const href of hrefs.filter((h2) => !h2.startsWith('/capacity'))) {
+      for (const href of hrefs) {
         assert.match(href, /project=laika-core/, `a tab drops the project: ${href}`);
       }
       // Or the filter above could hide every tab and the loop prove nothing.
@@ -206,24 +203,38 @@ void describe('the view tabs', () => {
   });
 
   /**
-   * **Capacity is a tab, and its link is still org-level** (LAI-251).
+   * **Capacity is a tab, and it keeps the space** (LAI-279).
    *
-   * LAI-248 asserted the opposite — Capacity absent from the strip — because
-   * an `orgLevel` route drops `?project=` and a tab under `laika-core` would
-   * claim to be about it. The owner's exact-match decision put the design's
-   * strip back; the honesty it was protecting now lives in the link, which is
-   * where it belongs, so that is what this asserts.
+   * LAI-251 had its link drop `?project=` so a tab under `laika-core` could not
+   * claim to be about `laika-core`. The honesty was right; the mechanism left
+   * the space bar reading **"No space"** over a screen still showing that
+   * space's tabs, which the owner reported as the screen looking like a
+   * different page.
+   *
+   * The design draws Capacity inside the space and puts the scope into a
+   * sentence — *"across N spaces · live"* — which is where a reader can see it.
+   * This asserts the link; `capacity.test.ts` asserts the sentence.
    */
-  void test('the Capacity tab does not claim this project in its link', async () => {
+  void test('the Capacity tab keeps the space, and the bar names it', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       const tab = h.page.locator('.view-tab', { hasText: 'Capacity' });
       await tab.waitFor({ timeout: 20_000 });
-      assert.equal(
-        await tab.getAttribute('href'),
-        '/capacity',
-        'the Capacity tab carries a project it does not read',
+      assert.equal(await tab.getAttribute('href'), '/capacity?project=laika-core');
+
+      await tab.click();
+      await h.page.waitForURL(/capacity\?project=laika-core/, { timeout: 10_000 });
+
+      // The whole of the owner's report: the bar must name the space, not
+      // fall back to "No space".
+      await h.page.waitForFunction(
+        () => (document.querySelector('.space-name')?.textContent ?? '') !== '',
+        undefined,
+        { timeout: 10_000 },
       );
+      const name = await h.page.locator('.space-name').innerText();
+      assert.notEqual(name, 'No space', 'the space bar lost the space');
+      assert.match(name, /Laika Core|laika-core/);
     } finally {
       await h.close();
     }
