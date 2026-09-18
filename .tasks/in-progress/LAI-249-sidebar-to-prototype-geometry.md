@@ -2,12 +2,20 @@
 id: LAI-249
 title: 'The sidebar takes the prototype''s exact geometry: collapse, popover, footer'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-248]
 discovered-from: LAI-248
-status: backlog
+started: 2026-09-18T11:58:43+05:30
+status: in-progress
 ---
+
+> **Claim deviation, flagged (§2).** `depends-on` names LAI-248, which sits in
+> `.tasks/review/` — accepted by nobody yet. Claimed anyway on the owner's
+> direction: the approved rebuild plan (2026-09-18) sequences this task
+> directly after finishing LAI-248, both SHELL's, same branch. The LAI-238
+> precedent, with the owner's plan in place of CHIEF's accept note. If CHIEF
+> sends LAI-248 back, this task absorbs the rework.
 
 ## Goal
 
