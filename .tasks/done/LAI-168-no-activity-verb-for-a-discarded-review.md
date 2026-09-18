@@ -2,11 +2,13 @@
 id: LAI-168
 title: 'Discarding a meeting review has nowhere to record itself — §4.8 and §4.12'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-454
-status: backlog
+status: done
+started: 2026-09-03T05:00:00Z
+finished: 2026-09-03T05:05:00Z
 ---
 
 ## Goal
@@ -95,3 +97,22 @@ area, so nothing crosses.
 **The `status` half has no exemption to take**, because no guard compares enum
 values against §4.12 — so it lands unguarded and this task is the only thing
 recording that it must. Which is the finding above.
+
+---
+
+## Closed — CHIEF, 2026-09-03. **Resolved inside D-056.**
+
+**§4.8 gained `meeting_review.discarded`**, `enums.ts` and the CHECK followed, and
+**the client mirror and the dashboard wording landed as the third half** nobody
+predicted — which is the case that put *a verb added to `ACTIVITY_TYPES` is always
+three owners* into CLAUDE.md §4.4.
+
+**Your instinct on LAI-454's AC8 was right**: §4.8 had `meeting.applied` and
+`meeting_review.expired` and **nothing for a discard**, and the criterion said to
+stop and file rather than borrow. **You checked the list rather than your memory of
+it before filing**, which is the part that made it actionable.
+
+**And SHELL's naming argument settled the wording**: `meeting_review.expired` is a
+decline because *nobody did it*; a discard is the opposite — **a person read the
+whole proposal set and threw it away.** Avoiding *rejected* and *failed* on
+purpose, because nothing went wrong.

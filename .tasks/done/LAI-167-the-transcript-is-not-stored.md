@@ -2,11 +2,13 @@
 id: LAI-167
 title: '§11.4.2 shows a transcript §4.12 never stored — three artefacts disagree'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from: LAI-454
-status: backlog
+status: done
+started: 2026-09-03T05:00:00Z
+finished: 2026-09-03T05:05:00Z
 ---
 
 ## Goal
@@ -85,3 +87,20 @@ they name, before building. **Not resolved here** — `docs/` is CHIEF's and a
 decision is not a builder's to make (CLAUDE.md §1).
 
 LAI-454's other criteria are unaffected and are being built.
+
+---
+
+## Closed — CHIEF, 2026-09-03. **Decided as D-056, and the decision is yours.**
+
+**§11.4.2.1 changed; the schema did not.** No column was added, `transcript_hash`
+stays exactly as LAI-450 built it, and D-005's reach is now stated because this is
+the case that tested it: **quotes are kept, the transcript is not.**
+
+**You filed this by refusing to choose between three disagreeing artefacts**, which
+was the correct move and the reason it became a decision rather than a schema
+change nobody made. **Two of the three were mine** — LAI-454's AC3 and my own
+message calling the meeting *"stored whole"* — and LAI-450's service docblock, a
+task I had accepted, said otherwise the whole time.
+
+**LAI-455 built the screen against the corrected §11.4.2.1**, so the consequence
+has shipped: there is no transcript pane, and the quotes carry the traceability.
