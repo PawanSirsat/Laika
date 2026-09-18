@@ -3,11 +3,12 @@ id: LAI-274
 title: The Calendar and the Sprints list to the design
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-273
 started: 2026-09-18T19:35:00Z
+finished: 2026-09-18T19:48:00Z
 ---
 
 ## Why
