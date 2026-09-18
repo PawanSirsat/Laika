@@ -2,11 +2,12 @@
 id: LAI-238
 title: An admin cannot see or revoke another user's tokens
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-459]
 discovered-from: LAI-460
-status: backlog
+started: 2026-09-18T09:14:02+05:30
+status: in-progress
 ---
 
 ## Goal
@@ -32,3 +33,14 @@ API directly. The Tokens screen manages **your own** and nobody else's.
 ## Notes
 
 `depends-on: [LAI-459]` because it belongs on the screen that task builds.
+
+**Claimed with LAI-459 in `.tasks/review/`, not `.tasks/done/` — §2's letter is
+not satisfied and I am saying so rather than letting it pass.** CHIEF accepted
+LAI-459 and directed this one next; the hold on it is CORE's two-line LAI-239
+edit, which touches nothing this task uses. The rule exists so nobody builds on
+work that might be sent back, and that risk is the part CHIEF's acceptance
+actually resolves — but the check as written would have said no, so this is a
+deviation on CHIEF's call, not a reading in which the dependency was met.
+
+The substance is present regardless: `OrganisationScreen.tsx` and its stylesheet
+are on `shell` already, which is what this task extends.
