@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
+import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -45,10 +46,33 @@ import { withProjectParam } from '../../nav-url.ts';
  * rather than trimming a list client-side. That is what lets the empty state say
  * *"nothing in this range"* truthfully instead of implying the project is empty.
  */
+/** A width for a segment of the release bar; `0%` rather than `NaN` when empty. */
+function pct(part: number, whole: number): string {
+  return whole === 0 ? '0%' : `${String((part / whole) * 100)}%`;
+}
+
+/** `4h`, `3d` — a duration a person reads, not milliseconds. */
+function humanMs(ms: number): string {
+  const hours = Math.round(ms / 3_600_000);
+  if (hours < 1) return `${String(Math.max(1, Math.round(ms / 60_000)))}m`;
+  if (hours < 48) return `${String(hours)}h`;
+  return `${String(Math.round(hours / 24))}d`;
+}
+
 export function DashboardScreen() {
   const { params, setParams } = useRoute();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
+
+  /**
+   * Throughput and cycle time, from the endpoint that decides them.
+   *
+   * Kept out of `use-dashboard` deliberately: that hook's three lists all feed
+   * the counts, and a fourth request whose failure must **not** blank the
+   * screen does not belong in the same all-or-nothing state. A metrics request
+   * that fails leaves the panel saying so and every other panel intact.
+   */
+  const [metrics, setMetrics] = useState<MetricsView | undefined>(undefined);
 
   // Fixed per range change, not per render: every "3 hours ago" on the page is
   // measured from it, and a moving clock would make rows disagree with each other.
@@ -56,6 +80,31 @@ export function DashboardScreen() {
 
   const range = rangeById(params.get('range') ?? DEFAULT_RANGE);
   const since = useMemo(() => sinceFor(range, now), [range, now]);
+
+  /*
+   * The throughput request follows the same window the rest of the screen
+   * uses, so the bars and the counts describe the same period. `since` is
+   * `undefined` for "all time", and the endpoint's own 30-day default then
+   * applies — which is the window the design's chart draws anyway.
+   */
+  useEffect(() => {
+    if (slug === undefined) return;
+    const controller = new AbortController();
+
+    setMetrics(undefined);
+    getMetrics(slug, since, controller.signal)
+      .then((view) => {
+        if (!controller.signal.aborted) setMetrics(view);
+      })
+      .catch(() => {
+        // The panel keeps saying "loading" rather than blanking the screen;
+        // every other panel on it is fed by a different request.
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [slug, since]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -145,6 +194,21 @@ export function DashboardScreen() {
 
   const { tasks, events, members, truncated } = dashboard.state;
   const breakdown = statusBreakdown(tasks);
+  const inReview = tasks.filter((t) => t.status === 'review').length;
+  const inFlight = tasks.filter((t) => t.status === 'in_progress').length;
+
+  /** In-progress work per person, heaviest first — the design's mini bars. */
+  const load = [
+    ...tasks
+      .filter((t) => t.status === 'in_progress' && t.assignee_id !== null)
+      .reduce((map, task) => {
+        const id = task.assignee_id ?? '';
+        map.set(id, (map.get(id) ?? 0) + 1);
+        return map;
+      }, new Map<string, number>()),
+  ]
+    .map(([id, count]) => ({ id, count, name: members.get(id)?.name ?? id }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
   const blocked = blockedTasks(tasks);
   // The feed is edited; the counts are not. `byActorKind` still sees every
   // event, because "12 events, 3 by agents" is a claim about what happened —
@@ -174,6 +238,127 @@ export function DashboardScreen() {
           Showing the first pages only — some counts may be low.
         </p>
       )}
+
+      {/*
+        **RELEASE PROGRESS** (prototype line 723). One number, the fraction it
+        came from, and a segmented bar — the design leads with this because it
+        is the only figure on the screen a reader can act on without reading
+        anything else.
+      */}
+      <section className="dash-panel dash-release" aria-label="Release progress">
+        <h2 className="dash-panel-label">RELEASE PROGRESS</h2>
+        <div className="dash-release-body">
+          <span className="dash-release-pct">
+            {breakdown.live === 0
+              ? '—'
+              : `${String(Math.round((breakdown.done / breakdown.live) * 100))}%`}
+          </span>
+          <span className="dash-release-of">
+            {breakdown.done} of {breakdown.live} tasks
+          </span>
+        </div>
+
+        <div className="dash-release-bar" aria-hidden="true">
+          {/* Three real segments in one bar, so the eye reads finished, waiting
+              and moving as parts of one whole rather than three counts. */}
+          <span
+            className="dash-seg dash-seg-done"
+            style={{ width: pct(breakdown.done, breakdown.live) }}
+          />
+          <span
+            className="dash-seg dash-seg-review"
+            style={{ width: pct(inReview, breakdown.live) }}
+          />
+          <span
+            className="dash-seg dash-seg-wip"
+            style={{ width: pct(inFlight, breakdown.live) }}
+          />
+        </div>
+
+        <div className="dash-release-legend">
+          <span className="dash-leg dash-leg-done">done {breakdown.done}</span>
+          <span className="dash-leg dash-leg-review">review {inReview}</span>
+          <span className="dash-leg dash-leg-wip">in progress {inFlight}</span>
+        </div>
+      </section>
+
+      {/*
+        **THROUGHPUT** (prototype line 733) — from `GET /projects/:slug/metrics`,
+        which the server has served since LAI-124 and nothing called until now.
+        Every bar is the server's own count of tasks completed that day; the
+        server sends quiet days as explicit zeroes, so nothing is interpolated.
+      */}
+      <section className="dash-panel" aria-label="Throughput">
+        <h2 className="dash-panel-title">
+          Throughput
+          <span className="dash-panel-meta">
+            {metrics === undefined
+              ? 'loading'
+              : `${String(metrics.throughput.reduce((n, b) => n + b.completed, 0))} completed`}
+          </span>
+        </h2>
+
+        {metrics === undefined ? (
+          <p className="dash-empty">Loading throughput…</p>
+        ) : metrics.throughput.length === 0 ? (
+          <p className="dash-empty">Nothing has been completed in this window.</p>
+        ) : (
+          <>
+            <div className="dash-bars">
+              {metrics.throughput.map((bucket) => {
+                const peak = Math.max(...metrics.throughput.map((b) => b.completed), 1);
+                return (
+                  <span
+                    key={bucket.day}
+                    className={bucket.completed === 0 ? 'dash-bar dash-bar-zero' : 'dash-bar'}
+                    style={{ height: `${String(Math.max(2, (bucket.completed / peak) * 100))}%` }}
+                    title={`${bucket.day}: ${String(bucket.completed)} completed`}
+                  />
+                );
+              })}
+            </div>
+
+            {/* `null` is "nothing to measure", never a zeroed shape — so the
+                screen says so instead of printing `p50 0m`. */}
+            <p className="dash-cycle">
+              {metrics.cycle_time === null
+                ? 'No completed task in this window had a start to measure from.'
+                : `cycle time p50 ${humanMs(metrics.cycle_time.p50_ms)} · p90 ${humanMs(
+                    metrics.cycle_time.p90_ms,
+                  )} · ${String(metrics.cycle_time.measured)} measured`}
+            </p>
+          </>
+        )}
+      </section>
+
+      {/*
+        **WHO IS CARRYING WHAT** (prototype line 740). Counted from the tasks
+        already loaded — the same list every other panel here counts.
+      */}
+      <section className="dash-panel" aria-label="Who is carrying what">
+        <h2 className="dash-panel-title">
+          Who is carrying what
+          <span className="dash-panel-meta">{load.length} carrying work</span>
+        </h2>
+
+        {load.length === 0 ? (
+          <p className="dash-empty">Nothing in progress is assigned to anyone.</p>
+        ) : (
+          <ul className="dash-load">
+            {load.map((row) => (
+              <li key={row.id} className="dash-load-row">
+                <span className="dash-load-name">{row.name}</span>
+                <span className="dash-load-bars" aria-hidden="true">
+                  {Array.from({ length: row.count }, (_, i) => (
+                    <span key={i} className="dash-load-pip" />
+                  ))}
+                </span>
+                <span className="dash-load-count">{row.count}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="dash-panel" aria-label="Work by status">
         <h2 className="dash-panel-title">

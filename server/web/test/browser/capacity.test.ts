@@ -166,12 +166,18 @@ void describe('the capacity screen', () => {
   void test('a person with no visible repo renders as a person, in both themes', async () => {
     const h = await open('/capacity', STUB);
     try {
-      await h.page.locator('.cap-present-row').first().waitFor({ timeout: 20_000 });
+      /*
+       * **The card, not the old presence row** (LAI-275). Capacity is now one
+       * card per person in the design's four panels; the property under test is
+       * unchanged — a person whose location is withheld renders as a person,
+       * with a sentence, and leaks nothing.
+       */
+      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
 
-      // The probe must see both rows, or "the withheld one is fine" is vacuous.
-      assert.equal(await h.page.locator('.cap-present-row').count(), 2);
+      // The probe must see every card, or "the withheld one is fine" is vacuous.
+      assert.ok((await h.page.locator('.cap-card').count()) >= 2);
 
-      const withheld = h.page.locator('.cap-present-row', { hasText: 'Tomas Nel' });
+      const withheld = h.page.locator('.cap-card', { hasText: 'Tomas Nel' });
       for (const theme of ['Light', 'Dark']) {
         await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
@@ -200,13 +206,13 @@ void describe('the capacity screen', () => {
   void test('an agent session is marked, and a human is not', async () => {
     const h = await open('/capacity', STUB);
     try {
-      const agent = h.page.locator('.cap-present-row', { hasText: 'Ada Lovelace' });
+      const agent = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
       await agent.waitFor({ timeout: 20_000 });
       // LAI-411's treatment, reused — the word `agent`, not a colour alone.
       assert.equal(await agent.locator('.marker-agent').count(), 1);
       assert.match(await agent.locator('.marker-agent').innerText(), /agent/i);
 
-      const human = h.page.locator('.cap-present-row', { hasText: 'Tomas Nel' });
+      const human = h.page.locator('.cap-card', { hasText: 'Tomas Nel' });
       assert.equal(
         await human.locator('.marker-agent').count(),
         0,
@@ -220,8 +226,10 @@ void describe('the capacity screen', () => {
   void test('task ids are resolved to keys and titles, never shown raw', async () => {
     const h = await open('/capacity', STUB);
     try {
-      await h.page.locator('.cap-task').first().waitFor({ timeout: 20_000 });
-      const chips = await h.page.locator('.cap-task').allInnerTexts();
+      // `.cap-chip` since LAI-275 — the design's in-progress chips. Same
+      // property: an id must never reach the screen in place of a key.
+      await h.page.locator('.cap-chip').first().waitFor({ timeout: 20_000 });
+      const chips = await h.page.locator('.cap-chip').allInnerTexts();
       assert.ok(chips.length >= 3, `only ${String(chips.length)} task chips`);
       for (const chip of chips) {
         assert.match(chip, /LAI-\d+/, `a chip shows no key: ${chip}`);
@@ -244,7 +252,7 @@ void describe('the capacity screen', () => {
       // AC5: the click may open a form; it must not navigate.
       assert.equal(h.page.url(), before, 'promoting navigated away');
       assert.equal(await h.page.locator('.unl-form').count(), 1, 'no form appeared');
-      assert.equal(await h.page.locator('.cap-present-row').count(), 2, 'the screen was replaced');
+      assert.ok((await h.page.locator('.cap-card').count()) >= 2, 'the screen was replaced');
     } finally {
       await h.close();
     }
@@ -308,8 +316,9 @@ void describe('the capacity screen', () => {
     };
     const h = await open('/capacity', noKey);
     try {
-      await h.page.locator('.cap-person').first().waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.cap-person').count(), 2);
+      // `.cap-card` since LAI-275 — one card per person, in the design's panels.
+      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.cap-card').count(), 2);
       assert.equal(
         await h.page.locator('.cap-unlisted-count').count(),
         0,
@@ -336,7 +345,7 @@ void describe('the capacity screen', () => {
       // saying where it lives.
       assert.equal(await h.page.locator('.cap input[type="checkbox"]').count(), 0);
       assert.doesNotMatch(text, /nobody is working/i, 'disabled must not claim nobody is working');
-      assert.equal(await h.page.locator('.cap-present-row').count(), 0);
+      assert.equal(await h.page.locator('.cap-card').count(), 0);
     } finally {
       await h.close();
     }

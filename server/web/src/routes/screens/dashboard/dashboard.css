@@ -225,3 +225,196 @@
   color: var(--tx3);
   white-space: nowrap;
 }
+
+/* ===========================================================================
+ * The design's three missing panels (prototype lines 719–816), LAI-275.
+ * ======================================================================== */
+
+.dash-panel-label {
+  margin: 0;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--tx3);
+}
+
+.dash-release-body {
+  display: flex;
+  align-items: baseline;
+  gap: 0.625rem;
+  margin-top: 0.5rem;
+}
+
+.dash-release-pct {
+  font-family: var(--font-mono);
+  font-size: 1.75rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx);
+}
+
+.dash-release-of {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx3);
+}
+
+/* One bar, three real segments — finished, waiting and moving read as parts of
+   the same whole rather than as three separate counts. */
+.dash-release-bar {
+  display: flex;
+  height: 8px;
+  margin-top: 0.625rem;
+  border-radius: 4px;
+  background: var(--tub);
+  overflow: hidden;
+}
+
+.dash-seg {
+  display: block;
+  height: 100%;
+}
+
+.dash-seg-done {
+  background: var(--grn);
+}
+
+.dash-seg-review {
+  background: var(--amb);
+}
+
+.dash-seg-wip {
+  background: var(--acc);
+}
+
+.dash-release-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  margin-top: 0.5rem;
+  font-size: 0.625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.dash-leg {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.dash-leg::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.dash-leg-done {
+  color: var(--grn);
+}
+.dash-leg-done::before {
+  background: var(--grn);
+}
+
+.dash-leg-review {
+  color: var(--amb);
+}
+.dash-leg-review::before {
+  background: var(--amb);
+}
+
+.dash-leg-wip {
+  color: var(--acc);
+}
+.dash-leg-wip::before {
+  background: var(--acc);
+}
+
+/* ------------------------------------------------------------- throughput */
+
+.dash-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 64px;
+  margin-top: 0.5rem;
+}
+
+.dash-bar {
+  flex: 1;
+  min-width: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--acc);
+}
+
+/* A quiet day is drawn, not skipped — the server sends explicit zeroes so the
+   chart's spacing is the real calendar rather than a compacted one. */
+.dash-bar-zero {
+  background: var(--bd);
+}
+
+.dash-cycle {
+  margin: 0.5rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  color: var(--tx3);
+}
+
+/* -------------------------------------------------------- who carries what */
+
+.dash-load {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+}
+
+.dash-load-row {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+}
+
+.dash-load-name {
+  flex: none;
+  width: 9.375rem;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-load-bars {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+}
+
+.dash-load-pip {
+  width: 14px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--acc);
+}
+
+.dash-load-count {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx3);
+}

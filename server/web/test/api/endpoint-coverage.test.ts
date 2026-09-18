@@ -55,7 +55,6 @@ const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
   'api/v1/heartbeats': "the plugin's SessionStart/Stop hooks post this (LAI-418), never the SPA",
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
-  'api/v1/projects/*/metrics': 'LAI-457 — the Dashboard never calls it',
   'api/v1/me/watching': 'LAI-458 — watching has no UI',
   'api/v1/tasks/*/watch': 'LAI-458',
   'api/v1/tasks/*/watchers': 'LAI-458',
