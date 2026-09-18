@@ -702,9 +702,19 @@ file. The rules below are the ones that are true of every line of code.
   Run it so a failure cannot be filtered out:
 
   ```bash
-  pnpm test > /tmp/gate.txt 2>&1; echo "EXIT $?"
+  pnpm test > /tmp/gate.txt 2>&1; echo "TEST $?"
+  pnpm lint   > /tmp/lint.txt 2>&1; echo "LINT $?"
+  pnpm format > /tmp/fmt.txt  2>&1; echo "FMT  $?"
   grep -E "Unhandled|Errors|Failed|not ok|✗" /tmp/gate.txt
   ```
+
+  **All three, and the gate is all three exiting `0`.** This rule said `pnpm test`
+  alone until 2026-09-03, and **`pnpm lint` was red on `master` for 54 commits and
+  nine accepted tasks** before SHELL noticed — one empty arrow function from
+  LAI-466, which CHIEF gated, accepted and pushed while reporting `EXIT 0`. **The
+  report was true and incomplete**, which is the same *"the instrument cannot see
+  the thing"* failure the rest of this section is about, **arriving in the rule
+  that names the instrument.**
 
   **`EXIT 0` is the claim. A count is not.** **And read it** — CHIEF pushed on an
   `EXIT 1` run without looking, because the command after it was chained with

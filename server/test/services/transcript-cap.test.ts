@@ -12,6 +12,17 @@ import {
   MONTHLY_SUBMISSION_CAP,
   submissionsInWindow,
 } from '../../src/services/webhooks.ts';
+import {
+  REVIEW_TTL_MS,
+  storeTranscriptReview,
+  type StoreTranscriptInput,
+} from '../../src/services/meeting-reviews.ts';
+import {
+  ProviderResponseError,
+  ProviderUnavailableError,
+  type ProviderClient,
+} from '../../src/services/provider.ts';
+import { expireMeetingReviews } from '../../src/jobs/jobs.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -177,5 +188,123 @@ describe('what the derived count deliberately does not see', () => {
       .run();
 
     expect(submissionsInWindow(t.db, NOW)).toBe(0);
+  });
+});
+
+// -------------------------------- a paid call leaves a row (D-057, LAI-171)
+
+describe('a submission the provider was paid for leaves a row', () => {
+  const PROJECT_SLUG = 'laika';
+
+  function input(): StoreTranscriptInput {
+    return { projectSlug: PROJECT_SLUG, transcript: 'we talked', source: 'recorder' };
+  }
+
+  const answering = (text: string): ProviderClient => ({ complete: () => Promise.resolve(text) });
+  const throwing = (err: Error): ProviderClient => ({ complete: () => Promise.reject(err) });
+
+  const rows = () => t.db.select().from(meetingReviews).all();
+
+  it('writes a failed row when the answer will not parse, and still counts', async () => {
+    // The gap LAI-467 left and this closes: the provider is called before the
+    // insert, so an unusable answer cost money and left nothing for
+    // `submissionsInWindow` to count.
+    await expect(
+      storeTranscriptReview(t.db, answering('not json at all'), input(), NOW),
+    ).rejects.toBeInstanceOf(ProviderResponseError);
+
+    expect(rows()).toHaveLength(1);
+    expect(rows()[0]?.status).toBe('failed');
+    expect(rows()[0]?.proposalsJson).toBe('[]');
+    expect(submissionsInWindow(t.db, NOW), 'the spend was not counted').toBe(1);
+  });
+
+  it('is distinguishable from a meeting that legitimately proposed nothing', async () => {
+    // **The whole argument of D-057.** `{"proposals": []}` is a real answer, so
+    // the emptiness cannot be the signal — a reviewer must be able to tell "the
+    // model had nothing to propose" from "the model misbehaved".
+    await storeTranscriptReview(t.db, answering('{"proposals":[]}'), input(), NOW);
+    await expect(
+      storeTranscriptReview(t.db, answering('garbage'), input(), NOW + 1),
+    ).rejects.toBeInstanceOf(ProviderResponseError);
+
+    const byStatus = rows()
+      .map((r) => r.status)
+      .sort();
+    expect(byStatus).toEqual(['failed', 'pending']);
+
+    // And they are identical on every other axis, which is why status has to be
+    // the distinguisher.
+    for (const row of rows()) expect(row.proposalsJson).toBe('[]');
+  });
+
+  it('writes one when the provider answered with an error, or timed out', async () => {
+    // `reached` is true for both: the provider saw the request and may have
+    // billed it.
+    await expect(
+      storeTranscriptReview(
+        t.db,
+        throwing(new ProviderUnavailableError('provider answered 500', true)),
+        input(),
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+    expect(rows()).toHaveLength(1);
+
+    await expect(
+      storeTranscriptReview(
+        t.db,
+        throwing(new ProviderUnavailableError('timed out', true)),
+        input(),
+        NOW + 1,
+      ),
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+
+    expect(rows()).toHaveLength(2);
+    expect(rows().every((r) => r.status === 'failed')).toBe(true);
+    expect(submissionsInWindow(t.db, NOW + 1)).toBe(2);
+  });
+
+  it('writes none when the request never reached the provider', async () => {
+    // A refused connection or a DNS failure spent nothing. **Counting these
+    // would let a network outage burn the month's budget** — and D-057's title
+    // is the rule: a call *that was paid for* leaves a row.
+    await expect(
+      storeTranscriptReview(
+        t.db,
+        throwing(new ProviderUnavailableError('could not connect', false)),
+        input(),
+        NOW,
+      ),
+    ).rejects.toBeInstanceOf(ProviderUnavailableError);
+
+    expect(rows(), 'a call that never connected was counted as spend').toEqual([]);
+    expect(submissionsInWindow(t.db, NOW)).toBe(0);
+  });
+
+  it('writes none for a project that does not exist — the provider is never called', async () => {
+    // AC4: a rejected request does not count, because it never reached the
+    // provider. Asserted with a client that throws if it is called at all.
+    const mustNotRun: ProviderClient = {
+      complete: () => Promise.reject(new Error('the provider was called for an unknown project')),
+    };
+
+    await expect(
+      storeTranscriptReview(t.db, mustNotRun, { ...input(), projectSlug: 'nope' }, NOW),
+    ).rejects.toThrow(/No project with slug/);
+
+    expect(rows()).toEqual([]);
+  });
+
+  it('a failed row is not reviewable and the expiry sweep cannot reach it', async () => {
+    // D-057: the sweep moves `pending -> expired`, so a `failed` row is
+    // untouched — existing code being right rather than a rule added for this.
+    await expect(
+      storeTranscriptReview(t.db, answering('garbage'), input(), NOW),
+    ).rejects.toBeInstanceOf(ProviderResponseError);
+
+    expireMeetingReviews(t.db, NOW + REVIEW_TTL_MS + 1);
+
+    expect(rows()[0]?.status, 'the sweep expired a failed row').toBe('failed');
   });
 });
