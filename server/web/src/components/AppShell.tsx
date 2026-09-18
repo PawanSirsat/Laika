@@ -4,6 +4,9 @@ import { EmptyState } from './EmptyState.tsx';
 import { Sidebar } from './Sidebar.tsx';
 import { showsAppNav } from './shell-chrome.ts';
 import { useShellContext } from '../api/use-shell-context.ts';
+import { useSpaces } from '../routes/use-spaces.ts';
+import { permissionHolder } from '../routes/nav-permissions.ts';
+import { SpaceTabs } from './SpaceTabs.tsx';
 import { ThemeToggle } from './ThemeToggle.tsx';
 import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
 import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
@@ -293,6 +296,9 @@ export function AppShell() {
 
   // Real numbers only. `undefined` renders nothing — see `useShellContext`.
   const projectSlug = params.get('project') ?? undefined;
+  // Gated on the session: `/login` and first boot render this shell too, and an
+  // ungated fetch 401s on every sign-in page load.
+  const { spaces, open: openSpace } = useSpaces(session.status === 'authenticated', projectSlug);
   const { version, sprintCount } = useShellContext(projectSlug, signedIn);
 
   return (
@@ -310,6 +316,8 @@ export function AppShell() {
             setNavOpen(false);
           }}
           projectSlug={projectSlug}
+          spaces={spaces}
+          onOpenSpace={openSpace}
           orgRole={session.status === 'authenticated' ? session.user.org_role : undefined}
           version={version}
           counts={{ '/sprints': sprintCount }}
@@ -385,6 +393,27 @@ export function AppShell() {
               </div>
             )}
           </header>
+        )}
+
+        {/*
+          The views of the space you are in (LAI-248). Above `<main>`, not
+          inside it, because it belongs to the shell rather than to whichever
+          screen happens to be showing — and it is the same bar across all of
+          them, which is what makes them read as views of one thing.
+
+          `SpaceTabs` renders nothing without a project, so org-level screens
+          and the pre-auth routes get no bar: there is no space to be inside of.
+        */}
+        {signedIn && (
+          <SpaceTabs
+            currentPath={path}
+            projectSlug={projectSlug}
+            onNavigate={navigate}
+            holds={permissionHolder(
+              session.status === 'authenticated' ? session.user.org_role : undefined,
+            )}
+            counts={{ '/sprints': sprintCount }}
+          />
         )}
 
         <main id="main" className="shell-main" tabIndex={-1}>

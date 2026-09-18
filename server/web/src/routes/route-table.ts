@@ -18,7 +18,24 @@
  */
 
 /** The three sidebar groups, in the order `docs/design/README.md` fixes. */
-export const NAV_GROUPS = ['WORK', 'REVIEW', 'SETTINGS'] as const;
+/**
+ * The sidebar's groups, in the live design's order (LAI-247).
+ *
+ * **`SPACES` is not here**, and that is the point: its rows are the projects you
+ * have opened recently, not routes. `Sidebar` renders it from the project list
+ * and then renders these two beneath it.
+ *
+ * **`WORK` and `REVIEW` are gone.** The design ties every view to a space — its
+ * `projectScreens` test lights a space row for the board, timeline, sprints,
+ * dashboard and meeting review alike — so those views became **tabs inside a
+ * space** rather than a flat list beside it.
+ *
+ * **`ORG` is ours, not the design's.** The design is single-project, so
+ * "inside a space" and "across the org" are the same place there. Capacity and
+ * Unlisted work read across every project (`orgLevel`, LAI-423) and a tab under
+ * `laika-core` would claim otherwise.
+ */
+export const NAV_GROUPS = ['ORG', 'SETTINGS'] as const;
 export type NavGroup = (typeof NAV_GROUPS)[number];
 
 export interface Route {
@@ -95,20 +112,50 @@ export interface Route {
 
 export const ROUTES: readonly Route[] = [
   // WORK
-  { path: '/board', label: 'Board', group: 'WORK', status: 'ready', phase: 'Phase 2' },
-  { path: '/timeline', label: 'Timeline', group: 'WORK', status: 'building', phase: 'Phase 2.5' },
-  { path: '/sprints', label: 'Sprints', group: 'WORK', status: 'building', phase: 'Phase 2' },
-  { path: '/projects', label: 'Projects', group: 'WORK', status: 'ready', phase: 'Phase 2' },
+  {
+    path: '/board',
+    label: 'Board',
+    group: null /* a space tab */,
+    status: 'ready',
+    phase: 'Phase 2',
+  },
+  {
+    path: '/timeline',
+    label: 'Timeline',
+    group: null /* a space tab */,
+    status: 'building',
+    phase: 'Phase 2.5',
+  },
+  {
+    path: '/sprints',
+    label: 'Sprints',
+    group: null /* a space tab */,
+    status: 'building',
+    phase: 'Phase 2',
+  },
+  {
+    path: '/projects',
+    label: 'Projects',
+    group: null /* reached as "More spaces" in the SPACES section */,
+    status: 'ready',
+    phase: 'Phase 2',
+  },
 
   // REVIEW
-  { path: '/dashboard', label: 'Dashboard', group: 'REVIEW', status: 'building', phase: 'Phase 5' },
+  {
+    path: '/dashboard',
+    label: 'Dashboard',
+    group: null /* a space tab */,
+    status: 'building',
+    phase: 'Phase 5',
+  },
   // A queue a human works through, and audit-shaped: admin-up only (§4.14).
   {
     orgLevel: true,
     requires: 'audit_log.export',
     path: '/unlisted',
     label: 'Unlisted work',
-    group: 'REVIEW',
+    group: 'ORG' /* reads across every project */,
     status: 'ready',
     phase: 'Phase 3',
   },
@@ -121,7 +168,7 @@ export const ROUTES: readonly Route[] = [
     orgLevel: true,
     path: '/capacity',
     label: 'Capacity',
-    group: 'REVIEW',
+    group: 'ORG' /* reads across every project */,
     status: 'ready',
     phase: 'Phase 5',
   },
@@ -129,7 +176,7 @@ export const ROUTES: readonly Route[] = [
   {
     path: '/meeting-review',
     label: 'Meeting review',
-    group: 'REVIEW',
+    group: null /* a space tab */,
     // Offered now that there is a screen behind it (LAI-455) — the same rule
     // that gave `Tokens` and `Capacity` their places back.
     status: 'ready',
@@ -177,6 +224,45 @@ export const ROUTES: readonly Route[] = [
   { public: true, path: '/design/tokens', label: 'Design tokens', group: null, phase: 'reference' },
   { public: true, path: '/design/states', label: 'States', group: null, phase: 'reference' },
 ];
+
+/**
+ * The views that live **inside** a space, in the order the tab bar shows them.
+ *
+ * Every one carries `?project=`: these are views *of* a project, which is what
+ * makes a tab bar honest. A route marked `orgLevel` may never appear here —
+ * `spaceTabs()` asserts it rather than trusting the list.
+ *
+ * `Calendar` is deliberately absent until it has a route (its own task).
+ */
+export const SPACE_TAB_PATHS: readonly string[] = [
+  '/board',
+  '/timeline',
+  '/sprints',
+  '/dashboard',
+  '/meeting-review',
+];
+
+/**
+ * The tabs, resolved against `ROUTES` so a renamed or deleted path cannot leave
+ * a tab pointing at nothing.
+ */
+export function spaceTabs(holds?: (permission: string) => boolean): readonly Route[] {
+  return SPACE_TAB_PATHS.map((path) => {
+    const route = ROUTES.find((r) => r.path === path);
+    if (route === undefined) {
+      throw new Error(`SPACE_TAB_PATHS names ${path}, which is not in ROUTES`);
+    }
+    // A tab is a view of one project. An org-level route dropped `?project=` on
+    // purpose, so showing it under a space would misstate what it reads.
+    if (route.orgLevel === true) {
+      throw new Error(`${path} is orgLevel and cannot be a space tab`);
+    }
+    return route;
+  }).filter(
+    (route) =>
+      isShipped(route) && (route.requires === undefined || (holds?.(route.requires) ?? true)),
+  );
+}
 
 export const DEFAULT_PATH = '/board';
 

@@ -101,26 +101,19 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // rather than a side effect noticed by a person opening the app.
     assert.deepEqual(
       navRoutes().map((r) => r.label),
-      // `Organisation` returns with LAI-086. A deliberate edit to this line,
-      // which is what it is here for.
+      // **Four, since LAI-248.** `navRoutes()` answers what the *sidebar
+      // groups* offer, and the sidebar stopped listing views: Board, Timeline,
+      // Sprints, Dashboard and Meeting review are the space tab bar now, and
+      // Projects is the SPACES section's *More spaces* row.
       //
-      // **Timeline before Sprints** since LAI-425 — the prototype's WORK order.
-      // This assertion is `deepEqual` on purpose: it caught the reorder before
-      // the change was finished, which is the only reason it is worth having.
-      // `Tokens` joins with LAI-410: the screen exists, so it is offered.
-      // `Capacity` joins with LAI-439 — M5's exit criterion; the screen exists,
-      // so it is offered. `Meeting review` joins with LAI-455, M6's.
-      [
-        'Board',
-        'Timeline',
-        'Sprints',
-        'Projects',
-        'Dashboard',
-        'Capacity',
-        'Meeting review',
-        'Tokens',
-        'Organisation',
-      ],
+      // This assertion is `deepEqual` on purpose — it caught a reorder before
+      // LAI-425 was finished, which is the only reason it is worth having. The
+      // tab bar's own order is pinned in `routes.test.ts`, and
+      // `reachable.test.ts` asserts that nothing left this list without
+      // arriving somewhere else.
+      // `Unlisted work` is gated on `audit_log.export` and `navRoutes()` here
+      // takes no predicate, so it is absent by the same rule it always was.
+      ['Capacity', 'Tokens', 'Organisation'],
     );
   });
 
@@ -199,16 +192,22 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
 
   void test('ungated entries are unaffected by the predicate', () => {
     const withNone = navRoutes(holdsNone).map((r) => r.label);
-    for (const label of ['Board', 'Projects', 'Dashboard']) {
+    // **Board, Projects and Dashboard used to be the examples here** and are
+    // not nav routes since LAI-248 — Board and Dashboard are space tabs,
+    // Projects is the SPACES section's *More spaces* row. Naming them now would
+    // assert that gating does not hide things that were never offered.
+    for (const label of ['Capacity', 'Tokens', 'Organisation']) {
       assert.ok(withNone.includes(label), `${label} was hidden by an unrelated permission check`);
     }
   });
 
   void test('the group filter honours it too, or the heading appears empty', () => {
-    const review = routesInGroup('REVIEW', holdsNone).map((r) => r.label);
-    assert.ok(!review.includes('Unlisted work'));
+    // `ORG` since LAI-248 — `REVIEW` is gone, its project-scoped members are
+    // tabs, and what is left beside the spaces reads across the whole org.
+    const org = routesInGroup('ORG', holdsNone).map((r) => r.label);
+    assert.ok(!org.includes('Unlisted work'));
     assert.ok(
-      routesInGroup('REVIEW', holdsAll)
+      routesInGroup('ORG', holdsAll)
         .map((r) => r.label)
         .includes('Unlisted work'),
     );

@@ -18,6 +18,7 @@ import {
   ROUTES,
   matchRoute,
   routesInGroup,
+  spaceTabs,
 } from '../src/routes/route-table.ts';
 import { SCREEN_COPY } from '../src/routes/screens/screen-copy.ts';
 
@@ -33,42 +34,47 @@ void before(async () => {
 });
 
 void describe('sidebar groups (AC1)', () => {
-  void test('exactly three groups, in the design order', () => {
-    assert.deepEqual([...NAV_GROUPS], ['WORK', 'REVIEW', 'SETTINGS']);
+  void test('the groups beside SPACES, in the design order', () => {
+    // **Two, not three, since LAI-248.** The live design's sidebar is SPACES
+    // then SETTINGS; `ORG` is ours, for the two views that read across every
+    // project and would be misstated by a tab under one space.
+    //
+    // `SPACES` is deliberately not a `NAV_GROUP`: its rows are projects, built
+    // from the project list rather than from `ROUTES`.
+    assert.deepEqual([...NAV_GROUPS], ['ORG', 'SETTINGS']);
+    assert.ok(!NAV_GROUPS.includes('WORK' as never), 'WORK survived the restructure');
+    assert.ok(!NAV_GROUPS.includes('REVIEW' as never), 'REVIEW survived the restructure');
   });
 
   void test('each group holds the right items, in order', () => {
-    // Changed by LAI-082, which is a product decision and not a loosened test:
-    // seven of these eight entries led to empty placeholders, so the sidebar now
-    // shows only routes with a screen behind them. `Capacity`, `Meeting review`,
-    // `Tokens` and `Organisation` are still routed and still reachable by URL —
-    // they are simply not offered. `nav-truth.test.ts` enforces the rule; this
-    // pins the resulting order.
+    // **Rewritten by LAI-248, not loosened.** The sidebar stopped listing views:
+    // the live design ties every view to a space, so `WORK` and `REVIEW` are
+    // gone and their project-scoped members are the tab bar
+    // (`SPACE_TAB_PATHS`). What is left beside the spaces is genuinely org-wide.
     assert.deepEqual(
-      routesInGroup('WORK').map((r) => r.label),
-      // **Timeline before Sprints** since LAI-425 — the prototype's WORK order.
-      // `Projects` is under WORK rather than the prototype's `SYSTEM` group
-      // because that group is deliberately not shipped (CLAUDE.md §5.1); a
-      // consequence of an existing decision, not drift.
-      ['Board', 'Timeline', 'Sprints', 'Projects'],
+      routesInGroup('ORG').map((r) => r.label),
+      // Both members of `ORG` are `orgLevel` — they drop `?project=` on purpose
+      // (LAI-423) and read across every project, so a tab under one space would
+      // misstate them. `reachable.test.ts` asserts that reasoning holds.
+      //
+      // **`Unlisted work` is absent here because no predicate was passed**, not
+      // because it left the group: it requires `audit_log.export`, and an
+      // absent predicate grants nothing. The gated case is asserted in
+      // `nav-truth.test.ts`.
+      ['Capacity'],
     );
-    assert.deepEqual(
-      routesInGroup('REVIEW').map((r) => r.label),
-      // `Capacity` joins with LAI-439, by the same rule that took it away and
-      // gave `Tokens` and `Organisation` back: a route is offered once there is
-      // a screen behind it. It moved from `WORK` to `REVIEW` in that task —
-      // AC1 names the group, and it reads with Dashboard rather than with the
-      // screens you open to move a task.
-      // `Meeting review` joins with LAI-455 — M6's exit criterion — by the rule
-      // that a route is offered once there is a screen behind it.
-      ['Dashboard', 'Capacity', 'Meeting review'],
-    );
-    // `SETTINGS` is no longer empty: LAI-086 built the Organisation screen, so
-    // it earned its place back by the same rule that took it away — a route is
-    // offered once there is a screen behind it.
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
       ['Tokens', 'Organisation'],
+    );
+  });
+
+  void test("the views are tabs, in the design's order", () => {
+    assert.deepEqual(
+      spaceTabs().map((r) => r.label),
+      // Board first, then the prototype's order. `Calendar` is absent until it
+      // has a route of its own; a tab pointing at nothing is worse than none.
+      ['Board', 'Timeline', 'Sprints', 'Dashboard', 'Meeting review'],
     );
   });
 });

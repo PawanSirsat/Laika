@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { Brand } from './Brand.tsx';
 import { NAV_GROUPS, routesInGroup } from '../routes/route-table.ts';
-import { mayTriageUnlisted } from '../api/unlisted.ts';
+import { permissionHolder } from '../routes/nav-permissions.ts';
 import { navHref } from '../routes/nav-url.ts';
+import type { Space } from '../routes/spaces.ts';
 
 export interface SidebarProps {
   readonly currentPath: string;
@@ -12,6 +13,16 @@ export interface SidebarProps {
   readonly onClose: () => void;
   /** Slug of the project in the URL, when there is one. */
   readonly projectSlug?: string | undefined;
+  /**
+   * The spaces to list, most recent first (LAI-247).
+   *
+   * Empty renders no SPACES section at all — before the project list arrives,
+   * and for somebody in no project yet. An empty section with a heading would
+   * claim there is something to see.
+   */
+  readonly spaces?: readonly Space[] | undefined;
+  /** Open a space: sets the project and goes to its board. */
+  readonly onOpenSpace?: ((slug: string) => void) | undefined;
   /**
    * The reader's org role, for entries that require a permission.
    *
@@ -56,6 +67,8 @@ export function Sidebar({
   version,
   counts,
   footer,
+  spaces,
+  onOpenSpace,
 }: SidebarProps) {
   /**
    * The reader's permissions, mirrored from `policy/can.ts` at one remove.
@@ -64,8 +77,7 @@ export function Sidebar({
    * `audit_log.export` is admin-up, and `mayTriageUnlisted` is the same
    * predicate the unlisted screen uses — one mirror, not two.
    */
-  const holds = (permission: string): boolean =>
-    permission === 'audit_log.export' ? mayTriageUnlisted(orgRole ?? '') : false;
+  const holds = permissionHolder(orgRole);
 
   return (
     <nav id="sidebar" className={open ? 'sidebar sidebar-open' : 'sidebar'} aria-label="Primary">
@@ -102,6 +114,80 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-nav">
+        {/*
+          **SPACES first, and it is not a route group** (LAI-247). Its rows are
+          the projects you have opened, which the design puts above everything
+          else — you pick where you are working before you pick what you are
+          looking at.
+        */}
+        {spaces !== undefined && spaces.length > 0 && (
+          <div className="sidebar-group">
+            <h2 className="sidebar-group-title" id="nav-SPACES">
+              SPACES
+            </h2>
+            <ul className="sidebar-list" aria-labelledby="nav-SPACES">
+              {spaces.map((space) => {
+                // A space is current for **any** view of it, not only the
+                // board — the design's `projectScreens` test. That is what
+                // makes the tab bar read as being inside the space.
+                const active = space.slug === projectSlug;
+                const href = navHref('/board', space.slug);
+
+                return (
+                  <li key={space.slug}>
+                    <a
+                      href={href}
+                      className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
+                      aria-current={active ? 'page' : undefined}
+                      title={`${space.name} — ${space.meta}`}
+                      onClick={(event) => {
+                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
+                          return;
+                        event.preventDefault();
+                        onOpenSpace?.(space.slug);
+                        onNavigate(href);
+                        onClose();
+                      }}
+                    >
+                      <span className="sidebar-dot" aria-hidden="true" />
+                      <span className="space-key" aria-hidden="true">
+                        {space.key}
+                      </span>
+                      <span className="sidebar-label">
+                        {space.name}
+                        <span className="space-meta">{space.meta}</span>
+                      </span>
+                    </a>
+                  </li>
+                );
+              })}
+              <li>
+                <a
+                  href="/projects"
+                  className={
+                    currentPath === '/projects'
+                      ? 'sidebar-link sidebar-link-active'
+                      : 'sidebar-link'
+                  }
+                  aria-current={currentPath === '/projects' ? 'page' : undefined}
+                  onClick={(event) => {
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    onNavigate('/projects');
+                    onClose();
+                  }}
+                >
+                  <span className="sidebar-dot" aria-hidden="true" />
+                  <span className="space-key" aria-hidden="true">
+                    MS
+                  </span>
+                  <span className="sidebar-label">More spaces</span>
+                </a>
+              </li>
+            </ul>
+          </div>
+        )}
+
         {NAV_GROUPS.filter((group) => routesInGroup(group, holds).length > 0).map((group) => (
           <div key={group} className="sidebar-group">
             <h2 className="sidebar-group-title" id={`nav-${group}`}>

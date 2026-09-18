@@ -100,6 +100,13 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React hook — no renderer in this package (CONVENTIONS §4)',
   ],
   [
+    'routes/use-spaces.ts',
+    // A React hook, and the part worth guarding is *when* it fetches — gated on
+    // the session, one page, no cursor walk. `test/browser/spaces-sidebar.test.ts`
+    // asserts that against a real browser; a unit test of the hook could not.
+    'a React hook; its gating is asserted in test/browser/spaces-sidebar.test.ts',
+  ],
+  [
     'routes/screens/organisation/use-user-tokens.ts',
     // Not the boilerplate hook reason, because a better one is true here: the
     // behaviour worth guarding is *when it fetches*, and `test/browser/
