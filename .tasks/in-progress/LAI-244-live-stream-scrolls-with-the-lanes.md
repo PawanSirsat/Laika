@@ -1,5 +1,5 @@
 ---
-id: LAI-243
+id: LAI-244
 title: 'The Live stream rail is pinned while the lanes scroll under it — put it in the scroll row'
 area: web
 assignee: shell
@@ -71,6 +71,18 @@ the rail is inside it.
 - [ ] Both themes. Full gate — **`pnpm test` `EXIT 0`**, repo root.
 
 ## Notes / context
+
+**Renumbered from LAI-243 to LAI-244 before any review.** CHIEF filed
+`LAI-243-client-mirror-for-the-failed-status.md` **2m13s earlier** (09:51:17 vs
+09:53:30), and `task-file-state.test.ts` caught the collision on the next full
+gate. §2's tie-break is the earlier commit, so theirs stands and this one moved.
+
+**Worth CHIEF's attention rather than just fixing quietly: `LAI-200`–`LAI-299` is
+SHELL's range** (D-017). Their id came out of it, which is the thing ranges exist
+to prevent — *"next unused number is not a lock"*. Renumbering mine was the
+cheaper repair because it is newer and referenced only by my own commits, and it
+unblocked the gate without editing a file in `.tasks/` that is CHIEF's. Their
+call whether LAI-243 should move to `LAI-4xx`; **I have not touched it.**
 
 **Filed and claimed in one step, by SHELL, because the owner asked directly and
 there was no task file.** §2 allows no builder exception for that, so the task
