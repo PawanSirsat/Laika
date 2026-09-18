@@ -2,11 +2,13 @@
 id: LAI-133
 title: SPEC §6.4 should carry the enriched projects list shape
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p3
 depends-on: [LAI-053]
 discovered-from: LAI-053
-status: backlog
+status: in-progress
+started: 2026-09-03T05:15:00Z
+finished:
 ---
 
 ## Goal
