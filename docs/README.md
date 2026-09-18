@@ -14,6 +14,13 @@ Read in this order if you are new:
    import which. Binding for all sessions; read before adding a file.
 6. **`DECISIONS.md`** — append-only log, D-001 onward. Every entry carries the
    reasoning, not just the rule.
+7. **`OPERATIONS.md`** — for the person **running** an instance, not building
+   one. **Every procedure in it is executed by a test**, and it says which; where
+   the prose and the test disagree, the test is right and the disagreement is a
+   bug.
+
+`design/` is the owner's imported visual reference. **CHIEF may measure it and may
+not decide anything in it** (D-020).
 
 Builders do not edit these files. Propose changes by writing a task file with
 `area: docs`, or raise it in your log entry and PM will pick it up.

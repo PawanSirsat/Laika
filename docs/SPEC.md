@@ -1641,7 +1641,7 @@ compose file or systemd unit.
 | `PORT` | `3000` | universal convention, unprefixed |
 | `HOST` | `0.0.0.0` | universal convention, unprefixed |
 | `NODE_ENV` | `production` | universal convention, unprefixed |
-| `LAIKA_SECRET` | **required — no default** | encryption key material (§12). **Minimum 32 characters**; a shorter value is a startup failure, not a warning, and the value is redacted from the error |
+| `LAIKA_SECRET` | **required — no default** | encryption key material (§12). **Minimum 32 characters**; a shorter value is a startup failure, not a warning, and the value is redacted from the error. **Back it up separately from the database and not beside it** — §12's columns are unreadable without it, and a backup containing both loses everything when one file is lost. `docs/OPERATIONS.md` has the restore drill |
 | `LAIKA_DATA_DIR` | `/data` | db, `backups/` |
 | `LAIKA_DB_PATH` | `$LAIKA_DATA_DIR/laika.db` | |
 | `LAIKA_PUBLIC_URL` | `http://localhost:$PORT` in development; **required in production** | invite links and webhook URLs — a localhost default that escapes into production sends people invite links they cannot open |

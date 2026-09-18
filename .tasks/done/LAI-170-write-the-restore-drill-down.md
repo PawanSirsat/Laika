@@ -6,9 +6,9 @@ assignee: chief
 priority: p2
 depends-on: [LAI-466]
 discovered-from: LAI-466
-status: in-progress
+status: done
 started: 2026-09-03T03:30:00Z
-finished:
+finished: 2026-09-03T03:45:00Z
 ---
 
 ## Goal
@@ -66,15 +66,17 @@ where losing one file loses everything.
 
 ## Acceptance criteria
 
-- [ ] The procedure lands where an operator looks — `README.md` or a
-      `docs/OPERATIONS.md`; **which is CHIEF's to place**.
-- [ ] It carries the `LAIKA_SECRET` warning, and §11.7 says the secret is backed
-      up separately from the database.
-- [ ] It says *copy one file* and *delete stale `-wal`/`-shm`*, with the reason,
-      not just the commands.
-- [ ] It points at `restore-drill.test.ts` as the executable version, so the two
-      cannot drift silently — a written procedure nothing runs is the shape this
-      whole task family is about.
+- [x] **`docs/OPERATIONS.md`**, new, and indexed from `docs/README.md` as item 7.
+      A section of `README.md` would have put operator procedure inside a
+      contributor document; M7 has four more of these coming (install, upgrade,
+      token setup, plugin install) and they want one home.
+- [x] **Step 0**, and it is the step with no error message. §11.7's row now says
+      to back it up **separately from the database and not beside it**.
+- [x] Both, with the reason. **Steps 3 and 4 are the whole risk** and the file
+      says so rather than burying it in a command block.
+- [x] Named at the top of the section **and** in the file's opening rule:
+      *where a written step and the test disagree, the test is right, and that
+      disagreement is a bug worth filing.*
 
 ## Notes
 
@@ -86,3 +88,48 @@ out and the reasoning holds: whether restoring is `cp` plus a restart or a
 command is a decision, the CLI is SHELL's, and a command that restores an
 unbootable snapshot is worse than no command. Proving it comes first, and it now
 has.
+
+---
+
+## Done — CHIEF, 2026-09-03
+
+**`docs/OPERATIONS.md` exists**, and it opens with the rule that makes it worth
+having rather than a second thing to keep current:
+
+> **Nothing in this file is a plan.** If a procedure is written here, something in
+> `server/test/` performs it. **Where a written step and the test disagree, the
+> test is right** — and that disagreement is a bug worth filing.
+
+**A new file rather than a `README.md` section**, because M7 has four more
+operator procedures coming — install, upgrade, token setup, plugin install — and
+putting the first inside a contributor document decides the wrong home for all
+five.
+
+### Step 0 is yours and it is the best part of the filing
+
+> *"Restore under a different secret and the database opens, the server boots,
+> `/health` answers, users sign in, and **every encrypted column is unreadable**."*
+
+**And the consequence you drew is the one that makes it urgent**: an operator told
+*"no webhook configured"* will go and configure one — **the single action that
+cannot help, and which overwrites what was recoverable.** That is now the
+paragraph explaining why Laika refuses the column loudly instead.
+
+§11.7's row says to back the secret up **separately from the database and not
+beside it**, with the reason: *a backup containing both loses everything when one
+file is lost.*
+
+### One thing I added
+
+**Step 5 reads `uptime_ms`.** CLAUDE.md §4.3 exists because CORE once ran
+first-boot setup against another session's instance on a port they thought was
+theirs — *"a health check answering does not prove **your** server answered."*
+**An operator restoring a backup is in exactly that position**, and it will look
+like success.
+
+### And the closing section says why there is no command
+
+Not because nobody got to it: **steps 3 and 4 are the two an operator should
+understand rather than delegate**, because getting them wrong produces a database
+that opens and is quietly wrong. **That is the argument for leaving it as five
+commands**, and it is stronger than "not yet".
