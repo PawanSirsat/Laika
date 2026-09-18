@@ -59,7 +59,7 @@ the pane must be `position: relative`. No new dependencies.
 
 **Two design corrections, both measured rather than reasoned.**
 
-1. **The drawer is , not  in the space pane.** The prototype
+1. **The drawer is `fixed`, not `absolute` in the space pane.** The prototype
    positions its overlay inside a content column that never scrolls; ours is a
    scrolling page. Measured on a page scrolled 400px: the drawer's top sat at
    **-400** with a height of 3861px, so a task opened below the fold had its
@@ -72,24 +72,29 @@ the pane must be `position: relative`. No new dependencies.
    well. Caught by looking at a screenshot, then pinned with assertions on the
    scrim's height and right edge.
 
- is the mechanism for keeping the design's other property — the
+`--rail-width` is the mechanism for keeping the design's other property — the
 scrim dims the view and leaves the sidebar usable, so you can switch space with
 a task open. The shell declares it beside the rail it describes (212px / 56px
 collapsed / 0 below 900px, where the rail is off-canvas), and the overlay reads
 it instead of guessing.
 
-**Opening a task now pushes a history entry.**  gained a 
+**Opening a task now pushes a history entry.** `setParams` gained a `push`
 option: every other filter replaces, deliberately, so Back does not step
 through each checkbox — but a drawer is a state the reader expects Back to
 undo, and Forward to restore. Closing replaces, or Back from a closed drawer
 would re-open it.
 
-** is content now.** Its own  shell, its
-backdrop and its Escape handler moved to ; it keeps the ,
-because the design draws that inside the header beside the key, and it keeps
-its focus-restore effect, which is the better of the two. **Two overlays for
-one drawer is how the geometry drifts apart.**
+**`TaskDetailPanel` is content now.** Its own `position: fixed` shell, its
+backdrop and its Escape handler moved to `TaskDrawer`; it keeps the `x` close
+button, because the design draws that inside the header beside the key, and it
+keeps its focus-restore effect, which is the better of the two. **Two overlays
+for one drawer is how the geometry drifts apart.**
 
 **The drawer's *content* is still the old panel** — that is Phase B4's task
-(the design's Comments · Activity · Changes tabs and meta column). This task
+(the design's Comments / Activity / Changes tabs and meta column). This task
 was the chrome, and the AC said so.
+
+**A note on how these notes were nearly mangled.** The first write of this
+section went through an unquoted shell heredoc, which ate every backticked
+term as a command substitution. Repaired in its own commit; the lesson is to
+write task prose from a file or a quoted heredoc, never one that interpolates.
