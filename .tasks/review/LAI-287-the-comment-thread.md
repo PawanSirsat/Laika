@@ -3,11 +3,12 @@ id: LAI-287
 title: The comment thread reads as a conversation
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p2
 depends-on: []
 discovered-from: LAI-285
 started: 2026-09-19T01:20:00Z
+finished: 2026-09-19T01:40:00Z
 ---
 
 ## Why
