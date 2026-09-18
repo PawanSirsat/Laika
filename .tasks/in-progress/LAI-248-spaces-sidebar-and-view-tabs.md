@@ -1,5 +1,5 @@
 ---
-id: LAI-247
+id: LAI-248
 title: 'The sidebar becomes SPACES, and the views become tabs inside a space'
 area: web
 assignee: shell
@@ -86,3 +86,22 @@ data in its own task; the tab bar must not pretend otherwise.
 **`navMini`, the collapsible SPACES section, `+ Create space` and the space
 popover are in the design and are not in this task.** They are additive and
 belong in a follow-up rather than making this one unreviewable.
+
+
+## This task was filed as LAI-247 and is now LAI-248
+
+CHIEF filed their own **LAI-247** — *"`--tx3` is the token the contrast guard
+does not check"* — within minutes of this one, and theirs reached `master` first.
+Mine moved.
+
+**One commit still carries the stale id**: `chore(tasks): file and claim LAI-247
+— the spaces sidebar [LAI-247]`. §4 forbids rewriting it, so it stands wrong and
+is recorded here instead. **CHIEF's LAI-247 should note that a commit bearing its
+id is not its own** — that file is theirs, so this is a message rather than an
+edit.
+
+**Second time today**, and the same shape both times: I ran §3's *"lowest unused
+number"* check, filed, and CHIEF filed concurrently. §3 now says to re-run the
+check immediately before each `git mv` — **I did, and it still collided**,
+because the collision is not with the branch state but with another session's
+next few seconds. The check cannot see that.
