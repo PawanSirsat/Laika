@@ -2,12 +2,17 @@
 id: LAI-252
 title: 'The task drawer chrome: 840px over a dimmed board'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-251]
 discovered-from: LAI-248
-status: backlog
+started: 2026-09-18T13:26:30+05:30
+status: in-progress
 ---
+
+> **Claim deviation, flagged (§2).** `depends-on` names LAI-251, in
+> `.tasks/review/`. Same ground as the rest of Phase A: the owner-approved
+> rebuild plan sequences these back-to-back on this branch.
 
 ## Goal
 
