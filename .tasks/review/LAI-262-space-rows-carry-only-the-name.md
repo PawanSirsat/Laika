@@ -7,7 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-249
 started: 2026-09-18T16:18:13+05:30
-status: in-progress
+finished: 2026-09-18T16:22:57+05:30
+status: review
 ---
 
 ## Goal
@@ -39,18 +40,18 @@ not in it:
 
 ## Acceptance criteria
 
-- [ ] A space row in the expanded rail renders the project's **name** and the
+- [x] A space row in the expanded rail renders the project's **name** and the
       active-state dot, and nothing else — no counts, no member figure, no key.
-- [ ] The collapsed 56px rail renders the two-letter key **instead of** the
+- [x] The collapsed 56px rail renders the two-letter key **instead of** the
       name, the same way a route row already does.
-- [ ] The More-spaces popover keeps `N tasks · M members`: that is where the
+- [x] The More-spaces popover keeps `N tasks · M members`: that is where the
       design puts it, and it is the one place a reader compares spaces.
-- [ ] Rows are one line again — the two-line height existed only to carry the
+- [x] Rows are one line again — the two-line height existed only to carry the
       meta.
-- [ ] A browser test reads an expanded space row's text and asserts it is the
+- [x] A browser test reads an expanded space row's text and asserts it is the
       name alone; another asserts the key appears when collapsed.
-- [ ] Both themes, widths 1440 / 1280 / 420, page overflow `0` at each.
-- [ ] Full gate — all three `EXIT 0`, repo root.
+- [x] Both themes, widths 1440 / 1280 / 420, page overflow `0` at each.
+- [x] Full gate — all three `EXIT 0`, repo root.
 
 ## Notes / context
 
@@ -63,3 +64,21 @@ as a failed criterion — the data is real and it is in the right place now.
 Several use it to read the list's order and membership; the key stops being
 present in wide mode, so those need to read the row's label instead. Keeping
 them working by keeping the key visible would be the tail wagging the dog.
+
+## Completion notes
+
+**Verified against the running instance**, which is where the owner saw it:
+the rail now reads `Laika Core / Laika Infra / Laika Web` and nothing else.
+
+`.space-key` and `.space-meta` are gone. A space row uses `.sidebar-mini` for
+its two letters — the same element a route row already used — so the collapsed
+rail behaves identically for both, and there is one mechanism rather than two.
+
+**The tests had to stop identifying rows by the key**, since it is no longer
+rendered at the width they run at. They read `.space-row .sidebar-label` now.
+That is a better selector anyway: it names the row, not an ornament the design
+may or may not draw.
+
+**A row's `title` still carries `N tasks · M members`.** A tooltip is not the
+rail — it costs no space, says nothing until asked, and keeps the counts one
+hover away for someone choosing between spaces.
