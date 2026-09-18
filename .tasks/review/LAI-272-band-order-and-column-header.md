@@ -3,11 +3,12 @@ id: LAI-272
 title: The sprint strip above WORKING NOW, and the column header the reference has
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-271
 started: 2026-09-18T18:05:00Z
+finished: 2026-09-18T18:31:00Z
 ---
 
 ## Why
