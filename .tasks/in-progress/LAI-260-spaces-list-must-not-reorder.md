@@ -2,11 +2,12 @@
 id: LAI-260
 title: 'The spaces list reorders itself when you click it'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-248
-status: backlog
+started: 2026-09-18T16:06:24+05:30
+status: in-progress
 ---
 
 ## Goal
