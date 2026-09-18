@@ -1,4 +1,7 @@
+import { mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { backfillTaskTimestamps } from './backfill.ts';
@@ -142,13 +145,157 @@ export function ensureActivityTriggers(db: Db): void {
  * only when something was applied — see `ensureActivityTriggers` for why the
  * unconditional part is the whole mechanism.
  */
-export function runMigrations(db: Db, migrationsFolder: string = MIGRATIONS_FOLDER): void {
-  migrate(db, { migrationsFolder });
-  ensureActivityTriggers(db);
+/**
+ * A pre-upgrade copy, kept out of the nightly fourteen (LAI-468).
+ *
+ * **A different prefix from `laika-`, and that is the whole mechanism.**
+ * `pruneBackups` keeps §11.6's fourteen by filename among files it recognises;
+ * a pre-upgrade copy it could delete is precisely the one you wanted. The
+ * prefixes do not overlap, so the nightly prune cannot reach these — and a test
+ * asserts that rather than leaving it to the reader to notice.
+ */
+export const PRE_MIGRATION_PREFIX = 'pre-migration-';
 
-  // Recovers `started_at` / `completed_at` from the audit trail for tasks that
-  // moved before LAI-126 began stamping them. Here rather than in a `.sql`
-  // migration because it reads `payload_json`, whose format `db/activity.ts`
-  // owns — see `backfill.ts`. Idempotent by construction: it only fills a null.
-  backfillTaskTimestamps(db);
+/** `pre-migration-2026-09-10T01-30-00-000Z.sqlite` — sorts, and reads as itself. */
+export function preMigrationFilename(now: number): string {
+  return `${PRE_MIGRATION_PREFIX}${new Date(now).toISOString().replace(/[:.]/g, '-')}.sqlite`;
+}
+
+/**
+ * Which migrations this database has not applied yet.
+ *
+ * Drizzle decides by timestamp: it records each applied migration's `when` from
+ * the journal as `created_at`, and applies every entry newer than the newest
+ * row. **This asks the same question the migrator will ask**, rather than a
+ * second one that could disagree with it — a snapshot taken because *this*
+ * thinks there is work, when the migrator disagrees, is a file written on every
+ * boot for ever.
+ *
+ * Returns tags rather than a count so a failure can name them.
+ */
+export function pendingMigrations(
+  sqlite: Database.Database,
+  migrationsFolder: string = MIGRATIONS_FOLDER,
+): string[] {
+  const journal = JSON.parse(
+    readFileSync(join(migrationsFolder, 'meta', '_journal.json'), 'utf8'),
+  ) as { entries?: { when?: number; tag?: string }[] };
+
+  const entries = journal.entries ?? [];
+
+  // The table does not exist before the first migration, and then everything is
+  // pending — which is the correct answer for a database that has never run one.
+  const present = sqlite
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get('__drizzle_migrations');
+  if (present === undefined) return entries.map((e) => e.tag ?? '(untagged)');
+
+  const last = sqlite.prepare('SELECT MAX(created_at) AS at FROM "__drizzle_migrations"').get() as
+    { at: number | null } | undefined;
+  const applied = last?.at ?? 0;
+
+  return entries.filter((e) => (e.when ?? 0) > applied).map((e) => e.tag ?? '(untagged)');
+}
+
+/**
+ * Copy the database, synchronously, before anything changes its shape.
+ *
+ * **`VACUUM INTO` rather than `Database.backup()`**, which is what the nightly
+ * job uses. That one is SQLite's *online* backup: asynchronous, and built to
+ * copy a database while other connections write to it. Neither property is
+ * wanted here. At this point in boot we are the only connection and the port is
+ * not bound, so there is nothing to avoid blocking — and `runMigrations` is
+ * called synchronously by `index.ts` before anything is awaited. Making the
+ * whole boot path async to reach an online backup, for a copy taken while
+ * nothing is online, is the wrong trade.
+ *
+ * `VACUUM INTO` writes one consistent file with no `-wal` or `-shm` beside it,
+ * which is the shape LAI-466's restore drill proves is restorable.
+ */
+export function snapshotBeforeMigrations(
+  sqlite: Database.Database,
+  dir: string,
+  now: number,
+): string {
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, preMigrationFilename(now));
+
+  // `VACUUM INTO` takes a string literal, not a bound parameter. The path is
+  // ours — derived from the configured database path — but the doubling is
+  // still here, because a directory with an apostrophe in it is a legal
+  // directory and a silent truncation would be a very confusing bug.
+  sqlite.exec(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
+
+  return path;
+}
+
+export interface RunMigrationsOptions {
+  migrationsFolder?: string;
+  /**
+   * Take a snapshot first. Absent in tests that do not care, and **present on
+   * the boot path**, which is the one that matters — see `index.ts`.
+   */
+  backup?: { sqlite: Database.Database; dir: string; now?: number };
+}
+
+/**
+ * Migrate, and copy the database first if there is anything to migrate.
+ *
+ * ## Why a snapshot here and not only nightly
+ *
+ * §11.6's job runs on a schedule. **The riskiest moment in a self-hosted
+ * product's life is the first boot after an upgrade**, and until LAI-468 it was
+ * the one moment with no fresh copy behind it — a nightly snapshot can be
+ * twenty-three hours old when the schema changes.
+ *
+ * **SQLite's DDL is transactional, so a single failed statement rolls back** —
+ * which is why this is worth doing carefully rather than assuming it is
+ * covered. `migrate()` applies files **in sequence**: three of five succeeding
+ * and the fourth failing leaves a database that is neither version, and no
+ * transaction spans the sequence. The snapshot is for that case.
+ *
+ * ## Only when there is work
+ *
+ * A snapshot on every restart would write a file per boot and, if it shared the
+ * nightly prefix, push §11.6's fourteen real ones out within a day of
+ * crash-looping. So it is taken only when `pendingMigrations` is non-empty, and
+ * a test asserts both directions.
+ */
+export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void {
+  const migrationsFolder = options.migrationsFolder ?? MIGRATIONS_FOLDER;
+  const backup = options.backup;
+
+  let snapshotPath: string | null = null;
+  if (backup !== undefined) {
+    const pending = pendingMigrations(backup.sqlite, migrationsFolder);
+    if (pending.length > 0) {
+      snapshotPath = snapshotBeforeMigrations(backup.sqlite, backup.dir, backup.now ?? Date.now());
+    }
+  }
+
+  try {
+    migrate(db, { migrationsFolder });
+    ensureActivityTriggers(db);
+
+    // Recovers `started_at` / `completed_at` from the audit trail for tasks that
+    // moved before LAI-126 began stamping them. Here rather than in a `.sql`
+    // migration because it reads `payload_json`, whose format `db/activity.ts`
+    // owns — see `backfill.ts`. Idempotent by construction: it only fills a null.
+    //
+    // **Inside the protected window deliberately.** It is not a `.sql` migration
+    // and it does write, and "idempotent by construction" is a property of
+    // today's implementation rather than of the step.
+    backfillTaskTimestamps(db);
+  } catch (cause) {
+    if (snapshotPath === null) throw cause;
+
+    // **The path goes in the error.** The operator is reading a crash log at
+    // this moment, not listing a backup directory — and a snapshot they do not
+    // know about is one they will not use.
+    throw new Error(
+      `Migration failed. The database as it was before this boot is at ${snapshotPath} ` +
+        `— restore that file before retrying (see the restore drill in docs).`,
+      { cause },
+    );
+  }
 }
