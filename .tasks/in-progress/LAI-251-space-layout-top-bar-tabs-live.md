@@ -2,12 +2,25 @@
 id: LAI-251
 title: 'SpaceLayout: the top bar, the full tab strip, the LIVE pill, presence, one SSE'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-249, LAI-250]
 discovered-from: LAI-248
-status: backlog
+started: 2026-09-18T13:06:41+05:30
+status: in-progress
 ---
+
+> **Claim deviation, flagged (§2).** `depends-on` names LAI-249 and LAI-250,
+> both in `.tasks/review/`. Same ground as those two: the owner-approved
+> rebuild plan (2026-09-18) sequences Phase A back-to-back on this branch.
+>
+> **And the claim commit was late, which is a §2 breach, not a deviation.** The
+> `git mv` happened at `started:` and the frontmatter edit did not follow until
+> the repo gate failed `task-file-state.test.ts` — by which point the code was
+> written. Nothing was lost (no other session claims web tasks, and the move
+> was visible on this branch throughout) but the lock was incomplete for the
+> duration and that is worth recording rather than quietly repairing. The
+> guard that caught it is the one CLAUDE.md §2 describes.
 
 ## Goal
 
