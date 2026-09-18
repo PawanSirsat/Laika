@@ -4,10 +4,17 @@ import type { Page } from './tasks.ts';
 /**
  * Personal access tokens (SPEC §4.9, API by LAI-402).
  *
- * These are what let a person point Claude Code at their own board. Everything
- * here is `/api/v1/tokens` — **your own tokens only**. An admin reading someone
- * else's is `GET /users/:id/tokens` and belongs on an administration screen, not
- * in personal settings.
+ * These are what let a person point Claude Code at their own board.
+ *
+ * **Two sets of endpoints, and the difference is the policy, not the shape.**
+ * `/api/v1/tokens` is self-scoped — `token.list_own` / `token.revoke_own`, open
+ * to everyone. `/api/v1/users/:id/tokens` is `token.list_any` /
+ * `token.revoke_any`, which §3.1 grants to Owner and Admin only. Both return
+ * `TokenView`, which is why one `TokenRow` renders either.
+ *
+ * The admin pair lives on the Organisation screen beside deactivation (LAI-238),
+ * not in personal settings — *"revoke the tokens of somebody who has left"* is
+ * the same job as locking them out, and it was an API-only operation until then.
  */
 
 export const TOKEN_SCOPES = ['full', 'read_only'] as const;
@@ -63,6 +70,36 @@ export function createToken(input: CreateTokenInput): Promise<CreatedToken> {
 
 export function revokeToken(id: string): Promise<void> {
   return request<void>(`/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/**
+ * Somebody else's tokens (§3.1 `token.list_any`, Owner and Admin).
+ *
+ * `403` for anyone below Admin and `404` for a user id that does not exist —
+ * both the server's to decide. The caller does not pre-check the role beyond
+ * deciding whether to render the control at all.
+ */
+export function listUserTokens(userId: string, signal?: AbortSignal): Promise<Page<TokenView>> {
+  return request<Page<TokenView>>(
+    `/users/${encodeURIComponent(userId)}/tokens`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/**
+ * Revoke one of somebody else's tokens (§3.1 `token.revoke_any`).
+ *
+ * **The user id is not decoration.** The service refuses a token that does not
+ * belong to the user in the path — `404`, not a silent success — so that an
+ * admin cannot revoke anybody's token through anybody's URL and leave an audit
+ * row naming the wrong owner. Passing the id the token was *listed under* is
+ * what keeps that check meaningful.
+ */
+export function revokeUserToken(userId: string, tokenId: string): Promise<void> {
+  return request<void>(
+    `/users/${encodeURIComponent(userId)}/tokens/${encodeURIComponent(tokenId)}`,
+    { method: 'DELETE' },
+  );
 }
 
 /**
