@@ -40,9 +40,12 @@ both `area: server`, neither with a UI counterpart filed.
       the server refuses it, **show the server's refusal**; if it does not,
       **stop and file** rather than adding a client-side rule the server does not
       have. The client is not the place a last-owner invariant lives.
-- [x] **Deactivation renders as the `DEACTIVATED` chip** the design specifies, and
-      a deactivated member stays visible in the list. **Deactivation is not
-      deletion** — the row is the record that they were here.
+- [ ] ~~**Deactivation renders as the `DEACTIVATED` chip**~~ — **FALSE IN
+      PRODUCTION, unticked 2026-09-03.** The client never sends
+      `?include_inactive=true`, so a deactivated person is absent from the
+      screen entirely and the chip is unreachable. **LAI-240** is the fix;
+      **LAI-241** is why no test caught it. Found by SHELL running a live
+      instance with real data, and reported rather than quietly amended.
 - [x] **Read D-048 first: there are two deactivation verbs.** Whichever this
       screen performs, the copy must say which one, because *"deactivate"* meaning
       two different things on one screen is worse than either.

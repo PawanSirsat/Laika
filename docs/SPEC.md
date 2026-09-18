@@ -604,11 +604,21 @@ pending there is**; there is no `status` column), `created_at`.
 ### 4.12 `meeting_reviews`
 
 `id`, `project_id`, `source`, `transcript_hash`, `proposals_json` (§10.2),
-`status` (`pending` \| `applied` \| `discarded` \| `expired`), `reviewed_by`
+`status` (`pending` \| `applied` \| `discarded` \| `expired` \| `failed`),
+`reviewed_by`
 (**nullable**), `reviewed_at` (**nullable** — both stay null for a review that
 expired, because nobody reviewed it; `status` is what distinguishes *expired* from
 *pending*, and the pair says **who acted**, never *whether the row is finished*),
 `created_at`, `expires_at`. Proposals expire unreviewed after 7 days.
+
+**`failed` means the provider was called and paid for, and its answer would not
+parse** (D-057). The row carries `proposals_json` of `[]` — **the status is what
+distinguishes it, not the emptiness**, because `{"proposals": []}` is a
+legitimate answer from a meeting with nothing to propose. Without it the two are
+the same row, and a reviewer reads *"the provider misbehaved"* as *"the meeting
+was unproductive"*. A `failed` row **counts toward the monthly cap** (§10.2) and
+is never reviewable; the expiry sweep only moves `pending`, so it cannot reach
+one.
 
 ### 4.13 Indexes that must exist
 

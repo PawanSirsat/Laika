@@ -2922,3 +2922,61 @@ location I quoted rather than checked against the table it implies.
 **CORE catching it on claiming, and refusing to build either half, is the
 protocol working.** The alternative — a builder guessing which of three artefacts
 is authoritative — is how a schema gains a column nobody decided on.
+
+## D-057 — A provider call that was paid for leaves a row. `failed` is a status.
+
+**2026-09-03. Raised by CORE in LAI-172, after they found their own LAI-171 task
+file had sketched a fix that does not work.**
+
+**`meeting_reviews.status` gains `failed`.** A transcript submission whose
+provider response will not parse writes a row with `status: 'failed'` and
+`proposals_json` of `[]`.
+
+### The argument, which is not the one the task file made
+
+LAI-171 worried that a proposal-less row is *"something readers must handle"*.
+**The real problem is worse, and CORE found it by reopening `parseProposals`
+instead of trusting what they had written about it:**
+
+> **`{"proposals": []}` is already a legitimate answer.** A meeting the model
+> considered and had nothing to propose about is a real, reviewable outcome
+> reading as `proposal_count: 0`.
+
+**So a row written with `[]` after a parse failure is indistinguishable from one
+written after a successful empty answer.** A reviewer concludes the meeting was
+unproductive; **the truth is the provider misbehaved and was paid for it.**
+
+**That is LAI-466's failure shape one table over** — a broken state that looks
+exactly like a legitimate absent one — and it is the same trap that made
+*"restored under the wrong secret"* report *"no provider configured"*.
+
+### Why `failed` and not the alternatives
+
+| | why not |
+| --- | --- |
+| **a separate attempts table** | a new table for one counter, and a second place a submission exists |
+| **an §4.8 activity verb** | gives the spend cap **two counting surfaces**; LAI-467 made it a single derived count for exactly that reason |
+| **not tracking it at all** | the cap then under-counts spend, and **for a spend bound that is the wrong direction to be wrong in** (CORE's own phrase, from LAI-450) |
+
+**`failed` is the smallest thing that counts for spend, never reads as
+reviewable, and says why it exists.** `proposals_json` stays `NOT NULL` and a
+failed row carries `[]` — **the status is the distinguisher, not the emptiness**,
+which is the whole point.
+
+**The expiry sweep needs no change**: it moves `pending → expired` and therefore
+cannot touch a `failed` row. That is the existing code being right rather than a
+new rule.
+
+### What this does not decide
+
+**Why it failed is not in the row.** Timeout, unparseable output and a refusal are
+one status here, and the reason goes to the log. **If an operator ever needs to
+tell them apart, that is a column and a decision** — and it should be driven by
+someone actually needing it, not by the shape looking incomplete.
+
+### Three owners, said in advance for once
+
+§4.12's enum (CHIEF) → `enums.ts` and the CHECK (CORE) → **`MeetingReviewStatus`
+in `server/web/src/api/meeting-reviews.ts` and the screen's wording (SHELL)**.
+CLAUDE.md §4.4 predicts this; **D-056 discovered the third owner mid-flight and
+this one names them before anyone starts.**

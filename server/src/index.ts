@@ -27,7 +27,15 @@ function main(): void {
   // a server that accepts requests against an unmigrated database is worse than
   // one that takes an extra moment to start.
   const { db, sqlite } = openDb({ path: env.dbPath });
-  runMigrations(db);
+
+  // One directory for both kinds of copy: §11.6's nightly snapshots and
+  // LAI-468's pre-upgrade one. They carry different filename prefixes so the
+  // nightly prune cannot reach the pre-upgrade copies.
+  const backupDir = join(dirname(env.dbPath), 'backups');
+
+  // **A copy before the schema changes** (LAI-468). Only when something is
+  // pending, so an unchanged schema on a restart writes nothing.
+  runMigrations(db, { backup: { sqlite, dir: backupDir } });
   log.info('db.ready', { path: env.dbPath });
 
   const auth = createAuth({
@@ -78,7 +86,7 @@ function main(): void {
     db,
     sqlite,
     log,
-    backupDir: join(dirname(env.dbPath), 'backups'),
+    backupDir,
   });
 
   const shutdown = createRuntimeShutdown({

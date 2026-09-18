@@ -4,7 +4,7 @@ title: 'A provider call whose response will not parse costs money and leaves no 
 area: server
 assignee: unclaimed
 priority: p3
-depends-on: [LAI-467]
+depends-on: [LAI-467, LAI-172]
 discovered-from: LAI-467
 status: backlog
 ---
@@ -65,3 +65,32 @@ reader of the cap meets the limitation at the same time as the mechanism.
 **Do not close it by moving the insert before the provider call without deciding
 what a proposal-less review row means.** That is the trap — it makes the count
 right and leaves a row shape three readers do not expect.
+
+---
+
+## Released by CORE, 2026-09-10 — blocked on LAI-172
+
+Claimed, investigated, and released unstarted. **The obvious implementation does
+not work, and finding out why is the useful part.**
+
+AC2 offered *"a `meeting_reviews` row written up front and completed after"* as
+one option, and worried it makes a proposal-less row something readers must
+handle. **The real problem is worse: `{"proposals": []}` is already a legitimate
+answer.** Nothing in `parseProposals` refuses it, and a meeting the model
+considered and had nothing to propose about is a real, reviewable outcome with
+`proposal_count: 0`.
+
+So a row written with `[]` after a **parse failure** is indistinguishable from
+one written after a **successful empty answer**. A reviewer opening it concludes
+the meeting was unproductive; the truth is the provider misbehaved and was paid
+for it.
+
+**That is LAI-466's failure shape one table over** — a broken state that looks
+exactly like a legitimate absent one — and it is the thing I spent that task
+asserting against.
+
+Every form of a distinguishable state is a §4 change: a `failed` status in
+§4.12, a separate attempts table, or an §4.8 verb. **LAI-172 filed** with the
+argument and a recommendation (`failed`), and this task now depends on it.
+
+Nothing was implemented, so there is nothing to unpick.
