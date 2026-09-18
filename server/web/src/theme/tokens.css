@@ -28,30 +28,30 @@
   /* ---- text ---- */
   --tx: #171a21;
   --tx2: #5a6070;
-  --tx3: #8d94a4;
+  --tx3: #606775;
 
   /* ---- accent: in progress, primary action ---- */
-  --acc: #2f6bff;
-  --accs: rgba(47, 107, 255, 0.09);
-  --accb: rgba(47, 107, 255, 0.34);
+  --acc: #2158e0;
+  --accs: rgba(33, 88, 224, 0.09);
+  --accb: rgba(33, 88, 224, 0.34);
 
   /* ---- purple: agent, to-do ---- */
-  --pur: #8b5cf6;
+  --pur: #6d3ddb;
   --purs: rgba(139, 92, 246, 0.11);
   --purb: rgba(139, 92, 246, 0.36);
 
   /* ---- green: done, public, success ---- */
-  --grn: #11996a;
+  --grn: #0d7d56;
   --grns: rgba(17, 153, 106, 0.1);
   --grnb: rgba(17, 153, 106, 0.3);
 
   /* ---- amber: review, warning, stale ---- */
-  --amb: #b6740b;
+  --amb: #8f5a08;
   --ambs: rgba(182, 116, 11, 0.1);
   --ambb: rgba(182, 116, 11, 0.3);
 
   /* ---- red: blocked, error, danger ---- */
-  --red: #d93a45;
+  --red: #c42630;
   --reds: rgba(217, 58, 69, 0.08);
   --redb: rgba(217, 58, 69, 0.32);
 
@@ -69,7 +69,7 @@
 
   --tx: #f3f3f5;
   --tx2: #a4a4ae;
-  --tx3: #71717d;
+  --tx3: #9a9aa4;
 
   --acc: #5b8cff;
   --accs: rgba(91, 140, 255, 0.14);

@@ -1,6 +1,6 @@
 ---
 id: LAI-246
-title: 'Take the design''s 13 contrast-lifted tokens'
+title: 'Take the design''s 9 contrast-lifted tokens'
 area: web
 assignee: shell
 priority: p1
@@ -16,8 +16,8 @@ The owner redirected the whole queue: **the shipped app should follow the Claude
 Design prototype's flow and philosophy**, keeping every feature we have.
 
 First and smallest piece: **the palette moved.** Reading the design through the
-MCP (project `a931b00e…`) against `src/theme/tokens.css`, 13 values changed, all
-contrast lifts:
+MCP (project `a931b00e…`) against `src/theme/tokens.css`, **9** values changed,
+all contrast lifts:
 
 | token | from | to |
 | --- | --- | --- |
@@ -29,11 +29,21 @@ contrast lifts:
 | `--grn` | `#11996a` | `#0d7d56` |
 | `--amb` | `#b6740b` | `#8f5a08` |
 | `--red` | `#d93a45` | `#c42630` |
-| `--mk` | `#2f6bff` | `#2558d6` |
-| `--ta` | `#0f7d63` | `#0c6b54` |
-| `--sv` | `#8b5cf6` | `#6d3ddb` |
-| `--jd` | `#c2410c` | `#a8380a` |
 | `.dk --tx3` | `#71717d` | `#9a9aa4` |
+
+**It was 13 in the first draft of this task, and that was wrong.** `--mk`,
+`--ta`, `--sv`, `--jd` and `--rb` are **design-only** — the prototype's avatar
+colours, which we derive in `theme/avatar-color.ts` instead of storing. They are
+not ours to change and were never in `tokens.css`.
+
+**My own AC3 caught it**: *"checked against the design by name, not by count."*
+The count was taken from the design's changed-token list, not from the
+intersection with ours — which is the exact failure that criterion names, in the
+task that names it.
+
+A further 24 declarations differ only in **formatting** — `rgba(15, 23, 42,
+0.09)` against `rgba(15,23,42,.09)`, because Prettier expands ours. Normalised
+before comparing; none is a value change.
 
 **This answers LAI-041.** That task asks the owner to decide `--tx3`'s contrast;
 they decided it in the design. LAI-041 should close against this rather than be
