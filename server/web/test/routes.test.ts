@@ -38,7 +38,19 @@ void before(async () => {
     ),
   );
   sidebar = code(parts.join('\n'));
-  shell = code(await readFile(fileURLToPath(new URL('components/AppShell.tsx', SRC)), 'utf8'));
+  // The shell is a family since LAI-250: the frame, its header, the gate and
+  // the outlet. Scanned together so a landmark cannot be "lost" by moving it
+  // one file sideways — which is exactly what this refactor did.
+  const shellParts = await Promise.all(
+    [
+      'components/AppShell.tsx',
+      'components/shell/ShellHeader.tsx',
+      'components/shell/ShellSidebar.tsx',
+      'components/shell/SessionGate.tsx',
+      'components/shell/ScreenOutlet.tsx',
+    ].map((name) => readFile(fileURLToPath(new URL(name, SRC)), 'utf8')),
+  );
+  shell = code(shellParts.join('\n'));
 });
 
 void describe('sidebar groups (AC1)', () => {
@@ -144,16 +156,23 @@ void describe('routing (AC4, AC6)', () => {
      * built. Nothing caught any of the three, because copy is a string and no
      * test knew which screens exist.
      *
-     * This does: a route AppShell renders for real must not describe itself as
-     * unbuilt. Derived from AppShell's own branches, so it stays true as
-     * screens land.
+     * This does: a route that renders for real must not describe itself as
+     * unbuilt. Derived from the **screen registry** since LAI-250 — it was read
+     * from `AppShell`'s `path === '...'` chain, and that chain is gone, so the
+     * same scan would now match almost nothing and pass by finding no screens
+     * at all.
      */
-    const shell = code(
-      await readFile(fileURLToPath(new URL('components/AppShell.tsx', SRC)), 'utf8'),
+    const outlet = code(
+      await readFile(fileURLToPath(new URL('components/shell/ScreenOutlet.tsx', SRC)), 'utf8'),
     );
+    const table = outlet.slice(outlet.indexOf('export const SCREENS'));
     const built = new Set(
-      [...shell.matchAll(/path === '([^']+)'/g)].map((m) => m[1]).filter((p) => p !== undefined),
+      [...table.matchAll(/'([^']+)':\s*\{\s*Component:/g)]
+        .map((m) => m[1])
+        .filter((p) => p !== undefined),
     );
+    // Or the loop below runs over nothing and proves nothing.
+    assert.ok(built.size >= 10, `parsed ${String(built.size)} screens — registry moved?`);
 
     const lying: string[] = [];
     for (const [path, copy] of Object.entries(SCREEN_COPY)) {

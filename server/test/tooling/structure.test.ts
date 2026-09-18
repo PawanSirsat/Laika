@@ -100,6 +100,15 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React hook — no renderer in this package (CONVENTIONS §4)',
   ],
   [
+    'components/shell/shell-context.ts',
+    // A React context and the hook that reads it. `useShell()` cannot be called
+    // outside a render, so the guard it exists for — throwing rather than
+    // handing back a silent `undefined` — is unreachable without a renderer,
+    // and this package has none (CONVENTIONS §4). The registry that consumes it
+    // is asserted in test/components/shell/screen-registry.test.ts.
+    'a React context; unreachable without a renderer (CONVENTIONS §4)',
+  ],
+  [
     'routes/use-spaces.ts',
     // A React hook, and the part worth guarding is *when* it fetches — gated on
     // the session, one page, no cursor walk. `test/browser/spaces-sidebar.test.ts`

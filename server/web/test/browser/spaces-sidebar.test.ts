@@ -16,7 +16,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, type StubCall } from './harness.ts';
+import { closeBrowser, open, refuse, type ApiStub, type StubCall } from './harness.ts';
 
 const project = (slug: string, name: string, prefix: string, tasks: number, members: number) => ({
   id: slug,
@@ -457,8 +457,23 @@ void describe('the fetch is gated on the session', () => {
    * `useShellContext` already documents for the sprint count.
    */
   void test('signed out, the project list is never requested', async () => {
-    const h = await open('/login', { '/api/v1/me': { error: { code: 'unauthorized' } } });
+    /*
+     * **`refuse`, not a bare error body.** This stub used to hand back the
+     * envelope with a `200`, so `getMe` parsed `{error: …}` as the *user* and
+     * the app went `authenticated` with no `user.id` — `avatarColor` threw and
+     * the page rendered **nothing at all**. Both assertions below passed on
+     * that blank page, which is CLAUDE.md §5's "an assertion a broken setup
+     * satisfies" exactly: *no projects were fetched* because nothing rendered.
+     *
+     * Found while capturing a screenshot for LAI-250 and tracked to source
+     * through the build's own sourcemap. The positive assertion is the fix:
+     * the sign-in form must actually be on the page.
+     */
+    const h = await open('/login', {
+      '/api/v1/me': refuse(401, 'unauthorized', 'Sign in to continue.'),
+    });
     try {
+      await h.page.locator('.auth').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(1500);
       const asked = h.calls.filter((c: StubCall) => c.path === '/api/v1/projects');
       assert.deepEqual(

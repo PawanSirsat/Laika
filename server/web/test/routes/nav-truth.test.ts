@@ -7,9 +7,9 @@
  * inside `AppShell`.
  *
  * So this test does not keep a second list of "real screens" — a second list is
- * the thing that drifts. It **reads `AppShell` and extracts the branches**, and
- * compares reality against what the route table claims. The two cannot disagree
- * without failing here.
+ * the thing that drifts. It **reads the screen registry** (LAI-250; it was
+ * `AppShell`'s branch chain before) and compares reality against what the route
+ * table claims. The two cannot disagree without failing here.
  */
 
 import assert from 'node:assert/strict';
@@ -24,22 +24,34 @@ import {
 } from '../../src/routes/route-table.ts';
 import { code } from '../helpers/code.ts';
 
-/** Paths `AppShell` actually renders a component for. */
+/**
+ * Paths that actually render a screen.
+ *
+ * **Read from the registry since LAI-250.** This used to extract
+ * `path === '...'` branches from `AppShell`, which was the only place the
+ * answer lived; the registry is now that place, and it is a table rather than
+ * a chain — so the extraction is exact instead of inferred from control flow.
+ */
 async function renderedPaths(): Promise<Set<string>> {
   const src = code(
-    await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
+    await readFile(new URL('../../src/components/shell/ScreenOutlet.tsx', import.meta.url), 'utf8'),
   );
+  const body = src.slice(src.indexOf('export const SCREENS'));
   const paths = new Set<string>();
-  for (const [, path] of src.matchAll(/path === '([^']+)'/g)) {
+  for (const [, path] of body.matchAll(/'([^']+)':\s*\{\s*Component:/g)) {
     if (path !== undefined) paths.add(path);
   }
+  if (paths.size === 0) throw new Error('parsed no screens — has the registry moved?');
   return paths;
 }
 
 /**
- * The redirect guards near the top of `AppShell` also compare `path`, and they
- * are not screens. Named rather than pattern-matched: a guard that quietly
- * counted as a screen would defeat the whole test.
+ * Screens that exist but are deliberately not nav destinations.
+ *
+ * Before LAI-250 these were excluded because they were *redirect guards*
+ * comparing `path`, not screens at all. They are real registry entries now, so
+ * the exclusion is stated for what it always meant: first boot and sign-in are
+ * pre-auth routes, reached by the gate rather than offered.
  */
 const NOT_SCREENS = new Set(['/setup', '/login']);
 

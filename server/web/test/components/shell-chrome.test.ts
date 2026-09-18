@@ -69,7 +69,10 @@ void describe('the shell actually applies the rule', () => {
     // the rule** and renders the sidebar behind it — not which argument the
     // call takes or what the local holding the answer is named.
     assert.match(src, /showsAppNav\(/, 'AppShell must ask the rule');
-    assert.match(src, /&&\s*\(?\s*<Sidebar/, 'the sidebar must be behind the rule');
+    // `<ShellSidebar>` since LAI-250 — the rail's data wiring moved into its
+    // own container. The property is unchanged: the sidebar renders only
+    // behind the rule.
+    assert.match(src, /&&\s*\(?\s*<ShellSidebar/, 'the sidebar must be behind the rule');
 
     // Gating on the route is the mistake being fixed: a list of pre-auth paths
     // has to be maintained by hand, so the next route added inherits whatever
@@ -92,9 +95,12 @@ void describe('the shell actually applies the rule', () => {
       if (/<Sidebar[\s/>]/.test(text)) renderers.push(file.slice(src.length));
     }
 
+    // One renderer, one policy. Since LAI-250 that renderer is `ShellSidebar`,
+    // which `AppShell` mounts behind `showsAppNav` (asserted above) — so the
+    // gate is still single, one level up.
     assert.deepEqual(
       renderers,
-      ['components/AppShell.tsx'],
+      ['components/shell/ShellSidebar.tsx'],
       'one gate, one place — a second caller would be a second policy',
     );
   });
@@ -102,8 +108,13 @@ void describe('the shell actually applies the rule', () => {
   void test('the identity survives without the navigation', async () => {
     // AC4: a signed-out page carries no nav but must still say what it is.
     // The brand used to live inside the sidebar, so removing one removed both.
+    // The pre-auth chrome is `ShellHeader` since LAI-250; the brand lives with
+    // the bar that carries it rather than with the frame that places the bar.
     const shell = code(
-      await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
+      await readFile(
+        new URL('../../src/components/shell/ShellHeader.tsx', import.meta.url),
+        'utf8',
+      ),
     );
     const sidebar = code(
       await readFile(new URL('../../src/components/sidebar/Sidebar.tsx', import.meta.url), 'utf8'),
@@ -147,7 +158,10 @@ void describe('the shell actually applies the rule', () => {
     // no longer matched, and it would have passed just as happily with the
     // pre-auth copy deleted.
     const src = code(
-      await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
+      await readFile(
+        new URL('../../src/components/shell/ShellHeader.tsx', import.meta.url),
+        'utf8',
+      ),
     );
 
     const start = src.indexOf('{!signedIn && (');
