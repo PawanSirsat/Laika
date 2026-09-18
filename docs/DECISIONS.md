@@ -3243,3 +3243,80 @@ not pre-empt.
 ### Revisit when
 
 The owner works in more than three projects regularly, or asks to pin a space.
+
+---
+
+## D-062 — The lanes fill the page, and the live-stream rail collapses to pay
+## for wider cards.
+
+**2026-09-18. Owner's request, with a screenshot of the five lanes:** *"i want
+that the bottom of page like in design ... also increase the task width"*.
+
+**The two halves turned out to be different kinds of thing**, and that is the
+whole content of this decision: one is a defect against the design, the other is
+a preference beyond it. Treating them the same would have meant "fixing" a board
+that already matched.
+
+### The measurement, before anything was changed
+
+`docs/design/Laika 01 - Kanban Board.dc.html`, against `shell`:
+
+| | design | shipped |
+| --- | --- | --- |
+| board row | `flex; gap:12px; padding:14px 18px 18px` | same |
+| lane strip | `flex:1; min-width:0; grid; repeat(5,1fr); gap:11px` | `repeat(5, minmax(12.875rem, 1fr)); gap:0.75rem` |
+| live-stream rail | `width:266px; flex:none` | `width: 16.625rem` — **266px** |
+| lane tub | `padding:11px 9px; radius 12px; no border` | `padding:0.75rem 0.625rem; radius-lg; 1px border` |
+| lane height | **none — `align-items:flex-start`** | `height: calc(100dvh - 21rem)` |
+
+**The rail is the design's width to the pixel, and the lanes are already `1fr`
+filling the row.** At the owner's ~2000px viewport each lane is ~290px; the same
+design at 1600px gives ~204px. **The cards are not narrow against the design —
+they are wider than it.**
+
+### So the width half is the owner's preference, and it has to be paid for
+
+There is no slack to reclaim. **The owner chose a collapsible rail** from three
+options, the other two being moving the stream below the board and accepting
+horizontal scroll at a wide lane minimum.
+
+**Collapsed, the rail returns 266px and each lane gains ~53px.** The stream stays
+one click away, which the other two options do not both manage: below-the-board
+always costs the glance, and a wide minimum changes nothing at the width the
+owner actually works at.
+
+**The collapsed state is remembered, and expanded stays the default.** A board
+that opens with its live stream hidden has quietly removed a feature for anyone
+who never finds the toggle.
+
+### The height half is a real defect, and the number is the defect
+
+The design has **no lane height at all** — `align-items:flex-start`, content
+height. **So "like in design" cannot be taken from the file literally**, and the
+owner's want is the one to build: the lanes should reach the bottom.
+
+What makes it a defect rather than only a preference is **how** ours is done:
+`height: calc(100dvh - 21rem)`, a hand-measured subtraction standing in for the
+chrome above it. **It has been tuned by hand twice** — LAI-272 widened it from
+`19rem` to `21rem` "to pay for" `.board-main`'s new padding. A constant that has
+to be re-derived every time anything above it changes will be wrong again on the
+next change, and it is wrong now, which is what the owner is looking at.
+
+**The lane's height must come from the layout, not from a number.** The column
+that holds the board fills what is left, the lane strip fills that column, and
+the lane body scrolls inside it. **`21rem` is deleted, not corrected** — a
+corrected magic number is the same defect with a fresh date on it.
+
+### What this does not change
+
+**The rail keeps its 266px expanded**, because that is the design's figure and
+nothing about wanting more room when it is shut argues for it being wrong when it
+is open.
+
+**Lane order, card contents and the band order are untouched** (LAI-425,
+LAI-270, LAI-272). This is the lane's box.
+
+### Revisit when
+
+The owner works at a narrower viewport regularly — at which point the lane
+minimum and horizontal scroll, declined here, become the live question again.
