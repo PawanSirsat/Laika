@@ -382,6 +382,107 @@ void describe('deactivation', () => {
   });
 });
 
+void describe('the directory includes people who left (LAI-240)', () => {
+  /**
+   * **Asserted on the request URL, not on the rendered list.**
+   *
+   * `harness.ts` matches stubs on **path alone** — *"a query string is the
+   * client's business rather than the fixture's"* — so a fixture containing
+   * Sam answers whether or not the client asked for inactive people. That is
+   * exactly how this defect survived a test that claimed to cover it: the
+   * assertion was structurally blind to the thing it asserted, and the bug was
+   * found by running a real instance instead.
+   *
+   * Until LAI-241 teaches the harness about query strings, `page.on('request')`
+   * is the instrument that can actually see it.
+   */
+  void test('the Organisation screen asks for inactive people', async () => {
+    const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
+    try {
+      const urls: string[] = [];
+      h.page.on('request', (r) => {
+        if (r.url().includes('/api/v1/users')) urls.push(r.url());
+      });
+
+      await h.page.reload();
+      await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+
+      assert.ok(urls.length > 0, 'the screen never requested /users at all');
+      for (const url of urls) {
+        assert.match(url, /include_inactive=true/, `a directory request omitted the flag: ${url}`);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  /**
+   * **Two screens disagreeing about how many people exist is the symptom a
+   * user actually reports** — Capacity said 5 and Organisation said 4 on the
+   * same database, in the same session. Neither number was obviously wrong on
+   * its own, which is why the assertion is the comparison.
+   */
+  void test('Capacity and Organisation agree on how many people there are', async () => {
+    const stub: ApiStub = {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/presence': { enabled: true, present: [] },
+      '/api/v1/capacity': {
+        enabled: true,
+        people: PEOPLE.map((p) => ({
+          user_id: p.id,
+          name: p.name,
+          active_sessions: 0,
+          in_progress_tasks: [],
+          oldest_in_progress_ms: null,
+          tasks_in_review: [],
+          last_seen: null,
+          unlisted: [],
+        })),
+      },
+      '/api/v1/unlisted': { data: [], next_cursor: null },
+    };
+
+    const org = await open('/organisation', stub);
+    let orgCount = 0;
+    try {
+      await org.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
+      orgCount = await org.page.locator('.org-person').count();
+    } finally {
+      await org.close();
+    }
+
+    const cap = await open('/capacity', stub);
+    let capCount = 0;
+    try {
+      await cap.page.locator('.cap-person, .cap-row, [class*="cap-"]').first().waitFor({
+        timeout: 20_000,
+      });
+      capCount = await cap.page.evaluate(() => {
+        // The people list, however Capacity spells it — counted from the names
+        // it renders rather than from a class this test would have to chase.
+        const names = new Set<string>();
+        document.querySelectorAll('[class*="cap-"]').forEach((el) => {
+          const text = el.textContent ?? '';
+          for (const n of ['Ada Lovelace', 'Tomas Nel', 'Priya Raman', 'Sam Okafor']) {
+            if (text.includes(n)) names.add(n);
+          }
+        });
+        return names.size;
+      });
+    } finally {
+      await cap.close();
+    }
+
+    assert.equal(orgCount, PEOPLE.length, `Organisation shows ${String(orgCount)} of 4`);
+    assert.equal(
+      orgCount,
+      capCount,
+      `Organisation shows ${String(orgCount)} people and Capacity shows ${String(capCount)}`,
+    );
+  });
+});
+
 void describe('deactivation is not deletion', () => {
   /**
    * The row is the record that they were here. §4.1 keeps it so history keeps
