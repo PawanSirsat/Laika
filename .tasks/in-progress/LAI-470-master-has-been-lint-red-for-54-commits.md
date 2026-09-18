@@ -2,11 +2,12 @@
 id: LAI-470
 title: '`pnpm lint` has been red on `master` since LAI-466 — one empty arrow function'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-175
-status: backlog
+status: in-progress
+started: 2026-09-10T09:45:00Z
 ---
 
 ## Goal
