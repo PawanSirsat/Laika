@@ -3,11 +3,12 @@ id: LAI-278
 title: Tokens and the Spaces directory to the design; joining a public space
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-277
 started: 2026-09-18T20:40:00Z
+finished: 2026-09-18T20:52:00Z
 ---
 
 ## Why
