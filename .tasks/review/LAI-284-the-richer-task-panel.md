@@ -3,11 +3,12 @@ id: LAI-284
 title: The task panel to the design — editable fields, dependencies, watchers, tabs
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-283
 started: 2026-09-18T23:10:00Z
+finished: 2026-09-19T00:05:00Z
 ---
 
 ## Why
