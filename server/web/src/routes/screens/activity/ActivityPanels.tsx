@@ -1,47 +1,75 @@
 import { describeEvent } from '../../../api/activity.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
-import { streamEmptyNote } from './stream-presentation.ts';
-import { describeActor } from './actor-presentation.ts';
+import { streamEmptyNote } from '../board/stream-presentation.ts';
+import { describeActor } from '../board/actor-presentation.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import type { ActivityEvent } from '../../../api/activity.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import { PresencePerson } from '../../../components/PresencePerson.tsx';
 import type { PresenceView } from '../../../api/presence.ts';
 import type { StreamStatus } from '../../../api/use-events.ts';
-import './board-rail.css';
+import '../board/board-rail.css';
 
-export interface BoardRailProps {
+export interface ActivityPanelsProps {
   readonly status: StreamStatus;
   readonly events: readonly ActivityEvent[];
   readonly gapped: boolean;
-  readonly tasks: readonly Task[];
   readonly members: ReadonlyMap<string, Member>;
   /** `undefined` while the first read is in flight (LAI-440). */
   readonly presence: PresenceView | undefined;
+  /** Decided by the screen, so its header count and this panel cannot disagree. */
+  readonly stale: readonly Task[];
+  readonly staleDays: number;
 }
 
 const DAY = 86_400_000;
 /** The design's threshold: five days without a status change or comment. */
-const STALE_DAYS = 5;
-
-function clock(at: number): string {
-  return new Date(at).toLocaleTimeString([], { hour12: false });
-}
+export const STALE_DAYS = 5;
 
 function ageDays(at: number, now: number): number {
   return Math.floor((now - at) / DAY);
 }
 
 /**
- * The 266px rail beside the board (prototype, band D right).
+ * What has stopped moving, oldest first.
+ *
+ * Exported so the screen's header count and this panel's list come from **one**
+ * computation. Two callers of one rule cannot drift; two copies of it can.
+ */
+export function staleTasks(tasks: readonly Task[], now: number): readonly Task[] {
+  return tasks
+    .filter((t) => t.status !== 'done' && ageDays(t.updated_at, now) >= STALE_DAYS)
+    .sort((a, b) => a.updated_at - b.updated_at)
+    .slice(0, 6);
+}
+
+function clock(at: number): string {
+  return new Date(at).toLocaleTimeString([], { hour12: false });
+}
+
+/**
+ * The three activity panels: the live stream, agent sessions, and what has
+ * stopped moving (the owner's updated design, 2026-09-18).
+ *
+ * **A tab, not a rail.** These sat in a 252px column beside the board, where
+ * the stream was too narrow to read a sentence in and the board gave up a fifth
+ * of its width. The board is plain now and these are three panels across.
  *
  * **Live stream and Stale are real.** The stream is the SSE feed — the first
  * consumer the endpoint has ever had — and stale tasks are computed from
  * `updated_at`, which every task carries. **Agent sessions is sample data**:
  * nothing stores a session, and `heartbeats` is an empty table with no route.
  */
-export function BoardRail({ status, events, gapped, tasks, members, presence }: BoardRailProps) {
+export function ActivityPanels({
+  status,
+  events,
+  gapped,
+  members,
+  presence,
+  stale,
+  staleDays,
+}: ActivityPanelsProps) {
   const now = Date.now();
   // **Real agent sessions** (LAI-440): a heartbeat sent on a token is an agent,
   // per §4.8's `actor_kind`. `demoAgentSessions` invented a percentage bar and a
@@ -52,13 +80,8 @@ export function BoardRail({ status, events, gapped, tasks, members, presence }: 
   // computed in JS, so they only follow the theme if this component re-renders.
   const { theme } = useTheme();
 
-  const stale = tasks
-    .filter((t) => t.status !== 'done' && ageDays(t.updated_at, now) >= STALE_DAYS)
-    .sort((a, b) => a.updated_at - b.updated_at)
-    .slice(0, 4);
-
   return (
-    <aside className="rail" aria-label="Board activity">
+    <div className="act-panels" aria-label="Activity">
       <section className="rail-card">
         <header className="rail-head">
           <span className={`rail-dot rail-dot-${status}`} aria-hidden="true" />
@@ -132,8 +155,20 @@ export function BoardRail({ status, events, gapped, tasks, members, presence }: 
           strip. A card headed "Agent sessions" that can never fill is worse on a
           screen somebody looks at all day than no card. */}
       {presence?.enabled !== false && (
-        <section className="rail-card">
+        <section className="rail-card rail-card-agents">
           <header className="rail-head">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <rect
+                x="4"
+                y="8"
+                width="16"
+                height="12"
+                rx="3"
+                stroke="currentColor"
+                strokeWidth="2.2"
+              />
+              <path d="M12 4v4M9 14h.01M15 14h.01" stroke="currentColor" strokeWidth="2.2" />
+            </svg>
             <h2>Agent sessions</h2>
             {presence !== undefined && <span className="rail-count">{agents.length}</span>}
           </header>
@@ -147,7 +182,19 @@ export function BoardRail({ status, events, gapped, tasks, members, presence }: 
             <ul className="rail-sessions">
               {agents.map((entry) => (
                 <li key={entry.user_id}>
-                  <PresencePerson entry={entry} theme={theme} variant="chip" />
+                  <div className="rail-session-head">
+                    <PresencePerson entry={entry} theme={theme} variant="chip" />
+                    {/*
+                      **`RUNNING`, and nothing more.** The design also draws a
+                      progress bar, an elapsed time and a tool-call count;
+                      nothing on the wire carries any of them — a heartbeat has
+                      `last_seen`, `repo` and `branch` and that is all. A bar
+                      measuring nothing is worse than no bar (LAI-440 removed an
+                      invented one already), so the chip says the one thing that
+                      is true: this session beat inside the window.
+                    */}
+                    <span className="rail-session-state">RUNNING</span>
+                  </div>
                   <p className="rail-session-meta">
                     last seen {new Date(entry.last_seen).toLocaleTimeString()}
                   </p>
@@ -158,13 +205,17 @@ export function BoardRail({ status, events, gapped, tasks, members, presence }: 
         </section>
       )}
 
-      <section className="rail-card">
+      <section className="rail-card rail-card-stale">
         <header className="rail-head">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.2" />
+            <path d="M12 8v4l3 2" stroke="currentColor" strokeWidth="2.2" />
+          </svg>
           <h2>Stale · no movement</h2>
           <span className="rail-count">{stale.length}</span>
         </header>
         {stale.length === 0 ? (
-          <p className="rail-empty">Everything has moved in the last {STALE_DAYS} days.</p>
+          <p className="rail-empty">Everything has moved in the last {staleDays} days.</p>
         ) : (
           <ul className="rail-stale">
             {stale.map((task) => (
@@ -181,8 +232,8 @@ export function BoardRail({ status, events, gapped, tasks, members, presence }: 
             ))}
           </ul>
         )}
-        <p className="rail-note">Threshold: {STALE_DAYS} days without an update.</p>
+        <p className="rail-note">Threshold: {staleDays} days without a status change or comment.</p>
       </section>
-    </aside>
+    </div>
   );
 }

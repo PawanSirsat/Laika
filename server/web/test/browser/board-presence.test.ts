@@ -267,7 +267,7 @@ void describe('the WORKING NOW strip', () => {
     }
   });
 
-  void test('presence off hides the strip entirely, and the rail card with it', async () => {
+  void test('presence off hides the strip entirely', async () => {
     // AC3: on the Board there is nothing to explain and no room to explain it.
     // A permanent empty band on the main screen is a standing reproach for a
     // setting somebody chose.
@@ -282,77 +282,11 @@ void describe('the WORKING NOW strip', () => {
         /WORKING NOW/,
         'the heading is still on the page',
       );
-      assert.doesNotMatch(
-        await h.page.locator('body').innerText(),
-        /Agent sessions/,
-        'the rail card is still on the page',
-      );
-    } finally {
-      await h.close();
-    }
-  });
-});
-
-void describe('the agent-sessions rail card', () => {
-  void test('lists real agent sessions, and only agents', async () => {
-    const h = await open('/board?project=laika-core', STUB);
-    try {
-      await h.page.locator('.rail-sessions li').first().waitFor({ timeout: 20_000 });
-      const rows = h.page.locator('.rail-sessions li');
-      // Ada is the only `is_agent` entry in the fixture; Tomas must not appear.
-      assert.equal(await rows.count(), 1);
-      // `Ada L.` — the rail card draws the chip form too (LAI-271), and a
-      // 252px rail is exactly where a full surname costs a line.
-      assert.match(await rows.first().innerText(), /Ada L\./);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('a session stays inside its card', async () => {
-    // The rail is about 250px. The chip put the repo and the branch side by side
-    // and ran off the right edge — found by looking, and fixed with `min-width:
-    // 0`, without which `overflow: hidden` never gets a chance to apply.
-    const h = await open('/board?project=laika-core', STUB);
-    try {
-      const row = h.page.locator('.rail-sessions li').first();
-      await row.waitFor({ timeout: 20_000 });
-      const card = h.page.locator('.rail-card', { hasText: 'Agent sessions' }).first();
-
-      // **Measure the thing that overflows, not the thing that contains it.**
-      // The first version of this assertion took the `li`'s box — and a
-      // block-level `li` is exactly the card's width whether or not its contents
-      // run past the edge, so removing the fix left it green. A mutation is what
-      // said so. The chip inside is what grows.
-      const chip = row.locator('.pp').first();
-      const chipBox = await chip.boundingBox();
-      const cardBox = await card.boundingBox();
-      assert.ok(chipBox !== null && cardBox !== null, 'nothing to measure');
-      assert.ok(
-        chipBox.x + chipBox.width <= cardBox.x + cardBox.width + 0.5,
-        `the chip runs to ${String(chipBox.x + chipBox.width)}, the card ends at ${String(cardBox.x + cardBox.width)}`,
-      );
-
-      // And nothing inside it is scrolled out of sight either.
-      const overflow = await row.evaluate((el) => el.scrollWidth - el.clientWidth);
-      assert.ok(overflow <= 1, `the session row hides ${String(overflow)}px of content`);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('no agent working says so', async () => {
-    const quiet = { ...STUB, '/api/v1/presence': { enabled: true, present: [] } };
-    const h = await open('/board?project=laika-core', quiet);
-    try {
-      await h.page.locator('.rail-card').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(600);
-      assert.equal(await h.page.locator('.rail-sessions li').count(), 0);
-      assert.match(
-        await h.page.locator('body').innerText(),
-        /no agent has a session/i,
-        'the card is a bare heading again',
-      );
+      /*
+       * The `Agent sessions` card moved to the Activity tab with the rest of
+       * the rail (LAI-281), so the board has none to hide. That the panel
+       * itself respects `presence.enabled` is asserted where it now lives.
+       */
     } finally {
       await h.close();
     }

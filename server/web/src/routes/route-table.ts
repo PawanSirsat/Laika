@@ -172,6 +172,19 @@ export const ROUTES: readonly Route[] = [
     status: 'building',
     phase: 'Phase 5',
   },
+  /*
+   * **The board's rail, promoted to a tab** (the owner's updated design).
+   *
+   * Space-scoped: the stream, the sessions and the stale list are all about
+   * *this* space, so the tab carries `?project=` like every other.
+   */
+  {
+    path: '/activity',
+    label: 'Activity',
+    group: null /* a space tab */,
+    status: 'ready',
+    phase: 'Phase 5',
+  },
   // A queue a human works through, and audit-shaped: admin-up only (§4.14).
   {
     orgLevel: true,
@@ -286,6 +299,12 @@ export const SPACE_TAB_PATHS: readonly string[] = [
   '/sprints',
   '/capacity',
   '/dashboard',
+  /*
+   * **Activity is a tab** (the owner's updated design, 2026-09-18). It carries
+   * what used to be the board's right rail — the live stream, the agent
+   * sessions and what has gone quiet.
+   */
+  '/activity',
   '/meeting-review',
 ];
 

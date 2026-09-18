@@ -4,6 +4,7 @@ import { SpaceLayout } from '../space/SpaceLayout.tsx';
 import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
 import { CalendarScreen } from '../../routes/screens/calendar/CalendarScreen.tsx';
 import { CapacityScreen } from '../../routes/screens/capacity/CapacityScreen.tsx';
+import { ActivityScreen } from '../../routes/screens/activity/ActivityScreen.tsx';
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
 import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
 import { InviteRoute } from '../../routes/screens/InviteRoute.tsx';
@@ -108,6 +109,15 @@ function CalendarRoute() {
   );
 }
 
+function ActivityRoute() {
+  const {
+    route: { params },
+  } = useShell();
+  // Space-scoped: the stream, the sessions and the stale list are all about
+  // *this* space, so the screen reads the same `?project=` every tab carries.
+  return <ActivityScreen slug={params.get('project') ?? undefined} />;
+}
+
 function CapacityRoute() {
   const {
     route: { navigate },
@@ -156,6 +166,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/calendar': { Component: CalendarRoute, layout: 'space' },
   '/sprints': { Component: SprintsScreen, layout: 'space' },
   '/dashboard': { Component: DashboardScreen, layout: 'space' },
+  '/activity': { Component: ActivityRoute, layout: 'space' },
   '/meeting-review': { Component: MeetingReviewRoute, layout: 'space' },
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
   '/capacity': { Component: CapacityRoute, layout: 'space' },

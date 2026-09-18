@@ -9,8 +9,6 @@ import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
-import { BoardRail } from './board/BoardRail.tsx';
-import { getPresence, type PresenceView } from '../../api/presence.ts';
 import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
 import { listTasks } from '../../api/tasks.ts';
@@ -58,37 +56,13 @@ export interface BoardScreenProps {
 export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
   const { theme } = useTheme();
 
-  /**
-   * Presence for the strip and the rail (LAI-440).
-   *
-   * **Polled, not streamed.** `GET /events` carries activity; nothing on it
-   * fires when somebody's presence changes, so a strip driven by it would sit
-   * still while going stale. Twenty seconds against a five-minute window.
-   *
-   * A failure leaves `presence` as it was rather than clearing it: a board that
-   * blanks its strip on one bad poll is worse than one showing a reading twenty
-   * seconds old.
+  /*
+   * **The board no longer polls presence.** It did so for two readers: the
+   * WORKING NOW strip and the right rail. The strip moved to `SpaceLayout`,
+   * which has its own read through `SpaceLive`, and the rail is now the
+   * Activity tab — so this was a poll every twenty seconds, on every board, for
+   * nobody. `/activity` does its own.
    */
-  const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const read = (signal?: AbortSignal): void => {
-      getPresence(signal)
-        .then(setPresence)
-        .catch(() => {
-          // Presence is not why somebody opened the board.
-        });
-    };
-    read(controller.signal);
-    const timer = setInterval(() => {
-      read();
-    }, 20_000);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, []);
   /**
    * The project this board is about.
    *
@@ -548,20 +522,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           )}
 
           {/*
-            **The board only.** The design puts the rail inside `boardLive`
-            (prototype line 2273) along with the presence strip and the grid;
-            List, Timeline and the rest are one full-width pane.
+            **No rail.** The owner's updated design makes the board plain: the
+            live stream, the agent sessions and the stale list are their own
+            tab now (`/activity`), where the stream is wide enough to read a
+            sentence in and the columns get the whole width back.
           */}
-          {view !== 'list' && (
-            <BoardRail
-              status={stream.status}
-              events={stream.recent}
-              gapped={stream.gapped}
-              tasks={allTasks}
-              members={members}
-              presence={presence}
-            />
-          )}
         </div>
       )}
 

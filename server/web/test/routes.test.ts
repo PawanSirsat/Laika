@@ -99,6 +99,7 @@ void describe('sidebar groups (AC1)', () => {
         'Sprints',
         'Capacity',
         'Dashboard',
+        'Activity',
         'Meeting review',
       ],
     );

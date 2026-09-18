@@ -160,7 +160,11 @@ void describe('the List view', () => {
        */
       assert.equal(await h.page.locator('.list-row').count(), 2, 'the rows must be present');
 
-      assert.equal(await h.page.locator('.rail').count(), 0, 'the rail is the board’s');
+      /*
+        The rail is nobody's now: LAI-281 moved those panels to the Activity
+        tab and left the board plain, so this asserts the *space* chrome — the
+        presence strip and the sprint chips — which is still the board's alone.
+      */
       assert.equal(await h.page.locator('.presence').count(), 0, 'WORKING NOW is the board’s');
       assert.equal(await h.page.locator('.strip').count(), 0, 'the sprint chips are the board’s');
 
@@ -168,7 +172,9 @@ void describe('the List view', () => {
       await h.page.goto(`${h.origin}/board?project=laika-core`);
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.presence').count(), 1, 'the board lost WORKING NOW');
-      assert.equal(await h.page.locator('.rail').count(), 1, 'the board lost its rail');
+      // Not the sprint chips: this stub has no sprints, so their absence is the
+      // fixture rather than the board. The lanes are the board's own chrome.
+      assert.ok((await h.page.locator('.lane').count()) >= 4, 'the board lost its lanes');
     } finally {
       await h.close();
     }

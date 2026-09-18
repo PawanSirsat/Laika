@@ -45,6 +45,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No activity in this window',
     body: 'Throughput, cycle time and stuck work are derived from the activity feed. Widen the range once there is history.',
   },
+  '/activity': {
+    headline: 'Nothing has happened here yet',
+    body: 'The live stream shows work as it lands. Agent sessions and stale tasks appear here too, so this is the one place to look when you want to know what is moving.',
+  },
   '/meeting-review': {
     headline: 'No meetings waiting on review',
     body: 'A transcript becomes proposed task changes here. Nothing applies until a human accepts it, line by line.',

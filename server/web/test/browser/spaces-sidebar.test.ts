@@ -180,6 +180,7 @@ void describe('the view tabs', () => {
         'Sprints',
         'Capacity',
         'Dashboard',
+        'Activity',
         'Meeting review',
       ]);
 

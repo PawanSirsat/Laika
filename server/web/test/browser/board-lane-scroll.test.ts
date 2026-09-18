@@ -340,10 +340,17 @@ void describe('a lane keeps the width the design gives it', () => {
     try {
       await boardReady(h);
 
-      // Narrow enough that five 206px lanes plus the rail cannot fit — but well
-      // above the old `1100px` special case, which is the width the owner was at
-      // and which used to squeeze instead of scrolling.
-      for (const width of [1440, 1280]) {
+      /*
+       * **Narrow enough that five lanes cannot fit.**
+       *
+       * This read `[1440, 1280]` when the board carried a 252px rail — five
+       * 206px lanes *plus the rail* did not fit at 1440. LAI-281 moved the rail
+       * to its own tab, so at 1440 the lanes genuinely fit and nothing needs to
+       * scroll. The property is unchanged and so is its point; only the width
+       * at which the board is actually crowded has moved, and a test asserting
+       * scrolling where there is room to spare tests nothing.
+       */
+      for (const width of [1180, 1024]) {
         await settle(h, width);
 
         // Whichever element carries it, something between the lanes and the
@@ -374,111 +381,20 @@ void describe('a lane keeps the width the design gives it', () => {
     }
   });
 
-  /**
-   * **What the owner asked for**, after seeing LAI-175:
+  /*
+   * **Two rail tests lived here and are gone with the rail** (LAI-281).
    *
-   * > *"also add that live stream in the scroll row so that will not fixed there
-   * > on screen"*
+   * They asserted that the Live stream travelled with the lanes rather than
+   * staying pinned, and that the lane strip never overlapped it — both real
+   * properties of a board that had a 252px column beside it. The owner's
+   * updated design makes the board plain and moves those panels to the Activity
+   * tab, so there is no rail to travel with the lanes and nothing for the strip
+   * to reach.
    *
-   * Asserted as movement, because that is the complaint: the rail stayed put
-   * while the lanes slid underneath it.
+   * They are deleted rather than rewritten: `activity-tab.test.ts` asserts what
+   * the panels do now, and a test kept alive against a component that no longer
+   * exists is the exemption-that-never-expires shape.
    */
-  void test('the Live stream rail travels with the lanes rather than staying pinned', async () => {
-    const h = await open('/board?project=laika-core', STUB);
-    try {
-      await boardReady(h);
-      await settle(h, 1280);
-
-      const railLeft = async () =>
-        h.page.locator('.rail').evaluate((el: Element) => el.getBoundingClientRect().left);
-
-      const before = await railLeft();
-      const moved = await h.page.evaluate(() => {
-        let node: Element | null = document.querySelector('.lane');
-        while (node !== null && node !== document.documentElement) {
-          if (node.scrollWidth > node.clientWidth + 1) {
-            node.scrollLeft = 400;
-            return node.scrollLeft;
-          }
-          node = node.parentElement;
-        }
-        return 0;
-      });
-      // Wait for the rail to have actually moved rather than for a clock — the
-      // same lesson as `settle()` above, on the axis this test is about.
-      await h.page
-        .waitForFunction(
-          (start: number) => {
-            const rail = document.querySelector('.rail');
-            return rail !== null && Math.abs(rail.getBoundingClientRect().left - start) > 1;
-          },
-          before,
-          { timeout: 10_000 },
-        )
-        .catch(() => {
-          // Swallowed so the assertion below reports *how far* it moved, which
-          // is a better failure than "waitForFunction timed out".
-        });
-      const after = await railLeft();
-
-      assert.ok(moved > 0, 'nothing scrolled, so this proves nothing about the rail');
-      assert.ok(
-        before - after > 100,
-        `the rail moved ${String(Math.round(before - after))}px for ${String(moved)}px of ` +
-          `scroll — it is pinned to the screen instead of riding with the board`,
-      );
-    } finally {
-      await h.close();
-    }
-  });
-
-  /**
-   * **AC3, and the reason this file exists.** The comment in `board.css`
-   * recorded this collision happening once. This is the assertion that stops it
-   * happening twice.
-   */
-  void test('the lane strip never reaches BoardRail, at any width where they share a row', async () => {
-    const h = await open('/board?project=laika-core', STUB);
-    try {
-      await boardReady(h);
-
-      for (const width of [1920, 1600, 1440, 1280, 1220]) {
-        await settle(h, width);
-
-        const geometry = await h.page.evaluate(() => {
-          const kanban = document.querySelector('.kanban');
-          const rail = document.querySelector('.rail');
-          if (kanban === null || rail === null) return null;
-          const k = kanban.getBoundingClientRect();
-          const r = rail.getBoundingClientRect();
-          const lanes = [...document.querySelectorAll('.lane')].map(
-            (l) => l.getBoundingClientRect().right,
-          );
-          return {
-            kanbanRight: k.right,
-            railLeft: r.left,
-            railTop: r.top,
-            kanbanTop: k.top,
-            lanes,
-          };
-        });
-
-        assert.ok(geometry, `at ${String(width)}px the board or the rail is missing`);
-        // Only meaningful while they actually share a row — below 1200px the
-        // rail drops underneath and there is no collision to have.
-        if (geometry.railTop > geometry.kanbanTop + 40) continue;
-
-        assert.ok(
-          geometry.kanbanRight <= geometry.railLeft + 1,
-          `at ${String(width)}px the lane strip ends at ${String(Math.round(geometry.kanbanRight))} ` +
-            `and the rail starts at ${String(Math.round(geometry.railLeft))} — the strip has grown ` +
-            `into the rail, which is the bug the old comment described`,
-        );
-      }
-    } finally {
-      await h.close();
-    }
-  });
 });
 
 void describe('what the owner actually complained about', () => {
