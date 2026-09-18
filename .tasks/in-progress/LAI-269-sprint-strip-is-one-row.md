@@ -2,11 +2,12 @@
 id: LAI-269
 title: 'The sprint strip is one row, as the reference has it'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-263
-status: backlog
+started: 2026-09-18T17:15:24+05:30
+status: in-progress
 ---
 
 ## Goal
