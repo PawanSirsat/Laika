@@ -1,6 +1,6 @@
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
-import { blockedState, blockers, staleFor } from '../../../api/board-derive.ts';
+import { blockedState, blockers, staleFor, updatedAge } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
@@ -100,12 +100,17 @@ export function TaskCard({
             'blocked by a dependency'
           ) : (
             <>
+              {/*
+                **One line, ellipsised** (LAI-263). It wrapped to two so the
+                title could have the card's full width — but the design's banner
+                is a single line and the owner asked for it back. The title is
+                what gives way: the key identifies the blocker exactly, the
+                title only helps you recognise it, and the whole line is in the
+                `title` attribute for anyone who needs the rest.
+              */}
               <span className="card-blocked-lead">
                 blocked by <b>{held[0]?.key}</b>
               </span>
-              {/* Second line, because the first has no room left: in a 167px
-                  column the title was being given 17px — one character. Its own
-                  line gives it the card's full width. */}
               <span className="card-blocked-detail">
                 <span className="card-blocked-what">{held[0]?.title}</span>
                 {held.length > 1 && (
@@ -174,6 +179,20 @@ export function TaskCard({
             deps ?
           </span>
         )}
+        {/*
+          **`comment_count` is served on every task and the card never showed
+          it** — LAI-223, open since it was noticed. Absent at zero: a card
+          that says `0` beside a link count reads as a control you can press.
+        */}
+        {task.comment_count > 0 && (
+          <span className="card-comments card-above" title="Comments">
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+              <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-4.5A8 8 0 1 1 21 12Z" />
+            </svg>
+            {task.comment_count}
+          </span>
+        )}
+
         {task.blocked_by.length > 0 && (
           <span className="card-deps card-above" title="Dependencies">
             <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
@@ -182,6 +201,15 @@ export function TaskCard({
             {task.blocked_by.length}
           </span>
         )}
+
+        {/* Against `Date.now()`, never a stored epoch — a fixture pinned to a
+            fixed time read as 240 days old twice before (LAI-420). */}
+        <span
+          className="card-age card-above"
+          title={`Updated ${updatedAge(task.updated_at, Date.now())}`}
+        >
+          {updatedAge(task.updated_at, Date.now())}
+        </span>
 
         <span className="card-spacer" />
 
