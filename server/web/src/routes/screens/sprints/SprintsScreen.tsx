@@ -7,6 +7,7 @@ import { canAssignToSprints, canManageSprints, type Sprint } from '../../../api/
 import { listProjects } from '../../../api/projects.ts';
 import { useSession } from '../../../api/use-session.ts';
 import { useRoute } from '../../use-route.ts';
+import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
 import { AssignTasksPanel } from './AssignTasksPanel.tsx';
 import { SprintCard } from './SprintCard.tsx';
 import { SprintForm } from './SprintForm.tsx';
@@ -38,7 +39,7 @@ import { withProjectParam } from '../../nav-url.ts';
  * threaded through a prop change in a file this task may not touch.
  */
 export function SprintsScreen() {
-  const { params, setParams } = useRoute();
+  const { params, setParams, navigate } = useRoute();
   const session = useSession();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
@@ -250,51 +251,80 @@ export function SprintsScreen() {
           )}
 
           <ul className="sprint-list">
-            {sprints.state.rows.map((row) => (
-              <li key={row.sprint.id}>
-                <SprintCard
-                  sprint={row.sprint}
-                  tasks={row.tasks}
-                  progress={row.progress}
-                  canManage={canManage}
-                  canAssign={canAssign}
-                  busy={sprints.busy}
-                  expanded={expanded === row.sprint.id}
-                  onToggle={() => {
-                    setExpanded(expanded === row.sprint.id ? undefined : row.sprint.id);
-                  }}
-                  onEdit={() => {
-                    setEditing(row.sprint);
-                    setFormOpen(true);
-                  }}
-                  onActivate={() => {
-                    void sprints.activate(row.sprint.id);
-                  }}
-                  onDelete={() => {
-                    setConfirmingDelete(row.sprint);
-                  }}
-                  onAssign={() => {
-                    setAssigning(row.sprint);
-                  }}
-                  onUnassign={(taskId) => {
-                    void sprints.unassign(row.sprint.id, taskId);
-                  }}
-                />
+            {sprints.state.rows.map((row, index) => {
+              /*
+               * Counted here rather than in the card, so the card places numbers
+               * and decides none of them — and so `blockedState`'s rule is used
+               * once rather than reimplemented per screen (LAI-215).
+               */
+              const byId = byIdIndex(row.tasks);
+              const blocked = row.tasks.filter((t) => blockedState(t, byId) === true).length;
+              const wip = row.tasks.filter((t) => t.status === 'in_progress').length;
+              const unassigned = row.tasks.filter((t) => t.assignee_id === null).length;
 
-                {assigning?.id === row.sprint.id && (
-                  <AssignTasksPanel
+              return (
+                <li key={row.sprint.id}>
+                  <SprintCard
                     sprint={row.sprint}
-                    available={sprints.state.status === 'ready' ? sprints.state.unassigned : []}
+                    tasks={row.tasks}
+                    progress={row.progress}
+                    index={index + 1}
+                    blocked={blocked}
+                    wip={wip}
+                    unassigned={unassigned}
+                    onScope={() => {
+                      const next = new URLSearchParams(params);
+                      next.set('sprint', row.sprint.id);
+                      setParams(next);
+                      navigate(`/board?${next.toString()}`);
+                    }}
+                    canManage={canManage}
+                    canAssign={canAssign}
                     busy={sprints.busy}
-                    onAssign={(taskIds) => sprints.assign(row.sprint.id, taskIds)}
-                    onClose={() => {
-                      setAssigning(undefined);
+                    expanded={expanded === row.sprint.id}
+                    onToggle={() => {
+                      setExpanded(expanded === row.sprint.id ? undefined : row.sprint.id);
+                    }}
+                    onEdit={() => {
+                      setEditing(row.sprint);
+                      setFormOpen(true);
+                    }}
+                    onActivate={() => {
+                      void sprints.activate(row.sprint.id);
+                    }}
+                    onDelete={() => {
+                      setConfirmingDelete(row.sprint);
+                    }}
+                    onAssign={() => {
+                      setAssigning(row.sprint);
+                    }}
+                    onUnassign={(taskId) => {
+                      void sprints.unassign(row.sprint.id, taskId);
                     }}
                   />
-                )}
-              </li>
-            ))}
+
+                  {assigning?.id === row.sprint.id && (
+                    <AssignTasksPanel
+                      sprint={row.sprint}
+                      available={sprints.state.status === 'ready' ? sprints.state.unassigned : []}
+                      busy={sprints.busy}
+                      onAssign={(taskIds) => sprints.assign(row.sprint.id, taskIds)}
+                      onClose={() => {
+                        setAssigning(undefined);
+                      }}
+                    />
+                  )}
+                </li>
+              );
+            })}
           </ul>
+
+          {/* The design's footnote (prototype line 645). It is the only place
+              that says what picking a sprint here actually does. */}
+          <p className="sprint-footnote">
+            Picking a sprint here scopes the board, the timeline and the sprint strip to it. “All
+            sprints” on the strip clears the scope and shows every task in the project.
+          </p>
         </>
       )}
     </div>
