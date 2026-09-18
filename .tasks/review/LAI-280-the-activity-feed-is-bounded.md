@@ -3,11 +3,12 @@ id: LAI-280
 title: The activity feed is bounded, and its rows read as the design's
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-279
 started: 2026-09-18T21:35:00Z
+finished: 2026-09-18T21:50:00Z
 ---
 
 ## Why
