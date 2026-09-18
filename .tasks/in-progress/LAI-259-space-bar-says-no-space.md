@@ -2,11 +2,12 @@
 id: LAI-259
 title: 'The space bar says "No space" for a project that exists'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-251
-status: backlog
+started: 2026-09-18T15:22:32+05:30
+status: in-progress
 ---
 
 ## Goal
