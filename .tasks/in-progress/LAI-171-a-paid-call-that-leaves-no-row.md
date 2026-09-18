@@ -2,11 +2,12 @@
 id: LAI-171
 title: 'A provider call whose response will not parse costs money and leaves no row'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p3
 depends-on: [LAI-467]
 discovered-from: LAI-467
-status: backlog
+status: in-progress
+started: 2026-09-10T02:10:00Z
 ---
 
 ## Goal
