@@ -2,11 +2,12 @@
 id: LAI-261
 title: 'The board keeps the old project when you switch space'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-260
-status: backlog
+started: 2026-09-18T16:13:40+05:30
+status: in-progress
 ---
 
 ## Goal
