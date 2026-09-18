@@ -144,7 +144,11 @@ function bootAgainst(path: string, secret: string) {
   const auth = createAuth({ db, sqlite, secret, baseUrl: ORIGIN, secureCookies: false });
   const app = createApp({
     version: '0.0.0-restored',
-    logger: createLogger(() => {}),
+    // The sink discards: this boots a restored database and asserts on what it
+    // serves, not on what it logged. `() => undefined` rather than `() => {}`
+    // because the empty body is a lint error — and matching `auth/origin.test.ts`,
+    // which is the only other discarding logger in `test/` (LAI-470).
+    logger: createLogger(() => undefined),
     auth,
     db,
     sqlite,

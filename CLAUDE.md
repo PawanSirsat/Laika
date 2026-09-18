@@ -708,6 +708,31 @@ file. The rules below are the ones that are true of every line of code.
   grep -E "Unhandled|Errors|Failed|not ok|✗" /tmp/gate.txt
   ```
 
+  **Never pipe a gate into anything.** This shell is **zsh**, and the two habits
+  that look like they capture a status both silently do not. Measured, not
+  assumed:
+
+  ```
+  false | tail -1; echo "${PIPESTATUS[0]}"   →   (empty)   # bash-only array
+  false | tail -1; echo "$?"                 →   0         # tail's status
+  false | tail -1; echo "${pipestatus[1]}"   →   1         # zsh's, 1-indexed
+  ```
+
+  **So `pnpm lint 2>&1 | tail -3; echo ${PIPESTATUS[0]}` prints nothing at all**,
+  and `tail -3` shows eslint's banner rather than its verdict — **a gate that
+  cannot report failure, quoted as evidence.** CORE ran that form for most of a
+  session.
+
+  **And never chain the gates so one exit code survives.** CORE's own LAI-468
+  output has `✖ 1 problem` four lines above `EXIT 0` — **lint ran, failed, printed,
+  and was never looked at**, because only the last command's status was captured.
+  That is *a gate you do not read is a gate you did not run*, reached from the
+  side that sentence does not describe: **not skipping the command, but chaining
+  it where its result cannot survive.**
+
+  Redirect each to its own file, capture each `$?` on its own line, and print all
+  four.
+
   **All three, and the gate is all three exiting `0`.** This rule said `pnpm test`
   alone until 2026-09-03, and **`pnpm lint` was red on `master` for 54 commits and
   nine accepted tasks** before SHELL noticed — one empty arrow function from
