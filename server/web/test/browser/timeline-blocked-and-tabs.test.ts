@@ -224,13 +224,35 @@ void describe('a blocked bar is not the same as an unblocked one', () => {
   });
 });
 
-void describe('the sprint tabs select what the strip describes', () => {
-  void test('the active sprint is chosen on load', async () => {
+void describe('the sprint chips select what the strip describes', () => {
+  /*
+   * **One chip row, shared with the board** (LAI-273). The design derives both
+   * from the same `sprintChips` (prototype lines 151 and 209), and Timeline had
+   * grown a second implementation — its own markup, its own selection state and
+   * its own idea of a fraction. Selection is now `?sprint=`, which is what the
+   * board already wrote, so the two screens cannot disagree about what is
+   * selected.
+   *
+   * What the old tests pinned is unchanged and is pinned here: the summary
+   * describes the *active* sprint on load, follows a selection, and never
+   * reports days left for a sprint that has ended.
+   */
+  void test('the active sprint is described on load, with nothing selected', async () => {
     const h = await open('/timeline?project=laika-core', STUB);
     try {
-      await h.page.locator('.tl-tab').first().waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.tl-tab').count(), SPRINTS.length);
-      assert.equal(await h.page.locator('.tl-tab-on .tl-tab-name').innerText(), 'S3');
+      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.strip-chip').count(), SPRINTS.length);
+
+      // Nothing is picked yet — `All sprints` carries the selection.
+      assert.equal(await h.page.locator('.strip-chip-on').count(), 0);
+      assert.equal(await h.page.locator('.strip-all-on').count(), 1);
+
+      // And the summary still speaks about the sprint today falls in.
+      await h.page.waitForFunction(
+        () => (document.querySelector('.tl-strip')?.textContent ?? '').includes('S3'),
+        undefined,
+        { timeout: 10_000 },
+      );
       assert.match(await h.page.locator('.tl-strip').innerText(), /S3/);
     } finally {
       await h.close();
@@ -240,12 +262,17 @@ void describe('the sprint tabs select what the strip describes', () => {
   void test('selecting a completed sprint changes the strip, and it does not say days left', async () => {
     const h = await open('/timeline?project=laika-core', STUB);
     try {
-      await h.page.locator('.tl-tab').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
       const before = await h.page.locator('.tl-strip').innerText();
       assert.match(before, /DAYS LEFT/, 'the active sprint should be counting down');
 
-      await h.page.locator('.tl-tab', { hasText: 'S1' }).first().click();
-      await h.page.waitForTimeout(250);
+      await h.page.locator('.strip-chip', { hasText: 'S1' }).first().click();
+      await h.page.waitForURL(/sprint=s1/, { timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => (document.querySelector('.tl-strip')?.textContent ?? '').includes('ENDED'),
+        undefined,
+        { timeout: 10_000 },
+      );
 
       const after = await h.page.locator('.tl-strip').innerText();
       assert.notEqual(after, before, 'the strip did not follow the selection');
@@ -266,9 +293,14 @@ void describe('the sprint tabs select what the strip describes', () => {
   void test('a future sprint counts to its start', async () => {
     const h = await open('/timeline?project=laika-core', STUB);
     try {
-      await h.page.locator('.tl-tab').first().waitFor({ timeout: 20_000 });
-      await h.page.locator('.tl-tab', { hasText: 'S4' }).first().click();
-      await h.page.waitForTimeout(250);
+      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.strip-chip', { hasText: 'S4' }).first().click();
+      await h.page.waitForURL(/sprint=s4/, { timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => (document.querySelector('.tl-strip')?.textContent ?? '').includes('STARTS IN'),
+        undefined,
+        { timeout: 10_000 },
+      );
       assert.match(await h.page.locator('.tl-strip').innerText(), /STARTS IN/);
     } finally {
       await h.close();
@@ -280,19 +312,21 @@ void describe('the sprint tabs select what the strip describes', () => {
     // select something else — which is exactly when a reader needs it.
     const h = await open('/timeline?project=laika-core', STUB);
     try {
-      await h.page.locator('.tl-tab').first().waitFor({ timeout: 20_000 });
-      await h.page.locator('.tl-tab', { hasText: 'S1' }).first().click();
-      await h.page.waitForTimeout(250);
+      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.strip-chip', { hasText: 'S1' }).first().click();
+      await h.page.waitForURL(/sprint=s1/, { timeout: 10_000 });
 
-      assert.equal(await h.page.locator('.tl-tab-on .tl-tab-name').innerText(), 'S1');
-      const live = h.page.locator('.tl-tab-live');
-      assert.equal(await live.count(), 1, 'the current sprint lost its marker when deselected');
-      const onCurrent = await h.page
-        .locator('.tl-tab-now')
-        .first()
-        .locator('.tl-tab-name')
-        .innerText();
-      assert.equal(onCurrent, 'S3', 'the marker moved with the selection instead of staying put');
+      assert.match(await h.page.locator('.strip-chip-on').innerText(), /S1/);
+
+      /*
+       * The sprint today falls in keeps its own mark while something else is
+       * selected — `strip-chip-active`, from the sprint's status rather than
+       * from the selection. A marker that moved with the selection would make
+       * the two facts indistinguishable, which is the whole point of the test.
+       */
+      const current = h.page.locator('.strip-chip-active');
+      assert.equal(await current.count(), 1, 'the current sprint lost its marker when deselected');
+      assert.match(await current.innerText(), /S3/, 'the marker moved with the selection');
     } finally {
       await h.close();
     }

@@ -385,12 +385,23 @@
    measured-versus-planned. */
 
 .tl-grid {
-  --tl-label: 24rem;
+  /*
+   * **250px, the design's figure** (prototype line 526). Ours was 24rem — 384px
+   * — which took a third of a 1200px window for names and squeezed every bar
+   * into the remainder.
+   */
+  --tl-label: 15.625rem;
   margin: 0 var(--space-4);
   border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  /* The design's card: 12px, with the shadow every panelled screen carries. */
+  border-radius: var(--radius-lg);
   background: var(--card);
+  box-shadow: var(--shadow);
   overflow: hidden;
+  /* Seven columns of track need room; the pane scrolls rather than the page. */
+  min-width: 67.5rem;
+  /* The containing block for the single today marker below. */
+  position: relative;
 }
 
 .tl-strip {
@@ -442,7 +453,14 @@
   border-right: 1px solid var(--bd);
 }
 
+/*
+ * **Positioned**, so the header's today marker measures against the axis it
+ * labels. Without it the marker resolved against an ancestor that includes the
+ * 250px task column, and the chart drew *two* amber lines in different places —
+ * one right, one meaningless.
+ */
 .tl-head-axis {
+  position: relative;
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -490,8 +508,15 @@
 
 .tl-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   border-bottom: 1px solid var(--bd);
+  /* The design's row floor, so a one-line title does not collapse the track. */
+  min-height: 2.875rem;
+  cursor: pointer;
+}
+
+.tl-row:hover {
+  background: var(--tub);
 }
 
 .tl-row:last-child {
@@ -503,6 +528,8 @@
 }
 
 .tl-row-label {
+  /* `border-box`, or the padding is added to the design's 250px. */
+  box-sizing: border-box;
   flex: 0 0 var(--tl-label);
   display: flex;
   align-items: center;
@@ -581,13 +608,51 @@
   min-width: 0;
 }
 
+/*
+ * **The design's bar: 24px tall, radius 7, with its key inside** (prototype
+ * line 563). Ours was a 12px pill with nothing written on it, which is why a
+ * track of them could not be read without counting rows across.
+ */
 .tl-bar {
   position: relative;
-  height: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 1.5rem;
   min-width: 3px;
-  border-radius: var(--radius-pill);
+  padding: 0 0.5625rem;
+  border-radius: 7px;
   background: var(--tx3);
+  overflow: hidden;
 }
+
+.tl-bar-key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx);
+}
+
+.tl-bar-blocked-mark {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.1875rem;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--red);
+  white-space: nowrap;
+}
+
+/*
+ * A narrow bar must not spill its label. `overflow: hidden` on the bar clips
+ * it, and the row's own title carries the same key a few pixels to the left —
+ * so nothing is lost, which is the condition for clipping rather than wrapping.
+ */
 
 /* Measured: filled, solid edge. */
 .tl-bar-actual,
@@ -629,11 +694,13 @@
   background: var(--red);
 }
 
+/*
+ * **In flow, not absolute.** The bar is now a flex row carrying its key and
+ * its blocker (the design's anatomy), so a dot positioned at `left: 2px` sat
+ * underneath the key instead of beside it.
+ */
 .tl-blocked-dot {
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  transform: translateY(-50%);
+  flex: none;
   width: 5px;
   height: 5px;
   border-radius: var(--radius-pill);
@@ -785,22 +852,107 @@
   stroke: currentColor;
 }
 
+/*
+ * **Today is amber and solid** (prototype line 530), not a red dashed hairline.
+ * Red is this product's colour for blocked; using it for *now* made the one
+ * neutral mark on the chart read as an alarm.
+ */
 .tl-today {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 0;
-  border-left: 1px dashed var(--red);
+  width: 2px;
+  background: var(--amb);
   pointer-events: none;
+  /* Over the bands and the bars. */
+  z-index: 2;
 }
 
 .tl-today-label {
   position: absolute;
   top: 0;
-  left: 2px;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--red);
-  background: var(--card);
-  padding: 0 2px;
+  left: 4px;
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: #fff;
+  background: var(--amb);
+  border-radius: 5px;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+/*
+ * The lane never wraps. `In progress` broke across two lines inside the row's
+ * meta line, which pushed the dates onto a third and made every row a
+ * different height.
+ */
+.timeline-task-status {
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------------------- the legend */
+
+.tl-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+  margin: 0 var(--space-4);
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--bd);
+  border-top: none;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--page);
+}
+
+.tl-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+.tl-legend-today {
+  color: var(--amb);
+}
+
+.tl-swatch {
+  width: 16px;
+  height: 8px;
+  border-radius: 3px;
+}
+
+.tl-swatch-flight {
+  background: var(--accs);
+  border: 1px solid var(--accb);
+}
+
+.tl-swatch-blocked {
+  background: var(--reds);
+  border: 1px solid var(--redb);
+}
+
+.tl-swatch-done {
+  background: var(--grns);
+  border: 1px solid var(--grnb);
+}
+
+.tl-swatch-today {
+  width: 1px;
+  height: 11px;
+  border-radius: 0;
+  background: var(--amb);
+}
+
+.tl-legend-note {
+  margin-left: auto;
+  font-size: 0.625rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  color: var(--tx3);
 }
