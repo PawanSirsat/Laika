@@ -2,11 +2,13 @@
 id: LAI-170
 title: 'The restore procedure exists as a test and nowhere an operator will look'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: [LAI-466]
 discovered-from: LAI-466
-status: backlog
+status: in-progress
+started: 2026-09-03T03:30:00Z
+finished:
 ---
 
 ## Goal
