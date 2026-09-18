@@ -122,7 +122,7 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // nothing under it, which is a smaller version of the same lie: a section
     // that promises contents it does not have.
     const sidebar = code(
-      await readFile(new URL('../../src/components/Sidebar.tsx', import.meta.url), 'utf8'),
+      await readFile(new URL('../../src/components/sidebar/Sidebar.tsx', import.meta.url), 'utf8'),
     );
     // Matches the **property**, not one spelling of it. This previously pinned
     // `routesInGroup(group)` exactly, so adding the permission argument in

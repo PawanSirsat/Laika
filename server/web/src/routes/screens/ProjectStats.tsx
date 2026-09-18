@@ -1,5 +1,6 @@
 import { LockIcon } from '../../components/LockIcon.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
+import { initials } from '../../theme/initials.ts';
 import type { Project } from '../../api/projects.ts';
 import type { Theme } from '../../theme/theme.ts';
 
@@ -12,16 +13,6 @@ export interface ProjectStatsProps {
 function totalOf(project: Project): number {
   const c = project.task_counts;
   return c.backlog + c.todo + c.in_progress + c.review + c.done;
-}
-
-function initials(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter((p) => p !== '');
-  const first = parts[0]?.[0] ?? '?';
-  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
-  return (first + last).toUpperCase();
 }
 
 const MINUTE = 60_000;

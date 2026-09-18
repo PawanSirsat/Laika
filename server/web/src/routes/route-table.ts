@@ -108,6 +108,13 @@ export interface Route {
   readonly status?: 'ready' | 'building';
   /** Which phase brings it to life, so an empty state can say what it waits on. */
   readonly phase: string;
+  /**
+   * Two letters for the collapsed 56px rail (LAI-249), the prototype's
+   * `n.abbr`. The design supplies `TK` and `OR`; Capacity and Unlisted work
+   * are not in its sidebar at all, so `CA` and `UW` are ours, formed the same
+   * way. Only grouped routes need one — nothing else renders in the rail.
+   */
+  readonly mini?: string;
 }
 
 export const ROUTES: readonly Route[] = [
@@ -158,6 +165,7 @@ export const ROUTES: readonly Route[] = [
     group: 'ORG' /* reads across every project */,
     status: 'ready',
     phase: 'Phase 3',
+    mini: 'UW',
   },
 
   // **REVIEW, not WORK** (LAI-439 AC1). It sat in `WORK` while it was a stub;
@@ -171,6 +179,7 @@ export const ROUTES: readonly Route[] = [
     group: 'ORG' /* reads across every project */,
     status: 'ready',
     phase: 'Phase 5',
+    mini: 'CA',
   },
 
   {
@@ -192,6 +201,7 @@ export const ROUTES: readonly Route[] = [
     group: 'SETTINGS',
     status: 'ready',
     phase: 'Phase 3',
+    mini: 'TK',
   },
   {
     orgLevel: true,
@@ -200,6 +210,7 @@ export const ROUTES: readonly Route[] = [
     group: 'SETTINGS',
     phase: 'Phase 1',
     status: 'ready',
+    mini: 'OR',
   },
 
   // Routed and reachable by URL, but not offered in the nav: no screen behind

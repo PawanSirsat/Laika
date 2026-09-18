@@ -106,14 +106,14 @@ void describe('the shell actually applies the rule', () => {
       await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
     );
     const sidebar = code(
-      await readFile(new URL('../../src/components/Sidebar.tsx', import.meta.url), 'utf8'),
+      await readFile(new URL('../../src/components/sidebar/Sidebar.tsx', import.meta.url), 'utf8'),
     );
 
-    // Matched on the component, not one exact spelling: LAI-088 gives the
-    // sidebar `<Brand variant="tile" />` to match the prototype, and the
-    // criterion is that the identity is rendered — not how it is configured.
+    // The criterion is that the identity is rendered, not how it is spelled:
+    // pre-auth it is `Brand`; the sidebar head draws its own wordmark since
+    // LAI-249 gave the logo a second job as the collapse control.
     assert.match(shell, /<Brand[\s/>]/, 'the shell must show the brand when there is no nav');
-    assert.match(sidebar, /<Brand[\s/>]/, 'and the sidebar must show the same one');
+    assert.match(sidebar, /sidebar-wordmark/, 'and the sidebar must carry the wordmark');
   });
 
   void test('a route that suppresses the shell header supplies both parts itself', async () => {
@@ -133,7 +133,7 @@ void describe('the shell actually applies the rule', () => {
 
     assert.match(table, /'\/setup'[^}]*ownsChrome: true/, '/setup must claim its own chrome');
     assert.ok(boot.includes('<Brand />'), 'it must render its own brand');
-    assert.ok(boot.includes('<ThemeToggle />'), 'and its own theme control (LAI-062 AC3)');
+    assert.ok(boot.includes('<ThemeSwitch />'), 'and its own theme control (LAI-062 AC3)');
   });
 
   void test('the theme control is reachable with no session', async () => {
@@ -155,7 +155,7 @@ void describe('the shell actually applies the rule', () => {
     const preAuth = src.slice(start, src.indexOf('</header>', start));
 
     assert.ok(
-      preAuth.includes('<ThemeToggle />'),
+      preAuth.includes('<ThemeSwitch />'),
       'the theme control must render when there is no session',
     );
   });

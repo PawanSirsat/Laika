@@ -17,7 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
 
 const SYSTEM = {
   database: 'SQLite · WAL',
@@ -42,7 +42,7 @@ void describe('the first-boot status panel', () => {
       await panel.waitFor({ timeout: 20_000 });
 
       for (const theme of ['Light', 'Dark']) {
-        await h.page.getByRole('radio', { name: theme }).click();
+        await setTheme(h.page, theme);
         await h.page.waitForTimeout(250);
 
         const text = await panel.innerText();

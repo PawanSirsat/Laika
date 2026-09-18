@@ -58,6 +58,14 @@ const STUB: ApiStub = {
   '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
   '/api/v1/projects/laika-core/activity': { data: [], next_cursor: null },
   '/api/v1/projects/laika-core/tags': { tags: [] },
+  // A name the design does not use, so "came from the API" is provable.
+  '/api/v1/org': {
+    id: 'org1',
+    name: 'Borealis Labs',
+    presence_enabled: true,
+    created_at: 1,
+    updated_at: 1,
+  },
 };
 
 void after(async () => {
@@ -75,7 +83,9 @@ void describe('the SPACES section', () => {
       assert.deepEqual(keys, ['LC', 'LW', 'LI', 'MS'], `saw ${keys.join(', ')}`);
 
       const sidebar = await h.page.locator('#sidebar').innerText();
-      assert.match(sidebar, /SPACES/);
+      // The design cases this one "Spaces", 11.5px/700 with a caret — not the
+      // uppercase micro-label the route groups use (LAI-249).
+      assert.match(sidebar, /Spaces/);
       // **Real counts, not a fixture**: `34 tasks · 4 members` is the design's
       // sample, and ours must come from the project payload.
       assert.match(sidebar, /5 tasks · 5 members/, "laika-core's counts are missing");
@@ -271,6 +281,169 @@ void describe('the new chrome fits', () => {
           );
         }
       }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the prototype geometry (LAI-249)', () => {
+  void test('the logo collapses the rail to 56px and back, keys surviving', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+
+      const width = async () =>
+        h.page.evaluate(() => {
+          const el = document.querySelector('#sidebar');
+          return el === null ? 0 : Math.round(el.getBoundingClientRect().width);
+        });
+
+      assert.equal(await width(), 212, 'expanded width is the prototype’s 212px');
+
+      await h.page.locator('.sidebar-logo').click();
+      await h.page.waitForFunction(
+        () => {
+          const el = document.querySelector('#sidebar');
+          return el !== null && Math.round(el.getBoundingClientRect().width) === 56;
+        },
+        undefined,
+        { timeout: 5000 },
+      );
+
+      // The collapsed rail still says which spaces are which.
+      const keys = h.page.locator('.space-key');
+      assert.ok((await keys.count()) >= 3, 'space keys must survive the collapse');
+      assert.ok(await keys.first().isVisible(), 'and be visible, not merely present');
+      // The two-letter route abbreviations appear only here.
+      assert.ok(await h.page.locator('.sidebar-mini', { hasText: 'TK' }).isVisible());
+
+      await h.page.locator('.sidebar-logo').click();
+      await h.page.waitForFunction(
+        () => {
+          const el = document.querySelector('#sidebar');
+          return el !== null && Math.round(el.getBoundingClientRect().width) === 212;
+        },
+        undefined,
+        { timeout: 5000 },
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the Spaces section head collapses its rows and says so', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      const head = h.page.locator('.spaces-head-toggle');
+      await head.waitFor({ timeout: 20_000 });
+      assert.equal(await head.getAttribute('aria-expanded'), 'true');
+      assert.ok((await h.page.locator('.space-key').count()) >= 3);
+
+      await head.click();
+      assert.equal(await head.getAttribute('aria-expanded'), 'false');
+      assert.equal(
+        await h.page.locator('.space-key').count(),
+        0,
+        'collapsing the section must take its rows with it',
+      );
+
+      await head.click();
+      assert.equal(await head.getAttribute('aria-expanded'), 'true');
+      assert.ok((await h.page.locator('.space-key').count()) >= 3, 'and bring them back');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the org line is the API’s name, not the design’s fixture', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.sidebar-orgline').waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.sidebar-orgline').innerText(), 'Borealis Labs');
+      const sidebar = await h.page.locator('#sidebar').innerText();
+      assert.doesNotMatch(sidebar, /Kvelld Dynamics/, 'the prototype’s org fixture leaked');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('More spaces opens the popover: unpinned rows, filter, escape, view-all', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      const more = h.page.locator('.sidebar-link-button', { hasText: 'More spaces' });
+      await more.waitFor({ timeout: 20_000 });
+      await more.click();
+
+      const pop = h.page.locator('.spaces-pop');
+      await pop.waitFor({ timeout: 5000 });
+
+      // Only the space NOT pinned above — the prototype's `popSpaces`.
+      const names = await pop.locator('.spaces-pop-name').allInnerTexts();
+      assert.deepEqual(names, ['Laika Docs'], `saw ${names.join(', ')}`);
+      assert.match(await pop.innerText(), /9 tasks · 2 members/, 'popover rows carry real meta');
+
+      // The search box is a real filter, not the prototype's drawing.
+      await pop.locator('input').fill('zzz');
+      assert.match(await pop.innerText(), /No space matches/);
+      await pop.locator('input').fill('docs');
+      assert.equal(await pop.locator('.spaces-pop-name').count(), 1);
+
+      // Escape closes it.
+      await h.page.keyboard.press('Escape');
+      assert.equal(await pop.count(), 0, 'Escape must close the popover');
+
+      // And View all spaces goes to the directory.
+      await more.click();
+      await pop.waitFor({ timeout: 5000 });
+      await pop.locator('.spaces-pop-all').click();
+      await h.page.waitForURL(/\/projects/, { timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a click outside the popover closes it', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      const more = h.page.locator('.sidebar-link-button', { hasText: 'More spaces' });
+      await more.waitFor({ timeout: 20_000 });
+      await more.click();
+      await h.page.locator('.spaces-pop').waitFor({ timeout: 5000 });
+
+      await h.page.mouse.click(1200, 600);
+      assert.equal(await h.page.locator('.spaces-pop').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the footer: chip, role, sign-out, and the design’s theme row', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      const footer = h.page.locator('.sidebar-footer');
+      await footer.waitFor({ timeout: 20_000 });
+
+      assert.match(await footer.innerText(), /Ada Lovelace/);
+      assert.match(await footer.innerText(), /owner/i, 'the role renders under the name');
+      assert.ok(await footer.locator('.sidebar-signout').isVisible(), 'sign out stays reachable');
+
+      // The design's two-state row: `☾ Switch to dark` in light, then the
+      // flip — through the app's own storage key, pinning an explicit value.
+      const toggle = footer.locator('.theme-switch');
+      assert.match(await toggle.innerText(), /Switch to dark/);
+      await toggle.click();
+      await h.page.waitForFunction(
+        () => document.documentElement.classList.contains('dk'),
+        undefined,
+        { timeout: 5000 },
+      );
+      assert.match(await toggle.innerText(), /Switch to light/);
+      assert.equal(
+        await h.page.evaluate(() => localStorage.getItem('laika.theme')),
+        'dark',
+        'the first click pins an explicit choice (D-058 contract)',
+      );
     } finally {
       await h.close();
     }

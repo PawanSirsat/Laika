@@ -326,6 +326,25 @@ export async function closeBrowser(): Promise<void> {
   cleanBuild();
 }
 
+/**
+ * Put the page in a theme **through the real control** (LAI-249).
+ *
+ * The control became the design's two-state `ThemeSwitch`, so "select Dark"
+ * is now "click if not already dark" — this helper keeps the property the old
+ * radio clicks had: a JS-computed colour bug hides from a class-toggle
+ * shortcut, and the theme is what these tests are about.
+ */
+export async function setTheme(page: Page, theme: string) {
+  const wantDark = theme.toLowerCase() === 'dark';
+  const isDark = await page.evaluate(() => document.documentElement.classList.contains('dk'));
+  if (wantDark !== isDark) await page.locator('.theme-switch').first().click();
+  await page.waitForFunction(
+    (want: boolean) => document.documentElement.classList.contains('dk') === want,
+    wantDark,
+    { timeout: 5000 },
+  );
+}
+
 /** Open `path` in a real browser, against the built SPA and a stubbed API. */
 export async function open(path: string, stub: ApiStub): Promise<Harness> {
   const calls: StubCall[] = [];

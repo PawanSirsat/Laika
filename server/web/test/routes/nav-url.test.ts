@@ -107,7 +107,7 @@ void describe('the sidebar actually uses it', () => {
     // the defect was never in a function — it was one `href={route.path}` in a
     // component no test can render. This is the assertion that was missing.
     const source = await readFile(
-      new URL('../../src/components/Sidebar.tsx', import.meta.url),
+      new URL('../../src/components/sidebar/Sidebar.tsx', import.meta.url),
       'utf8',
     );
 

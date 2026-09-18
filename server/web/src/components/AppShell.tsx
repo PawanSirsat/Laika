@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Brand } from './Brand.tsx';
 import { EmptyState } from './EmptyState.tsx';
-import { Sidebar } from './Sidebar.tsx';
+import { Sidebar } from './sidebar/Sidebar.tsx';
 import { showsAppNav } from './shell-chrome.ts';
 import { useShellContext } from '../api/use-shell-context.ts';
 import { useSpaces } from '../routes/use-spaces.ts';
 import { permissionHolder } from '../routes/nav-permissions.ts';
 import { SpaceTabs } from './SpaceTabs.tsx';
-import { ThemeToggle } from './ThemeToggle.tsx';
+import { ThemeSwitch } from './ThemeSwitch.tsx';
 import { FirstBootScreen } from '../routes/screens/FirstBootScreen.tsx';
 import { InviteScreen } from '../routes/screens/InviteScreen.tsx';
 import { acceptInvite } from '../api/invites.ts';
@@ -30,14 +30,12 @@ import { StateGallery } from './StateGallery.tsx';
 import { TokenReference } from '../theme/TokenReference.tsx';
 import { ApiErrorState } from './ApiErrorState.tsx';
 import { LoadingState } from './LoadingState.tsx';
-import { UserChrome } from './UserChrome.tsx';
 import { isPublic } from '../routes/route-table.ts';
 import { useRoute } from '../routes/use-route.ts';
 import { useSession } from '../api/use-session.ts';
 import { useSetupStatus } from '../api/use-setup-status.ts';
 import { completeSetup, fieldErrors } from '../api/setup.ts';
 import { ApiError } from '../api/errors.ts';
-import { useTheme } from '../theme/use-theme.ts';
 import { isCredentialRejection, SignInError } from '../api/auth.ts';
 import './app-shell.css';
 
@@ -55,8 +53,10 @@ import './app-shell.css';
 export function AppShell() {
   const { path, route, navigate, params, setParams } = useRoute();
   const { session, signIn, signOut, retry } = useSession();
-  const { theme } = useTheme();
   const [navOpen, setNavOpen] = useState(false);
+  // The 56px rail (LAI-249), toggled by the logo. Desktop-only — the CSS makes
+  // it inert below 900px, where the sidebar is off-canvas at full width.
+  const [navCollapsed, setNavCollapsed] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [signInError, setSignInError] = useState<string | undefined>(undefined);
   const [signInRejected, setSignInRejected] = useState(false);
@@ -298,8 +298,12 @@ export function AppShell() {
   const projectSlug = params.get('project') ?? undefined;
   // Gated on the session: `/login` and first boot render this shell too, and an
   // ungated fetch 401s on every sign-in page load.
-  const { spaces, open: openSpace } = useSpaces(session.status === 'authenticated', projectSlug);
-  const { version, sprintCount } = useShellContext(projectSlug, signedIn);
+  const {
+    spaces,
+    all: allSpaces,
+    open: openSpace,
+  } = useSpaces(session.status === 'authenticated', projectSlug);
+  const { version, sprintCount, orgName } = useShellContext(projectSlug, signedIn);
 
   return (
     <div className={signedIn ? 'shell' : 'shell shell-preauth'}>
@@ -315,26 +319,20 @@ export function AppShell() {
           onClose={() => {
             setNavOpen(false);
           }}
+          collapsed={navCollapsed}
+          onToggleCollapse={() => {
+            setNavCollapsed((v) => !v);
+          }}
           projectSlug={projectSlug}
           spaces={spaces}
+          allSpaces={allSpaces}
           onOpenSpace={openSpace}
           orgRole={session.status === 'authenticated' ? session.user.org_role : undefined}
-          version={version}
+          orgName={orgName}
           counts={{ '/sprints': sprintCount }}
-          footer={
-            /* Theme control above the user chip — the order the prototype uses
-               (LAI-088). The task text has these the other way round; the
-               design file is the authority and it puts the theme control first. */
-            <>
-              <ThemeToggle />
-              <UserChrome
-                user={session.user}
-                theme={theme}
-                onSignOut={handleSignOut}
-                signingOut={signingOut}
-              />
-            </>
-          }
+          user={session.status === 'authenticated' ? session.user : undefined}
+          onSignOut={handleSignOut}
+          signingOut={signingOut}
         />
       )}
 
@@ -389,7 +387,7 @@ export function AppShell() {
             {!signedIn && <Brand />}
             {!signedIn && (
               <div className="shell-head-right">
-                <ThemeToggle />
+                <ThemeSwitch />
               </div>
             )}
           </header>

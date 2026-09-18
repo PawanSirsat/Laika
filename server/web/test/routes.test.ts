@@ -29,7 +29,15 @@ let shell: string;
 void before(async () => {
   // Comments stripped: these tests assert absences, and the doc comments name
   // the very things being asserted absent. See test/helpers/code.ts.
-  sidebar = code(await readFile(fileURLToPath(new URL('components/Sidebar.tsx', SRC)), 'utf8'));
+  //
+  // The sidebar is a component family since LAI-249; the scans below cover
+  // every file in it, so a rule cannot be dodged by moving markup to a sibling.
+  const parts = await Promise.all(
+    ['Sidebar.tsx', 'SpacesSection.tsx', 'SpacesPopover.tsx', 'SidebarFooter.tsx'].map((name) =>
+      readFile(fileURLToPath(new URL(`components/sidebar/${name}`, SRC)), 'utf8'),
+    ),
+  );
+  sidebar = code(parts.join('\n'));
   shell = code(await readFile(fileURLToPath(new URL('components/AppShell.tsx', SRC)), 'utf8'));
 });
 

@@ -1,4 +1,5 @@
 import { avatarColor } from '../../../theme/avatar-color.ts';
+import { initials } from '../../../theme/initials.ts';
 import { blockedState, blockers, staleFor } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -15,16 +16,6 @@ export interface TaskCardProps {
   /** `S1`-style label per sprint id, and which one is active. Real data. */
   readonly sprintLabels?:
     ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
-}
-
-function initials(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter((p) => p !== '');
-  const first = parts[0]?.[0] ?? '?';
-  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
-  return (first + last).toUpperCase();
 }
 
 /**

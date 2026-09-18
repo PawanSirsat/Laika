@@ -18,7 +18,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
 
 const DAY = 86_400_000;
 
@@ -168,7 +168,7 @@ void describe('a blocked bar is not the same as an unblocked one', () => {
           });
 
       for (const theme of ['Light', 'Dark']) {
-        await h.page.getByRole('radio', { name: theme }).click();
+        await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
         // The probe must be able to see both, or "they differ" proves nothing.

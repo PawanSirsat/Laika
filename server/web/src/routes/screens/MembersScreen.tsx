@@ -17,21 +17,12 @@ import {
 import { getProject, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
 import './members.css';
+import { initials } from '../../theme/initials.ts';
 
 export interface MembersScreenProps {
   /** `?project=<slug>` — the same mechanism the board uses (LAI-058). */
   readonly slug: string | undefined;
   readonly me: MeProfile | undefined;
-}
-
-function initials(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter((p) => p !== '');
-  const first = parts[0]?.[0] ?? '?';
-  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
-  return (first + last).toUpperCase();
 }
 
 /**

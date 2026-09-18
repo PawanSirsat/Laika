@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isTombstone, listProjects, type Project } from '../api/projects.ts';
-import { promote, readRecent, recentSpaces, writeRecent, type Space } from './spaces.ts';
+import { promote, readRecent, recentSpaces, toSpace, writeRecent, type Space } from './spaces.ts';
 
 /**
  * The sidebar's spaces (LAI-248).
@@ -17,7 +17,12 @@ import { promote, readRecent, recentSpaces, writeRecent, type Space } from './sp
 export function useSpaces(
   enabled: boolean,
   current?: string,
-): { readonly spaces: readonly Space[]; readonly open: (slug: string) => void } {
+): {
+  readonly spaces: readonly Space[];
+  /** Every fetched space, for the More-spaces popover (LAI-249). One page — see above. */
+  readonly all: readonly Space[];
+  readonly open: (slug: string) => void;
+} {
   const [projects, setProjects] = useState<readonly Project[]>([]);
   const [recent, setRecent] = useState<readonly string[]>(() =>
     typeof localStorage === 'undefined' ? [] : readRecent(localStorage),
@@ -55,5 +60,5 @@ export function useSpaces(
     setRecent(next);
   }, []);
 
-  return { spaces: recentSpaces(projects, recent, current), open };
+  return { spaces: recentSpaces(projects, recent, current), all: projects.map(toSpace), open };
 }

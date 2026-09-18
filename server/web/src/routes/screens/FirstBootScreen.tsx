@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Brand } from '../../components/Brand.tsx';
-import { ThemeToggle } from '../../components/ThemeToggle.tsx';
+import { ThemeSwitch } from '../../components/ThemeSwitch.tsx';
 import { SystemStatus } from './SystemStatus.tsx';
 import type { SetupSystemStatus } from '../../api/setup.ts';
 import { Button } from '../../components/forms/Button.tsx';
@@ -138,7 +138,7 @@ export function FirstBootScreen({
         {/* The shell adds no header here (`ownsChrome`), so the theme control
             lives in the rail — LAI-062 AC3 still holds: someone setting an
             instance up at night must be able to stop being dazzled. */}
-        <ThemeToggle />
+        <ThemeSwitch />
 
         <SystemStatus system={system} />
       </aside>
