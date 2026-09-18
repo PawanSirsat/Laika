@@ -81,6 +81,15 @@ export function TaskDetailPanel({
   const detail = useTaskDetail(slug, task.id);
   const panelRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
+  /**
+   * Which tab is showing.
+   *
+   * Local, not in the URL: a tab is a way of looking at the task already
+   * identified by `?task=`, and putting it in the address bar would make Back
+   * step through tab switches before it closed the drawer — which is the one
+   * thing Back has to do here (LAI-252).
+   */
+  const [tab, setTab] = useState<'comments' | 'activity'>('comments');
 
   /**
    * Focus moves into the panel on open and **back to the card on close**.
@@ -262,11 +271,52 @@ export function TaskDetailPanel({
           <ApiErrorState error={detail.error} resource="this task" onRetry={detail.reload} />
         ) : (
           <>
-            <section className="panel-section">
-              <h3 className="panel-section-title">
-                Comments <span className="panel-count">{detail.comments.length}</span>
-              </h3>
+            {/*
+              **Tabs, as the design has it** (prototype line 1780: `comments`,
+              `activity`, `changes`).
 
+              **Two, not three.** The design's third tab is *Changes* — commits
+              and the PR — and Laika has no endpoint that returns them; LAI-095
+              is the task that would build it. A tab that is always empty claims
+              a feature exists and is worse than one that does not, so it is
+              absent until there is something behind it.
+            */}
+            <div className="panel-tabs" role="tablist" aria-label="Task detail">
+              <button
+                type="button"
+                role="tab"
+                id="tab-comments"
+                aria-selected={tab === 'comments'}
+                aria-controls="panel-comments"
+                className={tab === 'comments' ? 'panel-tab panel-tab-on' : 'panel-tab'}
+                onClick={() => {
+                  setTab('comments');
+                }}
+              >
+                Comments <span className="panel-tab-count">{detail.comments.length}</span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                id="tab-activity"
+                aria-selected={tab === 'activity'}
+                aria-controls="panel-activity"
+                className={tab === 'activity' ? 'panel-tab panel-tab-on' : 'panel-tab'}
+                onClick={() => {
+                  setTab('activity');
+                }}
+              >
+                Activity <span className="panel-tab-count">{detail.activity.length}</span>
+              </button>
+            </div>
+
+            <section
+              className="panel-section"
+              id="panel-comments"
+              role="tabpanel"
+              aria-labelledby="tab-comments"
+              hidden={tab !== 'comments'}
+            >
               {detail.comments.length === 0 ? (
                 <EmptyState headline="No comments yet" />
               ) : (
@@ -335,8 +385,13 @@ export function TaskDetailPanel({
               </form>
             </section>
 
-            <section className="panel-section">
-              <h3 className="panel-section-title">Activity</h3>
+            <section
+              className="panel-section"
+              id="panel-activity"
+              role="tabpanel"
+              aria-labelledby="tab-activity"
+              hidden={tab !== 'activity'}
+            >
               {detail.activity.length === 0 ? (
                 <p className="panel-muted">Nothing recorded yet.</p>
               ) : (
