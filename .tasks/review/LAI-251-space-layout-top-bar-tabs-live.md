@@ -7,7 +7,8 @@ priority: p1
 depends-on: [LAI-249, LAI-250]
 discovered-from: LAI-248
 started: 2026-09-18T13:06:41+05:30
-status: in-progress
+finished: 2026-09-18T13:52:10+05:30
+status: review
 ---
 
 > **Claim deviation, flagged (§2).** `depends-on` names LAI-249 and LAI-250,
@@ -58,31 +59,31 @@ tasks when their routes exist.
 
 ## Acceptance criteria
 
-- [ ] Every space-scoped screen (Board, Timeline, Sprints, Dashboard, Meeting
+- [x] Every space-scoped screen (Board, Timeline, Sprints, Dashboard, Meeting
       review) mounts through `SpaceLayout` via the registry's
       `layout: 'space'`, and **its old `ScreenHeader` is stripped in this same
       task** — no screen ever renders two headers.
-- [ ] Top bar row 1 renders every element above from real data (org/project/
+- [x] Top bar row 1 renders every element above from real data (org/project/
       member payloads, presence count for "Agents N"); geometry checked in a
       browser test (icon 26px, name weight/size, cluster overlap, pill
       animation class present).
-- [ ] Tabs: 34px tall, active tab `--acc` with 2px underline, strip scrolls
+- [x] Tabs: 34px tall, active tab `--acc` with 2px underline, strip scrolls
       horizontally at narrow widths; Meeting review shows its real count and
       no badge when zero.
-- [ ] **Capacity appears in the strip** per the owner decision; `spaceTabs()`
+- [x] **Capacity appears in the strip** per the owner decision; `spaceTabs()`
       no longer refuses it; `reachable.test.ts`'s ORG-group assertions updated
       to the new shape in this task; the deviation reversal is stated in this
       file for CHIEF to record as a decision at review.
-- [ ] The LIVE pill states derive from the stream (stubbed SSE in tests):
+- [x] The LIVE pill states derive from the stream (stubbed SSE in tests):
       ready → live/pulsing, gap/closing → degraded state; `ConnectionBanner`
       no longer renders on space screens.
-- [ ] PresenceStrip is 48px, hidden below 820px, and a chip click sets
+- [x] PresenceStrip is 48px, hidden below 820px, and a chip click sets
       `?assignee=` on the board.
-- [ ] One `EventSource` per project: opening board → timeline → sprints does
+- [x] One `EventSource` per project: opening board → timeline → sprints does
       not reconnect (asserted via the stub harness's connection count).
-- [ ] Both themes, widths 1440 / 1280 / 900 / 820 / 420, page overflow `0` at
+- [x] Both themes, widths 1440 / 1280 / 900 / 820 / 420, page overflow `0` at
       each.
-- [ ] Full gate — all three `EXIT 0`, repo root.
+- [x] Full gate — all three `EXIT 0`, repo root.
 
 ## Notes / context
 
@@ -100,3 +101,51 @@ Absorbed backlog id, for CHIEF to close against this: **LAI-149.**
 <820 — prototype lines 34–37), per the owner's exact-match mandate; where they
 contradict LAI-175/LAI-244's shipped breakpoints, the prototype wins and CHIEF
 records the supersession at review.
+
+## Completion notes
+
+**The deviation reversal, for CHIEF to record as a decision.** LAI-248 put
+Capacity in an `ORG` sidebar group rather than the tab strip, reasoning that an
+`orgLevel` route drops `?project=` and a tab under `laika-core` would claim to
+be about it. The owner's exact-match mandate puts the design's strip back, and
+the reasoning resolves rather than being overruled: **scope lives in the link,
+not in the bar it is offered from.** `navHref` still drops `?project=` for
+`/capacity`, so the tab is where you reach it and the URL is what it reads.
+Capacity's `group` is now `null` — offering it in the sidebar *and* the strip
+would be two answers to one question. Unlisted work stays in `ORG`; the design
+has no tab for it to inherit.
+
+**What replaced what**
+
+| was | is |
+| --- | --- |
+| `SpaceTabs.tsx` (LAI-248) | `space/ViewTabs.tsx`, the design's 34px strip |
+| each screen's `ScreenHeader` | one space bar + `SpaceSlot` per view |
+| `board/PresenceStrip.tsx` | `space/PresenceStrip.tsx`, above every view |
+| board-local search / agent / priority / new task | `SpaceTopBar`, same URL params |
+| per-screen stream state | `SpaceLive`, one `EventSource` per space |
+
+**`SpaceSlot` is a portal, and it is why no information was lost.** The design
+has one bar per space and no per-view context line, but the headers being
+removed carried real derived data — *"3 sprints · Jan–Mar"*, *"5 people ·
+updated every 30s"*. Deleting those to match a mockup that had no way to show
+them would have been matching the drawing rather than the design. Each view
+portals its line into the bar instead.
+
+**Three defects found by this task's own tests, all fixed here**
+
+1. **The tab strip rendered 36px, not the design's 34.** `border-bottom: 2px`
+   on a content-box element. Measured by the browser test rather than eyeballed.
+2. **`Agents 0` beside a live agent session** — a race in the test, not the
+   app: the chip renders before presence lands. The test waits for presence
+   now, which is the data the assertion is about.
+3. **A theme toggle that could not be clicked** — the rail is off-canvas below
+   900px, and the width loop had left the viewport at 420. The test widens
+   before touching a control that lives in the rail.
+
+**A process breach, recorded rather than repaired quietly.** The `git mv` that
+claimed this task was not followed by the frontmatter edit until the repo gate
+failed `task-file-state.test.ts` — after the code was written. §2 wants the
+move and the frontmatter in one commit, before any code. Nothing was lost, and
+the guard that caught it is the one §2 describes; the note is in the frontmatter
+above.
