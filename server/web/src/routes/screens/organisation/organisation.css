@@ -81,7 +81,7 @@
  * like it is not for you. `:not()` rather than a second rule resetting opacity,
  * because nesting opacity multiplies and 0.55 × 1 is still 0.55.
  */
-.org-person-inactive > *:not(.org-person-controls) {
+.org-person-inactive > *:not(.org-person-controls):not(.org-tokens) {
   opacity: 0.55;
 }
 
@@ -334,4 +334,95 @@
   color: var(--red);
   background: var(--reds);
   border: 1px solid var(--redb);
+}
+
+/* --- another person's tokens (LAI-238) ------------------------------------ */
+
+.org-tokens-toggle {
+  font: inherit;
+  font-size: var(--text-xs);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--bd);
+  background: transparent;
+  color: var(--tx2);
+  cursor: pointer;
+}
+.org-tokens-toggle:hover {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+.org-tokens-toggle[aria-expanded='true'] {
+  border-color: var(--bd2);
+  background: var(--tub);
+  color: var(--tx);
+}
+
+/* The row is a wrap-enabled flex line, so the panel takes a line of its own
+   underneath without the row becoming a grid.
+
+   **`flex-basis: 100%` alone does not do it** — the default `flex-shrink: 1`
+   lets it shrink back onto the line, which at 420px put the panel *beside* a
+   squeezed name column and pushed 89px of it off the page. `flex: 1 0 100%`
+   plus `min-width: 100%` is what actually forces the break. Measured, not
+   assumed: the first version passed every assertion at 1280px. */
+/* **The row must be allowed to wrap at every width, not only narrow ones.**
+   `.org-people li` has no `flex-wrap` of its own — it is shared with the invites
+   list — so a full-width item had no second line to go to and simply overflowed
+   by 111px at 1280px. This is on `.org-person`, which only people rows carry. */
+.org-person {
+  flex-wrap: wrap;
+}
+
+.org-tokens {
+  flex: 1 0 100%;
+  min-width: 100%;
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--bd);
+}
+
+.org-tokens-head {
+  margin: 0 0 var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.org-tokens-note {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-normal);
+  color: var(--tx3);
+}
+
+/* The shared `.tok-list` carries the Tokens screen's own page margins, which are
+   wrong inside a row. Overridden here rather than removed there — that screen is
+   where those margins are correct. */
+.org-tokens-list {
+  margin: 0;
+}
+
+.org-tokens-empty {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--tx3);
+}
+
+/* A person's row is name-then-controls on a wide screen and stacked on a narrow
+   one. Without this the controls keep `margin-left: auto` and compete with the
+   name for a line that fits neither. */
+@media (max-width: 40rem) {
+  .org-person-who {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .org-person-controls {
+    flex-basis: 100%;
+    margin-left: 0;
+    margin-top: var(--space-2);
+  }
 }

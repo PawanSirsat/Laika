@@ -105,6 +105,22 @@ of a task file. Builders have no equivalent exception.
 1. Pick ONE file from `.tasks/backlog/` whose `area` is yours, whose
    `assignee` is `unclaimed` or you, and whose `depends-on` ids are all present
    in `.tasks/done/` **on `master`**.
+
+   **The one exception is a dependency CHIEF has accepted and is holding**, which
+   §4.4 produces every time: a half is reviewed and green, and `master` cannot
+   take it until the other owner's half lands. It sits in `.tasks/review/`, and
+   **the check as written says no to work that is in fact unblocked.**
+
+   **Accepted is the real condition; `done/` is how it is normally visible.** So:
+   **CHIEF says so in the accept note, by name** — *"LAI-0XX may start against
+   this"* — and the dependent records the deviation in its own task file. **Never
+   infer it from a task merely sitting in `review/`**: that is the state of work
+   nobody has looked at yet, and it is not the same thing.
+
+   Observed on LAI-238, whose `depends-on` named LAI-459 while LAI-459 waited on
+   CORE's two lines. SHELL claimed it on CHIEF's direction **and flagged the
+   deviation rather than reading the rule loosely**, which is what turned a
+   one-off into this paragraph.
 2. Take the latest integrated state first: `git merge master`.
 3. **Check every branch, not just your own** — sessions work on separate
    branches, so a rival claim will not be in your working tree. **Ask where the

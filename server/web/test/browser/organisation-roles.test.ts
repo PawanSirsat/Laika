@@ -166,7 +166,7 @@ void describe('what it actually looks like', () => {
   void test('the deactivated row is dimmed and its Reactivate button is not', async () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      await h.page.locator('.org-person button').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.org-reactivate').first().waitFor({ timeout: 20_000 });
       const row = h.page.locator('.org-person', { hasText: 'Sam Okafor' });
 
       /** Opacity nests and multiplies, so the answer is the whole chain. */
@@ -180,7 +180,7 @@ void describe('what it actually looks like', () => {
         });
 
       const name = await effective('.org-person-name');
-      const button = await effective('button');
+      const button = await effective('.org-reactivate');
 
       assert.ok(name < 0.9, `the deactivated person is not dimmed (${String(name)})`);
       assert.ok(
@@ -188,7 +188,7 @@ void describe('what it actually looks like', () => {
         `Reactivate is dimmed to ${String(button)} — it reads as a disabled control`,
       );
       // …and it really is clickable, not merely bright.
-      assert.equal(await row.locator('button').isEnabled(), true);
+      assert.equal(await row.locator('.org-reactivate').isEnabled(), true);
     } finally {
       await h.close();
     }
@@ -209,10 +209,15 @@ void describe('role management', () => {
         0,
         'a member is offered a role dropdown',
       );
+      // **Deliberately every button, not just the deactivate one.** A member
+      // gets no controls at all, and this is the assertion that catches a new
+      // control arriving on the row without a gate. LAI-238's `Tokens` toggle
+      // is exactly that shape — which is why the *specific* locators elsewhere
+      // in this file were narrowed and this one was not.
       assert.equal(
         await h.page.locator('.org-person button').count(),
         0,
-        'a member is offered a deactivate button',
+        'a member is offered a button on a person row',
       );
       assert.equal(
         await h.page.locator('.org-person [disabled]').count(),
@@ -280,7 +285,8 @@ void describe('role management', () => {
       await h.page.locator('.org-person select').first().waitFor({ timeout: 20_000 });
       const mine = h.page.locator('.org-person', { hasText: 'Ada Lovelace' });
       assert.equal(await mine.locator('select').count(), 0, 'offered to change my own role');
-      assert.equal(await mine.locator('button').count(), 0, 'offered to lock myself out');
+      // Broad for the same reason: nothing on my own row, whatever it is.
+      assert.equal(await mine.locator('button').count(), 0, 'offered a control on my own row');
       // …and the others still have theirs, or the assertion above is vacuous.
       assert.equal(await h.page.locator('.org-person select').count(), 3);
     } finally {
@@ -322,12 +328,16 @@ void describe('deactivation', () => {
   void test('an active person is deactivated and an inactive one reactivated', async () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      await h.page.locator('.org-person button').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.org-deactivate').first().waitFor({ timeout: 20_000 });
 
-      const active = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).locator('button');
+      const active = h.page
+        .locator('.org-person', { hasText: 'Tomas Nel' })
+        .locator('.org-deactivate');
       assert.match(await active.innerText(), /^Deactivate$/i, 'wrong verb for an active person');
 
-      const inactive = h.page.locator('.org-person', { hasText: 'Sam Okafor' }).locator('button');
+      const inactive = h.page
+        .locator('.org-person', { hasText: 'Sam Okafor' })
+        .locator('.org-reactivate');
       assert.match(await inactive.innerText(), /^Reactivate$/i, 'wrong verb for an inactive one');
 
       // Reactivation asks nothing — it takes nobody's access away.
@@ -345,7 +355,7 @@ void describe('deactivation', () => {
   void test('deactivating asks first, and says it is not deletion', async () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      await h.page.locator('.org-person button').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.org-deactivate').first().waitFor({ timeout: 20_000 });
 
       let asked = '';
       h.page.on('dialog', (d) => {
@@ -353,7 +363,10 @@ void describe('deactivation', () => {
         void d.dismiss();
       });
 
-      await h.page.locator('.org-person', { hasText: 'Tomas Nel' }).locator('button').click();
+      await h.page
+        .locator('.org-person', { hasText: 'Tomas Nel' })
+        .locator('.org-deactivate')
+        .click();
       await h.page.waitForTimeout(500);
 
       assert.match(asked, /Tomas Nel/, 'the confirmation does not name who');
@@ -417,7 +430,9 @@ void describe('both themes', () => {
         assert.ok(/^rgba?\(/.test(ink) && /^rgba?\(/.test(paper), `${theme}: unresolved colours`);
         assert.notEqual(ink, paper, `${theme}: the heading is the same colour as its card`);
 
-        const button = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).locator('button');
+        const button = h.page
+          .locator('.org-person', { hasText: 'Tomas Nel' })
+          .locator('.org-deactivate');
         const bbox = await button.boundingBox();
         assert.ok(bbox !== null && bbox.height > 0, `${theme}: the deactivate button has no box`);
       }
