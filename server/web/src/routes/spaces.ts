@@ -96,8 +96,21 @@ export function writeRecent(storage: Pick<Storage, 'setItem'>, recent: readonly 
 }
 
 /**
- * The spaces to show, in order: remembered ones first, then whatever is left to
- * fill the row, so a first visit is never an empty section.
+ * The spaces to show: the most recent ones, **drawn in a stable order**.
+ *
+ * Two different questions, and conflating them was a defect the owner reported
+ * (LAI-260). Recency answers *which* spaces are listed — with more than
+ * {@link RECENT_LIMIT} projects something has to choose, and the ones you have
+ * opened most recently is the design's rule. Recency must **not** answer what
+ * order they are drawn in: when it did, clicking a space moved it to the top
+ * and the rows shuffled under the pointer, so the row you wanted was never
+ * where you last saw it.
+ *
+ * Sorted by name, therefore: deterministic, and it changes only when a project
+ * is renamed or added. **Not** the order `GET /projects` returns, which is
+ * `updated_at asc` and would reshuffle the sidebar whenever anything in a
+ * project changed — the same defect arriving from the server instead of from a
+ * click.
  *
  * **A remembered slug that no longer exists is dropped**, not rendered as a
  * broken row — a project can be deleted or a membership revoked between visits.
@@ -121,5 +134,6 @@ export function recentSpaces(
     .slice(0, RECENT_LIMIT)
     .map((slug) => bySlug.get(slug))
     .filter((p): p is Project => p !== undefined)
-    .map(toSpace);
+    .map(toSpace)
+    .sort((a, b) => a.name.localeCompare(b.name));
 }

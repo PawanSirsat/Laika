@@ -79,8 +79,9 @@ void describe('the SPACES section', () => {
       await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
 
       const keys = await h.page.locator('.space-key').allInnerTexts();
-      // Three spaces plus the More spaces row — the design's number.
-      assert.deepEqual(keys, ['LC', 'LW', 'LI', 'MS'], `saw ${keys.join(', ')}`);
+      // Three spaces plus the More spaces row — the design's number. **Drawn
+      // by name since LAI-260**, so the list never moves under the pointer.
+      assert.deepEqual(keys, ['LC', 'LI', 'LW', 'MS'], `saw ${keys.join(', ')}`);
 
       const sidebar = await h.page.locator('#sidebar').innerText();
       // The design cases this one "Spaces", 11.5px/700 with a caret — not the
@@ -236,37 +237,70 @@ void describe('a space row is active for any view of it', () => {
   });
 });
 
-void describe('the recent order survives a reload', () => {
+void describe('the list does not move under the pointer (LAI-260)', () => {
   /**
-   * Opening spaces writes the order; a fresh load must read it back.
-   *
-   * **A bare `/board` cannot be the probe**: the screen resolves a missing
-   * `?project=` to a real project and normalises the URL (LAI-423), so there
-   * is no load that reads storage alone. Instead the server order is
-   * adversarial (`LC, LI, LW`) and two clicks remember `[core, web]` — after
-   * a reload on core's board, `LW` before `LI` can only come from storage;
-   * losing it answers `LC, LI, LW`, the fill order.
+   * The owner's report, with screenshots: clicking a space sent it to the top
+   * and every other row shifted. **The row you want is then never where you
+   * last saw it**, and the next click lands on whatever slid into its place.
    */
-  void test('the order opened by clicks is read back on a fresh load', async () => {
+  void test('clicking a space leaves every row exactly where it was', async () => {
     const h = await open('/board?project=laika-core', WEB_STUB);
     try {
-      const web = h.page.locator('.sidebar-link', { hasText: 'Laika Web' });
-      await web.waitFor({ timeout: 20_000 });
-      await web.click();
-      await h.page.waitForURL(/project=laika-web/, { timeout: 10_000 });
+      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      const before = await h.page.locator('.space-key').allInnerTexts();
 
-      const core = h.page.locator('.sidebar-link', { hasText: 'Laika Core' });
-      await core.click();
-      await h.page.waitForURL(/project=laika-core/, { timeout: 10_000 });
+      // Click a space that is *not* the current one — the case that reordered.
+      await h.page.locator('.sidebar-link', { hasText: 'Laika Web' }).click();
+      await h.page.waitForURL(/project=laika-web/, { timeout: 10_000 });
+      await h.page.waitForTimeout(400);
+
+      const after = await h.page.locator('.space-key').allInnerTexts();
+      assert.deepEqual(after, before, `the rows moved: ${before.join(',')} -> ${after.join(',')}`);
+
+      // And again, to a third space.
+      await h.page.locator('.sidebar-link', { hasText: 'Laika Infra' }).click();
+      await h.page.waitForURL(/project=laika-infra/, { timeout: 10_000 });
+      await h.page.waitForTimeout(400);
+      assert.deepEqual(await h.page.locator('.space-key').allInnerTexts(), before);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('what was opened survives a reload', () => {
+  /**
+   * Opening spaces writes what is remembered; a fresh load must read it back.
+   *
+   * **Membership is the observable, not sequence** (LAI-260). The rows are
+   * drawn by name now, so an order assertion could no longer tell storage from
+   * the fill-up loop. With **four** projects and three slots it still can:
+   * opening Web and Infra must leave `laika-docs` off the list after a reload,
+   * and losing storage would fill from the server's own order and put it back.
+   */
+  void test('what was opened is remembered across a reload', async () => {
+    const h = await open('/board?project=laika-core', WEB_STUB);
+    try {
+      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+
+      for (const [name, slug] of [
+        ['Laika Web', 'laika-web'],
+        ['Laika Infra', 'laika-infra'],
+      ] as const) {
+        await h.page.locator('.sidebar-link', { hasText: name }).click();
+        await h.page.waitForURL(new RegExp(`project=${slug}`), { timeout: 10_000 });
+      }
 
       await h.page.reload();
       await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+
       const keys = await h.page.locator('.space-key').allInnerTexts();
       assert.deepEqual(
         keys,
-        ['LC', 'LW', 'LI', 'MS'],
-        `storage lost the order: ${keys.join(', ')}`,
+        ['LC', 'LI', 'LW', 'MS'],
+        `storage lost what was opened: ${keys.join(', ')}`,
       );
+      assert.ok(!keys.includes('LD'), 'a space nobody opened is on the list');
     } finally {
       await h.close();
     }
