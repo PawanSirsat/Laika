@@ -43,9 +43,25 @@ export interface ProviderRequest {
  * dependency being down is not the same fault as our code being wrong.
  */
 export class ProviderUnavailableError extends ApiError {
-  constructor(reason: string) {
+  /**
+   * Did the request actually get to the provider? (D-057, LAI-171)
+   *
+   * **Because a call that was paid for leaves a row and one that never
+   * connected does not** — D-057's title is the rule. A timeout or an error
+   * response means the provider saw the request and may well have billed it; a
+   * DNS failure or a refused connection means it never did, and counting those
+   * towards §10.2's cap would let a network outage burn the month's budget.
+   *
+   * **A property rather than a prose `reason` match.** The reason strings exist
+   * for a human reading a log; branching on them would be a guard reading a
+   * sentence, which is the thing this repo keeps finding rot.
+   */
+  readonly reached: boolean;
+
+  constructor(reason: string, reached = false) {
     super('unavailable', 'The AI provider could not be reached', { reason });
     this.name = 'ProviderUnavailableError';
+    this.reached = reached;
   }
 }
 
@@ -90,7 +106,8 @@ export function httpProviderClient(
           // The provider's own body is not echoed: it is a third party's error
           // text on its way to a Laika user, and §13.1 keeps other people's
           // detail out of our responses.
-          throw new ProviderUnavailableError(`provider answered ${String(res.status)}`);
+          // It answered, so it saw the request — `reached`.
+          throw new ProviderUnavailableError(`provider answered ${String(res.status)}`, true);
         }
 
         return textFrom(config, await res.json());
@@ -98,9 +115,10 @@ export function httpProviderClient(
         if (err instanceof ApiError) throw err;
         // `AbortError`, DNS failure, connection refused — all the same fault
         // from a caller's point of view, and none of them is our bug.
-        throw new ProviderUnavailableError(
-          err instanceof Error && err.name === 'AbortError' ? 'timed out' : 'could not connect',
-        );
+        // An abort means we gave up on a request the provider is probably still
+        // working on; anything else here never established the exchange.
+        const timedOut = err instanceof Error && err.name === 'AbortError';
+        throw new ProviderUnavailableError(timedOut ? 'timed out' : 'could not connect', timedOut);
       } finally {
         clearTimeout(timer);
       }

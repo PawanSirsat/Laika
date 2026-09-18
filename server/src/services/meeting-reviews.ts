@@ -17,7 +17,11 @@ import { meetingReviews, projects, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { updateProjectContext } from './projects.ts';
-import { type ProviderClient, ProviderResponseError } from './provider.ts';
+import {
+  type ProviderClient,
+  ProviderResponseError,
+  ProviderUnavailableError,
+} from './provider.ts';
 import {
   changeStatus,
   createTask,
@@ -235,18 +239,84 @@ export async function storeTranscriptReview(
   if (project === undefined) throw ApiError.notFound(`No project with slug "${input.projectSlug}"`);
 
   const prompt = buildPrompt(db, project.id, project.prefix, input.transcript);
-  const proposals = parseProposals(await client.complete({ prompt }));
 
+  // **The row is written for a call that was paid for, whatever came back**
+  // (D-057, LAI-171). §10.2's cap is counted from these rows (LAI-467), so a
+  // submission that spent money and stored nothing was spend the cap could not
+  // see — and for a bound that exists to stop a runaway integration,
+  // under-counting is the wrong direction to be wrong in.
+  let text: string;
+  try {
+    text = await client.complete({ prompt });
+  } catch (cause) {
+    // `reached` is the whole distinction: a timeout or an error response means
+    // the provider saw the request and may have billed it; a refused connection
+    // means it never did. Counting the second would let a network outage burn
+    // the month's budget.
+    if (cause instanceof ProviderUnavailableError && !cause.reached) throw cause;
+
+    recordSpentSubmission(db, project.id, input, now);
+    throw cause;
+  }
+
+  let proposals: StoredProposal[];
+  try {
+    proposals = parseProposals(text);
+  } catch (cause) {
+    // The provider answered and we paid for it; the answer is simply unusable.
+    recordSpentSubmission(db, project.id, input, now);
+    throw cause;
+  }
+
+  return {
+    id: insertReview(db, project.id, input, proposals, 'pending', now),
+    proposals: proposals.length,
+  };
+}
+
+/**
+ * A row for a submission the provider was paid for and that produced nothing.
+ *
+ * **`status: 'failed'`, and `proposals_json` of `[]`** — the status is the
+ * distinguisher, not the emptiness (D-057). `{"proposals": []}` is a legitimate
+ * answer, so an empty *pending* row would say "this meeting was unproductive"
+ * about a provider that misbehaved.
+ *
+ * **Why it fails is not in the row.** A timeout, an error response and
+ * unparseable output are one status; the reason goes to the caller's error and
+ * the log. D-057 leaves that as a column for whoever actually needs to tell them
+ * apart, rather than a shape that looks incomplete.
+ *
+ * **The expiry sweep cannot touch these**: it moves `pending → expired`. That is
+ * the existing code being right rather than a rule added here.
+ */
+function recordSpentSubmission(
+  db: Db,
+  projectId: string,
+  input: StoreTranscriptInput,
+  now: number,
+): void {
+  insertReview(db, projectId, input, [], 'failed', now);
+}
+
+function insertReview(
+  db: Db,
+  projectId: string,
+  input: StoreTranscriptInput,
+  proposals: readonly StoredProposal[],
+  status: 'pending' | 'failed',
+  now: number,
+): string {
   const id = newId();
   db.insert(meetingReviews)
     .values({
       id,
-      projectId: project.id,
+      projectId,
       source: input.source,
       // D-005: the hash, never the transcript.
       transcriptHash: createHash('sha256').update(input.transcript, 'utf8').digest('hex'),
       proposalsJson: JSON.stringify(proposals),
-      status: 'pending',
+      status,
       reviewedBy: null,
       reviewedAt: null,
       expiresAt: now + REVIEW_TTL_MS,
@@ -254,7 +324,7 @@ export async function storeTranscriptReview(
     })
     .run();
 
-  return { id, proposals: proposals.length };
+  return id;
 }
 
 // ------------------------------------------ applying an accepted set (§10.2)

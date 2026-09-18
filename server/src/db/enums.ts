@@ -163,7 +163,21 @@ export type AiProvider = (typeof AI_PROVIDERS)[number];
  * values inside an enum column's prose. LAI-168 carries the §4.12 row and is
  * the only thing recording that this is owed.
  */
-export const MEETING_REVIEW_STATUSES = ['pending', 'applied', 'expired', 'discarded'] as const;
+export const MEETING_REVIEW_STATUSES = [
+  'pending',
+  'applied',
+  'discarded',
+  // **A submission the provider was paid for and that produced nothing usable**
+  // (D-057). Not `pending` with an empty proposal set: `{"proposals": []}` is a
+  // legitimate answer — a meeting the model considered and had nothing to
+  // propose about — so an empty row would make "the provider misbehaved" read
+  // as "the meeting was unproductive". The status is the distinguisher, not the
+  // emptiness.
+  //
+  // In §4.12's order, which is the order LAI-173's guard will compare.
+  'expired',
+  'failed',
+] as const;
 export type MeetingReviewStatus = (typeof MEETING_REVIEW_STATUSES)[number];
 
 export const SPRINT_STATUSES = ['planned', 'active', 'completed'] as const;
