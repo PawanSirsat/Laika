@@ -3,11 +3,12 @@ id: LAI-273
 title: The Timeline to the design — shared chips, real bars, one today line
 area: web
 assignee: shell
-status: in-progress
+status: review
 priority: p1
 depends-on: []
 discovered-from: LAI-256
 started: 2026-09-18T19:05:00Z
+finished: 2026-09-18T19:22:00Z
 ---
 
 ## Why
