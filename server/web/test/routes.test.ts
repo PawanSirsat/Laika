@@ -91,7 +91,16 @@ void describe('sidebar groups (AC1)', () => {
       // The prototype's strip, minus `Calendar` — absent until it has a route
       // of its own; a tab pointing at nothing is worse than none. `List` joins
       // in its own task. Capacity is here by the owner's decision (LAI-251).
-      ['Board', 'List', 'Timeline', 'Sprints', 'Capacity', 'Dashboard', 'Meeting review'],
+      [
+        'Board',
+        'List',
+        'Timeline',
+        'Calendar',
+        'Sprints',
+        'Capacity',
+        'Dashboard',
+        'Meeting review',
+      ],
     );
   });
 });
@@ -114,9 +123,17 @@ void describe('the absences the criteria are actually about', () => {
     }
   });
 
-  void test('no Calendar anywhere (AC3)', () => {
-    assert.ok(!ROUTES.some((r) => /calendar/i.test(r.label) || /calendar/i.test(r.path)));
-    assert.ok(!/calendar/i.test(sidebar));
+  void test('Calendar is a tab, and never a sidebar entry (LAI-271)', () => {
+    /*
+     * **Inverted, deliberately.** LAI-019 excluded Calendar because §14 q10 had
+     * no answer; D-059 answered it — a tab inside a space, shipping with
+     * visible demo data until `tasks.due_date` exists. What still holds is the
+     * half this test was really protecting: it is not a *sidebar* destination.
+     */
+    const calendar = ROUTES.find((r) => r.path === '/calendar');
+    assert.ok(calendar, 'Calendar is gone again');
+    assert.equal(calendar.group, null, 'Calendar must not be a sidebar entry');
+    assert.ok(!/calendar/i.test(sidebar), 'the rail is offering Calendar');
   });
 });
 

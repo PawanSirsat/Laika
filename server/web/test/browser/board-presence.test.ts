@@ -215,13 +215,14 @@ void describe('the WORKING NOW strip', () => {
       await h.page.locator('.presence-chip').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.presence-chip').count(), 2);
 
-      const withheld = h.page.locator('.presence-chip', { hasText: 'Tomas Nel' });
+      // A chip reads `Tomas N.` since LAI-271 — the design's short form.
+      const withheld = h.page.locator('.presence-chip', { hasText: 'Tomas N.' });
       for (const theme of ['Light', 'Dark']) {
         await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
         const text = await withheld.innerText();
-        assert.match(text, /Tomas Nel/, `${theme}: the person is missing`);
+        assert.match(text, /Tomas N\./, `${theme}: the person is missing`);
         assert.match(text, /working elsewhere/, `${theme}: no sentence in place of the location`);
         assert.doesNotMatch(text, /unknown|undefined|null/i, `${theme}: a placeholder leaked`);
         assert.equal(await withheld.locator('.pp-repo').count(), 0, `${theme}: leaked a repo`);
@@ -237,11 +238,13 @@ void describe('the WORKING NOW strip', () => {
   void test('an agent chip is marked and a human chip is not', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      const agent = h.page.locator('.presence-chip', { hasText: 'Ada Lovelace' });
+      const agent = h.page.locator('.presence-chip', { hasText: 'Ada L.' });
       await agent.waitFor({ timeout: 20_000 });
-      assert.equal(await agent.locator('.marker-agent').count(), 1);
-      const human = h.page.locator('.presence-chip', { hasText: 'Tomas Nel' });
-      assert.equal(await human.locator('.marker-agent').count(), 0);
+      // A **dot** since LAI-271 — the design marks the session's kind here and
+      // keeps the word for the Capacity row, which has space for it.
+      assert.equal(await agent.locator('.pp-dot-agent').count(), 1);
+      const human = h.page.locator('.presence-chip', { hasText: 'Tomas N.' });
+      assert.equal(await human.locator('.pp-dot-agent').count(), 0);
     } finally {
       await h.close();
     }
@@ -298,7 +301,9 @@ void describe('the agent-sessions rail card', () => {
       const rows = h.page.locator('.rail-sessions li');
       // Ada is the only `is_agent` entry in the fixture; Tomas must not appear.
       assert.equal(await rows.count(), 1);
-      assert.match(await rows.first().innerText(), /Ada Lovelace/);
+      // `Ada L.` — the rail card draws the chip form too (LAI-271), and a
+      // 252px rail is exactly where a full surname costs a line.
+      assert.match(await rows.first().innerText(), /Ada L\./);
     } finally {
       await h.close();
     }

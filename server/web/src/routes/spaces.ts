@@ -14,6 +14,8 @@ export const RECENT_LIMIT = 3;
 const STORAGE_KEY = 'laika.recent-spaces';
 
 export interface Space {
+  /** The project's ULID — monotonic, so sorting by it is creation order. */
+  readonly id: string;
   readonly slug: string;
   readonly name: string;
   /** Two letters, as the design's `LC` / `LW` / `LI`. */
@@ -51,6 +53,7 @@ export function spaceMeta(project: Project): string {
 
 export function toSpace(project: Project): Space {
   return {
+    id: project.id,
     slug: project.slug,
     name: project.name,
     key: spaceKey(project),
@@ -130,10 +133,19 @@ export function recentSpaces(
     if (ordered.length >= RECENT_LIMIT) break;
     if (!ordered.includes(p.slug)) ordered.push(p.slug);
   }
-  return ordered
-    .slice(0, RECENT_LIMIT)
-    .map((slug) => bySlug.get(slug))
-    .filter((p): p is Project => p !== undefined)
-    .map(toSpace)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  return (
+    ordered
+      .slice(0, RECENT_LIMIT)
+      .map((slug) => bySlug.get(slug))
+      .filter((p): p is Project => p !== undefined)
+      .map(toSpace)
+      /*
+       * **Creation order, which ids already carry** (LAI-271). Stable — the
+       * point of LAI-260 — and it is the reference's order: `laika-core`,
+       * `laika-web`, `laika-infra` is the order they were made, not the
+       * alphabet. Ids are ULIDs, so sorting them sorts by creation time without
+       * a second field.
+       */
+      .sort((a, b) => a.id.localeCompare(b.id))
+  );
 }

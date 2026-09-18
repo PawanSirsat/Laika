@@ -209,6 +209,7 @@ function SpaceFrame({
 
       <PresenceStrip
         presence={presence}
+        spaceSlug={slug}
         assignee={assignee}
         onFilter={(userId) => {
           setParam('assignee', userId);

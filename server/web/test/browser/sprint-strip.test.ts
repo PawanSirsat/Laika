@@ -135,6 +135,7 @@ void describe('the board matches the reference (LAI-270)', () => {
       assert.ok(labels.includes('List'), `List is not a tab — saw ${labels.join(', ')}`);
       assert.equal(labels[0], 'Board');
       assert.equal(labels[1], 'List', 'List sits beside Board, as the reference has it');
+      assert.ok(labels.includes('Calendar'), `Calendar is not a tab — saw ${labels.join(', ')}`);
 
       // The badge belongs to Meeting review, not Sprints.
       const sprints = h.page.locator('.view-tab', { hasText: 'Sprints' });
@@ -289,11 +290,15 @@ void describe('the sprint strip', () => {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
       await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(400);
-      assert.equal(
-        await h.page.locator('.strip-pager').count(),
-        0,
-        'four pills fit at 1600px — a pager here would do nothing',
-      );
+      /*
+       * **Present but disabled** (LAI-271). The reference draws the arrow
+       * whether or not it can scroll, so it does not appear and vanish as
+       * sprints are added; it is inert when there is nothing past the edge,
+       * and says so rather than pretending.
+       */
+      const pager = h.page.locator('.strip-pager');
+      assert.equal(await pager.count(), 1, 'the reference draws the arrow always');
+      assert.equal(await pager.isDisabled(), true, 'four pills fit — it must be inert');
     } finally {
       await h.close();
     }
@@ -316,9 +321,10 @@ void describe('the sprint strip', () => {
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
       await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForFunction(() => document.querySelectorAll('.strip-pager').length === 1, {
-        timeout: 10_000,
-      });
+      await h.page.waitForFunction(
+        () => document.querySelector('.strip-pager')?.hasAttribute('disabled') === false,
+        { timeout: 10_000 },
+      );
 
       // And it does something: the row is further along than it was.
       const before = await h.page.locator('.strip-chips').evaluate((el) => el.scrollLeft);

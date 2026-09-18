@@ -25,6 +25,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No tasks to list',
     body: 'The list is the board as a table — same tasks, same filters, one row each. It fills in once the project has tasks.',
   },
+  '/calendar': {
+    headline: 'Nothing scheduled',
+    body: 'The calendar lays tasks out by the day they are due. Laika does not store a due date yet, so the dates here are sample data and the screen says so.',
+  },
   '/timeline': {
     headline: 'No sprints to lay out yet',
     body: 'The timeline draws sprints against dates once a project has them.',

@@ -18,8 +18,21 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, refuse, type ApiStub, type StubCall } from './harness.ts';
 
-const project = (slug: string, name: string, prefix: string, tasks: number, members: number) => ({
-  id: slug,
+/**
+ * `id` is a **ULID** in the real server — monotonic, so sorting by it is
+ * creation order, which is how the rail orders spaces (LAI-271). The fixture
+ * used to set `id: slug`, which sorts alphabetically and quietly made the two
+ * orders look the same.
+ */
+const project = (
+  id: string,
+  slug: string,
+  name: string,
+  prefix: string,
+  tasks: number,
+  members: number,
+) => ({
+  id,
   slug,
   prefix,
   name,
@@ -37,10 +50,11 @@ const project = (slug: string, name: string, prefix: string, tasks: number, memb
   last_activity_at: 2,
 });
 
-const CORE = project('laika-core', 'Laika Core', 'LC', 5, 5);
-const WEB = project('laika-web', 'Laika Web', 'LW', 3, 1);
-const INFRA = project('laika-infra', 'Laika Infra', 'LI', 14, 2);
-const DOCS = project('laika-docs', 'Laika Docs', 'LD', 9, 2);
+// Created in this order, so the rail draws them in it.
+const CORE = project('01AAA', 'laika-core', 'Laika Core', 'LC', 5, 5);
+const WEB = project('01BBB', 'laika-web', 'Laika Web', 'LW', 3, 1);
+const INFRA = project('01CCC', 'laika-infra', 'Laika Infra', 'LI', 14, 2);
+const DOCS = project('01DDD', 'laika-docs', 'Laika Docs', 'LD', 9, 2);
 
 const STUB: ApiStub = {
   '/api/v1/me': {
@@ -85,7 +99,7 @@ void describe('the SPACES section', () => {
       // deliberately not one.
       assert.deepEqual(
         names,
-        ['Laika Core', 'Laika Infra', 'Laika Web'],
+        ['laika-core', 'laika-web', 'laika-infra'],
         `saw ${names.join(', ')}`,
       );
       assert.ok(
@@ -96,7 +110,7 @@ void describe('the SPACES section', () => {
       // **A row is a dot and a name** (LAI-262): no counts, no member figure,
       // no two-letter key while the rail is expanded.
       const row = await h.page.locator('.space-row').first().innerText();
-      assert.equal(row.trim(), 'Laika Core', `the row carries more than its name: ${row}`);
+      assert.equal(row.trim(), 'laika-core', `the row carries more than its name: ${row}`);
 
       const sidebar = await h.page.locator('#sidebar').innerText();
       // The design cases this one "Spaces", 11.5px/700 with a caret — not the
@@ -119,7 +133,7 @@ void describe('the SPACES section', () => {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const active = h.page.locator('.sidebar-link-active');
       assert.equal(await active.count(), 1, 'more than one row is marked current');
-      assert.match(await active.innerText(), /Laika Core/);
+      assert.match(await active.innerText(), /laika-core/);
     } finally {
       await h.close();
     }
@@ -162,6 +176,7 @@ void describe('the view tabs', () => {
         'Board',
         'List',
         'Timeline',
+        'Calendar',
         'Sprints',
         'Capacity',
         'Dashboard',
@@ -247,7 +262,7 @@ void describe('a space row is active for any view of it', () => {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const active = h.page.locator('.sidebar-link-active');
       assert.equal(await active.count(), 1, 'exactly one row must be current');
-      assert.match(await active.innerText(), /Laika Core/);
+      assert.match(await active.innerText(), /laika-core/);
     } finally {
       await h.close();
     }
@@ -267,7 +282,7 @@ void describe('the list does not move under the pointer (LAI-260)', () => {
       const before = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
 
       // Click a space that is *not* the current one — the case that reordered.
-      await h.page.locator('.sidebar-link', { hasText: 'Laika Web' }).click();
+      await h.page.locator('.sidebar-link', { hasText: 'laika-web' }).click();
       await h.page.waitForURL(/project=laika-web/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
 
@@ -275,7 +290,7 @@ void describe('the list does not move under the pointer (LAI-260)', () => {
       assert.deepEqual(after, before, `the rows moved: ${before.join(',')} -> ${after.join(',')}`);
 
       // And again, to a third space.
-      await h.page.locator('.sidebar-link', { hasText: 'Laika Infra' }).click();
+      await h.page.locator('.sidebar-link', { hasText: 'laika-infra' }).click();
       await h.page.waitForURL(/project=laika-infra/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
       assert.deepEqual(await h.page.locator('.space-row .sidebar-label').allInnerTexts(), before);
@@ -301,8 +316,8 @@ void describe('what was opened survives a reload', () => {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
 
       for (const [name, slug] of [
-        ['Laika Web', 'laika-web'],
-        ['Laika Infra', 'laika-infra'],
+        ['laika-web', 'laika-web'],
+        ['laika-infra', 'laika-infra'],
       ] as const) {
         await h.page.locator('.sidebar-link', { hasText: name }).click();
         await h.page.waitForURL(new RegExp(`project=${slug}`), { timeout: 10_000 });
@@ -314,10 +329,10 @@ void describe('what was opened survives a reload', () => {
       const keys = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
       assert.deepEqual(
         keys,
-        ['Laika Core', 'Laika Infra', 'Laika Web'],
+        ['laika-core', 'laika-web', 'laika-infra'],
         `storage lost what was opened: ${keys.join(', ')}`,
       );
-      assert.ok(!keys.includes('Laika Docs'), 'a space nobody opened is on the list');
+      assert.ok(!keys.includes('laika-docs'), 'a space nobody opened is on the list');
     } finally {
       await h.close();
     }
@@ -470,6 +485,8 @@ void describe('the prototype geometry (LAI-249)', () => {
 
       // Only the space NOT pinned above — the prototype's `popSpaces`.
       const names = await pop.locator('.spaces-pop-name').allInnerTexts();
+      // The **popover** still shows display names and meta: it is the one
+      // place a reader compares spaces, and the design puts both there.
       assert.deepEqual(names, ['Laika Docs'], `saw ${names.join(', ')}`);
       assert.match(await pop.innerText(), /9 tasks · 2 members/, 'popover rows carry real meta');
 

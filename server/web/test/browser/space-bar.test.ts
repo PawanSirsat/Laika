@@ -234,7 +234,8 @@ void describe('the space bar', () => {
       // The heading renders before the fetch lands, so the strip reads
       // "Loading…" for a frame — wait for a chip rather than for the band.
       await h.page.locator('.presence-chip').first().waitFor({ timeout: 20_000 });
-      assert.match(await strip.innerText(), /Grace Hopper/);
+      // `Grace H.` in a chip (LAI-271); the full name is on the Capacity row.
+      assert.match(await strip.innerText(), /Grace H\./);
 
       await h.page.locator('.presence-chip').first().click();
       await h.page.waitForFunction(() => window.location.search.includes('assignee='), undefined, {

@@ -144,7 +144,14 @@ export function SpacesSection({
                   <span className="sidebar-mini" aria-hidden="true">
                     {space.key}
                   </span>
-                  <span className="sidebar-label">{space.name}</span>
+                  {/*
+                    **The slug** (LAI-271) — the reference names a space
+                    `laika-core`. The display name is not discarded: it is the
+                    row's `title`, the space bar's headline, and what the
+                    More-spaces popover lists, which is where a reader is
+                    actually choosing between spaces.
+                  */}
+                  <span className="sidebar-label">{space.slug}</span>
                 </a>
               </li>
             );

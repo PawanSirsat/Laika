@@ -134,7 +134,9 @@ void describe('the board follows the space', () => {
       });
       assert.match(await cardKeys(h.page), /AL-1/);
 
-      await h.page.locator('.sidebar-link', { hasText: 'Beta Space' }).click();
+      // The rail names a space by its **slug** since LAI-271, as the
+      // reference does; the display name stays in the bar's headline.
+      await h.page.locator('.sidebar-link', { hasText: 'beta-space' }).click();
       await h.page.waitForURL(/project=beta-space/, { timeout: 10_000 });
 
       // The whole defect: the URL and the headline moved and the cards did not.
@@ -158,12 +160,14 @@ void describe('the board follows the space', () => {
         timeout: 15_000,
       });
 
-      await h.page.locator('.sidebar-link', { hasText: 'Beta Space' }).click();
+      // The rail names a space by its **slug** since LAI-271, as the
+      // reference does; the display name stays in the bar's headline.
+      await h.page.locator('.sidebar-link', { hasText: 'beta-space' }).click();
       await h.page.waitForFunction(() => document.body.innerText.includes('BE-1'), undefined, {
         timeout: 15_000,
       });
 
-      await h.page.locator('.sidebar-link', { hasText: 'Alpha Space' }).click();
+      await h.page.locator('.sidebar-link', { hasText: 'alpha-space' }).click();
       await h.page.waitForFunction(() => document.body.innerText.includes('AL-1'), undefined, {
         timeout: 15_000,
       });

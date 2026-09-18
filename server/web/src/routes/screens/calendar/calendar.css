@@ -1,0 +1,121 @@
+/* The month grid (LAI-271), to the prototype's shape — lines 581–624. */
+
+.cal {
+  padding: var(--space-4) 18px var(--space-6);
+  min-width: 0;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--bd);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.cal-weekday {
+  background: var(--card);
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.cal-day {
+  background: var(--card);
+  min-height: 6.25rem;
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* The days either side of the month recede rather than disappear — a grid
+   with holes in it reads as broken. */
+.cal-day-out {
+  background: var(--page);
+}
+
+.cal-day-out .cal-date {
+  opacity: 0.45;
+}
+
+.cal-day-weekend {
+  background: var(--tub);
+}
+
+.cal-date {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx3);
+}
+
+/* Today is a filled disc, as the design draws it. */
+.cal-day-today .cal-date {
+  align-self: flex-start;
+  min-width: 1.125rem;
+  height: 1.125rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--amb);
+  color: #fff;
+}
+
+.cal-task {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 5px;
+  border: 1px solid var(--bd);
+  border-left: 2px solid var(--tx3);
+  border-radius: var(--radius-sm);
+  background: var(--page);
+  font: inherit;
+  font-size: 0.59375rem;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.cal-task:hover {
+  border-color: var(--bd2);
+}
+
+.cal-task:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.cal-task-p1 {
+  border-left-color: var(--red);
+}
+.cal-task-p2 {
+  border-left-color: var(--amb);
+}
+.cal-task-p3 {
+  border-left-color: var(--tx3);
+}
+
+.cal-task-key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  color: var(--tx3);
+}
+
+.cal-task-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--tx);
+}

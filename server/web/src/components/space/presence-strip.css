@@ -137,3 +137,14 @@
   font-size: 0.53125rem;
   color: var(--tx3);
 }
+
+/* The design's right-hand summary. Pushed to the end of the strip. */
+.presence-summary {
+  margin: 0 0 0 auto;
+  flex: none;
+  padding-left: var(--space-3);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+  white-space: nowrap;
+}

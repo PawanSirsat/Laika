@@ -110,3 +110,20 @@
   font-style: italic;
   white-space: nowrap;
 }
+
+/*
+ * The session's state as a dot beside the name (LAI-271) — the design marks it
+ * here and puts the agent badge on the avatar, rather than spelling "agent"
+ * out in a pill that takes a chip's whole second line.
+ */
+.pp-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--grn);
+}
+
+.pp-dot-agent {
+  background: var(--pur);
+}

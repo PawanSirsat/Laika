@@ -133,9 +133,13 @@ export function SprintStrip({ sprints, tasks, selected, onSelect }: SprintStripP
           only when there is something to scroll — a control that cannot do
           anything is what §5.1 forbids.
         */}
-        {overflowing && (
+        {/* The reference draws it whether or not it can scroll, so it does not
+            appear and vanish as sprints are added. Disabled when there is
+            nothing past the edge — visible, and honest about being inert. */}
+        {true && (
           <button
             type="button"
+            disabled={!overflowing}
             className="strip-pager"
             onClick={() => {
               chips.current?.scrollBy({ left: 320, behavior: 'smooth' });

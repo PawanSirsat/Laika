@@ -2,6 +2,7 @@ import type { ComponentType } from 'react';
 import { useShell } from './shell-context.ts';
 import { SpaceLayout } from '../space/SpaceLayout.tsx';
 import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
+import { CalendarScreen } from '../../routes/screens/calendar/CalendarScreen.tsx';
 import { CapacityScreen } from '../../routes/screens/capacity/CapacityScreen.tsx';
 import { DashboardScreen } from '../../routes/screens/dashboard/DashboardScreen.tsx';
 import { SetupRoute } from '../../routes/screens/SetupRoute.tsx';
@@ -91,6 +92,22 @@ function MeetingReviewRoute() {
   );
 }
 
+function CalendarRoute() {
+  const {
+    route: { params, setParams },
+  } = useShell();
+  return (
+    <CalendarScreen
+      slug={params.get('project') ?? undefined}
+      onOpenTask={(taskId) => {
+        const next = new URLSearchParams(params);
+        next.set('task', taskId);
+        setParams(next, { push: true });
+      }}
+    />
+  );
+}
+
 function CapacityRoute() {
   const {
     route: { navigate },
@@ -136,6 +153,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/board': { Component: BoardRoute, layout: 'space' },
   '/list': { Component: BoardRoute, layout: 'space' },
   '/timeline': { Component: TimelineScreen, layout: 'space' },
+  '/calendar': { Component: CalendarRoute, layout: 'space' },
   '/sprints': { Component: SprintsScreen, layout: 'space' },
   '/dashboard': { Component: DashboardScreen, layout: 'space' },
   '/meeting-review': { Component: MeetingReviewRoute, layout: 'space' },
