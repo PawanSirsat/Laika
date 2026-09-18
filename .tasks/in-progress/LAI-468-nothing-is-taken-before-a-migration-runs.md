@@ -2,11 +2,12 @@
 id: LAI-468
 title: 'Nothing is taken before a migration runs — M7 asks for migration safety on boot'
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: [LAI-466]
 discovered-from: LAI-466
-status: backlog
+status: in-progress
+started: 2026-09-10T01:30:00Z
 ---
 
 ## Goal
