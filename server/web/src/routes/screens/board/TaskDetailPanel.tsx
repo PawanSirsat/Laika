@@ -15,7 +15,23 @@ import {
   type BoardColumn,
 } from '../../../api/board-derive.ts';
 import { describeActor } from './actor-presentation.ts';
-import type { Member, Task } from '../../../api/tasks.ts';
+import { updateTask, type Member, type Task } from '../../../api/tasks.ts';
+import { InlineEdit } from '../task/InlineEdit.tsx';
+import { DependenciesSection } from '../task/DependenciesSection.tsx';
+import { WatchersSection } from '../task/WatchersSection.tsx';
+import { CommentBody } from '../task/CommentBody.tsx';
+import { CommentComposer } from '../task/CommentComposer.tsx';
+import {
+  demoAgentBuild,
+  demoClaimLock,
+  DEMO_HANDOFF_ENABLED,
+} from '../../../demo/agent-runtime.ts';
+import { DemoNotice } from '../../../components/DemoNotice.tsx';
+import { PRIORITIES } from '../../../api/tasks.ts';
+import { useTheme } from '../../../theme/use-theme.ts';
+import { avatarColor } from '../../../theme/avatar-color.ts';
+import { initials } from '../../../theme/initials.ts';
+import '../task/task-panel.css';
 import '../../../components/markers.css';
 import './task-detail.css';
 
@@ -45,6 +61,15 @@ export interface TaskDetailPanelProps {
   readonly onTagsChanged: (tags: readonly string[]) => void;
   /** Reload the board after an assignment so the card's avatar follows. */
   readonly onAssigned: () => void;
+  /**
+   * Re-read after an edit — title, description, priority, a dependency.
+   *
+   * The same call `onAssigned` makes; named separately because a reader of the
+   * call site should see *why* the board is being reloaded, and "something on
+   * the task changed" and "the assignee changed" are different reasons even
+   * when the remedy is the same.
+   */
+  readonly onTaskEdited: () => void;
 }
 
 function personName(id: string | null, members: ReadonlyMap<string, Member>): string {
@@ -76,11 +101,34 @@ export function TaskDetailPanel({
   mayAssign = false,
   mayEdit = false,
   onTagsChanged,
+  onTaskEdited,
   onAssigned,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
   const panelRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
+  const [overflowOpen, setOverflowOpen] = useState(false);
+  const [handoff, setHandoff] = useState<string | undefined>(undefined);
+  const statusRef = useRef<HTMLSelectElement | null>(null);
+  const { theme } = useTheme();
+  const now = Date.now();
+  /*
+   * The claim's deadline and the agent's build are the only things on this
+   * panel Laika cannot answer — see `demo/agent-runtime.ts`. Both are
+   * `undefined` in a production build, and every reader below treats that as
+   * "no such thing" rather than "not loaded yet".
+   */
+  const claimLock = demoClaimLock(task, now);
+  /*
+   * **Changes are commits**, filtered out of the activity this panel already
+   * loaded — `webhook.commit` is written by the GitHub webhook (§10.1). A
+   * second request for the same rows would be a second answer to one question.
+   */
+  const changes =
+    detail.status === 'ready'
+      ? detail.activity.filter((event) => event.type.startsWith('webhook.'))
+      : [];
+  const agentBuild = demoAgentBuild(task.created_by_client, task.id);
   /**
    * Which tab is showing.
    *
@@ -89,7 +137,7 @@ export function TaskDetailPanel({
    * step through tab switches before it closed the drawer — which is the one
    * thing Back has to do here (LAI-252).
    */
-  const [tab, setTab] = useState<'comments' | 'activity'>('comments');
+  const [tab, setTab] = useState<'comments' | 'activity' | 'changes'>('comments');
 
   /**
    * Focus moves into the panel on open and **back to the card on close**.
@@ -116,7 +164,6 @@ export function TaskDetailPanel({
    */
 
   const blocked = blockedState(task, byId);
-  const discoveredFrom = task.discovered_from === null ? undefined : byId.get(task.discovered_from);
 
   return (
     <div
@@ -128,14 +175,87 @@ export function TaskDetailPanel({
       ref={panelRef}
     >
       <header className="panel-head">
-        <div>
+        <div className="panel-head-main">
           <span className="panel-key">{task.key}</span>
-          <h2 className="panel-title">{task.title}</h2>
+          {/* The title is the text, and clicking it edits it — the design writes
+              it as a heading you type into rather than a field. */}
+          <h2 className="panel-title">
+            <InlineEdit
+              value={task.title}
+              placeholder="Untitled task"
+              shape="line"
+              label="Task title"
+              mayEdit={mayEdit === true}
+              onSave={async (next) => {
+                await updateTask(task.id, { title: next });
+                onTaskEdited();
+              }}
+            />
+          </h2>
         </div>
-        <button type="button" className="panel-close" onClick={onClose}>
-          <span className="visually-hidden">Close</span>
-          <span aria-hidden="true">×</span>
-        </button>
+
+        <div className="panel-head-actions">
+          {/*
+            The design's top-bar actions. `Move` focuses the status control
+            rather than opening a second one: two ways to move a task is two
+            places for the transition rules to be got wrong.
+          */}
+          {mayEdit === true && (
+            <button
+              type="button"
+              className="panel-head-action"
+              onClick={() => {
+                statusRef.current?.focus();
+              }}
+            >
+              Move
+            </button>
+          )}
+
+          <button
+            type="button"
+            className="panel-head-action"
+            aria-expanded={overflowOpen}
+            onClick={() => {
+              setOverflowOpen((open) => !open);
+            }}
+          >
+            <span aria-hidden="true">⋯</span>
+            <span className="visually-hidden">More actions</span>
+          </button>
+
+          {overflowOpen && (
+            <ul className="panel-overflow">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(task.key);
+                    setOverflowOpen(false);
+                  }}
+                >
+                  Copy task key
+                </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void navigator.clipboard?.writeText(window.location.href);
+                    setOverflowOpen(false);
+                  }}
+                >
+                  Copy link to this task
+                </button>
+              </li>
+            </ul>
+          )}
+
+          <button type="button" className="panel-close" onClick={onClose}>
+            <span className="visually-hidden">Close</span>
+            <span aria-hidden="true">×</span>
+          </button>
+        </div>
       </header>
 
       <div className="panel-body">
@@ -144,6 +264,7 @@ export function TaskDetailPanel({
             <label className="panel-control">
               <span className="visually-hidden">Status</span>
               <select
+                ref={statusRef}
                 value={task.status}
                 disabled={moving}
                 onChange={(event) => {
@@ -159,9 +280,29 @@ export function TaskDetailPanel({
               </select>
             </label>
 
-            <span className={`panel-priority panel-priority-${task.priority}`}>
-              {task.priority}
-            </span>
+            {mayEdit === true ? (
+              <label className={`panel-priority panel-priority-${task.priority}`}>
+                <span className="visually-hidden">Priority</span>
+                <select
+                  value={task.priority}
+                  onChange={(event) => {
+                    void updateTask(task.id, {
+                      priority: event.target.value as (typeof PRIORITIES)[number],
+                    }).then(onTaskEdited);
+                  }}
+                >
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      {p.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : (
+              <span className={`panel-priority panel-priority-${task.priority}`}>
+                {task.priority}
+              </span>
+            )}
 
             {task.ready && <span className="marker marker-ready">ready</span>}
             {blocked === true && <span className="marker marker-blocked">blocked</span>}
@@ -174,6 +315,25 @@ export function TaskDetailPanel({
               onChanged={onAssigned}
             />
           </div>
+
+          {/*
+            **The claim, and the deadline it does not have.**
+
+            Who holds it is real: `POST /tasks/:id/claim` is a compare-and-swap
+            that writes `assignee_id` where it is null, so an assignee *is* the
+            lock holder. The **expiry is invented** — nothing expires a claim and
+            no column stores a deadline — which is why the hour is marked as a
+            placeholder rather than printed as a fact. Somebody waiting for a
+            lock to lapse would wait for ever.
+          */}
+          {claimLock !== undefined && task.assignee_id !== null && (
+            <p className="claim-lock">
+              <span className="claim-lock-dot" aria-hidden="true" />
+              {personName(task.assignee_id, members)} has the claim
+              <span className="claim-lock-until"> until {claimLock.label}</span>
+              <span className="claim-lock-tag">placeholder</span>
+            </p>
+          )}
 
           {moveError !== undefined && (
             <p className="panel-alert" role="alert">
@@ -196,14 +356,66 @@ export function TaskDetailPanel({
 
         <section className="panel-section">
           <h3 className="panel-section-title">Description</h3>
-          {task.description_md === null || task.description_md === '' ? (
-            <p className="panel-muted">No description yet.</p>
-          ) : (
-            // Plain text, not rendered markdown: a renderer is a dependency
-            // this task may not add, and raw HTML would be an injection.
-            <p className="panel-description">{task.description_md}</p>
-          )}
+          {/*
+            Click to edit. Still **plain text, not rendered markdown**: a
+            renderer is a dependency this task may not add and raw HTML would be
+            an injection — the fenced-code handling in a comment is deliberately
+            the one exception and is a parser of one construct, not a renderer.
+          */}
+          <InlineEdit
+            value={task.description_md ?? ''}
+            placeholder="No description yet. Click to write one."
+            shape="block"
+            label="Description"
+            mayEdit={mayEdit === true}
+            onSave={async (next) => {
+              await updateTask(task.id, { description_md: next });
+              onTaskEdited();
+            }}
+          />
         </section>
+
+        {/*
+          **Discovered from** — the callout the design draws with a dashed
+          border. `discovered_from` is a real field: it is how a task filed
+          mid-work points back at the one that turned it up, and nothing in the
+          UI has ever shown it.
+        */}
+        {task.discovered_from !== null && (
+          <section className="panel-section">
+            <div className="discovered">
+              <p className="discovered-label">Discovered from</p>
+              {(() => {
+                const source = byId.get(task.discovered_from ?? '');
+                return source === undefined ? (
+                  // An id is not a key; the trail is real either way.
+                  <p className="discovered-body">
+                    A task outside this page. Its id is recorded on this one.
+                  </p>
+                ) : (
+                  <p className="discovered-body">
+                    <span className="discovered-key">{source.key}</span> {source.title}
+                    <span className="discovered-note">
+                      {' '}
+                      — filed while working on it, by {personName(task.created_by, members)}
+                    </span>
+                  </p>
+                );
+              })()}
+            </div>
+          </section>
+        )}
+
+        <DependenciesSection
+          task={task}
+          byId={byId}
+          members={members}
+          theme={theme}
+          mayEdit={mayEdit === true}
+          onChanged={onTaskEdited}
+        />
+
+        <WatchersSection taskId={task.id} members={members} theme={theme} meId={meId} />
 
         <section className="panel-section">
           <h3 className="panel-section-title">Provenance</h3>
@@ -219,51 +431,40 @@ export function TaskDetailPanel({
               <dt>Created by</dt>
               <dd>{personName(task.created_by, members)}</dd>
             </div>
-            {discoveredFrom !== undefined && (
+            {/*
+              **The client that made it, by name.** `created_by_client` is
+              derived from the creating token (`mira-cli`, not `api`) and is
+              never stored on the task — so it cannot go stale when a token is
+              renamed. `null` means there is no client to name: a browser
+              session, or a token since deleted. That is not "unknown", and the
+              channel above already says what it was.
+            */}
+            {task.created_by_client !== null && (
               <div>
-                <dt>Discovered from</dt>
+                <dt>Client</dt>
                 <dd>
-                  <code>{discoveredFrom.key}</code> {discoveredFrom.title}
+                  <code>{task.created_by_client}</code>
+                  {agentBuild !== undefined && (
+                    <span className="panel-agent-build">
+                      {' '}
+                      {agentBuild.version} · {agentBuild.scope}
+                    </span>
+                  )}
                 </dd>
               </div>
             )}
           </dl>
-        </section>
 
-        <section className="panel-section">
-          <h3 className="panel-section-title">Blocked by</h3>
-          {task.blocked_by.length === 0 ? (
-            <p className="panel-muted">
-              Nothing. This task can start whenever someone picks it up.
-            </p>
-          ) : (
-            <ul className="panel-deps">
-              {task.blocked_by.map((id) => {
-                const dep = byId.get(id);
-                if (dep === undefined) {
-                  return (
-                    <li key={id} className="panel-dep">
-                      <span className="marker marker-unknown">not loaded</span>
-                      <code>{id}</code>
-                    </li>
-                  );
-                }
-                const finished = dep.status === 'done' || dep.status === 'cancelled';
-                return (
-                  <li key={id} className={finished ? 'panel-dep panel-dep-done' : 'panel-dep'}>
-                    {/* Finished blockers must look different from open ones —
-                          that difference is the only reason this list exists. */}
-                    <span className={finished ? 'marker marker-ready' : 'marker marker-blocked'}>
-                      {finished ? 'done' : (COLUMN_LABELS[dep.status as BoardColumn] ?? dep.status)}
-                    </span>
-                    <code>{dep.key}</code>
-                    <span className="panel-dep-title">{dep.title}</span>
-                  </li>
-                );
-              })}
-            </ul>
+          {agentBuild !== undefined && (
+            <DemoNotice what="The client's version and token scope are placeholders — Laika stores the client's name but not its build, and a task does not carry the token's scope." />
           )}
         </section>
+
+        {/*
+          The old `Blocked by` list lived here and is now `DependenciesSection`
+          above — which shows both directions, names each blocker's status and
+          assignee, and can add and remove them (LAI-233).
+        */}
 
         {detail.status === 'loading' ? (
           <LoadingState shape="row" count={3} label="Loading comments and activity" />
@@ -272,42 +473,35 @@ export function TaskDetailPanel({
         ) : (
           <>
             {/*
-              **Tabs, as the design has it** (prototype line 1780: `comments`,
-              `activity`, `changes`).
-
-              **Two, not three.** The design's third tab is *Changes* — commits
-              and the PR — and Laika has no endpoint that returns them; LAI-095
-              is the task that would build it. A tab that is always empty claims
-              a feature exists and is worse than one that does not, so it is
-              absent until there is something behind it.
+              **Three tabs, as the design has it.** `Changes` is the commits
+              this task's work produced — `webhook.commit` activity rows, which
+              the GitHub webhook writes. It is a filter over activity rather
+              than a second request, so it cannot disagree with the tab beside
+              it, and it is empty rather than absent when no repo is wired.
             */}
             <div className="panel-tabs" role="tablist" aria-label="Task detail">
-              <button
-                type="button"
-                role="tab"
-                id="tab-comments"
-                aria-selected={tab === 'comments'}
-                aria-controls="panel-comments"
-                className={tab === 'comments' ? 'panel-tab panel-tab-on' : 'panel-tab'}
-                onClick={() => {
-                  setTab('comments');
-                }}
-              >
-                Comments <span className="panel-tab-count">{detail.comments.length}</span>
-              </button>
-              <button
-                type="button"
-                role="tab"
-                id="tab-activity"
-                aria-selected={tab === 'activity'}
-                aria-controls="panel-activity"
-                className={tab === 'activity' ? 'panel-tab panel-tab-on' : 'panel-tab'}
-                onClick={() => {
-                  setTab('activity');
-                }}
-              >
-                Activity <span className="panel-tab-count">{detail.activity.length}</span>
-              </button>
+              {(
+                [
+                  ['comments', 'Comments', detail.comments.length],
+                  ['activity', 'Activity', detail.activity.length],
+                  ['changes', 'Changes', changes.length],
+                ] as const
+              ).map(([id, label, count]) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  id={`tab-${id}`}
+                  aria-selected={tab === id}
+                  aria-controls={`panel-${id}`}
+                  className={tab === id ? 'panel-tab panel-tab-on' : 'panel-tab'}
+                  onClick={() => {
+                    setTab(id);
+                  }}
+                >
+                  {label} <span className="panel-tab-count">{count}</span>
+                </button>
+              ))}
             </div>
 
             <section
@@ -321,28 +515,50 @@ export function TaskDetailPanel({
                 <EmptyState headline="No comments yet" />
               ) : (
                 <ul className="panel-comments">
-                  {detail.comments.map((comment) => (
-                    <li key={comment.id} className="panel-comment">
-                      <div className="panel-comment-head">
-                        <span className="panel-comment-author">
-                          {personName(comment.author_id, members)}
-                        </span>
-                        {isAgentComment(comment) && (
-                          <span className="marker marker-agent">agent</span>
-                        )}
-                        {comment.edited_at !== null && (
-                          <span className="panel-muted panel-edited">edited</span>
-                        )}
-                        <time
-                          className="panel-time"
-                          dateTime={new Date(comment.created_at).toISOString()}
-                        >
-                          {new Date(comment.created_at).toLocaleString()}
-                        </time>
-                      </div>
-                      <p className="panel-comment-body">{comment.body_md}</p>
-                    </li>
-                  ))}
+                  {detail.comments.map((comment) => {
+                    const ink =
+                      comment.author_id === null
+                        ? undefined
+                        : avatarColor(comment.author_id, theme);
+                    return (
+                      <li key={comment.id} className="panel-comment">
+                        <div className="panel-comment-head">
+                          <span
+                            className="comment-avatar"
+                            aria-hidden="true"
+                            {...(ink === undefined
+                              ? {}
+                              : { style: { background: ink.background, color: ink.foreground } })}
+                          >
+                            {initials(personName(comment.author_id, members))}
+                          </span>
+                          <span className="panel-comment-author">
+                            {personName(comment.author_id, members)}
+                          </span>
+                          {/*
+                            **`AGENT`, from `created_via`.** A comment carries
+                            the channel it arrived by, so this is a fact rather
+                            than a guess — `mcp` is an agent and nothing else is.
+                          */}
+                          {isAgentComment(comment) && (
+                            <span className="marker marker-agent">agent</span>
+                          )}
+                          {comment.edited_at !== null && (
+                            <span className="panel-muted panel-edited">edited</span>
+                          )}
+                          <time
+                            className="panel-time"
+                            dateTime={new Date(comment.created_at).toISOString()}
+                          >
+                            {new Date(comment.created_at).toLocaleString()}
+                          </time>
+                        </div>
+                        {/* Fenced code renders as code — the design quotes a
+                            `POST /tasks/…` line in a bordered box. */}
+                        <CommentBody body={comment.body_md} />
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
 
@@ -357,18 +573,17 @@ export function TaskDetailPanel({
                   });
                 }}
               >
-                <label className="visually-hidden" htmlFor="comment-draft">
-                  Add a comment
-                </label>
-                <textarea
-                  id="comment-draft"
-                  className="panel-textarea"
-                  rows={3}
+                <CommentComposer
+                  slug={slug}
                   value={draft}
-                  disabled={detail.posting}
-                  placeholder="Add a comment"
-                  onChange={(event) => {
-                    setDraft(event.target.value);
+                  busy={detail.posting}
+                  onChange={setDraft}
+                  onSubmit={() => {
+                    const body = draft.trim();
+                    if (body === '') return;
+                    void detail.post(body).then(() => {
+                      setDraft('');
+                    });
                   }}
                 />
                 {detail.postError !== null && (
@@ -432,6 +647,90 @@ export function TaskDetailPanel({
                 </ol>
               )}
             </section>
+
+            <section
+              className="panel-section"
+              id="panel-changes"
+              role="tabpanel"
+              aria-labelledby="tab-changes"
+              hidden={tab !== 'changes'}
+            >
+              {changes.length === 0 ? (
+                <p className="panel-muted">
+                  No commits recorded against this task. Laika learns about them from the GitHub
+                  webhook, so a space with no repo wired has none.
+                </p>
+              ) : (
+                <ol className="panel-changes">
+                  {changes.map((event) => (
+                    <li key={`${event.id}-${String(event.seq)}`} className="panel-change">
+                      <span className="panel-change-who">{describeActor(event, members).name}</span>
+                      <span className="panel-change-what">{describeEvent(event)}</span>
+                      <time
+                        className="panel-time"
+                        dateTime={new Date(event.created_at).toISOString()}
+                      >
+                        {new Date(event.created_at).toLocaleString()}
+                      </time>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </section>
+
+            {/*
+              The design's footer: the two actions, then who may use them.
+              The note is not decoration — a Viewer sees this panel and every
+              control on it is absent rather than disabled, so without a
+              sentence they are left wondering what they are missing.
+            */}
+            <footer className="panel-foot">
+              <div className="panel-foot-actions">
+                {DEMO_HANDOFF_ENABLED && (
+                  <button
+                    type="button"
+                    className="panel-action panel-action-primary"
+                    onClick={() => {
+                      /*
+                        The refusal lives here, not in `demo/`: it is the
+                        screen's own explanation, and a sentence in that
+                        directory reaches the production bundle — `DEMO_ENABLED`
+                        is a runtime value, so the minifier keeps the text even
+                        when the behaviour is gone.
+                      */
+                      setHandoff(
+                        'Laika has no endpoint that hands a task to a runtime yet, so nothing was queued. This button is part of the imported design.',
+                      );
+                    }}
+                  >
+                    Hand to my agent
+                  </button>
+                )}
+
+                {mayEdit === true && task.status !== 'review' && task.status !== 'done' && (
+                  <button
+                    type="button"
+                    className="panel-action"
+                    disabled={moving}
+                    onClick={() => {
+                      onMove(task.id, 'review');
+                    }}
+                  >
+                    Move to Review
+                  </button>
+                )}
+              </div>
+
+              {handoff !== undefined && (
+                <p className="panel-alert" role="status">
+                  {handoff}
+                </p>
+              )}
+
+              <p className="panel-permission">
+                Members can move and comment. Viewers see this panel read-only.
+              </p>
+            </footer>
           </>
         )}
       </div>

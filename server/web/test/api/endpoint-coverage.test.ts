@@ -49,18 +49,19 @@ const WEB = fileURLToPath(new URL('../../src/', import.meta.url));
  * id.** Only a genuinely non-browser caller belongs in the first group.
  */
 const NO_BROWSER_CALLER: Readonly<Record<string, string>> = {
+  /*
+   * **The only half of LAI-458 still open.** LAI-284 wired watching *a task* —
+   * `PUT`/`DELETE /tasks/:id/watch` and `GET /tasks/:id/watchers` are called
+   * from the task panel — but *"the tasks I watch"* is a list screen nobody has
+   * built, and there is nowhere in the app to put it yet.
+   */
+  'api/v1/me/watching': 'LAI-458 — a "tasks I watch" screen does not exist',
   // Called by something that is not the SPA.
   'webhooks/github': 'GitHub posts here (§9.2); no browser is involved',
   'webhooks/transcript': 'a meeting bot or script posts here (D-052); signed, not session-authed',
   'api/v1/heartbeats': "the plugin's SessionStart/Stop hooks post this (LAI-418), never the SPA",
 
   // Built, served, and waiting on a screen. Each names the task, not a reason.
-  'api/v1/me/watching': 'LAI-458 — watching has no UI',
-  'api/v1/tasks/*/watch': 'LAI-458',
-  'api/v1/tasks/*/watchers': 'LAI-458',
-  'api/v1/projects/*/mentionable': 'LAI-458 — the `@` list has no UI',
-  'api/v1/tasks/*/dependencies': 'LAI-233 — the board draws dependencies and cannot edit them',
-  'api/v1/tasks/*/dependencies/*': 'LAI-233',
   'api/v1/comments/*': 'LAI-234 — a comment cannot be edited or deleted from the UI',
   'api/v1/projects/*/tags/*': 'LAI-235 — a tag cannot be removed from a project',
   'api/v1/activity': 'LAI-237 — the org-wide feed; only the per-project one is read',

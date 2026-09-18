@@ -18,7 +18,13 @@ export const API_BASE = '/api/v1';
 const REQUEST_ID_HEADER = 'X-Request-Id';
 
 export interface RequestOptions {
-  readonly method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  /*
+   * `PUT` is here for watching (§6.4): the server chose it deliberately, because
+   * watching is idempotent state rather than an event — pressing Watch twice
+   * leaves one row. A client that could not send `PUT` would have to model that
+   * as a `POST`, which is exactly the confusion the method choice avoids.
+   */
+  readonly method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly body?: unknown;
   readonly signal?: AbortSignal;
 }

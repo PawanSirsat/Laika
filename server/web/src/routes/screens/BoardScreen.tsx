@@ -549,6 +549,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               board.reload();
             }}
             onAssigned={board.reload}
+            onTaskEdited={board.reload}
             task={openTask}
             byId={board.byId}
             members={members}

@@ -358,3 +358,85 @@ export function listMembers(slug: string, signal?: AbortSignal): Promise<MemberL
     signal === undefined ? {} : { signal },
   );
 }
+
+/**
+ * Edit a task's own fields (`PATCH /tasks/:id`, LAI-284).
+ *
+ * **`status` is not among them.** §6.4's `PATCH` refuses it `422`; moving a task
+ * is `changeStatus`, because the server validates the transition and a `PATCH`
+ * that quietly accepted one would skip that. The type says so rather than a
+ * comment, so a caller that tries cannot compile.
+ *
+ * Unknown fields are `422` too, so this sends only what it is given — never a
+ * whole task object with the unchanged fields along for the ride.
+ */
+export interface TaskEdit {
+  readonly title?: string;
+  readonly description_md?: string;
+  readonly acceptance_md?: string;
+  readonly priority?: TaskPriority;
+  readonly assignee_id?: string | null;
+  readonly sprint_id?: string | null;
+}
+
+export function updateTask(taskId: string, edit: TaskEdit): Promise<Task> {
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}`, { method: 'PATCH', body: edit });
+}
+
+/**
+ * Watching (`PUT`/`DELETE /tasks/:id/watch`, §6.4).
+ *
+ * `PUT` rather than `POST` because watching is **idempotent state, not an
+ * event**: pressing Watch twice leaves one row. Both answer `204`, so neither
+ * returns the task — nothing about it changed, and a body would invite a caller
+ * to diff something identical either way.
+ */
+export function watchTask(taskId: string): Promise<void> {
+  return request<void>(`/tasks/${encodeURIComponent(taskId)}/watch`, { method: 'PUT' });
+}
+
+export function unwatchTask(taskId: string): Promise<void> {
+  return request<void>(`/tasks/${encodeURIComponent(taskId)}/watch`, { method: 'DELETE' });
+}
+
+/**
+ * Who is watching — **user ids**, not people.
+ *
+ * The server returns ids and filters them to who can still read the task. Names
+ * and roles come from the project's members, which the drawer already holds; a
+ * second lookup here would be a second answer to "who is this".
+ */
+export interface WatcherList {
+  readonly watchers: readonly string[];
+}
+
+export function listWatchers(taskId: string, signal?: AbortSignal): Promise<WatcherList> {
+  return request<WatcherList>(
+    `/tasks/${encodeURIComponent(taskId)}/watchers`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/**
+ * Dependencies (`POST`/`DELETE /tasks/:id/dependencies`, LAI-233).
+ *
+ * The field is `blocked_by_task_id` — **not** `depends_on`, which is what
+ * LAI-407's fixture sent and what the route answered `422` for while nothing
+ * looked. Named here once so no caller has to remember it.
+ *
+ * The server rejects a cycle and a self-reference; the client does not
+ * pre-judge either, it sends and renders the answer.
+ */
+export function addDependency(taskId: string, blockedByTaskId: string): Promise<Task> {
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}/dependencies`, {
+    method: 'POST',
+    body: { blocked_by_task_id: blockedByTaskId },
+  });
+}
+
+export function removeDependency(taskId: string, blockedByTaskId: string): Promise<Task> {
+  return request<Task>(
+    `/tasks/${encodeURIComponent(taskId)}/dependencies/${encodeURIComponent(blockedByTaskId)}`,
+    { method: 'DELETE' },
+  );
+}
