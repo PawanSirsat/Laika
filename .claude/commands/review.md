@@ -58,7 +58,16 @@ evidence. For each one, find the code that satisfies it. Where a criterion says
 guard exists is checked by removing what it guards and watching **that
 assertion** go red.
 
-**Two rules, both learned on 2026-09-02, both by the reviewer rather than the
+**One defect, three costumes.** Every rule below is an instance of it:
+
+> **The red came from somewhere other than the property under test.**
+
+An anchor that did not apply, a `tsc` error read as the guard firing, and a parse
+error read as a caught mutation — **all three exit non-zero, and all three look
+exactly like success.** CORE's generalisation, after CHIEF produced all three in
+one day.
+
+**The rules, learned on 2026-09-02, all by the reviewer rather than the
 builder:**
 
 > **A mutation's red must come from the assertion you are testing.**
