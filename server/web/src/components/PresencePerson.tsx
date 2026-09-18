@@ -57,8 +57,26 @@ function shortName(name: string): string {
  * slug* is passed in (the strip knows which space it is drawing) and the branch
  * is the work — which is what a person reads to know what an agent is on.
  */
+/**
+ * The task a branch is for: `lai-251-space-bar` → `LAI-251`.
+ *
+ * The design writes this line as `laika-core · LAI-142` — a **key**, not a
+ * branch. A branch that carries one is named by its key and a slug, and ours
+ * rendered as `lai-251…`: lower-cased and then cut off mid-word, because the
+ * slug made the line too long for the chip.
+ *
+ * A branch with no key in it is left exactly as it is. Guessing a key out of
+ * `main` would be inventing one, and the full branch is on the chip's title
+ * either way.
+ */
+function taskKey(branch: string): string {
+  const match = /^([A-Za-z]{2,5})-(\d+)/.exec(branch);
+  if (match === null) return branch;
+  return `${(match[1] ?? '').toUpperCase()}-${match[2] ?? ''}`;
+}
+
 function where(entry: PresenceEntry, spaceSlug: string | undefined): string {
-  const branch = entry.branch ?? '';
+  const branch = taskKey(entry.branch ?? '');
   if (spaceSlug === undefined) return branch === '' ? (entry.repo ?? '') : branch;
   return branch === '' ? spaceSlug : `${spaceSlug} · ${branch}`;
 }
