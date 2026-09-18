@@ -7,7 +7,8 @@ priority: p1
 depends-on: []
 discovered-from: LAI-251
 started: 2026-09-18T17:02:58+05:30
-status: in-progress
+finished: 2026-09-18T17:09:02+05:30
+status: review
 ---
 
 ## Goal
@@ -31,21 +32,21 @@ Five things about the card, all of them in `TaskCard.tsx` and `board.css`, and
 
 ## Acceptance criteria
 
-- [ ] Card padding, title size/weight/leading and the two-line clamp measured
+- [x] Card padding, title size/weight/leading and the two-line clamp measured
       against the prototype in a browser test — not eyeballed.
-- [ ] The comment count renders from `comment_count`, is **absent at zero**,
+- [x] The comment count renders from `comment_count`, is **absent at zero**,
       and a task with comments shows the real number. **Closes LAI-223** —
       note it for CHIEF's dedupe.
-- [ ] The relative timestamp comes from `updated_at` and is computed against
+- [x] The relative timestamp comes from `updated_at` and is computed against
       `Date.now()`, never a fixed epoch (the LAI-420 shelf-life bug, twice
       already).
-- [ ] The blocked banner is one line, ellipsised, and a browser test asserts
+- [x] The blocked banner is one line, ellipsised, and a browser test asserts
       its height does not grow with a long blocking title.
-- [ ] The footer's order matches the design: priority dot, ticket id, sprint
+- [x] The footer's order matches the design: priority dot, ticket id, sprint
       badge, comment count, link count, timestamp — with the assignee avatar
       bottom-right.
-- [ ] Both themes, widths 1440 / 1280 / 420, page overflow `0` at each.
-- [ ] Full gate — all three `EXIT 0`, repo root.
+- [x] Both themes, widths 1440 / 1280 / 420, page overflow `0` at each.
+- [x] Full gate — all three `EXIT 0`, repo root.
 
 ## Notes / context
 
@@ -61,3 +62,32 @@ header shows the count with no denominator.
 **The agent badge on the avatar already exists** and did not show on the
 seeded board because every seeded task was created via `web`. A task created
 through MCP renders it. Worth confirming rather than rebuilding.
+
+## Completion notes
+
+Measured on the running instance, not eyeballed: padding `13px 13px 11px`,
+title `13.5px / 600`, blocked banner `22px` — one line, where it was two.
+
+**`comment_count` renders at last.** LAI-223 is closed against this — the field
+has been on every task since the endpoint existed and no card ever showed it.
+Absent at zero, because a `0` beside the link count reads as a control.
+
+**`updatedAge` delegates to `staleFor`** rather than becoming a third copy of
+the same arithmetic. The two existing copies are deliberate and the file says
+why; a third would guard nothing, since this is the same question in the same
+units asked about `updated_at`. The only difference is wording — a footer
+stands alone, so `now` becomes `just now`.
+
+**The one-line banner is a trade, and it is stated in the CSS.** The second
+line existed because a 167px column left the blocker's title 17px — one
+character. The owner asked for the design's single line; the title truncates
+first, the key never does, and the whole line is in the `title` attribute.
+
+**A test-selector lesson worth keeping.** `locator('.card', { hasText: 'Presence
+strip' })` matched *two* cards: a blocked card repeats its blocker's title
+inside the banner. Scoping by `.card-key` fixed it. Any test that identifies a
+card by its title is ambiguous the moment that task blocks another.
+
+**Not in this task, by the owner's decision**: `WIP 3/4` and a column reviewer
+have no data model, and inventing either is what §5.1 forbids. Filed as
+LAI-267 and LAI-268 for CORE.
