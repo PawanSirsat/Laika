@@ -128,13 +128,146 @@ const STUB: ApiStub = {
   '/api/v1/projects/laika-core/members': {
     members: [{ user_id: 'u1', name: 'Ada', role: 'lead' }],
   },
-  '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
-  '/api/v1/projects/laika-core/activity': { data: [], next_cursor: null },
+  /**
+   * **Three sprints, because an empty list is not the real thing.**
+   *
+   * The 146px page overflow LAI-243 fixed did not reproduce against an empty
+   * sprint list: no sprint strip means a different width above the board and the
+   * arithmetic lands elsewhere. It was found on a seeded instance instead. A
+   * fixture that omits what the screen normally has is the same defect as a stub
+   * that answers regardless of the query — it makes the assertion narrower than
+   * it reads.
+   */
+  '/api/v1/projects/laika-core/sprints': {
+    data: [
+      {
+        id: 's1',
+        project_id: 'p1',
+        name: 'Sprint 1',
+        goal: 'Get the engine standing up',
+        status: 'completed',
+        starts_on: 1786492800000,
+        ends_on: 1787616000000,
+        created_at: 1,
+        updated_at: 1,
+      },
+      {
+        id: 's2',
+        project_id: 'p1',
+        name: 'Sprint 2',
+        goal: 'Policy and MCP parity',
+        status: 'active',
+        starts_on: 1788307200000,
+        ends_on: 1789430400000,
+        created_at: 1,
+        updated_at: 1,
+      },
+      {
+        id: 's3',
+        project_id: 'p1',
+        name: 'Sprint 3',
+        goal: null,
+        status: 'planned',
+        starts_on: 1789516800000,
+        ends_on: 1790640000000,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ],
+    next_cursor: null,
+  },
+  /**
+   * **Real feed rows, because the rail's markup is what broke the page.**
+   *
+   * Each row renders a `span.visually-hidden`, and `.visually-hidden` is
+   * `position: absolute` with no coordinates — so inside a horizontal scroller
+   * it sits at its static position, far right of the viewport, and escapes the
+   * clip unless the scroller is its containing block. An empty feed has none of
+   * them, and the 146px page overflow LAI-243 fixed **did not reproduce** until
+   * this fixture carried rows.
+   */
+  '/api/v1/projects/laika-core/activity': {
+    data: [
+      {
+        id: 'a1',
+        org_id: 'o1',
+        project_id: 'p1',
+        actor_id: 'u1',
+        actor_kind: 'user',
+        actor_token_id: null,
+        actor_name: 'Ada Lovelace',
+        type: 'task.moved',
+        payload: { task_id: 't3', from: 'todo', to: 'in_progress' },
+        created_at: 1788300000000,
+      },
+      {
+        id: 'a2',
+        org_id: 'o1',
+        project_id: 'p1',
+        actor_id: 'u1',
+        actor_kind: 'agent',
+        actor_token_id: 'tok1',
+        actor_name: 'Ada Lovelace',
+        type: 'task.created',
+        payload: { task_id: 't4' },
+        created_at: 1788300100000,
+      },
+      {
+        id: 'a3',
+        org_id: 'o1',
+        project_id: 'p1',
+        actor_id: null,
+        actor_kind: 'system',
+        actor_token_id: null,
+        actor_name: null,
+        type: 'task.stale_flagged',
+        payload: { task_id: 't5' },
+        created_at: 1788300200000,
+      },
+    ],
+    next_cursor: null,
+  },
   '/api/v1/projects/laika-core/tags': { tags: [] },
 };
 
 /** Measured from `docs/design/Laika Prototype.dc.html`: `206px` lanes, 11px gap. */
 const DESIGN_LANE = 206;
+
+/**
+ * Resize, then **wait for the layout to stop moving** rather than for a clock.
+ *
+ * A fixed `waitForTimeout` was enough when this file ran alone and not enough
+ * under the full suite: a lane measured **254px** at 1600px — between 1920's
+ * 270px and 1600's 206px — because the assertion read a layout that was still
+ * settling from the previous viewport. A flake that only appears under load is
+ * still a wrong answer, and it was *my* test that was wrong, not the CSS.
+ *
+ * Two consecutive frames with identical lane widths is the condition that
+ * actually matters, and it cannot pass early the way a timeout can.
+ */
+const settle = async (h: Awaited<ReturnType<typeof open>>, width: number) => {
+  await h.page.setViewportSize({ width, height: 1000 });
+  await h.page.waitForFunction((w: number) => document.documentElement.clientWidth === w, width, {
+    timeout: 10_000,
+  });
+  await h.page.waitForFunction(
+    () =>
+      new Promise<boolean>((resolve) => {
+        const read = () =>
+          [...document.querySelectorAll('.lane')]
+            .map((l) => Math.round(l.getBoundingClientRect().width))
+            .join(',');
+        const first = read();
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            resolve(read() === first && first !== '');
+          });
+        });
+      }),
+    undefined,
+    { timeout: 10_000 },
+  );
+};
 
 const boardReady = async (h: Awaited<ReturnType<typeof open>>) => {
   await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
@@ -153,8 +286,7 @@ void describe('a lane keeps the width the design gives it', () => {
       await boardReady(h);
 
       for (const width of [1920, 1600, 1440, 1280, 1100, 900]) {
-        await h.page.setViewportSize({ width, height: 1000 });
-        await h.page.waitForTimeout(250);
+        await settle(h, width);
 
         const widths = await h.page
           .locator('.lane')
@@ -167,37 +299,134 @@ void describe('a lane keeps the width the design gives it', () => {
               `the design gives it ${String(DESIGN_LANE)}px and it must not give any back`,
           );
         }
+
+        // **An upper bound too, whenever the row is scrolling.** A floor alone
+        // passes for lanes that ballooned: `flex-basis: auto` on the strip sizes
+        // it to the grid's *max-content*, which `1fr` leaves unbounded, and 311px
+        // lanes satisfy ">= 206" while being just as wrong. If the row has to
+        // scroll, every lane should be sitting exactly on the floor.
+        const scrolling = await h.page.evaluate(() => {
+          const row = document.querySelector('.board-main');
+          return row !== null && row.scrollWidth > row.clientWidth + 1;
+        });
+        if (scrolling) {
+          for (const [i, w] of widths.entries()) {
+            assert.ok(
+              Math.abs(w - DESIGN_LANE) <= 2,
+              `at ${String(width)}px the row scrolls, so lane ${String(i)} should be ` +
+                `${String(DESIGN_LANE)}px — it is ${String(Math.round(w))}px, which means the ` +
+                `strip is sizing to its own content rather than to the row`,
+            );
+          }
+        }
       }
     } finally {
       await h.close();
     }
   });
 
-  void test('the lane strip scrolls rather than squeezing, and does so at every width', async () => {
+  /**
+   * **The property, not the mechanism** (LAI-243 AC6).
+   *
+   * The first version of this asserted `.kanban` had `overflow-x: auto`. That
+   * pinned *which element scrolls*, and LAI-243 legitimately moved it up to
+   * `.board-main` so the rail travels with the lanes — so the assertion went red
+   * for a change that was correct. That is the LAI-158 shape, and the fix is to
+   * ask **"does the board scroll instead of squeezing"** rather than **"is the
+   * overflow on this selector"**.
+   */
+  void test('the board scrolls rather than squeezing, and does so at every width', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await boardReady(h);
 
-      // Narrow enough that five 206px lanes plus gaps cannot fit beside the
-      // rail — but well above the old `1100px` special case, which is the case
-      // the owner was in and which used to squeeze instead of scrolling.
+      // Narrow enough that five 206px lanes plus the rail cannot fit — but well
+      // above the old `1100px` special case, which is the width the owner was at
+      // and which used to squeeze instead of scrolling.
       for (const width of [1440, 1280]) {
-        await h.page.setViewportSize({ width, height: 1000 });
-        await h.page.waitForTimeout(250);
+        await settle(h, width);
 
-        const kanban = await h.page.locator('.kanban').evaluate((el: Element) => ({
-          scrollWidth: el.scrollWidth,
-          clientWidth: el.clientWidth,
-          overflowX: getComputedStyle(el).overflowX,
-        }));
+        // Whichever element carries it, something between the lanes and the
+        // viewport must scroll horizontally — and the page body must not.
+        const scroller = await h.page.evaluate(() => {
+          let node: Element | null = document.querySelector('.lane');
+          while (node !== null && node !== document.documentElement) {
+            if (node.scrollWidth > node.clientWidth + 1) {
+              return { selector: node.className.toString().split(' ')[0], scrollable: true };
+            }
+            node = node.parentElement;
+          }
+          return { selector: null as string | null, scrollable: false };
+        });
 
-        assert.equal(kanban.overflowX, 'auto', `at ${String(width)}px the strip cannot scroll`);
         assert.ok(
-          kanban.scrollWidth > kanban.clientWidth,
-          `at ${String(width)}px the lanes fit (${String(kanban.scrollWidth)} <= ` +
-            `${String(kanban.clientWidth)}) — they are still being squeezed`,
+          scroller.scrollable,
+          `at ${String(width)}px nothing scrolls — the lanes are still being squeezed`,
         );
+
+        const bodyOverflow = await h.page.evaluate(
+          () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        );
+        assert.equal(bodyOverflow, 0, `at ${String(width)}px the page itself scrolls sideways`);
       }
+    } finally {
+      await h.close();
+    }
+  });
+
+  /**
+   * **What the owner asked for**, after seeing LAI-175:
+   *
+   * > *"also add that live stream in the scroll row so that will not fixed there
+   * > on screen"*
+   *
+   * Asserted as movement, because that is the complaint: the rail stayed put
+   * while the lanes slid underneath it.
+   */
+  void test('the Live stream rail travels with the lanes rather than staying pinned', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await boardReady(h);
+      await settle(h, 1280);
+
+      const railLeft = async () =>
+        h.page.locator('.rail').evaluate((el: Element) => el.getBoundingClientRect().left);
+
+      const before = await railLeft();
+      const moved = await h.page.evaluate(() => {
+        let node: Element | null = document.querySelector('.lane');
+        while (node !== null && node !== document.documentElement) {
+          if (node.scrollWidth > node.clientWidth + 1) {
+            node.scrollLeft = 400;
+            return node.scrollLeft;
+          }
+          node = node.parentElement;
+        }
+        return 0;
+      });
+      // Wait for the rail to have actually moved rather than for a clock — the
+      // same lesson as `settle()` above, on the axis this test is about.
+      await h.page
+        .waitForFunction(
+          (start: number) => {
+            const rail = document.querySelector('.rail');
+            return rail !== null && Math.abs(rail.getBoundingClientRect().left - start) > 1;
+          },
+          before,
+          { timeout: 10_000 },
+        )
+        .catch(() => {
+          // Swallowed so the assertion below reports *how far* it moved, which
+          // is a better failure than "waitForFunction timed out".
+        });
+      const after = await railLeft();
+
+      assert.ok(moved > 0, 'nothing scrolled, so this proves nothing about the rail');
+      assert.ok(
+        before - after > 100,
+        `the rail moved ${String(Math.round(before - after))}px for ${String(moved)}px of ` +
+          `scroll — it is pinned to the screen instead of riding with the board`,
+      );
     } finally {
       await h.close();
     }
@@ -214,8 +443,7 @@ void describe('a lane keeps the width the design gives it', () => {
       await boardReady(h);
 
       for (const width of [1920, 1600, 1440, 1280, 1220]) {
-        await h.page.setViewportSize({ width, height: 1000 });
-        await h.page.waitForTimeout(250);
+        await settle(h, width);
 
         const geometry = await h.page.evaluate(() => {
           const kanban = document.querySelector('.kanban');
@@ -258,8 +486,7 @@ void describe('what the owner actually complained about', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await boardReady(h);
-      await h.page.setViewportSize({ width: 1440, height: 1000 });
-      await h.page.waitForTimeout(300);
+      await settle(h, 1440);
 
       const title = h.page.locator('.card-title', { hasText: 'Transcript webhook authentication' });
       const lines = await title.evaluate((el: Element) => {
@@ -282,16 +509,18 @@ void describe('what the owner actually complained about', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await boardReady(h);
-      await h.page.setViewportSize({ width: 1280, height: 1000 });
+      await settle(h, 1280);
 
       for (const theme of ['Light', 'Dark']) {
         await h.page.getByRole('radio', { name: theme }).click();
         await h.page.waitForTimeout(300);
 
         const clearance = await h.page.evaluate(() => {
-          const kanban = document.querySelector('.kanban');
-          if (kanban === null) return null;
-          const box = kanban.getBoundingClientRect();
+          // The scroller's own box, whichever it is — the scrollbar paints at
+          // the bottom of that, not of `.kanban`.
+          const row = document.querySelector('.board-main') ?? document.querySelector('.kanban');
+          if (row === null) return null;
+          const box = row.getBoundingClientRect();
           const lowest = Math.max(
             ...[...document.querySelectorAll('.lane')].map((l) => l.getBoundingClientRect().bottom),
           );
