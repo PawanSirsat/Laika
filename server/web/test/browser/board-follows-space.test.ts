@@ -128,7 +128,7 @@ void describe('the board follows the space', () => {
   void test('clicking a space swaps the cards, with no reload', async () => {
     const h = await open('/board?project=alpha-space', STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(() => document.body.innerText.includes('AL-1'), undefined, {
         timeout: 15_000,
       });
@@ -153,7 +153,7 @@ void describe('the board follows the space', () => {
   void test('and back again, so it is not a one-way sync', async () => {
     const h = await open('/board?project=alpha-space', STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(() => document.body.innerText.includes('AL-1'), undefined, {
         timeout: 15_000,
       });

@@ -76,12 +76,27 @@ void describe('the SPACES section', () => {
   void test('lists real projects, keyed by their own prefix', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
 
-      const keys = await h.page.locator('.space-key').allInnerTexts();
+      const names = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
       // Three spaces plus the More spaces row — the design's number. **Drawn
       // by name since LAI-260**, so the list never moves under the pointer.
-      assert.deepEqual(keys, ['LC', 'LI', 'LW', 'MS'], `saw ${keys.join(', ')}`);
+      // `.space-row` is a *space*; the More-spaces row opens a popover and is
+      // deliberately not one.
+      assert.deepEqual(
+        names,
+        ['Laika Core', 'Laika Infra', 'Laika Web'],
+        `saw ${names.join(', ')}`,
+      );
+      assert.ok(
+        await h.page.locator('.sidebar-link-button', { hasText: 'More spaces' }).isVisible(),
+        'the More spaces row is missing',
+      );
+
+      // **A row is a dot and a name** (LAI-262): no counts, no member figure,
+      // no two-letter key while the rail is expanded.
+      const row = await h.page.locator('.space-row').first().innerText();
+      assert.equal(row.trim(), 'Laika Core', `the row carries more than its name: ${row}`);
 
       const sidebar = await h.page.locator('#sidebar').innerText();
       // The design cases this one "Spaces", 11.5px/700 with a caret — not the
@@ -89,8 +104,9 @@ void describe('the SPACES section', () => {
       assert.match(sidebar, /Spaces/);
       // **Real counts, not a fixture**: `34 tasks · 4 members` is the design's
       // sample, and ours must come from the project payload.
-      assert.match(sidebar, /5 tasks · 5 members/, "laika-core's counts are missing");
-      assert.match(sidebar, /3 tasks · 1 member/, 'singular member is not pluralised down');
+      // The counts belong to the More-spaces popover, which is where the
+      // design puts them — asserted there, and asserted absent here.
+      assert.doesNotMatch(sidebar, /tasks · /, 'the rail is carrying the popover’s meta');
       assert.doesNotMatch(sidebar, /34 tasks/, "the design's fixture leaked into the app");
     } finally {
       await h.close();
@@ -100,7 +116,7 @@ void describe('the SPACES section', () => {
   void test('the current space is the active row, and only it', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const active = h.page.locator('.sidebar-link-active');
       assert.equal(await active.count(), 1, 'more than one row is marked current');
       assert.match(await active.innerText(), /Laika Core/);
@@ -116,7 +132,7 @@ void describe('the SPACES section', () => {
   void test('the sidebar no longer lists the views', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const sidebar = await h.page.locator('#sidebar').innerText();
       for (const group of ['WORK', 'REVIEW']) {
         assert.doesNotMatch(sidebar, new RegExp(group), `${group} is still a sidebar group`);
@@ -227,7 +243,7 @@ void describe('a space row is active for any view of it', () => {
   void test('the row is current on /sprints, not only on the board', async () => {
     const h = await open('/sprints?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const active = h.page.locator('.sidebar-link-active');
       assert.equal(await active.count(), 1, 'exactly one row must be current');
       assert.match(await active.innerText(), /Laika Core/);
@@ -246,22 +262,22 @@ void describe('the list does not move under the pointer (LAI-260)', () => {
   void test('clicking a space leaves every row exactly where it was', async () => {
     const h = await open('/board?project=laika-core', WEB_STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
-      const before = await h.page.locator('.space-key').allInnerTexts();
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      const before = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
 
       // Click a space that is *not* the current one — the case that reordered.
       await h.page.locator('.sidebar-link', { hasText: 'Laika Web' }).click();
       await h.page.waitForURL(/project=laika-web/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
 
-      const after = await h.page.locator('.space-key').allInnerTexts();
+      const after = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
       assert.deepEqual(after, before, `the rows moved: ${before.join(',')} -> ${after.join(',')}`);
 
       // And again, to a third space.
       await h.page.locator('.sidebar-link', { hasText: 'Laika Infra' }).click();
       await h.page.waitForURL(/project=laika-infra/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
-      assert.deepEqual(await h.page.locator('.space-key').allInnerTexts(), before);
+      assert.deepEqual(await h.page.locator('.space-row .sidebar-label').allInnerTexts(), before);
     } finally {
       await h.close();
     }
@@ -281,7 +297,7 @@ void describe('what was opened survives a reload', () => {
   void test('what was opened is remembered across a reload', async () => {
     const h = await open('/board?project=laika-core', WEB_STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
 
       for (const [name, slug] of [
         ['Laika Web', 'laika-web'],
@@ -292,15 +308,15 @@ void describe('what was opened survives a reload', () => {
       }
 
       await h.page.reload();
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
 
-      const keys = await h.page.locator('.space-key').allInnerTexts();
+      const keys = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
       assert.deepEqual(
         keys,
-        ['LC', 'LI', 'LW', 'MS'],
+        ['Laika Core', 'Laika Infra', 'Laika Web'],
         `storage lost what was opened: ${keys.join(', ')}`,
       );
-      assert.ok(!keys.includes('LD'), 'a space nobody opened is on the list');
+      assert.ok(!keys.includes('Laika Docs'), 'a space nobody opened is on the list');
     } finally {
       await h.close();
     }
@@ -355,7 +371,7 @@ void describe('the prototype geometry (LAI-249)', () => {
   void test('the logo collapses the rail to 56px and back, keys surviving', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-key').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
 
       const width = async () =>
         h.page.evaluate(() => {
@@ -375,11 +391,20 @@ void describe('the prototype geometry (LAI-249)', () => {
         { timeout: 5000 },
       );
 
-      // The collapsed rail still says which spaces are which.
-      const keys = h.page.locator('.space-key');
-      assert.ok((await keys.count()) >= 3, 'space keys must survive the collapse');
-      assert.ok(await keys.first().isVisible(), 'and be visible, not merely present');
-      // The two-letter route abbreviations appear only here.
+      /*
+       * **The collapsed rail is where the two-letter keys live** (LAI-262).
+       * The design renders `abbr` under `sc-if navMini` and the name
+       * otherwise, so this is the one width at which a space says `LC` — and
+       * the name must be the thing that gave way to it.
+       */
+      const firstRow = h.page.locator('.space-row').first();
+      assert.ok(await firstRow.locator('.sidebar-mini').isVisible(), 'the key did not appear');
+      assert.equal(await firstRow.locator('.sidebar-mini').innerText(), 'LC');
+      assert.ok(
+        !(await firstRow.locator('.sidebar-label').isVisible()),
+        'the name is still showing in a 56px rail',
+      );
+      // Route rows use the same mechanism.
       assert.ok(await h.page.locator('.sidebar-mini', { hasText: 'TK' }).isVisible());
 
       await h.page.locator('.sidebar-logo').click();
@@ -402,19 +427,19 @@ void describe('the prototype geometry (LAI-249)', () => {
       const head = h.page.locator('.spaces-head-toggle');
       await head.waitFor({ timeout: 20_000 });
       assert.equal(await head.getAttribute('aria-expanded'), 'true');
-      assert.ok((await h.page.locator('.space-key').count()) >= 3);
+      assert.ok((await h.page.locator('.space-row').count()) >= 3);
 
       await head.click();
       assert.equal(await head.getAttribute('aria-expanded'), 'false');
       assert.equal(
-        await h.page.locator('.space-key').count(),
+        await h.page.locator('.space-row').count(),
         0,
         'collapsing the section must take its rows with it',
       );
 
       await head.click();
       assert.equal(await head.getAttribute('aria-expanded'), 'true');
-      assert.ok((await h.page.locator('.space-key').count()) >= 3, 'and bring them back');
+      assert.ok((await h.page.locator('.space-row').count()) >= 3, 'and bring them back');
     } finally {
       await h.close();
     }
@@ -545,7 +570,7 @@ void describe('the fetch is gated on the session', () => {
         [],
         `the sign-in page fetched projects ${String(asked.length)} time(s)`,
       );
-      assert.equal(await h.page.locator('.space-key').count(), 0, 'spaces rendered signed out');
+      assert.equal(await h.page.locator('.space-row').count(), 0, 'spaces rendered signed out');
     } finally {
       await h.close();
     }

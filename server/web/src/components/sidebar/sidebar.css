@@ -230,41 +230,15 @@
 
 /* ---------------------------------------------------------------- spaces */
 
-/* The two-letter key — the project's own `prefix`. Mono so keys column up. */
-.space-key {
-  flex: none;
-  width: 1.5rem;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  color: var(--tx3);
-  text-align: left;
-}
-
-.sidebar-link-active .space-key {
-  color: var(--acc);
-}
-
-/* `N tasks · M members`, under the name (LAI-248 AC1). */
-.space-meta {
-  display: block;
-  margin-top: 2px;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-normal);
-  color: var(--tx3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* A space row is two lines, so it cannot use the single-line link height. */
-.sidebar-list .sidebar-link:has(.space-meta) {
-  height: auto;
-  padding-top: var(--space-2);
-  padding-bottom: var(--space-2);
-  align-items: flex-start;
-}
+/*
+ * **A space row is one line: a dot and a name** (LAI-262).
+ *
+ * The two-letter key it used to carry is the design's `abbr`, which the
+ * template renders only under `sc-if navMini` — `.sidebar-mini` above already
+ * does that, and space rows use it now like every other row. The
+ * `N tasks · M members` line lives in the More-spaces popover, which is where
+ * the design puts it and the only place a reader compares spaces.
+ */
 
 /* The Spaces section head: caret + "Spaces" at 11.5/700 — deliberately not
    the uppercase micro-label the route groups use (prototype lines 57–63). */
@@ -680,13 +654,6 @@
   .sidebar-collapsed .sidebar-link {
     padding: 0 0.375rem;
     gap: 4px;
-  }
-
-  .sidebar-collapsed .sidebar-list .sidebar-link:has(.space-meta) {
-    height: 1.9375rem;
-    padding-top: 0;
-    padding-bottom: 0;
-    align-items: center;
   }
 
   .sidebar-collapsed .sidebar-footer {

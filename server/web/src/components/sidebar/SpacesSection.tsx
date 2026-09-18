@@ -122,7 +122,9 @@ export function SpacesSection({
               <li key={space.slug}>
                 <a
                   href={href}
-                  className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
+                  className={
+                    active ? 'sidebar-link space-row sidebar-link-active' : 'sidebar-link space-row'
+                  }
                   aria-current={active ? 'page' : undefined}
                   title={`${space.name} — ${space.meta}`}
                   onClick={(event) => {
@@ -132,13 +134,17 @@ export function SpacesSection({
                   }}
                 >
                   <span className="sidebar-dot" aria-hidden="true" />
-                  <span className="space-key" aria-hidden="true">
+                  {/*
+                    **A dot and a name** (LAI-262). The two-letter key is the
+                    design's `abbr` and belongs to the collapsed rail only —
+                    `.sidebar-mini` is the same mechanism a route row uses. The
+                    `N tasks · M members` line is `s.meta`, and the design puts
+                    it in the More-spaces popover, not here.
+                  */}
+                  <span className="sidebar-mini" aria-hidden="true">
                     {space.key}
                   </span>
-                  <span className="sidebar-label">
-                    {space.name}
-                    <span className="space-meta">{space.meta}</span>
-                  </span>
+                  <span className="sidebar-label">{space.name}</span>
                 </a>
               </li>
             );
@@ -154,7 +160,7 @@ export function SpacesSection({
               }}
             >
               <span className="sidebar-dot" aria-hidden="true" />
-              <span className="space-key" aria-hidden="true">
+              <span className="sidebar-mini" aria-hidden="true">
                 MS
               </span>
               <span className="sidebar-label">More spaces</span>
