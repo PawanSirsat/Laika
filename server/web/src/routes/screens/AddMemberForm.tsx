@@ -56,6 +56,10 @@ export function AddMemberForm({ existingIds, busy, onAdd, onCancel }: AddMemberF
   useEffect(() => {
     const controller = new AbortController();
 
+    // **A picker, so active only** — the default, stated rather than assumed
+    // (LAI-240). You cannot hand a project to somebody who is locked out, and
+    // offering them would produce a member whose every action the policy
+    // refuses. The Organisation directory is the caller that wants the others.
     listAllUsers(controller.signal)
       .then((all) => {
         setUsers(all.users);

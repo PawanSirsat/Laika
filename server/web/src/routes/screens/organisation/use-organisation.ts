@@ -46,7 +46,12 @@ export function useOrganisation(canManage: boolean): UseOrganisation {
 
     // Not `Promise.all`: the invites half is allowed to fail without taking the
     // people list down with it.
-    const people = listAllUsers(controller.signal);
+    // **A directory, not a picker** (LAI-240). Somebody who has been
+    // deactivated still holds history — tasks they created, comments they wrote
+    // — and a list that omits them makes those references unattributable, which
+    // is the same argument §4.1 makes for keeping the row at all. It is also
+    // the only way to reach the `Reactivate` control.
+    const people = listAllUsers(controller.signal, { includeInactive: true });
     const invites = canManage
       ? listInvites(controller.signal).then(
           (page) => ({ rows: page.data, error: null as unknown }),
