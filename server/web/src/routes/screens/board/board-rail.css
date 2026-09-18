@@ -303,7 +303,15 @@
 .board-main {
   display: flex;
   gap: 0.75rem;
-  align-items: flex-start;
+  /*
+   * **`stretch`, so the lanes reach the bottom** (LAI-283). With `flex-start`
+   * the row was as tall as its tallest child, and its tallest child was a lane
+   * whose height was a hardcoded `calc()`. Both are gone: the row fills the
+   * board and the lanes fill the row.
+   */
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-x: auto;
   /*
    * **A scroll container must be the containing block for what it scrolls.**

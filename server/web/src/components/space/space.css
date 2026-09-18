@@ -7,6 +7,26 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /*
+   * **The viewport, not a percentage of it** (LAI-283).
+   *
+   * The board's lanes need a definite height to fill, and `height: 100%` cannot
+   * give them one: `.shell` is `min-height: 100vh`, so its height comes from its
+   * content — which includes the lanes. A percentage chain that ends in
+   * `min-height` is circular, and it resolved to `auto`: the lanes grew to fit
+   * their cards and the page scrolled instead. It *looked* right on a short
+   * board and fell apart on a full one, which is the worst way for a layout to
+   * be wrong.
+   *
+   * `100dvh` is the one honest anchor — it does not depend on what is inside.
+   * `dvh` rather than `vh` because mobile browsers shrink the viewport as their
+   * chrome retracts, and `vh` keeps the larger figure.
+   *
+   * Content taller than this still paints and the document still scrolls to it;
+   * this only stops the box being sized by what it contains.
+   */
+  height: 100dvh;
+  min-height: 0;
   /* Positioned so anything inside it that needs a containing block has one —
      and so a future scroller here cannot strand an absolutely-positioned child
      outside its clip (LAI-245). */

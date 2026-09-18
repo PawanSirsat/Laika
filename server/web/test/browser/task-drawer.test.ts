@@ -181,6 +181,13 @@ void describe('the task drawer', () => {
         el.scrollTop = 200;
       });
       const before = await lane.evaluate((el) => el.scrollTop);
+      /*
+       * **The positive control that caught LAI-283.** When the lane's height
+       * was a hardcoded `calc()` that stopped resolving, the lane grew to its
+       * cards instead — 3457px of it — and nothing scrolled. This said so
+       * rather than passing vacuously, which is the only reason the layout bug
+       * was visible from the suite at all.
+       */
       assert.ok(before > 0, 'the lane did not scroll — this proves nothing');
 
       await h.page.locator('.card').nth(3).click();

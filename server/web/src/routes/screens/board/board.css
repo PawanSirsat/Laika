@@ -4,7 +4,10 @@
 .board {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  /* `min-height: 100%` resolved against an auto-height parent, which is to say
+     it did nothing. The board is the space's growing child now. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .board > :not(.screen-bar):not(.board-scope):not(.demo-notice) {
@@ -1091,9 +1094,21 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* One height for every column, and the body inside it scrolls. The figure
-     tracks the chrome above *and* `.board-main`'s own 14px/18px padding. */
-  height: calc(100dvh - 21rem);
+  /*
+   * **The lanes fill what is left, rather than guessing at it** (LAI-283).
+   *
+   * This was `calc(100dvh - 21rem)`: a figure standing in for the height of
+   * every band above the board, which had to be re-guessed whenever any of them
+   * changed and was **99px short** once the right rail moved to its own tab —
+   * the lanes stopping well above the bottom of the window with dead space
+   * under them, which is what the owner reported.
+   *
+   * No height at all now. `.kanban` is a grid and a grid item stretches to its
+   * row by default, the row stretches to `.board-main`, and that fills `.space`,
+   * which is `100dvh`. The chain is measured rather than described, so it cannot
+   * drift out of step with the chrome above it. One height for every column
+   * still, and the body inside each still scrolls.
+   */
 }
 
 .kanban .lane-body {

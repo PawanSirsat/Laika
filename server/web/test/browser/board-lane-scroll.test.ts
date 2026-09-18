@@ -456,3 +456,59 @@ void describe('what the owner actually complained about', () => {
     }
   });
 });
+
+void describe('the lanes fill the window (LAI-283)', () => {
+  /**
+   * The owner's report, with a screenshot: the columns stopped well above the
+   * bottom of the window with dead space beneath them.
+   *
+   * The cause was a hardcoded `calc(100dvh - 21rem)` — a figure standing in for
+   * the height of every band above the board, which had to be re-guessed each
+   * time one of them changed and was 99px short once the right rail moved to
+   * its own tab. The height is measured now, not described.
+   *
+   * **Asserted at two window heights**, because a single one cannot tell a
+   * measured height from a lucky constant.
+   */
+  void test('reach the bottom, at any window height', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await boardReady(h);
+
+      const seen: number[] = [];
+      for (const height of [900, 700]) {
+        await h.page.setViewportSize({ width: 1440, height });
+        await h.page.waitForTimeout(250);
+
+        const m = await h.page.evaluate(() => {
+          const lane = document.querySelector('.lane');
+          if (lane === null) return null;
+          const r = lane.getBoundingClientRect();
+          return { bottom: r.bottom, height: r.height, viewport: window.innerHeight };
+        });
+        assert.ok(m !== null, 'no lane rendered');
+
+        // The pane's own bottom padding is the only thing that may be left.
+        const gap = m.viewport - m.bottom;
+        assert.ok(
+          gap >= 0 && gap <= 56,
+          `at ${String(height)}px the lanes stop ${String(Math.round(gap))}px above the bottom`,
+        );
+        seen.push(Math.round(m.height));
+      }
+
+      /*
+       * **And the height must track the window.** A constant would satisfy the
+       * gap check at whichever height it was tuned for; two different windows
+       * must give two different lane heights, differing by what the window did.
+       */
+      assert.equal(
+        seen[0]! - seen[1]!,
+        200,
+        `the lanes measured ${seen.join(' and ')} — they are not following the window`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
