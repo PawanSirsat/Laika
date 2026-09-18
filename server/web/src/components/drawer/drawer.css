@@ -32,7 +32,13 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: min(840px, 100%);
+  /*
+   * **1120px, not 840** (LAI-285). The design's drawer is two columns — the
+   * task as a document beside a 288px rail of fields — and at 840 the two
+   * together left the description about 500px wide, narrower than the board
+   * card the reader came from.
+   */
+  width: min(1120px, 100%);
   /* 840px is the whole drawer, border included — without this the 1px
      border-left makes it 841 and the design's number stops being the one on
      screen. The same trap as the tab strip's 34px. */

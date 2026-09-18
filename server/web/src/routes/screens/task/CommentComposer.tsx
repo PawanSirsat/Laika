@@ -8,6 +8,15 @@ export interface CommentComposerProps {
   readonly busy: boolean;
   readonly onChange: (next: string) => void;
   readonly onSubmit: () => void;
+  /**
+   * The send button, rendered on the toolbar row.
+   *
+   * Passed in rather than built here: the submit lives in the form above and
+   * knows about posting state and errors. The composer only decides *where* it
+   * sits — which is inside the box, on the right of the marks, as the design
+   * has it.
+   */
+  readonly send: React.ReactNode;
 }
 
 /** What a toolbar button wraps the selection in. */
@@ -36,7 +45,14 @@ const MARKS = [
  * filtering members here would be a second answer, and the wrong one for a
  * private space.
  */
-export function CommentComposer({ slug, value, busy, onChange, onSubmit }: CommentComposerProps) {
+export function CommentComposer({
+  slug,
+  value,
+  busy,
+  onChange,
+  onSubmit,
+  send,
+}: CommentComposerProps) {
   const box = useRef<HTMLTextAreaElement | null>(null);
   const [people, setPeople] = useState<readonly MentionableUser[]>([]);
   const [picking, setPicking] = useState(false);
@@ -89,6 +105,30 @@ export function CommentComposer({ slug, value, busy, onChange, onSubmit }: Comme
 
   return (
     <div className="composer">
+      <textarea
+        ref={box}
+        className="composer-field"
+        value={value}
+        disabled={busy}
+        rows={3}
+        placeholder="Leave a comment… ⌘↵ to send"
+        aria-label="Comment"
+        onChange={(event) => {
+          onChange(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            onSubmit();
+          }
+        }}
+      />
+
+      {/*
+        **Inside the box, along its foot** — the design puts the marks and the
+        send button on one row under the field, so the whole composer reads as
+        a single control rather than a toolbar sitting above a textarea.
+      */}
       <div className="composer-tools" role="group" aria-label="Formatting">
         {MARKS.map((m) => (
           <button
@@ -136,26 +176,9 @@ export function CommentComposer({ slug, value, busy, onChange, onSubmit }: Comme
             ))}
           </ul>
         )}
-      </div>
 
-      <textarea
-        ref={box}
-        className="composer-field"
-        value={value}
-        disabled={busy}
-        rows={3}
-        placeholder="Leave a comment… ⌘↵ to send"
-        aria-label="Comment"
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
-            event.preventDefault();
-            onSubmit();
-          }
-        }}
-      />
+        <span className="composer-send">{send}</span>
+      </div>
     </div>
   );
 }

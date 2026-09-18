@@ -175,7 +175,13 @@ void describe('the task panel', () => {
       assert.equal(await h.page.locator('.discovered').count(), 1, 'no discovered-from callout');
       assert.equal(await h.page.locator('.dep-chip').count(), 1, 'no dependency chip');
       assert.equal(await h.page.locator('.dep-link').count(), 1, 'no way to link a task');
-      assert.equal(await h.page.locator('.watch-row').count(), 2, 'watchers are missing');
+      // Watchers are a field on the rail now, not a list in the column.
+      assert.equal(
+        await h.page.locator('.panel-meta .meta-row').count(),
+        6,
+        'the rail lost a field',
+      );
+      assert.match(await h.page.locator('.panel-meta').innerText(), /Watchers/i);
       assert.equal(await h.page.locator('.panel-permission').count(), 1, 'no permission note');
 
       // The design's three tabs, with counts.
@@ -193,13 +199,17 @@ void describe('the task panel', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await openSubject(h);
-      const roles = await h.page.locator('.watch-role').allInnerTexts();
-      // `GET /watchers` returns **ids**; the roles can only come from members,
-      // and a second source for "who is this" would disagree with the first.
-      assert.deepEqual(
-        roles.map((r) => r.toLowerCase()),
-        ['lead', 'viewer'],
-      );
+      /*
+       * `GET /watchers` returns **ids**; names and roles can only come from
+       * members, and a second source for "who is this" would disagree with the
+       * first. The rail names the people and calls out the Viewers, which is
+       * the distinction that matters — a Viewer is told and cannot act.
+       */
+      const rail = await h.page.locator('.panel-meta').innerText();
+      assert.match(rail, /Ada Lovelace/);
+      assert.match(rail, /Grace Hopper/);
+      assert.match(rail, /2 people/);
+      assert.match(rail, /Grace Hopper is a Viewer/);
     } finally {
       await h.close();
     }
@@ -278,9 +288,13 @@ void describe('the task panel', () => {
     try {
       await openSubject(h);
 
-      // `u1` is in the stub's watcher list, so the button offers to stop.
-      const toggle = h.page.locator('.watch-toggle');
-      assert.match(await toggle.innerText(), /Stop watching/);
+      /*
+        Watch is a **header action** now, beside Move — it is a thing you do to
+        the task, not a field describing it. `u1` is in the stub's watcher list,
+        so it offers to stop.
+      */
+      const toggle = h.page.locator('.panel-head-action', { hasText: /watch/i });
+      assert.match(await toggle.innerText(), /Unwatch/);
       await toggle.click();
       await h.page.waitForTimeout(400);
 

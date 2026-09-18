@@ -82,6 +82,13 @@ const STUB: ApiStub = {
   },
   '/api/v1/presence': { enabled: false, present: [] },
   '/api/v1/tasks/t3/comments': { data: [], next_cursor: null },
+  /*
+   * The panel calls these since LAI-284/285 — watchers for the rail and the
+   * header's Watch button, mentionable for the composer's `@`. A fixture that
+   * does not answer them leaves requests in flight while the panel renders.
+   */
+  '/api/v1/tasks/t3/watchers': { watchers: [] },
+  '/api/v1/projects/laika-core/mentionable': { users: [] },
 };
 
 async function openDrawer(h: Awaited<ReturnType<typeof open>>) {
@@ -95,7 +102,7 @@ void after(async () => {
 });
 
 void describe('the task drawer', () => {
-  void test('is the design’s 840px, and the scrim spares the rail', async () => {
+  void test('is the design’s 1120px, and the scrim spares the rail', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
@@ -103,7 +110,12 @@ void describe('the task drawer', () => {
 
       const drawer = await h.page.locator('.drawer').boundingBox();
       assert.ok(drawer);
-      assert.equal(Math.round(drawer.width), 840, 'the drawer is the design’s 840px');
+      /*
+        **1120, not 840** (LAI-285). The drawer became two columns — the task as
+        a document beside a 288px rail of fields — and at 840 the two together
+        left the description narrower than the board card the reader came from.
+      */
+      assert.equal(Math.round(drawer.width), 1120, 'the drawer is the design’s 1120px');
 
       // **The scrim covers the view, not the sidebar.** Switching space with a
       // task open is the behaviour this protects.
@@ -142,7 +154,7 @@ void describe('the task drawer', () => {
     }
   });
 
-  void test('takes the full width when there is not 840px to give', async () => {
+  void test('takes the full width when there is not 1120px to give', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 700, height: 900 });
@@ -200,6 +212,15 @@ void describe('the task drawer', () => {
       const box = await h.page.locator('.drawer').boundingBox();
       assert.ok(box);
       assert.equal(Math.round(box.y), 0, 'the drawer opened off-screen');
+      /*
+       * **Wait for the panel, not for a duration.** The drawer's shell is
+       * rendered by `SpaceLayout` the moment `?task=` is set, while its
+       * contents are portalled in by `BoardScreen` once the task resolves — so
+       * `.drawer` can exist with nothing in it for a frame. Asserting after a
+       * fixed sleep made this flaky: it failed once with `{close: 0, head: 0}`
+       * and passed on the next run unchanged.
+       */
+      await h.page.locator('.panel-head').waitFor({ timeout: 10_000 });
       assert.ok(await h.page.locator('.panel-close').isVisible(), 'no way to close it is visible');
 
       await h.page.keyboard.press('Escape');

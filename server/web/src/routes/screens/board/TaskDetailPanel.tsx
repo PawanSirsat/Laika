@@ -1,24 +1,26 @@
 import { useEffect, useRef, useState } from 'react';
-import { AssignControl } from './AssignControl.tsx';
 import { TagPicker } from './TagPicker.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { describeEvent, statusTransition } from '../../../api/activity.ts';
+import { updatedAge } from '../../../api/board-derive.ts';
 import { isAgentComment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
-import {
-  BOARD_COLUMNS,
-  COLUMN_LABELS,
-  blockedState,
-  type BoardColumn,
-} from '../../../api/board-derive.ts';
+import { COLUMN_LABELS, type BoardColumn } from '../../../api/board-derive.ts';
 import { describeActor } from './actor-presentation.ts';
-import { updateTask, type Member, type Task } from '../../../api/tasks.ts';
+import {
+  listWatchers,
+  unwatchTask,
+  updateTask,
+  watchTask,
+  type Member,
+  type Task,
+} from '../../../api/tasks.ts';
+import { TaskMeta } from '../task/TaskMeta.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
 import { DependenciesSection } from '../task/DependenciesSection.tsx';
-import { WatchersSection } from '../task/WatchersSection.tsx';
 import { CommentBody } from '../task/CommentBody.tsx';
 import { CommentComposer } from '../task/CommentComposer.tsx';
 import {
@@ -26,8 +28,6 @@ import {
   demoClaimLock,
   DEMO_HANDOFF_ENABLED,
 } from '../../../demo/agent-runtime.ts';
-import { DemoNotice } from '../../../components/DemoNotice.tsx';
-import { PRIORITIES } from '../../../api/tasks.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -119,6 +119,47 @@ export function TaskDetailPanel({
    * "no such thing" rather than "not loaded yet".
    */
   const claimLock = demoClaimLock(task, now);
+
+  /**
+   * Who is watching, read once and used twice — the header's Watch button and
+   * the rail's list. Two independent reads would let the button and the list
+   * disagree about whether *you* are on it.
+   */
+  const [watchers, setWatchers] = useState<readonly string[] | undefined>(undefined);
+  const [watchBusy, setWatchBusy] = useState(false);
+  const watching = meId !== undefined && watchers?.includes(meId) === true;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    listWatchers(task.id, controller.signal)
+      .then((list) => {
+        if (!controller.signal.aborted) setWatchers(list.watchers);
+      })
+      .catch(() => {
+        // The rail says it could not read rather than claiming nobody watches.
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [task.id]);
+
+  const toggleWatch = async (): Promise<void> => {
+    setWatchBusy(true);
+    try {
+      await (watching ? unwatchTask(task.id) : watchTask(task.id));
+      /*
+       * Re-read rather than patch locally. Watching is **implicit as well as
+       * explicit** — commenting makes you a watcher — so the server's list is
+       * not always ours plus or minus one.
+       */
+      const list = await listWatchers(task.id);
+      setWatchers(list.watchers);
+    } catch {
+      // The button returns to its previous label; nothing claims to have changed.
+    } finally {
+      setWatchBusy(false);
+    }
+  };
   /*
    * **Changes are commits**, filtered out of the activity this panel already
    * loaded — `webhook.commit` is written by the GitHub webhook (§10.1). A
@@ -163,8 +204,6 @@ export function TaskDetailPanel({
    * because the design draws it beside the key.
    */
 
-  const blocked = blockedState(task, byId);
-
   return (
     <div
       className="panel"
@@ -175,23 +214,22 @@ export function TaskDetailPanel({
       ref={panelRef}
     >
       <header className="panel-head">
+        {/*
+          **Key, state, priority — and no title** (LAI-285). The design's header
+          is a status bar: it says *which task and what state* at a glance, and
+          the title belongs in the document below, where it can be as long as it
+          needs to be without pushing the actions off the row.
+        */}
         <div className="panel-head-main">
           <span className="panel-key">{task.key}</span>
-          {/* The title is the text, and clicking it edits it — the design writes
-              it as a heading you type into rather than a field. */}
-          <h2 className="panel-title">
-            <InlineEdit
-              value={task.title}
-              placeholder="Untitled task"
-              shape="line"
-              label="Task title"
-              mayEdit={mayEdit === true}
-              onSave={async (next) => {
-                await updateTask(task.id, { title: next });
-                onTaskEdited();
-              }}
-            />
-          </h2>
+          <span className={`panel-state panel-state-${task.status}`}>
+            <span className="panel-state-dot" aria-hidden="true" />
+            {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
+          </span>
+          <span className={`panel-prio panel-prio-${task.priority}`}>
+            <span className="panel-prio-dot" aria-hidden="true" />
+            {task.priority.toUpperCase()}
+          </span>
         </div>
 
         <div className="panel-head-actions">
@@ -208,7 +246,22 @@ export function TaskDetailPanel({
                 statusRef.current?.focus();
               }}
             >
-              Move
+              <span aria-hidden="true">+</span> Move
+            </button>
+          )}
+
+          {/* Watch is a header action in the design, beside Move — it is a
+              thing you do to the task, not a field describing it. */}
+          {meId !== undefined && (
+            <button
+              type="button"
+              className="panel-head-action"
+              disabled={watchBusy}
+              onClick={() => {
+                void toggleWatch();
+              }}
+            >
+              {watching ? 'Unwatch' : 'Watch'}
             </button>
           )}
 
@@ -258,93 +311,58 @@ export function TaskDetailPanel({
         </div>
       </header>
 
-      <div className="panel-body">
-        <section className="panel-section">
-          <div className="panel-controls">
-            <label className="panel-control">
-              <span className="visually-hidden">Status</span>
-              <select
-                ref={statusRef}
-                value={task.status}
-                disabled={moving}
-                onChange={(event) => {
-                  const to = event.target.value as BoardColumn;
-                  if (to !== task.status) onMove(task.id, to);
-                }}
-              >
-                {BOARD_COLUMNS.map((c) => (
-                  <option key={c} value={c}>
-                    {COLUMN_LABELS[c]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {mayEdit === true ? (
-              <label className={`panel-priority panel-priority-${task.priority}`}>
-                <span className="visually-hidden">Priority</span>
-                <select
-                  value={task.priority}
-                  onChange={(event) => {
-                    void updateTask(task.id, {
-                      priority: event.target.value as (typeof PRIORITIES)[number],
-                    }).then(onTaskEdited);
-                  }}
-                >
-                  {PRIORITIES.map((p) => (
-                    <option key={p} value={p}>
-                      {p.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <span className={`panel-priority panel-priority-${task.priority}`}>
-                {task.priority}
-              </span>
-            )}
-
-            {task.ready && <span className="marker marker-ready">ready</span>}
-            {blocked === true && <span className="marker marker-blocked">blocked</span>}
-
-            <AssignControl
-              task={task}
-              members={members}
-              meId={meId}
-              mayAssign={mayAssign}
-              onChanged={onAssigned}
+      <div className="panel-columns">
+        <div className="panel-main">
+          {/*
+            The title as a heading, click to edit — the design writes it as text
+            you type into rather than a field.
+          */}
+          <h2 className="panel-title">
+            <InlineEdit
+              value={task.title}
+              placeholder="Untitled task"
+              shape="line"
+              label="Task title"
+              mayEdit={mayEdit === true}
+              onSave={async (next) => {
+                await updateTask(task.id, { title: next });
+                onTaskEdited();
+              }}
             />
+          </h2>
+
+          {/* The design's line under the title: where it came from, its tags,
+              and when it was opened and last touched. */}
+          <div className="panel-byline">
+            <span className="panel-via">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <rect
+                  x="4"
+                  y="8"
+                  width="16"
+                  height="12"
+                  rx="3"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                />
+                <path d="M12 4v4" stroke="currentColor" strokeWidth="2.2" />
+              </svg>
+              {task.created_by_client === null
+                ? `created via ${task.created_via}`
+                : `created via agent · ${task.created_by_client}`}
+            </span>
+            <span className="panel-byline-times">
+              opened {updatedAge(task.created_at, now)} ago · updated{' '}
+              {updatedAge(task.updated_at, now)} ago
+            </span>
           </div>
 
           {/*
-            **The claim, and the deadline it does not have.**
-
-            Who holds it is real: `POST /tasks/:id/claim` is a compare-and-swap
-            that writes `assignee_id` where it is null, so an assignee *is* the
-            lock holder. The **expiry is invented** — nothing expires a claim and
-            no column stores a deadline — which is why the hour is marked as a
-            placeholder rather than printed as a fact. Somebody waiting for a
-            lock to lapse would wait for ever.
+            **The tag editor stays.** The design draws tags as chips in this
+            line and offers no way to change them, because a mockup has nothing
+            to change; keeping the picker is the owner's explicit ask, and it
+            renders the same chips with a way in.
           */}
-          {claimLock !== undefined && task.assignee_id !== null && (
-            <p className="claim-lock">
-              <span className="claim-lock-dot" aria-hidden="true" />
-              {personName(task.assignee_id, members)} has the claim
-              <span className="claim-lock-until"> until {claimLock.label}</span>
-              <span className="claim-lock-tag">placeholder</span>
-            </p>
-          )}
-
-          {moveError !== undefined && (
-            <p className="panel-alert" role="alert">
-              {moveError}
-            </p>
-          )}
-        </section>
-
-        <section className="panel-section">
-          {/* Tags before description: they are what someone came here to
-                change, and the description is read far more than it is edited. */}
           <TagPicker
             slug={slug}
             taskId={task.id}
@@ -352,289 +370,302 @@ export function TaskDetailPanel({
             mayEdit={mayEdit}
             onChanged={onTagsChanged}
           />
-        </section>
 
-        <section className="panel-section">
-          <h3 className="panel-section-title">Description</h3>
           {/*
+            Status, priority, the assignee and the claim line all moved to the
+            meta rail on the right (LAI-285) — the design puts *fields* there and
+            keeps this column for the task as a document.
+          */}
+          {moveError !== undefined && (
+            <p className="panel-alert" role="alert">
+              {moveError}
+            </p>
+          )}
+
+          <section className="panel-section">
+            <h3 className="panel-section-title">Description</h3>
+            {/*
             Click to edit. Still **plain text, not rendered markdown**: a
             renderer is a dependency this task may not add and raw HTML would be
             an injection — the fenced-code handling in a comment is deliberately
             the one exception and is a parser of one construct, not a renderer.
           */}
-          <InlineEdit
-            value={task.description_md ?? ''}
-            placeholder="No description yet. Click to write one."
-            shape="block"
-            label="Description"
-            mayEdit={mayEdit === true}
-            onSave={async (next) => {
-              await updateTask(task.id, { description_md: next });
-              onTaskEdited();
-            }}
-          />
-        </section>
+            <InlineEdit
+              value={task.description_md ?? ''}
+              placeholder="No description yet. Click to write one."
+              shape="block"
+              label="Description"
+              mayEdit={mayEdit === true}
+              onSave={async (next) => {
+                await updateTask(task.id, { description_md: next });
+                onTaskEdited();
+              }}
+            />
+          </section>
 
-        {/*
+          {/*
+            **Acceptance, which nothing has ever shown.** `acceptance_md` is a
+            real column and a real part of how this team writes a task — the
+            design gives it its own quoted block, because "what counts as done"
+            is read at a different moment from the description.
+          */}
+          {task.acceptance_md !== null && task.acceptance_md !== '' && (
+            <blockquote className="panel-acceptance">
+              <p className="panel-acceptance-label">Acceptance</p>
+              <p className="panel-acceptance-body">{task.acceptance_md}</p>
+            </blockquote>
+          )}
+
+          {/*
           **Discovered from** — the callout the design draws with a dashed
           border. `discovered_from` is a real field: it is how a task filed
           mid-work points back at the one that turned it up, and nothing in the
           UI has ever shown it.
         */}
-        {task.discovered_from !== null && (
-          <section className="panel-section">
-            <div className="discovered">
-              <p className="discovered-label">Discovered from</p>
-              {(() => {
-                const source = byId.get(task.discovered_from ?? '');
-                return source === undefined ? (
-                  // An id is not a key; the trail is real either way.
-                  <p className="discovered-body">
-                    A task outside this page. Its id is recorded on this one.
-                  </p>
-                ) : (
-                  <p className="discovered-body">
-                    <span className="discovered-key">{source.key}</span> {source.title}
-                    <span className="discovered-note">
-                      {' '}
-                      — filed while working on it, by {personName(task.created_by, members)}
-                    </span>
-                  </p>
-                );
-              })()}
-            </div>
-          </section>
-        )}
-
-        <DependenciesSection
-          task={task}
-          byId={byId}
-          members={members}
-          theme={theme}
-          mayEdit={mayEdit === true}
-          onChanged={onTaskEdited}
-        />
-
-        <WatchersSection taskId={task.id} members={members} theme={theme} meId={meId} />
-
-        <section className="panel-section">
-          <h3 className="panel-section-title">Provenance</h3>
-          <dl className="panel-facts">
-            <div>
-              <dt>Created via</dt>
-              <dd>
-                <code>{task.created_via}</code>
-                {task.created_via === 'mcp' && <span className="marker marker-agent">agent</span>}
-              </dd>
-            </div>
-            <div>
-              <dt>Created by</dt>
-              <dd>{personName(task.created_by, members)}</dd>
-            </div>
-            {/*
-              **The client that made it, by name.** `created_by_client` is
-              derived from the creating token (`mira-cli`, not `api`) and is
-              never stored on the task — so it cannot go stale when a token is
-              renamed. `null` means there is no client to name: a browser
-              session, or a token since deleted. That is not "unknown", and the
-              channel above already says what it was.
-            */}
-            {task.created_by_client !== null && (
-              <div>
-                <dt>Client</dt>
-                <dd>
-                  <code>{task.created_by_client}</code>
-                  {agentBuild !== undefined && (
-                    <span className="panel-agent-build">
-                      {' '}
-                      {agentBuild.version} · {agentBuild.scope}
-                    </span>
-                  )}
-                </dd>
+          {task.discovered_from !== null && (
+            <section className="panel-section">
+              <div className="discovered">
+                <p className="discovered-label">Discovered from</p>
+                {(() => {
+                  const source = byId.get(task.discovered_from ?? '');
+                  return source === undefined ? (
+                    // An id is not a key; the trail is real either way.
+                    <p className="discovered-body">
+                      A task outside this page. Its id is recorded on this one.
+                    </p>
+                  ) : (
+                    <p className="discovered-body">
+                      <span className="discovered-key">{source.key}</span> {source.title}
+                      <span className="discovered-note">
+                        {' '}
+                        — filed while working on it, by {personName(task.created_by, members)}
+                      </span>
+                    </p>
+                  );
+                })()}
               </div>
-            )}
-          </dl>
-
-          {agentBuild !== undefined && (
-            <DemoNotice what="The client's version and token scope are placeholders — Laika stores the client's name but not its build, and a task does not carry the token's scope." />
+            </section>
           )}
-        </section>
 
-        {/*
-          The old `Blocked by` list lived here and is now `DependenciesSection`
-          above — which shows both directions, names each blocker's status and
-          assignee, and can add and remove them (LAI-233).
-        */}
+          <DependenciesSection
+            task={task}
+            byId={byId}
+            members={members}
+            theme={theme}
+            mayEdit={mayEdit === true}
+            onChanged={onTaskEdited}
+          />
 
-        {detail.status === 'loading' ? (
-          <LoadingState shape="row" count={3} label="Loading comments and activity" />
-        ) : detail.status === 'error' ? (
-          <ApiErrorState error={detail.error} resource="this task" onRetry={detail.reload} />
-        ) : (
-          <>
-            {/*
+          {/*
+            Watchers and provenance are fields, so they live on the meta rail
+            too (LAI-285). What stays in this column is the task itself: title,
+            description, acceptance, what it waits on, and the conversation.
+          */}
+
+          {detail.status === 'loading' ? (
+            <LoadingState shape="row" count={3} label="Loading comments and activity" />
+          ) : detail.status === 'error' ? (
+            <ApiErrorState error={detail.error} resource="this task" onRetry={detail.reload} />
+          ) : (
+            <>
+              {/*
               **Three tabs, as the design has it.** `Changes` is the commits
               this task's work produced — `webhook.commit` activity rows, which
               the GitHub webhook writes. It is a filter over activity rather
               than a second request, so it cannot disagree with the tab beside
               it, and it is empty rather than absent when no repo is wired.
             */}
-            <div className="panel-tabs" role="tablist" aria-label="Task detail">
-              {(
-                [
-                  ['comments', 'Comments', detail.comments.length],
-                  ['activity', 'Activity', detail.activity.length],
-                  ['changes', 'Changes', changes.length],
-                ] as const
-              ).map(([id, label, count]) => (
-                <button
-                  key={id}
-                  type="button"
-                  role="tab"
-                  id={`tab-${id}`}
-                  aria-selected={tab === id}
-                  aria-controls={`panel-${id}`}
-                  className={tab === id ? 'panel-tab panel-tab-on' : 'panel-tab'}
-                  onClick={() => {
-                    setTab(id);
-                  }}
-                >
-                  {label} <span className="panel-tab-count">{count}</span>
-                </button>
-              ))}
-            </div>
+              <div className="panel-tabs" role="tablist" aria-label="Task detail">
+                {(
+                  [
+                    ['comments', 'Comments', detail.comments.length],
+                    ['activity', 'Activity', detail.activity.length],
+                    ['changes', 'Changes', changes.length],
+                  ] as const
+                ).map(([id, label, count]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    role="tab"
+                    id={`tab-${id}`}
+                    aria-selected={tab === id}
+                    aria-controls={`panel-${id}`}
+                    className={tab === id ? 'panel-tab panel-tab-on' : 'panel-tab'}
+                    onClick={() => {
+                      setTab(id);
+                    }}
+                  >
+                    {label} <span className="panel-tab-count">{count}</span>
+                  </button>
+                ))}
+              </div>
 
-            <section
-              className="panel-section"
-              id="panel-comments"
-              role="tabpanel"
-              aria-labelledby="tab-comments"
-              hidden={tab !== 'comments'}
-            >
-              {detail.comments.length === 0 ? (
-                <EmptyState headline="No comments yet" />
-              ) : (
-                <ul className="panel-comments">
-                  {detail.comments.map((comment) => {
-                    const ink =
-                      comment.author_id === null
-                        ? undefined
-                        : avatarColor(comment.author_id, theme);
-                    return (
-                      <li key={comment.id} className="panel-comment">
-                        <div className="panel-comment-head">
-                          <span
-                            className="comment-avatar"
-                            aria-hidden="true"
-                            {...(ink === undefined
-                              ? {}
-                              : { style: { background: ink.background, color: ink.foreground } })}
-                          >
-                            {initials(personName(comment.author_id, members))}
-                          </span>
-                          <span className="panel-comment-author">
-                            {personName(comment.author_id, members)}
-                          </span>
-                          {/*
+              <section
+                className="panel-section"
+                id="panel-comments"
+                role="tabpanel"
+                aria-labelledby="tab-comments"
+                hidden={tab !== 'comments'}
+              >
+                {detail.comments.length === 0 ? (
+                  <EmptyState headline="No comments yet" />
+                ) : (
+                  <ul className="panel-comments">
+                    {detail.comments.map((comment) => {
+                      const ink =
+                        comment.author_id === null
+                          ? undefined
+                          : avatarColor(comment.author_id, theme);
+                      return (
+                        <li key={comment.id} className="panel-comment">
+                          <div className="panel-comment-head">
+                            <span
+                              className="comment-avatar"
+                              aria-hidden="true"
+                              {...(ink === undefined
+                                ? {}
+                                : { style: { background: ink.background, color: ink.foreground } })}
+                            >
+                              {initials(personName(comment.author_id, members))}
+                            </span>
+                            <span className="panel-comment-author">
+                              {personName(comment.author_id, members)}
+                            </span>
+                            {/*
                             **`AGENT`, from `created_via`.** A comment carries
                             the channel it arrived by, so this is a fact rather
                             than a guess — `mcp` is an agent and nothing else is.
                           */}
-                          {isAgentComment(comment) && (
-                            <span className="marker marker-agent">agent</span>
-                          )}
-                          {comment.edited_at !== null && (
-                            <span className="panel-muted panel-edited">edited</span>
-                          )}
-                          <time
-                            className="panel-time"
-                            dateTime={new Date(comment.created_at).toISOString()}
-                          >
-                            {new Date(comment.created_at).toLocaleString()}
-                          </time>
-                        </div>
-                        {/* Fenced code renders as code — the design quotes a
+                            {isAgentComment(comment) && (
+                              <span className="marker marker-agent">agent</span>
+                            )}
+                            {comment.edited_at !== null && (
+                              <span className="panel-muted panel-edited">edited</span>
+                            )}
+                            <time
+                              className="panel-time"
+                              dateTime={new Date(comment.created_at).toISOString()}
+                            >
+                              {new Date(comment.created_at).toLocaleString()}
+                            </time>
+                          </div>
+                          {/* Fenced code renders as code — the design quotes a
                             `POST /tasks/…` line in a bordered box. */}
-                        <CommentBody body={comment.body_md} />
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
+                          <CommentBody body={comment.body_md} />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
 
-              <form
-                className="panel-composer"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const body = draft.trim();
-                  if (body === '') return;
-                  void detail.post(body).then(() => {
-                    setDraft('');
-                  });
-                }}
-              >
-                <CommentComposer
-                  slug={slug}
-                  value={draft}
-                  busy={detail.posting}
-                  onChange={setDraft}
-                  onSubmit={() => {
+                <form
+                  className="panel-composer"
+                  onSubmit={(event) => {
+                    event.preventDefault();
                     const body = draft.trim();
                     if (body === '') return;
                     void detail.post(body).then(() => {
                       setDraft('');
                     });
                   }}
-                />
-                {detail.postError !== null && (
-                  <ApiErrorState error={detail.postError} resource="this comment" />
-                )}
-                <Button
-                  type="submit"
-                  busy={detail.posting}
-                  busyLabel="Posting…"
-                  disabled={draft.trim() === ''}
                 >
-                  Comment
-                </Button>
-              </form>
-            </section>
+                  <CommentComposer
+                    slug={slug}
+                    value={draft}
+                    busy={detail.posting}
+                    onChange={setDraft}
+                    onSubmit={() => {
+                      const body = draft.trim();
+                      if (body === '') return;
+                      void detail.post(body).then(() => {
+                        setDraft('');
+                      });
+                    }}
+                    send={
+                      <Button
+                        type="submit"
+                        busy={detail.posting}
+                        busyLabel="Posting…"
+                        disabled={draft.trim() === ''}
+                      >
+                        Comment
+                      </Button>
+                    }
+                  />
+                  {detail.postError !== null && (
+                    <ApiErrorState error={detail.postError} resource="this comment" />
+                  )}
+                </form>
+              </section>
 
-            <section
-              className="panel-section"
-              id="panel-activity"
-              role="tabpanel"
-              aria-labelledby="tab-activity"
-              hidden={tab !== 'activity'}
-            >
-              {detail.activity.length === 0 ? (
-                <p className="panel-muted">Nothing recorded yet.</p>
-              ) : (
-                <ol className="panel-activity">
-                  {detail.activity.map((event) => {
-                    const move = statusTransition(event);
-                    // Not `personName`: on an activity row a null actor is the
-                    // system by CHECK constraint, and "someone edited this
-                    // task" reads as an unidentified human (LAI-411).
-                    const actor = describeActor(event, members);
-                    return (
-                      <li key={event.id} className="panel-event">
-                        <span className="panel-event-who">{actor.name}</span>
-                        {/* The word itself, not a colour — an `agent` and a
+              <section
+                className="panel-section"
+                id="panel-activity"
+                role="tabpanel"
+                aria-labelledby="tab-activity"
+                hidden={tab !== 'activity'}
+              >
+                {detail.activity.length === 0 ? (
+                  <p className="panel-muted">Nothing recorded yet.</p>
+                ) : (
+                  <ol className="panel-activity">
+                    {detail.activity.map((event) => {
+                      const move = statusTransition(event);
+                      // Not `personName`: on an activity row a null actor is the
+                      // system by CHECK constraint, and "someone edited this
+                      // task" reads as an unidentified human (LAI-411).
+                      const actor = describeActor(event, members);
+                      return (
+                        <li key={event.id} className="panel-event">
+                          <span className="panel-event-who">{actor.name}</span>
+                          {/* The word itself, not a colour — an `agent` and a
                               `system` marker must be told apart by someone who
                               cannot separate violet from grey (AC3). */}
-                        {actor.badge !== undefined && (
-                          <span className={`marker marker-${actor.badge}`}>{actor.badge}</span>
-                        )}
-                        <span className="panel-event-what">
-                          {describeEvent(event)}
-                          {move !== undefined && (
-                            <>
-                              {' '}
-                              <code>{move.from}</code> → <code>{move.to}</code>
-                            </>
+                          {actor.badge !== undefined && (
+                            <span className={`marker marker-${actor.badge}`}>{actor.badge}</span>
                           )}
+                          <span className="panel-event-what">
+                            {describeEvent(event)}
+                            {move !== undefined && (
+                              <>
+                                {' '}
+                                <code>{move.from}</code> → <code>{move.to}</code>
+                              </>
+                            )}
+                          </span>
+                          <time
+                            className="panel-time"
+                            dateTime={new Date(event.created_at).toISOString()}
+                          >
+                            {new Date(event.created_at).toLocaleString()}
+                          </time>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </section>
+
+              <section
+                className="panel-section"
+                id="panel-changes"
+                role="tabpanel"
+                aria-labelledby="tab-changes"
+                hidden={tab !== 'changes'}
+              >
+                {changes.length === 0 ? (
+                  <p className="panel-muted">
+                    No commits recorded against this task. Laika learns about them from the GitHub
+                    webhook, so a space with no repo wired has none.
+                  </p>
+                ) : (
+                  <ol className="panel-changes">
+                    {changes.map((event) => (
+                      <li key={`${event.id}-${String(event.seq)}`} className="panel-change">
+                        <span className="panel-change-who">
+                          {describeActor(event, members).name}
                         </span>
+                        <span className="panel-change-what">{describeEvent(event)}</span>
                         <time
                           className="panel-time"
                           dateTime={new Date(event.created_at).toISOString()}
@@ -642,97 +673,85 @@ export function TaskDetailPanel({
                           {new Date(event.created_at).toLocaleString()}
                         </time>
                       </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </section>
-
-            <section
-              className="panel-section"
-              id="panel-changes"
-              role="tabpanel"
-              aria-labelledby="tab-changes"
-              hidden={tab !== 'changes'}
-            >
-              {changes.length === 0 ? (
-                <p className="panel-muted">
-                  No commits recorded against this task. Laika learns about them from the GitHub
-                  webhook, so a space with no repo wired has none.
-                </p>
-              ) : (
-                <ol className="panel-changes">
-                  {changes.map((event) => (
-                    <li key={`${event.id}-${String(event.seq)}`} className="panel-change">
-                      <span className="panel-change-who">{describeActor(event, members).name}</span>
-                      <span className="panel-change-what">{describeEvent(event)}</span>
-                      <time
-                        className="panel-time"
-                        dateTime={new Date(event.created_at).toISOString()}
-                      >
-                        {new Date(event.created_at).toLocaleString()}
-                      </time>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
-
-            {/*
-              The design's footer: the two actions, then who may use them.
-              The note is not decoration — a Viewer sees this panel and every
-              control on it is absent rather than disabled, so without a
-              sentence they are left wondering what they are missing.
-            */}
-            <footer className="panel-foot">
-              <div className="panel-foot-actions">
-                {DEMO_HANDOFF_ENABLED && (
-                  <button
-                    type="button"
-                    className="panel-action panel-action-primary"
-                    onClick={() => {
-                      /*
-                        The refusal lives here, not in `demo/`: it is the
-                        screen's own explanation, and a sentence in that
-                        directory reaches the production bundle — `DEMO_ENABLED`
-                        is a runtime value, so the minifier keeps the text even
-                        when the behaviour is gone.
-                      */
-                      setHandoff(
-                        'Laika has no endpoint that hands a task to a runtime yet, so nothing was queued. This button is part of the imported design.',
-                      );
-                    }}
-                  >
-                    Hand to my agent
-                  </button>
+                    ))}
+                  </ol>
                 )}
+              </section>
+            </>
+          )}
+        </div>
 
-                {mayEdit === true && task.status !== 'review' && task.status !== 'done' && (
-                  <button
-                    type="button"
-                    className="panel-action"
-                    disabled={moving}
-                    onClick={() => {
-                      onMove(task.id, 'review');
-                    }}
-                  >
-                    Move to Review
-                  </button>
-                )}
-              </div>
+        {/*
+          **The meta rail** (LAI-285): the fields, then the two actions and the
+          sentence saying who may use them. The design puts the buttons at the
+          foot of *this* column rather than under the comments, so they stay in
+          view while somebody reads the thread.
+        */}
+        <div className="panel-side">
+          <TaskMeta
+            task={task}
+            members={members}
+            theme={theme}
+            spaceName={slug}
+            meId={meId}
+            mayAssign={mayAssign === true}
+            mayEdit={mayEdit === true}
+            moving={moving}
+            watchers={watchers}
+            claimLock={claimLock}
+            agentBuild={agentBuild}
+            onMove={onMove}
+            onAssigned={onAssigned}
+            onTaskEdited={onTaskEdited}
+            statusRef={statusRef}
+          />
 
-              {handoff !== undefined && (
-                <p className="panel-alert" role="status">
-                  {handoff}
-                </p>
-              )}
+          <div className="panel-side-actions">
+            {DEMO_HANDOFF_ENABLED && (
+              <button
+                type="button"
+                className="panel-action panel-action-primary"
+                onClick={() => {
+                  /*
+                    The refusal lives here, not in `demo/`: it is the screen's
+                    own explanation, and a sentence in that directory reaches
+                    the production bundle — `DEMO_ENABLED` is a runtime value,
+                    so the minifier keeps the text even when the behaviour is
+                    gone.
+                  */
+                  setHandoff(
+                    'Laika has no endpoint that hands a task to a runtime yet, so nothing was queued. This button is part of the imported design.',
+                  );
+                }}
+              >
+                <span aria-hidden="true">▷</span> Hand to my agent
+              </button>
+            )}
 
-              <p className="panel-permission">
-                Members can move and comment. Viewers see this panel read-only.
+            {mayEdit === true && task.status !== 'review' && task.status !== 'done' && (
+              <button
+                type="button"
+                className="panel-action"
+                disabled={moving}
+                onClick={() => {
+                  onMove(task.id, 'review');
+                }}
+              >
+                Move to Review
+              </button>
+            )}
+
+            {handoff !== undefined && (
+              <p className="panel-alert" role="status">
+                {handoff}
               </p>
-            </footer>
-          </>
-        )}
+            )}
+
+            <p className="panel-permission">
+              Members can move and comment. Viewers see this panel read-only.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

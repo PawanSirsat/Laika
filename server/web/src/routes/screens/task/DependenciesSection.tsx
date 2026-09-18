@@ -75,13 +75,24 @@ export function DependenciesSection({
 
   return (
     <section className="panel-section">
-      <h3 className="panel-section-title">
+      <h3 className="panel-section-title dep-title">
         Dependencies
         <span className="panel-count">{task.blocked_by.length + task.blocks.length}</span>
+        <span className="dep-rule" aria-hidden="true" />
+        {mayEdit && !adding && (
+          <button
+            type="button"
+            className="dep-link"
+            onClick={() => {
+              setAdding(true);
+            }}
+          >
+            + Link task
+          </button>
+        )}
       </h3>
 
       <div className="dep-group">
-        <p className="dep-label">Blocked by</p>
         {task.blocked_by.length === 0 ? (
           <p className="panel-muted">Nothing. This task can start whenever someone picks it up.</p>
         ) : (
@@ -90,6 +101,7 @@ export function DependenciesSection({
               <DependencyChip
                 key={id}
                 task={byId.get(id)}
+                relation="Blocked by"
                 members={members}
                 theme={theme}
                 {...(mayEdit
@@ -105,75 +117,60 @@ export function DependenciesSection({
           </ul>
         )}
 
-        {mayEdit &&
-          (adding ? (
-            <div className="dep-add">
-              <label className="visually-hidden" htmlFor="dep-pick">
-                Task this one is blocked by
-              </label>
-              <select
-                id="dep-pick"
-                value={picked}
-                disabled={busy}
-                onChange={(event) => {
-                  setPicked(event.target.value);
-                }}
-              >
-                <option value="">Choose a task…</option>
-                {candidates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.key} — {t.title}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="dep-confirm"
-                disabled={busy || picked === ''}
-                onClick={() => {
-                  void act(() => addDependency(task.id, picked));
-                }}
-              >
-                Link
-              </button>
-              <button
-                type="button"
-                className="dep-cancel"
-                disabled={busy}
-                onClick={() => {
-                  setAdding(false);
-                  setPicked('');
-                  setError(undefined);
-                }}
-              >
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              className="dep-link"
-              onClick={() => {
-                setAdding(true);
+        {mayEdit && adding && (
+          <div className="dep-add">
+            <label className="visually-hidden" htmlFor="dep-pick">
+              Task this one is blocked by
+            </label>
+            <select
+              id="dep-pick"
+              value={picked}
+              disabled={busy}
+              onChange={(event) => {
+                setPicked(event.target.value);
               }}
             >
-              + Link task
+              <option value="">Choose a task…</option>
+              {candidates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.key} — {t.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className="dep-confirm"
+              disabled={busy || picked === ''}
+              onClick={() => {
+                void act(() => addDependency(task.id, picked));
+              }}
+            >
+              Link
             </button>
-          ))}
+            <button
+              type="button"
+              className="dep-cancel"
+              disabled={busy}
+              onClick={() => {
+                setAdding(false);
+                setPicked('');
+                setError(undefined);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
 
       {task.blocks.length > 0 && (
         <div className="dep-group">
-          <p className="dep-label">
-            Blocks
-            {/* Read-only by design — see the note above. */}
-            <span className="dep-label-note">edit these on the task itself</span>
-          </p>
           <ul className="dep-list">
             {task.blocks.map((id) => (
               <DependencyChip
                 key={id}
                 task={byId.get(id)}
+                relation="Blocks"
                 members={members}
                 theme={theme}
                 busy={busy}
@@ -195,13 +192,21 @@ export function DependenciesSection({
 interface DependencyChipProps {
   /** `undefined` when the blocker is outside the loaded page. */
   readonly task: Task | undefined;
+  /**
+   * `Blocked by` or `Blocks` — the **relation**, on the chip.
+   *
+   * The design labels each row with which way the edge points rather than
+   * grouping under two headings. It reads better in a mixed list and it
+   * survives one side being empty, which the headings did not.
+   */
+  readonly relation: string;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   readonly busy: boolean;
   readonly onRemove?: () => void;
 }
 
-function DependencyChip({ task, members, theme, busy, onRemove }: DependencyChipProps) {
+function DependencyChip({ task, relation, members, theme, busy, onRemove }: DependencyChipProps) {
   /*
    * **An id is not a key.** A dependency outside the loaded page cannot be
    * named, and printing the ULID would put `01J8Z…` in front of somebody. It
@@ -211,6 +216,7 @@ function DependencyChip({ task, members, theme, busy, onRemove }: DependencyChip
   if (task === undefined) {
     return (
       <li className="dep-chip dep-chip-unknown">
+        <span className="dep-relation">{relation}</span>
         <span className="dep-chip-title">A task outside this page</span>
         {onRemove !== undefined && (
           <button type="button" className="dep-remove" disabled={busy} onClick={onRemove}>
@@ -227,12 +233,17 @@ function DependencyChip({ task, members, theme, busy, onRemove }: DependencyChip
 
   return (
     <li className="dep-chip">
-      <span className={`dep-status dep-status-${task.status}`}>
-        {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
+      <span className={`dep-relation dep-relation-${relation.split(' ')[0]?.toLowerCase() ?? ''}`}>
+        {relation}
       </span>
       <span className="dep-chip-key">{task.key}</span>
       <span className="dep-chip-title" title={task.title}>
         {task.title}
+      </span>
+      {/* The blocker's own state, on the right where the design puts it — it is
+          the answer to "is this still in my way". */}
+      <span className={`dep-status dep-status-${task.status}`}>
+        {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
       </span>
       <span
         className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
