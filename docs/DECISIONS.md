@@ -3090,3 +3090,100 @@ against `server/`.
 **Multi-project stays.** The prototype hardcodes `laika-core`; that is a
 simplification of a mockup, **not a product decision**, and reading it as one
 would delete a feature nobody voted to remove.
+
+---
+
+## D-060 — Manual card order is a stored per-project `position`. A drag is the
+## only thing that writes it.
+
+**2026-09-18. Owner's request: "user can change the task sequence by drag and
+drop", with a screenshot of the `BACKLOG` lane.** The feature needs an ordering
+the product does not currently have, so the shape of that ordering is a decision
+rather than an implementation detail.
+
+### What is true today, measured
+
+**`tasks` has no ordering column.** §4.5 lists none and `schema.ts` has none.
+Lane order comes from `services/tasks.ts:447` — `orderBy(asc(tasks.updatedAt),
+asc(tasks.id))`.
+
+**That is the LAI-260 defect, on the board instead of the sidebar.** An order
+keyed on `updated_at` moves whenever anything about a task changes: retitle a
+card and it slides to the bottom of its lane; drop one into another lane and it
+lands at the end rather than where it was dropped. The owner's words there —
+*"seque must not be change"* — are the same complaint one screen over, and the
+resolution is the same in kind: **the thing a human arranged must not rearrange
+itself.**
+
+**Cross-lane drag already works.** `KanbanView.tsx` has per-lane `onDragOver` /
+`onDrop` that call `onMove(task.id, column)`. What does not exist is any notion
+of *where in the lane* a card sits. This decision is about that, and only that.
+
+### The decisions
+
+1. **The order is stored on the server and shared by everyone.** Not
+   per-viewer, not `localStorage`. A board is one source of truth (SPEC §1); an
+   order only its arranger can see is a private opinion wearing the board's
+   clothes, and two people would then describe "the top of the backlog"
+   differently.
+
+2. **One sequence per project, not one per lane.** `position` orders every task
+   in the project; a lane draws the subset whose `status` matches, in that
+   sequence. A per-lane sequence would need a position that is only meaningful
+   beside a `status`, and every status change would then have to invent a new
+   one — which is the next decision's problem made permanent.
+
+3. **A cross-lane drop writes both `status` and `position`.** This falls out of
+   (2) and is not optional: with a project-wide sequence, a card dropped at the
+   top of `TODO` would otherwise appear wherever its old rank happens to place
+   it — the middle of the lane, under a pointer that was nowhere near the
+   middle. **Status still moves only through `POST /tasks/:id/status`** (§6.4,
+   LAI-130); the drop sends that and a reorder, and rolls the card back if
+   either fails.
+
+4. **No new `ACTIVITY_TYPES` verb. A reorder writes `task.updated` with
+   `{ field: 'position', from, to }`** — the shape §4.8 already uses for tags.
+   Two reasons, and the second is the load-bearing one:
+
+   - **§4.8's own test fails for a drag.** *"Could a reader answer 'when did this
+     happen?' without inspecting a payload?"* — "when did this card become third
+     in the lane" is not a question the feed is for.
+   - **A new verb is always three owners** (CLAUDE.md §4.4): the client mirrors
+     `ACTIVITY_TYPES` and the dashboard carries wording for every verb. Reusing
+     `task.updated` keeps this at two, which is the difference between a merge
+     procedure and a merge procedure with a third half nobody counted.
+
+   **The row is still written, because SSE needs it.** §11.5 names activity
+   frames after the §4.8 type, so `task.updated` is what tells a second viewer
+   the board moved. **The feed suppresses `field: 'position'` from rendering** —
+   the audit trail keeps every drag, the human-readable list does not show
+   forty of them. Storing and displaying are different questions and this
+   answers them differently on purpose.
+
+5. **The fallback order is deterministic and is not `updated_at`.** Whatever
+   orders rows that have no `position` yet — and rows created after this
+   lands — must not be the column whose instability caused this. A tie is broken
+   by something that does not move on its own.
+
+6. **Drag is not the only way to reorder.** A pointer-only affordance is
+   unusable by keyboard and by screen reader, and a board whose ordering is
+   mouse-exclusive has made the order itself inaccessible. The keyboard path
+   ships with the drag, not after it.
+
+### What this does not decide
+
+**The representation of `position` is CORE's** — sparse integers with a
+rebalance, fractional midpoints, or a lexical rank. The requirement is
+behavioural and is written into LAI-472: a drop moves the dropped card and
+**no other row**, repeated drops into the same gap keep working, and two
+concurrent drags do not silently swap. **Fractional midpoints run out of
+precision after roughly fifty drops into one gap**; that is a trap worth naming
+here so it is tested rather than discovered.
+
+**The List view's sort is untouched.** It has its own column sorting
+(`ListView.tsx`) and gaining a "manual" option is a separate question.
+
+### Revisit when
+
+A project's task count makes a whole-project sequence expensive to rebalance, or
+the owner asks for a per-sprint order that differs from the board's.
