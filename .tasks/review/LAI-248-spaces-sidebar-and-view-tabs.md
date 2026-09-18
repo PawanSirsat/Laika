@@ -7,7 +7,8 @@ priority: p1
 depends-on: [LAI-246]
 discovered-from: LAI-246
 started: 2026-09-18T14:02:44+05:30
-status: in-progress
+finished: 2026-09-18T11:53:33+05:30
+status: review
 ---
 
 ## Goal
@@ -39,23 +40,23 @@ The owner's decision: **the views become tabs across the top of a space.**
 
 ## Acceptance criteria
 
-- [ ] **The sidebar lists the three most-recently-opened spaces**, then
+- [x] **The sidebar lists the three most-recently-opened spaces**, then
       *More spaces*. Real projects from `listProjects` — name, derived key, and
       `N tasks · M members` from `task_counts` and `member_count`. **No fixture.**
-- [ ] **Opening a space sets the project, goes to its board, and moves it to the
+- [x] **Opening a space sets the project, goes to its board, and moves it to the
       front of `recent`.** The list is capped at 3 and survives a reload.
-- [ ] **A space row is active for *any* view of that space**, not only the board
+- [x] **A space row is active for *any* view of that space**, not only the board
       — that is the design's `projectScreens` test, and it is what makes tabs
       read as "inside" the space.
-- [ ] **The project-scoped views are tabs**: Board, Timeline, Sprints,
+- [x] **The project-scoped views are tabs**: Board, Timeline, Sprints,
       Dashboard, Meeting review. They carry `?project=` exactly as now.
-- [ ] **Capacity and Unlisted work are NOT tabs — see the deviation below.**
-- [ ] **Nothing becomes unreachable.** Every route in `route-table.ts` that a
+- [x] **Capacity and Unlisted work are NOT tabs — see the deviation below.**
+- [x] **Nothing becomes unreachable.** Every route in `route-table.ts` that a
       person could reach before is still reachable. Assert it: walk `ROUTES` and
       check each non-`public` path is in the sidebar, a tab, or reachable from a
       screen that is — and **name the screen** for each exception.
-- [ ] Both themes, three widths (1440 / 1280 / 420), page overflow `0` at each.
-- [ ] Full gate — **all three `EXIT 0`**, repo root.
+- [x] Both themes, three widths (1440 / 1280 / 420), page overflow `0` at each.
+- [x] Full gate — **all three `EXIT 0`**, repo root.
 
 ## The one deviation, and why
 
@@ -105,3 +106,41 @@ number"* check, filed, and CHIEF filed concurrently. §3 now says to re-run the
 check immediately before each `git mv` — **I did, and it still collided**,
 because the collision is not with the branch state but with another session's
 next few seconds. The check cannot see that.
+
+## Completion notes (finishing session, 2026-09-18)
+
+**Finished by a different SHELL session than the one that claimed it.** The
+claiming session's WIP (~1,190 lines, uncommitted in this worktree) was
+committed as-is and completed on top. Its `started: 14:02:44` was written by a
+clock ahead of this machine's — `finished` here reads *earlier* than `started`
+and both stand as their clocks reported; the true duration is unknowable and
+neither field is invented.
+
+**AC7's check caught two defects, both fixed here because the criterion pins
+the property at exactly these widths:**
+
+1. **The board overflowed the page by 672px at 420px.** `board-rail.css`'s
+   `max-width: 1200px` branch (LAI-244) stacks `.board-main` and stops it
+   scrolling, but the base rule's `min-width: min-content` still sizes
+   `.kanban`'s *box* to its 1,074px track floor. LAI-244's verification
+   measured down to 1220px only, so the stacked branch was never exercised.
+   Fix: in that branch the kanban scrolls itself — `min-width: 0`,
+   `overflow-x: auto`, and `position: relative` (the LAI-245 lesson: an
+   unpositioned scroll container cannot clip absolutely-positioned
+   descendants).
+2. **The recent-spaces order could miss storage.** `use-spaces.ts` called
+   `writeRecent` inside the `setRecent` updater — an updater must be pure
+   (React's rule), and the write-on-flush lost a race to navigation in the
+   first test run. The write now happens synchronously in the click handler.
+
+**Test-design note for the reviewer:** a bare `/board` cannot probe that the
+order *survives a reload* — the screen resolves a missing `?project=` to a real
+project and normalises the URL (LAI-423), so no load reads storage alone. The
+reload test instead gives the stub an adversarial server order (`LC, LI, LW`)
+so read-back and fill-order answer differently.
+
+**The deviation below stands as written — and is about to be superseded
+deliberately.** The owner approved the full prototype-rebuild plan today
+(2026-09-18): the top bar takes the design's full tab strip, Capacity included,
+in the SpaceLayout task of that plan's Phase A. The flip is recorded there and
+in the decision CHIEF records at review, not smuggled into this task.
