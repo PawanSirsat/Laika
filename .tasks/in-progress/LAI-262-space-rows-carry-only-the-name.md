@@ -2,11 +2,12 @@
 id: LAI-262
 title: 'A space row in the sidebar is a dot and a name, nothing else'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-249
-status: backlog
+started: 2026-09-18T16:18:13+05:30
+status: in-progress
 ---
 
 ## Goal
