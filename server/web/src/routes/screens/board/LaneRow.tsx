@@ -150,6 +150,23 @@ export function LaneRow({
       ]
         .filter((c) => c !== '')
         .join(' ')}
+      /*
+       * **The lanes get the space; the `+` tile gets what it needs.**
+       *
+       * `grid-auto-columns` applies one size to *every* implicit track, and the
+       * tile is a track too — so it claimed a full `1fr` share (measured: 301px
+       * on a 1552px board) to draw a 32px button, and the lanes were short by
+       * exactly that. An explicit template is the only way to size one track
+       * differently from the rest, so the count comes from the data.
+       *
+       * The `minmax` floor is unchanged, so `board-lane-scroll.test.ts`'s
+       * "no lane below 206px, the row scrolls instead" still holds.
+       */
+      style={{
+        gridTemplateColumns: `repeat(${String(lanes.length)}, minmax(var(--lane-floor, 12.875rem), 1fr))${
+          onAddColumn === undefined ? '' : ' auto'
+        }`,
+      }}
     >
       {lanes.map((lane, index) => {
         const { column, tasks } = lane;

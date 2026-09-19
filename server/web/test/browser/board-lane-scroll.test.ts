@@ -512,3 +512,110 @@ void describe('the lanes fill the window (LAI-283)', () => {
     }
   });
 });
+
+/**
+ * A board with **real columns**, so the `+` tile renders.
+ *
+ * The rest of this file predates `board_columns` and has no such route, so it
+ * takes the 404 fallback — which draws one lane per status and, deliberately,
+ * no column controls at all. A layout test for the tile written against that
+ * stub measures a tile that is not there: it passed against the broken layout
+ * and the fixed one alike, which is how the first version of this block was
+ * caught being worthless.
+ */
+const COLUMNS_STUB: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/board-columns': {
+    columns: [
+      // Five, matching what `boardReady` expects of the fallback board — this
+      // fixture differs only in that the columns are *real*, so the tile draws.
+      ['c1', 'Backlog', ['backlog']],
+      ['c2', 'To do', ['todo']],
+      ['c3', 'In progress', ['in_progress']],
+      ['c4', 'Review', ['review']],
+      ['c5', 'Done', ['done']],
+    ].map(([id, name, statuses], position) => ({
+      id,
+      project_id: 'p1',
+      name,
+      position,
+      hidden: false,
+      statuses,
+      primary_status: (statuses as string[])[0],
+    })),
+  },
+};
+
+void describe('the lanes use the width they are given (LAI-290)', () => {
+  void test('no column-sized gap is left beside the add-column tile', async () => {
+    /*
+     * **The `+` tile is a grid item, so it used to get a whole track.**
+     * `grid-auto-columns` sizes *every* implicit track the same, so the tile's
+     * was `minmax(206px, 1fr)` — a full column's share, measured at 301px on a
+     * 1552px board — to draw a 32px button. The lanes were short by exactly
+     * that, which is what the owner saw as empty space on the right.
+     *
+     * Asserted as arithmetic rather than by eye: what the lanes, the gaps and
+     * the tile occupy must account for the whole row.
+     */
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1800, height: 1000 });
+      await boardReady(h);
+
+      const box = await h.page.evaluate(() => {
+        const kanban = document.querySelector('.kanban');
+        if (kanban === null) return null;
+        const lanes = [...document.querySelectorAll('.lane')].map(
+          (l) => l.getBoundingClientRect().width,
+        );
+        const tile = document.querySelector('.lane-new');
+        const gap = Number.parseFloat(getComputedStyle(kanban).columnGap) || 0;
+        return {
+          width: kanban.getBoundingClientRect().width,
+          lanes,
+          tile: tile === null ? 0 : tile.getBoundingClientRect().width,
+          gap,
+        };
+      });
+
+      assert.ok(box !== null, 'no board rendered');
+
+      assert.ok(box.tile > 0, 'the add-column tile is not rendered — this test proves nothing');
+
+      const items = box.lanes.length + 1;
+      const used =
+        box.lanes.reduce((n, w) => n + w, 0) + box.tile + box.gap * Math.max(0, items - 1);
+
+      // A pixel or two of rounding is fine; a whole column of slack is the bug.
+      assert.ok(
+        box.width - used < 24,
+        `the lanes left ${String(Math.round(box.width - used))}px unused — the tile is taking a column's share`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the lanes reach the bottom of the window', async () => {
+    // The board is a full-height column; a margin under it is dead space, not
+    // breathing room. The owner's words: "use the space … the bottom as well".
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      const gap = await h.page.evaluate(() => {
+        const lanes = [...document.querySelectorAll('.lane')];
+        const lowest = Math.max(...lanes.map((l) => l.getBoundingClientRect().bottom));
+        return window.innerHeight - lowest;
+      });
+
+      assert.ok(gap < 40, `the lanes stop ${String(Math.round(gap))}px short of the bottom`);
+    } finally {
+      await h.close();
+    }
+  });
+});

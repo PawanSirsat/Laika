@@ -15,7 +15,14 @@
   margin-right: 1.125rem;
 }
 
-.kanban,
+/*
+ * **The list keeps its bottom margin; the board does not.**
+ *
+ * The board is a full-height column that ends at the viewport, so a margin
+ * under it is dead space below the lanes rather than breathing room after
+ * content — the owner's words were *"use the space we have … the bottom as
+ * well"*. A list scrolls the page and still wants the gap.
+ */
 .list {
   margin-bottom: var(--space-6);
 }
@@ -171,6 +178,12 @@
    *
    * The floor is a variable so View settings can narrow or widen the lanes
    * without a second grid rule.
+   */
+  /*
+   * The template is set inline from the lane count (see `LaneRow.tsx`) — the
+   * `+` tile needs an `auto` track while the lanes share the rest, and
+   * `grid-auto-columns` cannot say that. These stay as the fallback for a
+   * render with no inline style.
    */
   grid-auto-flow: column;
   grid-auto-columns: minmax(var(--lane-floor, 12.875rem), 1fr);
