@@ -14,6 +14,7 @@ import {
   blockers,
   byIdIndex,
   groupByColumn,
+  hideOldDone,
   staleFor,
 } from '../../src/api/board-derive.ts';
 import type { BoardColumn } from '../../src/api/columns.ts';
@@ -198,6 +199,56 @@ void describe('groupByColumn (LAI-266)', () => {
       groupByColumn(input, DEFAULT)[2]?.tasks.map((t) => t.id),
       groupByColumn(input, DEFAULT)[2]?.tasks.map((t) => t.id),
     );
+  });
+});
+
+void describe('hideOldDone (LAI-266)', () => {
+  const DAY = 86_400_000;
+  const now = 10 * DAY;
+
+  void test('never means never', () => {
+    const tasks = [task({ id: '1', status: 'done', completed_at: 0 })];
+    const { kept, hidden } = hideOldDone(tasks, null, now);
+
+    assert.equal(kept.length, 1);
+    assert.equal(hidden, 0);
+  });
+
+  void test('drops done work older than the cutoff and keeps the rest', () => {
+    // Both sides of the boundary, or the test passes for a function that hides
+    // everything or nothing.
+    const old = task({ id: '1', status: 'done', completed_at: now - 8 * DAY });
+    const fresh = task({ id: '2', status: 'done', completed_at: now - 2 * DAY });
+    const { kept, hidden } = hideOldDone([old, fresh], 7, now);
+
+    assert.deepEqual(
+      kept.map((t) => t.id),
+      ['2'],
+    );
+    assert.equal(hidden, 1, 'the count is what the board discloses — it must be real');
+  });
+
+  void test('touches nothing that is not done', () => {
+    // `cancelled` is not "finished", and unfinished work has no completion date
+    // to be old. A fixture of each, all older than the cutoff.
+    const tasks = [
+      task({ id: '1', status: 'todo', completed_at: 0 }),
+      task({ id: '2', status: 'in_progress', completed_at: 0 }),
+      task({ id: '3', status: 'review', completed_at: 0 }),
+      task({ id: '4', status: 'cancelled', completed_at: 0 }),
+    ];
+    const { kept, hidden } = hideOldDone(tasks, 1, now);
+
+    assert.equal(kept.length, 4);
+    assert.equal(hidden, 0);
+  });
+
+  void test('keeps a done task whose completion was never recorded', () => {
+    // `completed_at` is null for work that finished before LAI-126 stamped it.
+    // Hiding it would be guessing at an age nobody wrote down.
+    const { kept } = hideOldDone([task({ id: '1', status: 'done', completed_at: null })], 1, now);
+
+    assert.equal(kept.length, 1);
   });
 });
 

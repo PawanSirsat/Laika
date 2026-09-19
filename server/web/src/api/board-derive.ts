@@ -188,6 +188,35 @@ export function byIdIndex(tasks: readonly Task[]): ReadonlyMap<string, Task> {
   return new Map(tasks.map((t) => [t.id, t]));
 }
 
+/**
+ * Drop finished work the board has been told to stop showing (LAI-266).
+ *
+ * **Only `done`, and only when `completed_at` says so.** `cancelled` is not
+ * "finished", and a `done` task with no `completed_at` is one whose history
+ * predates the stamping (`db/backfill.ts` recovers what it can) — hiding it
+ * because a column is missing would be guessing at an age nobody recorded.
+ *
+ * `days === null` is "never", the default, and returns the list untouched.
+ *
+ * Returns the tasks **and** how many went, because the board has to say so: a
+ * filter nobody can see is worse than no filter, and this one removes work
+ * rather than restyling it.
+ */
+export function hideOldDone(
+  tasks: readonly Task[],
+  days: number | null,
+  now: number,
+): { readonly kept: readonly Task[]; readonly hidden: number } {
+  if (days === null) return { kept: tasks, hidden: 0 };
+
+  const cutoff = now - days * 86_400_000;
+  const kept = tasks.filter(
+    (task) => !(task.status === 'done' && task.completed_at !== null && task.completed_at < cutoff),
+  );
+
+  return { kept, hidden: tasks.length - kept.length };
+}
+
 /** A column and the cards in it. */
 export interface Lane {
   readonly column: BoardColumn;

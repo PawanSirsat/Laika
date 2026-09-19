@@ -15,7 +15,7 @@ import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard } from '../../api/use-board.ts';
-import { groupByColumn } from '../../api/board-derive.ts';
+import { groupByColumn, hideOldDone } from '../../api/board-derive.ts';
 import { isFallbackColumn, useColumns } from '../../api/use-columns.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
 import { ColumnDialog } from './board/ColumnDialog.tsx';
@@ -350,12 +350,21 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const group = params.get('group') ?? 'column';
   const grouped = isGroupBy(group);
 
+  /**
+   * The space's own hide-done setting, applied before anything else sees the
+   * tasks — it is not a filter this reader chose, it is the board's shape.
+   */
+  const visibleTasks = useMemo(
+    () => hideOldDone(board.state.tasks, project?.board_hide_done_days ?? null, Date.now()),
+    [board.state.tasks, project?.board_hide_done_days],
+  );
+
   const lanes = useMemo(
     () =>
       grouped
-        ? groupLanes(board.state.tasks, group, { members, sprintLabels })
-        : groupByColumn(board.state.tasks, columns.visible),
-    [grouped, group, board.state.tasks, columns.visible, members, sprintLabels],
+        ? groupLanes(visibleTasks.kept, group, { members, sprintLabels })
+        : groupByColumn(visibleTasks.kept, columns.visible),
+    [grouped, group, visibleTasks.kept, columns.visible, members, sprintLabels],
   );
 
   const shownLanes = useMemo(
@@ -374,8 +383,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * list view — one control with two behaviours depending on a toggle.
    */
   const tasks = useMemo(
-    () => (needle === '' && !agentOnly ? board.state.tasks : board.state.tasks.filter(matches)),
-    [board.state.tasks, needle, agentOnly, matches],
+    () => (needle === '' && !agentOnly ? visibleTasks.kept : visibleTasks.kept.filter(matches)),
+    [visibleTasks.kept, needle, agentOnly, matches],
   );
 
   /** `S1`, `S2`… in the sprint order the strip shows. Real data. */
@@ -612,6 +621,20 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {grouped && (
         <p className="board-scope" role="status">
           {groupNotice(group)}
+        </p>
+      )}
+
+      {/*
+        **Says what it is hiding.** This setting removes work from the board
+        rather than restyling it, so without a line saying so it is a silent
+        lie — somebody would look for a finished task and conclude it had been
+        deleted. Mandatory, not a nicety.
+      */}
+      {visibleTasks.hidden > 0 && (
+        <p className="board-scope" role="status">
+          {visibleTasks.hidden} finished {visibleTasks.hidden === 1 ? 'task is' : 'tasks are'}{' '}
+          hidden — this space hides work done more than {project?.board_hide_done_days ?? 0}{' '}
+          {project?.board_hide_done_days === 1 ? 'day' : 'days'} ago. Nothing is deleted.
         </p>
       )}
 
