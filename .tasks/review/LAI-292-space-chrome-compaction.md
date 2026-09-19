@@ -135,3 +135,35 @@ narrow — `.space-controls` is `flex: 1`, correct when its row owned the whole
 line and the reason the tabs were pushed off it. Both are now pinned to their
 content inside `.space-bar-top`. **A layout that depends on how wide the
 controls happen to be is not a layout.**
+
+## Superseded in part — 2026-09-19T17:44:36Z
+
+**The first acceptance criterion is no longer true of the code, and it is left
+ticked on purpose.** It was true of what this task built and what was submitted;
+the owner then reversed the design during **LAI-299**, asking for the project
+name on its own line with the view tabs beneath it, and sent a reference image.
+LAI-299 is the later instruction and it wins.
+
+So, for whoever reviews this:
+
+| | LAI-292 built | LAI-299 shipped |
+| --- | --- | --- |
+| identity + view tabs | **one line** | **two lines**, tabs beneath |
+| bar actions | after the tabs, same line | first line, above the tabs |
+
+**Do not test this task against the current bar** — that criterion will fail,
+correctly, and the failure is LAI-299 doing its job rather than this task being
+unmet. Everything else here still holds: the tabs remain a row of their own
+rather than a wrapped remainder, every tab survives every width, and the page
+never scrolls sideways. Those are the properties the guard was really keeping,
+and they are the ones the other session preserved when it flipped the
+assertion.
+
+The test is `browser/space-chrome-compaction.test.ts`. Its `sameLine`
+expectation is now `false`, edited by the other SHELL session under LAI-299 with
+the reason written in above it, and the `1920`-not-`1600` note from this task is
+untouched and still correct.
+
+Unticking the criterion would misrecord what was built; rewriting it would
+rewrite the task after submission. **Superseded, not amended** — the same rule
+`DECISIONS.md` follows.
