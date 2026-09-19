@@ -63,6 +63,8 @@ not shift sideways the moment you point at it, and the grip stays draggable.
 That was already the rule for these controls; only its **scope** changed, from
 `.lane:hover` to `.lane-head:hover`.
 
+**This task's commit contains work that is not this task's** — see below.
+
 **Only `board.css` is touched.** `LaneRow.tsx` emits a `lane-count-${dot}`
 modifier still; it simply has no rules behind it now. Removing the emission is a
 tidy-up for whoever next holds that file, not a behaviour change — flagged to
@@ -71,3 +73,41 @@ the other SHELL session rather than done from here.
 **No task file preceded this**, contrary to §2. The owner asked for it directly
 and asked for it fast; recorded here immediately on completion rather than
 claimed first. Noted in `logs/shell-2026-09-20.md`.
+
+## Contamination — read before reviewing — 2026-09-19T20:59:59Z
+
+**The commit for this task carries the other SHELL session's uncommitted
+LAI-602 work**, in the same file. Do not read it as mine.
+
+Theirs, in `board.css`:
+
+- `.lane-title` — `uppercase` / `0.07em` / `--weight-heavy` / `0.65625rem`
+  replaced with `0.8125rem`, `--weight-semibold`, `--tx`, no transform. Their
+  comment about a column named `To Do` displaying as `TO DO` is with it.
+- `.lane-count` — the monospace face, the `1px solid var(--bd)` border and the
+  `5px` radius removed, with their "quiet filled chip in the body font" comment.
+
+Mine are exactly four, all in `board.css`:
+
+| | from | to |
+| --- | --- | --- |
+| `.lane-head` padding | `0 0.25rem` | `0.5rem 0.625rem` |
+| `.lane-count` padding | `0.0625rem 0.375rem` | `0.1875rem 0.5rem` |
+| grip/menu/order reveal | `.lane:hover` | `.lane-head:hover` |
+| `.lane-count-in_progress`, `.lane-count-done` | present | deleted |
+
+**How it happened.** I staged an explicit path, not `git add -A` — and that was
+not enough. In a shared worktree the *file* can carry another session's
+uncommitted edits even when the path is mine. `git diff --stat` before
+committing would have shown 165 insertions where about 12 were expected; I read
+the stat only afterwards, which is how it was caught.
+
+**Not corrected from here.** They have uncommitted `BoardScreen.tsx` and
+`LaneRow.tsx` in the tree, so they are mid-task in the same area, and rewriting
+a file underneath a live session is worse than the mislabelling. They have been
+told, with both options, and it is their call.
+
+**One judgement to confirm at review**: deleting `.lane-count-in_progress` and
+`.lane-count-done` is mine and follows the owner's *"the color must be constant
+... for that task count"*. It lands on top of their `.lane-count` restyle. If
+their reference keeps a coloured count, mine is the one that is wrong.
