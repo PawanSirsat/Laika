@@ -230,8 +230,9 @@ const STUB: ApiStub = {
   '/api/v1/projects/laika-core/tags': { tags: [] },
 };
 
-/** Measured from `docs/design/Laika Prototype.dc.html`: `206px` lanes, 11px gap. */
-const DESIGN_LANE = 206;
+/** The addendum's column floor (LAI-606): min 256px. The mockup's raw 206 was
+ * mockup-scale and retired with the rest of its px. */
+const DESIGN_LANE = 256;
 
 /**
  * Resize, then **wait for the layout to stop moving** rather than for a clock.

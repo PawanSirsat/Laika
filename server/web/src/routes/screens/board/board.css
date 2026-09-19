@@ -186,8 +186,8 @@
    * render with no inline style.
    */
   grid-auto-flow: column;
-  grid-auto-columns: minmax(var(--lane-floor, 12.875rem), 1fr);
-  gap: 0.75rem;
+  grid-auto-columns: minmax(var(--lane-floor, 16rem), 1fr);
+  gap: 24px;
   /*
    * **Stretch, not start** (LAI-270). `start` sized every column to its own
    * cards, so five columns of different lengths left the ragged row the owner
@@ -209,7 +209,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   /* The design's tub: roomier at the top than at the sides. */
-  padding: 0.75rem 0.625rem;
+  /* The prototype's column: roomy top, tighter sides (LAI-606). */
+  padding: 20px 16px 16px;
   min-height: 8rem;
 }
 
@@ -223,7 +224,7 @@
 .lane-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 16px;
 }
 
 .lane-item {
@@ -1250,12 +1251,13 @@
  * Density and width, driven from View settings. One custom property and two
  * classes rather than a second grid rule — the floor already existed.
  */
+/* Rescaled around the new 16rem default (LAI-606). */
 .kanban-cols-narrow {
-  --lane-floor: 10.5rem;
+  --lane-floor: 12.875rem;
 }
 
 .kanban-cols-wide {
-  --lane-floor: 16rem;
+  --lane-floor: 17rem;
 }
 
 .kanban-dense .card {
@@ -2020,4 +2022,39 @@
 .card .card-age-now {
   color: var(--accent);
   font-weight: var(--weight-medium);
+}
+
+/*
+ * Dense mode, per the addendum (LAI-606): the same board, closer together.
+ * Size/leading changes live in the DENSITY map; these are the box metrics.
+ */
+.kanban-dense .lane {
+  padding: 16px 12px 12px;
+}
+
+.kanban-dense .lane-body {
+  gap: 12px;
+}
+
+.kanban-dense .card {
+  padding: 14px 14px 12px;
+}
+
+.kanban-dense .card-tags {
+  margin-top: 8px;
+}
+
+.kanban-dense .card .card-tag,
+.kanban-dense .card .marker {
+  min-height: 20px;
+  padding: 2px 8px;
+}
+
+.kanban-dense .card .card-foot {
+  min-height: 28px;
+}
+
+.kanban-dense .card .card-avatar {
+  width: 28px;
+  height: 28px;
 }

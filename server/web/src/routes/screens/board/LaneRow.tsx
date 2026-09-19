@@ -165,11 +165,11 @@ export function LaneRow({
        * exactly that. An explicit template is the only way to size one track
        * differently from the rest, so the count comes from the data.
        *
-       * The `minmax` floor is unchanged, so `board-lane-scroll.test.ts`'s
+       * The floor moved to 16rem (256px) with the prototype restyle (LAI-606);
        * "no lane below 206px, the row scrolls instead" still holds.
        */
       style={{
-        gridTemplateColumns: `repeat(${String(lanes.length)}, minmax(var(--lane-floor, 12.875rem), 1fr))${
+        gridTemplateColumns: `repeat(${String(lanes.length)}, minmax(var(--lane-floor, 16rem), 1fr))${
           onAddColumn === undefined ? '' : ' auto'
         }`,
       }}
