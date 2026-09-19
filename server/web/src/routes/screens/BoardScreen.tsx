@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
@@ -21,7 +21,7 @@ import { setHideDoneAfter } from '../../api/projects.ts';
 import { ColumnDialog } from './board/ColumnDialog.tsx';
 import { ViewSettings } from './board/ViewSettings.tsx';
 import { useViewPreferences } from './board/use-view-preferences.ts';
-import { groupLanes, groupNotice, isGroupBy } from './board/group-lanes.ts';
+import { groupNotice, groupSwimlanes, isGroupBy } from './board/group-lanes.ts';
 import type { BoardColumn } from '../../api/columns.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
@@ -359,20 +359,48 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     [board.state.tasks, project?.board_hide_done_days],
   );
 
-  const lanes = useMemo(
-    () =>
-      grouped
-        ? groupLanes(visibleTasks.kept, group, { members, sprintLabels })
-        : groupByColumn(visibleTasks.kept, columns.visible),
-    [grouped, group, visibleTasks.kept, columns.visible, members, sprintLabels],
+  /**
+   * Search and the agent toggle are applied **before** grouping, not after.
+   *
+   * A swimlane's count is the number on its header, and filtering afterwards
+   * would leave that number describing a set the row no longer draws.
+   */
+  const shownTasks = useMemo(
+    () => (needle === '' && !agentOnly ? visibleTasks.kept : visibleTasks.kept.filter(matches)),
+    [visibleTasks.kept, needle, agentOnly, matches],
   );
 
+  const collapsedGroups = useMemo(
+    () => new Set(prefs.preferences.collapsedGroups),
+    [prefs.preferences.collapsedGroups],
+  );
+
+  const toggleGroup = useCallback(
+    (key: string) => {
+      const next = new Set(prefs.preferences.collapsedGroups);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      prefs.set({ ...prefs.preferences, collapsedGroups: [...next] });
+    },
+    [prefs],
+  );
+
+  /** The plain board: one row of columns. */
   const shownLanes = useMemo(
+    () => groupByColumn(shownTasks, columns.visible),
+    [shownTasks, columns.visible],
+  );
+
+  /**
+   * The grouped board: a row per group, each holding **the same columns**.
+   * `undefined` when ungrouped, which is what `KanbanView` branches on.
+   */
+  const swimlanes = useMemo(
     () =>
-      needle === '' && !agentOnly
-        ? lanes
-        : lanes.map((lane) => ({ ...lane, tasks: lane.tasks.filter(matches) })),
-    [lanes, needle, agentOnly, matches],
+      grouped
+        ? groupSwimlanes(shownTasks, group, columns.visible, { members, sprintLabels })
+        : undefined,
+    [grouped, group, shownTasks, columns.visible, members, sprintLabels],
   );
 
   /**
@@ -382,10 +410,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * would have left search working on the board and silently doing nothing in
    * list view — one control with two behaviours depending on a toggle.
    */
-  const tasks = useMemo(
-    () => (needle === '' && !agentOnly ? visibleTasks.kept : visibleTasks.kept.filter(matches)),
-    [visibleTasks.kept, needle, agentOnly, matches],
-  );
+  const tasks = shownTasks;
 
   /** `S1`, `S2`… in the sprint order the strip shows. Real data. */
   /** What the panel shows as removable chips — the same params the bar writes. */
@@ -404,10 +429,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const editingColumn =
     editing === undefined ? undefined : columns.visible.find((c) => c.id === editing);
 
-  const shownCount = useMemo(
-    () => shownLanes.reduce((n, lane) => n + lane.tasks.length, 0),
-    [shownLanes],
-  );
+  const shownCount = shownTasks.length;
 
   // Read from the board's own list so the panel re-renders after a move —
   // holding a copy would show a stale status the moment the drag succeeded.
@@ -578,7 +600,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         <ColumnDialog
           column={editingColumn}
           all={columns.visible}
-          taskCount={lanes.find((l) => l.column.id === editingColumn.id)?.tasks.length ?? 0}
+          taskCount={shownTasks.filter((t) => editingColumn.statuses.includes(t.status)).length}
           busy={columns.busy}
           error={columns.error}
           onRename={(name) => {
@@ -703,6 +725,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           ) : (
             <KanbanView
               lanes={shownLanes}
+              {...(swimlanes === undefined ? {} : { swimlanes })}
+              collapsed={collapsedGroups}
+              onToggleGroup={toggleGroup}
               byId={board.byId}
               members={members}
               theme={theme}

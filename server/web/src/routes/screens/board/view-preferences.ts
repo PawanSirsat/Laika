@@ -36,12 +36,22 @@ export interface ViewPreferences {
   readonly fields: CardFields;
   readonly density: Density;
   readonly columnWidth: ColumnWidth;
+  /**
+   * Swimlane keys this reader has collapsed (LAI-290).
+   *
+   * Personal, like the rest of this record — one person folding away a
+   * colleague's row should not fold it away for everyone. Keys are the
+   * grouping value (a user id, a priority, `''` for Unassigned), so they stay
+   * meaningful when the grouping changes back.
+   */
+  readonly collapsedGroups: readonly string[];
 }
 
 export const DEFAULT_PREFERENCES: ViewPreferences = Object.freeze({
   fields: ALL_FIELDS,
   density: 'standard',
   columnWidth: 'standard',
+  collapsedGroups: Object.freeze([]) as readonly string[],
 });
 
 /** How many projects' preferences to keep. Same shape as `promote()` in `spaces.ts`. */
@@ -78,6 +88,11 @@ function normalise(value: unknown): ViewPreferences {
 
   const density = raw.density;
   const columnWidth = raw.columnWidth;
+  // Anything that is not an array of strings degrades to "nothing collapsed",
+  // the same field-by-field posture as the rest of this function.
+  const collapsed = Array.isArray(raw.collapsedGroups)
+    ? (raw.collapsedGroups as unknown[]).filter((k): k is string => typeof k === 'string')
+    : [];
 
   return {
     fields: fields as unknown as CardFields,
@@ -89,6 +104,7 @@ function normalise(value: unknown): ViewPreferences {
       typeof columnWidth === 'string' && WIDTHS.includes(columnWidth)
         ? (columnWidth as ColumnWidth)
         : DEFAULT_PREFERENCES.columnWidth,
+    collapsedGroups: collapsed,
   };
 }
 
@@ -96,6 +112,7 @@ export function isDefault(preferences: ViewPreferences): boolean {
   return (
     preferences.density === DEFAULT_PREFERENCES.density &&
     preferences.columnWidth === DEFAULT_PREFERENCES.columnWidth &&
+    preferences.collapsedGroups.length === 0 &&
     FIELD_KEYS.every((key) => preferences.fields[key])
   );
 }

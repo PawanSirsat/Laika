@@ -1,43 +1,49 @@
-import { statusLabel, type Lane } from '../../../api/board-derive.ts';
+import { groupByColumn, type Lane } from '../../../api/board-derive.ts';
 import type { BoardColumn } from '../../../api/columns.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 
 /**
- * Re-lane the board by something other than its columns (LAI-266).
+ * Grouping the board into swimlanes (LAI-290).
  *
- * Returns the **same `Lane[]`** the column path returns, so there is one lane
- * type and one renderer. The synthetic `BoardColumn` each group carries is not
- * a real row and never reaches the API — `KanbanView` only reads `name`,
- * `statuses` and `id` from it.
+ * ## What this got wrong the first time
  *
- * **These views are read-only, and that is a decision rather than an omission
- * (LAI-288).** A drop under group-by is not one operation: status goes through
- * `POST /tasks/:id/status` with its own validation, assignment through `PATCH`
- * or the compare-and-swap `POST /claim`, priority through `updateTask` — three
- * endpoints, three permission checks, three failure messages. And the keyboard
- * equivalent is unsolved: `.lane-move` is a select *of statuses*, so under
- * group-by-assignee a card would offer a keyboard move that lands somewhere
- * other than where the identical drag would. Shipping the pointer half alone is
- * what `board.css`'s existing rule forbids.
+ * LAI-266 shipped grouping that returned **one lane per group**, so choosing
+ * "group by assignee" made the status columns disappear and replaced them with
+ * a column per person. That is not what grouping means on a board.
+ *
+ * Jira — and every board that has this — keeps the columns and repeats them
+ * inside a **row** per group. `Pawan Sirsat (14)` is a collapsible band, and
+ * inside it are Backlog · To Do · In Progress · Done, holding only his cards.
+ * The columns are the project's real columns in every row; only the tasks
+ * differ.
+ *
+ * So this module returns rows, and the lanes inside each row come from the same
+ * `groupByColumn` the ungrouped board uses. One renderer, one lane type, and
+ * the grouped board cannot drift from the plain one.
+ *
+ * ## Dragging
+ *
+ * Between columns **inside** a swimlane: on, and it means status, exactly as
+ * ungrouped. Between swimlanes: off — that would mean reassigning, which is a
+ * different endpoint with a different permission and no keyboard equivalent
+ * (LAI-288).
  */
 
-export type GroupBy = 'column' | 'assignee' | 'priority' | 'sprint';
+export type GroupBy = 'assignee' | 'priority' | 'sprint';
 
 export function isGroupBy(value: string | undefined): value is GroupBy {
   return value === 'assignee' || value === 'priority' || value === 'sprint';
 }
 
-/** A lane that is not a column. `statuses` is empty — nothing drops here. */
-function synthetic(id: string, name: string, position: number): BoardColumn {
-  return {
-    id: `group:${id}`,
-    project_id: '',
-    name,
-    position,
-    hidden: false,
-    statuses: [],
-    primary_status: null,
-  };
+export interface Swimlane {
+  /** `''` for the Unassigned / No sprint row. Stable across renders. */
+  readonly key: string;
+  readonly name: string;
+  /** A user id, when grouping by assignee, so the row can draw a face. */
+  readonly avatarId?: string | undefined;
+  /** Every card in this row, across all its columns. */
+  readonly count: number;
+  readonly lanes: readonly Lane[];
 }
 
 export interface GroupOptions {
@@ -45,29 +51,56 @@ export interface GroupOptions {
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string; readonly active: boolean }>;
 }
 
-export function groupLanes(tasks: readonly Task[], by: GroupBy, options: GroupOptions): Lane[] {
-  const buckets = new Map<string, { name: string; tasks: Task[] }>();
-  const keyFor = (task: Task): { key: string; name: string } => {
-    if (by === 'assignee') {
-      if (task.assignee_id === null) return { key: '', name: 'Unassigned' };
-      return {
-        key: task.assignee_id,
-        name: options.members.get(task.assignee_id)?.name ?? 'Someone else',
-      };
-    }
-    if (by === 'priority') return { key: task.priority, name: task.priority.toUpperCase() };
+interface Bucket {
+  name: string;
+  avatarId?: string | undefined;
+  tasks: Task[];
+}
 
-    if (task.sprint_id === null) return { key: '', name: 'No sprint' };
+function bucketFor(task: Task, by: GroupBy, options: GroupOptions): { key: string; bucket: Bucket } {
+  if (by === 'assignee') {
+    if (task.assignee_id === null) {
+      return { key: '', bucket: { name: 'Unassigned', tasks: [] } };
+    }
     return {
-      key: task.sprint_id,
-      name: options.sprintLabels.get(task.sprint_id)?.label ?? 'Sprint',
+      key: task.assignee_id,
+      bucket: {
+        name: options.members.get(task.assignee_id)?.name ?? 'Someone else',
+        avatarId: task.assignee_id,
+        tasks: [],
+      },
     };
+  }
+
+  if (by === 'priority') {
+    return { key: task.priority, bucket: { name: task.priority.toUpperCase(), tasks: [] } };
+  }
+
+  if (task.sprint_id === null) return { key: '', bucket: { name: 'No sprint', tasks: [] } };
+  return {
+    key: task.sprint_id,
+    bucket: { name: options.sprintLabels.get(task.sprint_id)?.label ?? 'Sprint', tasks: [] },
   };
+}
+
+/**
+ * Split the board into rows, each holding the whole column set.
+ *
+ * A group with no cards does not appear — a board grouped by assignee should
+ * not draw a row for everybody in the org who happens to have no work.
+ */
+export function groupSwimlanes(
+  tasks: readonly Task[],
+  by: GroupBy,
+  columns: readonly BoardColumn[],
+  options: GroupOptions,
+): Swimlane[] {
+  const buckets = new Map<string, Bucket>();
 
   for (const task of tasks) {
-    const { key, name } = keyFor(task);
+    const { key, bucket } = bucketFor(task, by, options);
     const found = buckets.get(key);
-    if (found === undefined) buckets.set(key, { name, tasks: [task] });
+    if (found === undefined) buckets.set(key, { ...bucket, tasks: [task] });
     else found.tasks.push(task);
   }
 
@@ -83,22 +116,17 @@ export function groupLanes(tasks: readonly Task[], by: GroupBy, options: GroupOp
     return left.name.localeCompare(right.name);
   });
 
-  return entries.map(([key, bucket], index) => ({
-    column: synthetic(key === '' ? 'none' : key, bucket.name, index),
-    tasks: [...bucket.tasks].sort(
-      (a, b) => a.priority.localeCompare(b.priority) || a.number - b.number,
-    ),
+  return entries.map(([key, bucket]) => ({
+    key,
+    name: bucket.name,
+    avatarId: bucket.avatarId,
+    count: bucket.tasks.length,
+    // The same function the ungrouped board uses, against the same columns.
+    lanes: groupByColumn(bucket.tasks, columns),
   }));
 }
 
-/** What the board says when a grouped view has switched drag off. */
+/** What the board says about dragging while grouped. */
 export function groupNotice(by: GroupBy): string {
-  return `Grouped by ${by === 'column' ? 'column' : by} — drag is off. Change a task from its card menu or the task panel.`;
+  return `Grouped by ${by}. Cards move between columns as usual; dragging between rows is not a move.`;
 }
-
-/** Used by the empty-lane copy so a grouped lane does not talk about statuses. */
-export function isSyntheticColumn(column: BoardColumn): boolean {
-  return column.id.startsWith('group:');
-}
-
-export { statusLabel };
