@@ -19,7 +19,15 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
   {
     title: 'Surfaces',
     note: 'Canvas → column → card is the separation model; hover and pill sit beside it.',
-    tokens: ['--bg-canvas', '--bg-column', '--bg-card', '--bg-card-hover', '--bg-pill', '--bg-input', '--sidebar-tint'],
+    tokens: [
+      '--bg-canvas',
+      '--bg-column',
+      '--bg-card',
+      '--bg-card-hover',
+      '--bg-pill',
+      '--bg-input',
+      '--sidebar-tint',
+    ],
   },
   {
     title: 'Borders',

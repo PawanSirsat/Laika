@@ -31,29 +31,30 @@
 :root {
   /* ---- surfaces: canvas → column → card, and the steps are the design ---- */
   --bg-canvas: #0e0f11;
-  --bg-column: #17181b;
-  --bg-card: #202225;
-  --bg-card-hover: #272a2f;
-  --bg-pill: #2a2c31;
+  --bg-column: #141417;
+  --bg-card: #19191d;
+  --bg-card-hover: #1f1f24;
+  --bg-pill: #26262b;
   --bg-input: transparent;
   /* Dark keeps one canvas: the rail is told apart by a border, never a fill. */
   --sidebar-tint: #0e0f11;
 
   /* ---- borders ---- */
-  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-subtle: #232327;
   --border-default: rgba(255, 255, 255, 0.13);
   /*
    * **Cards and columns ask the theme, not the component.** Dark separates by
    * grey and draws no line; light needs one because its greys sit close
    * together. Putting the decision here is what stops a component owning it.
    */
-  --border-card: transparent;
+  /* The final brief gives dark cards a border again — one grey step up. */
+  --border-card: #26262b;
   --border-column: transparent;
 
   /* ---- text ---- */
-  --text-primary: #c9d1d9;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
+  --text-primary: #ececef;
+  --text-secondary: #b4b4bc;
+  --text-muted: #6e6e78;
 
   /* ---- accent: one colour, for "this one" ---- */
   --accent: #a78bfa;
@@ -86,13 +87,13 @@
    */
   --accent-border: rgba(167, 139, 250, 0.55);
   --chip-green-bg: rgba(110, 207, 154, 0.12);
-  --chip-green-border: rgba(110, 207, 154, 0.6);
+  --chip-green-border: rgba(110, 207, 154, 0.3);
   --chip-orange-bg: rgba(227, 177, 92, 0.12);
-  --chip-orange-border: rgba(227, 177, 92, 0.6);
+  --chip-orange-border: rgba(227, 177, 92, 0.3);
   --chip-blue-bg: rgba(123, 176, 245, 0.12);
-  --chip-blue-border: rgba(123, 176, 245, 0.6);
+  --chip-blue-border: rgba(123, 176, 245, 0.3);
   --chip-pink-bg: rgba(239, 143, 181, 0.12);
-  --chip-pink-border: rgba(239, 143, 181, 0.6);
+  --chip-pink-border: rgba(239, 143, 181, 0.3);
   --overdue-border: rgba(242, 115, 115, 0.55);
 
   /*
@@ -127,10 +128,10 @@
   --bg-input: #ffffff;
   --sidebar-tint: #fafafa;
 
-  --border-subtle: #eeeef0;
+  --border-subtle: #ececef;
   --border-default: #e4e4e7;
   --border-card: #e4e4e7;
-  --border-column: #eeeef0;
+  --border-column: transparent;
 
   --text-primary: #18181b;
   --text-secondary: #52525b;
@@ -154,14 +155,14 @@
   --priority-low: #2563eb;
 
   --accent-border: rgba(124, 58, 237, 0.55);
-  --chip-green-bg: rgba(21, 128, 61, 0.1);
-  --chip-green-border: rgba(21, 128, 61, 0.6);
-  --chip-orange-bg: rgba(161, 98, 7, 0.1);
-  --chip-orange-border: rgba(161, 98, 7, 0.6);
-  --chip-blue-bg: rgba(29, 78, 216, 0.1);
-  --chip-blue-border: rgba(29, 78, 216, 0.6);
-  --chip-pink-bg: rgba(190, 24, 93, 0.1);
-  --chip-pink-border: rgba(190, 24, 93, 0.6);
+  --chip-green-bg: rgba(21, 128, 61, 0.12);
+  --chip-green-border: rgba(21, 128, 61, 0.3);
+  --chip-orange-bg: rgba(161, 98, 7, 0.12);
+  --chip-orange-border: rgba(161, 98, 7, 0.3);
+  --chip-blue-bg: rgba(29, 78, 216, 0.12);
+  --chip-blue-border: rgba(29, 78, 216, 0.3);
+  --chip-pink-bg: rgba(190, 24, 93, 0.12);
+  --chip-pink-border: rgba(190, 24, 93, 0.3);
   --overdue-border: rgba(220, 38, 38, 0.55);
 
   --chip-purple: #7c3aed;
@@ -224,7 +225,7 @@
   --space-5: 1.5rem;
   --space-6: 2rem;
 
-  --radius-chip: 3px;
+  --radius-chip: 6px;
   /* The sprint chip's own step — smaller than a tag chip (LAI-606). */
   --radius-xs: 4px;
   /*
@@ -243,8 +244,8 @@
   --chip-padding: 0;
   --chip-border: transparent;
   --chip-bg: transparent;
-  --radius-card: 6px;
-  --radius-control: 6px;
+  --radius-card: 12px;
+  --radius-control: 8px;
   --radius-pill: 999px;
 
   /* Colour only. Nothing else animates. */
