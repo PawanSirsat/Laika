@@ -177,12 +177,24 @@ void describe('the board matches the reference (LAI-270)', () => {
         'the second row is back — the slot should be empty with no filter active',
       );
 
-      // And the filters really are in the bar, not merely gone.
-      assert.ok((await h.page.locator('.space-select').count()) >= 2, 'the filters vanished');
+      /*
+       * And the filters really are reachable, not merely gone.
+       *
+       * **They moved again in LAI-290** — behind the board's own `Filter`
+       * button, which is the reference's shape. The point of this assertion is
+       * unchanged and is the reason it was not simply deleted: *no second row,
+       * and the filters still exist somewhere a person can reach them.*
+       */
+      const filter = h.page.locator('.bt-button', { hasText: 'Filter' });
+      assert.equal(await filter.count(), 1, 'the filters vanished');
+
+      await filter.click();
       assert.match(
-        await h.page.locator('.space-select').first().innerText(),
-        /Priority/,
-        'priority must read as a named dropdown, not a cycling button',
+        await h.page.locator('.bt-pop').innerText(),
+        // Case-insensitive: the panel's labels are uppercased by CSS, so
+        // `innerText` returns `PRIORITY` rather than the source's casing.
+        /priority/i,
+        'priority must be a named control, not a cycling button',
       );
     } finally {
       await h.close();

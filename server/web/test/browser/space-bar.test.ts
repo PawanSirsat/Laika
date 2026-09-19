@@ -219,10 +219,16 @@ void describe('the space bar', () => {
         timeout: 5000,
       });
 
-      // **A dropdown since LAI-270**, as the reference has it — selecting is
-      // what writes the URL now, not pressing a button until it cycles round.
+      /*
+       * **A dropdown since LAI-270**, as the reference has it — selecting is
+       * what writes the URL, not pressing a button until it cycles round.
+       * **Behind `Filter` since LAI-290**, for the same reason: the bar drew it
+       * twice once the board had its own toolbar. What this test protects is
+       * unchanged — choosing a priority writes `?priority=`.
+       */
+      await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
       await h.page
-        .locator('.space-select', { hasText: 'Priority' })
+        .locator('.bt-field', { hasText: 'Priority' })
         .locator('select')
         .selectOption('p1');
       await h.page.waitForFunction(
@@ -335,6 +341,64 @@ void describe('the space bar', () => {
         .first()
         .evaluate((el) => getComputedStyle(el).color);
       assert.notEqual(style.colour, inactive, 'the active tab is not distinguished at all');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * One control per filter, wherever the filter lives (LAI-290).
+ *
+ * The board grew its own `Filter` button while the bar kept Priority, Tag,
+ * Assignee and Ready-only inline, so each of those four was drawn **twice**,
+ * both copies writing the same URL param. Two controls for one piece of state
+ * is a defect even when they agree — they disagree the moment one is changed
+ * from a link.
+ *
+ * The other half is why the bar's copies are *hidden* and not deleted: every
+ * non-board view of a space has no toolbar, and the bar is the only filtering
+ * it has.
+ */
+void describe('the bar does not draw filters a view already owns', () => {
+  void test('the board shows one priority control, not two', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.bt-button').first().waitFor({ timeout: 20_000 });
+
+      assert.equal(
+        await h.page.locator('.space-select').count(),
+        0,
+        'the bar is still drawing its own filters while the board owns them',
+      );
+      assert.equal(
+        await h.page.locator('.bt-button', { hasText: 'Filter' }).count(),
+        1,
+        'the board lost its Filter button',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a view with no toolbar keeps the bar’s own filters', async () => {
+    // The regression the obvious fix would have caused: deleting the four from
+    // `SpaceTopBar` strips filtering from Timeline, Calendar and Capacity,
+    // which have nowhere else to put it.
+    const h = await open('/timeline?project=laika-core', STUB);
+    try {
+      await h.page.locator('.space-bar').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(400);
+
+      assert.equal(
+        await h.page.locator('.bt-button', { hasText: 'Filter' }).count(),
+        0,
+        'the timeline has a board toolbar — this test is no longer measuring anything',
+      );
+      assert.ok(
+        (await h.page.locator('.space-select').count()) >= 2,
+        'the timeline lost its filters — the bar is its only place for them',
+      );
     } finally {
       await h.close();
     }

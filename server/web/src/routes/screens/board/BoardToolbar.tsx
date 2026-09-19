@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Member, TaskPriority } from '../../../api/tasks.ts';
+import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import './board-toolbar.css';
 
 export interface BoardToolbarProps {
@@ -109,6 +110,9 @@ export function BoardToolbar({
     (tag === undefined ? 0 : 1) +
     (ready ? 1 : 0) +
     (agentOnly ? 1 : 0);
+
+  // The bar must not draw these four a second time — see `SpaceFilterClaim`.
+  useClaimSpaceFilters();
 
   const grouped = group !== 'column';
   const groupLabel = GROUPS.find((g) => g.value === group)?.label ?? 'None';

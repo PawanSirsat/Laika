@@ -9,6 +9,7 @@ import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
 import { PresenceStrip } from './PresenceStrip.tsx';
 import { SpaceLive, useLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
+import { SpaceFilterClaim } from './SpaceSlot.tsx';
 import { BAND_SLOT_ID, SLOT_ID } from './SpaceSlot.tsx';
 import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
@@ -154,99 +155,101 @@ function SpaceFrame({
   const assignee = params.get('assignee') ?? undefined;
 
   return (
-    <div className="space">
-      <div className="space-bar">
-        <SpaceTopBar
-          spaceName={spaceName ?? slug}
-          members={members}
-          query={params.get('q') ?? ''}
-          priority={(params.get('priority') ?? undefined) as TaskPriority | undefined}
-          agentOnly={params.get('agent') === 'true'}
-          tags={tags}
-          tag={params.get('tag') ?? undefined}
-          assignee={params.get('assignee') ?? undefined}
-          ready={params.get('ready') === 'true'}
-          onQuery={(value) => {
-            setParam('q', value);
-          }}
-          onPriority={(value) => {
-            setParam('priority', value);
-          }}
-          onAgentOnly={(value) => {
-            setParam('agent', value ? 'true' : undefined);
-          }}
-          onTag={(value) => {
-            setParam('tag', value);
-          }}
-          onAssignee={(value) => {
-            setParam('assignee', value);
-          }}
-          onReady={(value) => {
-            setParam('ready', value ? 'true' : undefined);
-          }}
-          onCreate={() => {
-            // The board owns task creation; Create from any view goes there
-            // with the form open rather than duplicating it per screen.
-            navigate(
-              slug === undefined
-                ? '/board?new=task'
-                : `/board?project=${encodeURIComponent(slug)}&new=task`,
-            );
-          }}
-        />
+    <SpaceFilterClaim>
+      <div className="space">
+        <div className="space-bar">
+          <SpaceTopBar
+            spaceName={spaceName ?? slug}
+            members={members}
+            query={params.get('q') ?? ''}
+            priority={(params.get('priority') ?? undefined) as TaskPriority | undefined}
+            agentOnly={params.get('agent') === 'true'}
+            tags={tags}
+            tag={params.get('tag') ?? undefined}
+            assignee={params.get('assignee') ?? undefined}
+            ready={params.get('ready') === 'true'}
+            onQuery={(value) => {
+              setParam('q', value);
+            }}
+            onPriority={(value) => {
+              setParam('priority', value);
+            }}
+            onAgentOnly={(value) => {
+              setParam('agent', value ? 'true' : undefined);
+            }}
+            onTag={(value) => {
+              setParam('tag', value);
+            }}
+            onAssignee={(value) => {
+              setParam('assignee', value);
+            }}
+            onReady={(value) => {
+              setParam('ready', value ? 'true' : undefined);
+            }}
+            onCreate={() => {
+              // The board owns task creation; Create from any view goes there
+              // with the form open rather than duplicating it per screen.
+              navigate(
+                slug === undefined
+                  ? '/board?new=task'
+                  : `/board?project=${encodeURIComponent(slug)}&new=task`,
+              );
+            }}
+          />
 
-        <ViewTabs
-          currentPath={path}
-          projectSlug={slug}
-          onNavigate={navigate}
-          holds={permissionHolder(orgRole)}
-          counts={{ '/meeting-review': pendingReviews }}
-        />
+          <ViewTabs
+            currentPath={path}
+            projectSlug={slug}
+            onNavigate={navigate}
+            holds={permissionHolder(orgRole)}
+            counts={{ '/meeting-review': pendingReviews }}
+          />
 
-        {/* Where each view puts its own context line and controls. */}
-        <div id={SLOT_ID} className="space-slot" />
-      </div>
+          {/* Where each view puts its own context line and controls. */}
+          <div id={SLOT_ID} className="space-slot" />
+        </div>
 
-      {/*
+        {/*
         Between the bar and WORKING NOW — the design's order is tabs, then
         sprints, then who is working (LAI-272). The board fills this.
       */}
-      <div id={BAND_SLOT_ID} />
+        <div id={BAND_SLOT_ID} />
 
-      {/*
+        {/*
         **WORKING NOW belongs to the board.** The design wraps the presence
         strip, the grid and the rail in one `boardLive` condition (prototype
         line 2273); every other view of a space is a single full-width pane.
         It sat on all of them, which is what made List and Timeline read as the
         board with the middle swapped out.
       */}
-      {path === '/board' && (
-        <PresenceStrip
-          presence={presence}
-          spaceSlug={slug}
-          assignee={assignee}
-          onFilter={(userId) => {
-            setParam('assignee', userId);
-          }}
-        />
-      )}
+        {path === '/board' && (
+          <PresenceStrip
+            presence={presence}
+            spaceSlug={slug}
+            assignee={assignee}
+            onFilter={(userId) => {
+              setParam('assignee', userId);
+            }}
+          />
+        )}
 
-      {children}
+        {children}
 
-      {/*
+        {/*
         The task drawer, over the view and inside it (LAI-252). Mounted here so
         the screen underneath keeps its scroll and its data — a drawer that
         replaced the view would have to rebuild the board on every close.
       */}
-      {params.get('task') !== null && (
-        <TaskDrawer
-          onClose={() => {
-            // `push`ed open, so Back closes it; closing is a replace, or Back
-            // from here would step through the open state again.
-            setParam('task', undefined);
-          }}
-        />
-      )}
-    </div>
+        {params.get('task') !== null && (
+          <TaskDrawer
+            onClose={() => {
+              // `push`ed open, so Back closes it; closing is a replace, or Back
+              // from here would step through the open state again.
+              setParam('task', undefined);
+            }}
+          />
+        )}
+      </div>
+    </SpaceFilterClaim>
   );
 }

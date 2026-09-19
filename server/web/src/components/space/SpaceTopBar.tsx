@@ -5,6 +5,7 @@ import { useTheme } from '../../theme/use-theme.ts';
 import { useLive } from './SpaceLive.tsx';
 import { agentCount, cluster } from './top-bar-derive.ts';
 import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
+import { useSpaceFiltersClaimed } from './SpaceSlot.tsx';
 
 export interface SpaceTopBarProps {
   /**
@@ -97,6 +98,19 @@ export function SpaceTopBar({
   }, []);
   const { shown, overflow } = cluster(members);
   const agents = agentCount(presence?.present);
+
+  /*
+   * **Four of these move out when a view supplies its own filtering** (LAI-290).
+   * The board collapses Priority, Tag, Assignee and Ready-only behind its
+   * `Filter` button, and both copies wrote the same URL params — so on the
+   * board they were two controls for one piece of state.
+   *
+   * Hidden rather than deleted: every other view of a space (Timeline,
+   * Calendar, Capacity) has no toolbar, and the bar is the only filtering it
+   * has. The `Agents` chip stays either way — it carries a live presence count
+   * the Filter panel does not, so it is not the same control.
+   */
+  const ownFilters = !useSpaceFiltersClaimed();
 
   return (
     <div className="space-bar-row">
@@ -221,77 +235,85 @@ export function SpaceTopBar({
           Agents {agents}
         </button>
 
-        {/*
-          **A dropdown, not a cycler** (LAI-270). The reference reads
-          `Priority: all` and opens; a button you press repeatedly to reach p3
-          hides its own options.
-        */}
-        <label className={priority === undefined ? 'space-select' : 'space-select space-chip-on'}>
-          <span className="visually-hidden">Priority</span>
-          <select
-            value={priority ?? ''}
-            onChange={(event) => {
-              onPriority(
-                event.target.value === '' ? undefined : (event.target.value as TaskPriority),
-              );
-            }}
-          >
-            <option value="">Priority: all</option>
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                Priority: {p.toUpperCase()}
-              </option>
-            ))}
-          </select>
-        </label>
+        {ownFilters && (
+          <>
+            {/*
+            **A dropdown, not a cycler** (LAI-270). The reference reads
+            `Priority: all` and opens; a button you press repeatedly to reach p3
+            hides its own options.
+          */}
+            <label
+              className={priority === undefined ? 'space-select' : 'space-select space-chip-on'}
+            >
+              <span className="visually-hidden">Priority</span>
+              <select
+                value={priority ?? ''}
+                onChange={(event) => {
+                  onPriority(
+                    event.target.value === '' ? undefined : (event.target.value as TaskPriority),
+                  );
+                }}
+              >
+                <option value="">Priority: all</option>
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    Priority: {p.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-        {tags.length > 0 && (
-          <label className={tag === undefined ? 'space-select' : 'space-select space-chip-on'}>
-            <span className="visually-hidden">Tag</span>
-            <select
-              value={tag ?? ''}
-              onChange={(event) => {
-                onTag(event.target.value === '' ? undefined : event.target.value);
+            {tags.length > 0 && (
+              <label className={tag === undefined ? 'space-select' : 'space-select space-chip-on'}>
+                <span className="visually-hidden">Tag</span>
+                <select
+                  value={tag ?? ''}
+                  onChange={(event) => {
+                    onTag(event.target.value === '' ? undefined : event.target.value);
+                  }}
+                >
+                  <option value="">Any tag</option>
+                  {tags.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.name} ({t.task_count})
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
+            <label
+              className={assignee === undefined ? 'space-select' : 'space-select space-chip-on'}
+            >
+              <span className="visually-hidden">Assignee</span>
+              <select
+                value={assignee ?? ''}
+                onChange={(event) => {
+                  onAssignee(event.target.value === '' ? undefined : event.target.value);
+                }}
+              >
+                <option value="">Anyone</option>
+                <option value="none">Unassigned</option>
+                {members.map((m) => (
+                  <option key={m.user_id} value={m.user_id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              className={ready ? 'space-chip space-chip-on' : 'space-chip'}
+              aria-pressed={ready}
+              onClick={() => {
+                onReady(!ready);
               }}
             >
-              <option value="">Any tag</option>
-              {tags.map((t) => (
-                <option key={t.name} value={t.name}>
-                  {t.name} ({t.task_count})
-                </option>
-              ))}
-            </select>
-          </label>
+              Ready only
+            </button>
+          </>
         )}
-
-        <label className={assignee === undefined ? 'space-select' : 'space-select space-chip-on'}>
-          <span className="visually-hidden">Assignee</span>
-          <select
-            value={assignee ?? ''}
-            onChange={(event) => {
-              onAssignee(event.target.value === '' ? undefined : event.target.value);
-            }}
-          >
-            <option value="">Anyone</option>
-            <option value="none">Unassigned</option>
-            {members.map((m) => (
-              <option key={m.user_id} value={m.user_id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <button
-          type="button"
-          className={ready ? 'space-chip space-chip-on' : 'space-chip'}
-          aria-pressed={ready}
-          onClick={() => {
-            onReady(!ready);
-          }}
-        >
-          Ready only
-        </button>
 
         {/*
           Where a *view* hangs its own controls — the board's View settings
