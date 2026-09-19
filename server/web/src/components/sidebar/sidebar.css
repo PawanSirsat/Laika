@@ -125,8 +125,8 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  height: 1.9375rem; /* the prototype's 31px rows */
-  padding: 0 0.5625rem;
+  height: 36px; /* the addendum's rows (LAI-606) */
+  padding: 0 12px;
   border-radius: var(--radius-card);
   color: var(--text-secondary);
   text-decoration: none;

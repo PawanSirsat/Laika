@@ -3,7 +3,8 @@
 .strip {
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0.625rem 1.125rem;
+  /* h56: 40px tiles + 8px above and below (LAI-606). */
+  padding: 8px 24px;
   display: flex;
   flex-direction: column;
   gap: 0.5625rem;
@@ -18,7 +19,7 @@
 .strip-all,
 .strip-pager {
   flex: none;
-  height: 2.125rem;
+  height: 40px;
   padding: 0 0.6875rem;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
@@ -68,7 +69,7 @@
 .strip-chip {
   flex: 1 0 11rem;
   min-width: 11rem;
-  height: 2.125rem;
+  height: 40px;
   padding: 0 0.5625rem;
   display: flex;
   flex-direction: column;
@@ -165,7 +166,7 @@
   flex: none;
   display: flex;
   align-items: center;
-  height: 2.125rem;
+  height: 40px;
   margin: 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
@@ -238,7 +239,7 @@
 .strip-chip-ghost {
   display: inline-block;
   width: 9rem;
-  height: 2.125rem;
+  height: 40px;
   border-radius: var(--radius-card);
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);

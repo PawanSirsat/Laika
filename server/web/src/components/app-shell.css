@@ -8,7 +8,8 @@
  * here, beside the rail it describes, rather than guessed at by the overlay.
  */
 .shell {
-  --rail-width: 13.25rem;
+  /* The addendum's 280px rail (LAI-606). */
+  --rail-width: 17.5rem;
   display: flex;
   /*
    * **`height`, not `min-height`** (LAI-601).

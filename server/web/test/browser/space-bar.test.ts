@@ -362,7 +362,7 @@ void describe('the space bar', () => {
     }
   });
 
-  void test('the tabs are the design’s 34px, and the active one is underlined', async () => {
+  void test('the tabs are the addendum’s 44px, and the active one is underlined', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       const active = h.page.locator('.view-tab-active');
@@ -370,14 +370,16 @@ void describe('the space bar', () => {
 
       const box = await active.boundingBox();
       assert.ok(box);
-      assert.equal(Math.round(box.height), 34, 'a tab is the design’s 34px tall');
+      assert.equal(Math.round(box.height), 44, 'a tab is the addendum’s 44px tall');
 
       const style = await active.evaluate((el) => {
         const s = getComputedStyle(el);
         return { border: s.borderBottomWidth, weight: s.fontWeight, colour: s.color };
       });
       assert.equal(style.border, '2px', 'the active tab carries the design’s 2px underline');
-      assert.equal(style.weight, '700');
+      // 500 since LAI-606: the tab role never changes weight on activation —
+      // the accent and the underline carry the state.
+      assert.equal(style.weight, '500');
       // The underline and the text are the same accent, which is what makes
       // the state readable without relying on the colour alone.
       const inactive = await h.page
