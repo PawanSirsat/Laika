@@ -27,7 +27,7 @@
  */
 
 /** The chip colours a tag may take. Each is a token, declared per theme. */
-export const CHIP_COLORS = ['orange', 'green', 'blue', 'pink', 'neutral'] as const;
+export const CHIP_COLORS = ['orange', 'green', 'blue', 'pink', 'purple', 'neutral'] as const;
 export type ChipColor = (typeof CHIP_COLORS)[number];
 
 /**
@@ -38,15 +38,25 @@ export type ChipColor = (typeof CHIP_COLORS)[number];
  * the thing D-027 was right to resist.
  */
 const NAMED: Readonly<Record<string, ChipColor>> = {
-  bug: 'pink',
-  blocked: 'pink',
-  server: 'blue',
-  api: 'blue',
+  // The brief's TAG_COLORS, verbatim (LAI-606): ui amber · server/presence
+  // blue · board/auth green · bug pink · agent/ai purple · the rest grey.
   ui: 'orange',
   design: 'orange',
+  server: 'blue',
+  api: 'blue',
+  presence: 'blue',
   board: 'green',
+  auth: 'green',
   docs: 'green',
+  bug: 'pink',
+  blocked: 'pink',
+  agent: 'purple',
+  ai: 'purple',
   a11y: 'neutral',
+  policy: 'neutral',
+  core: 'neutral',
+  infra: 'neutral',
+  audit: 'neutral',
   chore: 'neutral',
 };
 
@@ -58,17 +68,14 @@ const NAMED: Readonly<Record<string, ChipColor>> = {
  * would not be.
  */
 export function tagColor(tag: string): ChipColor {
-  const key = tag.trim().toLowerCase();
-  const named = NAMED[key];
-  if (named !== undefined) return named;
-
-  let hash = 0;
-  for (let i = 0; i < key.length; i += 1) {
-    hash = (hash * 31 + key.charCodeAt(i)) | 0;
-  }
-
-  // `neutral` is excluded from the hash range: it is the *absence* of a
-  // colour, and a tag should not land there by accident.
-  const palette = CHIP_COLORS.filter((c) => c !== 'neutral');
-  return palette[Math.abs(hash) % palette.length] ?? 'neutral';
+  /*
+   * Unknown tags are **neutral**, not hashed (LAI-606). The hash gave every
+   * new tag a stable colour with no table to maintain — but the brief's map
+   * is exhaustive about which hues *mean* something, and the prototype's own
+   * fallback is grey. A colour that arrives by hash looks deliberate, and a
+   * chip colour that looks deliberate and means nothing is noise with
+   * authority. New meanings earn an entry above.
+   */
+  return NAMED[tag.trim().toLowerCase()] ?? 'neutral';
 }
+

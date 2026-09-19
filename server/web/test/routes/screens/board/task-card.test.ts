@@ -14,6 +14,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { CHIP_COLORS, tagColor } from '../../../../src/routes/screens/board/tag-colors.ts';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { before, describe, test } from 'node:test';
@@ -39,13 +40,45 @@ void describe('tags come from the API', () => {
   });
 });
 
-/*
- * The D-027 "no per-tag colour" suite lived here until LAI-606: the owner
- * reversed that decision against the prototype (tinted, per-type chips), so a
- * guard enforcing the old rule now guards the wrong thing. Its replacement —
- * asserting the TAG_COLORS *mapping* — lands with the mapping itself, in the
- * TAG_COLORS phase, so the assertions and the behaviour arrive together.
- */
+void describe('TAG_COLORS (LAI-606, reversing D-027)', () => {
+  /*
+   * The owner reversed D-027 against the prototype: chips are tinted, one
+   * hue per meaning. The map is asserted verbatim — a hue is a claim that a
+   * word means something, so drift here is a semantic bug, not a style one.
+   */
+  void test('the brief’s mapping, verbatim', () => {
+    for (const [tag, hue] of [
+      ['ui', 'orange'],
+      ['server', 'blue'],
+      ['presence', 'blue'],
+      ['board', 'green'],
+      ['auth', 'green'],
+      ['bug', 'pink'],
+      ['agent', 'purple'],
+      ['ai', 'purple'],
+      ['a11y', 'neutral'],
+      ['policy', 'neutral'],
+      ['core', 'neutral'],
+      ['infra', 'neutral'],
+      ['audit', 'neutral'],
+    ] as const) {
+      assert.equal(tagColor(tag), hue, `${tag} should be ${hue}`);
+    }
+  });
+
+  void test('an unknown tag is neutral, never hashed into meaning', () => {
+    assert.equal(tagColor('some-new-tag'), 'neutral');
+    assert.equal(tagColor('AUTH'), 'green', 'case must not matter');
+  });
+
+  void test('every hue the map hands out has a CSS rule', () => {
+    // A mapping to a class with no rule renders an unstyled chip — the
+    // card-tag-purple gap this test exists to keep closed.
+    for (const hue of CHIP_COLORS) {
+      assert.match(css, new RegExp(`\\.card-tag-${hue}\\b`), `no .card-tag-${hue} rule`);
+    }
+  });
+});
 
 void describe('the blocked banner names its blocker', () => {
   void test('it renders the blocking task, not just the word blocked', () => {
