@@ -2,12 +2,11 @@
 id: LAI-257
 title: 'The task drawer''s content: meta column, dependencies, three tabs'
 area: web
-assignee: shell
+assignee: unclaimed
 priority: p1
 depends-on: [LAI-252]
 discovered-from: LAI-248
-started: 2026-09-19T18:41:55+05:30
-status: in-progress
+status: backlog
 ---
 
 ## Goal
@@ -48,3 +47,10 @@ older reading of §6.4 will break on its first status change.
 
 Watchers is one of the endpoints served with no browser caller today; wiring it
 here closes part of **LAI-458** — the rest lands in LAI-258.
+
+
+## Released once, unstarted
+
+Claimed 2026-09-19T18:41 and released the same hour: the owner redirected to the
+board's top chrome (LAI-292). **No code was written** — the claim commit is the
+only trace, so nothing here is half-built and the next claimant starts clean.
