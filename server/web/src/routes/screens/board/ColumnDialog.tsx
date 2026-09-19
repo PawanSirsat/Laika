@@ -177,9 +177,7 @@ export function ColumnDialog({
                     <span className="cd-from">moves here from {from.name}</span>
                   )}
                   {onlyOne && (
-                    <span className="cd-from cd-from-warn">
-                      a column needs at least one status
-                    </span>
+                    <span className="cd-from cd-from-warn">a column needs at least one status</span>
                   )}
                 </li>
               );
@@ -206,8 +204,8 @@ export function ColumnDialog({
               {column.statuses.length > 0 && (
                 <label className="cd-field">
                   <span className="cd-hint">
-                    Its statuses ({column.statuses.map(statusLabel).join(', ')}) need a column.
-                    Move them to:
+                    Its statuses ({column.statuses.map(statusLabel).join(', ')}) need a column. Move
+                    them to:
                   </span>
                   <select
                     className="cd-select"
@@ -260,8 +258,8 @@ export function ColumnDialog({
 
           {lastColumn && (
             <p className="cd-hint">
-              This is the only column, so it cannot be deleted — its statuses would have nowhere
-              to go. Add another first.
+              This is the only column, so it cannot be deleted — its statuses would have nowhere to
+              go. Add another first.
             </p>
           )}
         </section>

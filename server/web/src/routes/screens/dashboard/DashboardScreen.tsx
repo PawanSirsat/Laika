@@ -657,9 +657,7 @@ export function DashboardScreen() {
                       <span className="dash-stale-age">
                         {updatedAge(task.updated_at, now)} quiet
                       </span>
-                      <span className="dash-stale-status">
-                        {statusLabel(task.status)}
-                      </span>
+                      <span className="dash-stale-status">{statusLabel(task.status)}</span>
                     </span>
                   </li>
                 ))}

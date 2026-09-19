@@ -162,8 +162,9 @@
    * **Implicit tracks, so nothing counts the columns** (LAI-266). This was
    * `repeat(5, minmax(12.875rem, 1fr))` when a board had exactly five lanes.
    *
-   * `repeat()` takes an `<integer>` and **not** a custom property — `repeat(var(--n), …)`
-   * is invalid and silently drops the whole declaration — so the count cannot
+   * `repeat()` takes an `<integer>` and **not** a custom property: a repeat
+   * count written as a variable is invalid and silently drops the whole
+   * declaration, so the count cannot
    * simply be parameterised. `grid-auto-flow: column` with `grid-auto-columns`
    * creates one track per child instead, and the number stops appearing
    * anywhere.
@@ -1290,7 +1291,7 @@
 }
 
 .lane-menu:hover {
-  color: var(--tx1);
+  color: var(--tx);
   background: var(--card);
 }
 
@@ -1349,7 +1350,7 @@
 .lane-order-select {
   font-size: 0.625rem;
   font-family: inherit;
-  color: var(--tx1);
+  color: var(--tx);
   background: var(--card);
   border: 1px solid var(--bd);
   border-radius: var(--radius-sm);
@@ -1373,7 +1374,7 @@
 }
 
 .view-settings-open:hover {
-  color: var(--tx1);
+  color: var(--tx);
   border-color: var(--accb);
 }
 

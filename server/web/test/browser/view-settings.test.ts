@@ -227,7 +227,11 @@ void describe('grouping', () => {
       assert.equal(draggable, 'false', 'cards are still draggable under a grouped view');
 
       const scope = await h.page.locator('.board-scope').first().innerText();
-      assert.match(scope, /drag is off/i, 'a missing affordance with no explanation reads as a bug');
+      assert.match(
+        scope,
+        /drag is off/i,
+        'a missing affordance with no explanation reads as a bug',
+      );
 
       assert.equal(
         await h.page.locator('.lane-grip').count(),
@@ -246,12 +250,18 @@ void describe('column width', () => {
 
     try {
       await openPanel(h);
-      const before = await h.page.locator('.lane').first().evaluate((el) => el.clientWidth);
+      const before = await h.page
+        .locator('.lane')
+        .first()
+        .evaluate((el) => el.clientWidth);
 
       await h.page.locator('input[name="vs-width"]').first().check();
       await h.page.waitForTimeout(150);
 
-      const after = await h.page.locator('.lane').first().evaluate((el) => el.clientWidth);
+      const after = await h.page
+        .locator('.lane')
+        .first()
+        .evaluate((el) => el.clientWidth);
       assert.ok(
         after <= before,
         `narrow should not widen the lanes: ${String(before)} → ${String(after)}`,

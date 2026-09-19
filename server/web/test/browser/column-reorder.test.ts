@@ -129,7 +129,9 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
     },
     '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
     '/api/v1/projects/laika-core/members': {
-      members: [{ user_id: 'u1', name: 'Ada', email: 'a@example.com', role: 'lead', created_at: 1 }],
+      members: [
+        { user_id: 'u1', name: 'Ada', email: 'a@example.com', role: 'lead', created_at: 1 },
+      ],
     },
     '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
     '/api/v1/projects/laika-core/activity': { data: [], next_cursor: null },

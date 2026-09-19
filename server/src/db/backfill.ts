@@ -2,10 +2,7 @@ import { asc, eq } from 'drizzle-orm';
 import { readPayload } from './activity.ts';
 import { type Db } from './client.ts';
 import { activity, boardColumns, projects, tasks } from './schema.ts';
-import {
-  BACKFILL_COLUMNS,
-  createDefaultBoardColumns,
-} from '../services/board-columns.ts';
+import { BACKFILL_COLUMNS, createDefaultBoardColumns } from './board-columns.ts';
 
 /**
  * Recover `started_at` and `completed_at` from the audit trail (LAI-435).

@@ -39,8 +39,7 @@ export interface KanbanViewProps {
   readonly onAddColumn?: (() => void) | undefined;
   readonly onEditColumn?: ((column: BoardColumn) => void) | undefined;
   readonly sprintLabels?:
-    | ReadonlyMap<string, { readonly label: string; readonly active: boolean }>
-    | undefined;
+    ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
 }
 
 /**
@@ -223,12 +222,14 @@ export function KanbanView({
                 className={dot === undefined ? 'lane-dot' : `lane-dot lane-dot-${dot}`}
                 aria-hidden="true"
               />
-              <h3 className="lane-title" id={`lane-${column.id}`} title={column.statuses.map(statusLabel).join(', ')}>
+              <h3
+                className="lane-title"
+                id={`lane-${column.id}`}
+                title={column.statuses.map(statusLabel).join(', ')}
+              >
                 {column.name}
               </h3>
-              <span
-                className={dot === undefined ? 'lane-count' : `lane-count lane-count-${dot}`}
-              >
+              <span className={dot === undefined ? 'lane-count' : `lane-count lane-count-${dot}`}>
                 {tasks.length}
               </span>
 

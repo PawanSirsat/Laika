@@ -92,14 +92,7 @@ export function projectBoardColumnRoutes(options: BoardColumnRouteOptions): Hono
     }
 
     return c.json({
-      columns: updateBoardColumn(
-        sqlite,
-        db,
-        actor,
-        c.req.param('slug'),
-        c.req.param('id'),
-        input,
-      ),
+      columns: updateBoardColumn(sqlite, db, actor, c.req.param('slug'), c.req.param('id'), input),
     });
   });
 

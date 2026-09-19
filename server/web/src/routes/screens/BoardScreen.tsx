@@ -5,7 +5,7 @@ import { LoadingState } from '../../components/LoadingState.tsx';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
-import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
+import { SpaceBand, SpaceBarSlot, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
@@ -493,13 +493,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 board.byId.size === 1 ? 'task' : 'tasks'
               } match`
         }
-      >
-        {/*
-          **The slot band is now always visible on the board**, where it used to
-          collapse whenever nothing was filtered (`.space-slot:empty`). That is
-          a deliberate trade for a permanent place to put this, which is the
-          design's in-bar control.
-        */}
+      />
+
+      {/*
+        **In the bar, not in the slot below it.** The slot collapses when empty
+        (`.space-slot:empty`) and the reference has no band under the tabs, so a
+        permanent control there would add a row to every board.
+      */}
+      <SpaceBarSlot>
         <button
           type="button"
           className="view-settings-open"
@@ -525,7 +526,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           </svg>
           View settings
         </button>
-      </SpaceSlot>
+      </SpaceBarSlot>
 
       {settingsAt !== undefined && (
         <ViewSettings

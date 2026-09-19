@@ -277,6 +277,15 @@ export function SpaceTopBar({
           Ready only
         </button>
 
+        {/*
+          Where a *view* hangs its own controls — the board's View settings
+          today (LAI-266). **In the bar, not in the slot below it**: the slot
+          collapses when empty and the reference has no band under the tabs, so
+          a permanent button there would add a row the design does not have.
+          `sprint-strip.test.ts` guards exactly that.
+        */}
+        <div id="space-bar-actions" className="space-bar-actions" />
+
         <button type="button" className="space-create" onClick={onCreate}>
           <svg
             width="13"

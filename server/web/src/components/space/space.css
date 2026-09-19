@@ -438,3 +438,11 @@
   background: var(--accs);
   color: var(--acc);
 }
+
+/*
+ * Where a view hangs its own control in the bar (LAI-266). Empty for every
+ * screen but the board, and it collapses to nothing when it is.
+ */
+.space-bar-actions {
+  display: contents;
+}

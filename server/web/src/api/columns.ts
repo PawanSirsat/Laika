@@ -50,11 +50,7 @@ export function createColumn(slug: string, name: string): Promise<BoardResponse>
   });
 }
 
-export function renameColumn(
-  slug: string,
-  columnId: string,
-  name: string,
-): Promise<BoardResponse> {
+export function renameColumn(slug: string, columnId: string, name: string): Promise<BoardResponse> {
   return request<BoardResponse>(
     `/projects/${encodeURIComponent(slug)}/board-columns/${encodeURIComponent(columnId)}`,
     { method: 'PATCH', body: { name } },
@@ -120,12 +116,9 @@ export function deleteColumn(
  * Sending the full list rather than a moved-id and a neighbour means a client
  * working from a stale board is refused instead of silently dropping a lane.
  */
-export function reorderColumns(
-  slug: string,
-  columnIds: readonly string[],
-): Promise<BoardResponse> {
-  return request<BoardResponse>(
-    `/projects/${encodeURIComponent(slug)}/board-columns/reorder`,
-    { method: 'POST', body: { column_ids: columnIds } },
-  );
+export function reorderColumns(slug: string, columnIds: readonly string[]): Promise<BoardResponse> {
+  return request<BoardResponse>(`/projects/${encodeURIComponent(slug)}/board-columns/reorder`, {
+    method: 'POST',
+    body: { column_ids: columnIds },
+  });
 }

@@ -186,10 +186,9 @@ describe('the human table (LAI-266)', () => {
     // permits cancellation, so does the human one, and nowhere else. If someone
     // hand-writes the human table later, this is what notices.
     for (const from of ALL) {
-      expect(
-        transitionsFrom(from, 'human').includes('cancelled'),
-        `${from} → cancelled`,
-      ).toBe(ALLOWED_TRANSITIONS[from].includes('cancelled'));
+      expect(transitionsFrom(from, 'human').includes('cancelled'), `${from} → cancelled`).toBe(
+        ALLOWED_TRANSITIONS[from].includes('cancelled'),
+      );
     }
   });
 

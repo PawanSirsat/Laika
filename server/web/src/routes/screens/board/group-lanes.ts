@@ -45,11 +45,7 @@ export interface GroupOptions {
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string; readonly active: boolean }>;
 }
 
-export function groupLanes(
-  tasks: readonly Task[],
-  by: GroupBy,
-  options: GroupOptions,
-): Lane[] {
+export function groupLanes(tasks: readonly Task[], by: GroupBy, options: GroupOptions): Lane[] {
   const buckets = new Map<string, { name: string; tasks: Task[] }>();
   const keyFor = (task: Task): { key: string; name: string } => {
     if (by === 'assignee') {

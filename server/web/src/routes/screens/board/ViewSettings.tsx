@@ -1,11 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { FIELD_KEYS, FIELD_LABELS } from './card-fields.ts';
-import {
-  type ColumnWidth,
-  type Density,
-  type ViewPreferences,
-} from './view-preferences.ts';
+import { type ColumnWidth, type Density, type ViewPreferences } from './view-preferences.ts';
 import './view-settings.css';
 
 export interface ViewSettingsProps {

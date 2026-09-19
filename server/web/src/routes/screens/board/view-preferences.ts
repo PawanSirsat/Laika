@@ -40,8 +40,8 @@ export interface ViewPreferences {
 
 export const DEFAULT_PREFERENCES: ViewPreferences = Object.freeze({
   fields: ALL_FIELDS,
-  density: 'standard' as Density,
-  columnWidth: 'standard' as ColumnWidth,
+  density: 'standard',
+  columnWidth: 'standard',
 });
 
 /** How many projects' preferences to keep. Same shape as `promote()` in `spaces.ts`. */
@@ -66,8 +66,8 @@ function normalise(value: unknown): ViewPreferences {
 
   const raw = value as Record<string, unknown>;
   const storedFields =
-    typeof raw['fields'] === 'object' && raw['fields'] !== null
-      ? (raw['fields'] as Record<string, unknown>)
+    typeof raw.fields === 'object' && raw.fields !== null
+      ? (raw.fields as Record<string, unknown>)
       : {};
 
   const fields = { ...ALL_FIELDS } as Record<string, boolean>;
@@ -76,17 +76,19 @@ function normalise(value: unknown): ViewPreferences {
     if (typeof stored === 'boolean') fields[key] = stored;
   }
 
-  const density = raw['density'];
-  const columnWidth = raw['columnWidth'];
+  const density = raw.density;
+  const columnWidth = raw.columnWidth;
 
   return {
     fields: fields as unknown as CardFields,
-    density: typeof density === 'string' && DENSITIES.includes(density)
-      ? (density as Density)
-      : DEFAULT_PREFERENCES.density,
-    columnWidth: typeof columnWidth === 'string' && WIDTHS.includes(columnWidth)
-      ? (columnWidth as ColumnWidth)
-      : DEFAULT_PREFERENCES.columnWidth,
+    density:
+      typeof density === 'string' && DENSITIES.includes(density)
+        ? (density as Density)
+        : DEFAULT_PREFERENCES.density,
+    columnWidth:
+      typeof columnWidth === 'string' && WIDTHS.includes(columnWidth)
+        ? (columnWidth as ColumnWidth)
+        : DEFAULT_PREFERENCES.columnWidth,
   };
 }
 

@@ -121,11 +121,9 @@ describe('writing', () => {
 
   it('replaces a column’s statuses with PUT', async () => {
     const review = await byName('Review');
-    const res = await send(
-      'PUT',
-      `/api/v1/projects/laika/board-columns/${review.id}/statuses`,
-      { statuses: ['review', 'done'] },
-    );
+    const res = await send('PUT', `/api/v1/projects/laika/board-columns/${review.id}/statuses`, {
+      statuses: ['review', 'done'],
+    });
 
     expect(res.status).toBe(200);
     expect((await byName('Review')).statuses).toEqual(['review', 'done']);
@@ -173,11 +171,9 @@ describe('the body is strict (§6.3)', () => {
 
   it('refuses a status outside the enum', async () => {
     const review = await byName('Review');
-    const res = await send(
-      'PUT',
-      `/api/v1/projects/laika/board-columns/${review.id}/statuses`,
-      { statuses: ['shipped'] },
-    );
+    const res = await send('PUT', `/api/v1/projects/laika/board-columns/${review.id}/statuses`, {
+      statuses: ['shipped'],
+    });
 
     expect(res.status).toBe(422);
   });

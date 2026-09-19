@@ -78,3 +78,24 @@ export function SpaceBand({ children }: SpaceBandProps) {
   if (host === null) return null;
   return createPortal(children, host);
 }
+
+/** Where a view puts its own control in the space bar (LAI-266). */
+export const BAR_SLOT_ID = 'space-bar-actions';
+
+/**
+ * Portal a view-specific control into the space bar.
+ *
+ * Distinct from {@link SpaceSlot}, which renders the row *below* the bar and is
+ * hidden when empty. Anything permanent belongs here, or that row stops
+ * collapsing and the board grows a band the design does not have.
+ */
+export function SpaceBarSlot({ children }: { readonly children: ReactNode }) {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHost(document.getElementById(BAR_SLOT_ID));
+  }, []);
+
+  if (host === null) return null;
+  return createPortal(children, host);
+}

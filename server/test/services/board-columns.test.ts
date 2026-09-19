@@ -4,7 +4,14 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { backfillBoardColumns } from '../../src/db/backfill.ts';
 import { TASK_STATUSES, type OrgRole, type TaskStatus } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, boardColumns, boardColumnStatuses, orgs, projects, users } from '../../src/db/schema.ts';
+import {
+  activity,
+  boardColumns,
+  boardColumnStatuses,
+  orgs,
+  projects,
+  users,
+} from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import {
   createBoardColumn,
@@ -146,7 +153,11 @@ describe('a new project', () => {
   });
 
   it('maps every status exactly once', () => {
-    expect(mappings(projectId).map((m) => m.status).sort()).toEqual([...TASK_STATUSES].sort());
+    expect(
+      mappings(projectId)
+        .map((m) => m.status)
+        .sort(),
+    ).toEqual([...TASK_STATUSES].sort());
   });
 });
 
@@ -220,15 +231,15 @@ describe('the invariant, under any sequence of edits', () => {
       // Every mapping points at a column of this project that still exists.
       const live = new Set(board().map((c) => c.id));
       for (const row of rows) {
-        expect(live.has(row.columnId), `step ${String(step)}: ${row.status} is orphaned`).toBe(true);
+        expect(live.has(row.columnId), `step ${String(step)}: ${row.status} is orphaned`).toBe(
+          true,
+        );
       }
 
       // Positions stay a dense permutation, which is what the reorder park and
       // the delete gap-closing are for.
       const positions = board().map((c) => c.position);
-      expect(positions, `step ${String(step)}: positions`).toEqual(
-        positions.map((_, i) => i),
-      );
+      expect(positions, `step ${String(step)}: positions`).toEqual(positions.map((_, i) => i));
 
       // The primary is the first status, and `null` exactly when there is none.
       // An empty column is legal — `createBoardColumn` makes one — so this
@@ -343,9 +354,9 @@ describe('the database holds its half even when the service is bypassed', () => 
     t.db.delete(projects).where(eq(projects.id, bare)).run();
 
     expect(mappings(bare)).toEqual([]);
-    expect(
-      t.db.select().from(boardColumns).where(eq(boardColumns.projectId, bare)).all(),
-    ).toEqual([]);
+    expect(t.db.select().from(boardColumns).where(eq(boardColumns.projectId, bare)).all()).toEqual(
+      [],
+    );
   });
 
   it('refuses two primaries in one column', () => {
@@ -401,7 +412,10 @@ describe('reordering', () => {
       const order = [...board().map((c) => c.id)].sort(() => next() - 0.5);
       reorderBoardColumns(t.sqlite, t.db, actor(adminId), 'laika', order);
 
-      expect(board().map((c) => c.id), `round ${String(i)}`).toEqual(order);
+      expect(
+        board().map((c) => c.id),
+        `round ${String(i)}`,
+      ).toEqual(order);
       expect(board().map((c) => c.position)).toEqual(order.map((_, n) => n));
     }
   });
@@ -457,14 +471,7 @@ describe('deleting', () => {
     for (;;) {
       const columns = board();
       if (columns.length === 1) break;
-      deleteBoardColumn(
-        t.sqlite,
-        t.db,
-        actor(adminId),
-        'laika',
-        columns[0]!.id,
-        columns[1]!.id,
-      );
+      deleteBoardColumn(t.sqlite, t.db, actor(adminId), 'laika', columns[0]!.id, columns[1]!.id);
     }
 
     const last = board()[0]!;
@@ -512,7 +519,11 @@ describe('editing statuses', () => {
     setColumnStatuses(t.sqlite, t.db, actor(adminId), 'laika', review.id, ['review', 'done']);
 
     expect(byName('Done').statuses).toEqual([]);
-    expect(mappings(projectId).map((m) => m.status).sort()).toEqual([...TASK_STATUSES].sort());
+    expect(
+      mappings(projectId)
+        .map((m) => m.status)
+        .sort(),
+    ).toEqual([...TASK_STATUSES].sort());
   });
 
   it('refuses an empty list', () => {
@@ -554,15 +565,7 @@ describe('permission', () => {
         'forbidden',
       );
       expectApiError(
-        () =>
-          deleteBoardColumn(
-            t.sqlite,
-            t.db,
-            actor(who),
-            'laika',
-            target.id,
-            byName('Done').id,
-          ),
+        () => deleteBoardColumn(t.sqlite, t.db, actor(who), 'laika', target.id, byName('Done').id),
         'forbidden',
       );
       expectApiError(
@@ -630,14 +633,16 @@ describe('the backfill', () => {
 
     expect(backfillBoardColumns(t.db)).toBe(1);
 
-    expect(board().filter((c) => !c.hidden).map((c) => c.name)).toEqual([
-      'Backlog',
-      'To do',
-      'In progress',
-      'Review',
-      'Done',
-    ]);
-    expect(mappings(projectId).map((m) => m.status).sort()).toEqual([...TASK_STATUSES].sort());
+    expect(
+      board()
+        .filter((c) => !c.hidden)
+        .map((c) => c.name),
+    ).toEqual(['Backlog', 'To do', 'In progress', 'Review', 'Done']);
+    expect(
+      mappings(projectId)
+        .map((m) => m.status)
+        .sort(),
+    ).toEqual([...TASK_STATUSES].sort());
   });
 
   it('leaves a project that already has columns alone, on every boot', () => {

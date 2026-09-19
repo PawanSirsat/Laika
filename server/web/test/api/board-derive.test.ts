@@ -98,9 +98,9 @@ void describe('groupByColumn (LAI-266)', () => {
     name: over.id,
     position: 0,
     hidden: false,
-    primary_status: (over.statuses[0] ?? null) as BoardColumn['primary_status'],
+    primary_status: over.statuses[0] ?? null,
     ...over,
-    statuses: over.statuses as BoardColumn['statuses'],
+    statuses: over.statuses,
   });
 
   const DEFAULT: BoardColumn[] = [

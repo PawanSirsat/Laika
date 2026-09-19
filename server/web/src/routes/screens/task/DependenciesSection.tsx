@@ -242,9 +242,7 @@ function DependencyChip({ task, relation, members, theme, busy, onRemove }: Depe
       </span>
       {/* The blocker's own state, on the right where the design puts it — it is
           the answer to "is this still in my way". */}
-      <span className={`dep-status dep-status-${task.status}`}>
-        {statusLabel(task.status)}
-      </span>
+      <span className={`dep-status dep-status-${task.status}`}>{statusLabel(task.status)}</span>
       <span
         className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
         title={who?.name ?? 'Unassigned'}
