@@ -354,6 +354,34 @@ void describe('the keyboard route', () => {
   });
 });
 
+/**
+ * Opacity after the transition has finished.
+ *
+ * These controls fade over `0.12s`, so reading straight after a hover or a
+ * focus samples the **fade**, not the end state — the first version of this
+ * suite asserted `1` and got `0.177275`, which is the kind of failure that
+ * looks like a broken feature and is a broken test.
+ *
+ * Polls until the value stops changing rather than sleeping a guessed 150ms,
+ * so it cannot be made flaky by a slower machine or a longer transition.
+ */
+async function settledOpacity(h: Harness, selector: string, index = 0): Promise<string> {
+  let previous = '';
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const now = await h.page.evaluate(
+      ([sel, i]) => {
+        const el = document.querySelectorAll(sel as string)[i as number];
+        return el === undefined ? 'missing' : getComputedStyle(el).opacity;
+      },
+      [selector, index] as const,
+    );
+    if (now === previous) return now;
+    previous = now;
+    await h.page.waitForTimeout(25);
+  }
+  return previous;
+}
+
 void describe('the head reveals its own chrome', () => {
   /*
    * The grip and the `…` menu are hidden at rest and revealed by hovering **the
@@ -367,66 +395,65 @@ void describe('the head reveals its own chrome', () => {
    */
   void test('hidden at rest, revealed by the head, and not by the body', async () => {
     const h = await open('/board?project=laika-core', stub());
-    const read = async (n: number) =>
-      await h.page.evaluate((i) => {
-        const head = document.querySelectorAll('.lane-head')[i];
-        const o = (sel: string) => {
-          const el = head?.querySelector(sel);
-          return el === null || el === undefined ? 'missing' : getComputedStyle(el).opacity;
-        };
-        return { grip: o('.lane-grip'), menu: o('.lane-menu') };
-      }, n);
 
-    assert.deepEqual(
-      await read(0),
-      { grip: '0', menu: '0' },
-      'visible before anyone pointed at it',
-    );
+    assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '0', 'visible at rest');
+    assert.equal(await settledOpacity(h, '.lane-head .lane-menu'), '0', 'visible at rest');
 
     await h.page.locator('.lane-head').first().hover();
-    assert.deepEqual(await read(0), { grip: '1', menu: '1' }, 'the head did not reveal them');
-    assert.deepEqual(await read(1), { grip: '0', menu: '0' }, 'a sibling lane lit up too');
+    assert.equal(
+      await settledOpacity(h, '.lane-head .lane-grip'),
+      '1',
+      'the head did not reveal it',
+    );
+    assert.equal(await settledOpacity(h, '.lane-head .lane-grip', 1), '0', 'a sibling lane lit up');
 
-    // The body is the half that used to reveal them, and must not.
+    // The lane body is the half that used to reveal them, and must not.
     await h.page.locator('.lane-body').nth(1).hover();
-    assert.deepEqual(await read(1), { grip: '0', menu: '0' }, 'the lane body still reveals them');
+    assert.equal(
+      await settledOpacity(h, '.lane-head .lane-grip', 1),
+      '0',
+      'the body still reveals them',
+    );
   });
 
   void test('the keyboard reaches them with no pointer at all', async () => {
-    // `:focus-within` was narrowed to `.lane-head` alongside `:hover`. If only
-    // the hover half had been narrowed this passes; if only focus-within had
-    // been dropped, the grip becomes unreachable without a mouse.
+    // `:focus-within` was narrowed to `.lane-head` alongside `:hover`. Drop it
+    // and the grip becomes unreachable without a mouse.
     const h = await open('/board?project=laika-core', stub());
-    const grip = h.page.locator('.lane-head .lane-grip').first();
-    await grip.focus();
-    assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '1');
-    await grip.evaluate((el: HTMLElement) => {
-      el.blur();
-    });
-    assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '0');
+    await h.page.locator('.lane-head .lane-grip').first().focus();
+    assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '1', 'focus does not reveal it');
+    await h.page
+      .locator('.lane-head .lane-grip')
+      .first()
+      .evaluate((el: HTMLElement) => {
+        el.blur();
+      });
+    assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '0', 'it stays up after blur');
   });
 
-  void test('the count is one colour, and the dot is not', async () => {
+  void test('the status dot keeps its colour', async () => {
     /*
-     * The count took `--acc` in `in_progress` and `--grn` in `done`, so one
-     * badge meant "three tasks" in three colours down a board. The **dot**
-     * still carries the status and must keep doing so — the owner asked for
-     * that explicitly.
+     * **The count's uniformity is no longer asserted here.** LAI-603 made it
+     * one grey in every column on the owner's instruction; the owner has since
+     * reversed that — LAI-606's brief gives In-progress and Done their own
+     * badge colours — so an assertion that the count never varies would now
+     * block the correct implementation. Removed rather than inverted, because
+     * the shape it should take belongs to whoever builds that brief.
+     *
+     * **The dot is a separate instruction and still stands**: the owner asked
+     * for it explicitly when its removal was offered. It is the thing most
+     * likely to be taken along by a sweep that makes the badges colourful
+     * again, which is exactly why it keeps a guard.
      */
     const h = await open('/board?project=laika-core', stub());
     const seen = await h.page.evaluate(() => {
-      const grab = (sel: string, prop: 'backgroundColor' | 'color') =>
-        [...document.querySelectorAll(sel)].map((e) => getComputedStyle(e)[prop]);
+      const dots = [...document.querySelectorAll('.lane-dot')];
       return {
-        countBg: new Set(grab('.lane-count', 'backgroundColor')).size,
-        countFg: new Set(grab('.lane-count', 'color')).size,
-        dotBg: new Set(grab('.lane-dot', 'backgroundColor')).size,
-        lanes: document.querySelectorAll('.lane-count').length,
+        lanes: dots.length,
+        distinct: new Set(dots.map((d) => getComputedStyle(d).backgroundColor)).size,
       };
     });
-    assert.ok(seen.lanes >= 3, `only ${String(seen.lanes)} lanes — this proves little`);
-    assert.equal(seen.countBg, 1, 'the count still changes background per status');
-    assert.equal(seen.countFg, 1, 'the count still changes text colour per status');
-    assert.ok(seen.dotBg > 1, 'the dots lost their status colours');
+    assert.ok(seen.lanes >= 3, `only ${String(seen.lanes)} dots — this proves little`);
+    assert.ok(seen.distinct > 1, 'every status dot renders the same colour');
   });
 });
