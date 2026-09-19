@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { backfillTaskTimestamps } from './backfill.ts';
+import { backfillBoardColumns, backfillTaskTimestamps } from './backfill.ts';
 import { type Db } from './client.ts';
 
 /**
@@ -286,6 +286,14 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
     // and it does write, and "idempotent by construction" is a property of
     // today's implementation rather than of the step.
     backfillTaskTimestamps(db);
+
+    // Gives a project that predates `board_columns` the five lanes it was
+    // already showing (LAI-266). Same reasoning as the line above for being
+    // here rather than in a `.sql` migration — it needs ULIDs, and the column
+    // names have to be the ones the client renders rather than a third copy —
+    // and idempotent in the same sense: it acts only on a project with no
+    // columns at all.
+    backfillBoardColumns(db);
   } catch (cause) {
     if (snapshotPath === null) throw cause;
 

@@ -6,7 +6,7 @@ CREATE TABLE `board_column_statuses` (
 	`created_at` integer NOT NULL,
 	PRIMARY KEY(`project_id`, `status`),
 	FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON UPDATE no action ON DELETE cascade,
-	FOREIGN KEY (`project_id`,`column_id`) REFERENCES `board_columns`(`project_id`,`id`) ON UPDATE no action ON DELETE restrict,
+	FOREIGN KEY (`project_id`,`column_id`) REFERENCES `board_columns`(`project_id`,`id`) ON UPDATE no action ON DELETE cascade,
 	CONSTRAINT "board_column_statuses_status_check" CHECK(status IN ('backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled')),
 	CONSTRAINT "board_column_statuses_is_primary_check" CHECK(is_primary IN (0, 1))
 );

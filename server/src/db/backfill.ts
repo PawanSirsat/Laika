@@ -1,7 +1,11 @@
 import { asc, eq } from 'drizzle-orm';
 import { readPayload } from './activity.ts';
 import { type Db } from './client.ts';
-import { activity, tasks } from './schema.ts';
+import { activity, boardColumns, projects, tasks } from './schema.ts';
+import {
+  BACKFILL_COLUMNS,
+  createDefaultBoardColumns,
+} from '../services/board-columns.ts';
 
 /**
  * Recover `started_at` and `completed_at` from the audit trail (LAI-435).
@@ -155,4 +159,63 @@ export function backfillTaskTimestamps(db: Db): BackfillResult {
   }
 
   return { startedAt, completedAt };
+}
+
+/**
+ * Give every project that predates `board_columns` the board it already had
+ * (LAI-266).
+ *
+ * ## Why this is not in the `.sql` migration
+ *
+ * Two reasons, and the second is the one that decided it.
+ *
+ * **ULIDs cannot be generated in SQLite.** A hand-written migration would have
+ * to synthesise ids by concatenating strings, and those ids are served by the
+ * API and live in the database for ever — a permanent wart in exchange for
+ * nothing.
+ *
+ * **The column names have to match what the client renders**, exactly: Backlog ·
+ * To do · In progress · Review · Done. Those five strings are the board people
+ * are looking at today, and the promise this backfill makes is that nobody's
+ * board changes shape on upgrade. Pasting them into SQL would make a third copy
+ * nobody compares; `BACKFILL_COLUMNS` is the one the service also uses.
+ *
+ * ## Why running every boot is safe
+ *
+ * Idempotent by construction, in the same sense as `backfillTaskTimestamps`
+ * above: it acts only on projects that have **no** columns at all. A project
+ * whose lead has since deleted one, renamed the rest and reordered them is not
+ * touched, because it is not empty.
+ *
+ * The one case it cannot distinguish is a project whose lead deleted *every*
+ * column — which `deleteBoardColumn` refuses, precisely so that "no columns"
+ * keeps meaning "never had any".
+ *
+ * ## Five columns, not the four a new project gets
+ *
+ * `DEFAULT_COLUMNS` merges `backlog` and `todo` into one "To do" lane, which is
+ * the better default and is **not** what an existing board looks like. Applying
+ * it here would silently merge two lanes on somebody's live board during a
+ * routine upgrade. A lead can do that in two clicks; nobody can undo having it
+ * done to them.
+ */
+export function backfillBoardColumns(db: Db, now: number = Date.now()): number {
+  const withoutColumns = db
+    .select({ id: projects.id })
+    .from(projects)
+    .all()
+    .filter(
+      (project) =>
+        db
+          .select({ id: boardColumns.id })
+          .from(boardColumns)
+          .where(eq(boardColumns.projectId, project.id))
+          .get() === undefined,
+    );
+
+  for (const project of withoutColumns) {
+    createDefaultBoardColumns(db, project.id, now, BACKFILL_COLUMNS);
+  }
+
+  return withoutColumns.length;
 }

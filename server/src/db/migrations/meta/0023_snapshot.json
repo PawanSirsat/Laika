@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "b9ab600d-6a39-441b-babe-378bc7927907",
+  "id": "9eefcf3c-2d5c-4232-ac67-d764ebcd6ada",
   "prevId": "a22ce87c-d82a-4011-86e3-e68ebc6c8a76",
   "tables": {
     "accounts": {
@@ -404,7 +404,7 @@
             "project_id",
             "id"
           ],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },

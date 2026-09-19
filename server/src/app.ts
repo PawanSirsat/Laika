@@ -22,6 +22,7 @@ import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
+import { projectBoardColumnRoutes } from './http/routes/board-columns.ts';
 import { projectSprintRoutes, sprintRoutes } from './http/routes/sprints.ts';
 import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
@@ -253,6 +254,7 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // Task routes mount on the same prefix; Hono merges the two routers.
     app.route(`${API_BASE}/projects`, projectTaskRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/projects`, projectSprintRoutes({ db, sqlite: options.sqlite }));
+    app.route(`${API_BASE}/projects`, projectBoardColumnRoutes({ db, sqlite: options.sqlite }));
     app.route(`${API_BASE}/projects`, projectActivityRoutes({ db }));
     app.route(`${API_BASE}/activity`, activityRoutes({ db }));
     // Before `userRoutes`, which registers `GET /` on the same prefix. They do

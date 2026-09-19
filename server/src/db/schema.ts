@@ -984,18 +984,34 @@ export const boardColumns = sqliteTable(
  * `column_id`. A plain `column_id` reference would let project A's status map to
  * project B's column with nothing to notice. The composite form refuses it.
  *
- * ## Why RESTRICT, when deleting a column is a supported operation
+ * ## Why CASCADE here, when RESTRICT is the obvious choice
  *
- * `deleteBoardColumn` reparents the rows first, so RESTRICT never fires on the
- * happy path. It exists for every *other* writer — a future service, a `DELETE`
- * typed at a shell. `CASCADE` there would delete the mappings with the column
- * and leave those statuses in no lane, which is silent: the tasks simply stop
- * appearing. RESTRICT turns that into a loud failure. `activity` takes the same
- * posture toward `projects`.
+ * RESTRICT was the first answer and it is wrong, for a reason worth writing
+ * down because nothing about it is visible in this file.
  *
- * Note `project_id` carries its own `CASCADE` to `projects` *as well*. Without
- * it the RESTRICT above wins when a project is deleted and the delete fails
- * outright — reproduced, and latent rather than absent, since LAI-154 is filed.
+ * The appeal of RESTRICT is that a `DELETE` which bypasses
+ * `deleteBoardColumn` — a future service, a shell against the volume — cannot
+ * silently strand a status in no column. But **SQLite resolves cascades in
+ * table-creation order**, and deleting a *project* cascades into both tables at
+ * once. If the mapping table is created first, its rows are still present when
+ * `board_columns` is cascaded away, the RESTRICT fires, and the project delete
+ * fails outright. Measured:
+ *
+ * ```
+ * parent table first   restrict  → ok          cascade → ok
+ * mapping table first  restrict  → FOREIGN KEY constraint failed
+ *                      cascade   → ok
+ * ```
+ *
+ * And drizzle-kit emits `CREATE TABLE` alphabetically, so
+ * `board_column_statuses` lands first — meaning RESTRICT's correctness here
+ * would rest on how two tables happen to be *named*. That is not a guarantee,
+ * it is a coincidence that survives until somebody renames something.
+ *
+ * So the invariant is held where it can be held honestly: `deleteBoardColumn`
+ * reparents before it deletes, and the property test drives two hundred
+ * operations asserting no status is ever orphaned. Both `project_id` cascades
+ * are kept as well, so the two tables empty together.
  */
 export const boardColumnStatuses = sqliteTable(
   'board_column_statuses',
@@ -1015,7 +1031,7 @@ export const boardColumnStatuses = sqliteTable(
       columns: [t.projectId, t.columnId],
       foreignColumns: [boardColumns.projectId, boardColumns.id],
       name: 'board_column_statuses_column_fk',
-    }).onDelete('restrict'),
+    }).onDelete('cascade'),
     index('board_column_statuses_column_id_idx').on(t.columnId),
     // A column has one drop target or none, never two — the partial-unique
     // pattern `sprints_one_active_per_project` established.
