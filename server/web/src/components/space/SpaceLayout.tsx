@@ -158,52 +158,60 @@ function SpaceFrame({
     <SpaceFilterClaim>
       <div className="space">
         <div className="space-bar">
-          <SpaceTopBar
-            spaceName={spaceName ?? slug}
-            members={members}
-            query={params.get('q') ?? ''}
-            priority={(params.get('priority') ?? undefined) as TaskPriority | undefined}
-            agentOnly={params.get('agent') === 'true'}
-            tags={tags}
-            tag={params.get('tag') ?? undefined}
-            assignee={params.get('assignee') ?? undefined}
-            ready={params.get('ready') === 'true'}
-            onQuery={(value) => {
-              setParam('q', value);
-            }}
-            onPriority={(value) => {
-              setParam('priority', value);
-            }}
-            onAgentOnly={(value) => {
-              setParam('agent', value ? 'true' : undefined);
-            }}
-            onTag={(value) => {
-              setParam('tag', value);
-            }}
-            onAssignee={(value) => {
-              setParam('assignee', value);
-            }}
-            onReady={(value) => {
-              setParam('ready', value ? 'true' : undefined);
-            }}
-            onCreate={() => {
-              // The board owns task creation; Create from any view goes there
-              // with the form open rather than duplicating it per screen.
-              navigate(
-                slug === undefined
-                  ? '/board?new=task'
-                  : `/board?project=${encodeURIComponent(slug)}&new=task`,
-              );
-            }}
-          />
+          {/*
+            **Identity and tabs on one line** (LAI-292). The owner asked for the
+            project name to move up so the row it had can be used for something
+            else — and with the board's own controls moving below WORKING NOW,
+            what is left of the bar is narrow enough to sit beside the tabs.
+          */}
+          <div className="space-bar-top">
+            <SpaceTopBar
+              spaceName={spaceName ?? slug}
+              members={members}
+              query={params.get('q') ?? ''}
+              priority={(params.get('priority') ?? undefined) as TaskPriority | undefined}
+              agentOnly={params.get('agent') === 'true'}
+              tags={tags}
+              tag={params.get('tag') ?? undefined}
+              assignee={params.get('assignee') ?? undefined}
+              ready={params.get('ready') === 'true'}
+              onQuery={(value) => {
+                setParam('q', value);
+              }}
+              onPriority={(value) => {
+                setParam('priority', value);
+              }}
+              onAgentOnly={(value) => {
+                setParam('agent', value ? 'true' : undefined);
+              }}
+              onTag={(value) => {
+                setParam('tag', value);
+              }}
+              onAssignee={(value) => {
+                setParam('assignee', value);
+              }}
+              onReady={(value) => {
+                setParam('ready', value ? 'true' : undefined);
+              }}
+              onCreate={() => {
+                // The board owns task creation; Create from any view goes there
+                // with the form open rather than duplicating it per screen.
+                navigate(
+                  slug === undefined
+                    ? '/board?new=task'
+                    : `/board?project=${encodeURIComponent(slug)}&new=task`,
+                );
+              }}
+            />
 
-          <ViewTabs
-            currentPath={path}
-            projectSlug={slug}
-            onNavigate={navigate}
-            holds={permissionHolder(orgRole)}
-            counts={{ '/meeting-review': pendingReviews }}
-          />
+            <ViewTabs
+              currentPath={path}
+              projectSlug={slug}
+              onNavigate={navigate}
+              holds={permissionHolder(orgRole)}
+              counts={{ '/meeting-review': pendingReviews }}
+            />
+          </div>
 
           {/* Where each view puts its own context line and controls. */}
           <div id={SLOT_ID} className="space-slot" />

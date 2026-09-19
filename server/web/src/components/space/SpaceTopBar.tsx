@@ -130,7 +130,13 @@ export function SpaceTopBar({
         <h1 className="space-name">{spaceName ?? 'No space'}</h1>
 
         {/* Real members, never the design's four fixtures. Absent rather than
-            a placeholder while the list is still loading. */}
+            a placeholder while the list is still loading.
+
+            **Deliberately not behind `ownFilters`** (LAI-292). The faces are an
+            assignee filter and belong in the board's own row — but that row does
+            not exist yet, and hiding them first leaves the board unable to
+            filter by assignee at all. They move in LAI-293, with the row that
+            receives them, so no build has neither. */}
         {members.length > 0 && (
           <div
             className="space-members"
@@ -186,6 +192,12 @@ export function SpaceTopBar({
                 : 'CONNECTING'}
         </span>
 
+        {/* Same claim as the members: search is a filter, and a view that owns
+        {/* Search stays in the bar for now (LAI-292). It belongs in the
+            board's own row and moves there in LAI-293, **with** that row —
+            hiding it here first would leave the board with no search at all
+            until the row exists. `space-bar.test.ts` caught the same mistake
+            for the member faces: it asserts four and saw none. */}
         <label className="space-search lk-sub">
           <span className="visually-hidden">Search tasks in this space</span>
           <svg

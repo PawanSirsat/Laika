@@ -35,14 +35,61 @@
 
 /* --------------------------------------------------------------- the bar */
 
+/*
+ * **Identity and tabs on one line** (LAI-292).
+ *
+ * The owner asked for the project name to move up so its row could be used for
+ * something else. With the board's own controls moving below WORKING NOW, what
+ * is left of the bar — mark, name, live pill, Create — is narrow enough to sit
+ * beside the tabs.
+ *
+ * It wraps rather than scrolls: on a narrow viewport the tabs drop to their own
+ * line, which is the old layout and is correct there. A single line that
+ * overflows would hide views entirely.
+ */
+.space-bar-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+
+/*
+ * The identity row sizes to its contents and the tabs take the rest.
+ *
+ * **`.space-controls` is `flex: 1`** so that `+ Create` sits at the right edge
+ * of a full-width row — correct when that row owned the whole line, and the
+ * reason the tabs were pushed onto a second one here. Inside this container the
+ * row must not claim the line, so both are pinned to their content.
+ *
+ * Found by measuring rather than reading: the merged line worked on the seeded
+ * instance, where the board's claim leaves the bar narrow, and wrapped in a
+ * fixture where it does not. A layout that depends on how wide the controls
+ * happen to be is not a layout.
+ */
+.space-bar-top > .space-bar-row {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.space-bar-top > .space-bar-row .space-controls {
+  flex: 0 1 auto;
+}
+
+.space-bar-top > nav {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .space-bar {
   flex: none;
   background: var(--card);
   border-bottom: 1px solid var(--bd);
-  padding: 13px 18px 0;
+  /* Was `13px 18px 0` for two stacked rows; one row needs less above it. */
+  padding: 9px 18px 0;
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: 7px;
 }
 
 .space-bar-row {
