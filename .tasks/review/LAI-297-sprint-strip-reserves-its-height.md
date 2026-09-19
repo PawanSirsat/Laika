@@ -6,8 +6,9 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-295
-status: in-progress
+status: review
 started: 2026-09-19T14:52:01Z
+finished: 2026-09-19T14:56:50Z
 ---
 
 ## Goal
@@ -34,17 +35,17 @@ with only tasks delayed the strip is already drawn and the jump is 0.
 
 ## Acceptance criteria
 
-- [ ] While sprints are loading, the strip occupies the same height it will have
+- [x] While sprints are loading, the strip occupies the same height it will have
       once they arrive — measured, in the browser, not asserted from the source.
-- [ ] A board whose project has **no** sprints does not reserve the height: the
+- [x] A board whose project has **no** sprints does not reserve the height: the
       strip is legitimately absent there, and reserving it would be the same
       defect mirrored.
-- [ ] `useDelayed` from `components/use-delayed.ts` gates anything visible, so a
+- [x] `useDelayed` from `components/use-delayed.ts` gates anything visible, so a
       fast response shows nothing (150ms delay / 300ms hold, already the app's
       default). Reserving *space* need not be delayed; drawing a *skeleton* must.
-- [ ] A test measures the strip's height in both states and asserts they agree.
+- [x] A test measures the strip's height in both states and asserts they agree.
       Assert the heights, not the presence of a class.
-- [ ] Both themes, and `prefers-reduced-motion: reduce`.
+- [x] Both themes, and `prefers-reduced-motion: reduce`.
 
 ## Notes / context
 
