@@ -948,7 +948,32 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
              * Only when the gesture is **mostly** horizontal, so an ordinary
              * vertical scroll inside a lane is untouched.
              */
-            if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+            if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) {
+              /*
+               * **The same latching, vertically, on a grouped board**
+               * (LAI-600). Grouped, the page scrolls between swimlane rows —
+               * but the pointer is usually over a `.lane-body`, which is a
+               * scroll container whether or not it has anything to scroll. A
+               * lane holding one card, or none, swallows `deltaY` and the
+               * board does not move.
+               *
+               * Forwarded **only when that lane has run out**, so scrolling
+               * inside a full lane still works: `scrollTop` already at the end
+               * in the direction of travel, or no overflow at all.
+               */
+              const pane = event.currentTarget;
+              if (pane.scrollHeight <= pane.clientHeight) return;
+
+              const lane = (event.target as HTMLElement | null)?.closest<HTMLElement>('.lane-body');
+              if (lane !== null && lane !== undefined) {
+                const room = lane.scrollHeight - lane.clientHeight;
+                const atEnd = event.deltaY > 0 ? lane.scrollTop >= room - 1 : lane.scrollTop <= 0;
+                if (room > 0 && !atEnd) return;
+              }
+
+              pane.scrollTop += event.deltaY;
+              return;
+            }
 
             /*
              * **Which element scrolls depends on the width.** Above 1200px it
