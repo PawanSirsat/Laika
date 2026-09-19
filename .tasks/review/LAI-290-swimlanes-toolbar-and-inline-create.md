@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-266
-status: in-progress
+status: review
 started: 2026-09-19T11:45:47Z
+finished: 2026-09-19T13:07:55Z
 ---
 
 ## Goal
@@ -78,22 +79,22 @@ that column*, creating into its `primary_status`.
 
 ## Acceptance criteria
 
-- [ ] Grouping renders **n groups × the same columns**, not n columns. A test
+- [x] Grouping renders **n groups × the same columns**, not n columns. A test
       asserts the column count inside a swimlane equals the project's column
       count — the assertion today's code fails.
-- [ ] A swimlane collapses and stays collapsed across a reload.
-- [ ] Ungrouped, the board renders exactly one lane row and no swimlane chrome.
-- [ ] Clicking a member avatar writes `?assignee=` and clicking it again clears
+- [x] A swimlane collapses and stays collapsed across a reload.
+- [x] Ungrouped, the board renders exactly one lane row and no swimlane chrome.
+- [x] Clicking a member avatar writes `?assignee=` and clicking it again clears
       it; the avatars are `<button>`, not `aria-hidden` spans.
-- [ ] **`+ Create` in the Done column creates a task whose status is `done`.**
+- [x] **`+ Create` in the Done column creates a task whose status is `done`.**
       This is the bug above, asserted directly.
-- [ ] View settings is a searchable field list with `×` per row; the four
+- [x] View settings is a searchable field list with `×` per row; the four
       non-removable fields show a disabled `×` with the reason.
-- [ ] All four right-hand icons do something real — none is decoration.
-- [ ] The add-column control is a square tile aligned with the lane headers and
+- [x] All four right-hand icons do something real — none is decoration.
+- [x] The add-column control is a square tile aligned with the lane headers and
       **still does not carry `.lane`** (`board-lane-scroll.test.ts` counts it).
-- [ ] Both themes, 1600/1440/1280/900/420, page overflow `0` at each.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+- [x] Both themes, 1600/1440/1280/900/420, page overflow `0` at each.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
 
 ## Known red, and what turns it green
 
