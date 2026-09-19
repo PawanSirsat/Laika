@@ -6,7 +6,7 @@ import { listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
 import { SpaceBand, SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { SprintStrip } from '../board/SprintStrip.tsx';
-import { COLUMN_LABELS } from '../../../api/board-derive.ts';
+import { statusLabel } from '../../../api/board-derive.ts';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { useSprints } from '../sprints/use-sprints.ts';
 import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
@@ -416,7 +416,7 @@ export function TimelineScreen() {
                           database's word for it, and the design writes the
                           lane's name. */}
                       <span className={`timeline-task-status timeline-task-${task.status}`}>
-                        {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
+                        {statusLabel(task.status)}
                       </span>
                       {/*
                     The row says which dates the bar is. A sprint's range

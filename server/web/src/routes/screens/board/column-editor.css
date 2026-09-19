@@ -1,0 +1,227 @@
+/*
+ * The column settings dialog (LAI-266). Tokens only.
+ *
+ * A small centred dialog rather than the 1120px task drawer — this configures a
+ * lane, it does not present a document.
+ */
+
+.column-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgb(15 23 42 / 45%);
+}
+
+.column-dialog {
+  position: fixed;
+  z-index: 41;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg, 0 24px 60px rgb(15 23 42 / 28%));
+  padding: 0.875rem 1rem 1rem;
+}
+
+.column-dialog:focus {
+  outline: none;
+}
+
+.cd-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.cd-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx1);
+}
+
+.cd-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--tx3);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-sm);
+}
+
+.cd-close:hover {
+  color: var(--tx1);
+  background: var(--tub);
+}
+
+.cd-error {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+  border-radius: var(--radius-md);
+  padding: 0.375rem 0.5rem;
+}
+
+.cd-section {
+  padding: 0.625rem 0;
+  border-top: 1px solid var(--bd);
+}
+
+.cd-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.cd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cd-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--tx2);
+}
+
+.cd-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--tx3);
+}
+
+.cd-input,
+.cd-select {
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--tx1);
+  background: var(--bg);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  padding: 0.3125rem 0.4375rem;
+  width: 100%;
+}
+
+.cd-input:focus-visible,
+.cd-select:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.cd-statuses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+
+.cd-status {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cd-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--tx1);
+  cursor: pointer;
+}
+
+.cd-check input {
+  accent-color: var(--acc);
+}
+
+.cd-status-name {
+  font-weight: var(--weight-medium);
+}
+
+.cd-primary {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--acc);
+  background: var(--accs);
+  border: 1px solid var(--accb);
+  border-radius: var(--radius-sm);
+  padding: 0 0.1875rem;
+}
+
+.cd-from {
+  font-size: 0.6875rem;
+  color: var(--tx3);
+}
+
+.cd-from-warn {
+  color: var(--amb);
+}
+
+.cd-danger {
+  border-top: 1px solid var(--redb);
+}
+
+.cd-delete,
+.cd-cancel,
+.cd-confirm {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+  border-radius: var(--radius-md);
+  padding: 0.3125rem 0.625rem;
+  cursor: pointer;
+}
+
+.cd-delete {
+  color: var(--red);
+  background: none;
+  border: 1px solid var(--redb);
+}
+
+.cd-delete:disabled {
+  color: var(--tx3);
+  border-color: var(--bd);
+  cursor: not-allowed;
+}
+
+.cd-actions {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+}
+
+.cd-cancel {
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  margin-left: auto;
+}
+
+.cd-confirm {
+  color: #fff;
+  background: var(--red);
+  border: 1px solid var(--red);
+}
+
+.cd-confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}

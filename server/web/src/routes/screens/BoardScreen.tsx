@@ -15,10 +15,18 @@ import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard } from '../../api/use-board.ts';
-import type { BoardColumn } from '../../api/board-derive.ts';
+import { groupByColumn } from '../../api/board-derive.ts';
+import { isFallbackColumn, useColumns } from '../../api/use-columns.ts';
+import { setHideDoneAfter } from '../../api/projects.ts';
+import { ColumnDialog } from './board/ColumnDialog.tsx';
+import { ViewSettings } from './board/ViewSettings.tsx';
+import { useViewPreferences } from './board/use-view-preferences.ts';
+import { groupLanes, groupNotice, isGroupBy } from './board/group-lanes.ts';
+import type { BoardColumn } from '../../api/columns.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
   listMembers,
+  canConfigureProject,
   canCreateTask,
   type Member,
   type Task,
@@ -216,6 +224,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   }, [slug]);
 
   const board = useBoard(slug, filter);
+  const columns = useColumns(slug);
+  const prefs = useViewPreferences(slug);
+  const [settingsAt, setSettingsAt] = useState<{ top: number; right: number } | undefined>(
+    undefined,
+  );
+  const [editing, setEditing] = useState<string | undefined>(undefined);
   // The first consumer the SSE endpoint has ever had (LAI-070).
   const stream = useEvents(slug);
 
@@ -286,6 +300,20 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     project !== undefined &&
     canCreateTask(me.org_role, project.id, me.memberships);
 
+  /** Lead-only — a narrower rule than creating a task. */
+  const mayConfigure =
+    me !== undefined &&
+    project !== undefined &&
+    canConfigureProject(me.org_role, project.id, me.memberships);
+
+  /** `Column 5`, skipping any name already taken. */
+  const nextColumnName = (existing: readonly BoardColumn[]): string => {
+    const taken = new Set(existing.map((c) => c.name));
+    let n = existing.length + 1;
+    while (taken.has(`Column ${String(n)}`)) n += 1;
+    return `Column ${String(n)}`;
+  };
+
   /**
    * Search is **client-side, over the tasks already loaded**.
    *
@@ -304,15 +332,39 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     };
   }, [needle, agentOnly]);
 
-  const columns = useMemo(() => {
-    if (needle === '' && !agentOnly) return board.columns;
+  /**
+   * Cards into lanes, against the project's own columns (LAI-266).
+   *
+   * The join lives here rather than in `useBoard` because the two halves come
+   * from different hooks with different refresh rates — columns change almost
+   * never, tasks constantly.
+   */
+  const sprintLabels = useMemo(() => {
+    const map = new Map<string, { label: string; active: boolean }>();
+    sprints.forEach((sprint, index) => {
+      map.set(sprint.id, { label: `S${String(index + 1)}`, active: sprint.status === 'active' });
+    });
+    return map;
+  }, [sprints]);
 
-    const next = {} as typeof board.columns;
-    for (const [column, tasks] of Object.entries(board.columns)) {
-      next[column as BoardColumn] = tasks.filter(matches);
-    }
-    return next;
-  }, [board.columns, needle, agentOnly, matches]);
+  const group = params.get('group') ?? 'column';
+  const grouped = isGroupBy(group);
+
+  const lanes = useMemo(
+    () =>
+      grouped
+        ? groupLanes(board.state.tasks, group, { members, sprintLabels })
+        : groupByColumn(board.state.tasks, columns.visible),
+    [grouped, group, board.state.tasks, columns.visible, members, sprintLabels],
+  );
+
+  const shownLanes = useMemo(
+    () =>
+      needle === '' && !agentOnly
+        ? lanes
+        : lanes.map((lane) => ({ ...lane, tasks: lane.tasks.filter(matches) })),
+    [lanes, needle, agentOnly, matches],
+  );
 
   /**
    * The same filter applied to the flat list.
@@ -327,17 +379,25 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   );
 
   /** `S1`, `S2`… in the sprint order the strip shows. Real data. */
-  const sprintLabels = useMemo(() => {
-    const map = new Map<string, { label: string; active: boolean }>();
-    sprints.forEach((sprint, index) => {
-      map.set(sprint.id, { label: `S${String(index + 1)}`, active: sprint.status === 'active' });
-    });
-    return map;
-  }, [sprints]);
+  /** What the panel shows as removable chips — the same params the bar writes. */
+  const activeFilters = useMemo(() => {
+    const found: { key: string; label: string }[] = [];
+    if (priority !== undefined) found.push({ key: 'priority', label: `Priority ${priority}` });
+    if (assignee !== undefined) found.push({ key: 'assignee', label: 'Assignee' });
+    if (tagScope !== undefined) found.push({ key: 'tag', label: `Tag ${tagScope}` });
+    if (sprintScope !== undefined) found.push({ key: 'sprint', label: 'Sprint' });
+    if (readyParam === 'true') found.push({ key: 'ready', label: 'Ready only' });
+    if (agentOnly) found.push({ key: 'agent', label: 'Agent-created' });
+    if (needle !== '') found.push({ key: 'q', label: `“${query}”` });
+    return found;
+  }, [priority, assignee, tagScope, sprintScope, readyParam, agentOnly, needle, query]);
+
+  const editingColumn =
+    editing === undefined ? undefined : columns.visible.find((c) => c.id === editing);
 
   const shownCount = useMemo(
-    () => Object.values(columns).reduce((n, list) => n + list.length, 0),
-    [columns],
+    () => shownLanes.reduce((n, lane) => n + lane.tasks.length, 0),
+    [shownLanes],
   );
 
   // Read from the board's own list so the panel re-renders after a move —
@@ -433,7 +493,101 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 board.byId.size === 1 ? 'task' : 'tasks'
               } match`
         }
-      />
+      >
+        {/*
+          **The slot band is now always visible on the board**, where it used to
+          collapse whenever nothing was filtered (`.space-slot:empty`). That is
+          a deliberate trade for a permanent place to put this, which is the
+          design's in-bar control.
+        */}
+        <button
+          type="button"
+          className="view-settings-open"
+          aria-haspopup="dialog"
+          aria-expanded={settingsAt !== undefined}
+          onClick={(event) => {
+            if (settingsAt !== undefined) {
+              setSettingsAt(undefined);
+              return;
+            }
+            const box = event.currentTarget.getBoundingClientRect();
+            setSettingsAt({
+              top: box.bottom + 6,
+              right: Math.max(8, window.innerWidth - box.right),
+            });
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
+            <circle cx="9" cy="6" r="2" />
+            <circle cx="15" cy="12" r="2" />
+            <circle cx="8" cy="18" r="2" />
+          </svg>
+          View settings
+        </button>
+      </SpaceSlot>
+
+      {settingsAt !== undefined && (
+        <ViewSettings
+          preferences={prefs.preferences}
+          onChange={prefs.set}
+          onReset={prefs.reset}
+          anchor={settingsAt}
+          onClose={() => {
+            setSettingsAt(undefined);
+          }}
+          hideDoneAfterDays={project?.board_hide_done_days ?? null}
+          {...(mayConfigure && slug !== undefined
+            ? {
+                onHideDoneChange: (days: number | null) => {
+                  // Take the server's project back rather than patching the
+                  // field locally: the same reason moves are not optimistic.
+                  void setHideDoneAfter(slug, days).then((updated) => {
+                    setProject(updated);
+                  });
+                },
+              }
+            : {})}
+          group={group}
+          onGroupChange={(next) => {
+            setParam('group', next === 'column' ? undefined : next);
+          }}
+          filters={activeFilters}
+          onClearFilter={(key) => {
+            setParam(key, undefined);
+          }}
+          onClearFilters={() => {
+            const next = new URLSearchParams(params);
+            for (const filter of activeFilters) next.delete(filter.key);
+            onParamsChange(next);
+          }}
+        />
+      )}
+
+      {editingColumn !== undefined && (
+        <ColumnDialog
+          column={editingColumn}
+          all={columns.visible}
+          taskCount={lanes.find((l) => l.column.id === editingColumn.id)?.tasks.length ?? 0}
+          busy={columns.busy}
+          error={columns.error}
+          onRename={(name) => {
+            void columns.rename(editingColumn.id, name);
+          }}
+          onSetStatuses={(statuses) => {
+            void columns.setStatuses(editingColumn.id, statuses);
+          }}
+          onDelete={(reassignTo) => {
+            void columns.remove(editingColumn.id, reassignTo).then(() => {
+              setEditing(undefined);
+            });
+          }}
+          onClose={() => {
+            setEditing(undefined);
+            columns.dismissError();
+          }}
+        />
+      )}
 
       {/*
         Mounted here rather than in the shell: it reports the state of *this*
@@ -454,6 +608,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {/* WORKING NOW moved up to the space bar in LAI-251: it is about the
           space, not about the board, and every view of a space shows it. */}
 
+      {grouped && (
+        <p className="board-scope" role="status">
+          {groupNotice(group)}
+        </p>
+      )}
+
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">
           {shownCount} of {board.byId.size} loaded {board.byId.size === 1 ? 'task' : 'tasks'} match.{' '}
@@ -472,10 +632,25 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         />
       )}
 
+      {/*
+        **One alert region, not two stacked banners.** A refused card move and a
+        refused column edit are the same kind of news — the server said no and
+        gave a reason — and two boxes for it would compete for the same corner
+        of the screen.
+      */}
       {board.moveError !== undefined && (
         <p className="board-alert" role="alert">
           {board.moveError}
           <button type="button" className="board-alert-close" onClick={board.dismissMoveError}>
+            Dismiss
+          </button>
+        </p>
+      )}
+
+      {columns.error !== undefined && (
+        <p className="board-alert" role="alert">
+          {columns.error}
+          <button type="button" className="board-alert-close" onClick={columns.dismissError}>
             Dismiss
           </button>
         </p>
@@ -503,10 +678,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             />
           ) : (
             <KanbanView
-              columns={columns}
+              lanes={shownLanes}
               byId={board.byId}
               members={members}
               theme={theme}
+              fields={prefs.preferences.fields}
+              cardsDraggable={!grouped}
+              density={prefs.preferences.density}
+              columnWidth={prefs.preferences.columnWidth}
               movingId={board.movingId}
               onMove={(id, to) => {
                 void board.move(id, to);
@@ -517,6 +696,19 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 setCreating(true);
               }}
               canAdd={mayCreate}
+              {...(mayConfigure && !grouped && !columns.visible.some(isFallbackColumn)
+                ? {
+                    onReorder: (ids: readonly string[]) => {
+                      void columns.reorder(ids);
+                    },
+                    onAddColumn: () => {
+                      void columns.create(nextColumnName(columns.visible));
+                    },
+                    onEditColumn: (column: BoardColumn) => {
+                      setEditing(column.id);
+                    },
+                  }
+                : {})}
               sprintLabels={sprintLabels}
             />
           )}

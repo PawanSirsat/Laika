@@ -225,6 +225,29 @@ export function createTask(slug: string, input: CreateTaskInput): Promise<Task> 
  * shown a button that answers 403, which teaches people the app is broken rather
  * than that they lack permission.
  */
+/**
+ * May this actor configure the board's columns? (LAI-266)
+ *
+ * `project.settings.edit` is **lead-only** (SPEC §3.2, *"Edit project settings
+ * and `context_md`"*), with org owner/admin holding implicit lead — a strictly
+ * narrower rule than `canCreateTask`, which admits members.
+ *
+ * The same display-only caveat applies as above, and the same consequence: the
+ * grip, the `⋯` and the `+ Add column` tile are **absent** for anyone this
+ * returns `false` for, not disabled. A control that answers 403 teaches people
+ * the app is broken rather than that they lack permission (LAI-082).
+ */
+export function canConfigureProject(
+  orgRole: string,
+  projectId: string,
+  memberships: readonly { readonly project_id: string; readonly role: string }[],
+): boolean {
+  if (orgRole === 'owner' || orgRole === 'admin') return true;
+  if (orgRole === 'viewer') return false;
+
+  return memberships.find((m) => m.project_id === projectId)?.role === 'lead';
+}
+
 export function canCreateTask(
   orgRole: string,
   projectId: string,

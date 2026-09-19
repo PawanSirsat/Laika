@@ -158,7 +158,21 @@
  */
 .kanban {
   display: grid;
-  grid-template-columns: repeat(5, minmax(12.875rem, 1fr));
+  /*
+   * **Implicit tracks, so nothing counts the columns** (LAI-266). This was
+   * `repeat(5, minmax(12.875rem, 1fr))` when a board had exactly five lanes.
+   *
+   * `repeat()` takes an `<integer>` and **not** a custom property — `repeat(var(--n), …)`
+   * is invalid and silently drops the whole declaration — so the count cannot
+   * simply be parameterised. `grid-auto-flow: column` with `grid-auto-columns`
+   * creates one track per child instead, and the number stops appearing
+   * anywhere.
+   *
+   * The floor is a variable so View settings can narrow or widen the lanes
+   * without a second grid rule.
+   */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(var(--lane-floor, 12.875rem), 1fr);
   gap: 0.75rem;
   /*
    * **Stretch, not start** (LAI-270). `start` sized every column to its own
@@ -1173,4 +1187,198 @@
   border-top: 1px solid var(--bd);
   padding-top: 0.5625rem;
   margin-top: 0.125rem;
+}
+
+/* ------------------------------------------ column configuration (LAI-266) */
+
+/*
+ * Density and width, driven from View settings. One custom property and two
+ * classes rather than a second grid rule — the floor already existed.
+ */
+.kanban-cols-narrow {
+  --lane-floor: 10.5rem;
+}
+
+.kanban-cols-wide {
+  --lane-floor: 16rem;
+}
+
+.kanban-dense .card {
+  padding: 0.4375rem 0.5rem;
+}
+
+.kanban-dense .card-title {
+  font-size: 0.78125rem;
+}
+
+.kanban-dense .lane-item + .lane-item {
+  margin-top: 0.3125rem;
+}
+
+/*
+ * The drag handle. **On a button in the header, never on the `<section>`** — a
+ * draggable lane swallows the card drags inside it, and three pixels of lane
+ * padding becomes a column drag.
+ */
+.lane-grip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.125rem;
+  border: 0;
+  background: none;
+  color: var(--tx3);
+  font-size: 0.6875rem;
+  line-height: 1;
+  cursor: grab;
+  border-radius: var(--radius-sm);
+}
+
+.lane-grip:hover {
+  color: var(--tx2);
+  background: var(--card);
+}
+
+.lane-grip:active {
+  cursor: grabbing;
+}
+
+/*
+ * Where the column would land. **`::before` on the lane, taking no layout
+ * space** — a marker that reflowed would make every other lane jump while the
+ * pointer is still moving. The 0.75rem gutter gives it room.
+ */
+.lane-drop-before {
+  position: relative;
+}
+
+.lane-drop-before::before {
+  content: '';
+  position: absolute;
+  left: -0.4375rem;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--acc);
+}
+
+/* What a drop on this lane will set, shown only while a card is over a lane
+   whose name does not already answer it. */
+.lane-target {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--acc);
+  background: var(--accs);
+  border: 1px solid var(--accb);
+  border-radius: var(--radius-sm);
+  padding: 0.0625rem 0.1875rem;
+  white-space: nowrap;
+}
+
+.lane-menu {
+  margin-left: auto;
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--tx3);
+  cursor: pointer;
+  padding: 0 0.125rem;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.lane-menu:hover {
+  color: var(--tx1);
+  background: var(--card);
+}
+
+/*
+ * The create tile, where the thing it creates will appear.
+ *
+ * **Deliberately not `.lane`.** `board-lane-scroll.test.ts` counts that class
+ * to check the board rendered, and a ghost that counted would make every lane
+ * measurement off by one.
+ */
+.lane-new {
+  align-self: stretch;
+  min-width: var(--lane-floor, 12.875rem);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border: 1px dashed var(--bd);
+  border-radius: var(--radius-lg);
+  background: none;
+  color: var(--tx3);
+  font-size: 0.75rem;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.lane-new:hover {
+  border-color: var(--accb);
+  color: var(--acc);
+  background: var(--accs);
+}
+
+/*
+ * Keyboard equivalent of the column drag, copying `.lane-move`'s block exactly:
+ * out of the visual flow until focused, then restored. The same argument
+ * applies — drag has no keyboard story, so the control that does must exist and
+ * must not cost a row of chrome on every lane.
+ */
+.lane-order {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.lane-order:focus-within {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+}
+
+.lane-order-select {
+  font-size: 0.625rem;
+  font-family: inherit;
+  color: var(--tx1);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-sm);
+  padding: 0.0625rem 0.1875rem;
+}
+
+/* The View settings trigger, in the space slot. */
+.view-settings-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 1.625rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--tx2);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.view-settings-open:hover {
+  color: var(--tx1);
+  border-color: var(--accb);
+}
+
+.view-settings-open svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  stroke: currentColor;
 }

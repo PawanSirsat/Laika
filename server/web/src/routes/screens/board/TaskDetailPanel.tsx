@@ -8,7 +8,7 @@ import { describeEvent, statusTransition } from '../../../api/activity.ts';
 import { updatedAge } from '../../../api/board-derive.ts';
 import { isAgentComment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
-import { COLUMN_LABELS, type BoardColumn } from '../../../api/board-derive.ts';
+import { statusLabel } from '../../../api/board-derive.ts';
 import { describeActor } from './actor-presentation.ts';
 import {
   listWatchers,
@@ -17,6 +17,7 @@ import {
   watchTask,
   type Member,
   type Task,
+  type TaskStatus,
 } from '../../../api/tasks.ts';
 import { TaskMeta } from '../task/TaskMeta.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
@@ -43,7 +44,7 @@ export interface TaskDetailPanelProps {
   readonly moving: boolean;
   readonly moveError: string | undefined;
   /** The same call the board uses — not a second implementation (LAI-056). */
-  readonly onMove: (taskId: string, to: BoardColumn) => void;
+  readonly onMove: (taskId: string, to: TaskStatus) => void;
   readonly onClose: () => void;
   /** The signed-in user's id, for Claim. */
   readonly meId?: string | undefined;
@@ -224,7 +225,7 @@ export function TaskDetailPanel({
           <span className="panel-key">{task.key}</span>
           <span className={`panel-state panel-state-${task.status}`}>
             <span className="panel-state-dot" aria-hidden="true" />
-            {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
+            {statusLabel(task.status)}
           </span>
           <span className={`panel-prio panel-prio-${task.priority}`}>
             <span className="panel-prio-dot" aria-hidden="true" />

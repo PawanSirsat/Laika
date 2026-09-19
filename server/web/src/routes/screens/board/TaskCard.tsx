@@ -2,6 +2,7 @@ import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { blockedState, blockers, staleFor, updatedAge } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
+import type { CardFields } from './card-fields.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
 export interface TaskCardProps {
@@ -9,6 +10,17 @@ export interface TaskCardProps {
   readonly byId: ReadonlyMap<string, Task>;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
+  /**
+   * Which optional parts to draw (LAI-266). One record rather than nine
+   * booleans, so a tenth field never reaches this signature.
+   */
+  readonly fields: CardFields;
+  /**
+   * `false` under a grouped view (LAI-266): a drop there would mean reassign or
+   * re-prioritise, which is three different endpoints and has no keyboard
+   * equivalent yet. LAI-288 carries it.
+   */
+  readonly draggable?: boolean | undefined;
   readonly moving: boolean;
   readonly onDragStart: (taskId: string) => void;
   readonly onDragEnd: () => void;
@@ -30,6 +42,8 @@ export function TaskCard({
   byId,
   members,
   theme,
+  fields,
+  draggable: mayDrag = true,
   moving,
   onDragStart,
   onDragEnd,
@@ -43,14 +57,14 @@ export function TaskCard({
   const byAgent = task.created_via === 'mcp';
   // Real since LAI-079. This was `demoTags(task.id)` until the tags table
   // landed; a demo module beside a live endpoint is a defect under D-032.
-  const tags = task.tags;
+  const tags = fields.tags ? task.tags : [];
   const held = blockers(task, byId);
   const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
 
   return (
     <article
       className={moving ? 'card card-moving' : 'card'}
-      draggable={!moving}
+      draggable={mayDrag && !moving}
       aria-busy={moving || undefined}
       onDragStart={(event) => {
         event.dataTransfer.setData('text/plain', task.id);
@@ -125,12 +139,16 @@ export function TaskCard({
       <div className="card-foot">
         {/* One glyph, three states, no text: P1 solid red, P2 solid amber,
             P3 hollow. The word stays in the title attribute for screen readers. */}
-        <span
-          className={`card-dot card-dot-${task.priority}`}
-          title={`Priority ${task.priority}`}
-          aria-hidden="true"
-        />
-        <span className="visually-hidden">Priority {task.priority}</span>
+        {fields.priority && (
+          <>
+            <span
+              className={`card-dot card-dot-${task.priority}`}
+              title={`Priority ${task.priority}`}
+              aria-hidden="true"
+            />
+            <span className="visually-hidden">Priority {task.priority}</span>
+          </>
+        )}
 
         <button
           type="button"
@@ -143,12 +161,12 @@ export function TaskCard({
           <span className="visually-hidden"> — open details</span>
         </button>
 
-        {sprint !== undefined && (
+        {fields.sprint && sprint !== undefined && (
           <span className={sprint.active ? 'card-sprint card-sprint-on' : 'card-sprint'}>
             {sprint.label}
           </span>
         )}
-        {task.ready && (
+        {fields.ready && task.ready && (
           <span
             className="marker marker-ready card-above"
             title="Unassigned, unblocked, ready to pick up"
@@ -156,7 +174,7 @@ export function TaskCard({
             ready
           </span>
         )}
-        {task.stale_flagged_at !== null && (
+        {fields.stale && task.stale_flagged_at !== null && (
           <span
             className="marker marker-stale card-above"
             title={`Flagged stale ${staleFor(task.stale_flagged_at, Date.now())} ago — the nightly job found no heartbeat and no commit for three days (§11.6)`}
@@ -184,7 +202,7 @@ export function TaskCard({
           it** — LAI-223, open since it was noticed. Absent at zero: a card
           that says `0` beside a link count reads as a control you can press.
         */}
-        {task.comment_count > 0 && (
+        {fields.comments && task.comment_count > 0 && (
           <span className="card-comments card-above" title="Comments">
             <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
               <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-4.5A8 8 0 1 1 21 12Z" />
@@ -193,7 +211,7 @@ export function TaskCard({
           </span>
         )}
 
-        {task.blocked_by.length > 0 && (
+        {fields.deps && task.blocked_by.length > 0 && (
           <span className="card-deps card-above" title="Dependencies">
             <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
               <path d="M9 15 15 9M10 6l1-1a4 4 0 1 1 6 6l-1 1M14 18l-1 1a4 4 0 1 1-6-6l1-1" />
@@ -204,16 +222,18 @@ export function TaskCard({
 
         {/* Against `Date.now()`, never a stored epoch — a fixture pinned to a
             fixed time read as 240 days old twice before (LAI-420). */}
-        <span
-          className="card-age card-above"
-          title={`Updated ${updatedAge(task.updated_at, Date.now())}`}
-        >
-          {updatedAge(task.updated_at, Date.now())}
-        </span>
+        {fields.age && (
+          <span
+            className="card-age card-above"
+            title={`Updated ${updatedAge(task.updated_at, Date.now())}`}
+          >
+            {updatedAge(task.updated_at, Date.now())}
+          </span>
+        )}
 
         <span className="card-spacer" />
 
-        {assignee === undefined ? (
+        {!fields.assignee ? null : assignee === undefined ? (
           <span className="card-unassigned card-above" title="Unassigned" aria-label="Unassigned">
             +
           </span>

@@ -1,6 +1,12 @@
 import { AssignControl } from '../board/AssignControl.tsx';
-import { BOARD_COLUMNS, COLUMN_LABELS, type BoardColumn } from '../../../api/board-derive.ts';
-import { updateTask, PRIORITIES, type Member, type Task } from '../../../api/tasks.ts';
+import { ALL_STATUSES, statusLabel } from '../../../api/board-derive.ts';
+import {
+  updateTask,
+  PRIORITIES,
+  type Member,
+  type Task,
+  type TaskStatus,
+} from '../../../api/tasks.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -20,7 +26,7 @@ export interface TaskMetaProps {
   readonly watchers: readonly string[] | undefined;
   readonly claimLock: DemoClaimLock | undefined;
   readonly agentBuild: DemoAgentBuild | undefined;
-  readonly onMove: (taskId: string, to: BoardColumn) => void;
+  readonly onMove: (taskId: string, to: TaskStatus) => void;
   readonly onAssigned: () => void;
   readonly onTaskEdited: () => void;
   readonly statusRef: React.RefObject<HTMLSelectElement | null>;
@@ -130,13 +136,20 @@ export function TaskMeta({
               value={task.status}
               disabled={moving || !mayEdit}
               onChange={(event) => {
-                const to = event.target.value as BoardColumn;
+                const to = event.target.value as TaskStatus;
                 if (to !== task.status) onMove(task.id, to);
               }}
             >
-              {BOARD_COLUMNS.map((c) => (
+              {/*
+                **All six, `cancelled` included** (LAI-266). The board never
+                resolves a drop to `cancelled` — a mis-drag must not cancel
+                somebody's work — so this control is the only way to reach it,
+                and before this it listed five. Cancelling was unreachable from
+                the entire UI.
+              */}
+              {ALL_STATUSES.map((c) => (
                 <option key={c} value={c}>
-                  {COLUMN_LABELS[c]}
+                  {statusLabel(c)}
                 </option>
               ))}
             </select>
