@@ -64,14 +64,15 @@ export interface AvatarColor {
  * a hue is a red test, not a hand ritual.
  */
 const MAX_LIGHT: Readonly<Record<number, number>> = {
+  // Solved at S62 — the prototype's vividness. S46 read as mud (owner call).
   212: 47,
-  262: 57,
-  292: 51,
-  322: 50,
+  262: 59,
+  292: 50,
+  322: 49,
   352: 52,
-  22: 44,
-  162: 34,
-  186: 36,
+  22: 43,
+  162: 31,
+  186: 33,
 };
 
 export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): AvatarColor {
@@ -87,9 +88,9 @@ export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): 
   const lightness = theme === 'dark' ? ceiling : Math.min(ceiling, ceiling - 4);
 
   return {
-    background: `hsl(${String(hue)} 46% ${String(lightness)}%)`,
+    background: `hsl(${String(hue)} 62% ${String(lightness)}%)`,
     foreground: '#fff',
-    border: `hsl(${String(hue)} 46% ${String(lightness - 8)}%)`,
+    border: `hsl(${String(hue)} 62% ${String(lightness - 8)}%)`,
   };
 }
 

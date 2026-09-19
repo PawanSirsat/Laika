@@ -326,9 +326,14 @@
 }
 
 .bt-members {
+  /* The prototype's member stack: a bordered pill the circles sit in. */
   display: inline-flex;
   align-items: center;
-  margin-inline: 0.125rem 0.25rem;
+  height: 36px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  margin-inline: 2px 4px;
 }
 
 .bt-member,
@@ -336,13 +341,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.375rem;
-  height: 1.375rem;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  border: 1.5px solid var(--bg-card);
-  font-size: 0.5625rem;
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0.01em;
+  /* The gap ring between overlapping circles — the canvas, not a colour. */
+  border: 2px solid var(--bg-canvas);
   cursor: pointer;
   padding: 0;
 }
@@ -350,7 +353,14 @@
 /* Overlapped, as the reference has them — the first one keeps its full edge. */
 .bt-member + .bt-member,
 .bt-member + .bt-member-more {
-  margin-inline-start: -0.3125rem;
+  /* "+1" is a figure, not another face: plain muted text, no circle. */
+  width: auto;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+  cursor: default;
+  padding-inline: 6px 0;
 }
 
 .bt-member-more {
