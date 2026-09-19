@@ -243,3 +243,143 @@
   color: var(--tx2);
   margin-top: var(--space-1);
 }
+
+/* --- spinner (LAI-295) ----------------------------------------------------- */
+
+/*
+ * Circular progress, for work with no shape to stand in for.
+ *
+ * `currentColor` on the leading edge and a transparent ring behind it, so the
+ * whole thing inherits its surroundings — one component on a primary button, a
+ * danger button and a plain toolbar, with no variant prop to keep in step with
+ * `ButtonVariant`.
+ */
+.spinner {
+  display: inline-block;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  /* The gap that makes it read as rotating rather than as a ring. */
+  border-top-color: transparent;
+  animation: spinner-turn 0.7s linear infinite;
+  /* Optical: a ring beside text sits high without this. */
+  vertical-align: -0.125em;
+}
+
+.spinner-sm {
+  width: 0.875rem;
+  height: 0.875rem;
+}
+
+.spinner-md {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-width: 2.5px;
+}
+
+/*
+ * **Still, not gone**, when the reader has asked for less motion — the same
+ * rule `.skeleton` follows above. A spinner is the only moving thing left on
+ * the page once skeletons stop pulsing, and removing it entirely would take the
+ * feedback away rather than the motion.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation: none;
+    /* Without the spin, a gapped ring reads as broken. Close it. */
+    border-top-color: currentColor;
+    opacity: 0.55;
+  }
+}
+
+@keyframes spinner-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- whole-layout skeletons (LAI-295) -------------------------------------- */
+
+/*
+ * These mirror a *layout*, not a repeated element, so each draws itself once
+ * rather than being repeated `count` times. The point is that nothing moves
+ * when the real content replaces them.
+ */
+
+/* The board: lanes side by side, matching `.kanban`'s track floor and gap. */
+.skeleton-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(12.875rem, 1fr);
+  gap: 0.6875rem;
+  align-items: start;
+  overflow: hidden;
+}
+
+.skeleton-lane {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  min-height: 8rem;
+}
+
+.skeleton-lane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
+}
+
+.skeleton-dot {
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+}
+
+/* A table: a header rule, then rows. */
+.skeleton-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.skeleton-table-head,
+.skeleton-table-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--bd);
+}
+
+.skeleton-table-head {
+  border-bottom-color: var(--bd2);
+}
+
+.skeleton-table-row:last-child {
+  border-bottom: none;
+}
+
+/* The drawer: a title block, a meta column, then body lines. */
+.skeleton-drawer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.skeleton-title {
+  height: 1.25rem;
+}
+
+.skeleton-drawer-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-block: 1px solid var(--bd);
+}
