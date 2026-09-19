@@ -241,9 +241,9 @@
    * chip rule, the three values become tokens set to nothing — so bringing the
    * boxes back later is editing these three lines, not hunting the rules again.
    */
-  --chip-padding: 0;
-  --chip-border: transparent;
-  --chip-bg: transparent;
+  --chip-padding: 3px 10px;
+  --chip-border: var(--chip-neutral-border);
+  --chip-bg: var(--chip-neutral-bg);
   --radius-card: 12px;
   --radius-control: 8px;
   --radius-pill: 999px;

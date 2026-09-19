@@ -276,7 +276,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  padding: 12px 14px;
+  /* The prototype's rhythm at app scale: 20 round, 16 at the foot. */
+  padding: 20px 20px 16px;
   /* `pointer`, not `grab`. The card was `grab` — honest about dragging and
      silent about the thing people actually do, which is open it. The design
      file uses `cursor:pointer` 46 times and `grab` never; dragging still works
@@ -376,7 +377,7 @@
 
 .card-title {
   color: var(--text-primary);
-  margin: var(--space-2) 0;
+  margin: 0;
 }
 
 .card-foot {
@@ -447,11 +448,6 @@
   align-items: center;
   justify-content: center;
   flex: none;
-}
-
-.card-unassigned {
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
 }
 
 /* ----------------------------------------------------------------- list */
@@ -1004,18 +1000,6 @@
   width: 0.5rem;
   height: 0.5rem;
   stroke: currentColor;
-}
-
-.card-unassigned {
-  width: 1.625rem;
-  height: 1.625rem;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-pill);
-  color: var(--text-muted);
 }
 
 /* The ghost row at the foot of each column (prototype). */
@@ -1883,4 +1867,157 @@
 .card .card-blocked b {
   color: var(--overdue);
   font-weight: 400;
+}
+
+/* =====================================================================
+ * The prototype's card anatomy (LAI-606, phase 5).
+ *
+ * Everything here is scoped `.card …` on purpose: the type roles declare
+ * `color: inherit` and `type.css` loads after this file, so a single class
+ * loses its colour on bundle order — measured three times now (blocked line,
+ * footer button, tag hues). Two classes win on specificity instead.
+ * ===================================================================== */
+
+/* Tags and the ready marker: tinted — text, 12% fill, 30% border. */
+.card .card-tag {
+  color: var(--chip-neutral);
+  background: var(--chip-neutral-bg);
+  border-color: var(--chip-neutral-border);
+}
+
+.card .card-tag-orange {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+}
+.card .card-tag-green {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+.card .card-tag-blue {
+  color: var(--chip-blue);
+  background: var(--chip-blue-bg);
+  border-color: var(--chip-blue-border);
+}
+.card .card-tag-pink {
+  color: var(--chip-pink);
+  background: var(--chip-pink-bg);
+  border-color: var(--chip-pink-border);
+}
+.card .card-tag-purple {
+  color: var(--chip-purple);
+  background: var(--chip-purple-bg);
+  border-color: var(--chip-purple-border);
+}
+
+.card .marker-ready {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+/* Chip box: h22 via padding on the 12px label line. */
+.card .card-tag,
+.card .marker {
+  padding: 3px 10px;
+  border-radius: var(--radius-chip);
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The sprint chip: mono, accent, its own smaller radius. */
+.card .card-sprint,
+.card .card-sprint-on {
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
+  min-height: 18px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Blocked: 3px left bar, tinted, one line. */
+.card .card-blocked {
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border-left: 3px solid var(--overdue);
+  border-radius: 0 4px 4px 0;
+  min-height: 28px;
+  padding: 0 10px;
+  align-items: center;
+  margin-top: 14px;
+}
+
+.card .card-blocked b {
+  color: var(--overdue);
+  font-weight: 400;
+}
+
+/* Row rhythm: title ·10· chips ·14· divider ·14· meta. */
+.card .card-tags {
+  margin-top: 10px;
+  gap: 6px;
+}
+
+.card .card-foot {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top-color: var(--border-subtle);
+  min-height: 36px;
+}
+
+/* Priority dot grows to the prototype's 12px; the ring stays the none-state. */
+.card .card-dot {
+  width: 12px;
+  height: 12px;
+}
+
+.card .card-dot-p1 {
+  background: var(--priority-high);
+}
+.card .card-dot-p2 {
+  background: var(--priority-medium);
+}
+
+/* The 36px avatar, and the accent bot badge as a small square. */
+.card .card-avatar {
+  width: 36px;
+  height: 36px;
+  border: 0;
+}
+
+.card .card-bot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  outline: 2px solid var(--bg-card);
+  right: -2px;
+  bottom: -2px;
+}
+
+/* Selected / keyboard-focused card wears the accent border. */
+.card:has(.card-open:focus-visible) {
+  border-color: var(--accent);
+}
+
+/* Done column: titles recede — the column is the state. */
+.lane[data-status='done'] .card-title {
+  color: var(--text-muted);
+}
+
+/*
+ * "just now" — the accent, while a card is fresh (LAI-606). A `var()`
+ * reference, not a colour: the single-source rule bans literals, not tokens.
+ * Scoped to beat `.t-meta`'s own colour on specificity.
+ */
+.card .card-age-now {
+  color: var(--accent);
+  font-weight: var(--weight-medium);
 }

@@ -97,7 +97,7 @@ export function TaskCard({
       )}
 
       {blocked === true && (
-        <p className="card-blocked t-label">
+        <p className="card-blocked t-caption">
           <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
             <rect x="4" y="11" width="16" height="9" rx="2" />
             <path d="M8 11V7a4 4 0 0 1 8 0v4" />
@@ -227,27 +227,32 @@ export function TaskCard({
         )}
 
         {/* Against `Date.now()`, never a stored epoch — a fixture pinned to a
-            fixed time read as 240 days old twice before (LAI-420). */}
+            fixed time read as 240 days old twice before (LAI-420).
+
+            Under five minutes it reads "just now" in the accent (LAI-606) —
+            the prototype's flash treatment, minus the flash. */}
         {fields.age && (
           <span
-            className="card-age card-above t-meta"
+            className={
+              Date.now() - task.updated_at < 300_000
+                ? 'card-age card-age-now card-above t-meta'
+                : 'card-age card-above t-meta'
+            }
             title={`Updated ${updatedAge(task.updated_at, Date.now())}`}
           >
-            {updatedAge(task.updated_at, Date.now())}
+            {Date.now() - task.updated_at < 300_000
+              ? 'just now'
+              : updatedAge(task.updated_at, Date.now())}
           </span>
         )}
 
         <span className="card-spacer" />
 
-        {!fields.assignee ? null : assignee === undefined ? (
-          <span
-            className="card-unassigned card-above t-meta"
-            title="Unassigned"
-            aria-label="Unassigned"
-          >
-            +
-          </span>
-        ) : (
+        {/* The dashed "+" that stood here for an unassigned card is gone
+            (LAI-606): it was display-only — claiming lives in the task
+            panel's AssignControl — and the prototype's meta row ends at the
+            avatar. Unassigned simply shows no avatar. */}
+        {!fields.assignee || assignee === undefined ? null : (
           <span className="card-who card-above">
             <span
               className="card-avatar t-avatar"

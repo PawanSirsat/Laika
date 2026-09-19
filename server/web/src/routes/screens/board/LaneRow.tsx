@@ -181,6 +181,7 @@ export function LaneRow({
         return (
           <section
             key={column.id}
+            data-status={dot}
             className={[
               over === column.id ? 'lane lane-over' : 'lane',
               columnOver === column.id ? 'lane-drop-before' : '',

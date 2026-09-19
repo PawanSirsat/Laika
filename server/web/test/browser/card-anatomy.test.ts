@@ -197,7 +197,7 @@ void describe('the card', () => {
        * LAI-606: the mockup's 13/13/11 gave way to the refreshed rhythm.
        * (The prototype-scale phase moves this once more, to 20px 20px 16px.)
        */
-      assert.equal(box.padding, '12px 14px', 'the refreshed card padding');
+      assert.equal(box.padding, '20px 20px 16px', 'the prototype’s card padding');
 
       const title = await h.page
         .locator('.card-title')
@@ -270,7 +270,9 @@ void describe('the card', () => {
        * thing the owner reported.
        */
       const height = (await banner.boundingBox())?.height ?? 0;
-      assert.ok(height < 28, `the banner is ${String(Math.round(height))}px — it wrapped`);
+      // 28px IS the banner's height now (min-height, LAI-606); one line of
+      // 13px caption inside it tops out well under 34, two lines cannot fit.
+      assert.ok(height <= 30, `the banner is ${String(Math.round(height))}px — it wrapped`);
     } finally {
       await h.close();
     }
