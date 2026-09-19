@@ -38,7 +38,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
 
   const signedIn = showsAppNav(session);
   const projectSlug = route.params.get('project') ?? undefined;
-  const { version, sprintCount, orgName } = useShellContext(projectSlug, signedIn);
+  const { version, sprintCount, orgName, spaceName } = useShellContext(projectSlug, signedIn);
 
   const { navigate } = route;
   const handleSignOut = useCallback(() => {
@@ -66,6 +66,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       version,
       sprintCount,
       orgName,
+      spaceName,
       host: window.location.host,
     }),
     [
@@ -82,6 +83,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
       version,
       sprintCount,
       orgName,
+      spaceName,
     ],
   );
 

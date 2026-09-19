@@ -87,8 +87,18 @@ void after(async () => {
   await closeBrowser();
 });
 
-void describe('the bar is one line', () => {
-  void test('identity and the view tabs share it when there is room', async () => {
+/*
+ * **Reversed by the owner during LAI-299.** LAI-292 compacted the bar so the
+ * identity and the tabs shared one line; the owner then asked for the project
+ * name on its own line with the tabs beneath it, and sent the reference.
+ *
+ * The guard is kept rather than deleted because what it was really protecting
+ * still matters: the tabs are a *row of their own*, not a wrapped remainder of
+ * the identity row, and every tab survives. Only the expected side of the
+ * `sameLine` assertion changed.
+ */
+void describe('the bar is two lines: identity, then tabs', () => {
+  void test('the tabs are on their own row, below the identity', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       // **1920, not 1600.** At 1600 this fixture is within a few pixels of
@@ -101,7 +111,7 @@ void describe('the bar is one line', () => {
 
       const g = await geometry(h.page);
       assert.ok(g.tabCount > 0, 'no tabs found — this proves nothing');
-      assert.equal(g.sameLine, true, 'the tabs are still on their own row');
+      assert.equal(g.sameLine, false, 'the tabs merged back onto the identity line');
     } finally {
       await h.close();
     }
@@ -246,16 +256,27 @@ void describe('the space bar’s actions are on the right', () => {
           : {
               createRight: Math.round(create.right),
               topRight: Math.round(top.right),
-              tabsRight: Math.round(tabs.right),
-              groupLeft: Math.round(group.left),
+              tabsTop: Math.round(tabs.top),
+              groupTop: Math.round(group.top),
             };
       });
 
       assert.ok(m !== null, 'the bar, the tabs or the actions are missing');
       assert.equal(m.createRight, m.topRight, 'Create is not flush with the bar’s right edge');
+
+      /*
+       * **They share the identity's line, above the tabs** (LAI-299).
+       *
+       * This asserted `groupLeft >= tabsRight` — "after the tabs" — which was
+       * the right test while the bar was one line. The owner then asked for
+       * two, so the actions and the tabs are no longer on the same row and a
+       * horizontal comparison between them says nothing. The property that
+       * survives is vertical: the actions are on the first line, the tabs on
+       * the second.
+       */
       assert.ok(
-        m.groupLeft >= m.tabsRight,
-        `the actions are still left of the tabs (${String(m.groupLeft)} < ${String(m.tabsRight)})`,
+        m.groupTop < m.tabsTop,
+        `the actions are not above the tabs (${String(m.groupTop)} >= ${String(m.tabsTop)})`,
       );
     } finally {
       await h.close();

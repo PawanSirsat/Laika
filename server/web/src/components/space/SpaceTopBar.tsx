@@ -7,6 +7,7 @@ import { useLive } from './SpaceLive.tsx';
 import { agentCount, cluster } from './top-bar-derive.ts';
 import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
 import { useSpaceFiltersClaimed } from './SpaceSlot.tsx';
+import { useShell } from '../shell/shell-context.ts';
 
 export interface SpaceTopBarProps {
   readonly members: readonly Member[];
@@ -56,6 +57,14 @@ export function SpaceTopBar({
   onReady,
   onCreate,
 }: SpaceTopBarProps) {
+  /*
+   * From the shell, not a prop: the rail reads the same value and one project
+   * name should be one request (LAI-299). `slug` is the fallback while the
+   * by-slug response is in flight — a URL is a poor name but a true one.
+   */
+  const { spaceName, route } = useShell();
+  const slug = route.params.get('project') ?? undefined;
+
   const { theme } = useTheme();
   const { stream, presence } = useLive();
   const searchRef = useRef<HTMLInputElement>(null);
@@ -117,16 +126,33 @@ export function SpaceTopBar({
       <div className="space-bar-row">
         <div className="space-identity">
           {/*
-          **The project name moved to the sidebar's wordmark** (LAI-293).
+          **The project name, shown only when the rail cannot** (LAI-299).
 
-          It was here *and* in the rail two inches away — the same word twice,
-          and the bar paid for it in width the owner wanted back. The rail is
-          the one that is always visible, including while a dialog covers the
-          bar, so it is the copy that stays.
+          LAI-293 moved it to the sidebar's wordmark because the bar and the
+          rail were naming the same thing two inches apart. That was right
+          while the rail is there — and the rail is **not** always there: it
+          collapses to icons (`.shell-rail-mini`), and below 900px it slides
+          off-canvas entirely. In both states the project had no name anywhere
+          on screen, which is how the owner found it.
 
-          The LIVE pill stays: it is about this space's event stream, not its
-          identity, and the rail has nowhere to say it.
+          So it is rendered always and **hidden by CSS whenever the rail is
+          showing it**, in `space.css`. The two rules there mirror the two
+          states exactly, which is what stops this becoming the duplication it
+          replaced.
         */}
+          <span className="space-icon" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#fff"
+              strokeWidth="2.2"
+            >
+              <path d="M5 20V9M12 20V4M19 20v-7" />
+            </svg>
+          </span>
+          <h1 className="space-name">{spaceName ?? slug ?? 'No space'}</h1>
 
           {/* Real members, never the design's four fixtures. Absent rather than
             a placeholder while the list is still loading.

@@ -1,5 +1,3 @@
-import { useEffect, useState } from 'react';
-import { getProject } from '../../api/projects.ts';
 import { Sidebar } from '../sidebar/Sidebar.tsx';
 import { useShell } from './shell-context.ts';
 import { useSpaces } from '../../routes/use-spaces.ts';
@@ -23,6 +21,7 @@ export interface ShellSidebarProps {
  */
 export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: ShellSidebarProps) {
   const {
+    spaceName,
     route: { path, navigate, params },
     session,
     me,
@@ -35,34 +34,10 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
   const projectSlug = params.get('project') ?? undefined;
 
   /*
-   * The open project's real name for the wordmark (LAI-293). By slug, not from
-   * the spaces list — see `Sidebar`'s `spaceName` for why the list cannot be
-   * trusted for this. Moved here from `SpaceLayout`, which asked for exactly
-   * this and no longer needs it; it is the same one request, not a new one.
+   * The name comes from the shell now (LAI-299), not a fetch of its own: the
+   * space bar needs the same string when this rail is collapsed or off-canvas,
+   * and two components fetching one project is one too many.
    */
-  const [spaceName, setSpaceName] = useState<string | undefined>(undefined);
-
-  useEffect(() => {
-    if (projectSlug === undefined) {
-      setSpaceName(undefined);
-      return;
-    }
-
-    const controller = new AbortController();
-
-    getProject(projectSlug, controller.signal)
-      .then((project) => {
-        if (!controller.signal.aborted) setSpaceName(project.name);
-      })
-      .catch(() => {
-        // The rail falls back to the listed name, then to the product name.
-        // A rail that cannot name the space is not worth an error state.
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [projectSlug]);
   // Gated on the session: `/login` and first boot render this shell too, and an
   // ungated fetch 401s on every sign-in page load.
   const {

@@ -8,7 +8,14 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, type ApiStub, type StubCall } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  setTheme,
+  type ApiStub,
+  type Harness,
+  type StubCall,
+} from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -154,9 +161,20 @@ void describe('the space bar', () => {
       assert.equal(await h.page.locator('.sidebar-wordmark').innerText(), 'Laika Core');
       assert.equal(await h.page.locator('.sidebar-orgline').innerText(), 'Borealis Labs');
 
-      // And the bar no longer draws either — moved, not copied.
-      assert.equal(await h.page.locator('.space-name').count(), 0);
-      assert.equal(await h.page.locator('.space-icon').count(), 0);
+      /*
+       * And the bar does not *show* either — moved, not copied.
+       *
+       * **`count()` was wrong here and LAI-299 proved it.** The bar's name is
+       * always in the DOM now and hidden by CSS when the rail is showing it,
+       * so a presence check returns 1 in both the correct and the broken
+       * state. The icon did not come back, so `count()` still fits it.
+       */
+      // The bar names it too since LAI-299 — see the describe below for why
+      // the "hide it when the rail has it" rule could not be computed.
+      assert.equal(await h.page.locator('.space-name').innerText(), 'Laika Core');
+      // The icon came back with the name in LAI-299 — the owner's reference
+      // has both on the bar's first line.
+      assert.equal(await h.page.locator('.space-icon').count(), 1);
 
       /*
        * Four avatars and `+2`, from six real members — never the design's four
@@ -425,6 +443,106 @@ void describe('the bar does not draw filters a view already owns', () => {
         (await h.page.locator('.space-select').count()) >= 2,
         'the timeline lost its filters — the bar is its only place for them',
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * The project is named exactly once, in every state (LAI-299).
+ *
+ * LAI-293 moved the name to the rail's wordmark. The rail is not always there:
+ * it collapses to icons, and below 900px it slides off-canvas — and in both
+ * states nothing on screen named the project. The owner found the second one.
+ *
+ * **Measured by visibility, not by presence.** The bar's copy is always in the
+ * DOM and hidden with CSS, so `locator.count()` cannot tell the states apart —
+ * it returns 1 whether or not anyone can read it. That is the assertion a
+ * broken fix would satisfy.
+ */
+/*
+ * **The bar names the project unconditionally** (LAI-299). It was hidden while
+ * the rail had it; that rule is not computable — a window positioned partly off
+ * the display leaves the rail off *screen* while the page still has it at
+ * `x = 0`, so the board had no name at all. Naming it twice is the accepted
+ * cost of never naming it nowhere.
+ */
+void describe('the project is named in the bar, wherever the rail is', () => {
+  /** What a person can actually read, in each of the two places. */
+  const naming = (h: Harness) =>
+    h.page.evaluate(() => {
+      const visible = (el: Element | null) =>
+        el !== null &&
+        el.getBoundingClientRect().width > 0 &&
+        getComputedStyle(el).display !== 'none';
+
+      const rail = document.querySelector('#sidebar, .sidebar');
+      const box = rail?.getBoundingClientRect();
+      // Off-canvas counts as absent: it is in the DOM and nobody can read it.
+      const railOnScreen = box !== undefined && box.left >= 0 && box.width > 0;
+      const wordmark = document.querySelector('.sidebar-wordmark');
+      const barName = document.querySelector('.space-name');
+
+      return {
+        rail: railOnScreen && visible(wordmark) ? (wordmark?.textContent ?? null) : null,
+        bar: visible(barName) ? (barName?.textContent ?? null) : null,
+      };
+    });
+
+  void test('wide with the rail open, both name it — deliberately', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 900 });
+      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(
+        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
+        undefined,
+        { timeout: 15_000 },
+      );
+
+      const m = await naming(h);
+      assert.equal(m.rail, 'Laika Core');
+      assert.equal(m.bar, 'Laika Core', 'the bar stopped naming the project');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('below 900px the rail is off-canvas, so the bar names it', async () => {
+    // The owner's report: their window was narrow, the rail was off screen,
+    // and the board had no name on it anywhere.
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 880, height: 900 });
+      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(500);
+
+      const m = await naming(h);
+      assert.equal(m.rail, null, 'the rail is on screen — this test is measuring the wrong state');
+      assert.equal(m.bar, 'Laika Core', 'nothing names the project at this width');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('collapsed, the bar names it', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 900 });
+      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
+
+      // The rail's own header button is what collapses it.
+      await h.page.locator('.sidebar-logo').click();
+      await h.page.waitForSelector('.shell-rail-mini', { timeout: 10_000 });
+      await h.page.waitForTimeout(400);
+
+      const m = await naming(h);
+      assert.equal(m.rail, null, 'the wordmark survived the collapse — wrong state');
+      assert.equal(m.bar, 'Laika Core', 'nothing names the project while the rail is collapsed');
     } finally {
       await h.close();
     }

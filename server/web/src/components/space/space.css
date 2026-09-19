@@ -561,3 +561,46 @@
 .space-bar-top > nav {
   order: 2;
 }
+
+/*
+ * The bar always names the project (LAI-299).
+ *
+ * It was hidden here whenever the rail was showing it — two rules mirroring
+ * the two states that hide the rail (collapsed, and off-canvas below 900px).
+ * **That condition cannot be computed.** The owner's browser window sits
+ * partly off the left of their display, so the rail is off their *screen*
+ * while the page still has it at `x = 0` at full width: neither rule fires,
+ * CSS has no way to ask, and the board had no name on it for the second time.
+ *
+ * So it is unconditional. The cost is the project named twice when the rail is
+ * visible, which is the duplication LAI-293 removed — accepted deliberately,
+ * because a name in two places is a much smaller fault than a board with none,
+ * and only one of the two is reported by anyone.
+ */
+.space-name {
+  display: block;
+}
+
+/*
+ * Line 1: icon, name, LIVE, then Agents and Create on the right.
+ * Line 2: the view tabs (LAI-299).
+ *
+ * The tabs take the full width, which is what forces them onto their own row;
+ * `order` keeps them last so the wrap lands between the two groups.
+ */
+.space-bar-top > .space-bar-row {
+  flex: 0 1 auto;
+  min-width: 0;
+  order: 1;
+}
+
+.space-bar-right {
+  order: 2;
+  margin-inline-start: auto;
+}
+
+.space-bar-top > nav {
+  flex: 1 1 100%;
+  min-width: 0;
+  order: 3;
+}
