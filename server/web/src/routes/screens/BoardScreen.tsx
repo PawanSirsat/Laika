@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
+import { useDelayed } from '../../components/use-delayed.ts';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
@@ -227,6 +228,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   }, [slug]);
 
   const board = useBoard(slug, filter);
+
+  /**
+   * **Nothing for the first 150ms** (LAI-295). Against a local instance the
+   * board usually answers in under 50ms, so rendering the skeleton the moment
+   * loading starts made every navigation blink — which reads as broken rather
+   * than fast. Held 300ms once shown, so a 160ms response does not flash it.
+   */
+  const showBoardSkeleton = useDelayed(board.state.status === 'loading');
   const columns = useColumns(slug);
   const [creatingColumn, setCreatingColumn] = useState(false);
   const prefs = useViewPreferences(slug);
@@ -832,7 +841,33 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       )}
 
       {board.state.status === 'loading' ? (
-        <LoadingState shape="card" count={4} label="Loading tasks" />
+        /* `null` until the delay elapses — deliberately not the empty board,
+           which would render "Nothing in this lane" and then replace it. */
+        !showBoardSkeleton ? null /*
+          **The board's shape, not a stack of cards** (LAI-295). This was
+          `shape="card" count={4}` — a vertical list where the board is a grid —
+          so the whole layout jumped when tasks arrived. `LoadingState`'s own
+          rule is that a skeleton mirrors what it replaces; this was the one
+          place it did not.
+
+          The column count comes from the project's **real** columns, because
+          they are configuration now (LAI-266): a fixed four replaced by five
+          real lanes is the same reflow, just narrower. Falls back to four only
+          while the columns themselves are still loading.
+
+          **And it follows the view.** This branch serves the list too —
+          `ListView` does no fetching of its own — so a board skeleton in front
+          of a table would be the same mismatch one screen over.
+        */ : view === 'list' ? (
+          <LoadingState shape="table" count={8} label="Loading tasks" />
+        ) : (
+          <LoadingState
+            shape="board"
+            columns={columns.visible.length > 0 ? columns.visible.length : 4}
+            count={2}
+            label="Loading tasks"
+          />
+        )
       ) : board.state.status === 'error' ? (
         <ApiErrorState error={board.state.error} resource="this board" onRetry={board.reload} />
       ) : (
@@ -979,6 +1014,23 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         permission is already resolved. A Viewer sees tags and gets no way to
         change them, rather than a control that answers 403.
       */}
+      {/*
+        **A drawer opened before the board has loaded** (LAI-295). `openTask` is
+        found in the board's own task list, so a deep link to
+        `/board?task=LC-12` — or a reload with the drawer open — rendered the
+        chrome with nothing inside it until the fetch landed.
+
+        Gated on `loading` rather than on `openTask === undefined` alone: once
+        the board *has* loaded and the id is still not there, the task does not
+        exist, and a skeleton that never resolves is a worse answer than an
+        empty drawer.
+      */}
+      {openTaskId !== undefined && openTask === undefined && board.state.status === 'loading' && (
+        <TaskDrawerContent>
+          <LoadingState shape="drawer" count={4} label="Loading this task" />
+        </TaskDrawerContent>
+      )}
+
       {openTask !== undefined && (
         <TaskDrawerContent>
           <TaskDetailPanel
