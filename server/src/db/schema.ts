@@ -17,6 +17,7 @@
 import { sql } from 'drizzle-orm';
 import {
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -207,6 +208,20 @@ export const projects = sqliteTable(
     visibility: text('visibility', { enum: PROJECT_VISIBILITIES }).notNull().default('private'),
     /** The shared brief served to agents by `get_project_context` (§7.1). */
     contextMd: text('context_md').notNull().default(''),
+    /**
+     * Hide finished work from the board once it is this many days old
+     * (LAI-266). `null` means never, and is the default.
+     *
+     * **A project setting rather than a per-viewer one, deliberately.** It does
+     * not change how work *looks*, it removes work from the board — so if it
+     * were personal, two people on the same board would disagree about whether
+     * a task exists. That is D-060's *"an order only its arranger can see is a
+     * private opinion wearing the board's clothes"* applied to visibility.
+     *
+     * The board still says what it is hiding; a filter nobody can see is worse
+     * than no filter.
+     */
+    boardHideDoneDays: integer('board_hide_done_days'),
     archivedAt: integer('archived_at'),
     createdAt,
     updatedAt,
@@ -878,6 +893,140 @@ export const commentMentions = sqliteTable(
   ],
 );
 
+// ------------------------------------------------------- §4.20 board_columns
+
+/**
+ * The board's lanes, as rows (LAI-266).
+ *
+ * Until this table existed, a column *was* a status: `BOARD_COLUMNS` in the
+ * client was a frozen five-value array and `.kanban` was `repeat(5, …)`. A
+ * column is now a per-project, named, ordered grouping of one or more statuses,
+ * which is Jira's model — and the reason it is safe. `TASK_STATUSES` is
+ * untouched, so everything that reasons about status keeps working: throughput
+ * (`services/metrics.ts`), capacity (`services/presence.ts`), the stale cron
+ * (`jobs/jobs.ts`) and every MCP tool.
+ *
+ * ## `position` may go negative, and no CHECK may forbid it
+ *
+ * `reorderBoardColumns` parks every row at `-(position + 1)` before writing the
+ * new order. That is not a flourish — **SQLite checks a unique index per row,
+ * not per statement or per transaction, and has no deferrable unique
+ * constraint**, so both a single `CASE` update and a naive per-row rewrite fail
+ * `UNIQUE constraint failed` on `(project_id, position)` partway through a
+ * permutation. Measured, not recalled.
+ *
+ * So: **do not add `CHECK (position >= 0)`.** It would look like an obvious
+ * tightening and would break reorder for any permutation that is not a simple
+ * append.
+ *
+ * ## `hidden`
+ *
+ * How `cancelled` gets a home without appearing on the board. §11.4.1 says
+ * `cancelled` is *"hidden behind a filter, not a column"*; without `hidden` it
+ * would either map to no column — making the mapping partial, which is the one
+ * thing `board_column_statuses` exists to prevent — or land in Done, where
+ * cancelled work would render as finished work.
+ *
+ * LAI-267 (a WIP limit) and LAI-268 (a column reviewer) both want configuration
+ * hung off a column and both predate this table. **They land here**, as columns
+ * on this row — not as a third table.
+ */
+export const boardColumns = sqliteTable(
+  'board_columns',
+  {
+    id: text('id').primaryKey(),
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    position: integer('position').notNull(),
+    /** 1 = holds statuses but draws no lane. `cancelled`'s home. */
+    hidden: integer('hidden').notNull().default(0),
+    createdAt,
+    updatedAt,
+  },
+  (t) => [
+    // Makes "position is a permutation" true of the data rather than merely of
+    // the code path that writes it — the same argument as
+    // `sprints_one_active_per_project`.
+    uniqueIndex('board_columns_project_position_unique').on(t.projectId, t.position),
+    uniqueIndex('board_columns_project_name_unique').on(t.projectId, t.name),
+    // Not redundant with the primary key: it is the parent side of
+    // `board_column_statuses`' composite foreign key, which SQLite requires to
+    // be a unique index over exactly those two columns in that order.
+    uniqueIndex('board_columns_project_id_unique').on(t.projectId, t.id),
+    index('board_columns_project_id_idx').on(t.projectId),
+    check('board_columns_hidden_check', sql.raw('hidden IN (0, 1)')),
+    check('board_columns_name_check', sql.raw('length(trim(name)) BETWEEN 1 AND 40')),
+  ],
+);
+
+// ----------------------------------------------- §4.21 board_column_statuses
+
+/**
+ * Which statuses a column draws, and which one a drop sets.
+ *
+ * **The primary key is the invariant.** `(project_id, status)` means a status
+ * belongs to at most one column in a project, so a task can never appear in two
+ * lanes. That half is enforced here, in SQL, because its violation is invisible
+ * until somebody's card shows up twice.
+ *
+ * **The other half is not, and saying so matters.** *Every* non-`cancelled`
+ * status being mapped — totality — cannot be expressed as a constraint. It is a
+ * write-time rule in `services/board-columns.ts` with a test behind it, in the
+ * same way `sprints` records that "at most one active sprint" and "sprints may
+ * not overlap" are write-time rules. A comment claiming the PK does both jobs
+ * would be worse than no comment.
+ *
+ * ## The foreign key is composite, and that is the point
+ *
+ * `project_id` here is a denormalisation — it is already reachable through
+ * `column_id`. A plain `column_id` reference would let project A's status map to
+ * project B's column with nothing to notice. The composite form refuses it.
+ *
+ * ## Why RESTRICT, when deleting a column is a supported operation
+ *
+ * `deleteBoardColumn` reparents the rows first, so RESTRICT never fires on the
+ * happy path. It exists for every *other* writer — a future service, a `DELETE`
+ * typed at a shell. `CASCADE` there would delete the mappings with the column
+ * and leave those statuses in no lane, which is silent: the tasks simply stop
+ * appearing. RESTRICT turns that into a loud failure. `activity` takes the same
+ * posture toward `projects`.
+ *
+ * Note `project_id` carries its own `CASCADE` to `projects` *as well*. Without
+ * it the RESTRICT above wins when a project is deleted and the delete fails
+ * outright — reproduced, and latent rather than absent, since LAI-154 is filed.
+ */
+export const boardColumnStatuses = sqliteTable(
+  'board_column_statuses',
+  {
+    projectId: text('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    status: text('status', { enum: TASK_STATUSES }).notNull(),
+    columnId: text('column_id').notNull(),
+    /** 1 = what a drop on this column sets. Exactly one per column. */
+    isPrimary: integer('is_primary').notNull().default(0),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.projectId, t.status] }),
+    foreignKey({
+      columns: [t.projectId, t.columnId],
+      foreignColumns: [boardColumns.projectId, boardColumns.id],
+      name: 'board_column_statuses_column_fk',
+    }).onDelete('restrict'),
+    index('board_column_statuses_column_id_idx').on(t.columnId),
+    // A column has one drop target or none, never two — the partial-unique
+    // pattern `sprints_one_active_per_project` established.
+    uniqueIndex('board_column_statuses_one_primary')
+      .on(t.columnId)
+      .where(sql`is_primary = 1`),
+    check('board_column_statuses_status_check', oneOf('status', TASK_STATUSES)),
+    check('board_column_statuses_is_primary_check', sql.raw('is_primary IN (0, 1)')),
+  ],
+);
+
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
@@ -898,3 +1047,5 @@ export type Tag = typeof tags.$inferSelect;
 export type TaskTag = typeof taskTags.$inferSelect;
 export type TaskWatcher = typeof taskWatchers.$inferSelect;
 export type CommentMention = typeof commentMentions.$inferSelect;
+export type BoardColumn = typeof boardColumns.$inferSelect;
+export type BoardColumnStatus = typeof boardColumnStatuses.$inferSelect;

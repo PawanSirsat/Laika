@@ -473,6 +473,20 @@ const TABLES_NOT_IN_SPEC = new Map<string, string>([
     'idempotency_keys',
     'transport bookkeeping for the `Idempotency-Key` header (§6.3, LAI-006), not product data — no endpoint reads it and a cron sweep empties it',
   ],
+  // The two below are the first entries in this map that are *meant to die*.
+  // Every other one is permanent — better-auth's tables and transport
+  // bookkeeping are never going to appear in §4. These are here because the
+  // code landed before the document, which is CLAUDE.md §4.4 step 2's
+  // self-expiring exemption, and the staleness guard at the bottom of this file
+  // is what takes them out: it fails the moment §4.20 exists.
+  [
+    'board_columns',
+    'LAI-266 landed columns as configuration; §4.20 is LAI-264, CHIEF’s half, in flight. Retired by the merge that adds the section — the staleness guard below fails until this entry is gone.',
+  ],
+  [
+    'board_column_statuses',
+    'LAI-266; §4.21 is LAI-264, in flight. One status belongs to at most one column per project, which the composite primary key enforces; totality is a service rule with a test.',
+  ],
 ]);
 
 /**
@@ -489,6 +503,10 @@ const COLUMNS_NOT_IN_SPEC = new Map<string, string>([
   [
     'users.image',
     'required by better-auth’s user model; unused — §4.1 says avatars are derived, no uploads in v1',
+  ],
+  [
+    'projects.board_hide_done_days',
+    'LAI-266: how long finished work stays on the board. §4.3 gains the row in LAI-264, CHIEF’s half, in flight. A project setting rather than a per-viewer one because it removes work from the board rather than restyling it.',
   ],
 ]);
 

@@ -69,6 +69,8 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
+    'board_column_statuses',
+    'board_columns',
     'comment_mentions',
     'comments',
     'heartbeats',
