@@ -60,9 +60,14 @@ answer is in hand at skeleton time. Only **member** and **lead** need the id.
       — the skeleton does not guess. Reserving on a coin flip is the same defect
       mirrored, and a viewer's board must not reserve a tile they never get.
 - [ ] The three-role shortcut is **not** duplicated in `BoardScreen`. Express it
-      in `api/tasks.ts` as a policy function returning `boolean | undefined`,
-      with `canConfigureProject` delegating to it, so there is one source of
-      truth for who may configure.
+      in `api/tasks.ts` as a **second export beside** `canConfigureProject`, not
+      by widening that function's return type — see the note below, which is the
+      design, not a suggestion.
+- [ ] **Both** `canConfigureProject` and `canCreateTask` delegate to it. The
+      short-circuit is written out twice today (`tasks.ts:245` and `:256`,
+      identical first two lines), and extracting it for one caller while the
+      other keeps its own copy leaves the next reader asking which is
+      authoritative.
 - [ ] Measured, with only `board-columns` delayed: the skeleton's lane widths
       equal the real board's for an admin, and no tile is drawn for a viewer.
 - [ ] `loading-sweep.test.ts`'s existing gate assertions still pass — they
@@ -82,3 +87,40 @@ one — already reserves the tile correctly.
 
 Do not "fix" this by always reserving: `LaneRow` emits the trailing `auto` only
 when `onAddColumn` is defined, so a viewer's board genuinely has no tile.
+
+## Design — settled, do not re-derive
+
+**Do not widen `canConfigureProject` to `boolean | undefined`.** That was this
+task's first shape and it is wrong. The function has exactly two callers
+(`BoardScreen.tsx:355` and `:375`), both pass a definite project id, and both
+can always get a definite answer. Widening makes them — and everything added
+later — absorb a third state that exists only for a caller that has not got the
+project yet. Line 375 would survive on `undefined && x` being falsy; **line 355
+assigns the result**, so `mayConfigure` becomes `boolean | undefined` and every
+downstream use needs a `?? false` that means nothing where it is written.
+
+It is also two questions in one signature. `canConfigureProject(role, id,
+memberships)` answers *"may this reader configure this project"*. The skeleton
+asks *"is the answer knowable without the project"*. A policy helper stops being
+readable when its return type has to carry both.
+
+A second export, sharing the short-circuit so the rule is stated once:
+
+```ts
+/** Owner and admin always may; a viewer never may. `undefined` when the org
+ *  role alone cannot decide and a membership lookup is needed. */
+export function byOrgRoleAlone(orgRole: string): boolean | undefined {
+  if (orgRole === 'owner' || orgRole === 'admin') return true;
+  if (orgRole === 'viewer') return false;
+  return undefined;
+}
+```
+
+`canConfigureProject` and `canCreateTask` both call it and fall through to their
+own membership test — which is where they differ, and the only place they
+should. Named for the **org role**, not for configuring, because both use it.
+
+`loading-sweep.test.ts:223` keeps asserting the gate asks the policy, unchanged.
+
+Design credited to the other SHELL session, who pushed back on the widening; the
+`canCreateTask` half is from checking how many copies of the short-circuit exist.
