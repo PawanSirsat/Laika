@@ -3320,3 +3320,85 @@ LAI-270, LAI-272). This is the lane's box.
 
 The owner works at a narrower viewport regularly — at which point the lane
 minimum and horizontal scroll, declined here, become the live question again.
+
+---
+
+## D-063 — A task opens as a centred modal over the board, not a right-hand
+## drawer. It amends D-059.2.
+
+**2026-09-19. Owner's decision, with a screenshot of the shipped drawer beside a
+Jira issue modal:** *"when we open the task that open from the right side but i
+want that like JIRA popup"*.
+
+**D-059.2 said a drawer** — *"a 840px drawer over a dimmed board, dismissed by
+clicking the scrim"* — and `docs/design/Laika 02-04 - Task, Capacity,
+Dashboard.dc.html` draws exactly that: `position:absolute; top:0; right:0;
+bottom:0; width:840px`. **So this departs from the design file, not just from a
+reading of it**, and it is the owner's to depart from. D-059's other three points
+stand.
+
+### This is smaller than it looks, because LAI-285 already did the hard half
+
+The drawer is **already two columns** — a document beside a 288px rail of fields
+— widened to `1120px` for exactly that reason. **A Jira issue modal is the same
+two columns in a different frame.** What changes is the box: fixed to the right
+edge, full height, bordered on one side → centred, rounded, shadowed on all
+sides, with a maximum height.
+
+**The content is not in scope and must not be redesigned to chase the
+screenshot.** Jira's breadcrumb, its epic link, its attachments and subtasks are
+Jira's data model, not ours.
+
+### What the frame becomes
+
+**Centred inside the dimmed region, not inside the viewport.** The scrim starts
+where the sidebar ends (`--rail-width`), which is LAI-252's deliberate property:
+*you can switch space with a task open*. Dimming the whole window to centre
+against it would trade a working behaviour for a few pixels of symmetry.
+
+**A maximum height, with both columns scrolling inside it.** The drawer is
+viewport-height by construction; a centred box is not, and "as tall as its
+content" is how a modal ends up taller than the screen with its close button
+off it.
+
+### The accessibility half is not optional now, and it is currently absent
+
+`TaskDrawer.tsx` has **no `role="dialog"`, no `aria-modal`, no labelling, and no
+focus trap.** It focuses the panel and listens for Escape, which is most of the
+behaviour and none of the semantics. A panel pinned to the edge is at least
+*arguably* a complementary region; **a centred box over a dimmed page is a modal
+dialog and nothing else**, and one that does not say so traps a screen-reader
+user outside the thing that just opened.
+
+**So the move carries the semantics with it** — role, modality, a label, a focus
+trap, and focus returned to the card that was clicked. This is not scope creep
+onto the owner's request: it is what the request makes true.
+
+### §11.4.2.1's table stops carrying pixel figures
+
+**The table in §11.4.2 headed `D-059` was wrong on two of its three rows.** Its
+sidebar row said *three spaces* until D-061, and its task row still says
+**`840px`** — a figure LAI-285 changed to `1120` without anything noticing,
+because **nothing parses §11.4 prose.** Yesterday's D-061 recorded that gap as a
+one-off; **it is the second instance in two days, so it is a pattern and gets
+fixed rather than noted again.**
+
+Two changes, both in `docs/`:
+
+1. **The table drops exact pixel widths.** §11.4.2.1 exists to say *what a screen
+   must contain*, and a width in it duplicates a CSS value that will always be
+   the real one. **A number that cannot be checked is worse than no number** —
+   it reads as authoritative to whoever finds it first.
+2. **Each row names its own governing decision** instead of the table claiming
+   one. A table headed with a single decision id silently misattributes every
+   row that is later amended, which is precisely what happened to the sidebar row
+   the day D-061 landed.
+
+**This is not a licence to strip figures from the SPEC generally.** §4's tables
+are schema declarations with a drift test behind them and they stay exact. The
+rule is narrower: **a figure belongs in the SPEC when something can falsify it.**
+
+### Revisit when
+
+The owner wants the modal to dim the sidebar too, or asks for Jira's minimise
+control — neither is decided here.

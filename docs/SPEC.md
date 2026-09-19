@@ -1472,11 +1472,16 @@ WORK / REVIEW sidebar, screens are not all routes, and five of these rows are no
 **Read the rows as surfaces, not as destinations**, until this section is
 rewritten against the refreshed design:
 
-| D-059 | |
-| --- | --- |
-| the sidebar | **SPACES** — two recent spaces, *More spaces*, SETTINGS. A space is a project with a two-letter key, a count and a colour |
-| Task detail | a **840px drawer over a dimmed board**, dismissed by the scrim — not a screen |
-| Timeline, Calendar, Capacity, Dashboard, Meeting review | **tabs across the top of a space** |
+**No exact widths here** (D-063). This table says what a screen must contain;
+a pixel figure in it duplicates a CSS value nothing can check it against, and
+both rows that carried one had drifted before anyone noticed. Each row names
+the decision currently governing it rather than the table naming one for all.
+
+| | | decision |
+| --- | --- | --- |
+| the sidebar | **SPACES** — two recent spaces, *More spaces*, SETTINGS. A space is a project with a two-letter key, a count and a colour | D-059.1, amended by **D-061** |
+| Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
+| Timeline, Calendar, Capacity, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
 
 Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
 and is behind the owner's live design.** `docs/design/README.md` says which copy
