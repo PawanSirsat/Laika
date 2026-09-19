@@ -181,6 +181,7 @@
 
 .cd-delete,
 .cd-cancel,
+.cd-submit,
 .cd-confirm {
   font: inherit;
   font-size: 0.75rem;
@@ -224,4 +225,35 @@
 .cd-confirm:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* --- create-a-column (LAI-291) -------------------------------------------- */
+
+/* The asterisk the reference shows beside a required label. Decorative — the
+   `required` meaning is carried by the disabled Submit and by the field itself,
+   not by a red star, which a screen reader announces as "asterisk". */
+.cd-required {
+  color: var(--red);
+}
+
+/* The affirmative action, so it reads as the way out of the dialog rather than
+   one of two equal buttons. Pushed right of Cancel. */
+.cd-submit {
+  margin-left: auto;
+  color: #fff;
+  background: var(--acc);
+  border: 1px solid var(--acc);
+}
+
+.cd-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Disabled until the name is there: a Submit that answers 422 is a worse way to
+   say "this field is required" than a button that plainly cannot be pressed. */
+.cd-submit:disabled {
+  color: var(--tx3);
+  background: var(--tub);
+  border-color: var(--bd);
+  cursor: default;
 }

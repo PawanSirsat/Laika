@@ -58,7 +58,7 @@ export interface UseColumns {
   /** The server's reason for refusing the last edit. */
   readonly error: string | undefined;
   readonly busy: boolean;
-  readonly create: (name: string) => Promise<void>;
+  readonly create: (name: string, status?: TaskStatus | null) => Promise<void>;
   readonly rename: (columnId: string, name: string) => Promise<void>;
   readonly setStatuses: (columnId: string, statuses: readonly TaskStatus[]) => Promise<void>;
   readonly remove: (columnId: string, reassignTo: string) => Promise<void>;
@@ -164,12 +164,38 @@ export function useColumns(slug: string | undefined): UseColumns {
     [reload],
   );
 
+  /**
+   * Create a column, optionally holding one status (LAI-291).
+   *
+   * **Two requests, because `POST /board-columns` takes only a name.** The
+   * column is made first and its status set second, so a failure on the second
+   * leaves a real, empty column rather than nothing — which is a legal state
+   * (`primary_status: null`) and visible, so the person can finish it from
+   * Column settings. The alternative, rolling back by deleting, turns a partial
+   * success into a total failure and loses the name they typed.
+   *
+   * The new column is found by **id difference**, not by name: two columns may
+   * share a name, and the server does not say which row it just made.
+   */
   const create = useCallback(
-    async (name: string) => {
+    async (name: string, status?: TaskStatus | null) => {
       if (slug === undefined) return;
-      await run(() => createColumn(slug, name));
+      const before = new Set(state.status === 'ready' ? state.columns.map((c) => c.id) : []);
+
+      await run(async () => {
+        const body = await createColumn(slug, name);
+        if (status === undefined || status === null) return body;
+
+        const made = body.columns.find((c) => !before.has(c.id));
+        // No new id means the server answered something this did not expect.
+        // Returning the board leaves the column on screen rather than throwing
+        // away a successful create over a failed follow-up.
+        if (made === undefined) return body;
+
+        return setColumnStatuses(slug, made.id, [status]);
+      });
     },
-    [run, slug],
+    [run, slug, state],
   );
 
   const rename = useCallback(

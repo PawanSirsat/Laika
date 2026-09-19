@@ -21,6 +21,7 @@ import { setHideDoneAfter } from '../../api/projects.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
 import { ColumnDialog } from './board/ColumnDialog.tsx';
+import { NewColumnDialog } from './board/NewColumnDialog.tsx';
 import { ViewSettings } from './board/ViewSettings.tsx';
 import { useViewPreferences } from './board/use-view-preferences.ts';
 import { groupNotice, groupSwimlanes, isGroupBy } from './board/group-lanes.ts';
@@ -227,6 +228,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
   const board = useBoard(slug, filter);
   const columns = useColumns(slug);
+  const [creatingColumn, setCreatingColumn] = useState(false);
   const prefs = useViewPreferences(slug);
   const [settingsAt, setSettingsAt] = useState<{ top: number; right: number } | undefined>(
     undefined,
@@ -325,12 +327,6 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     canConfigureProject(me.org_role, project.id, me.memberships);
 
   /** `Column 5`, skipping any name already taken. */
-  const nextColumnName = (existing: readonly BoardColumn[]): string => {
-    const taken = new Set(existing.map((c) => c.name));
-    let n = existing.length + 1;
-    while (taken.has(`Column ${String(n)}`)) n += 1;
-    return `Column ${String(n)}`;
-  };
 
   /**
    * Search is **client-side, over the tasks already loaded**.
@@ -692,6 +688,24 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         />
       )}
 
+      {creatingColumn && (
+        <NewColumnDialog
+          // Every column, visible and hidden, so the picker can say which one a
+          // status would move away from.
+          all={columns.state.columns}
+          busy={columns.busy}
+          error={columns.error}
+          onCreate={(name, status) => {
+            void columns.create(name, status).then(() => {
+              setCreatingColumn(false);
+            });
+          }}
+          onClose={() => {
+            setCreatingColumn(false);
+          }}
+        />
+      )}
+
       {editingColumn !== undefined && (
         <ColumnDialog
           column={editingColumn}
@@ -881,7 +895,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                       void columns.reorder([...ids, ...hidden]);
                     },
                     onAddColumn: () => {
-                      void columns.create(nextColumnName(columns.visible));
+                      // **Ask, then create** (LAI-291). This used to call
+                      // `columns.create(nextColumnName(...))`, so a column
+                      // called "New column" appeared and you renamed it after.
+                      setCreatingColumn(true);
                     },
                     onEditColumn: (column: BoardColumn) => {
                       setEditing(column.id);
