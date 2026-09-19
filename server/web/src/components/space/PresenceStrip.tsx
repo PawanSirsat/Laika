@@ -1,4 +1,3 @@
-import { Spinner } from '../../components/Spinner.tsx';
 import { PresencePerson } from '../PresencePerson.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
 import type { PresenceView } from '../../api/presence.ts';
@@ -54,10 +53,19 @@ export function PresenceStrip({ presence, assignee, onFilter, spaceSlug }: Prese
       <h2 className="presence-label">WORKING NOW</h2>
 
       {presence === undefined ? (
-        <p className="presence-note">
-          <Spinner size="sm" />
-          Loading…
-        </p>
+        /*
+         * **Nothing at all while presence loads** (LAI-607).
+         *
+         * This was a spinner and the word "Loading…", and presence resolves
+         * well after the board does — so it sat there animating for three
+         * seconds next to a board that was already usable, which reads as
+         * "something is stuck", not "something is coming".
+         *
+         * Presence is **ambient**: nobody is waiting on it, and the heading
+         * above already holds this row's height, so there is no reflow to
+         * prevent. A loading state is for work the reader is waiting through.
+         */
+        <p className="presence-note" aria-hidden="true" />
       ) : presence.present.length === 0 ? (
         <p className="presence-note">Nobody has a session in the last five minutes.</p>
       ) : (

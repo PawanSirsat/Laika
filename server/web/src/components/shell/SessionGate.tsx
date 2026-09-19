@@ -1,3 +1,4 @@
+import { Spinner } from '../Spinner.tsx';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ApiErrorState } from '../ApiErrorState.tsx';
 import { EmptyState } from '../EmptyState.tsx';
@@ -78,7 +79,19 @@ export function SessionGate({ children }: SessionGateProps) {
   if (!routeIsPublic && session.status === 'loading') {
     return (
       <div className="shell-gate">
-        <LoadingState shape="card" count={2} label="Loading your account" />
+        {/*
+          **A spinner, not a skeleton** (LAI-607). This rendered two card
+          placeholders, which the board's own skeleton replaced with a
+          different shape a moment later — two loading treatments in a row for
+          one wait, and the first one promising a layout that never arrived.
+
+          A skeleton is a promise about what is coming. This gate does not know
+          what is coming — any route can be behind it — so it has nothing to
+          promise and says only that it is working.
+        */}
+        <p className="shell-gate-note" role="status">
+          <Spinner size="sm" /> Loading your account
+        </p>
       </div>
     );
   }

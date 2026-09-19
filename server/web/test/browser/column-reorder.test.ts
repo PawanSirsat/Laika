@@ -353,3 +353,80 @@ void describe('the keyboard route', () => {
     }
   });
 });
+
+void describe('the head reveals its own chrome', () => {
+  /*
+   * The grip and the `…` menu are hidden at rest and revealed by hovering **the
+   * head**, not the lane (LAI-603). It was `.lane:hover`, which lit them up
+   * whenever the pointer was anywhere in a column — including down among the
+   * cards, where the controls are not.
+   *
+   * `opacity`, never `display`: the controls keep their space, so the title
+   * does not shift when you point at it and **the grip stays draggable**, which
+   * the drags above depend on.
+   */
+  void test('hidden at rest, revealed by the head, and not by the body', async () => {
+    const h = await open('/board?project=laika-core', stub());
+    const read = async (n: number) =>
+      await h.page.evaluate((i) => {
+        const head = document.querySelectorAll('.lane-head')[i];
+        const o = (sel: string) => {
+          const el = head?.querySelector(sel);
+          return el === null || el === undefined ? 'missing' : getComputedStyle(el).opacity;
+        };
+        return { grip: o('.lane-grip'), menu: o('.lane-menu') };
+      }, n);
+
+    assert.deepEqual(
+      await read(0),
+      { grip: '0', menu: '0' },
+      'visible before anyone pointed at it',
+    );
+
+    await h.page.locator('.lane-head').first().hover();
+    assert.deepEqual(await read(0), { grip: '1', menu: '1' }, 'the head did not reveal them');
+    assert.deepEqual(await read(1), { grip: '0', menu: '0' }, 'a sibling lane lit up too');
+
+    // The body is the half that used to reveal them, and must not.
+    await h.page.locator('.lane-body').nth(1).hover();
+    assert.deepEqual(await read(1), { grip: '0', menu: '0' }, 'the lane body still reveals them');
+  });
+
+  void test('the keyboard reaches them with no pointer at all', async () => {
+    // `:focus-within` was narrowed to `.lane-head` alongside `:hover`. If only
+    // the hover half had been narrowed this passes; if only focus-within had
+    // been dropped, the grip becomes unreachable without a mouse.
+    const h = await open('/board?project=laika-core', stub());
+    const grip = h.page.locator('.lane-head .lane-grip').first();
+    await grip.focus();
+    assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '1');
+    await grip.evaluate((el: HTMLElement) => {
+      el.blur();
+    });
+    assert.equal(await grip.evaluate((el) => getComputedStyle(el).opacity), '0');
+  });
+
+  void test('the count is one colour, and the dot is not', async () => {
+    /*
+     * The count took `--acc` in `in_progress` and `--grn` in `done`, so one
+     * badge meant "three tasks" in three colours down a board. The **dot**
+     * still carries the status and must keep doing so — the owner asked for
+     * that explicitly.
+     */
+    const h = await open('/board?project=laika-core', stub());
+    const seen = await h.page.evaluate(() => {
+      const grab = (sel: string, prop: 'backgroundColor' | 'color') =>
+        [...document.querySelectorAll(sel)].map((e) => getComputedStyle(e)[prop]);
+      return {
+        countBg: new Set(grab('.lane-count', 'backgroundColor')).size,
+        countFg: new Set(grab('.lane-count', 'color')).size,
+        dotBg: new Set(grab('.lane-dot', 'backgroundColor')).size,
+        lanes: document.querySelectorAll('.lane-count').length,
+      };
+    });
+    assert.ok(seen.lanes >= 3, `only ${String(seen.lanes)} lanes — this proves little`);
+    assert.equal(seen.countBg, 1, 'the count still changes background per status');
+    assert.equal(seen.countFg, 1, 'the count still changes text colour per status');
+    assert.ok(seen.dotBg > 1, 'the dots lost their status colours');
+  });
+});

@@ -128,12 +128,16 @@ function DrawerSkeleton({ lines }: { readonly lines: number }) {
   );
 }
 
+/*
+ * **Two bars, not three** (LAI-607). Eight cards x three lines put 24 pulsing
+ * bars on screen at once and the board read as noise rather than as loading.
+ * A card is legible as a card with a title and one meta line.
+ */
 function CardSkeleton() {
   return (
     <div className="skeleton-card">
-      <div className="skeleton skeleton-line" style={{ width: '35%' }} />
       <div className="skeleton skeleton-line" style={{ width: '85%' }} />
-      <div className="skeleton skeleton-line" style={{ width: '55%' }} />
+      <div className="skeleton skeleton-line" style={{ width: '45%' }} />
     </div>
   );
 }
