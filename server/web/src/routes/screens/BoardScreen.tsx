@@ -5,7 +5,7 @@ import { LoadingState } from '../../components/LoadingState.tsx';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
-import { SpaceBand, SpaceBarSlot, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
+import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
@@ -541,11 +541,19 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       />
 
       {/*
-        **In the bar, not in the slot below it.** The slot collapses when empty
-        (`.space-slot:empty`) and the reference has no band under the tabs, so a
-        permanent control there would add a row to every board.
+        **The board's own row, directly under WORKING NOW** (LAI-293).
+        
+        It lived in the space bar until the owner asked for the reference's
+        shape: one compact row sitting on top of the columns. No portal and no
+        slot is needed to get there — `SpaceLayout` renders `<PresenceStrip>`
+        (WORKING NOW) and then `{children}`, so the board's own output is
+        *already* the next thing below it. Measured before relying on it.
+        
+        That also removes a seam: the row would otherwise have been a container
+        owned by one task and contents owned by another, with the height agreed
+        by correspondence.
       */}
-      <SpaceBarSlot>
+      <div className="board-bar">
         <BoardToolbar
           priority={priority}
           assignee={assignee}
@@ -594,7 +602,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             setOverflowAt((at) => (at === undefined ? anchor : undefined));
           }}
         />
-      </SpaceBarSlot>
+      </div>
 
       {settingsAt !== undefined && (
         <ViewSettings

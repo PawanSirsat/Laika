@@ -252,3 +252,35 @@
     width: min(15rem, calc(100vw - 2rem));
   }
 }
+
+/*
+ * The row's own container, below WORKING NOW and above the lanes (LAI-293).
+ *
+ * `.bt` keeps `flex: 1 1 auto` because it used to be one child of the space
+ * bar's flex row. Standing alone it needs a box of its own, and that box's job
+ * is to line the row up with the columns underneath it — so the padding is the
+ * board's, not a number picked to look right.
+ */
+.board-bar {
+  display: flex;
+  align-items: center;
+  /*
+   * **No horizontal padding, on purpose.** `.board` has none either — it aligns
+   * its children with `margin-inline: 1.125rem`
+   * (`board.css`, `.board > :not(.screen-bar)…`), and this row is one of those
+   * children, so it picks the alignment up for free. Adding padding here would
+   * *add* to that margin and push the row out of line with the lanes, which is
+   * the one thing it must not do.
+   */
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--bd);
+  min-width: 0;
+}
+
+/*
+ * It is a row now, not a bar item — it must not also stretch inside a flex
+ * parent that no longer exists.
+ */
+.board-bar > .bt {
+  flex: 1 1 auto;
+}

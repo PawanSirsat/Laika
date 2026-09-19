@@ -768,3 +768,111 @@ void describe('scrolling the board (LAI-290)', () => {
     }
   });
 });
+
+/**
+ * The board's own row sits below WORKING NOW, above the lanes (LAI-293).
+ *
+ * It used to portal into the space bar. The owner's reference puts it directly
+ * on top of the columns, and getting there needed no slot from anyone: a board
+ * screen's own output already renders straight after `<PresenceStrip>`.
+ *
+ * **Asserted by geometry, not by class name.** A row that is in the right part
+ * of the DOM but painted somewhere else is the failure worth catching, and only
+ * a rectangle can tell the difference.
+ */
+void describe('where the board row sits (LAI-293)', () => {
+  void test('below WORKING NOW and above the first lane', async () => {
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      const m = await h.page.evaluate(() => {
+        const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+        const presence = document.querySelector('[class*="presence"]')?.getBoundingClientRect();
+        return {
+          presenceBottom: presence?.bottom ?? null,
+          barTop: box('.board-bar')?.top ?? null,
+          laneTop: box('.lane')?.top ?? null,
+        };
+      });
+
+      assert.ok(m.barTop !== null, 'the board row is not rendered at all');
+      assert.ok(m.laneTop !== null, 'no lane to measure against');
+      assert.ok(
+        m.presenceBottom !== null,
+        'WORKING NOW is absent — this test cannot tell where the row sits',
+      );
+      assert.ok(
+        m.presenceBottom <= m.barTop,
+        `the row is above WORKING NOW (${String(m.barTop)} < ${String(m.presenceBottom)})`,
+      );
+      assert.ok(
+        m.barTop < m.laneTop,
+        `the row is not above the lanes (${String(m.barTop)} >= ${String(m.laneTop)})`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('and no longer inside the space bar', async () => {
+    // The other half: moved, not copied.
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      assert.equal(
+        await h.page.locator('.space-bar .bt').count(),
+        0,
+        'the toolbar is still in the space bar',
+      );
+      assert.equal(await h.page.locator('.board-bar .bt').count(), 1, 'exactly one row expected');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('its edges line up with the lanes below it', async () => {
+    /*
+     * `.board` aligns its children with `margin-inline`, not padding, so a row
+     * that sets its own horizontal padding lands inset from the columns. That
+     * is the mistake this catches — it looks deliberate and reads as bolted on.
+     *
+     * **Measure the contents, not the container.** `getBoundingClientRect()`
+     * returns the *border* box, so padding on `.board-bar` does not move its
+     * own edges at all — it moves what is inside. Asserting on `.board-bar`
+     * passed happily with the padding restored, which is how this comment came
+     * to be here: the mutation survived and the test was the thing at fault.
+     */
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      const m = await h.page.evaluate(() => {
+        const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+        const bar = box('.board-bar .bt');
+        const main = box('.board-main');
+        return bar === null || main === null
+          ? null
+          : {
+              bl: Math.round(bar.left),
+              br: Math.round(bar.right),
+              ml: Math.round(main.left),
+              mr: Math.round(main.right),
+            };
+      });
+
+      assert.ok(m !== null, 'the row or the lane area is missing');
+      assert.equal(m.bl, m.ml, 'the row starts at a different x from the columns');
+      assert.equal(m.br, m.mr, 'the row ends at a different x from the columns');
+    } finally {
+      await h.close();
+    }
+  });
+});
