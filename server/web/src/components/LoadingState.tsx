@@ -20,6 +20,8 @@ export interface LoadingStateProps {
    * just narrower: four skeleton lanes replaced by five real ones still jumps.
    */
   readonly columns?: number;
+  /** Reserve the add-column tile, as the real board does when you may add one. */
+  readonly addTile?: boolean;
   /**
    * Announced to screen readers. Per-instance for the same reason empty-state
    * copy is: "Loading tasks" is useful, "Loading" is not.
@@ -35,9 +37,36 @@ export interface LoadingStateProps {
  * module's own rule, one paragraph up, is that a skeleton mirrors what it
  * replaces; the board was the one place it did not.
  */
-function BoardSkeleton({ columns, cards }: { readonly columns: number; readonly cards: number }) {
+function BoardSkeleton({
+  columns,
+  cards,
+  addTile,
+}: {
+  readonly columns: number;
+  readonly cards: number;
+  readonly addTile: boolean;
+}) {
   return (
-    <div className="skeleton-board">
+    <div
+      className="skeleton-board"
+      /*
+       * **The same track template `LaneRow` builds**, including the trailing
+       * `auto` for the add-column tile. `grid-auto-columns` gives every track
+       * one size, so without this the tile's 32px was shared out among the
+       * lanes instead: measured on the running board, skeleton lanes came out
+       * at 329px against the real 318px — 11px each, which is the tile plus
+       * its gap divided by four, and a visible shove when the data landed.
+       *
+       * If `LaneRow`'s template changes, this is the place that has to follow;
+       * `loading-sweep.test.ts` compares the two strings so it cannot drift
+       * quietly.
+       */
+      style={{
+        gridTemplateColumns: `repeat(${String(columns)}, minmax(var(--lane-floor, 12.875rem), 1fr))${
+          addTile ? ' auto' : ''
+        }`,
+      }}
+    >
       {Array.from({ length: columns }, (_, column) => (
         <div className="skeleton-lane" key={column}>
           <div className="skeleton-lane-head">
@@ -49,6 +78,7 @@ function BoardSkeleton({ columns, cards }: { readonly columns: number; readonly 
           ))}
         </div>
       ))}
+      {addTile && <div className="skeleton-lane-add" aria-hidden="true" />}
     </div>
   );
 }
@@ -118,7 +148,13 @@ function RowSkeleton() {
   );
 }
 
-export function LoadingState({ shape, count = 3, columns = 4, label }: LoadingStateProps) {
+export function LoadingState({
+  shape,
+  count = 3,
+  columns = 4,
+  addTile = false,
+  label,
+}: LoadingStateProps) {
   /*
    * `aria-busy` plus a polite live region: the skeletons themselves are
    * decorative, so they are hidden from assistive tech and the label carries
@@ -127,11 +163,11 @@ export function LoadingState({ shape, count = 3, columns = 4, label }: LoadingSt
   return (
     <div className="skeleton-list" role="status" aria-busy="true" aria-live="polite">
       <span className="visually-hidden">{label}</span>
-      <div aria-hidden="true" className="skeleton-list">
+      <div aria-hidden="true" className="skeleton-body">
         {/* The whole-layout shapes draw themselves once; `card` and `row` are
             repeated `count` times, which is what they were always for. */}
         {shape === 'board' ? (
-          <BoardSkeleton columns={columns} cards={count} />
+          <BoardSkeleton columns={columns} cards={count} addTile={addTile} />
         ) : shape === 'table' ? (
           <TableSkeleton rows={count} />
         ) : shape === 'drawer' ? (

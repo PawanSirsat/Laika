@@ -335,6 +335,27 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     project !== undefined &&
     canConfigureProject(me.org_role, project.id, me.memberships);
 
+  /*
+   * **The add-column tile's gate, one expression for the board and its
+   * skeleton** (LAI-295).
+   *
+   * `mayConfigure` needs `project`, and `project` is the thing the board is
+   * fetching — so while the skeleton is on screen it is *always* false, and a
+   * skeleton consulting it would never reserve a tile that is about to appear.
+   * Measured: lanes drew 329px against the real board's 318px, the tile's 32px
+   * and its gap shared out among four lanes.
+   *
+   * Columns load separately and carry the same project id, so the answer is
+   * available early. `project?.id` still wins once it arrives, which keeps a
+   * mid-switch board from being judged against the previous project's columns.
+   */
+  const boardProjectId = project?.id ?? columns.state.columns[0]?.project_id;
+  const mayAddColumn =
+    me !== undefined &&
+    boardProjectId !== undefined &&
+    canConfigureProject(me.org_role, boardProjectId, me.memberships) &&
+    !columns.visible.some(isFallbackColumn);
+
   /** `Column 5`, skipping any name already taken. */
 
   /**
@@ -858,15 +879,25 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           **And it follows the view.** This branch serves the list too —
           `ListView` does no fetching of its own — so a board skeleton in front
           of a table would be the same mismatch one screen over.
-        */ : view === 'list' ? (
-          <LoadingState shape="table" count={8} label="Loading tasks" />
-        ) : (
-          <LoadingState
-            shape="board"
-            columns={columns.visible.length > 0 ? columns.visible.length : 4}
-            count={2}
-            label="Loading tasks"
-          />
+          **Inside `.board-main`, not instead of it** (LAI-295). The skeleton
+          was a sibling of that container, so it lost its padding and its flex
+          layout: measured on the running instance, the lanes sat 14px high and
+          a pixel narrower than the board that replaced them.
+        */ : (
+          <div className="board-main">
+            {view === 'list' ? (
+              <LoadingState shape="table" count={8} label="Loading tasks" />
+            ) : (
+              <LoadingState
+                shape="board"
+                columns={columns.visible.length > 0 ? columns.visible.length : 4}
+                count={2}
+                // The same condition that gives `LaneRow` its `onAddColumn`.
+                addTile={mayAddColumn}
+                label="Loading tasks"
+              />
+            )}
+          </div>
         )
       ) : board.state.status === 'error' ? (
         <ApiErrorState error={board.state.error} resource="this board" onRetry={board.reload} />
@@ -964,7 +995,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               onCloseComposer={() => {
                 setComposingIn(undefined);
               }}
-              {...(mayConfigure && !columns.visible.some(isFallbackColumn)
+              {...(mayAddColumn
                 ? {
                     onReorder: (ids: readonly string[]) => {
                       /*

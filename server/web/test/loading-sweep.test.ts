@@ -124,3 +124,108 @@ void describe('a control with no button still says it is working', () => {
     assert.match(src, /Saving…/);
   });
 });
+
+void describe('the busy flag goes up before the wait, not after it', () => {
+  void test('sign-in marks the session loading before it posts', async () => {
+    /*
+     * Found by driving the real instance, not by reading the diff: the Sign in
+     * button showed nothing for the whole network round trip, then span for
+     * the fast `/me` re-read afterwards. `setSession({ status: 'loading' })`
+     * sat *below* `await apiSignIn(credentials)`, so `submitting` — which
+     * `LoginRoute` derives from `session.status === 'loading'` — was false for
+     * exactly the part anyone waits through.
+     *
+     * This asserts the order rather than the presence: both lines existed
+     * before the fix, in the wrong sequence.
+     */
+    const src = code(
+      await readFile(fileURLToPath(new URL('../src/api/use-session.ts', import.meta.url)), 'utf8'),
+    );
+    const start = src.indexOf('const signIn =');
+    const end = src.indexOf('const signOut =');
+    assert.ok(start !== -1 && end > start, 'signIn moved — this scan no longer reads it');
+    const body = src.slice(start, end);
+
+    const loading = body.indexOf("setSession({ status: 'loading' })");
+    const post = body.indexOf('await apiSignIn(');
+    assert.ok(loading !== -1, 'signIn no longer marks the session loading at all');
+    assert.ok(post !== -1, 'signIn no longer posts — this scan is aimed at nothing');
+    assert.ok(loading < post, 'the busy flag is set after the request it is meant to cover');
+
+    // And it must come back down if the credentials are refused, or the
+    // `loading` effect re-reads `/me`, takes a 401, and races the rejection.
+    assert.match(body, /catch \(cause\) \{[\s\S]*?status: 'anonymous'[\s\S]*?throw cause/);
+  });
+});
+
+void describe('the board skeleton mirrors the board it replaces', () => {
+  void test('it builds the same grid template as LaneRow', async () => {
+    /*
+     * `LaneRow` sizes the add-column tile with a trailing `auto` track,
+     * because `grid-auto-columns` gives every track one size and the tile
+     * would otherwise take a full `1fr` share. The skeleton has to build the
+     * same string or the lanes underneath it are a different width — measured
+     * at 329px against the real 318px before this, which is the tile's 32px
+     * plus its gap shared out among four lanes.
+     *
+     * Compared as strings, from both files, so neither can drift alone.
+     */
+    const read = async (rel: string) =>
+      await readFile(fileURLToPath(new URL(rel, import.meta.url)), 'utf8');
+    const laneRow = code(await read('../src/routes/screens/board/LaneRow.tsx'));
+    const skeleton = code(await read('../src/components/LoadingState.tsx'));
+
+    const track = /repeat\(\$\{String\([a-zA-Z.]+(?:\.length)?\)\}, (minmax\([^)]*\), 1fr\))\)/;
+    const fromLane = track.exec(laneRow);
+    const fromSkeleton = track.exec(skeleton);
+    assert.ok(fromLane, 'LaneRow no longer builds a repeat() template — re-aim this');
+    assert.ok(fromSkeleton, 'the board skeleton no longer builds one');
+    assert.equal(fromSkeleton[1], fromLane[1], 'the lane track sizes have drifted apart');
+
+    // And both must spend the trailing `auto` on the tile, conditionally.
+    assert.match(laneRow, /: ' auto'/);
+    assert.match(skeleton, /\? ' auto' : ''/);
+  });
+
+  void test('the skeleton reserves the tile on the same gate the board draws it', () => {
+    /*
+     * Matching templates is not enough: the skeleton can build the `auto`
+     * track and still be told `addTile={false}`, which puts the 11px back.
+     *
+     * So both read **one named constant**, and this asserts it is the same
+     * name in both places rather than two expressions that happen to agree.
+     * Comparing the expressions was the earlier version and it anchored on the
+     * wrong conditional spread — `mayConfigure && slug !== undefined`, a
+     * different gate on a different concern — and reported drift that was its
+     * own.
+     */
+    const screen = sources.get('routes/screens/BoardScreen.tsx');
+    assert.ok(screen !== undefined, 'BoardScreen moved — this scan is aimed at nothing');
+
+    const handler = screen.indexOf('onAddColumn:');
+    assert.ok(handler !== -1, 'BoardScreen no longer wires onAddColumn');
+    const spread = screen.lastIndexOf('{...(', handler);
+    assert.ok(spread !== -1, 'onAddColumn is no longer inside a conditional spread');
+    assert.match(
+      screen.slice(spread, spread + 40),
+      /^\{\.\.\.\(mayAddColumn\b/,
+      'the real tile is drawn on some other gate than mayAddColumn',
+    );
+    assert.match(screen, /addTile=\{mayAddColumn\}/, 'the skeleton is told by some other gate');
+
+    /*
+     * And the gate must not depend on `project`, which is what the board is
+     * fetching: consulting it would make the answer false for the whole time
+     * the skeleton is on screen, which is the entire window that matters.
+     */
+    const defined = /const mayAddColumn =([\s\S]*?);\n/.exec(screen)?.[1];
+    assert.ok(defined !== undefined, 'mayAddColumn is no longer defined in BoardScreen');
+    assert.match(defined, /canConfigureProject/, 'the gate stopped asking the policy');
+    assert.match(defined, /isFallbackColumn/, 'the gate stopped excluding fallback columns');
+    assert.doesNotMatch(
+      defined,
+      /project !== undefined/,
+      'the gate waits for the board it is meant to precede',
+    );
+  });
+});

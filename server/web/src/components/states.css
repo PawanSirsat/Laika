@@ -120,6 +120,48 @@
   gap: var(--space-2);
 }
 
+/*
+ * The decorative half of a `LoadingState`, under its live region. It used to
+ * repeat `.skeleton-list`, which applied that column gap a second time — a
+ * nested flex column inside a flex column, which the DOM showed as
+ * `.skeleton-list > .skeleton-list`. It carries the layout and the outer
+ * element carries the announcement.
+ */
+.skeleton-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/*
+ * **Fill the board pane, the way `.kanban` does.** `.board-main` is a flex
+ * row, so a skeleton dropped into it is sized to its content — and the lane
+ * grid's content width is its `minmax()` floor. Measured on the running
+ * instance: lanes came out at 206px against the real board's 318px, the floor
+ * exactly, because there was no free space to distribute.
+ *
+ * This is the same declaration `board-rail.css` gives `.board-main > .kanban`,
+ * and it lives here rather than there because it describes the skeleton.
+ */
+/* Stands in for `.lane-add`, which the board sizes with an `auto` track. */
+.skeleton-lane-add {
+  width: 2rem;
+  /* The border sits inside the 2rem, or the tile measures 34px against the
+     real `.lane-add`'s 32px and the `auto` track is that much wider. */
+  box-sizing: border-box;
+  /* The real `.lane-add` is a dashed outline, not a filled block — so this
+     stands in with the same border and radius rather than a grey slab. */
+  border: 1px dashed var(--bd2);
+  border-radius: var(--radius-md);
+  opacity: 0.5;
+}
+
+.board-main > .skeleton-list {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .skeleton-card {
   background: var(--card);
   border: 1px solid var(--bd);
@@ -310,8 +352,14 @@
 .skeleton-board {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(12.875rem, 1fr);
-  gap: 0.6875rem;
+  grid-auto-columns: minmax(var(--lane-floor, 12.875rem), 1fr);
+  /*
+   * `0.75rem`, which is `.board-main`'s and `.kanban`'s gap in
+   * `board-rail.css`. It read `0.6875rem` and measured 11px against the real
+   * board's 12px — close enough to look right in a screenshot and still move
+   * every lane when the data landed.
+   */
+  gap: 0.75rem;
   align-items: start;
   overflow: hidden;
 }

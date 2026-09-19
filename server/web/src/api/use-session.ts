@@ -111,11 +111,29 @@ export function useSession(): UseSession {
   }, []);
 
   const signIn = useCallback(async (credentials: Credentials): Promise<void> => {
-    await apiSignIn(credentials);
+    /*
+     * `loading` goes up **before** the await, not after it (LAI-295).
+     *
+     * The POST is the slow half — the part someone actually waits through —
+     * and setting it afterwards meant `submitting` stayed false for the whole
+     * round trip and only went true for the fast `/me` re-read. So the Sign in
+     * button sat there looking unpressed for as long as the network took, then
+     * span briefly once the work was already done: feedback the wrong way
+     * round, on the most-pressed button in the app.
+     */
+    setSession({ status: 'loading' });
+    try {
+      await apiSignIn(credentials);
+    } catch (cause) {
+      // Back to anonymous before rethrowing. Left at `loading`, the effect
+      // above re-reads `/me`, takes a 401, and that races the rejection the
+      // caller is about to render.
+      setSession({ status: 'anonymous' });
+      throw cause;
+    }
     // Re-read `/me` rather than trusting the sign-in response: it is the one
     // endpoint that defines the shape the rest of the app consumes, and going
     // through it means there is exactly one source of the current user.
-    setSession({ status: 'loading' });
     setAttempt((n) => n + 1);
   }, []);
 

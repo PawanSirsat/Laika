@@ -19,6 +19,7 @@ import { code } from '../helpers/code.ts';
 let spinner = '';
 let loading = '';
 let css = '';
+let board = '';
 let button = '';
 
 before(async () => {
@@ -28,6 +29,7 @@ before(async () => {
   loading = code(await read('../../src/components/LoadingState.tsx'));
   button = code(await read('../../src/components/forms/Button.tsx'));
   css = await read('../../src/components/states.css');
+  board = await read('../../src/routes/screens/board/board.css');
 });
 
 void describe('the spinner', () => {
@@ -68,10 +70,48 @@ void describe('skeletons mirror what they replace', () => {
     // the board is a grid.
     assert.match(loading, /function BoardSkeleton/);
     assert.match(css, /\.skeleton-board \{[^}]*display: grid/s);
-    // Same track floor and gap as `.kanban`, or the lanes land in a different
-    // place than the ones replacing them.
-    assert.match(css, /\.skeleton-board \{[^}]*minmax\(12\.875rem, 1fr\)/s);
-    assert.match(css, /\.skeleton-board \{[^}]*gap: 0\.6875rem/s);
+    /*
+     * Same track floor and gap as `.kanban` — **read out of `.kanban`**, not
+     * written down here. The previous version asserted `gap: 0.6875rem` as a
+     * literal under a comment claiming it matched the board, and the board's
+     * gap is `0.75rem`. It passed for a month and measured 11px against the
+     * real board's 12px on the running instance, which is a whole lane-width
+     * of drift by the fourth column.
+     */
+    const rule = (sheet: string, selector: string): string => {
+      const body = new RegExp(`\\${selector} \\{([^}]*)\\}`, 's').exec(sheet)?.[1];
+      assert.ok(body !== undefined, `${selector} not found — this comparison is aimed at nothing`);
+      return body;
+    };
+    const lane = rule(board, '.kanban');
+    const skel = rule(css, '.skeleton-board');
+    const grab = (body: string, prop: string): string => {
+      const value = new RegExp(`(?:^|;|\\n)\\s*${prop}:\\s*([^;]+);`).exec(body)?.[1];
+      assert.ok(value !== undefined, `no ${prop} in that rule`);
+      return value.trim();
+    };
+    assert.equal(grab(skel, 'gap'), grab(lane, 'gap'));
+    assert.equal(grab(skel, 'grid-auto-columns'), grab(lane, 'grid-auto-columns'));
+  });
+
+  void test('the live region and the shapes are separate elements', () => {
+    /*
+     * The inner wrapper repeated `.skeleton-list` — a flex column nested in an
+     * identical flex column, so its `gap` applied twice. It showed up in the
+     * DOM of the running board as `.skeleton-list > .skeleton-list`, which is
+     * how it was found; nothing in the source reads as wrong.
+     *
+     * The outer element carries `role="status"` and the label; the inner one
+     * carries the layout and is `aria-hidden`.
+     */
+    assert.match(loading, /className="skeleton-list" role="status"/);
+    assert.match(loading, /aria-hidden="true" className="skeleton-body"/);
+    assert.equal(
+      (loading.match(/className="skeleton-list"/g) ?? []).length,
+      1,
+      'the wrapper class is applied more than once — its gap will apply twice',
+    );
+    assert.match(css, /\.skeleton-body \{/);
   });
 
   void test('the board skeleton takes its column count from the caller', () => {
