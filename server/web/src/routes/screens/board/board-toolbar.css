@@ -343,6 +343,8 @@
   justify-content: center;
   width: 28px;
   height: 28px;
+  /* The pill must never squeeze a circle into an oval. */
+  flex: none;
   border-radius: 50%;
   /* The gap ring between overlapping circles — the canvas, not a colour. */
   border: 2px solid var(--bg-canvas);
@@ -351,9 +353,12 @@
 }
 
 /* Overlapped, as the reference has them — the first one keeps its full edge. */
-.bt-member + .bt-member,
-.bt-member + .bt-member-more {
-  /* "+1" is a figure, not another face: plain muted text, no circle. */
+.bt-member + .bt-member {
+  margin-left: -8px;
+}
+
+/* "+1" is a figure, not another face: plain muted text, no circle. */
+.bt-member-more {
   width: auto;
   background: transparent;
   border: 0;
@@ -361,13 +366,6 @@
   font-weight: var(--weight-semibold);
   cursor: default;
   padding-inline: 6px 0;
-}
-
-.bt-member-more {
-  background: var(--bg-card);
-  color: var(--text-muted);
-  cursor: default;
-  border-color: var(--border-subtle);
 }
 
 /*
