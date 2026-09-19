@@ -10,7 +10,19 @@
 .shell {
   --rail-width: 13.25rem;
   display: flex;
-  min-height: 100vh;
+  /*
+   * **`height`, not `min-height`** (LAI-601).
+   *
+   * With `min-height` the shell grows past the viewport and the *document*
+   * scrolls — and the rail is `position: sticky`, which cannot hold once the
+   * page itself is moving. Scrolling the timeline carried the sidebar, the
+   * theme switch and the user chip up off the screen with it.
+   *
+   * Pinning the shell to the viewport makes `.shell-main` below the scroller,
+   * so the rail stays put because nothing it sits in ever moves.
+   */
+  height: 100vh;
+  overflow: hidden;
   background: var(--page);
   color: var(--tx);
   font-family: var(--font-ui);
@@ -87,6 +99,18 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* Lets `.shell-main` shrink below its content so it can scroll (LAI-601). */
+  min-height: 0;
+}
+
+/*
+ * The one thing that scrolls (LAI-601). Screens that manage their own scroll —
+ * the board pins its lanes to the viewport — simply never overflow it.
+ */
+.shell-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .shell-head {
