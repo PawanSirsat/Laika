@@ -1,0 +1,136 @@
+/* The board's insights panel (LAI-290). Tokens only. */
+
+.bi-catcher {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+.bi {
+  position: fixed;
+  top: 4.25rem;
+  right: 1.125rem;
+  z-index: 31;
+  width: min(18rem, calc(100vw - 2rem));
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 0.75rem 0.875rem 0.875rem;
+}
+
+.bi-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.375rem;
+}
+
+.bi-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+}
+
+.bi-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--tx3);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-sm);
+}
+
+.bi-close:hover {
+  color: var(--tx);
+  background: var(--tub);
+}
+
+.bi-section {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--bd);
+}
+
+.bi-section:first-of-type {
+  border-top: 0;
+}
+
+.bi-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--tx2);
+}
+
+.bi-big {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+  line-height: 1.2;
+}
+
+.bi-unit {
+  font-family: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  color: var(--tx3);
+}
+
+/* A sparkline, not a chart: enough to see a shape, not enough to pretend to
+   be the dashboard. */
+.bi-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  height: 2.25rem;
+  margin: 0.375rem 0 0.25rem;
+}
+
+.bi-bar {
+  flex: 1 1 0;
+  min-height: 1px;
+  background: var(--acc);
+  border-radius: 1px 1px 0 0;
+  opacity: 0.75;
+}
+
+.bi-rows {
+  display: flex;
+  gap: 0.875rem;
+  margin: 0.375rem 0 0;
+}
+
+.bi-rows div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.bi-rows dt {
+  font-size: 0.5625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tx3);
+}
+
+.bi-rows dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+}
+
+.bi-note {
+  margin: 0.375rem 0 0;
+  font-size: 0.625rem;
+  line-height: 1.45;
+  color: var(--tx3);
+}

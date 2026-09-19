@@ -34,7 +34,7 @@
 
 .composer-title::placeholder {
   color: var(--tx3);
-  font-weight: var(--weight-regular, 400);
+  font-weight: var(--weight-medium);
 }
 
 .composer-error {

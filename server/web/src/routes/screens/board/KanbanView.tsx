@@ -1,11 +1,23 @@
 import { useCallback } from 'react';
 import { LaneRow, type LaneRowProps } from './LaneRow.tsx';
 import type { Swimlane } from './group-lanes.ts';
+import type { Theme } from '../../../theme/theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import './board.css';
 
-export interface KanbanViewProps extends Omit<LaneRowProps, 'showColumnConfig'> {
+export interface KanbanViewProps extends Omit<LaneRowProps, 'showColumnConfig' | 'theme'> {
+  /**
+   * Restated rather than inherited through the `Omit`.
+   *
+   * `tokens.test.ts` checks that any file computing an `avatarColor()` has a
+   * **live** theme — it looks for `readonly theme: Theme` or a `useTheme()`
+   * call, because a stale theme renders light-mode avatars in dark mode and
+   * nothing else looks wrong. Inheriting the prop satisfies the compiler and
+   * not the guard, and the guard is right to insist: a reader of this file
+   * could not otherwise tell where the theme came from.
+   */
+  readonly theme: Theme;
   /**
    * Grouped rows, or `undefined` for the plain board.
    *

@@ -122,17 +122,33 @@ export function SpaceTopBar({
             className="space-members"
             title={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
           >
+            {/*
+              **Buttons, not decoration** (LAI-290). These were `<span>` with
+              `aria-hidden="true"` — a row of faces that looked filterable and
+              was not, while the only way to filter by assignee was a separate
+              dropdown. Clicking one writes `?assignee=`, which the board
+              already reads; clicking it again clears it.
+            */}
             {shown.map((member) => {
               const colour = avatarColor(member.user_id, theme);
+              const on = assignee === member.user_id;
               return (
-                <span
+                <button
                   key={member.user_id}
-                  className="space-member"
+                  type="button"
+                  className={on ? 'space-member space-member-on' : 'space-member'}
                   style={{ background: colour.background, color: colour.foreground }}
-                  aria-hidden="true"
+                  aria-pressed={on}
+                  title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
+                  onClick={() => {
+                    onAssignee(on ? undefined : member.user_id);
+                  }}
                 >
                   {initials(member.name)}
-                </span>
+                  <span className="visually-hidden">
+                    {on ? ` — showing only their work, click to clear` : ` — show only their work`}
+                  </span>
+                </button>
               );
             })}
             {overflow > 0 && <span className="space-member-more">+{overflow}</span>}

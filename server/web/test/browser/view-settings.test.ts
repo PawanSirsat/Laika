@@ -111,7 +111,9 @@ const STUB: ApiStub = {
 
 async function openPanel(h: Harness): Promise<void> {
   await h.page.waitForSelector('.card-title');
-  await h.page.locator('.view-settings-open').click();
+  // The trigger moved into the board toolbar's icon cluster (LAI-290), where
+  // Jira puts it — it used to be a text button in the slot below the bar.
+  await h.page.locator('.bt-icon[title="View settings"]').click();
   await h.page.waitForSelector('.view-settings');
 }
 
@@ -217,26 +219,35 @@ void describe('grouping', () => {
     }
   });
 
-  void test('turns drag off and says so', async () => {
+  void test('keeps the columns, and keeps drag working inside them', async () => {
+    /*
+     * **The correction LAI-290 exists for.** LAI-266's grouping replaced the
+     * columns and therefore had to switch drag off. A swimlane keeps them, so
+     * a drop still means status and still works.
+     */
     const h = await open('/board?project=laika-core&group=assignee', STUB);
 
     try {
       await h.page.waitForSelector('.card-title');
 
-      const draggable = await h.page.locator('.card').first().getAttribute('draggable');
-      assert.equal(draggable, 'false', 'cards are still draggable under a grouped view');
-
-      const scope = await h.page.locator('.board-scope').first().innerText();
-      assert.match(
-        scope,
-        /drag is off/i,
-        'a missing affordance with no explanation reads as a bug',
+      assert.ok((await h.page.locator('.swim').count()) >= 1, 'no swimlane rendered');
+      assert.equal(
+        await h.page.locator('.swim').first().locator('.lane').count(),
+        COLUMNS.length,
+        'a swimlane lost the columns',
       );
 
       assert.equal(
+        await h.page.locator('.card').first().getAttribute('draggable'),
+        'true',
+        'cards must still move between columns while grouped',
+      );
+
+      // Drawn once, not once per row — columns are project-level.
+      assert.equal(
         await h.page.locator('.lane-grip').count(),
-        0,
-        'column reordering is meaningless while grouped and must not be offered',
+        COLUMNS.length,
+        'column controls should be on the first row only',
       );
     } finally {
       await h.close();

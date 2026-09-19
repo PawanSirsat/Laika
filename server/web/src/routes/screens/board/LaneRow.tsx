@@ -24,7 +24,15 @@ export interface LaneRowProps {
   readonly filtered: boolean;
   readonly onOpen: (taskId: string) => void;
   readonly fields: CardFields;
-  /** `false` while grouped — see `TaskCard`'s prop. */
+  /**
+   * Whether cards can be dragged at all.
+   *
+   * **`true` even while grouped** (LAI-290). LAI-266 switched it off when
+   * grouping *replaced* the columns — right then, because there was nothing to
+   * drop into. A swimlane keeps the columns, so a drop still means status and
+   * still works. Only dragging *between rows* is not a move, and that is
+   * LAI-288.
+   */
   readonly cardsDraggable?: boolean | undefined;
   readonly density?: 'standard' | 'compact' | undefined;
   readonly columnWidth?: 'narrow' | 'standard' | 'wide' | undefined;

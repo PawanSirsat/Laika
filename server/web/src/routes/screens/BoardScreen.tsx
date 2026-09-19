@@ -18,6 +18,8 @@ import { useBoard } from '../../api/use-board.ts';
 import { groupByColumn, hideOldDone } from '../../api/board-derive.ts';
 import { isFallbackColumn, useColumns } from '../../api/use-columns.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
+import { BoardInsights } from './board/BoardInsights.tsx';
+import { BoardToolbar } from './board/BoardToolbar.tsx';
 import { ColumnDialog } from './board/ColumnDialog.tsx';
 import { ViewSettings } from './board/ViewSettings.tsx';
 import { useViewPreferences } from './board/use-view-preferences.ts';
@@ -232,6 +234,20 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const [editing, setEditing] = useState<string | undefined>(undefined);
   /** Which column's inline composer is open (LAI-290). */
   const [composingIn, setComposingIn] = useState<string | undefined>(undefined);
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  /**
+   * Labels to offer in the filter, from the tasks already loaded.
+   *
+   * Not a second request: `?tag=` filters server-side over the whole project,
+   * but the *list* of labels worth offering is the one actually in use here.
+   */
+  const knownTags = useMemo(
+    () => [...new Set(board.state.tasks.flatMap((t) => t.tags))].sort(),
+    [board.state.tasks],
+  );
+  const [overflowAt, setOverflowAt] = useState<{ top: number; right: number } | undefined>(
+    undefined,
+  );
   // The first consumer the SSE endpoint has ever had (LAI-070).
   const stream = useEvents(slug);
 
@@ -534,31 +550,54 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         permanent control there would add a row to every board.
       */}
       <SpaceBarSlot>
-        <button
-          type="button"
-          className="view-settings-open"
-          aria-haspopup="dialog"
-          aria-expanded={settingsAt !== undefined}
-          onClick={(event) => {
-            if (settingsAt !== undefined) {
-              setSettingsAt(undefined);
-              return;
-            }
-            const box = event.currentTarget.getBoundingClientRect();
-            setSettingsAt({
-              top: box.bottom + 6,
-              right: Math.max(8, window.innerWidth - box.right),
-            });
+        <BoardToolbar
+          priority={priority}
+          assignee={assignee}
+          tag={tagScope}
+          ready={readyParam === 'true'}
+          agentOnly={agentOnly}
+          tags={knownTags}
+          members={[...members.values()]}
+          group={group}
+          onPriority={(value) => {
+            setParam('priority', value);
           }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <path d="M4 6h16M4 12h16M4 18h16" strokeLinecap="round" />
-            <circle cx="9" cy="6" r="2" />
-            <circle cx="15" cy="12" r="2" />
-            <circle cx="8" cy="18" r="2" />
-          </svg>
-          View settings
-        </button>
+          onAssignee={(value) => {
+            setParam('assignee', value);
+          }}
+          onTag={(value) => {
+            setParam('tag', value);
+          }}
+          onReady={(value) => {
+            setParam('ready', value ? 'true' : undefined);
+          }}
+          onAgentOnly={(value) => {
+            setParam('agent', value ? 'true' : undefined);
+          }}
+          onGroup={(value) => {
+            setParam('group', value === 'column' ? undefined : value);
+          }}
+          onClearFilters={() => {
+            const next = new URLSearchParams(params);
+            for (const key of ['priority', 'assignee', 'tag', 'ready', 'agent', 'q']) {
+              next.delete(key);
+            }
+            onParamsChange(next);
+          }}
+          onInsights={() => {
+            setInsightsOpen(true);
+          }}
+          onViewSettings={(anchor) => {
+            setSettingsAt((at) => (at === undefined ? anchor : undefined));
+          }}
+          onRefresh={() => {
+            board.reload();
+            columns.reload();
+          }}
+          onOverflow={(anchor) => {
+            setOverflowAt((at) => (at === undefined ? anchor : undefined));
+          }}
+        />
       </SpaceBarSlot>
 
       {settingsAt !== undefined && (
@@ -594,6 +633,61 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             const next = new URLSearchParams(params);
             for (const filter of activeFilters) next.delete(filter.key);
             onParamsChange(next);
+          }}
+        />
+      )}
+
+      {/*
+        The `⋯` menu. **Only actions that exist** — an overflow with a greyed
+        list of things Laika cannot do is the decoration the four icons were
+        supposed to avoid.
+      */}
+      {overflowAt !== undefined && (
+        <>
+          <div
+            className="bt-catcher"
+            aria-hidden="true"
+            onClick={() => {
+              setOverflowAt(undefined);
+            }}
+          />
+          <div
+            className="bt-menu"
+            role="menu"
+            style={{ top: `${String(overflowAt.top)}px`, right: `${String(overflowAt.right)}px` }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="bt-menu-item"
+              onClick={() => {
+                setOverflowAt(undefined);
+                onParamsChange(new URLSearchParams({ project: slug ?? '' }), { push: true });
+                window.location.assign(`/projects?project=${encodeURIComponent(slug ?? '')}`);
+              }}
+            >
+              Space settings
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="bt-menu-item"
+              onClick={() => {
+                setOverflowAt(undefined);
+                setParam('view', view === 'list' ? undefined : 'list');
+              }}
+            >
+              {view === 'list' ? 'Show as board' : 'Show as list'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {insightsOpen && slug !== undefined && (
+        <BoardInsights
+          slug={slug}
+          onClose={() => {
+            setInsightsOpen(false);
           }}
         />
       )}
@@ -740,7 +834,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               members={members}
               theme={theme}
               fields={prefs.preferences.fields}
-              cardsDraggable={!grouped}
+              cardsDraggable
               density={prefs.preferences.density}
               columnWidth={prefs.preferences.columnWidth}
               movingId={board.movingId}
@@ -762,7 +856,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               onCloseComposer={() => {
                 setComposingIn(undefined);
               }}
-              {...(mayConfigure && !grouped && !columns.visible.some(isFallbackColumn)
+              {...(mayConfigure && !columns.visible.some(isFallbackColumn)
                 ? {
                     onReorder: (ids: readonly string[]) => {
                       void columns.reorder(ids);

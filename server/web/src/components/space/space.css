@@ -111,6 +111,46 @@
   margin-left: -7px;
 }
 
+/*
+ * They became buttons in LAI-290, so they need the affordances a button has —
+ * a pointer, a hover lift and a visible focus ring. Overlapping avatars need
+ * the hovered one on top or the lift is hidden behind its neighbour.
+ */
+.space-member {
+  padding: 0;
+  cursor: pointer;
+  position: relative;
+  transition: transform 0.1s ease;
+}
+
+.space-member:hover {
+  transform: translateY(-1px);
+  z-index: 1;
+}
+
+.space-member:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+  z-index: 2;
+}
+
+/* The one being filtered on keeps a ring, so the board's state is legible
+   from the bar rather than only from the URL. */
+.space-member-on {
+  box-shadow: 0 0 0 2px var(--acc);
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .space-member {
+    transition: none;
+  }
+
+  .space-member:hover {
+    transform: none;
+  }
+}
+
 .space-member-more {
   margin-left: 5px;
   padding: 0 4px;
