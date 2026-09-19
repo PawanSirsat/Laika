@@ -404,40 +404,55 @@ void describe('the head reveals its own chrome', () => {
    */
   void test('hidden at rest, revealed by the head, and not by the body', async () => {
     const h = await open('/board?project=laika-core', stub());
+    try {
+      assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '0', 'visible at rest');
+      assert.equal(await settledOpacity(h, '.lane-head .lane-menu'), '0', 'visible at rest');
 
-    assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '0', 'visible at rest');
-    assert.equal(await settledOpacity(h, '.lane-head .lane-menu'), '0', 'visible at rest');
+      await h.page.locator('.lane-head').first().hover();
+      assert.equal(
+        await settledOpacity(h, '.lane-head .lane-grip'),
+        '1',
+        'the head did not reveal it',
+      );
+      assert.equal(
+        await settledOpacity(h, '.lane-head .lane-grip', 1),
+        '0',
+        'a sibling lane lit up',
+      );
 
-    await h.page.locator('.lane-head').first().hover();
-    assert.equal(
-      await settledOpacity(h, '.lane-head .lane-grip'),
-      '1',
-      'the head did not reveal it',
-    );
-    assert.equal(await settledOpacity(h, '.lane-head .lane-grip', 1), '0', 'a sibling lane lit up');
-
-    // The lane body is the half that used to reveal them, and must not.
-    await h.page.locator('.lane-body').nth(1).hover();
-    assert.equal(
-      await settledOpacity(h, '.lane-head .lane-grip', 1),
-      '0',
-      'the body still reveals them',
-    );
+      // The lane body is the half that used to reveal them, and must not.
+      await h.page.locator('.lane-body').nth(1).hover();
+      assert.equal(
+        await settledOpacity(h, '.lane-head .lane-grip', 1),
+        '0',
+        'the body still reveals them',
+      );
+    } finally {
+      await h.close();
+    }
   });
 
   void test('the keyboard reaches them with no pointer at all', async () => {
     // `:focus-within` was narrowed to `.lane-head` alongside `:hover`. Drop it
     // and the grip becomes unreachable without a mouse.
     const h = await open('/board?project=laika-core', stub());
-    await h.page.locator('.lane-head .lane-grip').first().focus();
-    assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '1', 'focus does not reveal it');
-    await h.page
-      .locator('.lane-head .lane-grip')
-      .first()
-      .evaluate((el: HTMLElement) => {
-        el.blur();
-      });
-    assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '0', 'it stays up after blur');
+    try {
+      await h.page.locator('.lane-head .lane-grip').first().focus();
+      assert.equal(
+        await settledOpacity(h, '.lane-head .lane-grip'),
+        '1',
+        'focus does not reveal it',
+      );
+      await h.page
+        .locator('.lane-head .lane-grip')
+        .first()
+        .evaluate((el: HTMLElement) => {
+          el.blur();
+        });
+      assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '0', 'it stays up after blur');
+    } finally {
+      await h.close();
+    }
   });
 
   void test('the status dot keeps its colour', async () => {
@@ -455,18 +470,96 @@ void describe('the head reveals its own chrome', () => {
      * again, which is exactly why it keeps a guard.
      */
     const h = await open('/board?project=laika-core', stub());
-    // Wait for the board itself. Counting before it renders reports zero dots,
-    // which the guard below correctly refuses — but the refusal describes the
-    // wait, not the colours, and that is a slow way to learn nothing.
-    await h.page.locator('.lane-head').first().waitFor({ state: 'attached' });
-    const seen = await h.page.evaluate(() => {
-      const dots = [...document.querySelectorAll('.lane-dot')];
-      return {
-        lanes: dots.length,
-        distinct: new Set(dots.map((d) => getComputedStyle(d).backgroundColor)).size,
-      };
-    });
-    assert.ok(seen.lanes >= 3, `only ${String(seen.lanes)} dots — this proves little`);
-    assert.ok(seen.distinct > 1, 'every status dot renders the same colour');
+    try {
+      // Wait for the board itself. Counting before it renders reports zero dots,
+      // which the guard below correctly refuses — but the refusal describes the
+      // wait, not the colours, and that is a slow way to learn nothing.
+      await h.page.locator('.lane-head').first().waitFor({ state: 'attached' });
+      const seen = await h.page.evaluate(() => {
+        const dots = [...document.querySelectorAll('.lane-dot')];
+        return {
+          lanes: dots.length,
+          distinct: new Set(dots.map((d) => getComputedStyle(d).backgroundColor)).size,
+        };
+      });
+      assert.ok(seen.lanes >= 3, `only ${String(seen.lanes)} dots — this proves little`);
+      assert.ok(seen.distinct > 1, 'every status dot renders the same colour');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the count badge maps status to hue', () => {
+  /*
+   * LAI-606, reversing LAI-603's one-grey rule on the owner's instruction:
+   * In-progress and Done wear their status colour as an outline — transparent
+   * fill, text and border in the hue — and every other lane keeps the plain
+   * filled pill. This is the assertion shape the removed uniformity test left
+   * for whoever built that brief to define.
+   *
+   * Colours are probe-resolved from the theme's own tokens, never hardcoded
+   * rgb: a palette edit in theme.css must not fail a *mapping* test, and a
+   * hardcoded value proves nothing about which token the badge follows. And no
+   * set-size counting — distinct-colour arithmetic cannot say *which* lane got
+   * *which* hue, which is the whole claim.
+   */
+  void test('in-progress and done are outlined in their hue; the rest stay plain', async () => {
+    const h = await open('/board?project=laika-core', stub());
+    try {
+      await h.page.locator('.lane-head').first().waitFor({ state: 'attached' });
+      const seen = await h.page.evaluate(() => {
+        const resolve = (token: string): string => {
+          const probe = document.createElement('span');
+          probe.style.color = `var(${token})`;
+          document.body.append(probe);
+          const value = getComputedStyle(probe).color;
+          probe.remove();
+          return value;
+        };
+        const lanes = [...document.querySelectorAll('.lane')].map((lane) => {
+          const badge = lane.querySelector('.lane-count');
+          const style = badge === null ? null : getComputedStyle(badge);
+          return {
+            status: lane.getAttribute('data-status') ?? '(none)',
+            text: style === null ? 'missing' : style.color,
+            border: style === null ? 'missing' : style.borderTopColor,
+            fill: style === null ? 'missing' : style.backgroundColor,
+          };
+        });
+        return {
+          lanes,
+          blue: resolve('--chip-blue'),
+          blueBorder: resolve('--chip-blue-border'),
+          green: resolve('--chip-green'),
+          greenBorder: resolve('--chip-green-border'),
+          plain: resolve('--text-secondary'),
+        };
+      });
+
+      // A mapping suite that never sees the two coloured lanes proves nothing.
+      const statuses = seen.lanes.map((l) => l.status);
+      assert.ok(statuses.includes('in_progress'), `no in_progress lane in ${statuses.join()}`);
+      assert.ok(statuses.includes('done'), `no done lane in ${statuses.join()}`);
+
+      const transparent = 'rgba(0, 0, 0, 0)';
+      for (const lane of seen.lanes) {
+        if (lane.status === 'in_progress') {
+          assert.equal(lane.text, seen.blue, 'in-progress count is not chip-blue');
+          assert.equal(lane.border, seen.blueBorder, 'in-progress outline is not chip-blue');
+          assert.equal(lane.fill, transparent, 'in-progress badge kept a fill');
+        } else if (lane.status === 'done') {
+          assert.equal(lane.text, seen.green, 'done count is not chip-green');
+          assert.equal(lane.border, seen.greenBorder, 'done outline is not chip-green');
+          assert.equal(lane.fill, transparent, 'done badge kept a fill');
+        } else {
+          assert.equal(lane.text, seen.plain, `${lane.status} count left the plain colour`);
+          assert.equal(lane.border, transparent, `${lane.status} badge grew an outline`);
+          assert.notEqual(lane.fill, transparent, `${lane.status} badge lost its pill fill`);
+        }
+      }
+    } finally {
+      await h.close();
+    }
   });
 });

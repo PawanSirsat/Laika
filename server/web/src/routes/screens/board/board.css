@@ -763,13 +763,6 @@
   border-color: var(--chip-green-border);
 }
 
-/*
- * **The count is one colour in every lane.** It used to take the status's
- * accent — blue in `in_progress`, green in `done` — so the same badge meant
- * "three tasks" in four different colours down one board. The coloured dot to
- * its left already carries the status; the number is just a number.
- */
-
 /* Sample data — no board-column entity exists to hold a limit. See demo/wip.ts. */
 .lane-wip {
   margin-left: auto;
