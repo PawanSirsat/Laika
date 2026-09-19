@@ -30,7 +30,7 @@ export interface LoadingStateProps {
 /**
  * The board: lanes side by side, each with a head and cards.
  *
- * The board rendered `shape="card"` until LAI-295 — a *vertical stack* where
+ * The board rendered `shape="card"` until LAI-293 — a *vertical stack* where
  * the board is a *grid*, so the whole layout jumped when tasks arrived. This
  * module's own rule, one paragraph up, is that a skeleton mirrors what it
  * replaces; the board was the one place it did not.

@@ -1,5 +1,5 @@
 /**
- * `use-delayed.ts` — when a loading indicator is allowed on screen (LAI-295).
+ * `use-delayed.ts` — when a loading indicator is allowed on screen (LAI-293).
  *
  * **A skeleton that appears for 80ms and vanishes is worse than no skeleton.**
  * It reads as a flicker, and the screen looks broken rather than fast. Against

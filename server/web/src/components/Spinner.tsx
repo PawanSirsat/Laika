@@ -16,7 +16,7 @@ export interface SpinnerProps {
 
 /**
  * A circular progress indicator, for work too small to deserve a skeleton
- * (LAI-295).
+ * (LAI-293).
  *
  * A skeleton stands in for content that is about to arrive and has a shape. A
  * spinner says *something is happening here* where there is no shape to stand

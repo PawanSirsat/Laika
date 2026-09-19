@@ -110,7 +110,7 @@ export function SpaceTopBar({
       <div className="space-bar-row">
         <div className="space-identity">
           {/*
-          **The project name moved to the sidebar's wordmark** (LAI-295).
+          **The project name moved to the sidebar's wordmark** (LAI-293).
 
           It was here *and* in the rail two inches away — the same word twice,
           and the bar paid for it in width the owner wanted back. The rail is

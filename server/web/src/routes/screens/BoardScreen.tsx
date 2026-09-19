@@ -230,7 +230,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const board = useBoard(slug, filter);
 
   /**
-   * **Nothing for the first 150ms** (LAI-295). Against a local instance the
+   * **Nothing for the first 150ms** (LAI-293). Against a local instance the
    * board usually answers in under 50ms, so rendering the skeleton the moment
    * loading starts made every navigation blink — which reads as broken rather
    * than fast. Held 300ms once shown, so a 160ms response does not flash it.
@@ -844,7 +844,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         /* `null` until the delay elapses — deliberately not the empty board,
            which would render "Nothing in this lane" and then replace it. */
         !showBoardSkeleton ? null /*
-          **The board's shape, not a stack of cards** (LAI-295). This was
+          **The board's shape, not a stack of cards** (LAI-293). This was
           `shape="card" count={4}` — a vertical list where the board is a grid —
           so the whole layout jumped when tasks arrived. `LoadingState`'s own
           rule is that a skeleton mirrors what it replaces; this was the one
@@ -1015,7 +1015,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         change them, rather than a control that answers 403.
       */}
       {/*
-        **A drawer opened before the board has loaded** (LAI-295). `openTask` is
+        **A drawer opened before the board has loaded** (LAI-293). `openTask` is
         found in the board's own task list, so a deep link to
         `/board?task=LC-12` — or a reload with the drawer open — rendered the
         chrome with nothing inside it until the fetch landed.

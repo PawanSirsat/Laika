@@ -49,7 +49,7 @@ export function Button({
       onClick={onClick}
     >
       {/*
-        **A spinner beside the label, and the label does not change** (LAI-295).
+        **A spinner beside the label, and the label does not change** (LAI-293).
         It read `busy ? (busyLabel ?? children) : children`, so every button
         swapped its text and resized mid-click — "Create task" is 11 characters
         and "Creating…" is 9, and the button moved under the cursor that had

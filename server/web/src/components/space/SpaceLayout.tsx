@@ -96,7 +96,7 @@ function SpaceFrame({
     const controller = new AbortController();
 
     /*
-     * **`getProject` is gone from here** (LAI-295). It existed to name the
+     * **`getProject` is gone from here** (LAI-293). It existed to name the
      * space in the bar; the name is now the rail's, fetched there by the same
      * call. Leaving it would have been a second request for an answer nothing
      * on this screen reads.

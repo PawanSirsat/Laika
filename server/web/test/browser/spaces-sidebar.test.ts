@@ -230,7 +230,7 @@ void describe('the view tabs', () => {
        * The whole of the owner's report: the space must be **named**, not
        * fall back to "No space".
        *
-       * The name lives in the rail's wordmark since LAI-295. The regression
+       * The name lives in the rail's wordmark since LAI-293. The regression
        * this guards is the same one and is if anything sharper here: the rail
        * falls back to the *product* name, so a failure now reads as a
        * plausible `Laika` rather than an obvious `No space`.

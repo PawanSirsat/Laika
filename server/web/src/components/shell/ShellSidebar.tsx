@@ -35,7 +35,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
   const projectSlug = params.get('project') ?? undefined;
 
   /*
-   * The open project's real name for the wordmark (LAI-295). By slug, not from
+   * The open project's real name for the wordmark (LAI-293). By slug, not from
    * the spaces list — see `Sidebar`'s `spaceName` for why the list cannot be
    * trusted for this. Moved here from `SpaceLayout`, which asked for exactly
    * this and no longer needs it; it is the same one request, not a new one.

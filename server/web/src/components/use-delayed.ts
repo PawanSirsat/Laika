@@ -6,7 +6,7 @@ export const SHOW_AFTER_MS = 150;
 export const HOLD_FOR_MS = 300;
 
 /**
- * Whether a loading indicator should be on screen (LAI-295).
+ * Whether a loading indicator should be on screen (LAI-293).
  *
  * **A skeleton that appears for 80ms and vanishes is worse than no skeleton** —
  * it reads as a flicker, and the screen looks broken rather than fast. Against

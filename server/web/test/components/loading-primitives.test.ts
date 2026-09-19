@@ -1,5 +1,5 @@
 /**
- * The loading primitives (LAI-295).
+ * The loading primitives (LAI-293).
  *
  * `Spinner` and the new `LoadingState` shapes are checked at source, because
  * what matters about them is structural — the shapes a skeleton draws, and that

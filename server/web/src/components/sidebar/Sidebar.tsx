@@ -142,7 +142,7 @@ export function Sidebar({
         {!collapsed && (
           <div className="sidebar-identity">
             {/*
-              **The open project, not the product** (LAI-295).
+              **The open project, not the product** (LAI-293).
 
               The owner asked for this slot to carry the project name, and for
               the space bar to stop repeating it — the bar had `Laika Core`

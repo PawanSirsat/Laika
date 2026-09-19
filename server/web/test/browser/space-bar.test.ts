@@ -134,7 +134,7 @@ void describe('the space bar', () => {
        * load. The fallback is correct behaviour; the assertion was racing it.
        */
       /*
-       * **The identity moved to the rail** (LAI-295). The bar carried the
+       * **The identity moved to the rail** (LAI-293). The bar carried the
        * project name and icon while the rail two inches away said `Laika`;
        * the owner asked for the rail to name the project and the bar to stop
        * repeating it.

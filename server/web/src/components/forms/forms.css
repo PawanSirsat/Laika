@@ -205,7 +205,7 @@
   border: 1px solid transparent;
   /*
    * `inline-flex` so the busy spinner sits on the label's centre line with a
-   * real gap (LAI-295). `justify-content: center` keeps `.button-block`'s
+   * real gap (LAI-293). `justify-content: center` keeps `.button-block`'s
    * full-width label centred, which `display: inline` gave it for free and a
    * bare flex would not.
    */

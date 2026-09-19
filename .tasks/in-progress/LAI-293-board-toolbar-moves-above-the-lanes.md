@@ -56,6 +56,25 @@ progress** — agree it with that session first.
 reference has no equivalent for; it is a different product. Compaction is
 LAI-292's business and deletion is nobody's.
 
+## Added mid-task, at the owner's request
+
+**The project name moved from the space bar to the sidebar's wordmark.** The
+owner pointed at the rail — *"why this is here, i want that use the project
+name"* — having already asked for the name to move up and free the bar. The bar
+and the rail were naming the same thing two inches apart.
+
+It carries one trap worth recording: the bar fetched the name **by slug**, not
+from the spaces list, because `useSpaces` asks for `listProjects({ limit: 20 })`
+and a project past the twentieth is not in it. Deriving the rail's name from
+that list would have reintroduced LAI-259's *"No space"* under a new
+name — `Laika`, which looks deliberate. The by-slug request moved to
+`ShellSidebar` rather than being dropped; the list is the first-paint fallback.
+
+- [x] The rail names the open project, and falls back to the product name when
+      no project is open.
+- [x] The bar draws neither the name nor the icon — moved, not copied.
+- [x] The four guards that asserted the name in the bar assert it in the rail.
+
 ## Acceptance criteria
 
 - [ ] The row renders **below WORKING NOW and above the first lane**, asserted

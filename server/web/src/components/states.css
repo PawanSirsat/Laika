@@ -244,7 +244,7 @@
   margin-top: var(--space-1);
 }
 
-/* --- spinner (LAI-295) ----------------------------------------------------- */
+/* --- spinner (LAI-293) ----------------------------------------------------- */
 
 /*
  * Circular progress, for work with no shape to stand in for.
@@ -298,7 +298,7 @@
   }
 }
 
-/* --- whole-layout skeletons (LAI-295) -------------------------------------- */
+/* --- whole-layout skeletons (LAI-293) -------------------------------------- */
 
 /*
  * These mirror a *layout*, not a repeated element, so each draws itself once

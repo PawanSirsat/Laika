@@ -1,5 +1,5 @@
 /**
- * The loading-state sweep (LAI-295, phase 3).
+ * The loading-state sweep (LAI-293, phase 3).
  *
  * Phases 1 and 2 built the primitives and fixed the named screens. This file
  * guards the part that is easy to do once and lose: **every** control that
