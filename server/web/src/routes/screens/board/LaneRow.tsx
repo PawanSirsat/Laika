@@ -10,6 +10,7 @@ import {
 } from '../../../api/board-derive.ts';
 import type { BoardColumn } from '../../../api/columns.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
+import { ColumnComposer } from './ColumnComposer.tsx';
 import type { CardFields } from './card-fields.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
@@ -35,6 +36,11 @@ export interface LaneRowProps {
    * column's primary, and a column with none cannot offer the button.
    */
   readonly onAdd?: ((status: MovableStatus) => void) | undefined;
+  /** The column whose composer is open, if any. */
+  readonly composingIn?: string | undefined;
+  readonly slug?: string | undefined;
+  readonly onCreated?: (() => void) | undefined;
+  readonly onCloseComposer?: (() => void) | undefined;
   readonly canAdd?: boolean | undefined;
   /**
    * Column configuration. **Absent, not disabled**, for anyone who may not
@@ -97,6 +103,10 @@ export function LaneRow({
   columnWidth = 'standard',
   onAdd,
   canAdd = false,
+  composingIn,
+  slug,
+  onCreated,
+  onCloseComposer,
   onReorder,
   showColumnConfig = true,
   onAddColumn,
@@ -351,16 +361,32 @@ export function LaneRow({
               )}
             </div>
 
-            {canAdd && onAdd !== undefined && dot !== undefined && (
-              <button
-                type="button"
-                className="lane-add"
-                onClick={() => {
-                  onAdd(dot);
+            {composingIn === column.id && dot !== undefined && slug !== undefined ? (
+              <ColumnComposer
+                slug={slug}
+                status={dot}
+                columnName={column.name}
+                onCreated={() => {
+                  onCreated?.();
                 }}
-              >
-                + Create
-              </button>
+                onClose={() => {
+                  onCloseComposer?.();
+                }}
+              />
+            ) : (
+              canAdd &&
+              onAdd !== undefined &&
+              dot !== undefined && (
+                <button
+                  type="button"
+                  className="lane-add"
+                  onClick={() => {
+                    onAdd(dot);
+                  }}
+                >
+                  + Create
+                </button>
+              )
             )}
           </section>
         );

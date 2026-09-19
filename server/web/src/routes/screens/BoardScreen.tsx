@@ -230,6 +230,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     undefined,
   );
   const [editing, setEditing] = useState<string | undefined>(undefined);
+  /** Which column's inline composer is open (LAI-290). */
+  const [composingIn, setComposingIn] = useState<string | undefined>(undefined);
   // The first consumer the SSE endpoint has ever had (LAI-070).
   const stream = useEvents(slug);
 
@@ -668,7 +670,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         </p>
       )}
 
-      {mayCreate && creating && (
+      {/*
+        **The List view only** (LAI-290). A list has no columns, so a banner is
+        the right shape there; the board creates in the column you clicked. The
+        `view ===` guard stops it leaking onto the board when somebody opens it
+        from the list and then switches tabs.
+      */}
+      {mayCreate && creating && view === 'list' && (
         <NewTaskForm
           slug={slug}
           onCreated={board.reload}
@@ -741,10 +749,19 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               }}
               filtered={filtered}
               onOpen={openTaskInUrl}
-              onAdd={() => {
-                setCreating(true);
-              }}
               canAdd={mayCreate}
+              {...(slug === undefined ? {} : { slug })}
+              {...(composingIn === undefined ? {} : { composingIn })}
+              onAdd={(status) => {
+                // The lane hands back its own primary status; find the column
+                // that owns it so the composer can name where it will land.
+                const column = columns.visible.find((c) => c.primary_status === status);
+                setComposingIn(column?.id);
+              }}
+              onCreated={board.reload}
+              onCloseComposer={() => {
+                setComposingIn(undefined);
+              }}
               {...(mayConfigure && !grouped && !columns.visible.some(isFallbackColumn)
                 ? {
                     onReorder: (ids: readonly string[]) => {
