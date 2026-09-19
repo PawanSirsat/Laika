@@ -3402,3 +3402,80 @@ rule is narrower: **a figure belongs in the SPEC when something can falsify it.*
 
 The owner wants the modal to dim the sidebar too, or asks for Jira's minimise
 control — neither is decided here.
+
+---
+
+## D-064 — D-062 is withdrawn. It measured a board that had already been
+## rebuilt, and the review backlog is why.
+
+**2026-09-19, during the review of LAI-248…LAI-287.**
+
+**D-062 decided two things that were already true.** Filed 2026-09-18 against the
+owner's screenshot, it recorded a measurement table of the board, decided the
+lanes should fill the page, and chose a collapsible live-stream rail to buy wider
+cards. LAI-475 carried it.
+
+**Both were built before that decision was written:**
+
+| D-062 decided | already shipped by |
+| --- | --- |
+| delete `calc(100dvh - 21rem)`; the lanes fill the page | **LAI-283**, finished 2026-09-18T22:52Z |
+| collapse the 266px rail to widen the cards | **LAI-281** — the rail left the board entirely and became its own tab |
+
+Measured on the merged tree: `.board-rail` **absent** from the board, five lanes
+at full width, lane heights **716 at a 900px viewport and 516 at 700** — LAI-283's
+own criterion, passing exactly.
+
+### The mechanism, which is the part worth keeping
+
+**The owner reported a real defect against a build 110 commits stale**, and
+**CHIEF filed against the same stale tree.** `master` was where both of us
+looked; `shell` was where the work was. Twenty-seven finished tasks sat in review
+because reviewing them is CHIEF's job and CHIEF was writing new tasks instead.
+
+> **An unreviewed queue does not just delay work. It makes the board lie about
+> itself**, and every measurement taken off `master` inherits the lie.
+
+D-062's measurement table was honest, careful, and describes a board that had not
+existed for three hours.
+
+### What survives
+
+**The reasoning in D-062 is not wrong**, and where SHELL reached the same
+conclusions independently that is worth noting rather than burying: both
+diagnosed `calc(100dvh - 21rem)` as a hand-tuned constant that would drift, and
+both concluded the rail was the only place the width could come from. SHELL went
+further and removed the rail from the board rather than collapsing it, which is
+the better answer.
+
+**One observation of D-062's survives** and is filed as LAI-479: a 32px
+`.kanban { margin-bottom }` left from when the board scrolled.
+
+**D-063 is unaffected.** The task modal is still a right-hand drawer on the
+merged tree — verified at x=560, width=1120 — so LAI-476 stands as written.
+
+### The rule this buys
+
+**Measure the branch that owns the code, not `master`**, whenever `master` is
+behind. `git diff --stat master...<branch>` before believing a screenshot, and
+**review the queue before filing against the area it covers.**
+
+### The task file is deleted, not parked in `done/`
+
+`task-file-state.test.ts` refused it — **a file in `done/` must carry
+`assignee`, `started` and `finished`, and LAI-475 has none**, because nobody ever
+claimed it. The guard is right: *done* means worked and finished, and a task
+withdrawn before it was picked up is neither.
+
+So the file is removed and **this decision is the record**. The id is never
+reused: §3's sweep keeps its `git log` half precisely so an id that no longer
+exists as a file is still seen.
+
+**That is the third time in two days the repo's own guards have caught me** —
+the id sweep on the 18th, the id-collision check the same day, and this. Each
+time the instrument was right and the instruction or the instinct behind it was
+not.
+
+### Revisit when
+
+Never — this is a withdrawal. The standing correction is the rule above.
