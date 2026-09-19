@@ -2,6 +2,7 @@ import { and, asc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import {
   activityActor,
+  isAgentPrincipal,
   isSystemPrincipal,
   type ResolvedActor,
   type ServiceCaller,
@@ -24,7 +25,7 @@ import { assertCan } from '../policy/can.ts';
 import { addComment, commentCounts } from './comments.ts';
 import { normaliseTagNames, setTaskTags, tagsForTasks, taskIdsWithTag } from './tags.ts';
 import { requireProjectBySlug } from './projects.ts';
-import { assertTransition, isReady } from './task-lifecycle.ts';
+import { assertTransition, isReady, type TransitionRule } from './task-lifecycle.ts';
 
 /**
  * Tasks (SPEC §4.5, §5, §6.4) — creation, listing, transitions, claiming and
@@ -613,12 +614,22 @@ export function changeStatus(
   taskId: string,
   to: TaskStatus,
   now: number = Date.now(),
+  /**
+   * Which §5 table applies. Defaults to asking the principal, which is what
+   * every caller wants except `finishTask` — see its docblock.
+   */
+  rule: TransitionRule = isAgentPrincipal(actor) ? 'agent' : 'human',
 ): TaskView {
   const { task, project } = requireTask(db, taskId);
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
 
-  assertTransition(task.status, to);
+  // §5's table, widened for a person and unchanged for a program (LAI-266).
+  // `isAgentPrincipal` reads `actor.token`, **not** `isSystemPrincipal` — a
+  // token-bearing agent is an ordinary actor, so the obvious predicate would
+  // have handed MCP the human rule. The branch below is a different question
+  // and keeps its own test.
+  assertTransition(task.status, to, rule);
 
   // §5: moving to `review` requires the assignee, a project lead, or org
   // Admin/Owner. The task text said "assignee, Admin or Owner" and omitted lead;
@@ -738,7 +749,13 @@ export function finishTask(
   return immediateTransaction(sqlite, () => {
     // The transition is validated by §5's own table, so finishing a task that
     // was never started fails here rather than being quietly allowed.
-    const task = changeStatus(db, actor, taskId, 'review', now);
+    //
+    // **`'agent'` is pinned rather than derived** (LAI-266). This is reached
+    // from the MCP tool only, whose actor always carries a token, so deriving
+    // would give the same answer today — but the parameter is a `ResolvedActor`
+    // and a cookie-authed caller would silently get the widened table, which
+    // makes the sentence above false. Pinning keeps it true whoever calls.
+    const task = changeStatus(db, actor, taskId, 'review', now, 'agent');
 
     addComment(db, actor, taskId, finishSummary(input), now);
 

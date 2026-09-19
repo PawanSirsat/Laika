@@ -264,3 +264,42 @@ export function withProject(principal: ServiceCaller, projectId: string): Servic
 export function isSystemPrincipal(principal: Principal): principal is SystemPrincipal {
   return 'kind' in principal && principal.kind === 'system';
 }
+
+/**
+ * Is this caller a program rather than a person at a keyboard? (LAI-266)
+ *
+ * Board columns made the §5 transition table too strict to drag against: with
+ * user-made columns, `todo → done` is an ordinary gesture and
+ * `ALLOWED_TRANSITIONS` refuses it. The owner's decision was to widen the table
+ * for people and leave it exactly as it is for agents, so that §5's *"`done` is
+ * never set by `finish_task`. Agents do not self-certify"* keeps meaning what it
+ * says.
+ *
+ * **`isSystemPrincipal` is not that question, and reaching for it is the
+ * mistake this function exists to prevent.** It means `kind === 'system'` — the
+ * §11.6 cron and §10.1's webhook. A token-bearing agent is an ordinary
+ * `ResolvedActor` (see `resolveTokenActor` above: *"a token is a way for
+ * somebody to act as themselves from somewhere else"*), so branching on it would
+ * hand every MCP caller the widened rule — the one outcome the split exists to
+ * prevent.
+ *
+ * The real discriminator is `token`, which `Actor` documents as *"Absent or
+ * `null` when the request arrived on a session cookie (§6.1)"*, and which the
+ * browser never carries.
+ *
+ * ## Why this is not `activityActor(p).actorKind !== 'user'`
+ *
+ * It would be one expression and one source of truth, and it is the wrong
+ * source. `activityActor` answers **attribution** — what the `activity` row
+ * says — and `can()`'s docblock draws that line deliberately: *"authority and
+ * attribution are different questions and a principal that carries an identity
+ * acquires one by accident."* Deriving authority from attribution crosses it.
+ *
+ * The two must nonetheless agree, so a test asserts they do across all three
+ * principal shapes. Separate in code, undriftable in test.
+ */
+export function isAgentPrincipal(principal: Principal): boolean {
+  if (isSystemPrincipal(principal)) return true;
+
+  return principal.token !== null && principal.token !== undefined;
+}
