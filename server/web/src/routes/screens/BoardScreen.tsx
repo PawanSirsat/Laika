@@ -872,7 +872,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         <ApiErrorState error={board.state.error} resource="this board" onRetry={board.reload} />
       ) : (
         <div
-          className="board-main"
+          /*
+           * Grouped, the page scrolls between rows; ungrouped it must not —
+           * see `.board-grouped` in `board-rail.css`. Driven by whether
+           * swimlanes were actually drawn, not by the group param, so a group
+           * that produced no rows does not leave the board scrollable.
+           */
+          className={swimlanes === undefined ? 'board-main' : 'board-main board-grouped'}
           onWheel={(event) => {
             /*
              * **Forward a sideways gesture to the board** (LAI-290).

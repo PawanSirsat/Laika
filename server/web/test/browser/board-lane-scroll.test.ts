@@ -876,3 +876,83 @@ void describe('where the board row sits (LAI-293)', () => {
     }
   });
 });
+
+/**
+ * A grouped board scrolls; an ungrouped one still does not (LAI-296).
+ *
+ * `.board-main` is `overflow-y: hidden` so the plain board cannot grow the
+ * phantom scrollbar LAI-290 removed. Grouped, that same rule made every row
+ * below the second unreachable — the board is one lane row *per group*, which
+ * is taller than any viewport as soon as there are three or four people.
+ *
+ * Both halves are asserted here **in one file**, because the bug was fixing one
+ * without noticing the other.
+ */
+void describe('a grouped board can reach its last row (LAI-296)', () => {
+  void test('grouped, it scrolls', async () => {
+    const h = await open('/board?project=laika-core&group=assignee', CROWDED_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1400, height: 700 });
+      await h.page.locator('.swim').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(400);
+
+      const room = await h.page.evaluate(() => {
+        const pane = document.querySelector('.board-main');
+        return pane === null ? 0 : pane.scrollHeight - pane.clientHeight;
+      });
+      assert.ok(room > 0, 'the grouped board is not tall enough to prove anything');
+
+      /*
+       * **A wheel gesture, not `scrollTop = n`.** Assigning `scrollTop` moves
+       * an `overflow: hidden` element perfectly well — script is not bound by
+       * the property that stops a *person* scrolling. The first version of
+       * this test did exactly that and **passed with the fix removed**, which
+       * is the whole defect it exists to catch.
+       *
+       * The computed style is asserted too: the gesture proves a person can
+       * reach the lower rows, the property says why.
+       */
+      const overflowY = await h.page.evaluate(() => {
+        const pane = document.querySelector('.board-main');
+        return pane === null ? '' : getComputedStyle(pane).overflowY;
+      });
+      assert.ok(
+        overflowY === 'auto' || overflowY === 'scroll',
+        `a grouped board cannot be scrolled by hand (overflow-y: ${overflowY})`,
+      );
+
+      const box = await h.page.locator('.swim').first().boundingBox();
+      assert.ok(box !== null, 'no row to aim at');
+      await h.page.mouse.move(box.x + box.width / 2, box.y + 40);
+      await h.page.mouse.wheel(0, 400);
+      await h.page.waitForTimeout(350);
+
+      const top = await h.page.evaluate(
+        () => document.querySelector('.board-main')?.scrollTop ?? 0,
+      );
+      assert.ok(top > 0, 'the grouped board refused to scroll — its lower rows are unreachable');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('ungrouped, it still refuses to', async () => {
+    // The half that must not regress: LAI-290 removed a vertical scrollbar
+    // that scrolled over a 91px phantom with no content under it.
+    const h = await open('/board?project=laika-core', CROWDED_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1400, height: 700 });
+      await boardReady(h);
+
+      const overflowY = await h.page.evaluate(() => {
+        const pane = document.querySelector('.board-main');
+        return pane === null ? '' : getComputedStyle(pane).overflowY;
+      });
+      assert.equal(overflowY, 'hidden', 'the plain board can scroll vertically again');
+    } finally {
+      await h.close();
+    }
+  });
+});

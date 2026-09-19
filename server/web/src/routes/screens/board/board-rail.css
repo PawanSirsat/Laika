@@ -323,9 +323,15 @@
    * against this box by the `position: relative` below — while every real box
    * ended 18px inside it.
    *
-   * The board is one screenful by design: the lanes reach the bottom and each
-   * scrolls its own cards. Nothing here should ever scroll vertically, so say
-   * so rather than relying on the content to stay short.
+   * **Ungrouped**, the board is one screenful by design: the lanes reach the
+   * bottom and each scrolls its own cards, so nothing here scrolls vertically
+   * and this says so rather than relying on the content to stay short.
+   *
+   * **Grouped is a different shape**, and this comment claimed otherwise for as
+   * long as swimlanes have existed (LAI-296). A grouped board is one lane row
+   * *per group* stacked down the page — five assignees is five full rows — and
+   * this rule made every row below the second unreachable. `.board-grouped`
+   * below is the exception, set by the screen that knows which shape it drew.
    */
   overflow-y: hidden;
   /*
@@ -423,4 +429,16 @@
   .rail-card {
     flex: 1 1 15rem;
   }
+}
+
+/*
+ * A grouped board scrolls itself (LAI-296).
+ *
+ * The lanes inside each row keep their own card scrolling; what is added here
+ * is the page-level scroll *between* rows, which the ungrouped board has no
+ * need of and must not get — the phantom-scrollbar fix in `.board-main` above
+ * is why it is opt-in rather than simply `auto`.
+ */
+.board-main.board-grouped {
+  overflow-y: auto;
 }

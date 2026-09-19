@@ -189,9 +189,13 @@ void describe('every swimlane holds the whole board', () => {
 });
 
 void describe('row order', () => {
-  void test('Unassigned leads, then people by name', () => {
-    // Unassigned first deliberately: it is the pile you act on. `Ada` sorts
-    // before `Bo` anyway, so the lead is what proves the special case.
+  void test('Unassigned trails, and the people are by workload', () => {
+    /*
+     * **Reversed by LAI-296**, at the owner's request: the busiest person
+     * leads and the bucket trails. It led until then on the argument that it
+     * is "the pile you act on" — which the owner overruled, and the bucket
+     * still gets its special case, just at the other end.
+     */
     const lanes = groupSwimlanes(
       [
         task({ id: '1', assignee_id: 'u2' }),
@@ -203,9 +207,10 @@ void describe('row order', () => {
       options,
     );
 
+    // One each, so this is the tie-break path: names, then the bucket last.
     assert.deepEqual(
       lanes.map((l) => l.name),
-      ['Unassigned', 'Ada', 'Bo'],
+      ['Ada', 'Bo', 'Unassigned'],
     );
   });
 
@@ -227,7 +232,10 @@ void describe('row order', () => {
     );
   });
 
-  void test('No sprint leads', () => {
+  void test('No sprint trails, for the same reason Unassigned does', () => {
+    // It shares the `''` key, so this is the same branch — asserted anyway,
+    // because "the same branch" is a claim about the code and this is a claim
+    // about the behaviour.
     const lanes = groupSwimlanes(
       [task({ id: '1', sprint_id: 's1' }), task({ id: '2', sprint_id: null })],
       'sprint',
@@ -237,7 +245,7 @@ void describe('row order', () => {
 
     assert.deepEqual(
       lanes.map((l) => l.name),
-      ['No sprint', 'S1'],
+      ['S1', 'No sprint'],
     );
   });
 });
@@ -288,7 +296,9 @@ void describe('rows carry what the header needs', () => {
     // display name — renaming a person would silently expand their row.
     assert.deepEqual(
       lanes.map((l) => l.key),
-      ['', 'u1'],
+      // `u1` first since LAI-296 — the bucket trails. The keys are what this
+      // asserts; their order is incidental and stated so it cannot drift.
+      ['u1', ''],
     );
   });
 });
@@ -301,5 +311,149 @@ void describe('the notice', () => {
 
     assert.match(notice, /assignee/);
     assert.match(notice, /between columns/i);
+  });
+});
+
+/**
+ * Row order (LAI-296).
+ *
+ * The owner's words: *"i want top that person has most task then unassigned is
+ * on bottom, i mean depends upon the filter."*
+ */
+void describe('the busiest row is first and the bucket is last', () => {
+  void test('rows are ordered by how much work they hold', () => {
+    const lanes = groupSwimlanes(
+      [
+        task({ id: '1', assignee_id: 'u2', status: 'todo' }),
+        task({ id: '2', assignee_id: 'u1', status: 'todo' }),
+        task({ id: '3', assignee_id: 'u1', status: 'done' }),
+        task({ id: '4', assignee_id: 'u1', status: 'review' }),
+      ],
+      'assignee',
+      COLUMNS,
+      options,
+    );
+
+    // Ada holds three and Bo one, so Ada leads — alphabetically she would too,
+    // which is why Bo is the one given the *smaller* pile: swap the counts and
+    // a name sort still passes. This ordering cannot be satisfied by accident.
+    assert.deepEqual(
+      lanes.map((l) => `${l.name}=${String(l.count)}`),
+      ['Ada=3', 'Bo=1'],
+    );
+  });
+
+  void test('a name sort would fail this one', () => {
+    // Bo holds more than Ada. Alphabetical puts Ada first; count puts Bo first.
+    const lanes = groupSwimlanes(
+      [
+        task({ id: '1', assignee_id: 'u1', status: 'todo' }),
+        task({ id: '2', assignee_id: 'u2', status: 'todo' }),
+        task({ id: '3', assignee_id: 'u2', status: 'done' }),
+      ],
+      'assignee',
+      COLUMNS,
+      options,
+    );
+
+    assert.deepEqual(
+      lanes.map((l) => l.name),
+      ['Bo', 'Ada'],
+    );
+  });
+
+  void test('Unassigned is last even when it is the biggest pile', () => {
+    /*
+     * The case that decides whether this is a count sort or a *workload* sort.
+     * Four unassigned against Ada's one: by count alone the bucket leads, and
+     * that would read as "nobody is the busiest person here".
+     */
+    const lanes = groupSwimlanes(
+      [
+        task({ id: '1', assignee_id: null, status: 'todo' }),
+        task({ id: '2', assignee_id: null, status: 'todo' }),
+        task({ id: '3', assignee_id: null, status: 'done' }),
+        task({ id: '4', assignee_id: null, status: 'review' }),
+        task({ id: '5', assignee_id: 'u1', status: 'todo' }),
+      ],
+      'assignee',
+      COLUMNS,
+      options,
+    );
+
+    assert.deepEqual(
+      lanes.map((l) => `${l.name}=${String(l.count)}`),
+      ['Ada=1', 'Unassigned=4'],
+    );
+  });
+
+  void test('ties fall back to the name, so the order is stable', () => {
+    const lanes = groupSwimlanes(
+      [
+        task({ id: '1', assignee_id: 'u2', status: 'todo' }),
+        task({ id: '2', assignee_id: 'u1', status: 'todo' }),
+      ],
+      'assignee',
+      COLUMNS,
+      options,
+    );
+
+    assert.deepEqual(
+      lanes.map((l) => l.name),
+      ['Ada', 'Bo'],
+    );
+  });
+
+  void test('the order follows the filter, because the counts do', () => {
+    /*
+     * *"depends upon the filter"*: this function is handed the **filtered**
+     * tasks, so narrowing the board reorders the rows with no filter logic
+     * here at all. Asserted by passing the two sets rather than by reading the
+     * implementation.
+     */
+    const all = [
+      task({ id: '1', assignee_id: 'u1', status: 'todo' }),
+      task({ id: '2', assignee_id: 'u1', status: 'todo' }),
+      task({ id: '3', assignee_id: 'u2', status: 'done' }),
+    ];
+
+    assert.deepEqual(
+      groupSwimlanes(all, 'assignee', COLUMNS, options).map((l) => l.name),
+      ['Ada', 'Bo'],
+      'unfiltered, Ada holds two and leads',
+    );
+
+    // Now only the done work — Ada holds none of it.
+    assert.deepEqual(
+      groupSwimlanes(
+        all.filter((t) => t.status === 'done'),
+        'assignee',
+        COLUMNS,
+        options,
+      ).map((l) => l.name),
+      ['Bo'],
+      'filtered to done, Bo is the only row and therefore the first',
+    );
+  });
+
+  void test('priority keeps its own order, not the count order', () => {
+    // p1 → p3 is an ordered vocabulary; sorting it by size would put whichever
+    // priority happens to be busiest on top, which is not what a priority row
+    // means.
+    const lanes = groupSwimlanes(
+      [
+        task({ id: '1', priority: 'p3', status: 'todo' }),
+        task({ id: '2', priority: 'p3', status: 'todo' }),
+        task({ id: '3', priority: 'p1', status: 'todo' }),
+      ],
+      'priority',
+      COLUMNS,
+      options,
+    );
+
+    assert.deepEqual(
+      lanes.map((l) => l.key),
+      ['p1', 'p3'],
+    );
   });
 });

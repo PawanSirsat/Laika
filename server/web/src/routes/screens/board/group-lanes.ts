@@ -111,12 +111,30 @@ export function groupSwimlanes(
   const entries = [...buckets.entries()];
 
   entries.sort(([leftKey, left], [rightKey, right]) => {
-    // **Unassigned and No sprint lead**, because that is the pile somebody
-    // opened this view to act on.
-    if (leftKey === '' && rightKey !== '') return -1;
-    if (rightKey === '' && leftKey !== '') return 1;
-    // Priority sorts p1 → p3; everything else by name.
+    /*
+     * **Unassigned and No sprint go last** (LAI-296).
+     *
+     * They led until the owner asked for busiest-first, and leading was wrong
+     * for a reason worth keeping: the `''` bucket is **not a person and its
+     * pile is not a workload**. Sorted among people by count it would claim
+     * nobody is busier than Ada, which is a sentence about a bucket. It is a
+     * bucket, so it sits at the end whatever its size.
+     */
+    if (leftKey === '' && rightKey !== '') return 1;
+    if (rightKey === '' && leftKey !== '') return -1;
+
+    // Priority is an ordered vocabulary, so p1 → p3 beats any count ordering.
     if (by === 'priority') return leftKey.localeCompare(rightKey);
+
+    /*
+     * **Busiest first, and it follows the filter for free.** `tasks` here is
+     * already the filtered set — the counts are of what the board is showing,
+     * so narrowing to one sprint reorders the rows by that sprint's workload
+     * without this function knowing a filter exists.
+     */
+    if (left.tasks.length !== right.tasks.length) return right.tasks.length - left.tasks.length;
+
+    // Ties by name, so the order is stable rather than insertion-dependent.
     return left.name.localeCompare(right.name);
   });
 
