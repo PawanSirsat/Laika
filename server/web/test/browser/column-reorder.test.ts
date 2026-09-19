@@ -446,6 +446,10 @@ void describe('the head reveals its own chrome', () => {
      * again, which is exactly why it keeps a guard.
      */
     const h = await open('/board?project=laika-core', stub());
+    // Wait for the board itself. Counting before it renders reports zero dots,
+    // which the guard below correctly refuses — but the refusal describes the
+    // wait, not the colours, and that is a slow way to learn nothing.
+    await h.page.locator('.lane-head').first().waitFor({ state: 'attached' });
     const seen = await h.page.evaluate(() => {
       const dots = [...document.querySelectorAll('.lane-dot')];
       return {
