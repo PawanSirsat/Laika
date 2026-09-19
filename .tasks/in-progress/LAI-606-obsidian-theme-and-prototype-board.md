@@ -44,6 +44,25 @@ cleared in phase 0b: `tokens.test.ts` (reads deleted `theme/tokens.css`),
 `lane-dots.test.ts` (pre-refresh token names), `task-card.test.ts` D-027 suite
 (owner reversed D-027), `card-hit-area.test.ts:120` (exact-string class regex).
 
+## Delta report — every value that still differs (the brief's Done-when)
+
+Sizes follow the addendum, not the file's raw px, by owner decision. Beyond
+that, the deliberate deltas:
+
+| where | file / brief says | shipped | why |
+| --- | --- | --- | --- |
+| all raw px | mockup scale (13.5 titles, 8.5 chips, 26 avatars) | addendum scale | owner decision |
+| colour hexes | file `#0c0c0f/#141418/#1b1b20…` | brief's `#0E0F11/#141417/#19191D…` | brief's typed table is the newest statement; near-miss deltas |
+| P3 priority dot | brief reads "filled red/amber/green" | hollow 1.5px ring `--text-muted` | the file's own treatment; "ring when none" reading |
+| done cards | file: whole card at opacity .66 | title muted only | brief names only the title |
+| header meta (WIP n/4, "Sana reviews") | file computes from fixtures | slot renders nothing | no WIP config or reviewer data exists |
+| card age | file has none on cards | kept, mono muted; "just now" accent < 5 min | brief explicit |
+| unknown tags | (hash, previously) | neutral | brief + file fallback = grey |
+| in-progress status | file colours it with its blue *accent* | `--chip-blue`, never `--accent` | accent is purple now |
+| Google Fonts link | file loads from CDN | self-hosted @fontsource | SPEC §13.4 |
+| dense switch | addendum writes `[data-density]` | `.kanban-dense` | owner earlier approved the existing toggle |
+| focus ring offset | addendum: 2px offset everywhere | 47 accent rings exist, offsets vary per control | swept, not normalised — noted for a follow-up |
+
 ## Acceptance criteria
 
 - [ ] Colour-literal guard green: no literal outside `styles/theme.css` (+ the
