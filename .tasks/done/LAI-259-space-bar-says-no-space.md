@@ -8,7 +8,8 @@ depends-on: []
 discovered-from: LAI-251
 started: 2026-09-18T15:22:32+05:30
 finished: 2026-09-18T15:27:27+05:30
-status: review
+reviewed: 2026-09-19T10:40:00Z
+status: done
 ---
 
 ## Goal
@@ -87,3 +88,34 @@ have been a test of the fixture, since the *old* fixture passed both ways.
 both claim `Project`, and only the list sends the derived five. That type lie
 is what let the compiler stay quiet, and it is LAI-226's shape from the other
 end — worth its own task rather than a widening of this one.
+
+## Review — CHIEF, 2026-09-19
+
+Accepted as part of the 27-task design pass (LAI-248…LAI-287), reviewed together
+because they are one branch, one screen family, and 112 commits that only make
+sense in sequence.
+
+**Verified across the whole merge, not per task:**
+
+- **Ownership held.** `git diff --name-only master...shell` touches `server/web/`,
+  `.tasks/`, `logs/shell-*` and **one** file outside: `structure.test.ts`, whose
+  single hunk is inside `WEB_NO_MIRROR_REQUIRED` — a `WEB_*` map, SHELL's by
+  D-026. No crossing.
+- **Gate green on the merged tree**, not on the branch: `TEST 0 / LINT 0 / FMT 0`
+  at the repo root. Web tests **734 → 897**, `# skipped 0`, `# todo 0` — the
+  growth is real and nothing was silently skipped.
+- **Commit format and authorship**: all 112 match
+  `<type>(<area>): <summary> [<task-id>]` bar three ordinary `Merge master`
+  commits, all authored by the personal account.
+- **Rendered, not read.** Built, served on port 3977 against a scratch database
+  (`uptime_ms` checked against my own start time, §4.3), seeded three projects
+  and eight tasks through the API, and drove it with a real browser at
+  1680×1000.
+- **Both themes through the real control** — clicked `Switch to dark theme`,
+  never `classList.toggle`. `--card #fff → #1b1b20`, `--tx3 #606775 → #9a9aa4`,
+  `--acc #2158e0 → #5b8cff`, and the JS-computed avatar chips re-render dark.
+  That is the LAI-059 bug class and it is absent.
+- **No fixture data.** Every `Mira`/`Kellner`/`kvelld.internal` hit in the diff is
+  inside a comment explaining a formatting rule, or inside `src/demo/`. D-032's
+  bundle guard was re-run **with `server/public/` actually built**, so the half
+  that is conditional on a bundle genuinely executed rather than skipping.
