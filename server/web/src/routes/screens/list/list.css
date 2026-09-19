@@ -1,0 +1,354 @@
+/*
+ * The List view (prototype lines 166–203).
+ *
+ * Every figure here is the design's own. The design draws this screen full
+ * width with **no right rail and no presence strip** — those belong to the
+ * board (`boardLive`, prototype line 2273), and the List is one card edge to
+ * edge.
+ */
+
+/*
+ * **No `width: 100%`.** The pane is a flex item inside `.board-main`, which
+ * carries an 18px side margin of its own — so a declared full width resolves
+ * against the wider containing block and hangs 18px past the viewport. Flex
+ * sizes it correctly with no width at all; the measured symptom was exactly
+ * 18px of document scroll at 900px.
+ */
+.list-pane {
+  min-width: 0;
+  min-height: 0;
+  /* The pane's own air, matching the board's. */
+  padding: 0.875rem 1.125rem 1.125rem;
+  background: var(--page);
+}
+
+/*
+ * The table scrolls sideways inside its own box rather than pushing the page.
+ * Seven columns have a floor of 940px and the window does not always have it.
+ */
+.list-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  min-width: 0;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+.list {
+  min-width: 58.75rem;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+/* ------------------------------------------------ the design's column widths */
+
+.list-col-key {
+  width: 4.625rem;
+}
+.list-col-summary {
+  width: auto;
+}
+.list-col-status {
+  width: 6.5rem;
+}
+.list-col-pri {
+  width: 2.625rem;
+}
+.list-col-assignee {
+  width: 9.375rem;
+}
+.list-col-spr {
+  width: 2.875rem;
+}
+.list-col-updated {
+  width: 5.25rem;
+}
+
+/* ----------------------------------------------------------------- the header */
+
+.list thead th {
+  padding: 0.5625rem 0.875rem;
+  background: var(--page);
+  border-bottom: 1px solid var(--bd);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.list thead th:last-child {
+  text-align: right;
+}
+
+.list-sort {
+  font: inherit;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.list-sort:hover,
+.list-sort:focus-visible {
+  color: var(--tx2);
+}
+
+/* ------------------------------------------------------------------- the rows */
+
+.list-row {
+  cursor: pointer;
+}
+
+.list-row:hover {
+  background: var(--tub);
+}
+
+.list tbody td {
+  padding: 0.625rem 0.875rem;
+  border-bottom: 1px solid var(--bd);
+  vertical-align: middle;
+}
+
+/* A finished row steps back without disappearing — the design's `--tx2`. */
+.list-row-muted .list-title {
+  color: var(--tx2);
+}
+
+.list-key {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+.list-open {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.list-open:hover,
+.list-open:focus-visible {
+  color: var(--acc);
+  text-decoration: underline;
+}
+
+/* --------------------------------------------------------------- the summary */
+
+.list-summary {
+  min-width: 0;
+}
+
+.list-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  min-width: 0;
+}
+
+.list-lock {
+  flex: none;
+  font-size: 0.5625rem;
+  line-height: 1;
+}
+
+.list-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78125rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-sub {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  margin-top: 0.25rem;
+}
+
+.list-labels {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx3);
+}
+
+.list-blocked {
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--red);
+}
+
+/* ------------------------------------------------------- status and priority */
+
+.list-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.05em;
+  border-radius: 5px;
+  padding: 0.25rem 0.375rem;
+  white-space: nowrap;
+}
+
+.list-pri {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+/*
+ * **One tone scale for three columns.** Status, priority and age all colour by
+ * the same five states, and writing them per column is how two of them drift
+ * into disagreeing about what amber means.
+ */
+.list-tone-flat {
+  color: var(--tx2);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+}
+
+.list-tone-accent {
+  color: var(--acc);
+  background: var(--accs);
+  border: 1px solid var(--accb);
+}
+
+.list-tone-good {
+  color: var(--grn);
+  background: var(--grns);
+  border: 1px solid var(--grnb);
+}
+
+.list-tone-warn {
+  color: var(--amb);
+  background: var(--ambs);
+  border: 1px solid var(--ambb);
+}
+
+.list-tone-bad {
+  color: var(--red);
+  background: var(--reds);
+  border: 1px solid var(--redb);
+}
+
+/* The pill is the only place the tone paints a box; the text columns take the
+   colour alone, which is what the design does. */
+.list-pri,
+.list-updated {
+  background: none;
+  border: none;
+}
+
+.list-tone-flat.list-pri,
+.list-tone-flat.list-updated {
+  color: var(--tx3);
+}
+
+/* -------------------------------------------------------------- the assignee */
+
+.list-assignee {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  min-width: 0;
+}
+
+.list-avatar {
+  display: flex;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  border: 1px solid transparent;
+}
+
+/* Unassigned is a dashed ring around nothing — the design's own mark for it. */
+.list-avatar-empty {
+  background: transparent;
+  color: var(--tx3);
+  border: 1.5px dashed var(--bd2);
+}
+
+.list-who {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.71875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+  color: var(--tx2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.list-spr {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--tx3);
+}
+
+.list-updated {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  text-align: right;
+}
+
+/* ---------------------------------------------------------- the closing row */
+
+.list tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.list-create {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  width: 100%;
+  font: inherit;
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx3);
+  background: var(--page);
+  border: none;
+  border-top: 1px solid var(--bd);
+  padding: 0.625rem 0.875rem;
+  cursor: pointer;
+}
+
+.list-create:hover,
+.list-create:focus-visible {
+  color: var(--acc);
+}

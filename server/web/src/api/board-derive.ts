@@ -112,6 +112,23 @@ export function staleFor(flaggedAt: number, now: number): string {
   return `${String(Math.floor(elapsed / 86_400_000))}d`;
 }
 
+/**
+ * How long ago a task last changed, for the card footer (LAI-263).
+ *
+ * **Delegates to {@link staleFor}** rather than repeating its units. The two
+ * neighbouring copies of this arithmetic in this codebase are deliberate — each
+ * guards its own caller and the file above says why — but a third would guard
+ * nothing: this is the same question in the same units, asked about
+ * `updated_at` instead of a stale flag.
+ *
+ * The one difference is wording. `staleFor` says `now` because it completes
+ * "flagged stale …"; a footer stands alone and the design writes "just now".
+ */
+export function updatedAge(updatedAt: number, now: number): string {
+  const compact = staleFor(updatedAt, now);
+  return compact === 'now' ? 'just now' : compact;
+}
+
 export function byIdIndex(tasks: readonly Task[]): ReadonlyMap<string, Task> {
   return new Map(tasks.map((t) => [t.id, t]));
 }

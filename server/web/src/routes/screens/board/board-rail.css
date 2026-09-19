@@ -303,7 +303,15 @@
 .board-main {
   display: flex;
   gap: 0.75rem;
-  align-items: flex-start;
+  /*
+   * **`stretch`, so the lanes reach the bottom** (LAI-283). With `flex-start`
+   * the row was as tall as its tallest child, and its tallest child was a lane
+   * whose height was a hardcoded `calc()`. Both are gone: the row fills the
+   * board and the lanes fill the row.
+   */
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-x: auto;
   /*
    * **A scroll container must be the containing block for what it scrolls.**
@@ -321,17 +329,32 @@
    */
   position: relative;
   /*
-   * Clearance for the scrollbar, so it never paints over the last card in the
-   * tallest lane. `scrollbar-gutter` alone would not do it: macOS overlay
-   * scrollbars reserve nothing and appear *on* the content while scrolling.
+   * **Air above the tubs.** The design sets `14px 18px 18px` on this pane; ours
+   * had no top padding, so the columns began on the WORKING NOW border with the
+   * band and the first tub touching — the gap the owner reported missing.
+   *
+   * The bottom is also clearance for the scrollbar, so it never paints over the
+   * last card in the tallest lane. `scrollbar-gutter` alone would not do it:
+   * macOS overlay scrollbars reserve nothing and appear *on* the content.
    */
-  padding-bottom: var(--space-2);
+  padding-top: 0.875rem;
+  padding-bottom: 1.125rem;
 }
 
-.board-main > .kanban,
-.board-main > .list {
+.board-main > .kanban {
   flex: 1 1 0;
   min-width: min-content;
+}
+
+/*
+ * **The List pane must be allowed to shrink.** It scrolls its own table
+ * sideways, so `min-width: min-content` would floor it at the table's 940px
+ * and push the *page* instead — 18px of horizontal document scroll at 900px,
+ * which is the one thing every width test in this suite exists to catch.
+ */
+.board-main > .list-pane {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 @media (max-width: 1200px) {
@@ -341,11 +364,41 @@
     overflow-x: visible;
     padding-bottom: 0;
   }
-  .board-main > .kanban,
-  .board-main > .list {
+  .board-main > .kanban {
     /* Full width again once the rail is underneath rather than beside. */
     flex: 1 1 auto;
     width: 100%;
+  }
+
+  /*
+   * **`align-self: stretch`, not `width: 100%`.**
+   *
+   * Stacked, `.board-main` is a *column* flex container with
+   * `align-items: flex-start`, so an item's width shrink-wraps to max-content —
+   * the table's 940px floor, 96px past a 900px viewport. A declared `width:
+   * 100%` misses too: it resolves against a containing block wider than the
+   * pane's own slot and overhangs by the 18px margin. Stretch asks for the
+   * container's width, which is the thing actually wanted.
+   */
+  .board-main > .list-pane {
+    flex: 1 1 auto;
+    align-self: stretch;
+    min-width: 0;
+  }
+  .board-main > .kanban {
+    /*
+     * The row stopped scrolling, but the lanes' track floor did not shrink —
+     * so the grid must scroll itself. All three lines carry it: the base
+     * rule's `min-width: min-content` sizes the *box* to the tracks (1074px),
+     * so without `min-width: 0` the box overflows the page and `overflow-x`
+     * has nothing to clip; and `relative` because an unpositioned scroll
+     * container is not the containing block of absolutely-positioned
+     * descendants, so it cannot clip them — the LAI-245 lesson, inherited by
+     * every new scroller.
+     */
+    min-width: 0;
+    overflow-x: auto;
+    position: relative;
   }
   .rail {
     width: 100%;

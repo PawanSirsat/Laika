@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
 
 const PROJECT = {
   id: 'p1',
@@ -201,7 +201,7 @@ void describe('the four tags are distinguishable, in both themes', () => {
       ]);
 
       for (const theme of ['Light', 'Dark']) {
-        await h.page.getByRole('radio', { name: theme }).click();
+        await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
         const colours = await h.page

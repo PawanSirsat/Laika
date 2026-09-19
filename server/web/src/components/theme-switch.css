@@ -1,0 +1,36 @@
+/* The design's one-row theme control (prototype footer, line ~86). */
+
+.theme-switch {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 1.8125rem; /* the prototype's 29px */
+  padding: 0 var(--space-2);
+  background: transparent;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  color: var(--tx2);
+  font-family: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.theme-switch:hover {
+  color: var(--tx);
+  background: var(--tub);
+}
+
+.theme-switch:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.theme-switch-compact {
+  padding: 0;
+  width: 1.8125rem;
+}

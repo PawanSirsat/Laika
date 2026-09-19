@@ -6,6 +6,13 @@
  * because `Sidebar` rendered a bare `href={route.path}` and the screens then
  * fell back to the alphabetically-first project.
  *
+ * **Sprints is a space tab since LAI-248, not a sidebar link** (the strip
+ * became `ViewTabs` in LAI-251; the selector moved with it). The property
+ * this file exists for is unchanged — *clicking a destination keeps the project
+ * you are reading* — and the tab bar is now where that property lives, because
+ * the sidebar lists spaces rather than views. The selector moved; the assertion
+ * did not weaken.
+ *
  * `nav-truth.test.ts` passed throughout: it asserts *which* destinations exist.
  * **Nothing asserted that clicking one takes you where you were**, because
  * nothing in this suite could click. Shown red against the pre-fix commit.
@@ -75,12 +82,12 @@ void describe('the nav keeps the project', () => {
     // what makes the failure visible.
     const h = await open('/board?project=laika-core', STUB);
     try {
-      const sprints = h.page.locator('.sidebar-link', { hasText: 'Sprints' }).first();
+      const sprints = h.page.locator('.view-tab', { hasText: 'Sprints' }).first();
       await sprints.waitFor({ timeout: 15_000 });
 
       // The probe must be able to see a nav link at all, or "the project was
       // lost" is indistinguishable from "there was no link".
-      assert.ok((await sprints.count()) > 0, 'no Sprints nav link — this proves nothing');
+      assert.ok((await sprints.count()) > 0, 'no Sprints tab — this proves nothing');
 
       await sprints.click();
       await h.page.waitForURL(/\/sprints/, { timeout: 10_000 });
@@ -102,7 +109,7 @@ void describe('the nav keeps the project', () => {
     // fix the left-click while silently breaking those.
     const h = await open('/board?project=laika-core', STUB);
     try {
-      const sprints = h.page.locator('.sidebar-link', { hasText: 'Sprints' }).first();
+      const sprints = h.page.locator('.view-tab', { hasText: 'Sprints' }).first();
       await sprints.waitFor({ timeout: 15_000 });
       const href = await sprints.getAttribute('href');
       assert.ok(href !== null, 'the nav item is not an anchor with an href');

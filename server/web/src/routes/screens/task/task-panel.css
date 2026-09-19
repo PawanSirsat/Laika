@@ -1,0 +1,1518 @@
+/*
+ * The richer task panel (LAI-284).
+ *
+ * The design's drawer is a document you edit in place, not a read-only card:
+ * the title and description are text you click into, dependencies and watchers
+ * are lists you change, and the footer carries the two actions with a sentence
+ * saying who may use them.
+ */
+
+/* ------------------------------------------------------------ inline edit */
+
+/*
+ * The read state must look like **text**, not like a field. A box around the
+ * title would say "form" and the whole point of clicking into it is that it
+ * does not — the hover is the only affordance, which is what the design does.
+ */
+.inline-edit {
+  display: block;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.125rem 0.25rem;
+  margin: -0.125rem -0.25rem;
+  cursor: text;
+}
+
+.inline-edit-can:hover,
+.inline-edit-can:focus-visible {
+  background: var(--tub);
+  border-color: var(--bd);
+}
+
+.inline-edit-readonly {
+  cursor: default;
+}
+
+.inline-edit-block {
+  white-space: pre-wrap;
+  line-height: 1.55;
+}
+
+.inline-edit-placeholder {
+  color: var(--tx3);
+  font-weight: var(--weight-medium);
+}
+
+.inline-edit-field {
+  width: 100%;
+  font: inherit;
+  color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--acc);
+  border-radius: 7px;
+  padding: 0.375rem 0.5rem;
+  resize: vertical;
+}
+
+.inline-edit-block .inline-edit-field,
+.inline-edit-open.inline-edit-block textarea {
+  font-family: var(--font-ui);
+  line-height: 1.55;
+}
+
+.inline-edit-hint,
+.inline-edit-error {
+  margin: 0.3125rem 0 0;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+}
+
+.inline-edit-hint {
+  color: var(--tx3);
+}
+
+.inline-edit-error {
+  color: var(--red);
+}
+
+/* ------------------------------------------------------- the header actions */
+
+.panel-head-main {
+  min-width: 0;
+}
+
+.panel-head-actions {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: none;
+}
+
+.panel-head-action {
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx2);
+  background: none;
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  padding: 0.375rem 0.5625rem;
+  cursor: pointer;
+}
+
+.panel-head-action:hover,
+.panel-head-action:focus-visible {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+
+.panel-overflow {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 3;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  min-width: 12.5rem;
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+}
+
+.panel-overflow button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.71875rem;
+  color: var(--tx2);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0.4375rem 0.5rem;
+  cursor: pointer;
+}
+
+.panel-overflow button:hover,
+.panel-overflow button:focus-visible {
+  background: var(--tub);
+  color: var(--tx);
+}
+
+/* ------------------------------------------------------------- claim lock */
+
+.claim-lock {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  margin: 0.5rem 0 0;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  color: var(--tx2);
+}
+
+.claim-lock-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: var(--pur);
+}
+
+.claim-lock-until {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  color: var(--tx3);
+}
+
+/*
+ * The hour is a placeholder and says so *next to itself*. A claim has no TTL;
+ * a reader who took the time at face value would wait for a lock that never
+ * lapses, so the caveat has to travel with the number rather than sit in a
+ * notice further down the page.
+ */
+.claim-lock-tag {
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--amb);
+  background: var(--ambs);
+  border: 1px solid var(--ambb);
+  border-radius: 4px;
+  padding: 0.125rem 0.25rem;
+}
+
+/* ---------------------------------------------------------- discovered from */
+
+/* The design's dashed callout: it is a pointer somewhere else, and the dashes
+   say "this belongs to another task" without a heading saying so. */
+.discovered {
+  border: 1px dashed var(--bd2);
+  border-radius: 9px;
+  padding: 0.625rem 0.75rem;
+  background: var(--tub);
+}
+
+.discovered-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.discovered-body {
+  margin: 0;
+  font-size: 0.71875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.45;
+  color: var(--tx2);
+}
+
+.discovered-key {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-heavy);
+  color: var(--acc);
+}
+
+.discovered-note {
+  font-weight: var(--weight-medium);
+  color: var(--tx3);
+}
+
+/* ------------------------------------------------------------ dependencies */
+
+.dep-group + .dep-group {
+  margin-top: 0.875rem;
+}
+
+.dep-label {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin: 0 0 0.375rem;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.dep-label-note {
+  font-size: 0.5625rem;
+  font-weight: var(--weight-medium);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dep-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.dep-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  min-width: 0;
+  padding: 0.375rem 0.5rem;
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.dep-status {
+  flex: none;
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  padding: 0.1875rem 0.3125rem;
+  background: var(--tub);
+  color: var(--tx3);
+}
+
+.dep-status-in_progress {
+  background: var(--accs);
+  color: var(--acc);
+}
+
+.dep-status-review {
+  background: var(--ambs);
+  color: var(--amb);
+}
+
+.dep-status-done {
+  background: var(--grns);
+  color: var(--grn);
+}
+
+.dep-chip-key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+.dep-chip-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  color: var(--tx);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dep-chip-unknown .dep-chip-title {
+  color: var(--tx3);
+  font-style: italic;
+}
+
+.dep-avatar {
+  display: flex;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-pill);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.dep-avatar-empty {
+  background: transparent;
+  color: var(--tx3);
+  border: 1.5px dashed var(--bd2);
+}
+
+.dep-remove,
+.watch-toggle,
+.dep-link,
+.dep-confirm,
+.dep-cancel {
+  font: inherit;
+  cursor: pointer;
+}
+
+.dep-remove {
+  flex: none;
+  font-size: 0.875rem;
+  line-height: 1;
+  color: var(--tx3);
+  background: none;
+  border: none;
+  padding: 0 0.125rem;
+}
+
+.dep-remove:hover:not(:disabled),
+.dep-remove:focus-visible {
+  color: var(--red);
+}
+
+.dep-link {
+  margin-top: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--acc);
+  background: none;
+  border: 1px dashed var(--accb);
+  border-radius: 7px;
+  padding: 0.375rem 0.625rem;
+}
+
+.dep-link:hover,
+.dep-link:focus-visible {
+  background: var(--accs);
+}
+
+.dep-add {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dep-add select {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 0.6875rem;
+  padding: 0.3125rem 0.375rem;
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  background: var(--card);
+  color: var(--tx);
+}
+
+.dep-confirm,
+.dep-cancel {
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  border-radius: 7px;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--bd);
+  background: var(--card);
+  color: var(--tx2);
+}
+
+.dep-confirm {
+  color: var(--acc);
+  border-color: var(--accb);
+  background: var(--accs);
+}
+
+.dep-confirm:disabled,
+.dep-cancel:disabled,
+.dep-remove:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------- watchers */
+
+.watch-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.watch-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+}
+
+.watch-avatar {
+  display: flex;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.watch-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.watch-role {
+  flex: none;
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--tx3);
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: 4px;
+  padding: 0.125rem 0.25rem;
+}
+
+.watch-toggle {
+  margin-top: 0.5rem;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  padding: 0.375rem 0.625rem;
+}
+
+.watch-toggle:hover:not(:disabled),
+.watch-toggle:focus-visible {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+
+/* ------------------------------------------------------ comments and code */
+
+.comment-avatar {
+  display: flex;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--radius-pill);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  background: var(--tub);
+  color: var(--tx3);
+}
+
+.comment-para {
+  margin: 0 0 0.4375rem;
+}
+
+.comment-para:last-child {
+  margin-bottom: 0;
+}
+
+/* The design's quoted request line: bordered, monospace, and scrolling rather
+   than wrapping — a wrapped `POST` line is harder to read than a scrolled one. */
+.comment-code {
+  position: relative;
+  margin: 0 0 0.4375rem;
+  padding: 0.5rem 0.625rem;
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+  overflow-x: auto;
+}
+
+.comment-code code {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  line-height: 1.55;
+  color: var(--tx2);
+  white-space: pre;
+}
+
+.comment-code-lang {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+/* --------------------------------------------------------- the composer */
+
+.composer {
+  position: relative;
+}
+
+.composer-tools {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 0.375rem;
+}
+
+.composer-tool {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx2);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.composer-tool:hover:not(:disabled),
+.composer-tool:focus-visible {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+
+.composer-tool:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.composer-tool-italic {
+  font-style: italic;
+}
+
+.composer-tool-code,
+.composer-tool-at {
+  font-family: var(--font-mono);
+}
+
+.composer-mentions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 3;
+  list-style: none;
+  margin: 0;
+  padding: 0.25rem;
+  min-width: 11.25rem;
+  max-height: 12rem;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 9px;
+  box-shadow: var(--shadow);
+}
+
+.composer-mentions button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  font-size: 0.71875rem;
+  color: var(--tx2);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 0.375rem 0.5rem;
+  cursor: pointer;
+}
+
+.composer-mentions button:hover,
+.composer-mentions button:focus-visible {
+  background: var(--accs);
+  color: var(--acc);
+}
+
+.composer-field {
+  width: 100%;
+  font: inherit;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--tx);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 0.5rem 0.625rem;
+  resize: vertical;
+}
+
+.composer-field:focus-visible {
+  border-color: var(--acc);
+}
+
+/* ------------------------------------------------------------- the changes */
+
+.panel-changes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+}
+
+.panel-change {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4375rem;
+  font-size: 0.71875rem;
+  line-height: 1.4;
+}
+
+.panel-change-who {
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+}
+
+.panel-change-what {
+  flex: 1;
+  min-width: 0;
+  color: var(--tx2);
+}
+
+/* --------------------------------------------------------------- the foot */
+
+.panel-foot {
+  margin-top: 1rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--bd);
+}
+
+.panel-foot-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.panel-action {
+  font: inherit;
+  font-size: 0.71875rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--tx2);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+}
+
+.panel-action:hover:not(:disabled),
+.panel-action:focus-visible {
+  border-color: var(--bd2);
+  color: var(--tx);
+}
+
+.panel-action-primary {
+  color: #fff;
+  background: var(--acc);
+  border-color: var(--acc);
+}
+
+.panel-action-primary:hover,
+.panel-action-primary:focus-visible {
+  color: #fff;
+  filter: brightness(1.06);
+}
+
+.panel-action:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/*
+ * The permission note. Controls a Viewer cannot use are **absent** here rather
+ * than disabled — a greyed-out button tells somebody they are failing at
+ * something — so without this sentence they would be left guessing what they
+ * cannot see.
+ */
+.panel-permission {
+  margin: 0.625rem 0 0;
+  font-size: 0.625rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  color: var(--tx3);
+}
+
+.panel-agent-build {
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  color: var(--tx3);
+}
+
+/*
+ * **The count needs air.** `.panel-section-title` is a block, so a `<span>`
+ * count inside it butted straight against the label — `DEPENDENCIES1`,
+ * `WATCHERS2`. A flex row with a gap, rather than a margin on the count, so the
+ * two stay aligned on their baselines whatever the count's width.
+ */
+.panel-section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4375rem;
+}
+
+/*
+ * **The composer fills the form.** `.panel-composer` is a column flex with
+ * `align-items: flex-start`, which is right for the Comment button and wrong
+ * for the box above it — the textarea shrank to its own content and sat about a
+ * fifth of the drawer's width. `align-self` on the composer rather than
+ * changing the form's alignment, so the button keeps its size.
+ */
+.panel-composer .composer {
+  align-self: stretch;
+  width: 100%;
+}
+
+/* ===========================================================================
+ * The two-column drawer (LAI-285).
+ *
+ * LAI-284 built every section the design asks for and stacked them in one
+ * column — right contents, wrong shape. The design is a document on the left
+ * and a rail of fields on the right, and the difference is not decoration: in
+ * one column the task's own metadata sits between the reader and the
+ * description.
+ * ======================================================================== */
+
+.panel-columns {
+  display: flex;
+  align-items: stretch;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.panel-main {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1.25rem 1.375rem 1.5rem;
+}
+
+/* The rail scrolls independently, so the actions at its foot stay reachable
+   while a long comment thread moves beside them. */
+.panel-side {
+  width: 18rem;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--bd);
+  background: var(--page);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ------------------------------------------------------------- the header */
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: none;
+  padding: 0.875rem 1.125rem;
+  border-bottom: 1px solid var(--bd);
+  background: var(--card);
+}
+
+.panel-head-main {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.panel-head .panel-key {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: var(--weight-heavy);
+  color: var(--tx2);
+}
+
+/* The state, as a pill — the one thing the header exists to say. */
+.panel-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 8px;
+  padding: 0.4375rem 0.625rem;
+  background: var(--tub);
+  color: var(--tx3);
+  border: 1px solid var(--bd);
+}
+
+.panel-state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+.panel-state-in_progress {
+  background: var(--accs);
+  border-color: var(--accb);
+  color: var(--acc);
+}
+
+.panel-state-review {
+  background: var(--ambs);
+  border-color: var(--ambb);
+  color: var(--amb);
+}
+
+.panel-state-done {
+  background: var(--grns);
+  border-color: var(--grnb);
+  color: var(--grn);
+}
+
+.panel-prio {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+.panel-prio-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-pill);
+  background: var(--tx3);
+}
+
+.panel-prio-p1 .panel-prio-dot {
+  background: var(--red);
+}
+
+.panel-prio-p2 .panel-prio-dot {
+  background: var(--amb);
+}
+
+/* ---------------------------------------------- the title and its byline */
+
+.panel-main .panel-title {
+  margin: 0 0 0.625rem;
+  font-size: 1.5rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1.22;
+  letter-spacing: -0.02em;
+  color: var(--tx);
+}
+
+.panel-byline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.875rem;
+}
+
+/* The design's purple "created via agent" chip — provenance at a glance,
+   because who made a task changes how you read it. */
+.panel-via {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--pur);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+  border-radius: 8px;
+  padding: 0.4375rem 0.5625rem;
+}
+
+.panel-byline-times {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+}
+
+/* ---------------------------------------------------------- the meta rail */
+
+.panel-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.meta-row {
+  padding: 0.75rem 0.875rem;
+  border-bottom: 1px solid var(--bd);
+}
+
+.meta-label {
+  margin: 0 0 0.375rem;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.meta-value {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  color: var(--tx);
+}
+
+.meta-plain {
+  margin: 0;
+}
+
+.meta-quiet {
+  color: var(--tx3);
+  font-weight: var(--weight-medium);
+}
+
+.meta-person {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.meta-avatar {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-pill);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.meta-avatar-empty {
+  background: transparent;
+  color: var(--tx3);
+  border: 1.5px dashed var(--bd2);
+}
+
+.meta-avatar-bot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  background: var(--pur);
+  border: 2px solid var(--page);
+}
+
+/* The rail's selects read as values with a chevron, not as form controls —
+   the design's fields are text you can change, not a settings page. */
+.meta-select select {
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0.125rem 0.25rem;
+  margin: -0.125rem -0.25rem;
+  cursor: pointer;
+  max-width: 100%;
+}
+
+.meta-select select:hover,
+.meta-select select:focus-visible {
+  border-color: var(--bd);
+  background: var(--card);
+}
+
+.meta-select select:disabled {
+  cursor: default;
+  color: var(--tx2);
+}
+
+.meta-prio-p1 select {
+  color: var(--red);
+  font-weight: var(--weight-bold);
+}
+
+.meta-prio-p2 select {
+  color: var(--amb);
+}
+
+.meta-person .assign-control select,
+.meta-person select {
+  font-size: 0.8125rem;
+}
+
+.meta-sub {
+  margin: 0.375rem 0 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex-wrap: wrap;
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  color: var(--tx3);
+}
+
+.meta-mono,
+.meta-sub-claim {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+}
+
+/* A placeholder says so beside itself, never only in a notice further away —
+   a reader who took the hour at face value would wait for a lock that does
+   not lapse. */
+.meta-placeholder {
+  font-family: var(--font-ui);
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--amb);
+  background: var(--ambs);
+  border: 1px solid var(--ambb);
+  border-radius: 4px;
+  padding: 0.125rem 0.25rem;
+}
+
+/* ------------------------------------------------------- the rail's foot */
+
+.panel-side-actions {
+  margin-top: auto;
+  padding: 0.875rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.panel-side-actions .panel-action {
+  width: 100%;
+  justify-content: center;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.625rem 0.75rem;
+}
+
+/* The design's primary is purple here, not the accent blue: handing work to an
+   agent is the one action on this panel that leaves the board. */
+.panel-side-actions .panel-action-primary {
+  background: var(--pur);
+  border-color: var(--pur);
+}
+
+/* ------------------------------------------------- stacked, on a narrow window */
+
+@media (max-width: 900px) {
+  .panel-columns {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .panel-main,
+  .panel-side {
+    overflow: visible;
+  }
+
+  .panel-side {
+    width: auto;
+    border-left: none;
+    border-top: 1px solid var(--bd);
+  }
+}
+
+/* ---------------------------------------------------- acceptance and chrome */
+
+/*
+ * `acceptance_md` gets the design's quoted block: a left rule and a label. It
+ * is read at a different moment from the description — *what counts as done* —
+ * and running the two together loses that.
+ */
+.panel-acceptance {
+  margin: 0 0 1rem;
+  padding: 0.0625rem 0 0.0625rem 0.875rem;
+  border-left: 3px solid var(--bd2);
+}
+
+.panel-acceptance-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+}
+
+.panel-acceptance-body {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.55;
+  color: var(--tx2);
+  white-space: pre-wrap;
+}
+
+/* The dependencies heading carries its action on the right, with a rule
+   between — the design's row. */
+.dep-title {
+  align-items: center;
+}
+
+.dep-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--bd);
+}
+
+.dep-title .dep-link {
+  margin-top: 0;
+  border: none;
+  padding: 0;
+  font-size: 0.71875rem;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.dep-title .dep-link:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+/* The relation leads the chip, and it is the label that varies — so it is the
+   one that gets the colour. */
+.dep-relation {
+  flex: none;
+  font-size: 0.5rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  padding: 0.25rem 0.375rem;
+  background: var(--tub);
+  color: var(--tx3);
+  border: 1px solid var(--bd);
+}
+
+.dep-relation-blocked {
+  background: var(--reds);
+  border-color: var(--redb);
+  color: var(--red);
+}
+
+.dep-chip .dep-status {
+  margin-left: auto;
+}
+
+/* ------------------------------------------------------- comments, unboxed */
+
+/*
+ * The design's thread has **no card per comment** — avatar, name, time, body,
+ * and whitespace between. Boxes around each one made four comments read as
+ * four unrelated notices rather than a conversation.
+ */
+.panel-comments .panel-comment {
+  border: none;
+  background: none;
+  padding: 0;
+  margin-bottom: 1rem;
+}
+
+.panel-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  margin-bottom: 0.25rem;
+}
+
+.panel-comment-head .panel-time {
+  margin-left: 0;
+  font-size: 0.625rem;
+}
+
+.panel-comment-author {
+  font-size: 0.8125rem;
+  font-weight: var(--weight-bold);
+  color: var(--tx);
+}
+
+.panel-comment-body {
+  margin: 0 0 0 1.875rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--tx2);
+}
+
+/* ---------------------------------------------------------- the composer */
+
+.composer {
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.composer:focus-within {
+  border-color: var(--acc);
+}
+
+.composer .composer-field {
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 0.625rem 0.75rem 0.375rem;
+}
+
+.composer .composer-field:focus-visible {
+  outline: none;
+  border: none;
+}
+
+.composer .composer-tools {
+  margin: 0;
+  padding: 0.375rem 0.625rem 0.5rem;
+}
+
+.composer .composer-tool {
+  border-color: transparent;
+  background: none;
+}
+
+.composer .composer-tool:hover:not(:disabled),
+.composer .composer-tool:focus-visible {
+  border-color: var(--bd);
+  background: var(--tub);
+}
+
+/* ---------------------------------------------------------- tags, inline */
+
+/*
+ * The tag editor sits in the byline's line of thought, so it is compact: chips
+ * with a remove, and the input only as wide as it needs to be. Its own heading
+ * is gone — the chips say what they are.
+ */
+.panel-main .tagp {
+  margin: 0 0 1rem;
+}
+
+/*
+ * No heading: the chips say what they are, and a `TAGS` label costs a line in
+ * a byline that is meant to read as one thought.
+ */
+.panel-main .tagp-head {
+  display: none;
+}
+
+/* The input is as wide as it needs to be, not as wide as the column. */
+.panel-main .tagp input[type='text'] {
+  max-width: 10rem;
+}
+
+.panel-main .tagp-list {
+  margin-bottom: 0.375rem;
+}
+
+/* The send button closes the toolbar row, on the right. */
+.composer-send {
+  margin-left: auto;
+}
+
+/* ===========================================================================
+ * The comment thread (LAI-287).
+ *
+ * The reference is a **conversation**, not a stack of notices: no box per
+ * comment, a solid avatar carrying the agent mark, the author's name with the
+ * time beside it, and the body indented to the name. Ours boxed every comment,
+ * used a pale 22px chip with no mark, and right-aligned a timestamp to the
+ * second — three things that made four replies read as four unrelated cards.
+ * ======================================================================== */
+
+.cmt-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cmt {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Solid, 36px, white initials — a face in a thread, not a badge on a row. */
+.cmt-avatar {
+  position: relative;
+  display: flex;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-pill);
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+}
+
+.cmt-bot {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  background: var(--pur);
+  border: 2px solid var(--card);
+}
+
+.cmt-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cmt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin: 0 0 0.25rem;
+}
+
+.cmt-who {
+  font-size: 0.875rem;
+  font-weight: var(--weight-bold);
+  line-height: 1.3;
+  color: var(--tx);
+}
+
+/* `AGENT`, upper-case and purple — the same purple the bot mark uses, so the
+   badge and the avatar say one thing rather than two. */
+.cmt-agent {
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.07em;
+  color: var(--pur);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+  border-radius: 6px;
+  padding: 0.25rem 0.4375rem;
+}
+
+.cmt-when,
+.cmt-edited {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+}
+
+.cmt-body .panel-comment-body,
+.cmt-body .comment-para {
+  margin-left: 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--tx);
+}
+
+/* The code block, roomier and unlabelled — see the note in `CommentBody`. */
+.cmt-body .comment-code {
+  margin: 0.5rem 0 0;
+  padding: 0.6875rem 0.875rem;
+  border-radius: 9px;
+}
+
+.cmt-body .comment-code code {
+  font-size: 0.71875rem;
+  line-height: 1.7;
+}
+
+/* --------------------------------------------------------- the composer row */
+
+.panel-composer {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.cmt-avatar-me {
+  margin-top: 0.125rem;
+}
+
+.panel-composer .composer {
+  flex: 1;
+  min-width: 0;
+  /* Filled, as the design has it — a draft looks like a comment waiting to be
+     sent rather than a form bolted under the thread. */
+  background: var(--tub);
+  border-color: var(--bd);
+}
+
+.panel-composer .composer:focus-within {
+  background: var(--card);
+  border-color: var(--acc);
+}
+
+.panel-composer .composer-field {
+  background: none;
+  font-size: 0.875rem;
+  padding: 0.75rem 0.875rem 0.5rem;
+}
+
+.panel-composer .composer-tools {
+  padding: 0 0.75rem 0.75rem;
+}
+
+/* The bot mark carries the glyph, centred. */
+.cmt-bot {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

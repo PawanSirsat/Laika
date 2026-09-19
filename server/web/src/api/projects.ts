@@ -1,5 +1,5 @@
 import { request } from './client.ts';
-import type { Page } from './tasks.ts';
+import type { MemberList, Page } from './tasks.ts';
 
 /**
  * Projects (SPEC §6.4, LAI-010).
@@ -207,4 +207,22 @@ export function applyProjectRows(
   }
 
   return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Join a public space (`POST /projects/:slug/join`, LAI-236).
+ *
+ * Served since the projects router was written and never called from the
+ * browser — the directory listed public spaces a reader could see and offered
+ * no way in, so the only route to membership was somebody adding you.
+ *
+ * Returns the space's members as they now stand, including you. The server
+ * decides whether the space is joinable; a private one answers `403` and the
+ * caller shows that message rather than pre-judging it here.
+ */
+export async function joinProject(slug: string, signal?: AbortSignal): Promise<MemberList> {
+  return request<MemberList>(`/projects/${encodeURIComponent(slug)}/join`, {
+    method: 'POST',
+    ...(signal === undefined ? {} : { signal }),
+  });
 }

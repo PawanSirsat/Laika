@@ -69,7 +69,10 @@ void describe('the shell actually applies the rule', () => {
     // the rule** and renders the sidebar behind it — not which argument the
     // call takes or what the local holding the answer is named.
     assert.match(src, /showsAppNav\(/, 'AppShell must ask the rule');
-    assert.match(src, /&&\s*\(?\s*<Sidebar/, 'the sidebar must be behind the rule');
+    // `<ShellSidebar>` since LAI-250 — the rail's data wiring moved into its
+    // own container. The property is unchanged: the sidebar renders only
+    // behind the rule.
+    assert.match(src, /&&\s*\(?\s*<ShellSidebar/, 'the sidebar must be behind the rule');
 
     // Gating on the route is the mistake being fixed: a list of pre-auth paths
     // has to be maintained by hand, so the next route added inherits whatever
@@ -92,9 +95,12 @@ void describe('the shell actually applies the rule', () => {
       if (/<Sidebar[\s/>]/.test(text)) renderers.push(file.slice(src.length));
     }
 
+    // One renderer, one policy. Since LAI-250 that renderer is `ShellSidebar`,
+    // which `AppShell` mounts behind `showsAppNav` (asserted above) — so the
+    // gate is still single, one level up.
     assert.deepEqual(
       renderers,
-      ['components/AppShell.tsx'],
+      ['components/shell/ShellSidebar.tsx'],
       'one gate, one place — a second caller would be a second policy',
     );
   });
@@ -102,18 +108,23 @@ void describe('the shell actually applies the rule', () => {
   void test('the identity survives without the navigation', async () => {
     // AC4: a signed-out page carries no nav but must still say what it is.
     // The brand used to live inside the sidebar, so removing one removed both.
+    // The pre-auth chrome is `ShellHeader` since LAI-250; the brand lives with
+    // the bar that carries it rather than with the frame that places the bar.
     const shell = code(
-      await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
+      await readFile(
+        new URL('../../src/components/shell/ShellHeader.tsx', import.meta.url),
+        'utf8',
+      ),
     );
     const sidebar = code(
-      await readFile(new URL('../../src/components/Sidebar.tsx', import.meta.url), 'utf8'),
+      await readFile(new URL('../../src/components/sidebar/Sidebar.tsx', import.meta.url), 'utf8'),
     );
 
-    // Matched on the component, not one exact spelling: LAI-088 gives the
-    // sidebar `<Brand variant="tile" />` to match the prototype, and the
-    // criterion is that the identity is rendered — not how it is configured.
+    // The criterion is that the identity is rendered, not how it is spelled:
+    // pre-auth it is `Brand`; the sidebar head draws its own wordmark since
+    // LAI-249 gave the logo a second job as the collapse control.
     assert.match(shell, /<Brand[\s/>]/, 'the shell must show the brand when there is no nav');
-    assert.match(sidebar, /<Brand[\s/>]/, 'and the sidebar must show the same one');
+    assert.match(sidebar, /sidebar-wordmark/, 'and the sidebar must carry the wordmark');
   });
 
   void test('a route that suppresses the shell header supplies both parts itself', async () => {
@@ -133,7 +144,7 @@ void describe('the shell actually applies the rule', () => {
 
     assert.match(table, /'\/setup'[^}]*ownsChrome: true/, '/setup must claim its own chrome');
     assert.ok(boot.includes('<Brand />'), 'it must render its own brand');
-    assert.ok(boot.includes('<ThemeToggle />'), 'and its own theme control (LAI-062 AC3)');
+    assert.ok(boot.includes('<ThemeSwitch />'), 'and its own theme control (LAI-062 AC3)');
   });
 
   void test('the theme control is reachable with no session', async () => {
@@ -147,7 +158,10 @@ void describe('the shell actually applies the rule', () => {
     // no longer matched, and it would have passed just as happily with the
     // pre-auth copy deleted.
     const src = code(
-      await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
+      await readFile(
+        new URL('../../src/components/shell/ShellHeader.tsx', import.meta.url),
+        'utf8',
+      ),
     );
 
     const start = src.indexOf('{!signedIn && (');
@@ -155,7 +169,7 @@ void describe('the shell actually applies the rule', () => {
     const preAuth = src.slice(start, src.indexOf('</header>', start));
 
     assert.ok(
-      preAuth.includes('<ThemeToggle />'),
+      preAuth.includes('<ThemeSwitch />'),
       'the theme control must render when there is no session',
     );
   });

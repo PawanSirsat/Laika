@@ -7,9 +7,9 @@
  * inside `AppShell`.
  *
  * So this test does not keep a second list of "real screens" — a second list is
- * the thing that drifts. It **reads `AppShell` and extracts the branches**, and
- * compares reality against what the route table claims. The two cannot disagree
- * without failing here.
+ * the thing that drifts. It **reads the screen registry** (LAI-250; it was
+ * `AppShell`'s branch chain before) and compares reality against what the route
+ * table claims. The two cannot disagree without failing here.
  */
 
 import assert from 'node:assert/strict';
@@ -24,22 +24,34 @@ import {
 } from '../../src/routes/route-table.ts';
 import { code } from '../helpers/code.ts';
 
-/** Paths `AppShell` actually renders a component for. */
+/**
+ * Paths that actually render a screen.
+ *
+ * **Read from the registry since LAI-250.** This used to extract
+ * `path === '...'` branches from `AppShell`, which was the only place the
+ * answer lived; the registry is now that place, and it is a table rather than
+ * a chain — so the extraction is exact instead of inferred from control flow.
+ */
 async function renderedPaths(): Promise<Set<string>> {
   const src = code(
-    await readFile(new URL('../../src/components/AppShell.tsx', import.meta.url), 'utf8'),
+    await readFile(new URL('../../src/components/shell/ScreenOutlet.tsx', import.meta.url), 'utf8'),
   );
+  const body = src.slice(src.indexOf('export const SCREENS'));
   const paths = new Set<string>();
-  for (const [, path] of src.matchAll(/path === '([^']+)'/g)) {
+  for (const [, path] of body.matchAll(/'([^']+)':\s*\{\s*Component:/g)) {
     if (path !== undefined) paths.add(path);
   }
+  if (paths.size === 0) throw new Error('parsed no screens — has the registry moved?');
   return paths;
 }
 
 /**
- * The redirect guards near the top of `AppShell` also compare `path`, and they
- * are not screens. Named rather than pattern-matched: a guard that quietly
- * counted as a screen would defeat the whole test.
+ * Screens that exist but are deliberately not nav destinations.
+ *
+ * Before LAI-250 these were excluded because they were *redirect guards*
+ * comparing `path`, not screens at all. They are real registry entries now, so
+ * the exclusion is stated for what it always meant: first boot and sign-in are
+ * pre-auth routes, reached by the gate rather than offered.
  */
 const NOT_SCREENS = new Set(['/setup', '/login']);
 
@@ -101,26 +113,20 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // rather than a side effect noticed by a person opening the app.
     assert.deepEqual(
       navRoutes().map((r) => r.label),
-      // `Organisation` returns with LAI-086. A deliberate edit to this line,
-      // which is what it is here for.
+      // **Four, since LAI-248.** `navRoutes()` answers what the *sidebar
+      // groups* offer, and the sidebar stopped listing views: Board, Timeline,
+      // Sprints, Dashboard and Meeting review are the space tab bar now, and
+      // Projects is the SPACES section's *More spaces* row.
       //
-      // **Timeline before Sprints** since LAI-425 — the prototype's WORK order.
-      // This assertion is `deepEqual` on purpose: it caught the reorder before
-      // the change was finished, which is the only reason it is worth having.
-      // `Tokens` joins with LAI-410: the screen exists, so it is offered.
-      // `Capacity` joins with LAI-439 — M5's exit criterion; the screen exists,
-      // so it is offered. `Meeting review` joins with LAI-455, M6's.
-      [
-        'Board',
-        'Timeline',
-        'Sprints',
-        'Projects',
-        'Dashboard',
-        'Capacity',
-        'Meeting review',
-        'Tokens',
-        'Organisation',
-      ],
+      // This assertion is `deepEqual` on purpose — it caught a reorder before
+      // LAI-425 was finished, which is the only reason it is worth having. The
+      // tab bar's own order is pinned in `routes.test.ts`, and
+      // `reachable.test.ts` asserts that nothing left this list without
+      // arriving somewhere else.
+      // `Unlisted work` is gated on `audit_log.export` and `navRoutes()` here
+      // takes no predicate, so it is absent by the same rule it always was.
+      // **Capacity left in LAI-251** — the design's tab strip carries it.
+      ['Tokens', 'Organisation'],
     );
   });
 
@@ -129,7 +135,7 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // nothing under it, which is a smaller version of the same lie: a section
     // that promises contents it does not have.
     const sidebar = code(
-      await readFile(new URL('../../src/components/Sidebar.tsx', import.meta.url), 'utf8'),
+      await readFile(new URL('../../src/components/sidebar/Sidebar.tsx', import.meta.url), 'utf8'),
     );
     // Matches the **property**, not one spelling of it. This previously pinned
     // `routesInGroup(group)` exactly, so adding the permission argument in
@@ -146,8 +152,16 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // today**, which means the filter above is currently guarding nothing
     // observable; it stays because the next hidden route re-creates the case,
     // and the rule is what matters rather than today's list.
+    // **`ORG` is genuinely empty without a predicate since LAI-251**, and that
+    // is the filter's first real customer rather than a defect: its only
+    // member is gated, so a reader without `audit_log.export` must not see the
+    // heading. Asserted as the specific expected case, not waved through.
     const empty = NAV_GROUPS.filter((g) => routesInGroup(g).length === 0);
-    assert.deepEqual(empty, [], 'a nav group has gone empty — the sidebar must still skip it');
+    assert.deepEqual(empty, ['ORG'], 'only ORG may be empty, and only when ungated');
+    assert.ok(
+      routesInGroup('ORG', () => true).length > 0,
+      'ORG must have a member for a reader who holds the permission',
+    );
   });
 
   void test('the screens Builder-A owns are registered and routed', () => {
@@ -199,16 +213,24 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
 
   void test('ungated entries are unaffected by the predicate', () => {
     const withNone = navRoutes(holdsNone).map((r) => r.label);
-    for (const label of ['Board', 'Projects', 'Dashboard']) {
+    // **Board, Projects and Dashboard used to be the examples here** and are
+    // not nav routes since LAI-248 — Board and Dashboard are space tabs,
+    // Projects is the SPACES section's *More spaces* row. Naming them now would
+    // assert that gating does not hide things that were never offered.
+    // **Capacity left with LAI-251** — it is a space tab now, so naming it
+    // here would assert that gating does not hide something never offered.
+    for (const label of ['Tokens', 'Organisation']) {
       assert.ok(withNone.includes(label), `${label} was hidden by an unrelated permission check`);
     }
   });
 
   void test('the group filter honours it too, or the heading appears empty', () => {
-    const review = routesInGroup('REVIEW', holdsNone).map((r) => r.label);
-    assert.ok(!review.includes('Unlisted work'));
+    // `ORG` since LAI-248 — `REVIEW` is gone, its project-scoped members are
+    // tabs, and what is left beside the spaces reads across the whole org.
+    const org = routesInGroup('ORG', holdsNone).map((r) => r.label);
+    assert.ok(!org.includes('Unlisted work'));
     assert.ok(
-      routesInGroup('REVIEW', holdsAll)
+      routesInGroup('ORG', holdsAll)
         .map((r) => r.label)
         .includes('Unlisted work'),
     );

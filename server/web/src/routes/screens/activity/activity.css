@@ -1,0 +1,211 @@
+/*
+ * Activity — the live stream, agent sessions and what has stopped moving
+ * (the owner's updated design, 2026-09-18).
+ *
+ * These three were the board's 252px right rail. As a rail the stream was too
+ * narrow to read a sentence in and the board gave up a fifth of its width to
+ * them; as a tab they are three panels across and the board is plain.
+ *
+ * The cards keep their `.rail-*` classes — the markup did not change, only
+ * where it lives and how wide it is — so this file is the layout and nothing
+ * else.
+ */
+
+.act {
+  padding: 0.875rem 1.125rem 1.125rem;
+  min-width: 0;
+}
+
+.act-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  align-items: start;
+}
+
+/* A grid item's `min-width` is `auto`, which floors it at its content — the
+   defect that pushed the dashboard's page sideways (LAI-280). */
+.act-panels > * {
+  min-width: 0;
+}
+
+/*
+ * Each panel is its own column and scrolls inside itself, so a busy stream
+ * cannot make the page taller than the screen — the same rule the dashboard's
+ * feed follows.
+ */
+.act-panels .rail-card {
+  display: flex;
+  flex-direction: column;
+  max-height: min(34rem, 62vh);
+  overflow: hidden;
+}
+
+.act-panels .rail-feed,
+.act-panels .rail-sessions,
+.act-panels .rail-stale {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--bd2) transparent;
+}
+
+/* The threshold note stays pinned under its list rather than scrolling away —
+   it is the definition of the list above it. */
+.act-panels .rail-note {
+  flex: none;
+  margin-top: auto;
+}
+
+/* ------------------------------------------------------------- the pill */
+
+.act-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  padding: 0.3125rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--grns);
+  border: 1px solid var(--grnb);
+  color: var(--grn);
+}
+
+.act-pill-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+}
+
+/* The pill names the transport, so it must tell the truth about it. */
+.act-pill-connecting,
+.act-pill-reconnecting {
+  background: var(--ambs);
+  border-color: var(--ambb);
+  color: var(--amb);
+}
+
+.act-pill-offline {
+  background: var(--reds);
+  border-color: var(--redb);
+  color: var(--red);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .act-pill-open .act-pill-dot {
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+}
+
+@media (max-width: 1100px) {
+  .act-panels {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .act-panels .rail-card {
+    max-height: min(24rem, 55vh);
+  }
+}
+
+/* ---------------------------------------------------- equal-height columns */
+
+/*
+ * The three cards are one row, so they share a height — the design draws them
+ * level, and three cards of different lengths beside each other read as three
+ * unrelated things rather than one screen.
+ */
+.act-panels {
+  align-items: stretch;
+}
+
+.act-panels .rail-card {
+  min-height: 22rem;
+}
+
+/* ------------------------------------------------------- the tinted heads */
+
+/*
+ * The design gives the two attention panels a tinted header bar and the neutral
+ * one none — colour marks what is asking for attention, not every card.
+ */
+.act-panels .rail-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5625rem 0.75rem;
+  margin: 0;
+  border-bottom: 1px solid var(--bd);
+}
+
+.act-panels .rail-card-agents {
+  border-color: var(--purb);
+}
+
+.act-panels .rail-card-agents .rail-head {
+  background: var(--purs);
+  border-bottom-color: var(--purb);
+  color: var(--pur);
+}
+
+.act-panels .rail-card-stale {
+  border-color: var(--ambb);
+}
+
+.act-panels .rail-card-stale .rail-head {
+  background: var(--ambs);
+  border-bottom-color: var(--ambb);
+  color: var(--amb);
+}
+
+.act-panels .rail-card-agents .rail-head h2,
+.act-panels .rail-card-agents .rail-count,
+.act-panels .rail-card-stale .rail-head h2,
+.act-panels .rail-card-stale .rail-count {
+  color: inherit;
+}
+
+/* The card owns its edges; the panels inside get their own inset. */
+.act-panels .rail-card {
+  padding: 0;
+}
+
+.act-panels .rail-feed,
+.act-panels .rail-sessions,
+.act-panels .rail-stale,
+.act-panels .rail-empty,
+.act-panels .rail-gap,
+.act-panels .rail-note {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.act-panels .rail-note {
+  padding-bottom: 0.625rem;
+}
+
+/* -------------------------------------------------------- a session's row */
+
+.rail-session-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.rail-session-state {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.06em;
+  color: var(--pur);
+  background: var(--purs);
+  border: 1px solid var(--purb);
+  border-radius: 5px;
+  padding: 0.25rem 0.375rem;
+}

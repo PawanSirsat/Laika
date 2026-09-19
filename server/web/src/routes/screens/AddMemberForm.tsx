@@ -6,6 +6,7 @@ import { listAllUsers, type OrgUser } from '../../api/users.ts';
 import { PROJECT_ROLES, ROLE_SUMMARY, type ProjectRole } from '../../api/members.ts';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
+import { initials } from '../../theme/initials.ts';
 
 export interface AddMemberFormProps {
   /** User ids already on the project — never offered. */
@@ -13,16 +14,6 @@ export interface AddMemberFormProps {
   readonly busy: boolean;
   readonly onAdd: (userId: string, role: ProjectRole) => Promise<boolean>;
   readonly onCancel: () => void;
-}
-
-function initials(name: string): string {
-  const parts = name
-    .trim()
-    .split(/\s+/)
-    .filter((p) => p !== '');
-  const first = parts[0]?.[0] ?? '?';
-  const last = parts.length > 1 ? (parts[parts.length - 1]?.[0] ?? '') : '';
-  return (first + last).toUpperCase();
 }
 
 /**

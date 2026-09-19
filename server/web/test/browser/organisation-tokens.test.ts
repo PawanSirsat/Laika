@@ -20,7 +20,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, type StubCall } from './harness.ts';
+import { closeBrowser, open, refuse, type ApiStub, type StubCall, setTheme } from './harness.ts';
 
 /**
  * **The real clock, not a pinned constant.**
@@ -355,7 +355,7 @@ void describe('both themes', () => {
       await row.locator('.tok-row').first().waitFor({ timeout: 20_000 });
 
       for (const theme of ['Light', 'Dark']) {
-        await h.page.getByRole('radio', { name: theme }).click();
+        await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
         const panel = row.locator('.org-tokens');

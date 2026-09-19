@@ -4,7 +4,9 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
-import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { SpaceBand, SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
+import { SprintStrip } from '../board/SprintStrip.tsx';
+import { COLUMN_LABELS } from '../../../api/board-derive.ts';
 import { formatRange } from '../sprints/sprint-derive.ts';
 import { useSprints } from '../sprints/use-sprints.ts';
 import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
@@ -15,7 +17,6 @@ import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import {
   isCurrent,
-  isPast,
   monthBands,
   sprintSummary,
   taskActuals,
@@ -126,7 +127,19 @@ export function TimelineScreen() {
    * asserted it, and every unit test still passed, because none of them mounts
    * the component.
    */
-  const [picked, setPicked] = useState<string | undefined>(undefined);
+  /**
+   * **`?sprint=` is the selection, not local state** — the same parameter the
+   * board's chips write. The design draws one chip row (`sprintChips`) and both
+   * screens read it, so picking S2 on the board and switching to Timeline keeps
+   * S2 rather than silently reverting to the current sprint.
+   */
+  const picked = params.get('sprint') ?? undefined;
+  const setPicked = (id: string | undefined): void => {
+    const next = new URLSearchParams(params);
+    if (id === undefined || id === '') next.delete('sprint');
+    else next.set('sprint', id);
+    setParams(next);
+  };
 
   if (projectError !== null) {
     return (
@@ -199,6 +212,12 @@ export function TimelineScreen() {
     }),
   );
 
+  /** `TUE 18 AUG` — the design's form for the pill beside the today line. */
+  const todayLabel = new Date(now)
+    .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
+    .toUpperCase()
+    .replace(/,/g, '');
+
   const active = rows.find((r) => isCurrent(r.sprint, now)) ?? rows[0];
 
   const shown = rows.find((r) => r.sprint.id === picked) ?? active;
@@ -214,8 +233,7 @@ export function TimelineScreen() {
 
   return (
     <div className="timeline">
-      <ScreenHeader
-        title="Timeline"
+      <SpaceSlot
         /* Derived, never a fixture: the axis the chart actually drew and the
            sprints actually on it. */
         context={`${formatRange(range.from, range.to)} · ${String(rows.length)} ${
@@ -250,68 +268,24 @@ export function TimelineScreen() {
         reader and in a screenshot.
       */}
       {/*
-        The sprint tabs (LAI-436).
+        The sprint chips (LAI-436, re-homed for the design).
 
-        **This is about selection, not information** — the counts also sit in the
-        band headers along the axis, where they are attached to the dates they
-        describe. What was missing is any way to look at a finished or a future
-        sprint: the strip only ever described the active one.
-
-        A tab is a real `button` with `aria-pressed`, not a styled `div`, so it
-        is reachable by keyboard on a screen whose whole point is scanning.
+        **One chip row for the whole product.** The design derives the board's
+        and the timeline's from the same `sprintChips` (prototype lines 151 and
+        209), and this screen had grown a second implementation of it — its own
+        markup, its own selection state, its own idea of what a fraction is.
+        It is now the board's component in the band above, which is where the
+        design puts it, and selection is `?sprint=` for both.
       */}
       {rows.length > 0 && (
-        <div className="tl-tabs" role="group" aria-label="Sprints">
-          {rows.map((row) => {
-            const stats = sprintSummary(row.tasks, blockedIn(row.tasks), row.sprint, now);
-            const current = isCurrent(row.sprint, now);
-            const done = stats.total === 0 ? 0 : (stats.done / stats.total) * 100;
-
-            return (
-              <button
-                key={row.sprint.id}
-                type="button"
-                className={[
-                  'tl-tab',
-                  row.sprint.id === shown?.sprint.id ? 'tl-tab-on' : '',
-                  current ? 'tl-tab-now' : '',
-                  isPast(row.sprint, now) ? 'tl-tab-past' : '',
-                ]
-                  .filter((c) => c !== '')
-                  .join(' ')}
-                aria-pressed={row.sprint.id === shown?.sprint.id}
-                onClick={() => {
-                  setPicked(row.sprint.id);
-                }}
-              >
-                <span className="tl-tab-head">
-                  <span className="tl-tab-name">{row.sprint.name}</span>
-                  {/* The active sprint is marked, not merely selected — AC6.
-                      Selection is a background; being current is a glyph, so the
-                      two are distinguishable when they coincide and when they
-                      do not. */}
-                  {current && (
-                    <span className="tl-tab-live" title="The sprint today falls in">
-                      ●
-                    </span>
-                  )}
-                  <span className="tl-tab-frac">
-                    {stats.done}/{stats.total}
-                  </span>
-                </span>
-                <span className="tl-tab-meter" aria-hidden="true">
-                  <span className="tl-tab-fill" style={{ width: `${String(done)}%` }} />
-                </span>
-                {stats.blocked > 0 && (
-                  <span className="tl-tab-blocked">
-                    <LockIcon />
-                    {stats.blocked}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
+        <SpaceBand>
+          <SprintStrip
+            sprints={rows.map((r) => r.sprint)}
+            tasks={allTasks}
+            selected={picked}
+            onSelect={setPicked}
+          />
+        </SpaceBand>
       )}
 
       {summary !== undefined && shown !== undefined && (
@@ -348,6 +322,28 @@ export function TimelineScreen() {
       )}
 
       <div className="tl-grid">
+        {/*
+          **One today line for the whole card** (prototype line 530: the header
+          pill and the body rule are drawn from the same `todayPre`).
+
+          It was two — one in the header, one over the rows — and they landed
+          12px apart, because the header measures the axis and the body measures
+          the axis *plus* the task column. Two markers for one fact will always
+          find a way to disagree; this is the fact, drawn once, with the pill at
+          the top where the design puts it.
+        */}
+        {today.on === 'axis' && (
+          <div
+            className="tl-today"
+            style={{
+              left: `calc(var(--tl-label) + (100% - var(--tl-label)) * ${String(today.percent / 100)})`,
+            }}
+            role="presentation"
+          >
+            <span className="tl-today-label">TODAY · {todayLabel}</span>
+          </div>
+        )}
+
         <div className="tl-head">
           <div className="tl-head-label">TASK</div>
           <div className="tl-head-axis">
@@ -416,8 +412,11 @@ export function TimelineScreen() {
                     </span>
                     <span className="tl-meta">
                       <span className="tl-key">{task.key}</span>
+                      {/* `In progress`, not `in_progress` — the enum is the
+                          database's word for it, and the design writes the
+                          lane's name. */}
                       <span className={`timeline-task-status timeline-task-${task.status}`}>
-                        {task.status}
+                        {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
                       </span>
                       {/*
                     The row says which dates the bar is. A sprint's range
@@ -449,7 +448,30 @@ export function TimelineScreen() {
                       bar.fromSprint ? ' (the sprint, not the task)' : ''
                     }`}
                   >
-                    {isBlocked && <span className="tl-blocked-dot" aria-hidden="true" />}
+                    {/*
+                      **The key rides inside the bar.** The design writes it
+                      there (prototype line 563) and it is what makes a track of
+                      bars readable without tracing each one back to its row —
+                      ours drew an unlabelled block and a dot.
+                    */}
+                    <span className="tl-bar-key">{task.key}</span>
+                    {isBlocked && (
+                      <span className="tl-bar-blocked-mark">
+                        {/*
+                          **The dot is the non-colour marker** the greyscale
+                          guard checks for, and it is the part that survives a
+                          bar too narrow for any text. The lock and the blocker's
+                          key are the design's addition beside it, not a
+                          replacement for it.
+                        */}
+                        <span className="tl-blocked-dot" aria-hidden="true" />
+                        <LockIcon />
+                        {task.blocked_by
+                          .map((id) => byTaskId.get(id)?.key)
+                          .filter((k): k is string => k !== undefined)
+                          .join(', ')}
+                      </span>
+                    )}
                     <span className="visually-hidden">
                       {bar.fromSprint ? 'planned, from its sprint' : 'actual'}
                       {isBlocked ? ', blocked' : ''}
@@ -463,19 +485,34 @@ export function TimelineScreen() {
               </div>
             );
           })}
-
-          {today.on === 'axis' && (
-            <div
-              className="tl-today"
-              style={{
-                left: `calc(var(--tl-label) + (100% - var(--tl-label)) * ${String(today.percent / 100)})`,
-              }}
-              role="presentation"
-            >
-              <span className="tl-today-label">TODAY</span>
-            </div>
-          )}
         </div>
+      </div>
+
+      {/*
+        The design's legend (prototype lines 574–579). It names what each fill
+        means and what the grey columns between sprints are — the one thing on
+        this chart a reader cannot work out by looking.
+      */}
+      <div className="tl-legend">
+        <span className="tl-legend-item">
+          <span className="tl-swatch tl-swatch-flight" aria-hidden="true" />
+          in flight
+        </span>
+        <span className="tl-legend-item">
+          <span className="tl-swatch tl-swatch-blocked" aria-hidden="true" />
+          blocked
+        </span>
+        <span className="tl-legend-item">
+          <span className="tl-swatch tl-swatch-done" aria-hidden="true" />
+          done
+        </span>
+        <span className="tl-legend-item tl-legend-today">
+          <span className="tl-swatch tl-swatch-today" aria-hidden="true" />
+          today
+        </span>
+        <span className="tl-legend-note">
+          Grey columns are the gap between sprints. Click a row to open it.
+        </span>
       </div>
 
       {today.on !== 'axis' && (

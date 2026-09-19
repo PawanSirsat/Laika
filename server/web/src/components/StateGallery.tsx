@@ -53,7 +53,7 @@ const SPECIMENS: readonly Specimen[] = [
       <EmptyState
         headline="No projects yet"
         body="Create the first one and point it at a repo."
-        action={{ label: 'New project', onClick: () => undefined }}
+        action={{ label: 'New space', onClick: () => undefined }}
       />
     ),
   },

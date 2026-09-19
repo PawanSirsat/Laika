@@ -4,7 +4,8 @@
   display: flex;
   align-items: center;
   gap: 0.625rem;
-  padding: 0.5625rem 1.125rem;
+  /* 48px overall, as the design has it. */
+  padding: 0.4375rem 1.125rem;
   background: var(--page);
   border-bottom: 1px solid var(--bd);
   flex-wrap: wrap;
@@ -136,4 +137,15 @@
   margin: 0;
   font-size: 0.53125rem;
   color: var(--tx3);
+}
+
+/* The design's right-hand summary. Pushed to the end of the strip. */
+.presence-summary {
+  margin: 0 0 0 auto;
+  flex: none;
+  padding-left: var(--space-3);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+  white-space: nowrap;
 }

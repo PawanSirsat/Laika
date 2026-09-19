@@ -21,6 +21,14 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'Nothing in this lane',
     body: 'The board shows backlog, to do, in progress, review and done for one project. It fills in once projects and tasks exist.',
   },
+  '/list': {
+    headline: 'No tasks to list',
+    body: 'The list is the board as a table — same tasks, same filters, one row each. It fills in once the project has tasks.',
+  },
+  '/calendar': {
+    headline: 'Nothing scheduled',
+    body: 'The calendar lays tasks out by the day they are due. Laika does not store a due date yet, so the dates here are sample data and the screen says so.',
+  },
   '/timeline': {
     headline: 'No sprints to lay out yet',
     body: 'The timeline draws sprints against dates once a project has them.',
@@ -36,6 +44,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
   '/dashboard': {
     headline: 'No activity in this window',
     body: 'Throughput, cycle time and stuck work are derived from the activity feed. Widen the range once there is history.',
+  },
+  '/activity': {
+    headline: 'Nothing has happened here yet',
+    body: 'The live stream shows work as it lands. Agent sessions and stale tasks appear here too, so this is the one place to look when you want to know what is moving.',
   },
   '/meeting-review': {
     headline: 'No meetings waiting on review',

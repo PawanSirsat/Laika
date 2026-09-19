@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import {
   applyMeetingReview,
   discardMeetingReview,
@@ -188,8 +188,7 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
 
   return (
     <div className="mr">
-      <ScreenHeader
-        title="Meeting review"
+      <SpaceSlot
         context={
           reviews.length === 0
             ? undefined

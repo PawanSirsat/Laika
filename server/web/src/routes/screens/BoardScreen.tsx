@@ -1,22 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { KanbanView } from './board/KanbanView.tsx';
-import { ListView } from './board/ListView.tsx';
+import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
-import { ScreenHeader } from '../../components/ScreenHeader.tsx';
+import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
-import { showsUnreachableBanner, streamPillLabel } from './board/stream-presentation.ts';
+import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
-import { BoardRail } from './board/BoardRail.tsx';
-import { PresenceStrip } from './board/PresenceStrip.tsx';
-import { getPresence, type PresenceView } from '../../api/presence.ts';
 import { useEvents } from '../../api/use-events.ts';
 import { listSprints, type Sprint } from '../../api/sprints.ts';
-import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
+import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard } from '../../api/use-board.ts';
 import type { BoardColumn } from '../../api/board-derive.ts';
 import { useTheme } from '../../theme/use-theme.ts';
@@ -42,7 +39,9 @@ export interface BoardScreenProps {
   readonly me?: MeProfile | undefined;
   /** Filter and view state, owned by the URL so a filtered board is linkable. */
   readonly params: URLSearchParams;
-  readonly onParamsChange: (next: URLSearchParams) => void;
+  readonly onParamsChange: (next: URLSearchParams, options?: { readonly push?: boolean }) => void;
+  /** The route being rendered — `/board` or `/list` (LAI-270). */
+  readonly path?: string;
 }
 
 /**
@@ -54,41 +53,32 @@ export interface BoardScreenProps {
  * that someone has to find and remove later, and a visible button is honest
  * about the board being a snapshot.
  */
-export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
+export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
   const { theme } = useTheme();
 
-  /**
-   * Presence for the strip and the rail (LAI-440).
-   *
-   * **Polled, not streamed.** `GET /events` carries activity; nothing on it
-   * fires when somebody's presence changes, so a strip driven by it would sit
-   * still while going stale. Twenty seconds against a five-minute window.
-   *
-   * A failure leaves `presence` as it was rather than clearing it: a board that
-   * blanks its strip on one bad poll is worse than one showing a reading twenty
-   * seconds old.
+  /*
+   * **The board no longer polls presence.** It did so for two readers: the
+   * WORKING NOW strip and the right rail. The strip moved to `SpaceLayout`,
+   * which has its own read through `SpaceLive`, and the rail is now the
+   * Activity tab — so this was a poll every twenty seconds, on every board, for
+   * nobody. `/activity` does its own.
    */
-  const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
+  /**
+   * The project this board is about.
+   *
+   * State, because the resolver below fills it in when the URL names none —
+   * but **the URL wins whenever it names one** (LAI-261). Seeded once and
+   * never re-read, this held the previous project after the sidebar moved to
+   * another space: the address bar and the headline said one thing and the
+   * cards were another's, which is the failure the resolver's own comment
+   * warns about, arriving from the opposite direction.
+   */
+  const urlSlug = params.get('project') ?? undefined;
+  const [slug, setSlug] = useState<string | undefined>(urlSlug);
 
   useEffect(() => {
-    const controller = new AbortController();
-    const read = (signal?: AbortSignal): void => {
-      getPresence(signal)
-        .then(setPresence)
-        .catch(() => {
-          // Presence is not why somebody opened the board.
-        });
-    };
-    read(controller.signal);
-    const timer = setInterval(() => {
-      read();
-    }, 20_000);
-    return () => {
-      controller.abort();
-      clearInterval(timer);
-    };
-  }, []);
-  const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
+    if (urlSlug !== undefined && urlSlug !== slug) setSlug(urlSlug);
+  }, [urlSlug, slug]);
   const [projectError, setProjectError] = useState<unknown>(null);
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
   /**
@@ -101,14 +91,26 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const openTaskId = params.get('task') ?? undefined;
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
-  const [projectTags, setProjectTags] = useState<readonly ProjectTag[]>([]);
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   const [creating, setCreating] = useState(false);
-  const [query, setQuery] = useState('');
-  const searchRef = useRef<HTMLInputElement>(null);
+  /**
+   * The search text, from the URL (LAI-251).
+   *
+   * Local state until the space bar took the input over: the control is in the
+   * bar now and writes `?q=`, so a board holding its own copy would filter by
+   * something the field no longer reflects.
+   */
+  const query = params.get('q') ?? '';
 
-  const view: BoardViewMode = params.get('view') === 'list' ? 'list' : 'kanban';
+  /**
+   * Kanban or list, **from the path** (LAI-270).
+   *
+   * The design makes List a tab beside Board, not a toggle inside the board —
+   * so the route decides. `?view=list` still works, because links carrying it
+   * predate the tab.
+   */
+  const view: BoardViewMode = path === '/list' || params.get('view') === 'list' ? 'list' : 'kanban';
   const priority = (params.get('priority') ?? undefined) as TaskPriority | undefined;
   const assignee = params.get('assignee') ?? undefined;
   const readyParam = params.get('ready');
@@ -187,35 +189,12 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
     };
   }, [slug]);
 
-  /**
-   * `/` focuses search — but never while someone is typing.
-   *
-   * Without the guard this steals the key from every text field on the screen,
-   * including the new-task title, and a shortcut that eats your input is worse
-   * than no shortcut.
+  /*
+   * The `/` shortcut moved to `SpaceTopBar` with the input it focuses
+   * (LAI-251). A shortcut that reaches across components into another's DOM
+   * node is the kind of coupling that survives exactly until someone renames
+   * an id.
    */
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-
-      const target = event.target;
-      if (target instanceof HTMLElement) {
-        const tag = target.tagName;
-        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
-          return;
-        }
-      }
-
-      event.preventDefault();
-      searchRef.current?.focus();
-      searchRef.current?.select();
-    };
-
-    addEventListener('keydown', onKey);
-    return () => {
-      removeEventListener('keydown', onKey);
-    };
-  }, []);
 
   // Assignee names for the cards. A failure here is not a board failure — the
   // cards fall back to showing the raw id rather than the whole screen erroring.
@@ -286,15 +265,8 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         setSprints([]);
       });
 
-    // The project's tag vocabulary, for the filter. Re-read on `attempt` with
-    // everything else, so applying a brand-new tag adds it to the list without
-    // a reload.
-    listProjectTags(slug, controller.signal)
-      .then(setProjectTags)
-      .catch(() => {
-        // Only the filter's options are lost; the board itself is unaffected.
-        setProjectTags([]);
-      });
+    // The tag filter moved to the space bar with the rest of them (LAI-270),
+    // and the bar fetches its own vocabulary.
 
     listTasks(slug, { limit: 200 }, controller.signal)
       .then((page) => {
@@ -323,11 +295,6 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
    * searching instead of implying it reaches the whole project.
    */
   const needle = query.trim().toLowerCase();
-
-  const agentCount = useMemo(
-    () => board.state.tasks.filter((t) => t.created_via === AGENT_VIA).length,
-    [board.state.tasks],
-  );
 
   const matches = useMemo(() => {
     return (task: Task): boolean => {
@@ -378,14 +345,21 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
   const openTask = openTaskId === undefined ? undefined : board.byId.get(openTaskId);
 
   const openTaskInUrl = (taskId: string): void => {
-    setParam('task', taskId);
+    // **A history entry, unlike every other filter** (LAI-252): opening a task
+    // is a state the reader expects Back to undo. Closing replaces, or Back
+    // from a closed drawer would re-open it.
+    setParam('task', taskId, { push: true });
   };
 
-  const setParam = (key: string, value: string | undefined): void => {
+  const setParam = (
+    key: string,
+    value: string | undefined,
+    options?: { readonly push?: boolean },
+  ): void => {
     const next = new URLSearchParams(params);
     if (value === undefined || value === '') next.delete(key);
     else next.set(key, value);
-    onParamsChange(next);
+    onParamsChange(next, options);
   };
 
   if (projectError !== null) {
@@ -417,191 +391,49 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         am I in* versus *what am I filtering*. Measured against
         `docs/design/Laika Prototype.dc.html` at 1600×1100, not from memory.
       */}
-      <SprintStrip
-        sprints={sprints}
-        tasks={allTasks}
-        selected={sprintScope}
-        onSelect={(id) => {
-          setParam('sprint', id);
-        }}
-        onOpenSprints={() => {
-          window.location.assign('/sprints');
-        }}
-      />
+      {/* Above WORKING NOW, as the design has it (LAI-272) — and on the
+          board, which is the only screen the design gives the chips to
+          (`isBoard`, prototype line 146). Timeline draws its own set. */}
+      {view !== 'list' && (
+        <SpaceBand>
+          <SprintStrip
+            sprints={sprints}
+            tasks={allTasks}
+            selected={sprintScope}
+            onSelect={(id) => {
+              setParam('sprint', id);
+            }}
+          />
+        </SpaceBand>
+      )}
 
-      <ScreenHeader
-        title="Board"
+      {/*
+        The board's own filters, in the space bar's slot (LAI-251).
+
+        **Search, the agent toggle, the priority cycler and Create are gone
+        from here**: the design puts them in the space bar and they now live in
+        `SpaceTopBar`, writing the same `?q=`, `?agent=`, `?priority=` this
+        screen already read. What is left is the board's alone — the design has
+        no tag, assignee, ready or view control anywhere.
+
+        The stream pill went the same way: one LIVE indicator per space, in the
+        bar, rather than one per screen.
+      */}
+      {/*
+        **No second row** (LAI-270). The design has none: tag, assignee,
+        priority and ready-only live in the space bar beside Search, and
+        Board/List are tabs. The only thing left for the slot is the scope
+        line, and only when a filter is actually hiding something.
+      */}
+      <SpaceSlot
         context={
-          <>
-            {project?.slug}
-            <span className={`live live-${stream.status}`} title={`Event stream: ${stream.status}`}>
-              <span className="live-dot" aria-hidden="true" />
-              {streamPillLabel(stream.status)}
-            </span>
-          </>
+          shownCount === board.byId.size
+            ? undefined
+            : `${String(shownCount)} of ${String(board.byId.size)} loaded ${
+                board.byId.size === 1 ? 'task' : 'tasks'
+              } match`
         }
-      >
-        <label className="board-search">
-          <span className="visually-hidden">Search tasks</span>
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" strokeLinecap="round" />
-          </svg>
-          <input
-            id="board-search-input"
-            ref={searchRef}
-            type="search"
-            placeholder="Search tasks…"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') setQuery('');
-            }}
-          />
-          {/* The prototype puts the shortcut inside the field, where it reads as
-              part of the control rather than as prose underneath it. */}
-          <kbd aria-hidden="true">/</kbd>
-        </label>
-
-        {/*
-          Agent work is **real**, not sample data: `created_via` ships on every
-          task and `mcp` is what an agent writes through. Filtered client-side
-          over the loaded page, like search.
-        */}
-        <button
-          type="button"
-          className={agentOnly ? 'bar-control bar-control-agent' : 'bar-control'}
-          aria-pressed={agentOnly}
-          onClick={() => {
-            setParam('agent', agentOnly ? undefined : 'true');
-          }}
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            strokeWidth="2"
-            aria-hidden="true"
-            width="13"
-            height="13"
-          >
-            <rect x="4" y="8" width="16" height="12" rx="3" />
-            <path d="M12 4v4M9 14h.01M15 14h.01" strokeLinecap="round" />
-          </svg>
-          Agent work
-          {agentCount > 0 && <span className="bar-count">{agentCount}</span>}
-        </button>
-
-        {/* One button cycling all → p1 → p2 → p3, as the prototype does. */}
-        <button
-          type="button"
-          className={priority === undefined ? 'bar-control' : 'bar-control bar-control-on'}
-          onClick={() => {
-            const order: readonly (TaskPriority | undefined)[] = [undefined, 'p1', 'p2', 'p3'];
-            const next = order[(order.indexOf(priority) + 1) % order.length];
-            setParam('priority', next);
-          }}
-        >
-          {priority === undefined ? 'Priority: all' : `${priority.toUpperCase()} only`}
-        </button>
-
-        {/*
-          The tag filter sits with the other filters rather than on the cards:
-          this is where a reader already looks for "show me less". The counts
-          come from the same endpoint the picker uses, so the list is the
-          project's real vocabulary and not whatever happens to be on screen.
-        */}
-        {projectTags.length > 0 && (
-          <label className="bar-control">
-            <span className="visually-hidden">Tag</span>
-            <select
-              value={tagScope ?? ''}
-              onChange={(e) => {
-                setParam('tag', e.target.value);
-              }}
-            >
-              <option value="">Any tag</option>
-              {projectTags.map((tag) => (
-                <option key={tag.name} value={tag.name}>
-                  {tag.name} ({tag.task_count})
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        <label className="bar-control">
-          <span className="visually-hidden">Assignee</span>
-          <select
-            value={assignee ?? ''}
-            onChange={(e) => {
-              setParam('assignee', e.target.value);
-            }}
-          >
-            <option value="">Anyone</option>
-            <option value="none">Unassigned</option>
-            {[...members.values()].map((m) => (
-              <option key={m.user_id} value={m.user_id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className={ready === true ? 'bar-control bar-control-on' : 'bar-control'}>
-          <input
-            type="checkbox"
-            checked={ready === true}
-            onChange={(e) => {
-              setParam('ready', e.target.checked ? 'true' : undefined);
-            }}
-          />
-          Ready only
-        </label>
-
-        <div className="board-views" role="group" aria-label="View">
-          {(['kanban', 'list'] as const).map((mode) => (
-            <button
-              key={mode}
-              type="button"
-              className={view === mode ? 'board-view board-view-on' : 'board-view'}
-              aria-pressed={view === mode}
-              onClick={() => {
-                setParam('view', mode === 'kanban' ? undefined : 'list');
-              }}
-            >
-              {mode === 'kanban' ? 'Board' : 'List'}
-            </button>
-          ))}
-        </div>
-
-        {filtered && (
-          <button
-            type="button"
-            className="bar-control"
-            onClick={() => {
-              const next = new URLSearchParams(params);
-              for (const key of ['priority', 'assignee', 'ready', 'agent']) next.delete(key);
-              onParamsChange(next);
-            }}
-          >
-            Clear
-          </button>
-        )}
-
-        {mayCreate && (
-          <button
-            type="button"
-            className="bar-control bar-control-primary"
-            onClick={() => {
-              setCreating(true);
-            }}
-          >
-            + New task
-          </button>
-        )}
-      </ScreenHeader>
+      />
 
       {/*
         Mounted here rather than in the shell: it reports the state of *this*
@@ -619,14 +451,8 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         />
       )}
 
-      <PresenceStrip
-        presence={presence}
-        theme={theme}
-        assignee={assignee}
-        onFilter={(id) => {
-          setParam('assignee', id);
-        }}
-      />
+      {/* WORKING NOW moved up to the space bar in LAI-251: it is about the
+          space, not about the board, and every view of a space shows it. */}
 
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">
@@ -666,8 +492,14 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
               tasks={tasks}
               byId={board.byId}
               members={members}
+              sprintLabels={sprintLabels}
+              theme={theme}
               filtered={filtered}
+              canAdd={mayCreate}
               onOpen={openTaskInUrl}
+              onAdd={() => {
+                setCreating(true);
+              }}
             />
           ) : (
             <KanbanView
@@ -689,14 +521,12 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
             />
           )}
 
-          <BoardRail
-            status={stream.status}
-            events={stream.recent}
-            gapped={stream.gapped}
-            tasks={allTasks}
-            members={members}
-            presence={presence}
-          />
+          {/*
+            **No rail.** The owner's updated design makes the board plain: the
+            live stream, the agent sessions and the stale list are their own
+            tab now (`/activity`), where the stream is wide enough to read a
+            sentence in and the columns get the whole width back.
+          */}
         </div>
       )}
 
@@ -709,27 +539,30 @@ export function BoardScreen({ params, onParamsChange, me }: BoardScreenProps) {
         change them, rather than a control that answers 403.
       */}
       {openTask !== undefined && (
-        <TaskDetailPanel
-          slug={slug}
-          meId={me?.id}
-          mayAssign={mayCreate}
-          mayEdit={mayCreate}
-          onTagsChanged={() => {
-            board.reload();
-          }}
-          onAssigned={board.reload}
-          task={openTask}
-          byId={board.byId}
-          members={members}
-          moving={board.movingId === openTask.id}
-          moveError={board.moveError}
-          onMove={(id, to) => {
-            void board.move(id, to);
-          }}
-          onClose={() => {
-            setParam('task', undefined);
-          }}
-        />
+        <TaskDrawerContent>
+          <TaskDetailPanel
+            slug={slug}
+            meId={me?.id}
+            mayAssign={mayCreate}
+            mayEdit={mayCreate}
+            onTagsChanged={() => {
+              board.reload();
+            }}
+            onAssigned={board.reload}
+            onTaskEdited={board.reload}
+            task={openTask}
+            byId={board.byId}
+            members={members}
+            moving={board.movingId === openTask.id}
+            moveError={board.moveError}
+            onMove={(id, to) => {
+              void board.move(id, to);
+            }}
+            onClose={() => {
+              setParam('task', undefined);
+            }}
+          />
+        </TaskDrawerContent>
       )}
     </div>
   );

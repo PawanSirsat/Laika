@@ -1,0 +1,84 @@
+/*
+ * The task drawer (LAI-252), to the prototype's geometry — lines 360–367.
+ *
+ * **`fixed`, and the scrim starts where the rail ends.**
+ *
+ * `absolute` inside the space pane was the first shape — it is what the
+ * prototype does, whose content column never scrolls. Ours does: measured on a
+ * page scrolled 400px, the drawer's top sat at **-400** and its height was the
+ * whole 3861px document, so a task opened below the fold had its key and close
+ * button off-screen. The scrim had the matching fault — it ended where the
+ * board's content ended rather than at the bottom of the window.
+ *
+ * Pinning both to the viewport fixes it, and `--rail-width` (from
+ * `app-shell.css`) keeps the design's other property: the scrim dims the view
+ * and leaves the sidebar usable, so you can switch space with a task open.
+ */
+
+.drawer-scrim {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--rail-width, 0px);
+  z-index: 20;
+  /* The design's own scrim. A raw rgba rather than a token because no token is
+     a dimming layer — `--bd2` is a border colour and reads far too light here. */
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  /*
+   * **1120px, not 840** (LAI-285). The design's drawer is two columns — the
+   * task as a document beside a 288px rail of fields — and at 840 the two
+   * together left the description about 500px wide, narrower than the board
+   * card the reader came from.
+   */
+  width: min(1120px, 100%);
+  /* 840px is the whole drawer, border included — without this the 1px
+     border-left makes it 841 and the design's number stops being the one on
+     screen. The same trap as the tab strip's 34px. */
+  box-sizing: border-box;
+  z-index: 21;
+  background: var(--card);
+  border-left: 1px solid var(--bd);
+  box-shadow: -24px 0 60px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: drawer-slidein 0.2s ease;
+}
+
+.drawer:focus {
+  outline: none;
+}
+
+.drawer-slot {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@keyframes drawer-slidein {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer {
+    animation: none;
+  }
+}

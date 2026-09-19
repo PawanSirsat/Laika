@@ -16,7 +16,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
 
 const DAY = 86_400_000;
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
@@ -188,7 +188,7 @@ void describe('the stale marker (§11.4.1)', () => {
       for (const theme of ['Dark', 'Light']) {
         // The real control, never a class toggle: a JS-computed colour bug hides
         // from the shortcut, and the theme is what this test is about.
-        await h.page.getByRole('radio', { name: theme }).click();
+        await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
         assert.equal(await marker.count(), 1, `the marker vanished in ${theme}`);

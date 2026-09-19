@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getHealth } from './health.ts';
+import { getOrg } from './org.ts';
 import { countSprints } from './sprints.ts';
 import { subscribeToEvents } from './event-stream.ts';
 
@@ -25,6 +26,12 @@ export interface ShellContext {
   readonly version: string | undefined;
   /** Sprints in the active project, or `undefined` when there is no number. */
   readonly sprintCount: number | undefined;
+  /**
+   * The organisation's name, for the sidebar's identity line (LAI-249) —
+   * "Kvelld Dynamics" in the prototype is a fixture. `undefined` until
+   * `GET /org` answers, and the line renders nothing for it.
+   */
+  readonly orgName: string | undefined;
 }
 
 /**
@@ -51,6 +58,7 @@ export interface ShellContext {
 export function useShellContext(slug: string | undefined, enabled: boolean): ShellContext {
   const [version, setVersion] = useState<string | undefined>(undefined);
   const [sprintCount, setSprintCount] = useState<number | undefined>(undefined);
+  const [orgName, setOrgName] = useState<string | undefined>(undefined);
   /**
    * Bumped whenever the stream says this project changed, which re-runs the
    * count below (LAI-122).
@@ -100,6 +108,29 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
     };
   }, []);
 
+  // The org line is gated exactly like the sprint count: `GET /org` needs a
+  // session, and the sidebar it feeds is not rendered without one.
+  useEffect(() => {
+    if (!enabled) {
+      setOrgName(undefined);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    getOrg(controller.signal)
+      .then((org) => {
+        setOrgName(org.name);
+      })
+      .catch(() => {
+        // A missing org line costs a subtitle, not a screen.
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [enabled]);
+
   useEffect(() => {
     if (slug === undefined || !enabled) {
       setSprintCount(undefined);
@@ -120,5 +151,5 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
     };
   }, [slug, enabled, generation]);
 
-  return { version, sprintCount };
+  return { version, sprintCount, orgName };
 }

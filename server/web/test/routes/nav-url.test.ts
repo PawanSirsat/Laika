@@ -14,12 +14,23 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
 import { navHref, withProjectParam } from '../../src/routes/nav-url.ts';
-import { ROUTES } from '../../src/routes/route-table.ts';
+import { ROUTES, spaceTabs } from '../../src/routes/route-table.ts';
 
 const SLUG = 'laika-core';
 
-/** Every destination the sidebar actually offers. */
-const NAV_ROUTES = ROUTES.filter((r) => r.group !== null && r.status !== undefined);
+/**
+ * Every destination the chrome offers — sidebar groups **and** the space tabs.
+ *
+ * **The tabs had to join since LAI-248.** The sidebar lists spaces now, so every
+ * route left in a group is `orgLevel` and the project-scoped filter below
+ * matched nothing. Its own `this proves nothing` guard caught that immediately,
+ * which is the whole reason that line is there — the subject of this file moved
+ * into the tab bar, and following it is not the same as weakening it.
+ */
+const NAV_ROUTES = [
+  ...ROUTES.filter((r) => r.group !== null && r.status !== undefined),
+  ...spaceTabs(() => true),
+];
 
 void describe('a nav click keeps the project you are reading', () => {
   void test('every project-scoped nav destination carries it', () => {
@@ -96,7 +107,7 @@ void describe('the sidebar actually uses it', () => {
     // the defect was never in a function — it was one `href={route.path}` in a
     // component no test can render. This is the assertion that was missing.
     const source = await readFile(
-      new URL('../../src/components/Sidebar.tsx', import.meta.url),
+      new URL('../../src/components/sidebar/Sidebar.tsx', import.meta.url),
       'utf8',
     );
 

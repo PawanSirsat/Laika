@@ -26,7 +26,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, type StubCall } from './harness.ts';
+import { closeBrowser, open, refuse, type ApiStub, type StubCall, setTheme } from './harness.ts';
 
 const user = (id: string, name: string, org_role: string, is_active = true) => ({
   id,
@@ -514,7 +514,7 @@ void describe('both themes', () => {
       await h.page.locator('.org-person select').first().waitFor({ timeout: 20_000 });
 
       for (const theme of ['Light', 'Dark']) {
-        await h.page.getByRole('radio', { name: theme }).click();
+        await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
         const card = h.page.locator('.org-card').first();

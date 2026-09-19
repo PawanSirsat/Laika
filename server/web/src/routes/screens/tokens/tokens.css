@@ -166,3 +166,124 @@
 
 /* The token row itself lives in `components/token-row.css` — the Organisation
    screen shows other people's tokens with the same markup (LAI-238). */
+
+/* ===========================================================================
+ * The design's token table headers, scope reference and CLI block
+ * (prototype lines 931–1069), LAI-278.
+ * ======================================================================== */
+
+.tok-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.875rem 0.375rem;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  color: var(--tx3);
+}
+
+.tok-head-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.tok-head-scope {
+  width: 4.5rem;
+  flex: none;
+}
+
+.tok-head-used,
+.tok-head-scopeto,
+.tok-head-expires {
+  width: 6.5rem;
+  flex: none;
+}
+
+.tok-head-act {
+  width: 4.75rem;
+  flex: none;
+}
+
+.tok-ref,
+.tok-cli {
+  margin-top: 1.125rem;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 0.875rem 1rem;
+}
+
+.tok-ref-title {
+  margin: 0 0 0.625rem;
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--tx3);
+}
+
+.tok-ref-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tok-ref-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+}
+
+.tok-ref-row dt {
+  flex: none;
+  width: 6.25rem;
+}
+
+.tok-ref-row dt code {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-bold);
+  color: var(--acc);
+  background: var(--accs);
+  border: 1px solid var(--accb);
+  border-radius: 4px;
+  padding: 0.125rem 0.3125rem;
+}
+
+.tok-ref-row dd {
+  margin: 0;
+  font-size: 0.71875rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.45;
+  color: var(--tx2);
+}
+
+.tok-cli-block {
+  margin: 0;
+  padding: 0.6875rem 0.75rem;
+  border-radius: 8px;
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  overflow-x: auto;
+}
+
+.tok-cli-block code {
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  line-height: 1.6;
+  color: var(--tx2);
+  white-space: pre;
+}
+
+.tok-cli-note {
+  margin: 0.625rem 0 0;
+  font-size: 0.65625rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.5;
+  color: var(--tx3);
+}

@@ -46,10 +46,14 @@
 .pp-chip,
 .pp-chip .pp-body,
 .pp-chip .pp-head,
+/*
+ * **No clipping.** The chip is `flex: none` and sizes to its own line, exactly
+ * as the design's does; `overflow: hidden` here cut `LAI-251` to `lai-251…`
+ * instead. `nowrap` keeps the line single without shortening it.
+ */
 .pp-chip .pp-where {
-  max-width: 100%;
   min-width: 0;
-  overflow: hidden;
+  white-space: nowrap;
 }
 
 .pp-head {
@@ -109,4 +113,21 @@
   color: var(--tx3);
   font-style: italic;
   white-space: nowrap;
+}
+
+/*
+ * The session's state as a dot beside the name (LAI-271) — the design marks it
+ * here and puts the agent badge on the avatar, rather than spelling "agent"
+ * out in a pill that takes a chip's whole second line.
+ */
+.pp-dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--grn);
+}
+
+.pp-dot-agent {
+  background: var(--pur);
 }

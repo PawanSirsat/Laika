@@ -18,7 +18,26 @@
  */
 
 /** The three sidebar groups, in the order `docs/design/README.md` fixes. */
-export const NAV_GROUPS = ['WORK', 'REVIEW', 'SETTINGS'] as const;
+/**
+ * The sidebar's groups, in the live design's order (LAI-247).
+ *
+ * **`SPACES` is not here**, and that is the point: its rows are the projects you
+ * have opened recently, not routes. `Sidebar` renders it from the project list
+ * and then renders these two beneath it.
+ *
+ * **`WORK` and `REVIEW` are gone.** The design ties every view to a space — its
+ * `projectScreens` test lights a space row for the board, timeline, sprints,
+ * dashboard and meeting review alike — so those views became **tabs inside a
+ * space** rather than a flat list beside it.
+ *
+ * **`ORG` is ours, not the design's.** The design is single-project, so
+ * "inside a space" and "across the org" are the same place there. Unlisted
+ * work reads across every project (`orgLevel`, LAI-423) and has no tab in the
+ * design to inherit. **Capacity left this group in LAI-251**: the design's
+ * strip carries it, and a route's scope lives in its link rather than in the
+ * bar it is offered from.
+ */
+export const NAV_GROUPS = ['ORG', 'SETTINGS'] as const;
 export type NavGroup = (typeof NAV_GROUPS)[number];
 
 export interface Route {
@@ -91,37 +110,116 @@ export interface Route {
   readonly status?: 'ready' | 'building';
   /** Which phase brings it to life, so an empty state can say what it waits on. */
   readonly phase: string;
+  /**
+   * Two letters for the collapsed 56px rail (LAI-249), the prototype's
+   * `n.abbr`. The design supplies `TK` and `OR`; Capacity and Unlisted work
+   * are not in its sidebar at all, so `CA` and `UW` are ours, formed the same
+   * way. Only grouped routes need one — nothing else renders in the rail.
+   */
+  readonly mini?: string;
 }
 
 export const ROUTES: readonly Route[] = [
   // WORK
-  { path: '/board', label: 'Board', group: 'WORK', status: 'ready', phase: 'Phase 2' },
-  { path: '/timeline', label: 'Timeline', group: 'WORK', status: 'building', phase: 'Phase 2.5' },
-  { path: '/sprints', label: 'Sprints', group: 'WORK', status: 'building', phase: 'Phase 2' },
-  { path: '/projects', label: 'Projects', group: 'WORK', status: 'ready', phase: 'Phase 2' },
+  {
+    path: '/board',
+    label: 'Board',
+    group: null /* a space tab */,
+    status: 'ready',
+    phase: 'Phase 2',
+  },
+  {
+    path: '/list',
+    label: 'List',
+    group: null /* a space tab */,
+    status: 'ready',
+    phase: 'Phase 2',
+  },
+  {
+    path: '/timeline',
+    label: 'Timeline',
+    group: null /* a space tab */,
+    status: 'building',
+    phase: 'Phase 2.5',
+  },
+  {
+    path: '/calendar',
+    label: 'Calendar',
+    group: null /* a space tab */,
+    status: 'ready',
+    phase: 'Phase 2.5',
+  },
+  {
+    path: '/sprints',
+    label: 'Sprints',
+    group: null /* a space tab */,
+    status: 'building',
+    phase: 'Phase 2',
+  },
+  {
+    path: '/projects',
+    label: 'Projects',
+    group: null /* reached as "More spaces" in the SPACES section */,
+    status: 'ready',
+    phase: 'Phase 2',
+  },
 
   // REVIEW
-  { path: '/dashboard', label: 'Dashboard', group: 'REVIEW', status: 'building', phase: 'Phase 5' },
+  {
+    path: '/dashboard',
+    label: 'Dashboard',
+    group: null /* a space tab */,
+    status: 'building',
+    phase: 'Phase 5',
+  },
+  /*
+   * **The board's rail, promoted to a tab** (the owner's updated design).
+   *
+   * Space-scoped: the stream, the sessions and the stale list are all about
+   * *this* space, so the tab carries `?project=` like every other.
+   */
+  {
+    path: '/activity',
+    label: 'Activity',
+    group: null /* a space tab */,
+    status: 'ready',
+    phase: 'Phase 5',
+  },
   // A queue a human works through, and audit-shaped: admin-up only (§4.14).
   {
     orgLevel: true,
     requires: 'audit_log.export',
     path: '/unlisted',
     label: 'Unlisted work',
-    group: 'REVIEW',
+    group: 'ORG' /* reads across every project */,
     status: 'ready',
     phase: 'Phase 3',
+    mini: 'UW',
   },
 
-  // **REVIEW, not WORK** (LAI-439 AC1). It sat in `WORK` while it was a stub;
-  // the criterion names the group, and it reads with Dashboard and Unlisted work
-  // — screens you open to see how things stand rather than to move a task.
-  // Capacity is read across every project at once, not within one.
+  /*
+   * **A space tab, and it keeps the space** (LAI-279).
+   *
+   * LAI-251 made this `orgLevel` so its tab dropped `?project=` — the reasoning
+   * being that a tab sitting under `laika-core` must not claim to be about
+   * `laika-core`. The honesty was right; the mechanism was not. Dropping the
+   * parameter left the space bar reading **"No space"** over a screen still
+   * showing the space's tabs, which is not a scope statement, it is a screen
+   * that looks broken.
+   *
+   * The design settles it (prototype line 651): Capacity is drawn inside the
+   * space, and its summary bar says **"across N spaces · live"** in words. The
+   * scope belongs in a sentence a person reads, not in a missing query
+   * parameter nobody sees — and keeping `?project=` means switching back to
+   * Board returns you to the space you came from.
+   *
+   * `group: null` because it is not a sidebar row: two places to reach one
+   * screen is two answers to one question.
+   */
   {
-    orgLevel: true,
     path: '/capacity',
     label: 'Capacity',
-    group: 'REVIEW',
+    group: null /* a space tab */,
     status: 'ready',
     phase: 'Phase 5',
   },
@@ -129,7 +227,7 @@ export const ROUTES: readonly Route[] = [
   {
     path: '/meeting-review',
     label: 'Meeting review',
-    group: 'REVIEW',
+    group: null /* a space tab */,
     // Offered now that there is a screen behind it (LAI-455) — the same rule
     // that gave `Tokens` and `Capacity` their places back.
     status: 'ready',
@@ -145,6 +243,7 @@ export const ROUTES: readonly Route[] = [
     group: 'SETTINGS',
     status: 'ready',
     phase: 'Phase 3',
+    mini: 'TK',
   },
   {
     orgLevel: true,
@@ -153,6 +252,7 @@ export const ROUTES: readonly Route[] = [
     group: 'SETTINGS',
     phase: 'Phase 1',
     status: 'ready',
+    mini: 'OR',
   },
 
   // Routed and reachable by URL, but not offered in the nav: no screen behind
@@ -177,6 +277,53 @@ export const ROUTES: readonly Route[] = [
   { public: true, path: '/design/tokens', label: 'Design tokens', group: null, phase: 'reference' },
   { public: true, path: '/design/states', label: 'States', group: null, phase: 'reference' },
 ];
+
+/**
+ * The views that live **inside** a space, in the order the tab bar shows them.
+ *
+ * **The design's own strip, Capacity included** — the owner's exact-match
+ * decision (2026-09-18), which supersedes LAI-248's deviation. That task put
+ * Capacity in an `ORG` sidebar group because it is `orgLevel` and reads across
+ * every project, and the reasoning was right about the data: what it got wrong
+ * is that a tab's *scope* is a property of its link, not of the strip it sits
+ * in. `navHref` still drops `?project=` for an `orgLevel` route, so the URL
+ * stays honest while the strip matches the design.
+ *
+ * `Calendar` is deliberately absent until it has a route (its own task).
+ */
+export const SPACE_TAB_PATHS: readonly string[] = [
+  '/board',
+  '/list',
+  '/timeline',
+  '/calendar',
+  '/sprints',
+  '/capacity',
+  '/dashboard',
+  /*
+   * **Activity is a tab** (the owner's updated design, 2026-09-18). It carries
+   * what used to be the board's right rail — the live stream, the agent
+   * sessions and what has gone quiet.
+   */
+  '/activity',
+  '/meeting-review',
+];
+
+/**
+ * The tabs, resolved against `ROUTES` so a renamed or deleted path cannot leave
+ * a tab pointing at nothing.
+ */
+export function spaceTabs(holds?: (permission: string) => boolean): readonly Route[] {
+  return SPACE_TAB_PATHS.map((path) => {
+    const route = ROUTES.find((r) => r.path === path);
+    if (route === undefined) {
+      throw new Error(`SPACE_TAB_PATHS names ${path}, which is not in ROUTES`);
+    }
+    return route;
+  }).filter(
+    (route) =>
+      isShipped(route) && (route.requires === undefined || (holds?.(route.requires) ?? true)),
+  );
+}
 
 export const DEFAULT_PATH = '/board';
 

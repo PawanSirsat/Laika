@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -166,7 +166,7 @@ void describe('a blocked task still shows as blocked after the rename', () => {
       // Both themes, driven through the real control rather than a class
       // toggle — a JS-computed colour bug hides from the shortcut.
       for (const theme of ['Dark', 'Light']) {
-        await h.page.getByRole('radio', { name: theme }).click();
+        await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
         assert.equal(
           await h.page.locator('.card-blocked').count(),

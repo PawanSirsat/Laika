@@ -1,0 +1,299 @@
+/*
+ * The Calendar (prototype lines 581–624).
+ *
+ * Rows, not one flat grid. The design gives each week a 46px gutter carrying
+ * its ISO week number, and a row that owns its own label cannot drift out of
+ * step with it — which two parallel lists eventually would.
+ */
+
+.cal {
+  padding: 0.875rem 1.125rem 1.125rem;
+  min-width: 0;
+}
+
+.cal-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  min-width: 0;
+  padding-bottom: 2px;
+}
+
+.cal-card {
+  min-width: 60rem;
+  background: var(--card);
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+/* ----------------------------------------------------------------- the head */
+
+.cal-head {
+  display: flex;
+  background: var(--page);
+  border-bottom: 1px solid var(--bd);
+}
+
+.cal-weekday {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.625rem;
+  border-left: 1px solid var(--bd);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.09em;
+  color: var(--tx3);
+}
+
+/* ----------------------------------------------------------- the week gutter */
+
+.cal-gutter {
+  width: 46px;
+  flex: none;
+  box-sizing: border-box;
+  border-right: 1px solid var(--bd);
+  background: var(--page);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--tx3);
+}
+
+.cal-gutter-head {
+  background: var(--page);
+}
+
+/* ----------------------------------------------------------------- the weeks */
+
+.cal-week {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--bd);
+}
+
+.cal-day {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  /* The design's cell floor, so a week with no work is the same height as one
+     with three tasks in it. */
+  min-height: 6.5rem;
+  padding: 0.4375rem 0.5rem 0.5rem;
+  border-left: 1px solid var(--bd);
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  background: var(--card);
+}
+
+/* A day outside this month is present but recessive — the grid keeps its shape
+   and the reader is not invited to read those cells as this month's. */
+.cal-day-out {
+  background: var(--page);
+}
+
+.cal-day-out .cal-date {
+  color: var(--tx3);
+}
+
+.cal-day-weekend {
+  background: var(--tub);
+}
+
+/* The running sprint's days, from the API — not a placeholder. */
+.cal-day-sprint {
+  background: var(--purs);
+}
+
+.cal-day-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.cal-date {
+  flex: none;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 0.65625rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+/* Today is a filled badge, which is the one thing on this grid that must be
+   findable in a glance. */
+.cal-day-today .cal-date {
+  background: var(--amb);
+  color: #fff;
+}
+
+.cal-month {
+  flex: none;
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  letter-spacing: 0.07em;
+  color: var(--tx3);
+}
+
+.cal-sprint-tag {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx3);
+}
+
+.cal-sprint-tag-now {
+  color: var(--pur);
+}
+
+/* ----------------------------------------------------------------- the tasks */
+
+.cal-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cal-task {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  padding: 0.3125rem 0.375rem;
+  border-radius: 6px;
+  background: var(--tub);
+  border: 1px solid var(--bd);
+  cursor: pointer;
+  min-width: 0;
+}
+
+.cal-task:hover,
+.cal-task:focus-visible {
+  border-color: var(--bd2);
+}
+
+/* Priority tints the chip, as it tints the card's dot on the board. */
+.cal-task-p1 {
+  background: var(--reds);
+  border-color: var(--redb);
+}
+
+.cal-task-p2 {
+  background: var(--ambs);
+  border-color: var(--ambb);
+}
+
+.cal-task-key {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.53125rem;
+  font-weight: var(--weight-heavy);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+.cal-task-p1 .cal-task-key {
+  color: var(--red);
+}
+
+.cal-task-p2 .cal-task-key {
+  color: var(--amb);
+}
+
+.cal-task-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+  color: var(--tx2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The design's agent mark: a purple square, the same purple the bot badge uses
+   on a card. Shape as well as colour, so it survives greyscale. */
+.cal-task-agent {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--pur);
+}
+
+/* ---------------------------------------------------------------- the legend */
+
+.cal-legend {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  flex-wrap: wrap;
+  padding: 0.625rem 0.75rem;
+  background: var(--page);
+}
+
+.cal-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.625rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--tx2);
+}
+
+.cal-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+.cal-swatch-today {
+  border-radius: 5px;
+  background: var(--amb);
+}
+
+.cal-swatch-sprint {
+  background: var(--purs);
+  border: 1px solid var(--purb);
+}
+
+.cal-swatch-weekend {
+  background: var(--tub);
+}
+
+.cal-swatch-agent {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--pur);
+}
+
+.cal-legend-note {
+  margin-left: auto;
+  font-size: 0.625rem;
+  font-weight: var(--weight-medium);
+  line-height: 1.4;
+  color: var(--tx3);
+}

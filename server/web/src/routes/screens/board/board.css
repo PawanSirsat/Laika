@@ -4,7 +4,10 @@
 .board {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  /* `min-height: 100%` resolved against an auto-height parent, which is to say
+     it did nothing. The board is the space's growing child now. */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .board > :not(.screen-bar):not(.board-scope):not(.demo-notice) {
@@ -156,15 +159,22 @@
 .kanban {
   display: grid;
   grid-template-columns: repeat(5, minmax(12.875rem, 1fr));
-  gap: 0.6875rem;
-  align-items: start;
+  gap: 0.75rem;
+  /*
+   * **Stretch, not start** (LAI-270). `start` sized every column to its own
+   * cards, so five columns of different lengths left the ragged row the owner
+   * saw beside the reference, where all five are the same height and scroll
+   * their own contents.
+   */
+  align-items: stretch;
 }
 
 .lane {
   background: var(--tub);
   border: 1px solid var(--bd);
   border-radius: var(--radius-lg);
-  padding: var(--space-2);
+  /* The design's tub: roomier at the top than at the sides. */
+  padding: 0.75rem 0.625rem;
   min-height: 8rem;
 }
 
@@ -173,32 +183,6 @@
 .lane-over {
   border-color: var(--acc);
   background: var(--accs);
-}
-
-.lane-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--space-1) var(--space-2) var(--space-2);
-}
-
-.lane-title {
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--tx2);
-  margin: 0;
-}
-
-.lane-count {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--tx2);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-pill);
-  padding: 0 var(--space-2);
 }
 
 .lane-body {
@@ -252,7 +236,9 @@
   border: 1px solid var(--bd);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow);
-  padding: var(--space-3);
+  /* The design's own figures (prototype line ~290): 13px round, 11px at the
+     foot, which reads as more air than `--space-3`'s uniform 12. */
+  padding: 0.8125rem 0.8125rem 0.6875rem;
   /* `pointer`, not `grab`. The card was `grab` — honest about dragging and
      silent about the thing people actually do, which is open it. The design
      file uses `cursor:pointer` 46 times and `grab` never; dragging still works
@@ -648,10 +634,21 @@
 
 /* ------------------------------------- lane headers (prototype: five lanes) */
 
+/*
+ * **The group sits left; only the WIP note is pushed right** — dot, name and
+ * count read as one unit, which is the reference's arrangement.
+ *
+ * It did not, for a while: a pre-rebuild `.lane-head` above this one carried
+ * `justify-content: space-between` and this rule overrode neither it nor its
+ * padding, so the three parts splayed across the column. The old block is gone
+ * rather than overridden — two rules for one element is what hid it.
+ */
 .lane-head {
   display: flex;
   align-items: center;
   gap: 0.4375rem;
+  justify-content: flex-start;
+  padding: 0 0.25rem;
 }
 
 .lane-dot {
@@ -678,23 +675,25 @@
 .lane-title {
   font-size: 0.65625rem;
   font-weight: var(--weight-heavy);
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--tx2);
   margin: 0;
+  white-space: nowrap;
 }
 
 /* The count pill takes the lane's colour, so the eye reads column and volume
    together rather than as two separate facts. */
 .lane-count {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-heavy);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-bold);
   color: var(--tx2);
   background: var(--card);
   border: 1px solid var(--bd);
-  border-radius: var(--radius-pill);
-  padding: 0.0625rem 0.375rem;
+  /* A rounded square, not a pill — the reference's badge. */
+  border-radius: 5px;
+  padding: 0.1875rem 0.25rem;
 }
 
 .lane-count-in_progress {
@@ -726,11 +725,21 @@
 
 .card-title {
   margin: 0;
-  font-size: 0.78125rem;
+  /* 13.5px/600 with the design's tracking and leading (prototype ~line 291).
+     The owner read the old 12.5px as too light and too small; this is the
+     figure the reference actually uses. */
+  font-size: 0.84375rem;
   font-weight: var(--weight-semibold);
-  line-height: 1.38;
+  line-height: 1.4;
+  letter-spacing: -0.008em;
   color: var(--tx);
   text-wrap: pretty;
+  /* Two lines, then an ellipsis — the design clamps, and an unclamped title
+     pushes the footer around as cards differ in length. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* Done cards recede — the column already says they are finished. */
@@ -778,9 +787,11 @@
 .card-blocked {
   display: flex;
   align-items: center;
-  /* Wraps to a second line on purpose — see `.card-blocked-detail`. */
-  flex-wrap: wrap;
+  /* **One line** (LAI-263). It wrapped so the title could have full width; the
+     design's banner is a single line and the owner asked for it back. */
+  flex-wrap: nowrap;
   gap: 0 0.375rem;
+  overflow: hidden;
   min-width: 0;
   margin: 0;
   padding: 0.25rem 0.375rem;
@@ -805,18 +816,27 @@
 }
 
 /**
- * The blocker's title, on its own line.
+ * The blocker's title, sharing the line with its key.
  *
- * Measured rather than guessed: in a 167px column the title sharing a line with
- * `blocked by LC-1` was left **17px** — one character and an ellipsis, which
- * tells the reader nothing they did not already have from the key. `flex-basis:
- * 100%` puts it on the next line with the full card width.
+ * **It had its own line, and that was the right call for a 167px column** —
+ * measured then, the title was left 17px, one character and an ellipsis. The
+ * owner has asked for the design's single line, and the trade is stated rather
+ * than hidden: in a narrow column the title truncates hard, and the full text
+ * is in the banner's `title` attribute for anyone who needs it. The key, which
+ * identifies the blocker exactly, never truncates.
  */
 .card-blocked-detail {
   display: flex;
   gap: 0.25rem;
-  flex: 1 0 100%;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+}
+
+.card-blocked-what {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* The first thing to give way when even a whole line is not enough. */
@@ -1020,4 +1040,137 @@
 .card-sprint-on {
   background: var(--purs);
   color: var(--pur);
+}
+
+/* ----------------------------------------------------- card footer (LAI-263) */
+
+/*
+ * The comment count, at last. `comment_count` has been served on every task
+ * since the endpoint existed and the card never rendered it (LAI-223).
+ */
+.card-comments,
+.card-deps {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+}
+
+.card-comments svg,
+.card-deps svg {
+  width: 0.6875rem;
+  height: 0.6875rem;
+  stroke: currentColor;
+}
+
+/* How long since the task last changed. Mono, like every other figure. */
+.card-age {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: 0.59375rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx3);
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------- the reference's columns (LAI-270) */
+
+/*
+ * **Equal-height panels that scroll their own cards.**
+ *
+ * They grew to fit before, so five columns of different lengths left a ragged
+ * row and the *page* scrolled instead of the column. The reference's columns
+ * are the same height, scroll internally, and keep `+ Add task` at the bottom
+ * where it does not drift away from the cards it belongs to.
+ *
+ * `100dvh` minus the chrome above: the sidebar is `100vh` already, and this is
+ * the same idea applied to the lane.
+ */
+.kanban .lane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  /*
+   * **The lanes fill what is left, rather than guessing at it** (LAI-283).
+   *
+   * This was `calc(100dvh - 21rem)`: a figure standing in for the height of
+   * every band above the board, which had to be re-guessed whenever any of them
+   * changed and was **99px short** once the right rail moved to its own tab —
+   * the lanes stopping well above the bottom of the window with dead space
+   * under them, which is what the owner reported.
+   *
+   * No height at all now. `.kanban` is a grid and a grid item stretches to its
+   * row by default, the row stretches to `.board-main`, and that fills `.space`,
+   * which is `100dvh`. The chain is measured rather than described, so it cannot
+   * drift out of step with the chrome above it. One height for every column
+   * still, and the body inside each still scrolls.
+   */
+}
+
+.kanban .lane-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* The thin scrollbar the reference shows on a full column. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--bd2) transparent;
+}
+
+.kanban .lane-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.kanban .lane-body::-webkit-scrollbar-thumb {
+  background: var(--bd2);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Pinned: it is the column's footer, not the last card's neighbour. */
+.kanban .lane-add {
+  flex: none;
+  margin-top: var(--space-2);
+}
+
+/*
+ * **The status select is keyboard-only now.**
+ *
+ * The reference has no per-card control, and a `Backlog ⌄` bar under every
+ * card was the loudest difference between the two boards. It is not deleted:
+ * dragging is the only other way to move a task, and drag has no keyboard
+ * story — so it is out of the visual flow until it is focused, at which point
+ * it appears where it always was.
+ */
+.lane-move {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.lane-move:focus-within {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+}
+
+/* A rule between the tags and the footer, as the reference draws it. */
+.card-foot {
+  border-top: 1px solid var(--bd);
+  padding-top: 0.5625rem;
+  margin-top: 0.125rem;
 }

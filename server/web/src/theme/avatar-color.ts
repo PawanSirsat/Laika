@@ -71,5 +71,33 @@ export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): 
       };
 }
 
+/**
+ * The **filled** avatar: the same hue, saturated, with white initials.
+ *
+ * A comment thread wants a face, not a tint — the design fills the circles
+ * there because a thread is read as a sequence of *people*, and a pastel chip
+ * reads as a label on a row. Everywhere else (a card, a chip in a strip, a
+ * dependency) the pastel is right, because the avatar is decoration beside
+ * text that already names the person.
+ *
+ * **Same hash, same hue.** A person is the same colour in both forms — only the
+ * fill changes — so recognising somebody in a thread and on a card is one
+ * learned association rather than two.
+ *
+ * `38%` lightness rather than something prettier: white on `hsl(h 55% 38%)`
+ * clears 4.5:1 for every hue in the ramp, and an avatar nobody can read the
+ * initials on is a coloured dot.
+ */
+export function avatarColorSolid(userId: string, theme: 'light' | 'dark' = 'light'): AvatarColor {
+  const hue = HUES[hash(userId) % HUES.length] ?? HUES[0];
+  const lightness = theme === 'dark' ? 44 : 38;
+
+  return {
+    background: `hsl(${String(hue)} 55% ${String(lightness)}%)`,
+    foreground: '#fff',
+    border: `hsl(${String(hue)} 55% ${String(lightness - 8)}%)`,
+  };
+}
+
 /** How many distinct colours exist — used by the token reference page. */
 export const AVATAR_COLOR_COUNT = HUES.length;

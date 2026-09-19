@@ -11,7 +11,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
 const T0 = Date.UTC(2026, 7, 3);
@@ -126,7 +126,7 @@ void describe('a measured bar does not look like a placed one', () => {
       assert.equal(await h.page.locator('.tl-bar-planned').count(), 1, 'no planned bar rendered');
 
       for (const theme of ['Light', 'Dark']) {
-        await h.page.getByRole('radio', { name: theme }).click();
+        await setTheme(h.page, theme);
         await h.page.waitForTimeout(300);
 
         const style = async (sel: string) =>

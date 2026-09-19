@@ -39,8 +39,25 @@ samp {
  * `clip-path` rather than `display:none`, which would remove it from the
  * accessibility tree entirely.
  */
+/*
+ * Screen-reader-only text.
+ *
+ * **`left`/`top` are load-bearing, not tidiness** (LAI-245, from LAI-244's
+ * measurement). Without them an absolutely-positioned box sits at its *static*
+ * position — wherever it would have been in flow — which inside a horizontal
+ * scroller is out in the scrolled-away region. An **unpositioned** scroll
+ * container is not its containing block, so `overflow-x` never clips it and the
+ * page gains a scrollbar with no visibly oversized element: 146px of it, in a
+ * board rail, found only by enumerating right edges.
+ *
+ * Anchoring it means the worst case is a clipped 1px box at the corner of the
+ * nearest positioned ancestor, which is nothing, instead of a box that widens
+ * whatever contains it.
+ */
 .visually-hidden {
   position: absolute;
+  left: 0;
+  top: 0;
   width: 1px;
   height: 1px;
   margin: -1px;

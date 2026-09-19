@@ -2,21 +2,22 @@ import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
+import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import {
   getCapacity,
   getPresence,
+  hasLocation,
   type CapacityView,
   type PresenceView,
 } from '../../../api/presence.ts';
 import { getTask, type Task } from '../../../api/tasks.ts';
+import { listProjects } from '../../../api/projects.ts';
 import { listUnlisted, type UnlistedWork } from '../../../api/unlisted.ts';
 import { UnlistedList } from '../unlisted/UnlistedList.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { byAvailability, oldestAge, taskIdsToResolve } from './capacity-derive.ts';
-import { PresencePerson } from '../../../components/PresencePerson.tsx';
 import '../../../components/markers.css';
 import './capacity.css';
 
@@ -64,6 +65,14 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
   const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
   const [unlisted, setUnlisted] = useState<readonly UnlistedWork[]>([]);
   const [tasks, setTasks] = useState<ReadonlyMap<string, Task>>(new Map());
+  /**
+   * How many spaces this screen reads across.
+   *
+   * A real count from `GET /projects`, and `undefined` until it lands — the bar
+   * then says how often it refreshes rather than "across 0 spaces", which would
+   * be a claim rather than a gap.
+   */
+  const [spaceCount, setSpaceCount] = useState<number | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
 
   const load = (signal?: AbortSignal): void => {
@@ -102,6 +111,23 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
       });
   };
 
+  // Once, not on the poll: the number of spaces does not change every 20s, and
+  // re-reading it with the presence poll would be a request per tick for a
+  // figure nobody watches.
+  useEffect(() => {
+    const controller = new AbortController();
+    listProjects({}, controller.signal)
+      .then((page) => {
+        if (!controller.signal.aborted) setSpaceCount(page.data.length);
+      })
+      .catch(() => {
+        // The bar falls back to saying how often it refreshes.
+      });
+    return () => {
+      controller.abort();
+    };
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     load(controller.signal);
@@ -126,8 +152,7 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
 
   return (
     <div className="cap">
-      <ScreenHeader
-        title="Capacity"
+      <SpaceSlot
         context={`${String(people.length)} ${people.length === 1 ? 'person' : 'people'} · updated every ${String(POLL_MS / 1000)}s`}
       />
 
@@ -143,82 +168,229 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
         />
       ) : (
         <>
-          <section className="cap-section">
-            <h2 className="cap-h">Working now</h2>
-            {working.length === 0 ? (
-              <p className="cap-quiet">No sessions in the last five minutes.</p>
-            ) : (
-              <ul className="cap-present">
-                {working.map((entry) => (
-                  <li key={entry.user_id} className="cap-present-row">
-                    <PresencePerson entry={entry} theme={theme} variant="row" />
-                    <span className="cap-seen">
-                      {new Date(entry.last_seen).toLocaleTimeString()}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          {/*
+            The design's summary bar (prototype line 651). Three counts and a
+            sentence — every one of them counted from what the API sent, never
+            estimated.
+          */}
+          <div className="cap-summary">
+            <span className="cap-fig">
+              <span className="cap-fig-label">ACTIVE NOW</span>
+              <span className="cap-fig-value">{working.length}</span>
+            </span>
+            <span className="cap-fig cap-fig-agent">
+              <span className="cap-fig-label">AGENT SESSIONS</span>
+              <span className="cap-fig-value">
+                {people.reduce((n, person) => n + person.active_sessions, 0)}
+              </span>
+            </span>
+            <span className="cap-fig cap-fig-unlisted">
+              <span className="cap-fig-label">UNLISTED WORK</span>
+              <span className="cap-fig-value">{unlisted.length}</span>
+            </span>
+            {/*
+              **The scope, in words** (LAI-279, prototype line 656).
 
-          <section className="cap-section">
-            <h2 className="cap-h">Who takes the next task</h2>
-            <ul className="cap-people">
-              {people.map((person) => {
-                const age = oldestAge(person.oldest_in_progress_ms);
-                const ink = avatarColor(person.user_id, theme);
+              This screen reads across the whole organisation while living
+              inside a space. That used to be said by stripping `?project=` from
+              its link, which left the space bar reading "No space" over a screen
+              still showing the space's tabs — not a scope statement, just a
+              screen that looks broken. A sentence is what the design uses and
+              what a reader can actually act on.
+            */}
+            <span className="cap-summary-note">
+              {spaceCount === undefined
+                ? `updated every ${String(POLL_MS / 1000)}s · live`
+                : `across ${String(spaceCount)} ${spaceCount === 1 ? 'space' : 'spaces'} · live`}
+            </span>
+          </div>
 
-                return (
-                  <li key={person.user_id} className="cap-person">
-                    <span
-                      className="cap-avatar"
-                      style={{ background: ink.background, color: ink.foreground }}
-                    >
-                      {initials(person.name)}
-                    </span>
-                    <div className="cap-person-body">
-                      <div className="cap-person-head">
+          {/*
+            One card per person, in four panels (prototype lines 657–693):
+            who they are · what they are working on · their agent session ·
+            what is in progress. It was two flat lists, which answered "who is
+            here" and "who is free" but never joined them up for one person.
+          */}
+          {/*
+            **Enabled and quiet is not disabled** (LAI-150). An org that records
+            presence and has nobody beating must say so in its own words — an
+            empty list beside a summary bar of zeroes reads as a broken screen,
+            and reads identically to presence being off, which is a different
+            claim entirely. `capacity.test.ts` is the fixture that separates them.
+          */}
+          {people.length === 0 && (
+            <p className="cap-quiet">No sessions in the last five minutes.</p>
+          )}
+
+          <ul className="cap-people">
+            {people.map((person) => {
+              const age = oldestAge(person.oldest_in_progress_ms);
+              const ink = avatarColor(person.user_id, theme);
+              const here = working.find((e) => e.user_id === person.user_id);
+              const now =
+                here?.matched_task_id === undefined || here.matched_task_id === null
+                  ? undefined
+                  : tasks.get(here.matched_task_id);
+              const mine = unlisted.filter((u) => u.user_id === person.user_id);
+
+              return (
+                <li key={person.user_id} className="cap-card">
+                  <div className="cap-panels">
+                    <div className="cap-who">
+                      <span
+                        className="cap-avatar"
+                        style={{ background: ink.background, color: ink.foreground }}
+                        aria-hidden="true"
+                      >
+                        {initials(person.name)}
+                      </span>
+                      <span className="cap-who-lines">
                         <span className="cap-name">{person.name}</span>
-                        {person.active_sessions > 0 && (
-                          <span className="cap-sessions">
-                            {person.active_sessions}{' '}
-                            {person.active_sessions === 1 ? 'session' : 'sessions'}
+                        <span className="cap-who-meta">
+                          {/*
+                            **`is_agent`, not `active_sessions > 0`.** A person
+                            can have a session count without that session being
+                            an agent's — `is_agent` is `tokenId !== null`, which
+                            is the fact this badge claims. The first cut badged a
+                            human as an agent, and `capacity.test.ts` said so.
+                          */}
+                          {here?.is_agent === true && (
+                            <span className="marker marker-agent">agent</span>
+                          )}
+                          <span className="cap-seen-dot">
+                            <span
+                              className={here === undefined ? 'cap-dot' : 'cap-dot cap-dot-live'}
+                              aria-hidden="true"
+                            />
+                            {/*
+                              `last_seen` is nullable — a person who has never
+                              beaten has no time to show, and printing the epoch
+                              would read as 1970.
+                            */}
+                            <span className="cap-seen">
+                              {person.last_seen === null
+                                ? 'never seen'
+                                : new Date(person.last_seen).toLocaleTimeString()}
+                            </span>
                           </span>
-                        )}
-                        {age !== undefined && (
-                          <span className="cap-age" title="Age of their oldest in-progress task">
-                            oldest {age}
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="cap-panel cap-working">
+                      <span className="cap-panel-label">WORKING ON</span>
+                      {now !== undefined ? (
+                        <>
+                          <span className="cap-now">
+                            <span className="cap-now-key">{now.key}</span>
+                            <span className="cap-now-title" title={now.title}>
+                              {now.title}
+                            </span>
                           </span>
-                        )}
-                      </div>
-
-                      <TaskLine
-                        label="In progress"
-                        ids={person.in_progress_tasks}
-                        tasks={tasks}
-                        onOpenTask={onOpenTask}
-                      />
-                      <TaskLine
-                        label="Awaiting their review"
-                        ids={person.tasks_in_review}
-                        tasks={tasks}
-                        onOpenTask={onOpenTask}
-                      />
-
-                      {/* **Absent, not empty.** `?? []` here would turn "you may
-                          not be told" into "they have logged nothing". */}
-                      {person.unlisted !== undefined && person.unlisted.length > 0 && (
-                        <p className="cap-unlisted-count">
-                          {person.unlisted.length} unlisted{' '}
-                          {person.unlisted.length === 1 ? 'note' : 'notes'}
-                        </p>
+                          {here?.repo !== undefined && (
+                            <span className="cap-now-repo">
+                              {here.repo}
+                              {here.branch === undefined ? '' : ` · ${here.branch}`}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="cap-idle">
+                          {/*
+                            **Three states, not two** (LAI-438). A person whose
+                            location is withheld is not the same as one who is
+                            in a session on no particular task, and neither is
+                            the same as being away — `hasLocation` is the one
+                            rule that tells the first apart, and it tests
+                            `repo` because `matched_task_id` and `project_ids`
+                            arrive `null`/`[]` either way.
+                          */}
+                          {here === undefined
+                            ? 'Not in a session right now.'
+                            : hasLocation(here)
+                              ? 'In a session, on no particular task.'
+                              : 'working elsewhere'}
+                        </span>
                       )}
                     </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </section>
+
+                    <div className="cap-panel cap-agent">
+                      <span className="cap-panel-label">AGENT SESSION</span>
+                      {person.active_sessions > 0 ? (
+                        <>
+                          <span className="cap-agent-live">
+                            <span className="cap-pulse" aria-hidden="true" />
+                            running
+                            <span className="cap-agent-count">
+                              {person.active_sessions}{' '}
+                              {person.active_sessions === 1 ? 'token' : 'tokens'}
+                            </span>
+                          </span>
+                          {age !== undefined && (
+                            <span className="cap-agent-meta">oldest task {age}</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="cap-idle">No agent session.</span>
+                      )}
+                    </div>
+
+                    <div className="cap-panel cap-wip">
+                      <span className="cap-panel-label">
+                        IN PROGRESS
+                        <span className="cap-wip-count">{person.in_progress_tasks.length}</span>
+                      </span>
+                      <span className="cap-chips">
+                        {person.in_progress_tasks.length === 0 ? (
+                          <span className="cap-idle">Nothing assigned in progress</span>
+                        ) : (
+                          person.in_progress_tasks.map((id) => {
+                            const task = tasks.get(id);
+                            return (
+                              <button
+                                key={id}
+                                type="button"
+                                className="cap-chip"
+                                disabled={task === undefined}
+                                onClick={() => {
+                                  if (task !== undefined) onOpenTask(task.key);
+                                }}
+                              >
+                                <span
+                                  className={`cap-chip-dot cap-chip-${task?.priority ?? 'p3'}`}
+                                  aria-hidden="true"
+                                />
+                                {/* An id is not a key — until it resolves this
+                                    says so rather than printing a ULID. */}
+                                <span className="cap-chip-key">{task?.key ?? '…'}</span>
+                                <span className="cap-chip-title">{task?.title ?? ''}</span>
+                              </button>
+                            );
+                          })
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/*
+                    **Absent, not empty** — `?? []` here would turn "you may not
+                    be told" into "they have logged nothing" (the field is
+                    withheld without `audit_log.export`).
+                  */}
+                  {person.unlisted !== undefined && mine.length > 0 && (
+                    <div className="cap-unlisted-strip">
+                      <span className="cap-unlisted-label">UNLISTED WORK</span>
+                      <span className="cap-unlisted-note">{mine[0]?.note ?? ''}</span>
+                      <span className="cap-unlisted-meta">
+                        {mine.length > 1 ? `+${String(mine.length - 1)} more · ` : ''}
+                        {mine[0]?.repo ?? ''}
+                      </span>
+                    </div>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
 
           {unlisted.length > 0 && (
             <section className="cap-section">
@@ -242,43 +414,5 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
         </>
       )}
     </div>
-  );
-}
-
-function TaskLine({
-  label,
-  ids,
-  tasks,
-  onOpenTask,
-}: {
-  readonly label: string;
-  readonly ids: readonly string[];
-  readonly tasks: ReadonlyMap<string, Task>;
-  readonly onOpenTask: (taskKey: string) => void;
-}) {
-  if (ids.length === 0) return null;
-
-  return (
-    <p className="cap-tasks">
-      <span className="cap-tasks-label">{label}</span>
-      {ids.map((id) => {
-        const task = tasks.get(id);
-        return (
-          <button
-            key={id}
-            type="button"
-            className="cap-task"
-            disabled={task === undefined}
-            onClick={() => {
-              if (task !== undefined) onOpenTask(task.key);
-            }}
-          >
-            {/* Until it resolves, the key is unknown — and an id is not a key,
-                so this says so rather than printing a ULID at somebody. */}
-            {task === undefined ? '…' : `${task.key} ${task.title}`}
-          </button>
-        );
-      })}
-    </p>
   );
 }

@@ -1,12 +1,13 @@
-import { PresencePerson } from '../../../components/PresencePerson.tsx';
-import type { PresenceView } from '../../../api/presence.ts';
-import type { Theme } from '../../../theme/theme.ts';
+import { PresencePerson } from '../PresencePerson.tsx';
+import { useTheme } from '../../theme/use-theme.ts';
+import type { PresenceView } from '../../api/presence.ts';
 import './presence-strip.css';
 
 export interface PresenceStripProps {
   /** `undefined` while the first request is in flight. */
   readonly presence: PresenceView | undefined;
-  readonly theme: Theme;
+  /** The space being drawn, for the chip's `laika-core · branch` line. */
+  readonly spaceSlug?: string | undefined;
   /** The member currently filtering the board, if any. */
   readonly assignee: string | undefined;
   readonly onFilter: (userId: string | undefined) => void;
@@ -34,8 +35,15 @@ export interface PresenceStripProps {
  *
  * Clicking a person still filters the board by assignee, which is real and
  * always was.
+ *
+ * **Moved out of `board/` by LAI-251.** The design puts this band under the
+ * space bar, above whichever view is showing — it is about the space, not
+ * about the board.
  */
-export function PresenceStrip({ presence, theme, assignee, onFilter }: PresenceStripProps) {
+export function PresenceStrip({ presence, assignee, onFilter, spaceSlug }: PresenceStripProps) {
+  // Read here rather than passed in: a stale `theme` prop keeps the previous
+  // palette after a flip, which is the trap `theme/use-theme.ts` documents.
+  const { theme } = useTheme();
   // `enabled: false` is a fact from the response, never inferred from an empty
   // list — the two are opposite claims (§4.2, LAI-150).
   if (presence !== undefined && !presence.enabled) return null;
@@ -65,11 +73,24 @@ export function PresenceStrip({ presence, theme, assignee, onFilter }: PresenceS
               >
                 {/* The one presence renderer (LAI-440). A chip and a row look
                     different and decide the same things. */}
-                <PresencePerson entry={entry} theme={theme} variant="chip" />
+                <PresencePerson entry={entry} theme={theme} variant="chip" spaceSlug={spaceSlug} />
               </button>
             );
           })}
         </div>
+      )}
+
+      {/*
+        `2 agent sessions live · 4 people active`, at the right of the strip —
+        the design's own summary. Both figures are counted from the same list
+        the chips come from.
+      */}
+      {presence !== undefined && presence.present.length > 0 && (
+        <p className="presence-summary">
+          {presence.present.filter((p) => p.is_agent).length} agent{' '}
+          {presence.present.filter((p) => p.is_agent).length === 1 ? 'session' : 'sessions'} live ·{' '}
+          {presence.present.length} {presence.present.length === 1 ? 'person' : 'people'} active
+        </p>
       )}
 
       {assignee !== undefined && (

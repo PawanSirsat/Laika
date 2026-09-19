@@ -18,6 +18,7 @@ import {
   ROUTES,
   matchRoute,
   routesInGroup,
+  spaceTabs,
 } from '../src/routes/route-table.ts';
 import { SCREEN_COPY } from '../src/routes/screens/screen-copy.ts';
 
@@ -28,47 +29,79 @@ let shell: string;
 void before(async () => {
   // Comments stripped: these tests assert absences, and the doc comments name
   // the very things being asserted absent. See test/helpers/code.ts.
-  sidebar = code(await readFile(fileURLToPath(new URL('components/Sidebar.tsx', SRC)), 'utf8'));
-  shell = code(await readFile(fileURLToPath(new URL('components/AppShell.tsx', SRC)), 'utf8'));
+  //
+  // The sidebar is a component family since LAI-249; the scans below cover
+  // every file in it, so a rule cannot be dodged by moving markup to a sibling.
+  const parts = await Promise.all(
+    ['Sidebar.tsx', 'SpacesSection.tsx', 'SpacesPopover.tsx', 'SidebarFooter.tsx'].map((name) =>
+      readFile(fileURLToPath(new URL(`components/sidebar/${name}`, SRC)), 'utf8'),
+    ),
+  );
+  sidebar = code(parts.join('\n'));
+  // The shell is a family since LAI-250: the frame, its header, the gate and
+  // the outlet. Scanned together so a landmark cannot be "lost" by moving it
+  // one file sideways — which is exactly what this refactor did.
+  const shellParts = await Promise.all(
+    [
+      'components/AppShell.tsx',
+      'components/shell/ShellHeader.tsx',
+      'components/shell/ShellSidebar.tsx',
+      'components/shell/SessionGate.tsx',
+      'components/shell/ScreenOutlet.tsx',
+    ].map((name) => readFile(fileURLToPath(new URL(name, SRC)), 'utf8')),
+  );
+  shell = code(shellParts.join('\n'));
 });
 
 void describe('sidebar groups (AC1)', () => {
-  void test('exactly three groups, in the design order', () => {
-    assert.deepEqual([...NAV_GROUPS], ['WORK', 'REVIEW', 'SETTINGS']);
+  void test('the groups beside SPACES, in the design order', () => {
+    // **Two, not three, since LAI-248.** The live design's sidebar is SPACES
+    // then SETTINGS; `ORG` is ours, for the two views that read across every
+    // project and would be misstated by a tab under one space.
+    //
+    // `SPACES` is deliberately not a `NAV_GROUP`: its rows are projects, built
+    // from the project list rather than from `ROUTES`.
+    assert.deepEqual([...NAV_GROUPS], ['ORG', 'SETTINGS']);
+    assert.ok(!NAV_GROUPS.includes('WORK' as never), 'WORK survived the restructure');
+    assert.ok(!NAV_GROUPS.includes('REVIEW' as never), 'REVIEW survived the restructure');
   });
 
   void test('each group holds the right items, in order', () => {
-    // Changed by LAI-082, which is a product decision and not a loosened test:
-    // seven of these eight entries led to empty placeholders, so the sidebar now
-    // shows only routes with a screen behind them. `Capacity`, `Meeting review`,
-    // `Tokens` and `Organisation` are still routed and still reachable by URL —
-    // they are simply not offered. `nav-truth.test.ts` enforces the rule; this
-    // pins the resulting order.
+    // **Rewritten by LAI-248, not loosened.** The sidebar stopped listing views:
+    // the live design ties every view to a space, so `WORK` and `REVIEW` are
+    // gone and their project-scoped members are the tab bar
+    // (`SPACE_TAB_PATHS`). What is left beside the spaces is genuinely org-wide.
     assert.deepEqual(
-      routesInGroup('WORK').map((r) => r.label),
-      // **Timeline before Sprints** since LAI-425 — the prototype's WORK order.
-      // `Projects` is under WORK rather than the prototype's `SYSTEM` group
-      // because that group is deliberately not shipped (CLAUDE.md §5.1); a
-      // consequence of an existing decision, not drift.
-      ['Board', 'Timeline', 'Sprints', 'Projects'],
+      routesInGroup('ORG').map((r) => r.label),
+      // **Empty without a predicate, since LAI-251.** `Unlisted work` is the
+      // group's only member now — Capacity became a space tab — and it
+      // requires `audit_log.export`, which an absent predicate never grants.
+      // The gated case is asserted in `nav-truth.test.ts`.
+      [],
     );
-    assert.deepEqual(
-      routesInGroup('REVIEW').map((r) => r.label),
-      // `Capacity` joins with LAI-439, by the same rule that took it away and
-      // gave `Tokens` and `Organisation` back: a route is offered once there is
-      // a screen behind it. It moved from `WORK` to `REVIEW` in that task —
-      // AC1 names the group, and it reads with Dashboard rather than with the
-      // screens you open to move a task.
-      // `Meeting review` joins with LAI-455 — M6's exit criterion — by the rule
-      // that a route is offered once there is a screen behind it.
-      ['Dashboard', 'Capacity', 'Meeting review'],
-    );
-    // `SETTINGS` is no longer empty: LAI-086 built the Organisation screen, so
-    // it earned its place back by the same rule that took it away — a route is
-    // offered once there is a screen behind it.
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
       ['Tokens', 'Organisation'],
+    );
+  });
+
+  void test("the views are tabs, in the design's order", () => {
+    assert.deepEqual(
+      spaceTabs().map((r) => r.label),
+      // The prototype's strip, minus `Calendar` — absent until it has a route
+      // of its own; a tab pointing at nothing is worse than none. `List` joins
+      // in its own task. Capacity is here by the owner's decision (LAI-251).
+      [
+        'Board',
+        'List',
+        'Timeline',
+        'Calendar',
+        'Sprints',
+        'Capacity',
+        'Dashboard',
+        'Activity',
+        'Meeting review',
+      ],
     );
   });
 });
@@ -91,9 +124,17 @@ void describe('the absences the criteria are actually about', () => {
     }
   });
 
-  void test('no Calendar anywhere (AC3)', () => {
-    assert.ok(!ROUTES.some((r) => /calendar/i.test(r.label) || /calendar/i.test(r.path)));
-    assert.ok(!/calendar/i.test(sidebar));
+  void test('Calendar is a tab, and never a sidebar entry (LAI-271)', () => {
+    /*
+     * **Inverted, deliberately.** LAI-019 excluded Calendar because §14 q10 had
+     * no answer; D-059 answered it — a tab inside a space, shipping with
+     * visible demo data until `tasks.due_date` exists. What still holds is the
+     * half this test was really protecting: it is not a *sidebar* destination.
+     */
+    const calendar = ROUTES.find((r) => r.path === '/calendar');
+    assert.ok(calendar, 'Calendar is gone again');
+    assert.equal(calendar.group, null, 'Calendar must not be a sidebar entry');
+    assert.ok(!/calendar/i.test(sidebar), 'the rail is offering Calendar');
   });
 });
 
@@ -130,16 +171,23 @@ void describe('routing (AC4, AC6)', () => {
      * built. Nothing caught any of the three, because copy is a string and no
      * test knew which screens exist.
      *
-     * This does: a route AppShell renders for real must not describe itself as
-     * unbuilt. Derived from AppShell's own branches, so it stays true as
-     * screens land.
+     * This does: a route that renders for real must not describe itself as
+     * unbuilt. Derived from the **screen registry** since LAI-250 — it was read
+     * from `AppShell`'s `path === '...'` chain, and that chain is gone, so the
+     * same scan would now match almost nothing and pass by finding no screens
+     * at all.
      */
-    const shell = code(
-      await readFile(fileURLToPath(new URL('components/AppShell.tsx', SRC)), 'utf8'),
+    const outlet = code(
+      await readFile(fileURLToPath(new URL('components/shell/ScreenOutlet.tsx', SRC)), 'utf8'),
     );
+    const table = outlet.slice(outlet.indexOf('export const SCREENS'));
     const built = new Set(
-      [...shell.matchAll(/path === '([^']+)'/g)].map((m) => m[1]).filter((p) => p !== undefined),
+      [...table.matchAll(/'([^']+)':\s*\{\s*Component:/g)]
+        .map((m) => m[1])
+        .filter((p) => p !== undefined),
     );
+    // Or the loop below runs over nothing and proves nothing.
+    assert.ok(built.size >= 10, `parsed ${String(built.size)} screens — registry moved?`);
 
     const lying: string[] = [];
     for (const [path, copy] of Object.entries(SCREEN_COPY)) {
