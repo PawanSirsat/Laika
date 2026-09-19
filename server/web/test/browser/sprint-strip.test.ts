@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
 
 const DAY = 86_400_000;
 const NOW = Date.now();
@@ -407,6 +407,88 @@ void describe('the sprint strip', () => {
         before,
         { timeout: 5000 },
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * The strip reserves its height while the sprint list is in flight (LAI-297).
+ *
+ * It rendered `null` until the sprints arrived, then appeared at full height
+ * and pushed the whole board down 57px. Measured on the seeded instance:
+ * `.kanban` top **132 → 189**.
+ *
+ * **It only shows when sprints are slower than tasks**, which is why it
+ * survived the rest of the loading work — with everything delayed together the
+ * strip is already drawn by the time the board is, and the jump is zero. The
+ * route delay here is therefore on `sprints` *alone*, deliberately.
+ */
+void describe('the strip holds its place while it loads (LAI-297)', () => {
+  /** `.kanban`'s distance from the top — what a jump actually moves. */
+  const boardTop = (h: Harness) =>
+    h.page.evaluate(() => {
+      const k = document.querySelector('.kanban');
+      return k === null ? null : Math.round(k.getBoundingClientRect().top);
+    });
+
+  void test('the board does not move when the sprints land', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.route('**/projects/*/sprints*', async (route) => {
+        await h.page.waitForTimeout(1500);
+        await route.continue();
+      });
+      await h.page.setViewportSize({ width: 1600, height: 1000 });
+      await h.page.goto(`${h.origin}/board?project=laika-core`);
+      await h.page.waitForTimeout(500);
+
+      const during = await boardTop(h);
+      assert.ok(during !== null, 'the board never rendered — nothing to measure');
+
+      await h.page.locator('.strip-pill, .strip-chips > *').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(400);
+
+      const after = await boardTop(h);
+      assert.equal(
+        after,
+        during,
+        `the board jumped ${String((after ?? 0) - during)}px when the sprints landed`,
+      );
+    } finally {
+      /*
+       * **Before `close()`, or the run fails with every assertion green.** The
+       * delaying route is still sleeping when the test ends; its callback then
+       * touches a closed page and node's test runner reports an
+       * `unhandledRejection` — a non-zero exit with `# fail 0` above it, which
+       * is the exact shape `CLAUDE.md` warns a pass-count grep cannot see.
+       */
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('a project with no sprints reserves nothing', async () => {
+    /*
+     * The other half, and the reason `loading` had to be a real flag rather
+     * than "is the list empty": a board that genuinely has no sprints must
+     * draw no strip at all. Reserving height for everyone would have turned
+     * one jump into a permanent empty band.
+     */
+    const h = await open('/board?project=laika-core', {
+      ...STUB,
+      '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
+    });
+
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 1000 });
+      await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(600);
+
+      assert.equal(await h.page.locator('.strip').count(), 0, 'an empty strip is still drawn');
+      assert.equal(await h.page.locator('.strip-chip-ghost').count(), 0);
     } finally {
       await h.close();
     }

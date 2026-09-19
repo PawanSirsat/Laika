@@ -103,6 +103,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const openTaskId = params.get('task') ?? undefined;
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
+  /*
+   * Whether the sprint list is still in flight — the strip cannot reserve its
+   * height without knowing, and an empty list means two different things
+   * (LAI-297).
+   */
+  const [sprintsLoading, setSprintsLoading] = useState(true);
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   const [creating, setCreating] = useState(false);
@@ -300,12 +306,25 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     if (slug === undefined) return;
     const controller = new AbortController();
 
+    setSprintsLoading(true);
     listSprints(slug, {}, controller.signal)
       .then((page) => {
         setSprints(page.data);
       })
       .catch(() => {
         setSprints([]);
+      })
+      .finally(() => {
+        /*
+         * **`finally`, and not inside the `then`.** A failed sprint list must
+         * also stop reserving the strip's height, or a project whose sprints
+         * endpoint is down keeps a 57px empty band for ever — which is the
+         * LAI-297 jump frozen rather than fixed.
+         *
+         * Guarded on the signal so an aborted request does not write state
+         * into an unmounted screen.
+         */
+        if (!controller.signal.aborted) setSprintsLoading(false);
       });
 
     // The tag filter moved to the space bar with the rest of them (LAI-270),
@@ -533,6 +552,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         <SpaceBand>
           <SprintStrip
             sprints={sprints}
+            loading={sprintsLoading}
             tasks={allTasks}
             selected={sprintScope}
             onSelect={(id) => {

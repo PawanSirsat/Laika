@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { useDelayed } from '../../../components/use-delayed.ts';
 import { daysLeft } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import type { Task } from '../../../api/tasks.ts';
@@ -10,6 +11,16 @@ export interface SprintStripProps {
   readonly tasks: readonly Task[];
   /** The sprint the board is scoped to, or `undefined` for all sprints. */
   readonly selected: string | undefined;
+  /**
+   * Whether the sprint list is still in flight.
+   *
+   * **Load-bearing, not cosmetic.** Without it the strip cannot tell *"no
+   * sprints yet"* from *"this project has none"*, so it drew nothing and then
+   * appeared at full height, moving the whole board down 57px (LAI-297). The
+   * board's own skeleton had already been matched to the pixel; this was the
+   * entire remaining jump.
+   */
+  readonly loading?: boolean | undefined;
   readonly onSelect: (sprintId: string | undefined) => void;
 }
 
@@ -46,9 +57,7 @@ function pct(done: number, total: number): number {
  * Selecting a sprint scopes the board through `?sprint=`, which the tasks
  * endpoint has always accepted.
  */
-export function SprintStrip({ sprints, tasks, selected, onSelect }: SprintStripProps) {
-  if (sprints.length === 0) return null;
-
+export function SprintStrip({ sprints, tasks, selected, onSelect, loading }: SprintStripProps) {
   const now = Date.now();
   const current = sprints.find((s) => s.id === selected);
   const counts = countFor(tasks, selected);
@@ -81,6 +90,29 @@ export function SprintStrip({ sprints, tasks, selected, onSelect }: SprintStripP
     };
   }, [sprints.length]);
 
+  /*
+   * A placeholder only when the wait is long enough to notice (LAI-297).
+   * `useDelayed` holds it once shown, so a response landing at 160ms does not
+   * flash two chips and remove them.
+   */
+  const slow = useDelayed(loading === true && sprints.length === 0);
+
+  /*
+   * **The early return moved below the hooks, and it had to.**
+   *
+   * It was the first line of the component: `if (sprints.length === 0) return
+   * null`. That is a conditional hook call — the first render of a board has
+   * no sprints yet and ran **zero** hooks, and the render after they arrived
+   * ran three, which is the "rendered more hooks than during the previous
+   * render" error. It survived because the strip was usually mounted with its
+   * sprints already in hand; giving it a loading state makes the empty render
+   * the normal one.
+   *
+   * Loading is not empty: a project genuinely without sprints draws nothing,
+   * which is what the strip is for.
+   */
+  if (sprints.length === 0 && loading !== true) return null;
+
   return (
     <section className="strip" aria-label="Sprints">
       <div className="strip-row">
@@ -96,6 +128,16 @@ export function SprintStrip({ sprints, tasks, selected, onSelect }: SprintStripP
         </button>
 
         <div className="strip-chips" ref={chips}>
+          {/*
+            Placeholder chips while the list is slow (LAI-297). `aria-hidden`
+            and not focusable: they carry no information, and a screen reader
+            announcing two empty buttons is worse than silence. The row's
+            height comes from the real `All sprints` button beside them, so
+            these change nothing about the layout — they exist only so a long
+            wait does not look like an empty strip.
+          */}
+          {slow &&
+            [0, 1].map((i) => <span key={i} className="strip-chip-ghost" aria-hidden="true" />)}
           {sprints.map((sprint, index) => {
             const c = countFor(tasks, sprint.id);
             const on = sprint.id === selected;

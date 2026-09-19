@@ -227,3 +227,20 @@
   height: 0.875rem;
   stroke: currentColor;
 }
+
+/*
+ * A placeholder chip, shown only when the sprint list is slow (LAI-297).
+ *
+ * Sized like a real chip so the row does not reflow when the real ones
+ * replace it. It is decoration and says so — no text, no focus, `aria-hidden`
+ * at the call site.
+ */
+.strip-chip-ghost {
+  display: inline-block;
+  width: 9rem;
+  height: 2.125rem;
+  border-radius: var(--radius-md);
+  background: var(--card);
+  border: 1px solid var(--bd);
+  opacity: 0.55;
+}
