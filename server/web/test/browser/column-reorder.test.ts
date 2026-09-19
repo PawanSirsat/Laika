@@ -366,6 +366,15 @@ void describe('the keyboard route', () => {
  * so it cannot be made flaky by a slower machine or a longer transition.
  */
 async function settledOpacity(h: Harness, selector: string, index = 0): Promise<string> {
+  /*
+   * **Wait for the board first.** Reading before it renders returns `missing`,
+   * which fails an assertion that is about a *colour* or an *opacity* — so the
+   * message blames the property and the cause is the wait. It showed up as
+   * flake: the same assertion passed in a full-file run and failed under
+   * `--test-name-pattern`, because the ordering changed what had rendered by
+   * the time it ran.
+   */
+  await h.page.locator('.lane-head').first().waitFor({ state: 'attached' });
   let previous = '';
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const now = await h.page.evaluate(
