@@ -364,21 +364,33 @@ void describe('the new chrome fits', () => {
    * Both themes at 1440 / 1280 / 420, page overflow 0 at each — the LAI-244
    * lesson is that one width proves nothing and a floor alone is half an
    * assertion. The theme is set through the app's own storage key so the dark
-   * half exercises `initTheme`, and the `dk` check proves the setup ran —
-   * a setup step with no assertion cannot fail at all.
+   * half exercises `initTheme`, and two checks prove the setup ran — a setup
+   * step with no assertion cannot fail at all. Light asserts the `data-theme`
+   * attribute (dark is the bare `:root` since LAI-606, so its absence alone
+   * proves nothing), and the canvas paint must differ between the two loops,
+   * which no broken init can satisfy.
    */
   void test('no page overflow with the spaces sidebar and the tab bar', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
+      const canvases: Partial<Record<'light' | 'dark', string>> = {};
       for (const theme of ['light', 'dark'] as const) {
         await h.page.evaluate((t: string) => {
           localStorage.setItem('laika.theme', t);
         }, theme);
         await h.page.reload();
         await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
-        const dark = await h.page.evaluate(() => document.documentElement.classList.contains('dk'));
-        assert.equal(dark, theme === 'dark', `the ${theme} theme did not apply`);
+        const state = await h.page.evaluate(() => ({
+          attr: document.documentElement.getAttribute('data-theme'),
+          canvas: getComputedStyle(document.body).backgroundColor,
+        }));
+        assert.equal(
+          state.attr,
+          theme === 'light' ? 'light' : null,
+          `the ${theme} theme did not apply`,
+        );
+        canvases[theme] = state.canvas;
 
         for (const width of [1440, 1280, 420]) {
           await h.page.setViewportSize({ width, height: 1000 });
@@ -397,6 +409,11 @@ void describe('the new chrome fits', () => {
           );
         }
       }
+      assert.notEqual(
+        canvases.light,
+        canvases.dark,
+        'the two themes painted the same canvas — initTheme never ran',
+      );
     } finally {
       await h.close();
     }

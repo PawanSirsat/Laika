@@ -69,7 +69,8 @@ const density = Object.entries(DENSITY).flatMap(([, roles]) =>
   Object.entries(roles).map(([role, over]) => {
     const lines = [`.kanban-dense .t-${role} {`];
     if (over.size !== undefined) lines.push(`  font-size: ${rem(over.size)};`);
-    if (over.leading !== undefined) lines.push(`  line-height: ${leading(over.leading)};`);
+    if ('leading' in over && over.leading !== undefined)
+      lines.push(`  line-height: ${leading(over.leading)};`);
     lines.push('}');
     return lines.join('\n');
   }),
@@ -77,7 +78,9 @@ const density = Object.entries(DENSITY).flatMap(([, roles]) =>
 
 writeFileSync(
   new URL('../src/styles/type.css', import.meta.url).pathname,
-  [header, ...blocks, densityNote, ...density].join('\n\n') + '\n',
+  // trimEnd each piece: the header template ends in its own newline, and a
+  // double blank after join is exactly what `pnpm format` rejects.
+  [header, ...blocks, densityNote, ...density].map((s) => s.trimEnd()).join('\n\n') + '\n',
 );
 
 console.log(`${String(ROLE_NAMES.length)} roles, ${String(density.length)} density overrides`);

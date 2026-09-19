@@ -379,7 +379,7 @@ async function settledOpacity(h: Harness, selector: string, index = 0): Promise<
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const now = await h.page.evaluate(
       ([sel, i]) => {
-        const el = document.querySelectorAll(sel as string)[i as number];
+        const el = document.querySelectorAll(sel)[i];
         return el === undefined ? 'missing' : getComputedStyle(el).opacity;
       },
       [selector, index] as const,
