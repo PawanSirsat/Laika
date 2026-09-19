@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-293
-status: in-progress
+status: review
 started: 2026-09-19T17:05:12Z
+finished: 2026-09-19T17:43:08Z
 ---
 
 ## A regression I introduced, reported by the owner
@@ -59,15 +60,32 @@ file is here before any of it is committed, and no other session was near these
 files — but the order was wrong and reversing it afterwards would be a worse
 record than saying so.
 
+## What the owner actually asked for, after the first fix
+
+The first fix showed the name in the bar **only when the rail could not**. That
+condition is not computable — the owner's window sits partly off their display,
+so the rail is off *screen* while the page has it at `x = 0` at full width, and
+the board was still nameless. It is unconditional now; naming it twice is the
+accepted cost of never naming it nowhere.
+
+Then, with the reference: **the name belongs on its own line, with the tabs
+beneath it.** That reverses LAI-292's one-line compaction. Its guard is kept
+with the expectation flipped — what it protected (the tabs are a row of their
+own, every tab survives) still holds.
+
+- [x] Icon and project name on the bar's first line, Agents and Create right.
+- [x] The view tabs on the second line.
+- [x] LAI-292's `the bar is one line` guard updated, not deleted.
+
 ## Acceptance criteria
 
-- [ ] The project is named exactly once in every state: rail open, rail
+- [x] The project is named exactly once in every state: rail open, rail
       collapsed, and below 900px. Never twice, never nowhere.
-- [ ] Asserted for all three, by visibility rather than by presence in the DOM —
+- [x] Asserted for all three, by visibility rather than by presence in the DOM —
       the bar's copy is always rendered and hidden with CSS, so a presence
       check cannot see the bug.
-- [ ] One `getProject` for the name, not one per reader.
-- [ ] Non-board views behave the same — the rail is shell chrome, not the
+- [x] One `getProject` for the name, not one per reader.
+- [x] Non-board views behave the same — the rail is shell chrome, not the
       board's.
-- [ ] Both themes. Page overflow `0` at 1600/1280/900/420.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+- [x] Both themes. Page overflow `0` at 1600/1280/900/420.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
