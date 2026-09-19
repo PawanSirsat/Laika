@@ -3187,3 +3187,218 @@ here so it is tested rather than discovered.
 
 A project's task count makes a whole-project sequence expensive to rebalance, or
 the owner asks for a per-sprint order that differs from the board's.
+
+---
+
+## D-061 — The sidebar shows two spaces, not three. It amends D-059.1 and
+## nothing else.
+
+**2026-09-18. Owner's decision, with a screenshot of the shipped sidebar:**
+*"here only show 2 projects not three in sidebar other in more spaces"*.
+
+**D-059.1 said three** — *"Three most-recent spaces, then More spaces, then
+SETTINGS"* — taken from the live design. The owner is overriding their own
+earlier reading of it, which is theirs to do. **D-059's other three points are
+untouched** and remain in force.
+
+### What changes, and what deliberately does not
+
+**One constant.** `server/web/src/routes/spaces.ts` — `RECENT_LIMIT = 3 → 2`.
+Both the display slice and `promote()`'s storage cap already read it, so the
+change is genuinely one value rather than a hunt.
+
+**SPEC §11.4.2.1's sidebar row is edited to match**, by CHIEF, in the same
+breath. **No guard binds that row to the constant** — it is prose in a table
+nothing parses, unlike §4's schema tables — so this is **not** a §4.4 two-owner
+change and neither half reddens the gate alone. It is recorded here because a
+spec line that nobody's test can falsify is exactly the kind that goes stale
+silently.
+
+**`More spaces` keeps every project, including the two on display.** It is the
+directory, not the remainder, and it was already unconditional. Making it
+conditional on there being something left over is a different question nobody
+has asked.
+
+**Recency still chooses the set; it still does not choose the order.** That is
+LAI-260 and the owner's *"seque must not be change"*, and **this decision must
+not be read as reopening it.** Fewer slots makes the stable-order property more
+valuable, not less.
+
+### The consequence, stated so it is chosen rather than discovered
+
+**The space you are in always occupies one of the two slots** — `recentSpaces()`
+puts `current` first, by design, so that opening a space from the popover cannot
+leave it invisible. **So the sidebar now reads as "where I am, plus one".**
+
+With the owner's three projects, **one is always in the popover**, and which one
+changes as they work. That is the point of the request rather than a side
+effect, but it is the property to check against the real board before calling it
+right: a two-slot list churns more often than a three-slot one, and the value of
+a short list is that the rows stop moving.
+
+**If that churn is the thing that grates, the answer is not a third slot** — it
+is pinning, which is a feature nobody has asked for and which this decision does
+not pre-empt.
+
+### Revisit when
+
+The owner works in more than three projects regularly, or asks to pin a space.
+
+---
+
+## D-062 — The lanes fill the page, and the live-stream rail collapses to pay
+## for wider cards.
+
+**2026-09-18. Owner's request, with a screenshot of the five lanes:** *"i want
+that the bottom of page like in design ... also increase the task width"*.
+
+**The two halves turned out to be different kinds of thing**, and that is the
+whole content of this decision: one is a defect against the design, the other is
+a preference beyond it. Treating them the same would have meant "fixing" a board
+that already matched.
+
+### The measurement, before anything was changed
+
+`docs/design/Laika 01 - Kanban Board.dc.html`, against `shell`:
+
+| | design | shipped |
+| --- | --- | --- |
+| board row | `flex; gap:12px; padding:14px 18px 18px` | same |
+| lane strip | `flex:1; min-width:0; grid; repeat(5,1fr); gap:11px` | `repeat(5, minmax(12.875rem, 1fr)); gap:0.75rem` |
+| live-stream rail | `width:266px; flex:none` | `width: 16.625rem` — **266px** |
+| lane tub | `padding:11px 9px; radius 12px; no border` | `padding:0.75rem 0.625rem; radius-lg; 1px border` |
+| lane height | **none — `align-items:flex-start`** | `height: calc(100dvh - 21rem)` |
+
+**The rail is the design's width to the pixel, and the lanes are already `1fr`
+filling the row.** At the owner's ~2000px viewport each lane is ~290px; the same
+design at 1600px gives ~204px. **The cards are not narrow against the design —
+they are wider than it.**
+
+### So the width half is the owner's preference, and it has to be paid for
+
+There is no slack to reclaim. **The owner chose a collapsible rail** from three
+options, the other two being moving the stream below the board and accepting
+horizontal scroll at a wide lane minimum.
+
+**Collapsed, the rail returns 266px and each lane gains ~53px.** The stream stays
+one click away, which the other two options do not both manage: below-the-board
+always costs the glance, and a wide minimum changes nothing at the width the
+owner actually works at.
+
+**The collapsed state is remembered, and expanded stays the default.** A board
+that opens with its live stream hidden has quietly removed a feature for anyone
+who never finds the toggle.
+
+### The height half is a real defect, and the number is the defect
+
+The design has **no lane height at all** — `align-items:flex-start`, content
+height. **So "like in design" cannot be taken from the file literally**, and the
+owner's want is the one to build: the lanes should reach the bottom.
+
+What makes it a defect rather than only a preference is **how** ours is done:
+`height: calc(100dvh - 21rem)`, a hand-measured subtraction standing in for the
+chrome above it. **It has been tuned by hand twice** — LAI-272 widened it from
+`19rem` to `21rem` "to pay for" `.board-main`'s new padding. A constant that has
+to be re-derived every time anything above it changes will be wrong again on the
+next change, and it is wrong now, which is what the owner is looking at.
+
+**The lane's height must come from the layout, not from a number.** The column
+that holds the board fills what is left, the lane strip fills that column, and
+the lane body scrolls inside it. **`21rem` is deleted, not corrected** — a
+corrected magic number is the same defect with a fresh date on it.
+
+### What this does not change
+
+**The rail keeps its 266px expanded**, because that is the design's figure and
+nothing about wanting more room when it is shut argues for it being wrong when it
+is open.
+
+**Lane order, card contents and the band order are untouched** (LAI-425,
+LAI-270, LAI-272). This is the lane's box.
+
+### Revisit when
+
+The owner works at a narrower viewport regularly — at which point the lane
+minimum and horizontal scroll, declined here, become the live question again.
+
+---
+
+## D-063 — A task opens as a centred modal over the board, not a right-hand
+## drawer. It amends D-059.2.
+
+**2026-09-19. Owner's decision, with a screenshot of the shipped drawer beside a
+Jira issue modal:** *"when we open the task that open from the right side but i
+want that like JIRA popup"*.
+
+**D-059.2 said a drawer** — *"a 840px drawer over a dimmed board, dismissed by
+clicking the scrim"* — and `docs/design/Laika 02-04 - Task, Capacity,
+Dashboard.dc.html` draws exactly that: `position:absolute; top:0; right:0;
+bottom:0; width:840px`. **So this departs from the design file, not just from a
+reading of it**, and it is the owner's to depart from. D-059's other three points
+stand.
+
+### This is smaller than it looks, because LAI-285 already did the hard half
+
+The drawer is **already two columns** — a document beside a 288px rail of fields
+— widened to `1120px` for exactly that reason. **A Jira issue modal is the same
+two columns in a different frame.** What changes is the box: fixed to the right
+edge, full height, bordered on one side → centred, rounded, shadowed on all
+sides, with a maximum height.
+
+**The content is not in scope and must not be redesigned to chase the
+screenshot.** Jira's breadcrumb, its epic link, its attachments and subtasks are
+Jira's data model, not ours.
+
+### What the frame becomes
+
+**Centred inside the dimmed region, not inside the viewport.** The scrim starts
+where the sidebar ends (`--rail-width`), which is LAI-252's deliberate property:
+*you can switch space with a task open*. Dimming the whole window to centre
+against it would trade a working behaviour for a few pixels of symmetry.
+
+**A maximum height, with both columns scrolling inside it.** The drawer is
+viewport-height by construction; a centred box is not, and "as tall as its
+content" is how a modal ends up taller than the screen with its close button
+off it.
+
+### The accessibility half is not optional now, and it is currently absent
+
+`TaskDrawer.tsx` has **no `role="dialog"`, no `aria-modal`, no labelling, and no
+focus trap.** It focuses the panel and listens for Escape, which is most of the
+behaviour and none of the semantics. A panel pinned to the edge is at least
+*arguably* a complementary region; **a centred box over a dimmed page is a modal
+dialog and nothing else**, and one that does not say so traps a screen-reader
+user outside the thing that just opened.
+
+**So the move carries the semantics with it** — role, modality, a label, a focus
+trap, and focus returned to the card that was clicked. This is not scope creep
+onto the owner's request: it is what the request makes true.
+
+### §11.4.2.1's table stops carrying pixel figures
+
+**The table in §11.4.2 headed `D-059` was wrong on two of its three rows.** Its
+sidebar row said *three spaces* until D-061, and its task row still says
+**`840px`** — a figure LAI-285 changed to `1120` without anything noticing,
+because **nothing parses §11.4 prose.** Yesterday's D-061 recorded that gap as a
+one-off; **it is the second instance in two days, so it is a pattern and gets
+fixed rather than noted again.**
+
+Two changes, both in `docs/`:
+
+1. **The table drops exact pixel widths.** §11.4.2.1 exists to say *what a screen
+   must contain*, and a width in it duplicates a CSS value that will always be
+   the real one. **A number that cannot be checked is worse than no number** —
+   it reads as authoritative to whoever finds it first.
+2. **Each row names its own governing decision** instead of the table claiming
+   one. A table headed with a single decision id silently misattributes every
+   row that is later amended, which is precisely what happened to the sidebar row
+   the day D-061 landed.
+
+**This is not a licence to strip figures from the SPEC generally.** §4's tables
+are schema declarations with a drift test behind them and they stay exact. The
+rule is narrower: **a figure belongs in the SPEC when something can falsify it.**
+
+### Revisit when
+
+The owner wants the modal to dim the sidebar too, or asks for Jira's minimise
+control — neither is decided here.
