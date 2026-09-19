@@ -577,8 +577,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       const toggle = footer.locator('.theme-switch');
       assert.match(await toggle.innerText(), /Switch to dark/);
       await toggle.click();
+      // Dark is the bare `:root` since LAI-606 — the attribute leaving is the
+      // flip. The start state was light ('Switch to dark' above), so absence
+      // here is the transition, not a page that never themed.
       await h.page.waitForFunction(
-        () => document.documentElement.classList.contains('dk'),
+        () => document.documentElement.getAttribute('data-theme') !== 'light',
         undefined,
         { timeout: 5000 },
       );
