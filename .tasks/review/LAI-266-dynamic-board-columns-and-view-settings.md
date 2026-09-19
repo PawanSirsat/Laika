@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-09-19T10:00:20Z
+finished: 2026-09-19T11:44:17Z
 ---
 
 ## Scope exception — read this first
@@ -135,67 +136,67 @@ Review · Done), one status each, plus the hidden Cancelled.
 
 **Columns**
 
-- [ ] A lead can create, rename, delete and reorder columns on a space, and the
+- [x] A lead can create, rename, delete and reorder columns on a space, and the
       order survives a reload because it is stored, not local.
-- [ ] Deleting a column **requires** a target for its statuses; the dialog names
+- [x] Deleting a column **requires** a target for its statuses; the dialog names
       the real number of tasks affected and says no task is deleted.
-- [ ] Deleting the last column is refused, with the reason on screen.
-- [ ] Editing a column's statuses moves them rather than copying: after any
+- [x] Deleting the last column is refused, with the reason on screen.
+- [x] Editing a column's statuses moves them rather than copying: after any
       sequence of edits, **every status except `cancelled` is in exactly one
       column, and no status is in two.** Asserted against the table, not the
       service's own return value.
-- [ ] A new project gets the four columns above — **including the first-boot
+- [x] A new project gets the four columns above — **including the first-boot
       project** (`setup.ts`) and `seed()`, not only `createProject`.
-- [ ] A project that existed before this migration renders an **identical** board
+- [x] A project that existed before this migration renders an **identical** board
       afterwards.
-- [ ] A member and a viewer get no column affordances at all (absent, not
+- [x] A member and a viewer get no column affordances at all (absent, not
       disabled), and the endpoints refuse them.
 
 **Drag**
 
-- [ ] A column reorders by dragging its header grip, with a drop indicator that
+- [x] A column reorders by dragging its header grip, with a drop indicator that
       does not reflow the other lanes.
-- [ ] **The keyboard equivalent ships in this task** — a `.lane-order` select
+- [x] **The keyboard equivalent ships in this task** — a `.lane-order` select
       following `.lane-move`'s existing clip/focus pattern — and is tested with
       no drag events at all.
-- [ ] A card drag cannot reorder a column and a column drag cannot move a card.
+- [x] A card drag cannot reorder a column and a column drag cannot move a card.
       Both directions tested; this is what the separate MIME type exists for.
-- [ ] A rejected reorder snaps back and names the reason.
-- [ ] Dropping a card on a multi-status column sets that column's **primary**
+- [x] A rejected reorder snaps back and names the reason.
+- [x] Dropping a card on a multi-status column sets that column's **primary**
       status; dropping a card on a column that already holds its status sends
       **nothing**.
-- [ ] `todo → done` by drag now lands, **and** the MCP `update_status` tool still
+- [x] `todo → done` by drag now lands, **and** the MCP `update_status` tool still
       refuses it for a token-bearing caller. Both halves, or the split is
       unproven.
 
 **View settings**
 
-- [ ] The panel opens from the space slot, closes on Escape, scrim and blur, and
+- [x] The panel opens from the space slot, closes on Escape, scrim and blur, and
       returns focus to its trigger.
-- [ ] Nine card fields toggle. The four that do not — title, the key/open button,
+- [x] Nine card fields toggle. The four that do not — title, the key/open button,
       the blocked banner, the `deps ?` marker — are **absent from the list with a
       sentence**, not greyed.
-- [ ] A hidden field is **not rendered**, proven by `locator(...).count() === 0`;
+- [x] A hidden field is **not rendered**, proven by `locator(...).count() === 0`;
       a `display:none` node would still count 1.
-- [ ] Density and column width work; the board still scrolls rather than
+- [x] Density and column width work; the board still scrolls rather than
       squeezing at 8 columns, tested with an 8-column fixture.
-- [ ] Hide-done-after-N-days is a **project setting**, not a personal one, and
+- [x] Hide-done-after-N-days is a **project setting**, not a personal one, and
       the board discloses what it is hiding in `.board-scope`.
-- [ ] Group by assignee / priority / sprint renders, is **read-only**, says so on
+- [x] Group by assignee / priority / sprint renders, is **read-only**, says so on
       screen, and hides the column affordances while grouped. LAI-288 carries the
       drag.
-- [ ] Field, density and width choices persist per project in `localStorage` and
+- [x] Field, density and width choices persist per project in `localStorage` and
       do **not** travel in the URL; filter and group **do**.
 
 **Not regressing**
 
-- [ ] `card-anatomy`, `task-card`, `card-hit-area`, `card-click` and
+- [x] `card-anatomy`, `task-card`, `card-hit-area`, `card-click` and
       `stale-marker` are **unchanged and green**. Defaults are all-fields-on, so
       a board with no stored preferences is identical to today's. If one goes
       red, a default changed and the change is wrong.
-- [ ] `sprint-strip.test.ts:192` (all lanes one height) is **unchanged and
+- [x] `sprint-strip.test.ts:192` (all lanes one height) is **unchanged and
       green** — if it fails, `align-items: stretch` broke.
-- [ ] Repo-root `pnpm test`, `pnpm lint` and `pnpm format` all exit `0`.
+- [x] Repo-root `pnpm test`, `pnpm lint` and `pnpm format` all exit `0`.
 
 ## Known red, and what turns it green
 
