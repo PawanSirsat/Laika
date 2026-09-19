@@ -689,10 +689,10 @@
 }
 
 .lane-dot-todo {
-  background: var(--chip-pink);
+  background: var(--chip-purple);
 }
 .lane-dot-in_progress {
-  background: var(--accent);
+  background: var(--chip-blue);
 }
 .lane-dot-review {
   background: var(--chip-orange);

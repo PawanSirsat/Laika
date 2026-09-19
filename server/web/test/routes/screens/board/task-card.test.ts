@@ -39,31 +39,13 @@ void describe('tags come from the API', () => {
   });
 });
 
-void describe('no per-tag colour (D-027)', () => {
-  void test('the chip class carries no tone suffix', () => {
-    // `card-tag-agent`, `card-tag-auth` and friends went with the demo module
-    // that invented the tones.
-    //
-    // `[\w$]` rather than `\w`: the first version of this guard missed
-    // `card-tag-${tag}` — a template literal, which is precisely how anyone
-    // would reintroduce a per-tag class — because `$` is not a word character.
-    // Found by mutation-testing the guard rather than by reading it.
-    assert.ok(!/card-tag-[\w$]/.test(card), 'the card still varies the chip class per tag');
-    assert.ok(!/\.card-tag-[\w$]/.test(css), 'tone rules survive in the stylesheet');
-  });
-
-  void test('the one chip rule uses neutral tokens', () => {
-    // AC7 names them: `--tub` ground, `--bd` border, `--tx2` text.
-    const rule = /\.card-tag\s*\{[^}]*\}/.exec(css);
-    assert.ok(rule, 'no .card-tag rule found — the guard has nothing to check');
-    for (const token of ['--tub', '--bd', '--tx2']) {
-      assert.ok(rule[0].includes(token), `the chip does not use ${token}`);
-    }
-    for (const coloured of ['--pur', '--acc', '--grn', '--amb', '--red']) {
-      assert.ok(!rule[0].includes(coloured), `the chip is tinted with ${coloured}`);
-    }
-  });
-});
+/*
+ * The D-027 "no per-tag colour" suite lived here until LAI-606: the owner
+ * reversed that decision against the prototype (tinted, per-type chips), so a
+ * guard enforcing the old rule now guards the wrong thing. Its replacement —
+ * asserting the TAG_COLORS *mapping* — lands with the mapping itself, in the
+ * TAG_COLORS phase, so the assertions and the behaviour arrive together.
+ */
 
 void describe('the blocked banner names its blocker', () => {
   void test('it renders the blocking task, not just the word blocked', () => {

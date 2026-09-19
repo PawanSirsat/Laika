@@ -18,11 +18,19 @@ import { MOVABLE_STATUSES, primaryStatus } from '../../../../src/api/board-deriv
 import type { BoardColumn } from '../../../../src/api/columns.ts';
 
 const EXPECTED: Readonly<Record<string, string>> = {
-  // Backlog takes the default `--tx3`; the rest are named explicitly.
-  todo: '--pur',
-  in_progress: '--acc',
-  review: '--amb',
-  done: '--grn',
+  /*
+   * Backlog takes the default `--text-muted`; the rest are named explicitly.
+   *
+   * **In-progress is `--chip-blue`, never `--accent`** (LAI-606). The prototype
+   * coloured in-progress with its accent, which was blue; ours is purple, so
+   * the status keeps the *blue* and the accent keeps meaning "this one". Todo
+   * is `--chip-purple` — the same hue as the accent by design, but its own
+   * token, so an accent edit can never silently recolour a status.
+   */
+  todo: '--chip-purple',
+  in_progress: '--chip-blue',
+  review: '--chip-orange',
+  done: '--chip-green',
 };
 
 async function css(): Promise<string> {
@@ -48,7 +56,7 @@ void describe('every column carries the right status colour', () => {
     const sheet = await css();
     // Deliberately has no rule of its own — `.lane-dot` is `--tx3`.
     assert.ok(!/\.lane-dot-backlog\s*\{/.test(sheet), 'backlog should use the base rule');
-    assert.match(sheet, /\.lane-dot\s*\{[^}]*background:\s*var\(--tx3\)/);
+    assert.match(sheet, /\.lane-dot\s*\{[^}]*background:\s*var\(--text-muted\)/);
   });
 
   void test('every movable status is accounted for', () => {

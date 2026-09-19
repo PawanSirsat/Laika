@@ -119,9 +119,15 @@ void describe('it stays one control', () => {
 
   void test('it is a real button, so Tab and Enter/Space work unaided', async () => {
     const tsx = await read(CARD_TSX);
+    /*
+     * Class *presence*, not the exact attribute string: the element has since
+     * gained a type-role class (`t-code`), and every future role or state
+     * class would re-break an exact match. What this protects is that the
+     * thing carrying `card-open` is a real `<button>`.
+     */
     assert.match(
       tsx,
-      /<button\s[^>]*className="card-key card-open"/s,
+      /<button\s[^>]*className="[^"]*\bcard-key\b[^"]*\bcard-open\b[^"]*"/s,
       'the open control is not a button',
     );
   });

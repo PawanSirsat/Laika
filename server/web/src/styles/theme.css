@@ -95,6 +95,19 @@
   --chip-pink-border: rgba(239, 143, 181, 0.6);
   --overdue-border: rgba(242, 115, 115, 0.55);
 
+
+  /*
+   * Added for the prototype board (LAI-606 phase 0b). Purple chips carry
+   * agent/ai tags; the neutral tint pair lets grey tags take the same tinted
+   * anatomy as every other chip. New tokens use the final 12%/30% alphas the
+   * brief sets for all chips — the older hues catch up in the re-value phase.
+   */
+  --chip-purple: #a78bfa;
+  --chip-purple-bg: rgba(167, 139, 250, 0.12);
+  --chip-purple-border: rgba(167, 139, 250, 0.3);
+  --chip-neutral-bg: rgba(156, 163, 175, 0.12);
+  --chip-neutral-border: rgba(156, 163, 175, 0.3);
+
   /* ---- overlays ---- */
   --scrim: rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.5);
@@ -152,6 +165,13 @@
   --chip-pink-border: rgba(190, 24, 93, 0.6);
   --overdue-border: rgba(220, 38, 38, 0.55);
 
+
+  --chip-purple: #7c3aed;
+  --chip-purple-bg: rgba(124, 58, 237, 0.12);
+  --chip-purple-border: rgba(124, 58, 237, 0.3);
+  --chip-neutral-bg: rgba(82, 82, 91, 0.12);
+  --chip-neutral-border: rgba(82, 82, 91, 0.3);
+
   --scrim: rgba(24, 24, 27, 0.4);
   --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.22);
 
@@ -207,6 +227,8 @@
   --space-6: 2rem;
 
   --radius-chip: 3px;
+  /* The sprint chip's own step — smaller than a tag chip (LAI-606). */
+  --radius-xs: 4px;
   /*
    * Chip metrics, shared by every theme (LAI-606). Here rather than in each
    * chip rule so "what a chip looks like" is one answer — the border alpha is
