@@ -267,13 +267,16 @@
    and swallows the whole board. */
 .card {
   position: relative;
-  background: var(--bg-card-hover);
+  /*
+   * `--bg-card`, with `--bg-card-hover` reserved for `:hover` — the two were
+   * once swapped here and corrected by a tail override; the correction now
+   * lives where the value does (LAI-606 consolidation).
+   */
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
-  /* The design's own figures (prototype line ~290): 13px round, 11px at the
-     foot, which reads as more air than `--space-3`'s uniform 12. */
-  padding: 0.8125rem 0.8125rem 0.6875rem;
+  padding: 12px 14px;
   /* `pointer`, not `grab`. The card was `grab` — honest about dragging and
      silent about the thing people actually do, which is open it. The design
      file uses `cursor:pointer` 46 times and `grab` never; dragging still works
@@ -786,7 +789,8 @@
 .card-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 /**
@@ -1645,85 +1649,71 @@
 }
 
 /*
- * Chips: coloured text, a 55% border, no fill (LAI-606).
+ * Chip anatomy — one block, one answer (LAI-606 consolidation).
  *
- * Every chip on a card used to carry a tinted background, so a card with a
- * tag, a sprint and a `ready` marker had three filled blocks competing with
- * the title. The brief's rule is that colour marks *meaning*, and an outline
- * says the same thing without painting an area.
+ * This replaces five overlapping blocks appended across the session, whose
+ * net cascade is reproduced here exactly. The framing (padding, border
+ * colour, fill) reads the shared `--chip-*` levers, currently "nothing";
+ * the per-hue colour classes are kept even though `.t-label`'s
+ * `color: inherit` currently beats them on bundle order — the tinted-chip
+ * phase re-scopes them rather than this one changing anything visible.
  *
- * Appended rather than edited in place: these override the earlier rules
- * wholesale, and keeping the originals next to them would leave two answers to
- * the same question for the next reader to pick between.
+ * **Order matters here**: the base `.marker`/`.card-sprint` framing must stay
+ * *after* the early `.marker-*` state rules (~line 380), because it wins some
+ * of their properties on order alone. Folding it upward flips those winners.
  */
 .card-tag,
 .card-sprint,
 .marker {
-  background: transparent;
+  padding: var(--chip-padding);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--chip-border);
+  background: var(--chip-bg);
   border-radius: var(--radius-chip);
-  /* Sentence case, per the brief — no shouted tags. */
   text-transform: none;
 }
 
 .card-tag {
-  border: 1px solid var(--border-default);
   color: var(--chip-neutral);
 }
 
-/* Sprint codes stay mono — they are codes, like the issue key. */
 .card-sprint,
 .card-sprint-on {
-  border: 1px solid var(--border-default);
-  background: transparent;
-  color: var(--chip-neutral);
+  color: var(--text-muted);
+  border: 1px solid var(--chip-border);
+  background: var(--chip-bg);
 }
 
-.marker-ready {
+.card-tag-orange {
+  color: var(--chip-orange);
+  border-color: var(--chip-orange-border);
+}
+.card-tag-green {
   color: var(--chip-green);
-  border: 1px solid var(--chip-green-border);
-  background: transparent;
+  border-color: var(--chip-green-border);
+}
+.card-tag-blue {
+  color: var(--chip-blue);
+  border-color: var(--chip-blue-border);
+}
+.card-tag-pink {
+  color: var(--chip-pink);
+  border-color: var(--chip-pink-border);
+}
+.card-tag-neutral {
+  color: var(--chip-neutral);
+  border-color: var(--border-default);
 }
 
-/* Blocked is the one exception the brief keeps filled: it is a warning. */
+/* Unrendered today; kept because the cascade above was built around it. */
 .marker-blocked {
   color: var(--overdue);
   border: 1px solid var(--overdue-border);
   background: var(--blocked-bg);
 }
 
-/*
- * Dark separates by grey, not by line (LAI-606). Light keeps its borders,
- * because #FFFFFF on #F2F4F6 is not enough step on its own.
- */
-.dk .card {
-  border-color: transparent;
-}
-
-.dk .lane {
-  border-color: transparent;
-}
-
-/*
- * The three greys, restored (LAI-606).
- *
- * `.lane` was painting `--bg-canvas` and `.card` `--bg-card-hover`, which collapses
- * canvas and column into one value — measured: column and canvas both
- * `#15181C` in dark, and in light the column came out *lighter* than the card.
- * The brief's whole separation model is canvas → column → card, so with two of
- * the three equal there is nothing holding a column apart from the page.
- *
- * Set here rather than by editing those rules: both were carrying another
- * session's uncommitted change when this landed, and overriding is the one
- * move that does not rewrite work in flight.
- */
-.lane {
-  background: var(--bg-column);
-}
-
-.card {
-  background: var(--bg-card);
-}
-
+/* Hover raises the card one grey step (LAI-606). */
 .card:hover {
   background: var(--bg-card-hover);
 }
@@ -1773,31 +1763,6 @@
 }
 
 /*
- * Card rhythm, per the reference close-up: 12px between the title, the chip
- * row and the meta row, and 12px/14px around the card itself.
- */
-.card {
-  padding: 12px 14px;
-}
-
-.card-tags {
-  margin-top: 12px;
-}
-
-.card-foot {
-  margin-top: 12px;
-}
-
-/*
- * **Kept, not deleted** (LAI-606). The owner asked for the hairline to become
- * transparent rather than for the element to go: it still reserves its line, so
- * removing it later is a colour change rather than a layout one.
- */
-.card-foot {
-  border-top-color: transparent;
-}
-
-/*
  * Cards, made plain (LAI-606).
  *
  * Every chip reads the shared framing tokens, which are currently "nothing".
@@ -1813,19 +1778,6 @@
   border-radius: var(--radius-chip);
 }
 
-/* The tags need their own air now that no border supplies it. */
-.card-tags {
-  gap: 10px;
-}
-
-/* Sprint tag: the strip's own treatment — mono, muted, unboxed. */
-.card-sprint,
-.card-sprint-on {
-  color: var(--text-muted);
-  border-color: var(--chip-border);
-  background: var(--chip-bg);
-}
-
 .marker-ready {
   color: var(--chip-green);
   border-color: var(--chip-border);
@@ -1837,11 +1789,6 @@
  * colour and one weight. The key was bold, which made a card with a blocker
  * read as three levels of emphasis where the owner wants one.
  */
-.card-blocked,
-.card-blocked b {
-  color: var(--overdue);
-}
-
 /* No underline on a card. A link earns one by being pointed at. */
 .card-key,
 .card-open {
@@ -1866,6 +1813,9 @@
   flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
+  margin-top: 12px;
+  /* The hairline is reserved, not drawn — turning it back on is one colour. */
+  border-top-color: transparent;
 }
 
 .card-foot > .card-meta,
@@ -1875,26 +1825,14 @@
   text-overflow: ellipsis;
 }
 
-.card-add,
-.card-foot > button:last-child {
-  margin-left: auto;
-  flex-shrink: 0;
-  width: 28px;
-  height: 28px;
-  border: 1px dashed var(--border-subtle);
-  color: var(--text-muted);
-  background: transparent;
-}
-
-
 /*
- * The blocked line is one colour and one weight (LAI-606).
- *
- * `t-label` is 12/400 and inherits its colour, which is what this row needs —
- * the label, the key and the title are all the same `--overdue`. The `b` around
- * the key stays in the markup and simply stops being bold: nothing added or
- * removed, and emphasis is a value.
+ * The `.card-add` rule that stood here was deleted (LAI-606 consolidation):
+ * nothing renders the class, and its `button:last-child` half was a trap — a
+ * card whose trailing spans were all hidden by view settings would have had
+ * its *key* restyled as a 28px dashed box.
  */
+
+
 /*
  * **Two classes, and it has to be** (LAI-606). `.t-label` sets `color:
  * inherit` and `type.css` is imported after this file, so a single-class
