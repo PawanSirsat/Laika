@@ -4,7 +4,7 @@ title: 'A task opens as a centred modal, not a right-hand drawer'
 area: web
 assignee: unclaimed
 priority: p1
-depends-on: [LAI-285]
+depends-on: []
 discovered-from:
 status: backlog
 ---
@@ -81,11 +81,28 @@ trap.
 
 ## Notes / context
 
-**`depends-on: [LAI-285]` and it is real.** LAI-285 built the two columns this
-reshapes and **is sitting in `.tasks/review/`**, not `done/`. Do not start until
-CHIEF has accepted it — and per CLAUDE.md §2, if CHIEF is holding it for a merge
-and says by name that this may start, record the deviation here. **Do not infer
-it from the file being in `review/`.**
+**No dependency. Claim this whenever you like.**
+
+It carried `depends-on: [LAI-285]` for an hour and that was wrong, so the
+reasoning is here rather than in a log nobody reads:
+
+- **LAI-285's code is already on `shell`** — `drawer.css` is at `1120px` with the
+  two columns built. You are not waiting for it to arrive; it is in your tree.
+- **The frame does not depend on the contents.** Centring a box, capping its
+  height and giving it dialog semantics is true of a one-column panel and a
+  two-column one alike. If LAI-285 were sent back tomorrow, this task would still
+  build.
+- **`depends-on` means the work cannot proceed, not that two tasks touch one
+  file.** §2 reads `depends-on` as *present in `.tasks/done/` on `master`*, so
+  writing it there made a **review queue** into a **blocker** — which is CHIEF's
+  throughput problem leaking into a builder's.
+
+**The one real consideration, which is sequencing and not blocking:** both tasks
+edit `.drawer` in `drawer.css`. One task in progress per session means you do
+them one after another on one branch, so there is nothing to collide. **If CHIEF
+sends LAI-285 back while this is in flight**, expect to re-apply its two-column
+work on top of the new frame — say so in your log rather than absorbing it
+silently.
 
 **The files are `components/drawer/drawer.css` and
 `components/drawer/TaskDrawer.tsx`.** The name `drawer` is now wrong; **renaming
