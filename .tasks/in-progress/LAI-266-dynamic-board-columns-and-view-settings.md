@@ -2,11 +2,12 @@
 id: LAI-266
 title: 'Dynamic board columns, and a Jira-style View settings panel'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-19T10:00:20Z
 ---
 
 ## Scope exception — read this first
