@@ -1,3 +1,4 @@
+import { Spinner } from '../../components/Spinner.tsx';
 import { PresencePerson } from '../PresencePerson.tsx';
 import { useTheme } from '../../theme/use-theme.ts';
 import type { PresenceView } from '../../api/presence.ts';
@@ -53,7 +54,10 @@ export function PresenceStrip({ presence, assignee, onFilter, spaceSlug }: Prese
       <h2 className="presence-label">WORKING NOW</h2>
 
       {presence === undefined ? (
-        <p className="presence-note">Loading…</p>
+        <p className="presence-note">
+          <Spinner size="sm" />
+          Loading…
+        </p>
       ) : presence.present.length === 0 ? (
         <p className="presence-note">Nobody has a session in the last five minutes.</p>
       ) : (

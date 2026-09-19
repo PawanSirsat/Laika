@@ -92,11 +92,22 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
   return (
     <div className="act">
       <SpaceSlot
-        context={`${String(recent)} ${recent === 1 ? 'event' : 'events'} in the last minute · ${String(
-          running,
-        )} agent ${running === 1 ? 'session' : 'sessions'} running · ${String(stale.length)} stale ${
-          stale.length === 1 ? 'task' : 'tasks'
-        }`}
+        /*
+         * **The agent clause is dropped until presence answers** (LAI-295).
+         * `presence?.present.filter(...) ?? []` gives 0 for "not asked yet"
+         * and 0 for "asked, nobody there", so this line read "0 agent sessions
+         * running" as a fact and then changed it. `ActivityPanels` two files
+         * over already guards its own count this way.
+         */
+        context={[
+          `${String(recent)} ${recent === 1 ? 'event' : 'events'} in the last minute`,
+          presence === undefined
+            ? undefined
+            : `${String(running)} agent ${running === 1 ? 'session' : 'sessions'} running`,
+          `${String(stale.length)} stale ${stale.length === 1 ? 'task' : 'tasks'}`,
+        ]
+          .filter((part) => part !== undefined)
+          .join(' · ')}
       >
         {/* The design's pill names the transport, because "live" on this screen
             means one specific thing: the SSE stream is attached. */}

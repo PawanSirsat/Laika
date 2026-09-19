@@ -229,3 +229,31 @@ void describe('the board skeleton mirrors the board it replaces', () => {
     );
   });
 });
+
+void describe('a count is not stated before it is known', () => {
+  void test('presence-derived counts distinguish "none" from "not yet asked"', () => {
+    /*
+     * `presence?.present` is `undefined` until the fetch lands, and every
+     * consumer here reached for `?? []` or optional chaining and then rendered
+     * `.length`. That is `0` for *not asked yet* and `0` for *asked, nobody
+     * there* — so the chip said "Agents 0" and the activity header said "0
+     * agent sessions running" as facts, then changed them.
+     *
+     * CLAUDE.md §5.1: every number in the shipped UI comes from a response. A
+     * count computed from absent data is a hardcoded value wearing a variable.
+     */
+    for (const path of [
+      'components/space/SpaceTopBar.tsx',
+      'routes/screens/activity/ActivityScreen.tsx',
+      'routes/screens/activity/ActivityPanels.tsx',
+    ]) {
+      const src = sources.get(path);
+      assert.ok(src !== undefined, `${path} moved — this scan is aimed at nothing`);
+      assert.match(
+        src,
+        /presence [!=]== undefined/,
+        `${path} renders a presence count without asking whether presence arrived`,
+      );
+    }
+  });
+});

@@ -1,3 +1,4 @@
+import { Spinner } from '../../components/Spinner.tsx';
 import { useState } from 'react';
 import { Button } from '../../components/forms/Button.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
@@ -131,6 +132,7 @@ export function InviteScreen({
         <div className="auth-card auth-card-invite">
           <p className="auth-kicker">ACCEPT INVITE</p>
           <p className="auth-note" role="status">
+            <Spinner size="sm" />
             Checking your invite…
           </p>
         </div>

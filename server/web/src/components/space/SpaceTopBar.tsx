@@ -1,3 +1,4 @@
+import { Spinner } from '../../components/Spinner.tsx';
 import { useEffect, useRef } from 'react';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
@@ -90,7 +91,13 @@ export function SpaceTopBar({
     };
   }, []);
   const { shown, overflow } = cluster(members);
-  const agents = agentCount(presence?.present);
+  /*
+   * `undefined` while presence is in flight, **not `0`** (LAI-295).
+   * `agentCount(presence?.present)` returned 0 for "not asked yet" and 0 for
+   * "asked, none there", so the chip stated a count it did not have and then
+   * changed it. §5.1: every number in the shipped UI comes from a response.
+   */
+  const agents = presence === undefined ? undefined : agentCount(presence.present);
 
   /*
    * **Four of these move out when a view supplies its own filtering** (LAI-290).
@@ -352,7 +359,7 @@ export function SpaceTopBar({
             <rect x="4" y="8" width="16" height="12" rx="3" />
             <path d="M12 4v4M9 14h.01M15 14h.01" />
           </svg>
-          Agents {agents}
+          Agents {agents ?? <Spinner size="sm" label="Counting agents" />}
         </button>
 
         <button type="button" className="space-create" onClick={onCreate}>
