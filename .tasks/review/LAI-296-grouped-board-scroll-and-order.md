@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-293
-status: in-progress
+status: review
 started: 2026-09-19T14:21:53Z
+finished: 2026-09-19T14:27:41Z
 ---
 
 ## Renumbered from LAI-295 — read this before following an id
@@ -65,12 +66,12 @@ Same for `No sprint`, which shares the `''` key.
 
 ## Acceptance criteria
 
-- [ ] A grouped board scrolls vertically to its last row, at 900px tall.
-- [ ] An **ungrouped** board still does not — the phantom-scrollbar fix from
+- [x] A grouped board scrolls vertically to its last row, at 900px tall.
+- [x] An **ungrouped** board still does not — the phantom-scrollbar fix from
       LAI-290 survives, asserted by the test that already exists for it.
-- [ ] Rows are ordered by task count, highest first; ties by name.
-- [ ] `Unassigned` / `No sprint` is always last, whatever its count.
-- [ ] The order follows the filter: filtering changes the counts and therefore
+- [x] Rows are ordered by task count, highest first; ties by name.
+- [x] `Unassigned` / `No sprint` is always last, whatever its count.
+- [x] The order follows the filter: filtering changes the counts and therefore
       the order, asserted directly.
-- [ ] Both themes. Page overflow `0` at 1600/1280/900/420.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+- [x] Both themes. Page overflow `0` at 1600/1280/900/420.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
