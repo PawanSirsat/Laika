@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-600
-status: in-progress
+status: review
 started: 2026-09-19T20:14:03Z
+finished: 2026-09-19T20:14:03Z
 ---
 
 ## The defect
