@@ -2,11 +2,12 @@
 id: LAI-257
 title: 'The task drawer''s content: meta column, dependencies, three tabs'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-252]
 discovered-from: LAI-248
-status: backlog
+started: 2026-09-19T18:41:55+05:30
+status: in-progress
 ---
 
 ## Goal
