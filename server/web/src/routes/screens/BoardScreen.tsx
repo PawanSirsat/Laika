@@ -341,7 +341,19 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     return () => {
       controller.abort();
     };
-  }, [slug, board.state.tasks]);
+    /*
+     * **`slug` alone** (LAI-609). This also depended on `board.state.tasks`,
+     * which is a fresh array on every board fetch — so every task load
+     * re-fetched the entire sprint list, and the board asked for sprints three
+     * times on a single open.
+     *
+     * The effect never reads `tasks`. It was presumably there so the strip's
+     * progress would follow the board, but progress is **not** in the sprint
+     * payload — `GET /sprints` returns name, dates, status and goal, and
+     * `SprintStrip` counts `2/2` itself from the tasks it is handed. So the
+     * re-fetch returned identical rows and changed nothing on screen.
+     */
+  }, [slug]);
 
   const mayCreate =
     me !== undefined &&
