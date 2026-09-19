@@ -278,3 +278,57 @@ void describe('the card', () => {
     }
   });
 });
+
+/**
+ * The meta row at the brief's worst case: 218px lanes (LAI-606).
+ *
+ * Two properties, asserted the honest way each: the key by `scrollWidth`
+ * (an ellipsis is invisible to a bounding box), the single line by the row's
+ * *height* against its tallest child — child `top`s are useless under
+ * `align-items: center`, where a 36px avatar and a 12px dot legitimately
+ * start at different y on the same line. That false positive was measured
+ * before this comment was written.
+ */
+void describe('the meta row at 218px', () => {
+  void test('the key never truncates and the row never wraps', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await h.page.evaluate(() => {
+        const grid = document.querySelector<HTMLElement>('.kanban');
+        if (grid === null) return;
+        grid.style.setProperty('--lane-floor', '218px');
+        grid.style.gridTemplateColumns = 'repeat(4, 218px)';
+      });
+      await h.page.waitForTimeout(400);
+
+      const m = await h.page.evaluate(() => {
+        const truncated: string[] = [];
+        document.querySelectorAll('.card-key').forEach((k) => {
+          if (k.scrollWidth > k.clientWidth + 1) truncated.push(k.textContent?.trim() ?? '?');
+        });
+        const tallFeet = [...document.querySelectorAll('.card-foot')].filter((f) => {
+          const tallest = Math.max(
+            0,
+            ...[...f.children].map((c) => c.getBoundingClientRect().height),
+          );
+          const style = getComputedStyle(f);
+          const inner =
+            f.getBoundingClientRect().height -
+            parseFloat(style.paddingTop) -
+            parseFloat(style.paddingBottom) -
+            parseFloat(style.borderTopWidth);
+          return inner > tallest + 4;
+        }).length;
+        return { truncated, tallFeet, lanes: document.querySelectorAll('.lane').length };
+      });
+
+      assert.ok(m.lanes > 0, 'no lanes — nothing measured');
+      assert.deepEqual(m.truncated, [], 'a key truncated at 218px');
+      assert.equal(m.tallFeet, 0, 'a meta row is taller than its tallest child — it wrapped');
+    } finally {
+      await h.close();
+    }
+  });
+});

@@ -78,4 +78,3 @@ export function tagColor(tag: string): ChipColor {
    */
   return NAMED[tag.trim().toLowerCase()] ?? 'neutral';
 }
-

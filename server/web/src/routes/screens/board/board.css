@@ -2058,3 +2058,21 @@
   width: 28px;
   height: 28px;
 }
+
+/*
+ * The key never truncates; counts and age give way first (LAI-606).
+ *
+ * The meta row's children all had `min-width: 0`, so the flexbox shrank
+ * whatever it liked — measured: a 36px avatar squeezed the *key* to "L…",
+ * which is the one thing on the row a person actually cites. The dot, key
+ * and sprint chip are fixed; the counts and age keep their `min-width: 0`
+ * and ellipsis, so they are what compresses when space runs out.
+ */
+.card .card-foot > .card-key,
+.card .card-foot > .card-dot,
+.card .card-foot > .card-sprint,
+.card .card-foot > .card-sprint-on {
+  flex-shrink: 0;
+  min-width: max-content;
+  overflow: visible;
+}
