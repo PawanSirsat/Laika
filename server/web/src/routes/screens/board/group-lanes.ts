@@ -57,7 +57,11 @@ interface Bucket {
   tasks: Task[];
 }
 
-function bucketFor(task: Task, by: GroupBy, options: GroupOptions): { key: string; bucket: Bucket } {
+function bucketFor(
+  task: Task,
+  by: GroupBy,
+  options: GroupOptions,
+): { key: string; bucket: Bucket } {
   if (by === 'assignee') {
     if (task.assignee_id === null) {
       return { key: '', bucket: { name: 'Unassigned', tasks: [] } };

@@ -153,7 +153,9 @@ export function BoardToolbar({
             <select
               value={priority ?? ''}
               onChange={(event) => {
-                onPriority(event.target.value === '' ? undefined : (event.target.value as TaskPriority));
+                onPriority(
+                  event.target.value === '' ? undefined : (event.target.value as TaskPriority),
+                );
               }}
             >
               <option value="">Any</option>
@@ -247,8 +249,8 @@ export function BoardToolbar({
             </label>
           ))}
           <p className="bt-note">
-            Grouping draws a row per group, each holding the same columns. Cards still move
-            between columns; dragging between rows is not a move.
+            Grouping draws a row per group, each holding the same columns. Cards still move between
+            columns; dragging between rows is not a move.
           </p>
         </div>
       )}
@@ -270,7 +272,10 @@ export function BoardToolbar({
         aria-haspopup="dialog"
         onClick={(event) => {
           const rect = event.currentTarget.getBoundingClientRect();
-          onViewSettings({ top: rect.bottom + 6, right: Math.max(8, window.innerWidth - rect.right) });
+          onViewSettings({
+            top: rect.bottom + 6,
+            right: Math.max(8, window.innerWidth - rect.right),
+          });
         }}
       >
         <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">

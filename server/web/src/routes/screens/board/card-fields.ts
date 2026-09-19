@@ -73,3 +73,51 @@ export const FIELD_LABELS: Readonly<Record<keyof CardFields, string>> = {
 };
 
 export const FIELD_KEYS = Object.keys(FIELD_LABELS) as (keyof CardFields)[];
+
+/**
+ * A glyph per field, so the Selected-fields list reads as a list of *things*
+ * rather than a column of checkboxes.
+ *
+ * Text glyphs rather than an icon set: this repo has no icon dependency and a
+ * field list is not worth adding one for.
+ */
+export const FIELD_ICONS: Readonly<Record<keyof CardFields, string>> = {
+  tags: '\u25c7',
+  priority: '\u2191',
+  sprint: '\u25f7',
+  ready: '\u25cf',
+  stale: '\u25f4',
+  comments: '\u25a1',
+  deps: '\u26ad',
+  age: '\u25f4',
+  assignee: '\u25cb',
+};
+
+/**
+ * The four a reader cannot switch off, with the reason shown beside each.
+ *
+ * They appear in the Selected-fields list with a **disabled** `\u00d7` rather
+ * than being absent — the reference greys `Summary` the same way, and a field
+ * that simply is not listed reads as an oversight.
+ */
+export const ALWAYS_ON: readonly {
+  readonly key: string;
+  readonly label: string;
+  readonly icon: string;
+  readonly why: string;
+}[] = [
+  { key: 'title', label: 'Summary', icon: '\u2261', why: 'A card without a title is not a card' },
+  { key: 'key', label: 'Work item key', icon: '#', why: 'The key is what opens the card' },
+  {
+    key: 'blocked',
+    label: 'Blocked warning',
+    icon: '\u26a0',
+    why: 'Hiding it invites work that cannot proceed',
+  },
+  {
+    key: 'deps-unknown',
+    label: 'Unknown blockers',
+    icon: '?',
+    why: 'Hiding it turns “cannot judge” into “fine”',
+  },
+];

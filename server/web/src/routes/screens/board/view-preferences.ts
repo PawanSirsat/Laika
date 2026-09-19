@@ -51,7 +51,7 @@ export const DEFAULT_PREFERENCES: ViewPreferences = Object.freeze({
   fields: ALL_FIELDS,
   density: 'standard',
   columnWidth: 'standard',
-  collapsedGroups: Object.freeze([]) as readonly string[],
+  collapsedGroups: Object.freeze([]),
 });
 
 /** How many projects' preferences to keep. Same shape as `promote()` in `spaces.ts`. */

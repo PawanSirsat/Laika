@@ -1303,17 +1303,27 @@
  * measurement off by one.
  */
 .lane-new {
-  align-self: stretch;
-  min-width: var(--lane-floor, 12.875rem);
+  /*
+   * **A square tile, not a lane** (LAI-290). It was a full-height dashed
+   * column, which read as loudly as a real one; the reference's is a small
+   * square at the end of the row, level with the lane headers.
+   *
+   * `align-self: start` is what keeps it from stretching — the grid's
+   * `align-items: stretch` would otherwise make it as tall as the board.
+   */
+  align-self: start;
+  width: 2rem;
+  height: 2rem;
+  min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 0.25rem;
-  border: 1px dashed var(--bd);
-  border-radius: var(--radius-lg);
-  background: none;
-  color: var(--tx3);
-  font-size: 0.75rem;
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  background: var(--card);
+  color: var(--tx2);
+  font-size: 1rem;
+  line-height: 1;
   font-weight: var(--weight-medium);
   cursor: pointer;
 }

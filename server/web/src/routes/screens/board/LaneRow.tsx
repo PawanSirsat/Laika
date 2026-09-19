@@ -407,8 +407,9 @@ export function LaneRow({
         one.
       */}
       {onAddColumn !== undefined && (
-        <button type="button" className="lane-new" onClick={onAddColumn}>
-          + Add column
+        <button type="button" className="lane-new" onClick={onAddColumn} title="Add a column">
+          <span aria-hidden="true">+</span>
+          <span className="visually-hidden">Add a column</span>
         </button>
       )}
 

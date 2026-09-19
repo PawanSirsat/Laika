@@ -52,12 +52,7 @@ export interface KanbanViewProps extends Omit<LaneRowProps, 'showColumnConfig' |
  * row — correct, but four copies of the same control invite the reader to
  * think otherwise.
  */
-export function KanbanView({
-  swimlanes,
-  collapsed,
-  onToggleGroup,
-  ...row
-}: KanbanViewProps) {
+export function KanbanView({ swimlanes, collapsed, onToggleGroup, ...row }: KanbanViewProps) {
   const toggle = useCallback(
     (key: string) => {
       onToggleGroup?.(key);
@@ -92,7 +87,10 @@ export function KanbanView({
                   toggle(lane.key);
                 }}
               >
-                <span className={shut ? 'swim-chevron' : 'swim-chevron swim-chevron-open'} aria-hidden="true">
+                <span
+                  className={shut ? 'swim-chevron' : 'swim-chevron swim-chevron-open'}
+                  aria-hidden="true"
+                >
                   ›
                 </span>
                 <span className="visually-hidden">{shut ? 'Expand' : 'Collapse'} </span>

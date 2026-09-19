@@ -98,7 +98,9 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
     '/api/v1/projects/laika-core/board-columns': { columns: COLUMNS },
     '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
     '/api/v1/projects/laika-core/members': {
-      members: [{ user_id: 'u1', name: 'Ada', email: 'a@example.com', role: 'lead', created_at: 1 }],
+      members: [
+        { user_id: 'u1', name: 'Ada', email: 'a@example.com', role: 'lead', created_at: 1 },
+      ],
     },
     '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
     '/api/v1/projects/laika-core/activity': { data: [], next_cursor: null },
@@ -110,7 +112,8 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
 
 /** The `+ Create` button inside the named lane. */
 function addIn(h: Harness, name: string) {
-  return h.page.locator('.lane', { has: h.page.locator('.lane-title', { hasText: name }) })
+  return h.page
+    .locator('.lane', { has: h.page.locator('.lane-title', { hasText: name }) })
     .locator('.lane-add');
 }
 
@@ -180,10 +183,7 @@ void describe('the column decides the status', () => {
       await board(h);
       await addIn(h, 'Done').click();
 
-      assert.match(
-        (await h.page.locator('.composer-target').innerText()) ?? '',
-        /done/i,
-      );
+      assert.match((await h.page.locator('.composer-target').innerText()) ?? '', /done/i);
     } finally {
       await h.close();
     }

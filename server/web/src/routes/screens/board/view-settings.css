@@ -175,3 +175,125 @@
   color: var(--tx);
   border-color: var(--bd2);
 }
+
+/* ------------------------------------ Show fields, as a list (LAI-290) */
+
+.vs-search {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--tx);
+  background: var(--tub);
+  border: 1px solid var(--bd2);
+  border-radius: var(--radius-md);
+  padding: 0.25rem 0.4375rem;
+  width: 100%;
+  margin-bottom: 0.375rem;
+}
+
+.vs-search:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.vs-sub {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx2);
+}
+
+.vs-available,
+.vs-selected {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.vs-available {
+  border: 1px solid var(--bd);
+  border-radius: var(--radius-md);
+  padding: 0.125rem;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.vs-add,
+.vs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  width: 100%;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--tx);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0.25rem 0.3125rem;
+  text-align: left;
+}
+
+.vs-add {
+  cursor: pointer;
+}
+
+.vs-add:hover {
+  background: var(--tub);
+}
+
+.vs-plus {
+  margin-left: auto;
+  color: var(--acc);
+  font-weight: var(--weight-bold);
+}
+
+.vs-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--tub);
+  color: var(--tx2);
+  font-size: 0.625rem;
+  line-height: 1;
+}
+
+.vs-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-row-locked .vs-row-name {
+  color: var(--tx3);
+}
+
+.vs-remove {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--tx3);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.1875rem;
+  border-radius: var(--radius-sm);
+}
+
+.vs-remove:hover:not(:disabled) {
+  color: var(--red);
+  background: var(--reds);
+}
+
+.vs-remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

@@ -1,6 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FIELD_KEYS, FIELD_LABELS } from './card-fields.ts';
+import { ALWAYS_ON, FIELD_ICONS, FIELD_KEYS, FIELD_LABELS } from './card-fields.ts';
 import { type ColumnWidth, type Density, type ViewPreferences } from './view-preferences.ts';
 import './view-settings.css';
 
@@ -85,6 +85,15 @@ export function ViewSettings({
   onClearFilters,
 }: ViewSettingsProps) {
   const panel = useRef<HTMLDivElement | null>(null);
+  const [query, setQuery] = useState('');
+
+  const shown = FIELD_KEYS.filter((key) => preferences.fields[key]);
+  const needle = query.trim().toLowerCase();
+  const hidden = FIELD_KEYS.filter(
+    (key) =>
+      !preferences.fields[key] &&
+      (needle === '' || FIELD_LABELS[key].toLowerCase().includes(needle)),
+  );
 
   useEffect(() => {
     panel.current?.focus();
@@ -213,32 +222,94 @@ export function ViewSettings({
         </section>
 
         <section className="vs-section">
-          <h3 className="vs-label">Card fields</h3>
-          <div className="vs-fields">
-            {FIELD_KEYS.map((key) => (
-              <label key={key} className="vs-check">
-                <input
-                  type="checkbox"
-                  name={`field-${key}`}
-                  checked={preferences.fields[key]}
-                  onChange={(event) => {
-                    setField(key, event.target.checked);
-                  }}
-                />
-                {FIELD_LABELS[key]}
-              </label>
-            ))}
-          </div>
+          <h3 className="vs-label">Show fields</h3>
+
           {/*
-            A sentence rather than four greyed checkboxes. A disabled control
-            invites a hunt for the reason; this answers it. See `card-fields.ts`
-            for why each one is not optional.
+            **A search and a removable list**, which is the reference's shape —
+            it was a column of checkboxes. With nine fields the difference is
+            cosmetic; the point is that adding a tenth does not make the panel
+            longer, because unselected fields live behind the search.
           */}
-          <p className="vs-note">
-            The title, the task key and blocked warnings always show — the key is what opens the
-            card, and hiding a blocked warning would invite someone to start work that cannot
-            proceed.
-          </p>
+          <input
+            type="search"
+            className="vs-search"
+            placeholder="Search fields"
+            aria-label="Search fields"
+            value={query}
+            onChange={(event) => {
+              setQuery(event.target.value);
+            }}
+          />
+
+          {hidden.length > 0 && (
+            <ul className="vs-available">
+              {hidden.map((key) => (
+                <li key={key}>
+                  <button
+                    type="button"
+                    className="vs-add"
+                    onClick={() => {
+                      setField(key, true);
+                      setQuery('');
+                    }}
+                  >
+                    <span className="vs-icon" aria-hidden="true">
+                      {FIELD_ICONS[key]}
+                    </span>
+                    {FIELD_LABELS[key]}
+                    <span className="vs-plus" aria-hidden="true">
+                      +
+                    </span>
+                    <span className="visually-hidden"> — add this field</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <h4 className="vs-sub">Selected fields</h4>
+          <ul className="vs-selected">
+            {ALWAYS_ON.map((field) => (
+              <li key={field.key} className="vs-row vs-row-locked">
+                <span className="vs-icon" aria-hidden="true">
+                  {field.icon}
+                </span>
+                <span className="vs-row-name">{field.label}</span>
+                {/* Disabled rather than absent — the reference greys `Summary`
+                    the same way, and a field simply missing reads as a bug. */}
+                <button
+                  type="button"
+                  className="vs-remove"
+                  data-field={field.key}
+                  disabled
+                  title={field.why}
+                  aria-label={`${field.label} cannot be removed — ${field.why}`}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+
+            {shown.map((key) => (
+              <li key={key} className="vs-row">
+                <span className="vs-icon" aria-hidden="true">
+                  {FIELD_ICONS[key]}
+                </span>
+                <span className="vs-row-name">{FIELD_LABELS[key]}</span>
+                <button
+                  type="button"
+                  className="vs-remove"
+                  data-field={key}
+                  aria-label={`Remove ${FIELD_LABELS[key]}`}
+                  onClick={() => {
+                    setField(key, false);
+                  }}
+                >
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
 
         <section className="vs-section">

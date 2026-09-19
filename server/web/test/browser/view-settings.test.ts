@@ -131,7 +131,7 @@ void describe('toggling a card field', () => {
       assert.equal(await h.page.locator('.card-age').count(), 1, 'the field was not there to hide');
       const titlesBefore = await h.page.locator('.card-title').count();
 
-      await h.page.locator('input[name="field-age"]').uncheck();
+      await h.page.locator('.vs-remove[data-field="age"]').click();
       await h.page.waitForTimeout(120);
 
       assert.equal(
@@ -146,7 +146,9 @@ void describe('toggling a card field', () => {
       );
 
       // And back, so the test covers both values rather than one direction.
-      await h.page.locator('input[name="field-age"]').check();
+      // Back on through the search, which is how the reference adds a field.
+      await h.page.locator('.vs-search').fill('Last updated');
+      await h.page.locator('.vs-add').first().click();
       await h.page.waitForTimeout(120);
       assert.equal(await h.page.locator('.card-age').count(), 1);
     } finally {
@@ -159,7 +161,7 @@ void describe('toggling a card field', () => {
 
     try {
       await openPanel(h);
-      await h.page.locator('input[name="field-tags"]').uncheck();
+      await h.page.locator('.vs-remove[data-field="tags"]').click();
       await h.page.waitForTimeout(120);
 
       const url = h.page.url();
@@ -188,16 +190,20 @@ void describe('the fields that are not optional', () => {
     try {
       await openPanel(h);
 
-      for (const name of ['field-title', 'field-key', 'field-blocked', 'field-deps-unknown']) {
-        assert.equal(
-          await h.page.locator(`input[name="${name}"]`).count(),
-          0,
-          `${name} should not be offered as a toggle`,
-        );
-      }
+      /*
+       * **Listed with a disabled `×`, not absent** — the reference greys
+       * `Summary` the same way, and a field that is simply missing from the
+       * list reads as an oversight rather than a decision.
+       */
+      for (const field of ['title', 'key', 'blocked', 'deps-unknown']) {
+        const row = h.page.locator(`.vs-remove[data-field="${field}"]`);
+        assert.equal(await row.count(), 1, `${field} should be listed`);
+        assert.equal(await row.isDisabled(), true, `${field} must not be removable`);
 
-      const copy = await h.page.locator('.view-settings').innerText();
-      assert.match(copy, /always show/i, 'nothing explains why four fields are missing');
+        // And it says why, rather than leaving a dead control to puzzle over.
+        const why = await row.getAttribute('title');
+        assert.ok((why ?? '').length > 10, `${field} gives no reason`);
+      }
     } finally {
       await h.close();
     }

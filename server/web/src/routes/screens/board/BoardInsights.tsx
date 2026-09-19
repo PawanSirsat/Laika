@@ -40,7 +40,9 @@ function duration(ms: number): string {
  */
 export function BoardInsights({ slug, onClose }: BoardInsightsProps) {
   const [state, setState] = useState<
-    { status: 'loading' } | { status: 'ready'; data: MetricsView } | { status: 'error'; why: string }
+    | { status: 'loading' }
+    | { status: 'ready'; data: MetricsView }
+    | { status: 'error'; why: string }
   >({ status: 'loading' });
 
   useEffect(() => {
@@ -108,8 +110,8 @@ export function BoardInsights({ slug, onClose }: BoardInsightsProps) {
                 ))}
               </div>
               <p className="bi-note">
-                {state.data.throughput.length} days. Days with nothing finished are present and
-                zero — the server sends them, so the shape is not invented here.
+                {state.data.throughput.length} days. Days with nothing finished are present and zero
+                — the server sends them, so the shape is not invented here.
               </p>
             </section>
 
