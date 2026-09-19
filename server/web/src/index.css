@@ -4,8 +4,8 @@
  * self-hosted board that phones home on every page load contradicts SPEC §13.4.
  * `test/csp-compatibility.test.ts` fails if a remote font URL ever appears.
  */
-/* Inter is the UI face (LAI-606); Jakarta stays for anything still asking. */
-@import '@fontsource-variable/inter';
+/* Plus Jakarta Sans is the UI face — the prototype's own family — with
+   JetBrains Mono for keys and codes. Self-hosted: SPEC §13.4 forbids a CDN. */
 @import '@fontsource-variable/plus-jakarta-sans';
 @import '@fontsource-variable/jetbrains-mono';
 

@@ -10,7 +10,6 @@
  * are the roles whose colour belongs to the thing wearing them.
  */
 
-
 .t-display {
   font-family: var(--font-ui);
   font-size: 1.375rem;
@@ -31,11 +30,12 @@
 
 .t-heading {
   font-family: var(--font-ui);
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  line-height: 1.25rem;
-  letter-spacing: 0;
+  line-height: 1;
+  letter-spacing: 0.08em;
   color: var(--text-primary);
+  text-transform: uppercase;
 }
 
 .t-tab {
@@ -52,10 +52,10 @@
 
 .t-body {
   font-family: var(--font-ui);
-  font-size: 0.875rem;
-  font-weight: 400;
-  line-height: 1.25rem;
-  letter-spacing: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
@@ -71,8 +71,8 @@
 .t-label {
   font-family: var(--font-ui);
   font-size: 0.75rem;
-  font-weight: 400;
-  line-height: 1rem;
+  font-weight: 500;
+  line-height: 1;
   letter-spacing: 0;
   color: inherit;
   white-space: nowrap;
@@ -100,10 +100,10 @@
 }
 
 .t-meta {
-  font-family: var(--font-ui);
-  font-size: 0.8125rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
   font-weight: 400;
-  line-height: 1.3;
+  line-height: 1;
   letter-spacing: 0;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
@@ -125,10 +125,10 @@
 .t-caption {
   font-family: var(--font-ui);
   font-size: 0.8125rem;
-  font-weight: 400;
-  line-height: 1.45;
+  font-weight: 500;
+  line-height: 1.3;
   letter-spacing: 0;
-  color: var(--text-secondary);
+  color: inherit;
 }
 
 .t-control {
@@ -154,9 +154,9 @@
 
 .t-code {
   font-family: var(--font-mono);
-  font-size: 0.875rem;
-  font-weight: 400;
-  line-height: 1.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
   letter-spacing: 0;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -167,17 +167,17 @@
 
 .t-code-sm {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 400;
+  font-size: 0.6875rem;
+  font-weight: 600;
   line-height: 1;
-  letter-spacing: 0;
-  color: var(--text-muted);
+  letter-spacing: 0.02em;
+  color: inherit;
 }
 
 .t-avatar {
   font-family: var(--font-ui);
-  font-size: 0.6875rem;
-  font-weight: 600;
+  font-size: 0.75rem;
+  font-weight: 700;
   line-height: 1;
   letter-spacing: 0.02em;
   color: inherit;
@@ -192,8 +192,8 @@
  */
 
 .kanban-dense .t-body {
-  font-size: 0.8125rem;
-  line-height: 1.125rem;
+  font-size: 0.875rem;
+  line-height: 1.3;
 }
 
 .kanban-dense .t-meta {

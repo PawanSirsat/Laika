@@ -33,7 +33,12 @@ export interface TypeRole {
   readonly family: 'ui' | 'mono';
   /** Pixels, as the brief states them. Emitted as rem. */
   readonly size: number;
-  readonly weight: 400 | 500 | 600;
+  /**
+   * 700 admitted by the final brief ("weights 400/500/600/700"), for the
+   * avatar role alone in practice. The variable fonts carry the whole axis,
+   * so 700 is a real face, not a synthesised bold.
+   */
+  readonly weight: 400 | 500 | 600 | 700;
   /**
    * A unitless ratio, or a CSS length such as `'20px'`.
    *
@@ -70,11 +75,12 @@ export const TYPE_ROLES = {
   title: { family: 'ui', size: 16, weight: 600, leading: 1.3, tracking: 0, color: 'text-primary' },
   heading: {
     family: 'ui',
-    size: 14,
+    size: 12,
     weight: 600,
-    leading: '20px',
-    tracking: 0,
+    leading: 1,
+    tracking: 0.08,
     color: 'text-primary',
+    transform: 'uppercase',
   },
   tab: {
     family: 'ui',
@@ -85,7 +91,14 @@ export const TYPE_ROLES = {
     color: 'text-secondary',
     truncate: true,
   },
-  body: { family: 'ui', size: 14, weight: 400, leading: '20px', tracking: 0, color: 'text-primary' },
+  body: {
+    family: 'ui',
+    size: 16,
+    weight: 600,
+    leading: 1.3,
+    tracking: -0.01,
+    color: 'text-primary',
+  },
   'body-sm': {
     family: 'ui',
     size: 14,
@@ -97,8 +110,8 @@ export const TYPE_ROLES = {
   label: {
     family: 'ui',
     size: 12,
-    weight: 400,
-    leading: '16px',
+    weight: 500,
+    leading: 1,
     tracking: 0,
     color: 'inherit',
     truncate: true,
@@ -121,10 +134,10 @@ export const TYPE_ROLES = {
     tabular: true,
   },
   meta: {
-    family: 'ui',
-    size: 13,
+    family: 'mono',
+    size: 12,
     weight: 400,
-    leading: 1.3,
+    leading: 1,
     tracking: 0,
     color: 'text-muted',
     tabular: true,
@@ -142,10 +155,10 @@ export const TYPE_ROLES = {
   caption: {
     family: 'ui',
     size: 13,
-    weight: 400,
-    leading: 1.45,
+    weight: 500,
+    leading: 1.3,
     tracking: 0,
-    color: 'text-secondary',
+    color: 'inherit',
   },
   control: {
     family: 'ui',
@@ -159,9 +172,9 @@ export const TYPE_ROLES = {
   input: { family: 'ui', size: 14, weight: 400, leading: 1, tracking: 0, color: 'text-primary' },
   code: {
     family: 'mono',
-    size: 14,
-    weight: 400,
-    leading: '20px',
+    size: 13,
+    weight: 600,
+    leading: 1,
     tracking: 0,
     color: 'text-secondary',
     tabular: true,
@@ -169,11 +182,11 @@ export const TYPE_ROLES = {
   },
   'code-sm': {
     family: 'mono',
-    size: 12,
-    weight: 400,
+    size: 11,
+    weight: 600,
     leading: 1,
-    tracking: 0,
-    color: 'text-muted',
+    tracking: 0.02,
+    color: 'inherit',
   },
   /*
    * Initials in a circle — card avatar, the toolbar's assignee stack, the
@@ -184,8 +197,8 @@ export const TYPE_ROLES = {
    */
   avatar: {
     family: 'ui',
-    size: 11,
-    weight: 600,
+    size: 12,
+    weight: 700,
     leading: 1,
     tracking: 0.02,
     color: 'inherit',
@@ -207,7 +220,7 @@ export type RoleName = keyof typeof TYPE_ROLES;
  */
 export const DENSITY = {
   dense: {
-    body: { size: 13, leading: '18px' },
+    body: { size: 14, leading: 1.3 },
     meta: { size: 12 },
     label: { size: 11 },
   },

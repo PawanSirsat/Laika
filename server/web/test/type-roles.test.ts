@@ -37,6 +37,38 @@ function block(name: string): Record<string, string> {
 }
 
 void describe('every role matches its declaration', () => {
+  void test('the sixteen roles the brief names, plus avatar, all exist', () => {
+    /*
+     * The sync suite derives both sides from TYPE_ROLES, so a role *deleted*
+     * from the object vanishes from CSS and test alike with everything green —
+     * which happened: a greedy edit swallowed `body-sm` and 16 === 16 passed.
+     * The expected list is stated independently so a lost role is a red test,
+     * not a silent absence.
+     */
+    assert.deepEqual(
+      [...ROLE_NAMES].sort(),
+      [
+        'avatar',
+        'body',
+        'body-sm',
+        'caption',
+        'code',
+        'code-sm',
+        'control',
+        'display',
+        'field-label',
+        'heading',
+        'input',
+        'label',
+        'meta',
+        'overline',
+        'tab',
+        'title',
+        'value',
+      ].sort(),
+    );
+  });
+
   for (const name of ROLE_NAMES) {
     void test(`.t-${name}`, () => {
       const role = ROLES[name];
@@ -47,7 +79,9 @@ void describe('every role matches its declaration', () => {
       assert.equal(css['font-weight'], String(role.weight), 'weight');
       assert.equal(
         css['line-height'],
-        typeof role.leading === 'number' ? String(role.leading) : rem(Number.parseFloat(role.leading)),
+        typeof role.leading === 'number'
+          ? String(role.leading)
+          : rem(Number.parseFloat(role.leading)),
         'line-height',
       );
       assert.equal(
@@ -78,13 +112,18 @@ void describe('every role matches its declaration', () => {
     });
   }
 
-  void test('the brief’s weight rule: 400, 500 and 600 only', () => {
-    // "Weights loaded: 400, 500, 600 only. Never 700+." Asserted against the
-    // roles rather than trusted, because a 700 here would silently ask for a
-    // face the app does not load and get a synthesised bold.
+  void test('the brief’s weight rule: 400 to 700, nothing heavier', () => {
+    /*
+     * The final brief loads 400/500/600/700 (avatar initials are 12/700).
+     * The earlier version of this rule capped at 600 with a rationale about
+     * unloaded faces being synthesised — obsolete twice over: the families are
+     * variable fonts carrying the whole axis, and the brief now names 700.
+     * The cap that remains is 800+: nothing in the role system may ask for a
+     * heavier face than the brief loads.
+     */
     for (const name of ROLE_NAMES) {
       const { weight } = ROLES[name];
-      assert.ok([400, 500, 600].includes(weight), `${name} is ${String(weight)}`);
+      assert.ok([400, 500, 600, 700].includes(weight), `${name} is ${String(weight)}`);
     }
   });
 

@@ -95,7 +95,6 @@
   --chip-pink-border: rgba(239, 143, 181, 0.6);
   --overdue-border: rgba(242, 115, 115, 0.55);
 
-
   /*
    * Added for the prototype board (LAI-606 phase 0b). Purple chips carry
    * agent/ai tags; the neutral tint pair lets grey tags take the same tinted
@@ -165,7 +164,6 @@
   --chip-pink-border: rgba(190, 24, 93, 0.6);
   --overdue-border: rgba(220, 38, 38, 0.55);
 
-
   --chip-purple: #7c3aed;
   --chip-purple-bg: rgba(124, 58, 237, 0.12);
   --chip-purple-border: rgba(124, 58, 237, 0.3);
@@ -185,14 +183,14 @@
  * =================================================================== */
 :root {
   /*
-   * Inter is first and is **not installed yet**. The brief asks for it
-   * self-hosted; `@fontsource-variable/inter` is a dependency and CLAUDE.md §5
-   * wants a task naming the package before one is added. Filed separately —
-   * until it lands the stack falls through to the brief's own system chain,
-   * which is why that chain is spelled out rather than assumed.
+   * The prototype's families (LAI-606, owner decision): Plus Jakarta Sans for
+   * UI, JetBrains Mono for keys and sprint codes. Both self-hosted — the
+   * prototype loads them from Google Fonts, which SPEC §13.4 forbids, so the
+   * @fontsource imports in index.css are the source. Inter was briefly the UI
+   * face earlier the same day; the final brief defers to the prototype, and
+   * the package stays installed but unreferenced.
    */
-  --font-ui: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  /* Issue keys and sprint codes only. */
+  --font-ui: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace;
 
   --text-xs: 0.6875rem; /* 11px — sidebar group headings */
