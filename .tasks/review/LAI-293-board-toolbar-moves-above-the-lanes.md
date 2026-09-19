@@ -6,8 +6,9 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-290
-status: in-progress
+status: review
 started: 2026-09-19T13:16:24Z
+finished: 2026-09-19T14:21:33Z
 ---
 
 ## Why
@@ -77,17 +78,17 @@ name — `Laika`, which looks deliberate. The by-slug request moved to
 
 ## Acceptance criteria
 
-- [ ] The row renders **below WORKING NOW and above the first lane**, asserted
+- [x] The row renders **below WORKING NOW and above the first lane**, asserted
       by position — `getBoundingClientRect().top` ordered presence < toolbar <
       first `.lane`.
-- [ ] The space bar no longer carries the board's toolbar: `.bt` is absent from
+- [x] The space bar no longer carries the board's toolbar: `.bt` is absent from
       `.space-bar`.
-- [ ] Exactly one control per filter param survives: `.space-select` count `0`
+- [x] Exactly one control per filter param survives: `.space-select` count `0`
       on the board, `Filter` button count `1`.
-- [ ] Non-board views are untouched — Timeline still shows the bar's own
+- [x] Non-board views are untouched — Timeline still shows the bar's own
       filters and grows no toolbar row.
-- [ ] Phase 2: Search and the avatars render in this row and not in the bar,
+- [x] Phase 2: Search and the avatars render in this row and not in the bar,
       via the existing claim — **or** the phase is explicitly deferred in this
       file with the reason.
-- [ ] Both themes. Page overflow `0` at 1600/1440/1280/900/420.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+- [x] Both themes. Page overflow `0` at 1600/1440/1280/900/420.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
