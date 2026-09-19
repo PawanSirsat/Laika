@@ -1,3 +1,4 @@
+import { Spinner } from '../../components/Spinner.tsx';
 import { useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { ScreenHeader } from '../../components/ScreenHeader.tsx';
@@ -237,7 +238,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
           />
 
           <div className="projects-form-actions">
-            <Button type="submit" busy={submitting} busyLabel="Creating…">
+            <Button type="submit" busy={submitting}>
               Create project
             </Button>
             <Button
@@ -398,7 +399,8 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
                             void join(project.slug);
                           }}
                         >
-                          {joining === project.slug ? 'Joining…' : 'Join'}
+                          {joining === project.slug && <Spinner size="sm" />}
+                          Join
                         </button>
                       </footer>
                     </article>
@@ -437,12 +439,7 @@ export function ProjectsScreen({ onOpen, onOpenMembers, me }: ProjectsScreenProp
 
           {list.nextCursor !== null && (
             <div className="projects-more">
-              <Button
-                variant="secondary"
-                busy={list.loadingMore}
-                busyLabel="Loading…"
-                onClick={list.loadMore}
-              >
+              <Button variant="secondary" busy={list.loadingMore} onClick={list.loadMore}>
                 Load more
               </Button>
             </div>

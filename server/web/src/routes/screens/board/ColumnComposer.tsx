@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { createTask, PRIORITIES } from '../../../api/tasks.ts';
@@ -140,6 +141,7 @@ export function ColumnComposer({
             void submit();
           }}
         >
+          {busy && <Spinner size="sm" />}
           <span aria-hidden="true">↵</span>
           <span className="visually-hidden">Create</span>
         </button>

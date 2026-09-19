@@ -294,13 +294,7 @@ export function InviteScreen({
           error={touched && !matchCheck.ok ? matchCheck.message : undefined}
         />
 
-        <Button
-          type="submit"
-          fullWidth
-          busy={submitting}
-          busyLabel="Creating your account…"
-          variant="invite"
-        >
+        <Button type="submit" fullWidth busy={submitting} variant="invite">
           {`Join ${invite.org_name} as ${roleLabel}`}
         </Button>
 

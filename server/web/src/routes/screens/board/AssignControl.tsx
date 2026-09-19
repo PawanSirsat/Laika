@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useState } from 'react';
 import { assignTask, claimTask, claimWinner } from '../../../api/tasks.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
@@ -104,6 +105,7 @@ export function AssignControl({ task, members, meId, mayAssign, onChanged }: Ass
             run(claimTask(task.id));
           }}
         >
+          {busy && <Spinner size="sm" />}
           Claim
         </button>
       )}

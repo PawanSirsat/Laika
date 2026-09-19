@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { addDependency, removeDependency, type Member, type Task } from '../../../api/tasks.ts';
@@ -145,6 +146,7 @@ export function DependenciesSection({
                 void act(() => addDependency(task.id, picked));
               }}
             >
+              {busy && <Spinner size="sm" />}
               Link
             </button>
             <button

@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { STATUSES, type TaskStatus } from '../../../api/tasks.ts';
 import { statusLabel } from '../../../api/board-derive.ts';
@@ -159,7 +160,8 @@ export function NewColumnDialog({ all, busy, error, onCreate, onClose }: NewColu
             disabled={trimmed === '' || busy}
             onClick={submit}
           >
-            {busy ? 'Creating…' : 'Submit'}
+            {busy && <Spinner size="sm" />}
+            Submit
           </button>
         </footer>
       </div>

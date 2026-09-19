@@ -163,7 +163,7 @@ export function LoginScreen({
           disabled={submitting}
         />
 
-        <Button type="submit" fullWidth busy={submitting} busyLabel="Signing in…">
+        <Button type="submit" fullWidth busy={submitting}>
           Sign in
         </Button>
 

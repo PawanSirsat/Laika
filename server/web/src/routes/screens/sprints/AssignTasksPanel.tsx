@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useState } from 'react';
 import type { Sprint } from '../../../api/sprints.ts';
 import type { Task } from '../../../api/tasks.ts';
@@ -95,9 +96,8 @@ export function AssignTasksPanel({
                 });
               }}
             >
-              {busy
-                ? 'Adding…'
-                : `Add ${String(selected.size)} task${selected.size === 1 ? '' : 's'}`}
+              {busy && <Spinner size="sm" />}
+              {`Add ${String(selected.size)} task${selected.size === 1 ? '' : 's'}`}
             </button>
           </div>
         </>

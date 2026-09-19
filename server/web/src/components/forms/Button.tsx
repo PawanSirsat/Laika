@@ -22,12 +22,6 @@ export interface ButtonProps {
    * user but mean different things, and only one of them resolves by waiting.
    */
   readonly busy?: boolean;
-  /**
-   * Replaces the label while busy. **Rarely what you want** — the button
-   * resizes mid-click and the word you pressed disappears. Kept for the few
-   * callers that had it; the spinner is the feedback now.
-   */
-  readonly busyLabel?: string | undefined;
   readonly onClick?: (() => void) | undefined;
   readonly fullWidth?: boolean;
 }
@@ -38,7 +32,6 @@ export function Button({
   type = 'button',
   disabled = false,
   busy = false,
-  busyLabel,
   onClick,
   fullWidth = false,
 }: ButtonProps) {
@@ -62,11 +55,15 @@ export function Button({
         and "Creating…" is 9, and the button moved under the cursor that had
         just pressed it.
 
+        The `busyLabel` prop went with it rather than being left for anyone who
+        wanted the old behaviour back: a prop with no callers is how a retired
+        decision creeps back in.
+
         `aria-busy` above already says "working" to a screen reader, so the
         spinner is decorative and announces nothing on top of it.
       */}
       {busy && <Spinner size="sm" />}
-      {busy ? (busyLabel ?? children) : children}
+      {children}
     </button>
   );
 }

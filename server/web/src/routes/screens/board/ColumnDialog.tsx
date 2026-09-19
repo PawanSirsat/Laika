@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ALL_STATUSES, statusLabel } from '../../../api/board-derive.ts';
@@ -250,6 +251,7 @@ export function ColumnDialog({
                     onDelete(target);
                   }}
                 >
+                  {busy && <Spinner size="sm" />}
                   Delete column
                 </button>
               </div>

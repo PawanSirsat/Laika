@@ -106,7 +106,7 @@ export function NewTaskForm({ slug, onCreated, onCancel }: NewTaskFormProps) {
 
       {/* Disabled on an empty title rather than submitting and letting the
           server answer 422 for something the form already knows. */}
-      <Button type="submit" busy={busy} busyLabel="Creating…" disabled={trimmed === ''}>
+      <Button type="submit" busy={busy} disabled={trimmed === ''}>
         Create
       </Button>
       <Button variant="secondary" disabled={busy} onClick={onCancel}>

@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useState } from 'react';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -197,7 +198,8 @@ export function SprintsScreen() {
                 });
               }}
             >
-              {sprints.busy ? 'Deleting…' : 'Delete sprint'}
+              {sprints.busy && <Spinner size="sm" />}
+              Delete sprint
             </button>
             <button
               type="button"
@@ -281,6 +283,7 @@ export function SprintsScreen() {
                     canManage={canManage}
                     canAssign={canAssign}
                     busy={sprints.busy}
+                    pending={sprints.pending}
                     expanded={expanded === row.sprint.id}
                     onToggle={() => {
                       setExpanded(expanded === row.sprint.id ? undefined : row.sprint.id);

@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -290,7 +291,8 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
                         disabled={busy || accepted.size === 0}
                         onClick={apply}
                       >
-                        {busy ? 'Applying…' : `Apply ${String(accepted.size)}`}
+                        {busy && <Spinner size="sm" />}
+                        {`Apply ${String(accepted.size)}`}
                       </button>
                     </div>
                   </div>

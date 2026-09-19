@@ -624,12 +624,7 @@ export function TaskDetailPanel({
                       });
                     }}
                     send={
-                      <Button
-                        type="submit"
-                        busy={detail.posting}
-                        busyLabel="Posting…"
-                        disabled={draft.trim() === ''}
-                      >
+                      <Button type="submit" busy={detail.posting} disabled={draft.trim() === ''}>
                         Comment
                       </Button>
                     }

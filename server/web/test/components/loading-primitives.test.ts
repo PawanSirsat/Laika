@@ -95,7 +95,10 @@ void describe('the button', () => {
     // It resized mid-click: "Create task" is 11 characters and "Creating…" is
     // 9, so the button moved under the cursor that had just pressed it.
     assert.match(button, /\{busy && <Spinner size="sm" \/>\}/);
-    assert.match(button, /busyLabel \?\? children/, 'callers that pass busyLabel lost it');
+    // The label is rendered unconditionally — there is no `busy ?` branch left
+    // around it, and no `busyLabel` prop for one to come back through.
+    assert.match(button, /\{busy && <Spinner size="sm" \/>\}\s*\n\s*\{children\}/);
+    assert.doesNotMatch(button, /busyLabel/, 'the retired prop is still reachable');
   });
 
   void test('still blocks activation and still says why', () => {

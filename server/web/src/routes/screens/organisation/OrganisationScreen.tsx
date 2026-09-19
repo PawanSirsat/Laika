@@ -530,7 +530,7 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
               </select>
             </label>
 
-            <Button type="submit" busy={busy} busyLabel="Sending…">
+            <Button type="submit" busy={busy}>
               Send invite
             </Button>
           </form>
