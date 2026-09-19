@@ -336,7 +336,7 @@ export function LaneRow({
                  */
                 <button
                   type="button"
-                  className="lane-title lane-title-editable"
+                  className="lane-title lane-title-editable t-heading"
                   id={`lane-${column.id}`}
                   title={`Rename — holds ${column.statuses.map(statusLabel).join(', ')}`}
                   onClick={() => {
@@ -347,7 +347,7 @@ export function LaneRow({
                 </button>
               ) : (
                 <h3
-                  className="lane-title"
+                  className="lane-title t-heading"
                   id={`lane-${column.id}`}
                   title={column.statuses.map(statusLabel).join(', ')}
                 >
@@ -480,12 +480,26 @@ export function LaneRow({
               dot !== undefined && (
                 <button
                   type="button"
-                  className="lane-add"
+                  className="lane-add t-control"
                   onClick={() => {
                     onAdd(dot);
                   }}
                 >
-                  + Create
+                  {/*
+                    The prototype's label with its drawn plus (LAI-606) — a
+                    plain text button, not a dashed box. `.lane-add` stays the
+                    class: two suites locate this button by it.
+                  */}
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    aria-hidden="true"
+                  >
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  Add task
                 </button>
               )
             )}

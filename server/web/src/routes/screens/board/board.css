@@ -714,10 +714,11 @@
  * their own case at normal tracking.
  */
 .lane-title {
-  font-size: 0.8125rem;
-  /* Plain, not bold — the reference's name is a quiet grey label. */
-  font-weight: var(--weight-medium);
-  color: var(--text-secondary);
+  /*
+   * Size, weight, case, tracking and colour all come from `.t-heading`
+   * (LAI-606) — uppercase included, as a CSS transform, so the DOM keeps the
+   * column's real name and every locator finding lanes by text still works.
+   */
   margin: 0;
   white-space: nowrap;
 }
@@ -730,15 +731,39 @@
  * is a quiet filled chip in the body font.
  */
 .lane-count {
-  font-size: 0.6875rem;
+  /* The prototype's badge: a 22px rounded square in mono (LAI-606). */
+  font-family: var(--font-mono);
+  font-size: 12px;
   font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
-  background: var(--bg-card);
-  border: 0;
-  border-radius: var(--radius-chip);
-  padding: 0.1875rem 0.5rem;
-  min-width: 1.25rem;
-  text-align: center;
+  background: var(--bg-pill);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  min-width: 22px;
+  min-height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+}
+
+/*
+ * In-progress and Done carry their status colour, outlined — transparent
+ * fill, border and text in the status hue (LAI-606). This reverses LAI-603's
+ * one-colour rule at the owner's instruction; the dot keeps saying which
+ * status, the badge now agrees for the two columns the eye hunts for.
+ */
+.lane-count-in_progress {
+  background: transparent;
+  color: var(--chip-blue);
+  border-color: var(--chip-blue-border);
+}
+
+.lane-count-done {
+  background: transparent;
+  color: var(--chip-green);
+  border-color: var(--chip-green-border);
 }
 
 /*
@@ -994,23 +1019,39 @@
 }
 
 /* The ghost row at the foot of each column (prototype). */
-.lane-add {
+/*
+ * Scoped under `.lane`, and it has to be: `.t-control` declares
+ * `color: inherit` and `type.css` loads after this file, so a single-class
+ * `.lane-add` loses its colour on bundle order and rendered text-primary at
+ * rest — measured. Two classes beat the role on specificity, the same fix the
+ * blocked line needed.
+ */
+.lane .lane-add {
+  /* The prototype's plain text button — no dashed box (LAI-606). */
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
   width: 100%;
-  font: inherit;
-  font-size: 0.65625rem;
-  font-weight: var(--weight-semibold);
-  color: var(--text-muted);
+  height: 40px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
   background: none;
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-card);
-  padding: 0.375rem;
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
-.lane-add:hover {
-  color: var(--accent);
-  border-color: var(--accent-border);
-  background: var(--accent-bg);
+.lane .lane-add svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.lane .lane-add:hover,
+.lane .lane-add:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
 }
 
 .lane-add:focus-visible {
@@ -1581,8 +1622,6 @@
    * above said. Same for `color: inherit` against `.lane-title`'s colour.
    */
   font: inherit;
-  font-size: 0.8125rem;
-  font-weight: var(--weight-medium);
   color: var(--text-secondary);
   padding: 0.0625rem 0.25rem;
   margin-inline-start: -0.25rem;
@@ -1831,7 +1870,6 @@
  * card whose trailing spans were all hidden by view settings would have had
  * its *key* restyled as a 28px dashed box.
  */
-
 
 /*
  * **Two classes, and it has to be** (LAI-606). `.t-label` sets `color:

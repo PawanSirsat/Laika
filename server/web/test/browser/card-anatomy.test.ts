@@ -193,7 +193,11 @@ void describe('the card', () => {
           const s = getComputedStyle(el);
           return { padding: s.padding };
         });
-      assert.equal(box.padding, '13px 13px 11px', 'the design’s card padding');
+      /*
+       * LAI-606: the mockup's 13/13/11 gave way to the refreshed rhythm.
+       * (The prototype-scale phase moves this once more, to 20px 20px 16px.)
+       */
+      assert.equal(box.padding, '12px 14px', 'the refreshed card padding');
 
       const title = await h.page
         .locator('.card-title')
@@ -202,7 +206,8 @@ void describe('the card', () => {
           const s = getComputedStyle(el);
           return { size: s.fontSize, weight: s.fontWeight, clamp: s.webkitLineClamp };
         });
-      assert.equal(title.size, '13.5px');
+      // `.t-body` carries the title now: 16/600 per the final brief.
+      assert.equal(title.size, '16px');
       assert.equal(title.weight, '600');
       assert.equal(title.clamp, '2', 'the title must clamp rather than push the footer about');
     } finally {

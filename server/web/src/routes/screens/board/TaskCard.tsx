@@ -164,9 +164,11 @@ export function TaskCard({
         </button>
 
         {fields.sprint && sprint !== undefined && (
-          <span className={
-            sprint.active ? 'card-sprint card-sprint-on t-code-sm' : 'card-sprint t-code-sm'
-          }>
+          <span
+            className={
+              sprint.active ? 'card-sprint card-sprint-on t-code-sm' : 'card-sprint t-code-sm'
+            }
+          >
             {sprint.label}
           </span>
         )}
