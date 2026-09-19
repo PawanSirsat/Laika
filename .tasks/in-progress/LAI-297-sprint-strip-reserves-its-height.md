@@ -2,11 +2,12 @@
 id: LAI-297
 title: The sprint strip reserves its height while sprints load
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-295
-status: backlog
+status: in-progress
+started: 2026-09-19T14:52:01Z
 ---
 
 ## Goal
