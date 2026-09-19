@@ -126,25 +126,37 @@ void describe('the space bar', () => {
       /*
        * **Wait for the name, not for the element.**
        *
-       * The bar renders `spaceName ?? slug`, so `.space-name` exists from the
+       * The rail renders the listed name first, so `.sidebar-wordmark` exists from the
        * first paint carrying `laika-core`, and `GET /projects/:slug` replaces
        * it a beat later. Waiting on the element therefore returns on the
        * *fallback*, and this asserted against whichever of the two the machine
        * happened to be showing — green most runs, red about one in two under
        * load. The fallback is correct behaviour; the assertion was racing it.
        */
-      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      /*
+       * **The identity moved to the rail** (LAI-295). The bar carried the
+       * project name and icon while the rail two inches away said `Laika`;
+       * the owner asked for the rail to name the project and the bar to stop
+       * repeating it.
+       *
+       * The race this test was written for is unchanged and still the point:
+       * the wordmark renders the listed name first and the by-slug answer a
+       * beat later, so waiting on the *element* returns on the fallback.
+       * Wait for the value.
+       */
+      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
-        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
+        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
         undefined,
         { timeout: 15_000 },
       );
 
-      assert.equal(await h.page.locator('.space-name').innerText(), 'Laika Core');
+      assert.equal(await h.page.locator('.sidebar-wordmark').innerText(), 'Laika Core');
+      assert.equal(await h.page.locator('.sidebar-orgline').innerText(), 'Borealis Labs');
 
-      const icon = await h.page.locator('.space-icon').boundingBox();
-      assert.ok(icon, 'the space icon is missing');
-      assert.equal(Math.round(icon.width), 26, 'the icon is the design’s 26px square');
+      // And the bar no longer draws either — moved, not copied.
+      assert.equal(await h.page.locator('.space-name').count(), 0);
+      assert.equal(await h.page.locator('.space-icon').count(), 0);
 
       /*
        * Four avatars and `+2`, from six real members — never the design's four
@@ -178,10 +190,10 @@ void describe('the space bar', () => {
     // fields. Asserted against a fixture shaped like the real endpoint.
     const h = await open('/board?project=laika-core', STUB);
     try {
-      const name = h.page.locator('.space-name');
+      const name = h.page.locator('.sidebar-wordmark');
       await name.waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
-        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
+        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
         undefined,
         { timeout: 10_000 },
       );
@@ -303,7 +315,7 @@ void describe('the space bar', () => {
   void test('the bar fits, both themes, at every width', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
 
       for (const theme of ['light', 'dark']) {
         // Back to a width where the rail is on-canvas: below 900px the sidebar

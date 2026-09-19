@@ -226,15 +226,23 @@ void describe('the view tabs', () => {
       await tab.click();
       await h.page.waitForURL(/capacity\?project=laika-core/, { timeout: 10_000 });
 
-      // The whole of the owner's report: the bar must name the space, not
-      // fall back to "No space".
+      /*
+       * The whole of the owner's report: the space must be **named**, not
+       * fall back to "No space".
+       *
+       * The name lives in the rail's wordmark since LAI-295. The regression
+       * this guards is the same one and is if anything sharper here: the rail
+       * falls back to the *product* name, so a failure now reads as a
+       * plausible `Laika` rather than an obvious `No space`.
+       */
       await h.page.waitForFunction(
-        () => (document.querySelector('.space-name')?.textContent ?? '') !== '',
+        () => (document.querySelector('.sidebar-wordmark')?.textContent ?? '') !== '',
         undefined,
         { timeout: 10_000 },
       );
-      const name = await h.page.locator('.space-name').innerText();
-      assert.notEqual(name, 'No space', 'the space bar lost the space');
+      const name = await h.page.locator('.sidebar-wordmark').innerText();
+      assert.notEqual(name, 'No space', 'the rail lost the space');
+      assert.notEqual(name, 'Laika', 'the rail fell back to the product name');
       assert.match(name, /Laika Core|laika-core/);
     } finally {
       await h.close();

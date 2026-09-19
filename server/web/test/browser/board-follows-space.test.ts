@@ -146,7 +146,9 @@ void describe('the board follows the space', () => {
       const after = await cardKeys(h.page);
       assert.match(after, /BE-1/, 'the board did not follow the space');
       assert.doesNotMatch(after, /AL-1/, "the previous space's cards are still on screen");
-      assert.equal(await h.page.locator('.space-name').innerText(), 'Beta Space');
+      // The rail names the open project since LAI-295; the bar no longer does.
+      // What this asserts is unchanged — switching space renames the identity.
+      assert.equal(await h.page.locator('.sidebar-wordmark').innerText(), 'Beta Space');
     } finally {
       await h.close();
     }

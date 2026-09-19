@@ -8,12 +8,6 @@ import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
 import { useSpaceFiltersClaimed } from './SpaceSlot.tsx';
 
 export interface SpaceTopBarProps {
-  /**
-   * What to call this space. The project's `name`, falling back to its slug
-   * while the request is in flight — never a `Space` built from list-only
-   * fields the by-slug response does not carry (LAI-259).
-   */
-  readonly spaceName: string | undefined;
   readonly members: readonly Member[];
   /** Live filter state, read from and written back to the URL. */
   readonly query: string;
@@ -45,7 +39,6 @@ export interface SpaceTopBarProps {
  * forbids. Space settings arrive with a screen to put behind them.
  */
 export function SpaceTopBar({
-  spaceName,
   members,
   query,
   priority,
@@ -116,19 +109,17 @@ export function SpaceTopBar({
     <>
       <div className="space-bar-row">
         <div className="space-identity">
-          <span className="space-icon" aria-hidden="true">
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#fff"
-              strokeWidth="2.2"
-            >
-              <path d="M5 20V9M12 20V4M19 20v-7" />
-            </svg>
-          </span>
-          <h1 className="space-name">{spaceName ?? 'No space'}</h1>
+          {/*
+          **The project name moved to the sidebar's wordmark** (LAI-295).
+
+          It was here *and* in the rail two inches away — the same word twice,
+          and the bar paid for it in width the owner wanted back. The rail is
+          the one that is always visible, including while a dialog covers the
+          bar, so it is the copy that stays.
+
+          The LIVE pill stays: it is about this space's event stream, not its
+          identity, and the rail has nowhere to say it.
+        */}
 
           {/* Real members, never the design's four fixtures. Absent rather than
             a placeholder while the list is still loading.

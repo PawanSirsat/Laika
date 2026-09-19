@@ -35,6 +35,17 @@ export interface SidebarProps {
   readonly orgRole?: string | undefined;
   /** The organisation's name, under the wordmark (prototype line 50). */
   readonly orgName?: string | undefined;
+  /**
+   * The open project's name, from `GET /projects/:slug`.
+   *
+   * **Authoritative, because the list is not.** `useSpaces` asks for
+   * `listProjects({ limit: 20 })`, so a project past the twentieth — or one
+   * reached by URL alone — is simply not in it. Deriving the name only from
+   * that list is how "No space" appeared over a project that plainly existed
+   * (LAI-259); this keeps the by-slug answer that fixed it, moved here with
+   * the name itself.
+   */
+  readonly spaceName?: string | undefined;
   /** Counts by route path. No entry, no badge — that is how it stays honest. */
   readonly counts?: Readonly<Record<string, number | undefined>> | undefined;
   /** The signed-in user, for the footer. Absent renders no footer. */
@@ -65,6 +76,7 @@ export function Sidebar({
   onOpenSpace,
   orgRole,
   orgName,
+  spaceName,
   counts,
   user,
   onSignOut,
@@ -76,6 +88,23 @@ export function Sidebar({
    * uses — one mirror, not two.
    */
   const holds = permissionHolder(orgRole);
+
+  /*
+   * `allSpaces` first: `spaces` is the recent-and-current shortlist, and a
+   * project reached by URL alone need not be on it. Both are already props —
+   * this needs no new plumbing and no second request.
+   */
+  /*
+   * The list is the *fallback*, not the source: it is already loaded, so it
+   * names the space on the first paint instead of flashing the product name
+   * while the by-slug request is in flight.
+   */
+  const listed =
+    projectSlug === undefined
+      ? undefined
+      : (allSpaces?.find((s) => s.slug === projectSlug)?.name ??
+        spaces?.find((s) => s.slug === projectSlug)?.name);
+  const openSpace = spaceName ?? listed;
 
   const railClass = ['sidebar', open ? 'sidebar-open' : '', collapsed ? 'sidebar-collapsed' : '']
     .filter((c) => c !== '')
@@ -112,7 +141,20 @@ export function Sidebar({
         </button>
         {!collapsed && (
           <div className="sidebar-identity">
-            <span className="sidebar-wordmark">Laika</span>
+            {/*
+              **The open project, not the product** (LAI-295).
+
+              The owner asked for this slot to carry the project name, and for
+              the space bar to stop repeating it — the bar had `Laika Core`
+              beside `Laika` in the rail, which is the same word twice and a
+              line of bar width spent on it.
+
+              Falls back to the product name when no project is open: the rail
+              is global chrome and `/organisation`, `/members` and the unlisted
+              screens have no space to name. A blank wordmark there would read
+              as a loading state that never resolves.
+            */}
+            <span className="sidebar-wordmark">{openSpace ?? 'Laika'}</span>
             {/*
               The org's real name, from `GET /org` — "Kvelld Dynamics" in the
               prototype is a fixture. `undefined` renders nothing rather than a

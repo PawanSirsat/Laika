@@ -2,7 +2,6 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useShell } from '../shell/shell-context.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { listMembers, type Member } from '../../api/tasks.ts';
-import { getProject } from '../../api/projects.ts';
 import { listMeetingReviews } from '../../api/meeting-reviews.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
@@ -79,7 +78,6 @@ function SpaceFrame({
    * does not carry — so building one here threw, the `catch` below swallowed
    * it, and the bar read "No space" over a project that plainly existed.
    */
-  const [spaceName, setSpaceName] = useState<string | undefined>(undefined);
   const [members, setMembers] = useState<readonly Member[]>([]);
   /**
    * The Meeting review tab's badge — **the design puts it there**, not on
@@ -91,29 +89,22 @@ function SpaceFrame({
 
   useEffect(() => {
     if (slug === undefined) {
-      setSpaceName(undefined);
       setMembers([]);
       return;
     }
 
     const controller = new AbortController();
 
-    getProject(slug, controller.signal)
-      .then((project) => {
-        if (!controller.signal.aborted) setSpaceName(project.name);
-      })
-      .catch((cause: unknown) => {
-        /*
-         * **Only an unreachable endpoint belongs here.** This `catch` used to
-         * sit around a `toSpace()` call that could throw a `TypeError`, and it
-         * absorbed it — which is how "No space" survived review (LAI-259). The
-         * `.then` above now does nothing that can fail, so anything arriving
-         * here is a request that did not land, and the bar falls back to the
-         * slug while the screen below shows its own error state.
-         */
-        if (cause instanceof TypeError) throw cause;
-      });
-
+    /*
+     * **`getProject` is gone from here** (LAI-295). It existed to name the
+     * space in the bar; the name is now the rail's, fetched there by the same
+     * call. Leaving it would have been a second request for an answer nothing
+     * on this screen reads.
+     *
+     * The LAI-259 lesson it carried moves with it: a `catch` must not sit
+     * around code that can throw a `TypeError`, or a genuine bug is absorbed
+     * as an offline endpoint. `ShellSidebar` swallows only the request.
+     */
     listMembers(slug, controller.signal)
       .then((list) => {
         if (!controller.signal.aborted) setMembers(list.members);
@@ -166,7 +157,6 @@ function SpaceFrame({
           */}
           <div className="space-bar-top">
             <SpaceTopBar
-              spaceName={spaceName ?? slug}
               members={members}
               query={params.get('q') ?? ''}
               priority={(params.get('priority') ?? undefined) as TaskPriority | undefined}
