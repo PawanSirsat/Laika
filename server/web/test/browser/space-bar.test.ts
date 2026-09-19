@@ -146,10 +146,24 @@ void describe('the space bar', () => {
       assert.ok(icon, 'the space icon is missing');
       assert.equal(Math.round(icon.width), 26, 'the icon is the design’s 26px square');
 
-      // Four avatars and `+2`, from six real members — never the design's
-      // four fixtures.
-      assert.equal(await h.page.locator('.space-member').count(), 4);
-      assert.equal(await h.page.locator('.space-member-more').innerText(), '+2');
+      /*
+       * Four avatars and `+2`, from six real members — never the design's four
+       * fixtures.
+       *
+       * **Asserted on the timeline since LAI-293.** The faces are an assignee
+       * filter, so on the *board* they now live in that view's own row and the
+       * bar correctly has none. The property this protects — real members,
+       * clustered, never fixtures — is unchanged; only the view it must be
+       * measured on moved.
+       */
+      const t = await open('/timeline?project=laika-core', STUB);
+      try {
+        await t.page.locator('.space-member').first().waitFor({ timeout: 20_000 });
+        assert.equal(await t.page.locator('.space-member').count(), 4);
+        assert.equal(await t.page.locator('.space-member-more').innerText(), '+2');
+      } finally {
+        await t.close();
+      }
 
       const bar = await h.page.locator('#sidebar').innerText();
       assert.doesNotMatch(bar, /Mira Kellner/);

@@ -533,3 +533,31 @@
 .space-bar-actions {
   display: contents;
 }
+
+/*
+ * Agents and Create sit to the right of the bar (LAI-293, the owner's
+ * reference). `auto` on the first of them pushes it and every later sibling
+ * across, which is one declaration instead of a meaningless spacer node.
+ */
+.space-bar-right {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  /*
+   * **After the tabs, at the bar's right edge.** The DOM keeps this next to
+   * the identity row it came from — reading order is project, then its
+   * actions — while `order` paints it last. `.view-tabs` is `flex: 1 1 auto`,
+   * so it is the tabs that carry this group across; an `auto` margin here
+   * would find no free space to consume.
+   */
+  order: 3;
+}
+
+.space-bar-top > .space-bar-row {
+  order: 1;
+}
+
+.space-bar-top > nav {
+  order: 2;
+}

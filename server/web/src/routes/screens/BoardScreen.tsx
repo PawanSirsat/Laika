@@ -578,6 +578,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           onAgentOnly={(value) => {
             setParam('agent', value ? 'true' : undefined);
           }}
+          query={query}
+          theme={theme}
+          onQuery={(value) => {
+            setParam('q', value === '' ? undefined : value);
+          }}
           onGroup={(value) => {
             setParam('group', value === 'column' ? undefined : value);
           }}

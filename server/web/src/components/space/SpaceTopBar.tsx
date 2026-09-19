@@ -113,119 +113,236 @@ export function SpaceTopBar({
   const ownFilters = !useSpaceFiltersClaimed();
 
   return (
-    <div className="space-bar-row">
-      <div className="space-identity">
-        <span className="space-icon" aria-hidden="true">
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#fff"
-            strokeWidth="2.2"
-          >
-            <path d="M5 20V9M12 20V4M19 20v-7" />
-          </svg>
-        </span>
-        <h1 className="space-name">{spaceName ?? 'No space'}</h1>
+    <>
+      <div className="space-bar-row">
+        <div className="space-identity">
+          <span className="space-icon" aria-hidden="true">
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="#fff"
+              strokeWidth="2.2"
+            >
+              <path d="M5 20V9M12 20V4M19 20v-7" />
+            </svg>
+          </span>
+          <h1 className="space-name">{spaceName ?? 'No space'}</h1>
 
-        {/* Real members, never the design's four fixtures. Absent rather than
+          {/* Real members, never the design's four fixtures. Absent rather than
             a placeholder while the list is still loading.
 
-            **Deliberately not behind `ownFilters`** (LAI-292). The faces are an
-            assignee filter and belong in the board's own row — but that row does
-            not exist yet, and hiding them first leaves the board unable to
-            filter by assignee at all. They move in LAI-293, with the row that
-            receives them, so no build has neither. */}
-        {members.length > 0 && (
-          <div
-            className="space-members"
-            title={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
-          >
-            {/*
+            **Behind `ownFilters` as of LAI-293**, now that the row that receives
+            them exists. LAI-292 deliberately left them here because hiding them
+            before `.board-bar` rendered them would have left the board unable to
+            filter by assignee at all — the ordering was the requirement, and
+            this is the other half of it, landing in the same commit. */}
+          {ownFilters && members.length > 0 && (
+            <div
+              className="space-members"
+              title={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
+            >
+              {/*
               **Buttons, not decoration** (LAI-290). These were `<span>` with
               `aria-hidden="true"` — a row of faces that looked filterable and
               was not, while the only way to filter by assignee was a separate
               dropdown. Clicking one writes `?assignee=`, which the board
               already reads; clicking it again clears it.
             */}
-            {shown.map((member) => {
-              const colour = avatarColor(member.user_id, theme);
-              const on = assignee === member.user_id;
-              return (
-                <button
-                  key={member.user_id}
-                  type="button"
-                  className={on ? 'space-member space-member-on' : 'space-member'}
-                  style={{ background: colour.background, color: colour.foreground }}
-                  aria-pressed={on}
-                  title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
-                  onClick={() => {
-                    onAssignee(on ? undefined : member.user_id);
-                  }}
-                >
-                  {initials(member.name)}
-                  <span className="visually-hidden">
-                    {on ? ` — showing only their work, click to clear` : ` — show only their work`}
-                  </span>
-                </button>
-              );
-            })}
-            {overflow > 0 && <span className="space-member-more">+{overflow}</span>}
-          </div>
-        )}
-      </div>
+              {shown.map((member) => {
+                const colour = avatarColor(member.user_id, theme);
+                const on = assignee === member.user_id;
+                return (
+                  <button
+                    key={member.user_id}
+                    type="button"
+                    className={on ? 'space-member space-member-on' : 'space-member'}
+                    style={{ background: colour.background, color: colour.foreground }}
+                    aria-pressed={on}
+                    title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
+                    onClick={() => {
+                      onAssignee(on ? undefined : member.user_id);
+                    }}
+                  >
+                    {initials(member.name)}
+                    <span className="visually-hidden">
+                      {on
+                        ? ` — showing only their work, click to clear`
+                        : ` — show only their work`}
+                    </span>
+                  </button>
+                );
+              })}
+              {overflow > 0 && <span className="space-member-more">+{overflow}</span>}
+            </div>
+          )}
+        </div>
 
-      <div className="space-controls">
-        {/*
+        <div className="space-controls">
+          {/*
           The LIVE pill. Four states, because the stream has four and a pill
           that only ever says LIVE is decoration (§11.5).
         */}
-        <span className={`space-live space-live-${stream}`}>
-          <span className="space-live-dot" aria-hidden="true" />
-          {stream === 'live'
-            ? 'LIVE'
-            : stream === 'catching-up'
-              ? 'CATCHING UP'
-              : stream === 'down'
-                ? 'OFFLINE'
-                : 'CONNECTING'}
-        </span>
+          <span className={`space-live space-live-${stream}`}>
+            <span className="space-live-dot" aria-hidden="true" />
+            {stream === 'live'
+              ? 'LIVE'
+              : stream === 'catching-up'
+                ? 'CATCHING UP'
+                : stream === 'down'
+                  ? 'OFFLINE'
+                  : 'CONNECTING'}
+          </span>
 
-        {/* Same claim as the members: search is a filter, and a view that owns
-        {/* Search stays in the bar for now (LAI-292). It belongs in the
-            board's own row and moves there in LAI-293, **with** that row —
-            hiding it here first would leave the board with no search at all
-            until the row exists. `space-bar.test.ts` caught the same mistake
-            for the member faces: it asserts four and saw none. */}
-        <label className="space-search lk-sub">
-          <span className="visually-hidden">Search tasks in this space</span>
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            aria-hidden="true"
-          >
-            <circle cx="11" cy="11" r="7" />
-            <path d="m20 20-3.5-3.5" />
-          </svg>
-          <input
-            ref={searchRef}
-            type="search"
-            placeholder="Search"
-            value={query}
-            onChange={(event) => {
-              onQuery(event.target.value);
-            }}
-          />
-        </label>
+          {/* Same claim as the members: search is a filter, and a view that owns
+            its filtering owns this too (LAI-293). Non-board views keep it —
+            the bar is the only search they have. */}
+          {ownFilters && (
+            <label className="space-search lk-sub">
+              <span className="visually-hidden">Search tasks in this space</span>
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                aria-hidden="true"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                ref={searchRef}
+                type="search"
+                placeholder="Search"
+                value={query}
+                onChange={(event) => {
+                  onQuery(event.target.value);
+                }}
+              />
+            </label>
+          )}
+          {ownFilters && (
+            <>
+              {/*
+            **A dropdown, not a cycler** (LAI-270). The reference reads
+            `Priority: all` and opens; a button you press repeatedly to reach p3
+            hides its own options.
+          */}
+              <label
+                className={priority === undefined ? 'space-select' : 'space-select space-chip-on'}
+              >
+                <span className="visually-hidden">Priority</span>
+                <select
+                  value={priority ?? ''}
+                  onChange={(event) => {
+                    onPriority(
+                      event.target.value === '' ? undefined : (event.target.value as TaskPriority),
+                    );
+                  }}
+                >
+                  <option value="">Priority: all</option>
+                  {PRIORITIES.map((p) => (
+                    <option key={p} value={p}>
+                      Priority: {p.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
+              {tags.length > 0 && (
+                <label
+                  className={tag === undefined ? 'space-select' : 'space-select space-chip-on'}
+                >
+                  <span className="visually-hidden">Tag</span>
+                  <select
+                    value={tag ?? ''}
+                    onChange={(event) => {
+                      onTag(event.target.value === '' ? undefined : event.target.value);
+                    }}
+                  >
+                    <option value="">Any tag</option>
+                    {tags.map((t) => (
+                      <option key={t.name} value={t.name}>
+                        {t.name} ({t.task_count})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label
+                className={assignee === undefined ? 'space-select' : 'space-select space-chip-on'}
+              >
+                <span className="visually-hidden">Assignee</span>
+                <select
+                  value={assignee ?? ''}
+                  onChange={(event) => {
+                    onAssignee(event.target.value === '' ? undefined : event.target.value);
+                  }}
+                >
+                  <option value="">Anyone</option>
+                  <option value="none">Unassigned</option>
+                  {members.map((m) => (
+                    <option key={m.user_id} value={m.user_id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className={ready ? 'space-chip space-chip-on' : 'space-chip'}
+                aria-pressed={ready}
+                onClick={() => {
+                  onReady(!ready);
+                }}
+              >
+                Ready only
+              </button>
+            </>
+          )}
+
+          {/*
+          Where a *view* hangs its own controls — the board's View settings
+          today (LAI-266). **In the bar, not in the slot below it**: the slot
+          collapses when empty and the reference has no band under the tabs, so
+          a permanent button there would add a row the design does not have.
+          `sprint-strip.test.ts` guards exactly that.
+        */}
+          <div id="space-bar-actions" className="space-bar-actions" />
+        </div>
+      </div>
+
+      <div className="space-bar-right">
+        {/*
+          **Agents and Create moved to the far right of the bar** (LAI-293, the
+          owner's reference). They sat between the project name and the view
+          tabs, which reads as crammed rather than as a pair of actions.
+
+          They are a **sibling of the tabs**, not a child of the identity row —
+          `margin-inline-start: auto` inside that row only reaches the row's own
+          right edge, which is immediately left of the tabs. Measured: it put
+          Create at x=608 in a 1600 bar. The tabs' `flex: 1 1 auto` is what
+          carries this group to the end; `order` puts it after them without
+          moving the DOM out of reading order.
+        */}
+        {/*
+          **Agents and Create sit to the right**, per the owner's reference.
+          `.space-agents-start` carries `margin-inline-start: auto`, so it and
+          everything after it are pushed across — one rule rather than a spacer
+          element, which would be a node with no meaning.
+        */}
         <button
           type="button"
-          className={agentOnly ? 'space-chip space-chip-on' : 'space-chip'}
+          className={
+            agentOnly
+              ? 'space-chip space-chip-on space-agents-start'
+              : 'space-chip space-agents-start'
+          }
           aria-pressed={agentOnly}
           title="Show only agent-authored work"
           onClick={() => {
@@ -247,95 +364,6 @@ export function SpaceTopBar({
           Agents {agents}
         </button>
 
-        {ownFilters && (
-          <>
-            {/*
-            **A dropdown, not a cycler** (LAI-270). The reference reads
-            `Priority: all` and opens; a button you press repeatedly to reach p3
-            hides its own options.
-          */}
-            <label
-              className={priority === undefined ? 'space-select' : 'space-select space-chip-on'}
-            >
-              <span className="visually-hidden">Priority</span>
-              <select
-                value={priority ?? ''}
-                onChange={(event) => {
-                  onPriority(
-                    event.target.value === '' ? undefined : (event.target.value as TaskPriority),
-                  );
-                }}
-              >
-                <option value="">Priority: all</option>
-                {PRIORITIES.map((p) => (
-                  <option key={p} value={p}>
-                    Priority: {p.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {tags.length > 0 && (
-              <label className={tag === undefined ? 'space-select' : 'space-select space-chip-on'}>
-                <span className="visually-hidden">Tag</span>
-                <select
-                  value={tag ?? ''}
-                  onChange={(event) => {
-                    onTag(event.target.value === '' ? undefined : event.target.value);
-                  }}
-                >
-                  <option value="">Any tag</option>
-                  {tags.map((t) => (
-                    <option key={t.name} value={t.name}>
-                      {t.name} ({t.task_count})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-
-            <label
-              className={assignee === undefined ? 'space-select' : 'space-select space-chip-on'}
-            >
-              <span className="visually-hidden">Assignee</span>
-              <select
-                value={assignee ?? ''}
-                onChange={(event) => {
-                  onAssignee(event.target.value === '' ? undefined : event.target.value);
-                }}
-              >
-                <option value="">Anyone</option>
-                <option value="none">Unassigned</option>
-                {members.map((m) => (
-                  <option key={m.user_id} value={m.user_id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <button
-              type="button"
-              className={ready ? 'space-chip space-chip-on' : 'space-chip'}
-              aria-pressed={ready}
-              onClick={() => {
-                onReady(!ready);
-              }}
-            >
-              Ready only
-            </button>
-          </>
-        )}
-
-        {/*
-          Where a *view* hangs its own controls — the board's View settings
-          today (LAI-266). **In the bar, not in the slot below it**: the slot
-          collapses when empty and the reference has no band under the tabs, so
-          a permanent button there would add a row the design does not have.
-          `sprint-strip.test.ts` guards exactly that.
-        */}
-        <div id="space-bar-actions" className="space-bar-actions" />
-
         <button type="button" className="space-create" onClick={onCreate}>
           <svg
             width="13"
@@ -351,6 +379,6 @@ export function SpaceTopBar({
           Create
         </button>
       </div>
-    </div>
+    </>
   );
 }

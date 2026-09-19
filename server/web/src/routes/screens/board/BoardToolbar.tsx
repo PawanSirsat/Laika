@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Member, TaskPriority } from '../../../api/tasks.ts';
+import type { Theme } from '../../../theme/theme.ts';
+import { avatarColor } from '../../../theme/avatar-color.ts';
+import { initials } from '../../../theme/initials.ts';
+import { cluster } from '../../../components/space/top-bar-derive.ts';
 import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import './board-toolbar.css';
 
@@ -13,6 +17,11 @@ export interface BoardToolbarProps {
   readonly tags: readonly string[];
   readonly members: readonly Member[];
   readonly group: string;
+  /** Search and the faces live here now, not in the space bar (LAI-293). */
+  readonly query: string;
+  readonly onQuery: (value: string) => void;
+  /** Live, because a stale theme paints light avatars in dark mode. */
+  readonly theme: Theme;
   readonly onPriority: (value: TaskPriority | undefined) => void;
   readonly onAssignee: (value: string | undefined) => void;
   readonly onTag: (value: string | undefined) => void;
@@ -93,6 +102,9 @@ export function BoardToolbar({
   onReady,
   onAgentOnly,
   onGroup,
+  query,
+  onQuery,
+  theme,
   onClearFilters,
   onInsights,
   onViewSettings,
@@ -114,11 +126,101 @@ export function BoardToolbar({
   // The bar must not draw these four a second time — see `SpaceFilterClaim`.
   useClaimSpaceFilters();
 
+  const { shown, overflow } = cluster(members);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  /*
+   * **The `/` shortcut moves with the input it focuses.** It lived in
+   * `SpaceTopBar` beside the search box; now that the board renders its own,
+   * the bar's copy is not rendered here and `searchRef.current` there is
+   * `null` — so `/` would have become a silent no-op on the board, which is
+   * the kind of breakage nothing fails on.
+   */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
+        return;
+      }
+      event.preventDefault();
+      searchRef.current?.focus();
+      searchRef.current?.select();
+    };
+
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
+
   const grouped = group !== 'column';
   const groupLabel = GROUPS.find((g) => g.value === group)?.label ?? 'None';
 
   return (
     <div className="bt" ref={box}>
+      <label className="bt-search">
+        <span className="visually-hidden">Search tasks on this board</span>
+        <svg
+          width="13"
+          height="13"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          aria-hidden="true"
+        >
+          <circle cx="11" cy="11" r="7" />
+          <path d="m20 20-3.5-3.5" />
+        </svg>
+        <input
+          ref={searchRef}
+          type="search"
+          placeholder="Search board"
+          value={query}
+          onChange={(event) => {
+            onQuery(event.target.value);
+          }}
+        />
+      </label>
+
+      {/*
+        **Buttons, not decoration.** A face is an assignee filter: clicking one
+        writes `?assignee=`, clicking it again clears it. Absent rather than a
+        placeholder while the member list is still loading.
+      */}
+      {members.length > 0 && (
+        <div
+          className="bt-members"
+          title={`${String(members.length)} ${members.length === 1 ? 'member' : 'members'}`}
+        >
+          {shown.map((member) => {
+            const colour = avatarColor(member.user_id, theme);
+            const on = assignee === member.user_id;
+            return (
+              <button
+                key={member.user_id}
+                type="button"
+                className={on ? 'bt-member bt-member-on' : 'bt-member'}
+                style={{ background: colour.background, color: colour.foreground }}
+                aria-pressed={on}
+                title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
+                onClick={() => {
+                  onAssignee(on ? undefined : member.user_id);
+                }}
+              >
+                {initials(member.name)}
+                <span className="visually-hidden">
+                  {on ? ' — showing only their work, click to clear' : ' — show only their work'}
+                </span>
+              </button>
+            );
+          })}
+          {overflow > 0 && <span className="bt-member-more">+{overflow}</span>}
+        </div>
+      )}
+
       <button
         type="button"
         className={active > 0 ? 'bt-button bt-button-on' : 'bt-button'}

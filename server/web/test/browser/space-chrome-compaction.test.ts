@@ -162,32 +162,103 @@ void describe('no slot was carved', () => {
  *
  * They are filters and they belong in the board's own row — LAI-293 moves them
  * there. This task hid them first, and `space-bar.test.ts` caught it
- * immediately: it asserts four faces on the board and saw none, because the row
- * that should receive them does not exist yet.
+ * immediately: it asserted four faces on the board and saw none, because the
+ * row that should receive them did not exist yet.
  *
- * So the order is the point. They move **with** the row, in one change, and
- * until then the bar keeps them on every view. This asserts that ordering
- * rather than the end state — a guard against hiding them again before there is
- * somewhere for them to go.
+ * **That row exists now** (LAI-293), so the ordering guard has done its job and
+ * becomes an end-state guard: search and the faces are in the board's own row,
+ * and still in the bar everywhere else. Kept rather than deleted — what it was
+ * really protecting is *no build has neither*, and that is still the property
+ * worth failing on.
  */
-void describe('filters stay in the bar until a row exists to receive them', () => {
-  for (const [view, path] of [
-    ['board', '/board'],
-    ['timeline', '/timeline'],
-  ] as const) {
-    void test(`${view} still has its search and assignee faces`, async () => {
-      const h = await open(`${path}?project=laika-core`, STUB);
-      try {
-        await h.page.setViewportSize({ width: 1600, height: 1000 });
-        await h.page.locator('.space-bar-row').waitFor({ timeout: 20_000 });
-        await h.page.waitForTimeout(500);
+void describe('search and the faces are in exactly one place per view', () => {
+  void test('the board has them in its own row, not in the bar', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 1000 });
+      await h.page.locator('.space-bar-row').waitFor({ timeout: 20_000 });
+      await h.page.locator('.board-bar').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(500);
 
-        const g = await geometry(h.page);
-        assert.equal(g.search, 1, `${view} has no search`);
-        assert.equal(g.members, 1, `${view} has no assignee filter`);
-      } finally {
-        await h.close();
-      }
-    });
-  }
+      assert.equal(
+        await h.page.locator('.board-bar .bt-search').count(),
+        1,
+        'the row has no search',
+      );
+      assert.ok(
+        (await h.page.locator('.board-bar .bt-member').count()) > 0,
+        'the row has no assignee faces',
+      );
+
+      const g = await geometry(h.page);
+      assert.equal(g.search, 0, 'the bar still draws search on the board');
+      assert.equal(g.members, 0, 'the bar still draws the faces on the board');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the timeline keeps them in the bar — it has no row', async () => {
+    // The half that stops the move becoming a deletion: a view with no toolbar
+    // has nowhere else to put them.
+    const h = await open('/timeline?project=laika-core', STUB);
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 1000 });
+      await h.page.locator('.space-bar-row').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(500);
+
+      assert.equal(await h.page.locator('.board-bar').count(), 0, 'the timeline grew a board row');
+
+      const g = await geometry(h.page);
+      assert.equal(g.search, 1, 'the timeline lost its search');
+      assert.equal(g.members, 1, 'the timeline lost its assignee filter');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * Agents and Create sit at the bar's right edge (LAI-293).
+ *
+ * They were between the project name and the view tabs, which reads as crammed
+ * rather than as a pair of actions. **Asserted against the bar's own right
+ * edge**, not against a pixel: a number would pass on any width that happened
+ * to match and would have to be rewritten every time the tabs change.
+ */
+void describe('the space bar’s actions are on the right', () => {
+  void test('Create ends where the bar ends, and both sit after the tabs', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 1000 });
+      await h.page.locator('.space-create').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(400);
+
+      const m = await h.page.evaluate(() => {
+        const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+        const create = box('.space-create');
+        const top = box('.space-bar-top');
+        const tabs = box('.view-tabs');
+        const group = box('.space-bar-right');
+        return create === null || top === null || tabs === null || group === null
+          ? null
+          : {
+              createRight: Math.round(create.right),
+              topRight: Math.round(top.right),
+              tabsRight: Math.round(tabs.right),
+              groupLeft: Math.round(group.left),
+            };
+      });
+
+      assert.ok(m !== null, 'the bar, the tabs or the actions are missing');
+      assert.equal(m.createRight, m.topRight, 'Create is not flush with the bar’s right edge');
+      assert.ok(
+        m.groupLeft >= m.tabsRight,
+        `the actions are still left of the tabs (${String(m.groupLeft)} < ${String(m.tabsRight)})`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
 });
