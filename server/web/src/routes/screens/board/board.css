@@ -676,7 +676,8 @@
   align-items: center;
   gap: 0.4375rem;
   justify-content: flex-start;
-  padding: 0 0.25rem;
+  /* Room around the row, per the design — it sat flush against the lane edge. */
+  padding: 0.5rem 0.625rem;
 }
 
 .lane-dot {
@@ -700,41 +701,48 @@
   background: var(--grn);
 }
 
+/*
+ * **The column's own name, as written** (LAI-602).
+ *
+ * It was `uppercase` at `0.07em` tracking, which is what made a row of columns
+ * read as shouted labels rather than as names — and it silently renamed them:
+ * a column called `To Do` displayed as `TO DO`, so the header and the rename
+ * field disagreed about what the column is called. The reference sets them in
+ * their own case at normal tracking.
+ */
 .lane-title {
-  font-size: 0.65625rem;
-  font-weight: var(--weight-heavy);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--tx2);
+  font-size: 0.8125rem;
+  font-weight: var(--weight-semibold);
+  color: var(--tx);
   margin: 0;
   white-space: nowrap;
 }
 
 /* The count pill takes the lane's colour, so the eye reads column and volume
    together rather than as two separate facts. */
+/*
+ * A plain rounded badge beside the name (LAI-602). The monospace face and the
+ * border were doing the shouting the uppercase title started; the reference's
+ * is a quiet filled chip in the body font.
+ */
 .lane-count {
-  font-family: var(--font-mono);
-  font-size: 0.59375rem;
-  font-weight: var(--weight-bold);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
   color: var(--tx2);
   background: var(--card);
-  border: 1px solid var(--bd);
-  /* A rounded square, not a pill — the reference's badge. */
-  border-radius: 5px;
-  padding: 0.1875rem 0.25rem;
+  border: 0;
+  border-radius: var(--radius-sm);
+  padding: 0.1875rem 0.5rem;
+  min-width: 1.25rem;
+  text-align: center;
 }
 
-.lane-count-in_progress {
-  color: var(--acc);
-  background: var(--accs);
-  border-color: var(--accb);
-}
-
-.lane-count-done {
-  color: var(--grn);
-  background: var(--grns);
-  border-color: var(--grnb);
-}
+/*
+ * **The count is one colour in every lane.** It used to take the status's
+ * accent — blue in `in_progress`, green in `done` — so the same badge meant
+ * "three tasks" in four different colours down one board. The coloured dot to
+ * its left already carries the status; the number is just a number.
+ */
 
 /* Sample data — no board-column entity exists to hold a limit. See demo/wip.ts. */
 .lane-wip {
@@ -1525,4 +1533,113 @@
   font-size: 0.75rem;
   color: var(--tx3);
   padding: var(--space-4) 0;
+}
+
+/*
+ * The header's controls appear on hover (LAI-602).
+ *
+ * The reference shows a column as **name + count** and nothing else; the grip,
+ * the `⋯` and the order select only arrive when the pointer does. Ours drew all
+ * of them always, which is what made a row of four columns read as cluttered
+ * rather than as four columns.
+ *
+ * `opacity`, not `display`, deliberately: the controls keep their space, so the
+ * title does not shift sideways the moment you point at it. And `:focus-within`
+ * keeps every one of them reachable by keyboard, where there is no hover.
+ */
+.lane-grip,
+.lane-menu,
+.lane-order {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.lane-head:hover .lane-grip,
+.lane-head:hover .lane-menu,
+.lane-head:hover .lane-order,
+.lane-head:focus-within .lane-grip,
+.lane-head:focus-within .lane-menu,
+.lane-head:focus-within .lane-order {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lane-grip,
+  .lane-menu,
+  .lane-order {
+    transition: none;
+  }
+}
+
+/* The name reads as pressable, because it is (LAI-602). */
+.lane-title-editable {
+  font-size: 0.8125rem;
+  font-weight: var(--weight-semibold);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: inherit;
+  color: inherit;
+  padding: 0.0625rem 0.25rem;
+  margin-inline-start: -0.25rem;
+  cursor: text;
+  text-align: start;
+  min-width: 0;
+}
+
+.lane-title-editable:hover {
+  background: var(--card);
+  border-color: var(--bd);
+}
+
+.lane-rename {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+}
+
+.lane-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--acc);
+  background: var(--card);
+  color: var(--tx);
+  outline: none;
+}
+
+/* Under the field, as the reference has them — not squeezing the header. */
+.lane-rename-actions {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  inset-inline-end: 0;
+  display: flex;
+  gap: 0.25rem;
+  z-index: 2;
+}
+
+.lane-rename-ok,
+.lane-rename-cancel {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--bd);
+  background: var(--card);
+  color: var(--tx2);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.lane-rename-ok:hover,
+.lane-rename-cancel:hover {
+  color: var(--tx);
+  border-color: var(--bd2);
 }
