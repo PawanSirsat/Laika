@@ -2,11 +2,12 @@
 id: LAI-290
 title: 'Swimlanes, the board toolbar, and a create that lands in the column you clicked'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-266
-status: backlog
+status: in-progress
+started: 2026-09-19T11:45:47Z
 ---
 
 ## Goal
