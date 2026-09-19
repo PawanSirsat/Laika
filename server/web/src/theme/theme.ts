@@ -5,12 +5,19 @@
  * → light.
  *
  * The OS preference only *selects* a theme here; it never defines colours.
- * `tokens.css` declares every colour in both `:root` and `.dk`, so a media query
- * that redeclared any of them would be a second source of truth and could strand
- * a value when the user toggles away from their OS setting.
+ * `styles/theme.css` declares every colour in every theme block, so a media
+ * query that redeclared any of them would be a second source of truth and could
+ * strand a value when the user toggles away from their OS setting.
  */
 
-export const THEMES = ['light', 'dark'] as const;
+/**
+ * Every theme, in switcher order (LAI-606).
+ *
+ * **Adding a theme is adding a block to `styles/theme.css` and a name here.**
+ * Nothing else: the switcher reads this array, so a new theme appears in the UI
+ * without an edit, and components never learn its name.
+ */
+export const THEMES = ['dark', 'light'] as const;
 export type Theme = (typeof THEMES)[number];
 
 /** What the user asked for. `system` means "follow the OS". */
@@ -18,8 +25,18 @@ export type ThemePreference = Theme | 'system';
 
 export const STORAGE_KEY = 'laika.theme';
 
-/** The class `tokens.css` hangs the dark palette on. Matches the design. */
-const DARK_CLASS = 'dk';
+/**
+ * The attribute `styles/theme.css` hangs each palette on.
+ *
+ * **Dark is the bare `:root` and carries no attribute.** Every other theme is
+ * `:root[data-theme='<name>']`, so the default needs no markup to be correct —
+ * which is what makes a first paint before any script the *dark* one rather
+ * than a flash of something else.
+ */
+const THEME_ATTRIBUTE = 'data-theme';
+
+/** The theme that `:root` itself declares, and therefore needs no attribute. */
+const DEFAULT_THEME: Theme = 'dark';
 
 const DARK_QUERY = '(prefers-color-scheme: dark)';
 
@@ -78,8 +95,33 @@ export function resolveTheme(preference: ThemePreference, system: Theme = system
  * is what stops a white scrollbar framing a dark app.
  */
 export function applyTheme(theme: Theme, root: HTMLElement = document.documentElement): void {
-  root.classList.toggle(DARK_CLASS, theme === 'dark');
+  if (theme === DEFAULT_THEME) {
+    // Removed, not set to 'dark': `:root` already *is* dark, and an attribute
+    // that names the default is a second place for it to be wrong.
+    root.removeAttribute(THEME_ATTRIBUTE);
+  } else {
+    root.setAttribute(THEME_ATTRIBUTE, theme);
+  }
+
   root.style.colorScheme = theme;
+}
+
+/**
+ * Choose a theme: persist it and put it on the document (LAI-606).
+ *
+ * The one entry point the brief asks for — the switcher calls this and nothing
+ * else. `'system'` is a valid choice and clears the stored value, so a reader
+ * who picks it follows the OS again rather than being pinned to whatever it
+ * happened to be at the moment they chose.
+ */
+export function setTheme(
+  preference: ThemePreference,
+  root: HTMLElement = document.documentElement,
+): Theme {
+  writePreference(preference);
+  const theme = resolveTheme(preference);
+  applyTheme(theme, root);
+  return theme;
 }
 
 /**

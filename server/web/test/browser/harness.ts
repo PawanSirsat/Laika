@@ -335,11 +335,23 @@ export async function closeBrowser(): Promise<void> {
  * shortcut, and the theme is what these tests are about.
  */
 export async function setTheme(page: Page, theme: string) {
+  /*
+   * **`data-theme`, not a `.dk` class** (LAI-606).
+   *
+   * The engine moved to an attribute, and dark is the bare `:root` — it sets
+   * *no* attribute at all, so "is it dark" is "is the attribute absent", not
+   * "is it 'dark'". This helper kept watching for the class and waited the full
+   * five seconds on every theme switch in the suite, which surfaced as two
+   * unrelated tests timing out rather than as a theme problem.
+   */
   const wantDark = theme.toLowerCase() === 'dark';
-  const isDark = await page.evaluate(() => document.documentElement.classList.contains('dk'));
+  const reads = () => document.documentElement.getAttribute('data-theme') !== 'light';
+
+  const isDark = await page.evaluate(reads);
   if (wantDark !== isDark) await page.locator('.theme-switch').first().click();
+
   await page.waitForFunction(
-    (want: boolean) => document.documentElement.classList.contains('dk') === want,
+    (want: boolean) => (document.documentElement.getAttribute('data-theme') !== 'light') === want,
     wantDark,
     { timeout: 5000 },
   );

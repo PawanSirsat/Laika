@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { useDelayed } from '../../../components/use-delayed.ts';
 import { daysLeft } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import type { Task } from '../../../api/tasks.ts';
@@ -91,11 +90,17 @@ export function SprintStrip({ sprints, tasks, selected, onSelect, loading }: Spr
   }, [sprints.length]);
 
   /*
-   * A placeholder only when the wait is long enough to notice (LAI-297).
-   * `useDelayed` holds it once shown, so a response landing at 160ms does not
-   * flash two chips and remove them.
+   * **No placeholder inside the strip** (LAI-606).
+   *
+   * LAI-297 reserved the height *and* pulsed two ghost chips while the list
+   * loaded. Reserving is still right — it is what stops the board jumping
+   * 57px. The animation is not: measured, it ran to ~6s, long past the board
+   * being usable, and the owner's complaint about loader noise is exactly this.
+   *
+   * **Reserving layout and animating a placeholder are separable**, and only
+   * the first is needed for ambient data. Nobody waits on the sprint list;
+   * they wait on the board, which is already there.
    */
-  const slow = useDelayed(loading === true && sprints.length === 0);
 
   /*
    * **The early return moved below the hooks, and it had to.**
@@ -128,16 +133,6 @@ export function SprintStrip({ sprints, tasks, selected, onSelect, loading }: Spr
         </button>
 
         <div className="strip-chips" ref={chips}>
-          {/*
-            Placeholder chips while the list is slow (LAI-297). `aria-hidden`
-            and not focusable: they carry no information, and a screen reader
-            announcing two empty buttons is worse than silence. The row's
-            height comes from the real `All sprints` button beside them, so
-            these change nothing about the layout — they exist only so a long
-            wait does not look like an empty strip.
-          */}
-          {slow &&
-            [0, 1].map((i) => <span key={i} className="strip-chip-ghost" aria-hidden="true" />)}
           {sprints.map((sprint, index) => {
             const c = countFor(tasks, sprint.id);
             const on = sprint.id === selected;

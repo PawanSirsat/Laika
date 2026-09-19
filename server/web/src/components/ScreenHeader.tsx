@@ -14,7 +14,7 @@ export interface ScreenHeaderProps {
  * The header bar every screen shares.
  *
  * The prototype gives all ten screens the identical band — `12px 18px` on
- * `var(--card)` with a bottom border, the title at 15px/800 and a 10px context
+ * `var(--bg-card)` with a bottom border, the title at 15px/800 and a 10px context
  * line beside it, controls pushed right. Building it once means a new screen
  * cannot drift, and it removes the reason each screen had its own header markup.
  *

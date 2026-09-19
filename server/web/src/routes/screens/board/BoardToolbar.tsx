@@ -202,7 +202,7 @@ export function BoardToolbar({
               <button
                 key={member.user_id}
                 type="button"
-                className={on ? 'bt-member bt-member-on' : 'bt-member'}
+                className={on ? 'bt-member bt-member-on t-avatar' : 'bt-member t-avatar'}
                 style={{ background: colour.background, color: colour.foreground }}
                 aria-pressed={on}
                 title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}

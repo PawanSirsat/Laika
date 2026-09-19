@@ -63,6 +63,8 @@ export interface LaneRowProps {
    * Columns are project-level, so N copies of one control is noise.
    */
   readonly showColumnConfig?: boolean | undefined;
+  /** Rename from the header itself — the reference renames in place (LAI-602). */
+  readonly onRenameColumn?: ((columnId: string, name: string) => void) | undefined;
   readonly onAddColumn?: (() => void) | undefined;
   readonly onEditColumn?: ((column: BoardColumn) => void) | undefined;
   readonly sprintLabels?:
@@ -119,8 +121,12 @@ export function LaneRow({
   showColumnConfig = true,
   onAddColumn,
   onEditColumn,
+  onRenameColumn,
   sprintLabels,
 }: LaneRowProps) {
+  /** The column being renamed in place, and the draft text. */
+  const [renaming, setRenaming] = useState<{ id: string; draft: string } | undefined>(undefined);
+
   const [dragging, setDragging] = useState<string | undefined>(undefined);
   const [over, setOver] = useState<string | undefined>(undefined);
   const [draggingColumn, setDraggingColumn] = useState<string | undefined>(undefined);
@@ -271,13 +277,83 @@ export function LaneRow({
                 className={dot === undefined ? 'lane-dot' : `lane-dot lane-dot-${dot}`}
                 aria-hidden="true"
               />
-              <h3
-                className="lane-title"
-                id={`lane-${column.id}`}
-                title={column.statuses.map(statusLabel).join(', ')}
-              >
-                {column.name}
-              </h3>
+              {renaming?.id === column.id ? (
+                <form
+                  className="lane-rename"
+                  /*
+                   * **Clicking away closes it** (LAI-602). It stayed open until
+                   * the `✕` was pressed, so a column looked selected long after
+                   * the reader had moved on. `relatedTarget` is what keeps the
+                   * `✓` working: the blur fires before the click lands, and
+                   * without this check it cancels the save it was meant to
+                   * commit.
+                   */
+                  onBlur={(event) => {
+                    if (event.currentTarget.contains(event.relatedTarget)) return;
+                    setRenaming(undefined);
+                  }}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const next = renaming.draft.trim();
+                    // An empty name is a delete nobody asked for.
+                    if (next !== '' && next !== column.name) onRenameColumn?.(column.id, next);
+                    setRenaming(undefined);
+                  }}
+                >
+                  <input
+                    className="lane-rename-input"
+                    aria-label={`Rename ${column.name}`}
+                    value={renaming.draft}
+                    autoFocus
+                    onChange={(event) => {
+                      setRenaming({ id: column.id, draft: event.target.value });
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') setRenaming(undefined);
+                    }}
+                  />
+                  <span className="lane-rename-actions">
+                    <button type="submit" className="lane-rename-ok" aria-label="Save name">
+                      ✓
+                    </button>
+                    <button
+                      type="button"
+                      className="lane-rename-cancel"
+                      aria-label="Cancel rename"
+                      onClick={() => {
+                        setRenaming(undefined);
+                      }}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                </form>
+              ) : onRenameColumn !== undefined && showColumnConfig ? (
+                /*
+                 * **The name is the rename control** (LAI-602). The reference
+                 * makes it look pressable on hover and opens an input in place;
+                 * a rename buried in the `⋯` menu is a rename nobody finds.
+                 */
+                <button
+                  type="button"
+                  className="lane-title lane-title-editable"
+                  id={`lane-${column.id}`}
+                  title={`Rename — holds ${column.statuses.map(statusLabel).join(', ')}`}
+                  onClick={() => {
+                    setRenaming({ id: column.id, draft: column.name });
+                  }}
+                >
+                  {column.name}
+                </button>
+              ) : (
+                <h3
+                  className="lane-title"
+                  id={`lane-${column.id}`}
+                  title={column.statuses.map(statusLabel).join(', ')}
+                >
+                  {column.name}
+                </h3>
+              )}
               <span className={dot === undefined ? 'lane-count' : `lane-count lane-count-${dot}`}>
                 {tasks.length}
               </span>

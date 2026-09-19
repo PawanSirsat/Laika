@@ -1,0 +1,232 @@
+/*
+ * Every colour in Laika, and the only file allowed to contain one (LAI-606).
+ *
+ * ## The rule this file exists to make true
+ *
+ * A colour literal — `#hex`, `rgb()`, `hsl()` — anywhere else in `src/` is a
+ * defect, and `tokens.test.ts` fails the build on one. That is what makes a
+ * theme a thirty-line change instead of an archaeology exercise: adding one is
+ * copying a block below, renaming its selector, and editing values.
+ *
+ * ## Two kinds of token, deliberately separated
+ *
+ * **Theme blocks** hold colour and nothing else. Every block declares the
+ * *same* list — no theme may invent a token, because a component reading it
+ * would then break on the themes that lack it. Add to one, add to all.
+ *
+ * **Shared tokens** sit outside the blocks: type, weight, radius, spacing,
+ * transitions. They are the same in every theme by definition, and repeating
+ * them per block is how they drift apart.
+ *
+ * ## Semantic names only
+ *
+ * `--bg-card`, not `--violet-400`. A component asking for "card background"
+ * keeps meaning something when the palette changes; one asking for "violet"
+ * has to be edited. This is the difference between a theme and a repaint.
+ */
+
+/* ===================================================================
+ * Obsidian dark — the default.
+ * =================================================================== */
+:root {
+  /* ---- surfaces: canvas → column → card, and the steps are the design ---- */
+  --bg-canvas: #0e0f11;
+  --bg-column: #17181b;
+  --bg-card: #202225;
+  --bg-card-hover: #272a2f;
+  --bg-pill: #2a2c31;
+  --bg-input: transparent;
+  /* Dark keeps one canvas: the rail is told apart by a border, never a fill. */
+  --sidebar-tint: #0e0f11;
+
+  /* ---- borders ---- */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-default: rgba(255, 255, 255, 0.13);
+  /*
+   * **Cards and columns ask the theme, not the component.** Dark separates by
+   * grey and draws no line; light needs one because its greys sit close
+   * together. Putting the decision here is what stops a component owning it.
+   */
+  --border-card: transparent;
+  --border-column: transparent;
+
+  /* ---- text ---- */
+  --text-primary: #c9d1d9;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+
+  /* ---- accent: one colour, for "this one" ---- */
+  --accent: #a78bfa;
+  --accent-bg: rgba(167, 139, 250, 0.14);
+  --on-accent: #0e0f11;
+
+  /* ---- meaning: overdue and blocked ---- */
+  --overdue: #f27373;
+  --blocked-bg: rgba(242, 115, 115, 0.1);
+
+  /* ---- chips: coloured text, 55% border, no fill ---- */
+  --chip-orange: #e3b15c;
+  --chip-green: #6ecf9a;
+  --chip-blue: #7bb0f5;
+  --chip-pink: #ef8fb5;
+  --chip-neutral: #9ca3af;
+
+  /* ---- priority ---- */
+  --priority-high: #f27373;
+  --priority-medium: #e3b15c;
+  --priority-low: #7bb0f5;
+
+  /*
+   * ---- per-hue soft fill and 55% border ----
+   *
+   * The brief names one value per chip colour; the app also needs the tinted
+   * fill and the border that go with it (a `ready` chip, a blocked banner, a
+   * selected sprint). Added to **both** blocks rather than one, because a token
+   * that exists in only one theme is a component that breaks on the other.
+   */
+  --accent-border: rgba(167, 139, 250, 0.55);
+  --chip-green-bg: rgba(110, 207, 154, 0.12);
+  --chip-green-border: rgba(110, 207, 154, 0.6);
+  --chip-orange-bg: rgba(227, 177, 92, 0.12);
+  --chip-orange-border: rgba(227, 177, 92, 0.6);
+  --chip-blue-bg: rgba(123, 176, 245, 0.12);
+  --chip-blue-border: rgba(123, 176, 245, 0.6);
+  --chip-pink-bg: rgba(239, 143, 181, 0.12);
+  --chip-pink-border: rgba(239, 143, 181, 0.6);
+  --overdue-border: rgba(242, 115, 115, 0.55);
+
+  /* ---- overlays ---- */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.5);
+
+  /* ---- elevation ---- */
+  --shadow-card: none;
+}
+
+/* ===================================================================
+ * Obsidian light. Same token list, different values — nothing else.
+ * =================================================================== */
+:root[data-theme='light'] {
+  --bg-canvas: #ffffff;
+  --bg-column: #f4f4f5;
+  --bg-card: #ffffff;
+  --bg-card-hover: #fafafa;
+  --bg-pill: #e4e4e7;
+  --bg-input: #ffffff;
+  --sidebar-tint: #fafafa;
+
+  --border-subtle: #eeeef0;
+  --border-default: #e4e4e7;
+  --border-card: #e4e4e7;
+  --border-column: #eeeef0;
+
+  --text-primary: #18181b;
+  --text-secondary: #52525b;
+  --text-muted: #8a8a94;
+
+  --accent: #7c3aed;
+  --accent-bg: rgba(124, 58, 237, 0.1);
+  --on-accent: #ffffff;
+
+  --overdue: #dc2626;
+  --blocked-bg: rgba(220, 38, 38, 0.08);
+
+  --chip-orange: #a16207;
+  --chip-green: #15803d;
+  --chip-blue: #1d4ed8;
+  --chip-pink: #be185d;
+  --chip-neutral: #52525b;
+
+  --priority-high: #dc2626;
+  --priority-medium: #b45309;
+  --priority-low: #2563eb;
+
+  --accent-border: rgba(124, 58, 237, 0.55);
+  --chip-green-bg: rgba(21, 128, 61, 0.1);
+  --chip-green-border: rgba(21, 128, 61, 0.6);
+  --chip-orange-bg: rgba(161, 98, 7, 0.1);
+  --chip-orange-border: rgba(161, 98, 7, 0.6);
+  --chip-blue-bg: rgba(29, 78, 216, 0.1);
+  --chip-blue-border: rgba(29, 78, 216, 0.6);
+  --chip-pink-bg: rgba(190, 24, 93, 0.1);
+  --chip-pink-border: rgba(190, 24, 93, 0.6);
+  --overdue-border: rgba(220, 38, 38, 0.55);
+
+  --scrim: rgba(24, 24, 27, 0.4);
+  --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.22);
+
+  --shadow-card: 0 1px 1px rgba(24, 24, 27, 0.08);
+}
+
+/* ===================================================================
+ * Shared across every theme: type, shape, spacing, motion.
+ * Outside the blocks on purpose — repeating them per theme is how they
+ * drift apart.
+ * =================================================================== */
+:root {
+  /*
+   * Inter is first and is **not installed yet**. The brief asks for it
+   * self-hosted; `@fontsource-variable/inter` is a dependency and CLAUDE.md §5
+   * wants a task naming the package before one is added. Filed separately —
+   * until it lands the stack falls through to the brief's own system chain,
+   * which is why that chain is spelled out rather than assumed.
+   */
+  --font-ui: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  /* Issue keys and sprint codes only. */
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace;
+
+  --text-xs: 0.6875rem; /* 11px — sidebar group headings */
+  --text-sm: 0.75rem; /* 12px — chips, field labels */
+  --text-base: 0.8125rem; /* 13px — field values, meta */
+  --text-ui: 0.875rem; /* 14px — body, tabs, buttons, inputs */
+  --text-md: 0.9375rem; /* 15px — card titles */
+  --text-lg: 1.125rem; /* 18px — screen headings */
+  --text-xl: 1.375rem; /* 22px — space title */
+  --text-mono: 0.78125rem; /* 12.5px — keys and sprint codes */
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  /*
+   * Kept because 112 call sites still ask for it. The brief's type scale tops
+   * out at 600 for the elements it names, and those are set from the scale —
+   * this is the weight everything *else* inherited, and flattening it blind
+   * would restyle screens the brief never mentions.
+   */
+  --weight-heavy: 800;
+
+  --leading-body: 1.45;
+
+  /* 4px grid. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  --radius-chip: 3px;
+  /*
+   * Chip metrics, shared by every theme (LAI-606). Here rather than in each
+   * chip rule so "what a chip looks like" is one answer — the border alpha is
+   * the part that kept being re-decided per chip.
+   */
+  /*
+   * **Chip framing is one decision, taken here** (LAI-606).
+   *
+   * The owner asked for chips with no box: text in the chip's colour and
+   * nothing around it. Rather than delete the border and padding from each
+   * chip rule, the three values become tokens set to nothing — so bringing the
+   * boxes back later is editing these three lines, not hunting the rules again.
+   */
+  --chip-padding: 0;
+  --chip-border: transparent;
+  --chip-bg: transparent;
+  --radius-card: 6px;
+  --radius-control: 6px;
+  --radius-pill: 999px;
+
+  /* Colour only. Nothing else animates. */
+  --transition: background-color 120ms ease, border-color 120ms ease;
+}

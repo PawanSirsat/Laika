@@ -83,8 +83,8 @@
 
 .space-bar {
   flex: none;
-  background: var(--card);
-  border-bottom: 1px solid var(--bd);
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border-subtle);
   /* Was `13px 18px 0` for two stacked rows; one row needs less above it. */
   padding: 9px 18px 0;
   display: flex;
@@ -112,7 +112,7 @@
   width: 26px;
   height: 26px;
   border-radius: 7px;
-  background: var(--acc);
+  background: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -137,15 +137,15 @@
   align-items: center;
   height: 28px;
   padding: 0 4px 0 3px;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
 }
 
 .space-member {
   width: 21px;
   height: 21px;
   border-radius: 50%;
-  border: 1.5px solid var(--card);
+  border: 1.5px solid var(--bg-card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -176,7 +176,7 @@
 }
 
 .space-member:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
   z-index: 2;
 }
@@ -184,7 +184,7 @@
 /* The one being filtered on keeps a ring, so the board's state is legible
    from the bar rather than only from the URL. */
 .space-member-on {
-  box-shadow: 0 0 0 2px var(--acc);
+  box-shadow: 0 0 0 2px var(--accent);
   z-index: 1;
 }
 
@@ -205,7 +205,7 @@
   font-size: 0.59375rem;
   font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .space-controls {
@@ -243,9 +243,9 @@
 }
 
 .space-live-live {
-  background: var(--grns);
-  border: 1px solid var(--grnb);
-  color: var(--grn);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
+  color: var(--chip-green);
 }
 
 .space-live-live .space-live-dot {
@@ -253,21 +253,21 @@
 }
 
 .space-live-catching-up {
-  background: var(--ambs);
-  border: 1px solid var(--ambb);
-  color: var(--amb);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  color: var(--chip-orange);
 }
 
 .space-live-connecting {
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  color: var(--tx3);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
 }
 
 .space-live-down {
-  background: var(--reds);
-  border: 1px solid var(--redb);
-  color: var(--red);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  color: var(--overdue);
 }
 
 @keyframes space-pulse {
@@ -296,14 +296,14 @@
   height: 30px;
   width: 132px;
   padding: 0 10px;
-  border: 1px solid var(--bd);
+  border: 1px solid var(--border-subtle);
   border-radius: 9px;
-  background: var(--page);
-  color: var(--tx3);
+  background: var(--bg-canvas);
+  color: var(--text-muted);
 }
 
 .space-search:focus-within {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 
@@ -315,7 +315,7 @@
   font-family: inherit;
   font-size: 0.71875rem;
   font-weight: var(--weight-medium);
-  color: var(--tx);
+  color: var(--text-primary);
   outline: none;
   padding: 0;
 }
@@ -338,27 +338,27 @@
 }
 
 .space-chip {
-  border: 1px solid var(--bd);
+  border: 1px solid var(--border-subtle);
   background: transparent;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .space-chip:hover {
-  border-color: var(--bd2);
-  color: var(--tx);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 
 .space-chip-on {
-  border-color: var(--accb);
-  background: var(--accs);
-  color: var(--acc);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 .space-create {
   padding: 0 12px;
-  border: 1px solid var(--acc);
-  background: var(--acc);
-  color: #fff;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
   font-size: 0.75rem;
 }
 
@@ -368,7 +368,7 @@
 
 .space-chip:focus-visible,
 .space-create:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -406,7 +406,7 @@
   font-size: 0.78125rem; /* 12.5px */
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx2);
+  color: var(--text-secondary);
   text-decoration: none;
   white-space: nowrap;
   /* Always present and transparent, so selecting a tab does not move the row. */
@@ -414,17 +414,17 @@
 }
 
 .view-tab:hover {
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .view-tab-active {
-  color: var(--acc);
-  border-bottom-color: var(--acc);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
   font-weight: var(--weight-bold);
 }
 
 .view-tab:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -433,8 +433,8 @@
   font-size: 0.53125rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
-  color: var(--pur);
-  background: var(--purs);
+  color: var(--chip-pink);
+  background: var(--chip-pink-bg);
   border-radius: 4px;
   padding: 3px 4px;
 }
@@ -459,7 +459,7 @@
   min-width: 0;
   font-size: 0.65625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -491,22 +491,22 @@
   align-items: center;
   height: 30px;
   padding: 0 0.375rem 0 0.625rem;
-  border: 1px solid var(--bd);
+  border: 1px solid var(--border-subtle);
   border-radius: 9px;
   background: transparent;
-  color: var(--tx2);
+  color: var(--text-secondary);
   font-size: 0.71875rem;
   font-weight: var(--weight-bold);
   white-space: nowrap;
 }
 
 .space-select:hover {
-  border-color: var(--bd2);
-  color: var(--tx);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 
 .space-select:focus-within {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -521,9 +521,9 @@
 }
 
 .space-select.space-chip-on {
-  border-color: var(--accb);
-  background: var(--accs);
-  color: var(--acc);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 /*

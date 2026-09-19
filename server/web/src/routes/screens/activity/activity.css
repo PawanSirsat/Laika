@@ -48,7 +48,7 @@
   overscroll-behavior: contain;
   min-height: 0;
   scrollbar-width: thin;
-  scrollbar-color: var(--bd2) transparent;
+  scrollbar-color: var(--border-default) transparent;
 }
 
 /* The threshold note stays pinned under its list rather than scrolling away —
@@ -70,9 +70,9 @@
   letter-spacing: 0.06em;
   padding: 0.3125rem 0.5rem;
   border-radius: var(--radius-pill);
-  background: var(--grns);
-  border: 1px solid var(--grnb);
-  color: var(--grn);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
+  color: var(--chip-green);
 }
 
 .act-pill-dot {
@@ -85,15 +85,15 @@
 /* The pill names the transport, so it must tell the truth about it. */
 .act-pill-connecting,
 .act-pill-reconnecting {
-  background: var(--ambs);
-  border-color: var(--ambb);
-  color: var(--amb);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+  color: var(--chip-orange);
 }
 
 .act-pill-offline {
-  background: var(--reds);
-  border-color: var(--redb);
-  color: var(--red);
+  background: var(--blocked-bg);
+  border-color: var(--overdue-border);
+  color: var(--overdue);
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -138,27 +138,27 @@
   gap: 0.375rem;
   padding: 0.5625rem 0.75rem;
   margin: 0;
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .act-panels .rail-card-agents {
-  border-color: var(--purb);
+  border-color: var(--chip-pink-border);
 }
 
 .act-panels .rail-card-agents .rail-head {
-  background: var(--purs);
-  border-bottom-color: var(--purb);
-  color: var(--pur);
+  background: var(--chip-pink-bg);
+  border-bottom-color: var(--chip-pink-border);
+  color: var(--chip-pink);
 }
 
 .act-panels .rail-card-stale {
-  border-color: var(--ambb);
+  border-color: var(--chip-orange-border);
 }
 
 .act-panels .rail-card-stale .rail-head {
-  background: var(--ambs);
-  border-bottom-color: var(--ambb);
-  color: var(--amb);
+  background: var(--chip-orange-bg);
+  border-bottom-color: var(--chip-orange-border);
+  color: var(--chip-orange);
 }
 
 .act-panels .rail-card-agents .rail-head h2,
@@ -203,9 +203,9 @@
   font-weight: var(--weight-heavy);
   line-height: 1;
   letter-spacing: 0.06em;
-  color: var(--pur);
-  background: var(--purs);
-  border: 1px solid var(--purb);
+  color: var(--chip-pink);
+  background: var(--chip-pink-bg);
+  border: 1px solid var(--chip-pink-border);
   border-radius: 5px;
   padding: 0.25rem 0.375rem;
 }

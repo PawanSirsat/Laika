@@ -60,14 +60,14 @@ export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): 
 
   return theme === 'dark'
     ? {
-        background: `hsl(${String(hue)} 42% 26%)`,
-        foreground: `hsl(${String(hue)} 60% 92%)`,
-        border: `hsl(${String(hue)} 45% 40%)`,
+        background: `hsl(${String(hue)} 34% 26%)`,
+        foreground: `hsl(${String(hue)} 48% 92%)`,
+        border: `hsl(${String(hue)} 36% 40%)`,
       }
     : {
-        background: `hsl(${String(hue)} 72% 90%)`,
-        foreground: `hsl(${String(hue)} 65% 24%)`,
-        border: `hsl(${String(hue)} 55% 72%)`,
+        background: `hsl(${String(hue)} 58% 90%)`,
+        foreground: `hsl(${String(hue)} 52% 24%)`,
+        border: `hsl(${String(hue)} 44% 72%)`,
       };
 }
 
@@ -93,9 +93,9 @@ export function avatarColorSolid(userId: string, theme: 'light' | 'dark' = 'ligh
   const lightness = theme === 'dark' ? 44 : 38;
 
   return {
-    background: `hsl(${String(hue)} 55% ${String(lightness)}%)`,
-    foreground: '#fff',
-    border: `hsl(${String(hue)} 55% ${String(lightness - 8)}%)`,
+    background: `hsl(${String(hue)} 44% ${String(lightness)}%)`,
+    foreground: 'var(--on-accent)',
+    border: `hsl(${String(hue)} 44% ${String(lightness - 8)}%)`,
   };
 }
 

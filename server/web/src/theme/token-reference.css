@@ -5,8 +5,8 @@
 
 .tr {
   padding: var(--space-5);
-  background: var(--page);
-  color: var(--tx);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--text-base);
   min-height: 100vh;
@@ -21,15 +21,15 @@
 /* Each panel paints its own surface, so the dark one is dark inside a light
    page — which is what makes the comparison possible. */
 .tr-panel {
-  background: var(--page);
-  color: var(--tx);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: var(--space-4);
 }
 
 .tr-panel-head {
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
   padding-bottom: var(--space-2);
   margin-bottom: var(--space-4);
 }
@@ -43,7 +43,7 @@
 .tr-panel-sub {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
   margin: var(--space-1) 0 0;
 }
 
@@ -59,7 +59,7 @@
 
 .tr-group-note {
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
   margin: 0 0 var(--space-3);
 }
 
@@ -78,19 +78,19 @@
 .tr-swatch-chip {
   width: 4rem;
   height: 2.5rem;
-  border: 1px solid var(--bd2);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
 }
 
 .tr-elevated {
-  background: var(--card);
-  border-color: var(--bd);
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
 }
 
 .tr-swatch-name {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .tr-textrow {
@@ -98,8 +98,8 @@
   flex-wrap: wrap;
   gap: var(--space-4);
   padding: var(--space-3);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   margin-bottom: var(--space-2);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -125,11 +125,11 @@
 
 .tr-shared {
   margin-top: var(--space-6);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: var(--space-4);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-card);
 }
 
 .tr-type p {
@@ -141,7 +141,7 @@
 .tr-radius code {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .tr-scale-row {
@@ -153,8 +153,8 @@
 
 .tr-scale-bar {
   height: 0.75rem;
-  background: var(--acc);
-  border-radius: var(--radius-sm);
+  background: var(--accent);
+  border-radius: var(--radius-chip);
 }
 
 .tr-radii {
@@ -173,6 +173,6 @@
 .tr-radius-box {
   width: 3rem;
   height: 3rem;
-  background: var(--accs);
-  border: 1px solid var(--accb);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
 }

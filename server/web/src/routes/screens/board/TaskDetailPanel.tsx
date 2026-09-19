@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { TagPicker } from './TagPicker.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
-import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { describeEvent, statusTransition } from '../../../api/activity.ts';
@@ -509,7 +508,16 @@ export function TaskDetailPanel({
                 hidden={tab !== 'comments'}
               >
                 {detail.comments.length === 0 ? (
-                  <EmptyState headline="No comments yet" />
+                  /*
+                   * **One quiet line, not a full empty state** (LAI-605).
+                   *
+                   * `EmptyState` is built for a screen with nothing on it — an
+                   * icon, a headline and room around both. Here it sat above a
+                   * composer that is already inviting a comment, so an
+                   * *absence* took more of the panel than several comments
+                   * would, and pushed the composer below the fold.
+                   */
+                  <p className="cmt-none">No comments yet</p>
                 ) : (
                   <ul className="cmt-list">
                     {detail.comments.map((comment) => {
@@ -543,10 +551,10 @@ export function TaskDetailPanel({
                                     width="16"
                                     height="12"
                                     rx="3"
-                                    stroke="#fff"
+                                    stroke="var(--on-accent)"
                                     strokeWidth="3"
                                   />
-                                  <path d="M12 4v4" stroke="#fff" strokeWidth="3" />
+                                  <path d="M12 4v4" stroke="var(--on-accent)" strokeWidth="3" />
                                 </svg>
                               </span>
                             )}

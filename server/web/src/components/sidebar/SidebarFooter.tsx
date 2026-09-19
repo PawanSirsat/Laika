@@ -14,7 +14,7 @@ export interface SidebarFooterProps {
 /**
  * The sidebar footer (prototype lines ~85–88): the theme row **above** the
  * user chip — that order is the design's — then a 26px avatar, name 11px/700
- * and the role 8.5px/800 in `--pur`.
+ * and the role 8.5px/800 in `--chip-pink`.
  *
  * The prototype has no sign-out anywhere, and signing out is not a feature to
  * lose to a mockup's omission — a quiet button rides at the chip's end, wide
@@ -32,7 +32,7 @@ export function SidebarFooter({ user, collapsed, onSignOut, signingOut }: Sideba
       <ThemeSwitch compact={collapsed} />
       <div className="sidebar-user">
         <span
-          className="sidebar-user-avatar"
+          className="sidebar-user-avatar t-avatar"
           style={{ background: colour.background, color: colour.foreground }}
           aria-hidden="true"
         >

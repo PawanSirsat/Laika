@@ -115,7 +115,7 @@ export function Sidebar({
       <div className="sidebar-head">
         {/*
           The logo is the collapse control, as the prototype has it (line 49):
-          a 28px radius-9 square on `--tx`, glyph stroked in `--card`.
+          a 28px radius-9 square on `--text-primary`, glyph stroked in `--bg-card`.
         */}
         <button
           type="button"

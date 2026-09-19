@@ -9,7 +9,7 @@
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: rgb(15 23 42 / 45%);
+  background: var(--scrim);
 }
 
 .column-dialog {
@@ -21,10 +21,10 @@
   width: min(24rem, calc(100vw - 2rem));
   max-height: calc(100vh - 4rem);
   overflow-y: auto;
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   padding: 0.875rem 1rem 1rem;
 }
 
@@ -42,39 +42,39 @@
   margin: 0;
   font-size: 0.875rem;
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .cd-close {
   margin-left: auto;
   border: 0;
   background: none;
-  color: var(--tx3);
+  color: var(--text-muted);
   font-size: 1.125rem;
   line-height: 1;
   cursor: pointer;
   padding: 0 0.25rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
 }
 
 .cd-close:hover {
-  color: var(--tx);
-  background: var(--tub);
+  color: var(--text-primary);
+  background: var(--bg-column);
 }
 
 .cd-error {
   margin: 0 0 0.5rem;
   font-size: 0.75rem;
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
-  border-radius: var(--radius-md);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
   padding: 0.375rem 0.5rem;
 }
 
 .cd-section {
   padding: 0.625rem 0;
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .cd-section:first-of-type {
@@ -94,31 +94,31 @@
   font-weight: var(--weight-heavy);
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .cd-hint {
   margin: 0.25rem 0 0;
   font-size: 0.6875rem;
   line-height: 1.45;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .cd-input,
 .cd-select {
   font: inherit;
   font-size: 0.8125rem;
-  color: var(--tx);
-  background: var(--tub);
-  border: 1px solid var(--bd2);
-  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
   padding: 0.3125rem 0.4375rem;
   width: 100%;
 }
 
 .cd-input:focus-visible,
 .cd-select:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -143,12 +143,12 @@
   align-items: center;
   gap: 0.375rem;
   font-size: 0.8125rem;
-  color: var(--tx);
+  color: var(--text-primary);
   cursor: pointer;
 }
 
 .cd-check input {
-  accent-color: var(--acc);
+  accent-color: var(--accent);
 }
 
 .cd-status-name {
@@ -159,24 +159,24 @@
   font-family: var(--font-mono);
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
-  color: var(--acc);
-  background: var(--accs);
-  border: 1px solid var(--accb);
-  border-radius: var(--radius-sm);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-chip);
   padding: 0 0.1875rem;
 }
 
 .cd-from {
   font-size: 0.6875rem;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .cd-from-warn {
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 
 .cd-danger {
-  border-top: 1px solid var(--redb);
+  border-top: 1px solid var(--overdue-border);
 }
 
 .cd-delete,
@@ -186,20 +186,20 @@
   font: inherit;
   font-size: 0.75rem;
   font-weight: var(--weight-semibold);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   padding: 0.3125rem 0.625rem;
   cursor: pointer;
 }
 
 .cd-delete {
-  color: var(--red);
+  color: var(--overdue);
   background: none;
-  border: 1px solid var(--redb);
+  border: 1px solid var(--overdue-border);
 }
 
 .cd-delete:disabled {
-  color: var(--tx3);
-  border-color: var(--bd);
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
   cursor: not-allowed;
 }
 
@@ -210,16 +210,16 @@
 }
 
 .cd-cancel {
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
   margin-left: auto;
 }
 
 .cd-confirm {
-  color: #fff;
-  background: var(--red);
-  border: 1px solid var(--red);
+  color: var(--on-accent);
+  background: var(--overdue);
+  border: 1px solid var(--overdue);
 }
 
 .cd-confirm:disabled {
@@ -233,16 +233,16 @@
    `required` meaning is carried by the disabled Submit and by the field itself,
    not by a red star, which a screen reader announces as "asterisk". */
 .cd-required {
-  color: var(--red);
+  color: var(--overdue);
 }
 
 /* The affirmative action, so it reads as the way out of the dialog rather than
    one of two equal buttons. Pushed right of Cancel. */
 .cd-submit {
   margin-left: auto;
-  color: #fff;
-  background: var(--acc);
-  border: 1px solid var(--acc);
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
 }
 
 .cd-submit:hover:not(:disabled) {
@@ -252,8 +252,8 @@
 /* Disabled until the name is there: a Submit that answers 422 is a worse way to
    say "this field is required" than a button that plainly cannot be pressed. */
 .cd-submit:disabled {
-  color: var(--tx3);
-  background: var(--tub);
-  border-color: var(--bd);
+  color: var(--text-muted);
+  background: var(--bg-column);
+  border-color: var(--border-subtle);
   cursor: default;
 }

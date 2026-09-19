@@ -20,10 +20,10 @@
 
 .cal-card {
   min-width: 60rem;
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 
@@ -31,20 +31,20 @@
 
 .cal-head {
   display: flex;
-  background: var(--page);
-  border-bottom: 1px solid var(--bd);
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .cal-weekday {
   flex: 1;
   min-width: 0;
   padding: 0.5rem 0.625rem;
-  border-left: 1px solid var(--bd);
+  border-left: 1px solid var(--border-subtle);
   font-size: 0.5625rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
   letter-spacing: 0.09em;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* ----------------------------------------------------------- the week gutter */
@@ -53,8 +53,8 @@
   width: 46px;
   flex: none;
   box-sizing: border-box;
-  border-right: 1px solid var(--bd);
-  background: var(--page);
+  border-right: 1px solid var(--border-subtle);
+  background: var(--bg-canvas);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -62,11 +62,11 @@
   font-size: 0.5625rem;
   font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .cal-gutter-head {
-  background: var(--page);
+  background: var(--bg-canvas);
 }
 
 /* ----------------------------------------------------------------- the weeks */
@@ -74,7 +74,7 @@
 .cal-week {
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .cal-day {
@@ -85,30 +85,30 @@
      with three tasks in it. */
   min-height: 6.5rem;
   padding: 0.4375rem 0.5rem 0.5rem;
-  border-left: 1px solid var(--bd);
+  border-left: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
-  background: var(--card);
+  background: var(--bg-card);
 }
 
 /* A day outside this month is present but recessive — the grid keeps its shape
    and the reader is not invited to read those cells as this month's. */
 .cal-day-out {
-  background: var(--page);
+  background: var(--bg-canvas);
 }
 
 .cal-day-out .cal-date {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .cal-day-weekend {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 /* The running sprint's days, from the API — not a placeholder. */
 .cal-day-sprint {
-  background: var(--purs);
+  background: var(--chip-pink-bg);
 }
 
 .cal-day-head {
@@ -131,14 +131,14 @@
   font-size: 0.65625rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 /* Today is a filled badge, which is the one thing on this grid that must be
    findable in a glance. */
 .cal-day-today .cal-date {
-  background: var(--amb);
-  color: #fff;
+  background: var(--chip-orange);
+  color: var(--on-accent);
 }
 
 .cal-month {
@@ -147,7 +147,7 @@
   font-weight: var(--weight-heavy);
   line-height: 1;
   letter-spacing: 0.07em;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .cal-sprint-tag {
@@ -157,11 +157,11 @@
   font-size: 0.53125rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .cal-sprint-tag-now {
-  color: var(--pur);
+  color: var(--chip-pink);
 }
 
 /* ----------------------------------------------------------------- the tasks */
@@ -181,26 +181,26 @@
   text-align: left;
   padding: 0.3125rem 0.375rem;
   border-radius: 6px;
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
   cursor: pointer;
   min-width: 0;
 }
 
 .cal-task:hover,
 .cal-task:focus-visible {
-  border-color: var(--bd2);
+  border-color: var(--border-default);
 }
 
 /* Priority tints the chip, as it tints the card's dot on the board. */
 .cal-task-p1 {
-  background: var(--reds);
-  border-color: var(--redb);
+  background: var(--blocked-bg);
+  border-color: var(--overdue-border);
 }
 
 .cal-task-p2 {
-  background: var(--ambs);
-  border-color: var(--ambb);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
 }
 
 .cal-task-key {
@@ -209,15 +209,15 @@
   font-size: 0.53125rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .cal-task-p1 .cal-task-key {
-  color: var(--red);
+  color: var(--overdue);
 }
 
 .cal-task-p2 .cal-task-key {
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 
 .cal-task-title {
@@ -226,7 +226,7 @@
   font-size: 0.59375rem;
   font-weight: var(--weight-semibold);
   line-height: 1.2;
-  color: var(--tx2);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -239,7 +239,7 @@
   width: 10px;
   height: 10px;
   border-radius: 3px;
-  background: var(--pur);
+  background: var(--chip-pink);
 }
 
 /* ---------------------------------------------------------------- the legend */
@@ -250,7 +250,7 @@
   gap: 0.875rem;
   flex-wrap: wrap;
   padding: 0.625rem 0.75rem;
-  background: var(--page);
+  background: var(--bg-canvas);
 }
 
 .cal-legend-item {
@@ -260,7 +260,7 @@
   font-size: 0.625rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .cal-swatch {
@@ -271,23 +271,23 @@
 
 .cal-swatch-today {
   border-radius: 5px;
-  background: var(--amb);
+  background: var(--chip-orange);
 }
 
 .cal-swatch-sprint {
-  background: var(--purs);
-  border: 1px solid var(--purb);
+  background: var(--chip-pink-bg);
+  border: 1px solid var(--chip-pink-border);
 }
 
 .cal-swatch-weekend {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 .cal-swatch-agent {
   width: 10px;
   height: 10px;
   border-radius: 3px;
-  background: var(--pur);
+  background: var(--chip-pink);
 }
 
 .cal-legend-note {
@@ -295,5 +295,5 @@
   font-size: 0.625rem;
   font-weight: var(--weight-medium);
   line-height: 1.4;
-  color: var(--tx3);
+  color: var(--text-muted);
 }

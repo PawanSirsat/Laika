@@ -4,11 +4,14 @@
  * self-hosted board that phones home on every page load contradicts SPEC §13.4.
  * `test/csp-compatibility.test.ts` fails if a remote font URL ever appears.
  */
+/* Inter is the UI face (LAI-606); Jakarta stays for anything still asking. */
+@import '@fontsource-variable/inter';
 @import '@fontsource-variable/plus-jakarta-sans';
 @import '@fontsource-variable/jetbrains-mono';
 
 /* Every colour, type step and radius. Light on :root, dark on .dk. */
-@import './theme/tokens.css';
+@import './styles/theme.css';
+@import './styles/type.css';
 
 :root {
   font-family: var(--font-ui);
@@ -23,8 +26,8 @@ html,
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--page);
-  color: var(--tx);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
 }
 
 code,

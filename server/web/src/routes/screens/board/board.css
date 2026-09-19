@@ -29,8 +29,8 @@
 
 .board-views {
   display: flex;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 
@@ -38,16 +38,16 @@
   font: inherit;
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
-  background: var(--card);
+  color: var(--text-secondary);
+  background: var(--bg-card);
   border: none;
   padding: var(--space-2) var(--space-3);
   cursor: pointer;
 }
 
 .board-view-on {
-  background: var(--accs);
-  color: var(--acc);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 .board-view:focus-visible,
@@ -56,7 +56,7 @@
 .list-sort:focus-visible,
 .lane-move-select:focus-visible,
 .board-alert-close:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -73,21 +73,21 @@
   align-items: center;
   gap: var(--space-2);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .board-filter select {
   font: inherit;
   font-size: var(--text-sm);
-  color: var(--tx);
-  background: var(--card);
-  border: 1px solid var(--bd2);
-  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
   padding: 2px var(--space-2);
 }
 
 .board-filter-check input {
-  accent-color: var(--acc);
+  accent-color: var(--accent);
 }
 
 .board-clear,
@@ -95,10 +95,10 @@
   font: inherit;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: var(--space-1) var(--space-3);
   cursor: pointer;
 }
@@ -108,10 +108,10 @@
   align-items: center;
   gap: var(--space-3);
   font-size: var(--text-sm);
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
-  border-radius: var(--radius-md);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-3);
   margin: 0 0 var(--space-4);
 }
@@ -120,10 +120,10 @@
   font: inherit;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--red);
+  color: var(--overdue);
   background: transparent;
-  border: 1px solid var(--redb);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-chip);
   padding: 0 var(--space-2);
   margin-left: auto;
   cursor: pointer;
@@ -198,9 +198,16 @@
 }
 
 .lane {
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
+  /*
+   * **`--bg-column`, not `--bg-canvas`.** Darkening the lane to the canvas colour made
+   * the column vanish into the background — three greys collapsed to two.
+   * The separation is canvas -> column -> card, and the fix for a card that
+   * did not stand out was to raise the *card* (`--bg-card-hover`), not to sink the
+   * lane. Caught by the other SHELL session, in both themes.
+   */
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   /* The design's tub: roomier at the top than at the sides. */
   padding: 0.75rem 0.625rem;
   min-height: 8rem;
@@ -209,8 +216,8 @@
 /* The drop target has to be visible before the mouse is released, or a drag is
    a guess. */
 .lane-over {
-  border-color: var(--acc);
-  background: var(--accs);
+  border-color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .lane-body {
@@ -236,10 +243,10 @@
   font: inherit;
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
   background: none;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   padding: 0.125rem 0.25rem;
   cursor: pointer;
   opacity: 0.75;
@@ -248,8 +255,8 @@
 .lane-move-select:hover,
 .lane-move-select:focus-visible {
   opacity: 1;
-  color: var(--tx2);
-  background: var(--card);
+  color: var(--text-secondary);
+  background: var(--bg-card);
 }
 
 /* ----------------------------------------------------------------- card */
@@ -260,10 +267,10 @@
    and swallows the whole board. */
 .card {
   position: relative;
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow);
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   /* The design's own figures (prototype line ~290): 13px round, 11px at the
      foot, which reads as more air than `--space-3`'s uniform 12. */
   padding: 0.8125rem 0.8125rem 0.6875rem;
@@ -275,12 +282,12 @@
 }
 
 /* Existing tokens only (D-020). No shadow lift: there is one elevation token,
-   `--shadow`, and a hover shadow would mean inventing a second — not mine to
+   `--shadow-card`, and a hover shadow would mean inventing a second — not mine to
    decide. Border and surface both change, so the state is legible without it.
    Not a border-*width* change, which would reflow the column on every hover. */
 .card:hover {
-  border-color: var(--bd2);
-  background: var(--tub);
+  border-color: var(--border-default);
+  background: var(--bg-column);
 }
 
 .card:active {
@@ -317,7 +324,7 @@
 .card-moving {
   opacity: 0.6;
   cursor: progress;
-  border-color: var(--accb);
+  border-color: var(--accent-border);
 }
 
 .card-head {
@@ -336,7 +343,7 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  color: var(--tx2);
+  color: var(--text-secondary);
   /* A key is one token. In a narrow column it was breaking after the hyphen —
      `LC-` above `4` — which reads as two things and matches no task. */
   white-space: nowrap;
@@ -344,33 +351,29 @@
 
 .card-priority {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
   border-radius: var(--radius-pill);
   padding: 0 var(--space-2);
 }
 
 .card-priority-p1 {
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
 }
 .card-priority-p2 {
-  color: var(--amb);
-  background: var(--ambs);
-  border: 1px solid var(--ambb);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
 }
 .card-priority-p3 {
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
 }
 
 .card-title {
-  font-size: var(--text-sm);
-  color: var(--tx);
+  color: var(--text-primary);
   margin: var(--space-2) 0;
-  line-height: 1.4;
 }
 
 .card-foot {
@@ -387,24 +390,24 @@
 }
 
 .marker-ready {
-  color: var(--grn);
-  background: var(--grns);
-  border: 1px solid var(--grnb);
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
 }
 .marker-blocked {
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
 }
 .marker-deps {
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
 }
 /*
  * Stale, in the design's own vocabulary (§11.4.1).
  *
- * The prototype has no card-level stale marker — its clock, `--amb` and the
+ * The prototype has no card-level stale marker — its clock, `--chip-orange` and the
  * "Stale · N days quiet" phrasing come from the dashboard panel — so this
  * borrows that rather than inventing a colour. It shares amber with
  * `.marker-unknown`, which is tolerable because the two say different words and
@@ -412,9 +415,9 @@
  * never chose, to keep it apart from one the design never mentions.
  */
 .marker-stale {
-  color: var(--amb);
-  background: var(--ambs);
-  border: 1px solid var(--ambb);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -427,28 +430,25 @@
 
 /* A dependency outside the loaded set — stated, not guessed. */
 .marker-unknown {
-  color: var(--amb);
-  background: var(--ambs);
-  border: 1px solid var(--ambb);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
 }
 
 .card-avatar {
   width: 1.5rem;
   height: 1.5rem;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--bd2);
+  border: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
   flex: none;
 }
 
 .card-unassigned {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 /* ----------------------------------------------------------------- list */
@@ -457,9 +457,9 @@
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-sm);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 
@@ -467,11 +467,11 @@
 .list td {
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .list th {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 .list tbody tr:last-child td {
@@ -484,7 +484,7 @@
   font-weight: var(--weight-bold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--tx2);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   padding: 0;
@@ -495,7 +495,7 @@
 .list-updated {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
@@ -506,13 +506,13 @@
 }
 
 .list-priority-p1 {
-  color: var(--red);
+  color: var(--overdue);
 }
 .list-priority-p2 {
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 .list-priority-p3 {
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 /* Opens the detail panel. A button so it is focusable and keyboard-activatable;
@@ -523,22 +523,22 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  color: var(--tx2);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   padding: 0;
   cursor: pointer;
   text-decoration: underline;
-  text-decoration-color: var(--bd2);
+  text-decoration-color: var(--border-default);
   text-underline-offset: 2px;
 }
 
 .card-open:hover {
-  color: var(--acc);
+  color: var(--accent);
 }
 
 .card-open:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -551,10 +551,10 @@
   gap: var(--space-3);
   padding: var(--space-4);
   margin-bottom: var(--space-4);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 
 .new-task-title {
@@ -580,14 +580,14 @@
   height: 1.9375rem;
   width: 11.625rem;
   padding: 0 0.6875rem;
-  border: 1px solid var(--bd);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.5625rem;
-  background: var(--card);
-  color: var(--tx3);
+  background: var(--bg-card);
+  color: var(--text-muted);
 }
 
 .board-search:focus-within {
-  border-color: var(--accb);
+  border-color: var(--accent-border);
 }
 
 .board-search svg {
@@ -606,7 +606,7 @@
   font: inherit;
   font-size: 0.71875rem;
   font-weight: var(--weight-medium);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .board-search input:focus {
@@ -614,7 +614,7 @@
 }
 
 .board-search input::placeholder {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .board-search kbd {
@@ -622,9 +622,9 @@
   font-family: var(--font-mono);
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
   padding: 0.125rem 0.25rem;
 }
 
@@ -656,8 +656,8 @@
   margin: 0;
   padding: var(--space-2) 1.125rem;
   font-size: var(--text-sm);
-  color: var(--tx3);
-  border-bottom: 1px solid var(--bd);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* ------------------------------------- lane headers (prototype: five lanes) */
@@ -676,8 +676,8 @@
   align-items: center;
   gap: 0.4375rem;
   justify-content: flex-start;
-  /* Room around the row, per the design — it sat flush against the lane edge. */
-  padding: 0.5rem 0.625rem;
+  /* Tight to the top, per the reference — 0.5rem above the name was too much. */
+  padding: 0.125rem 0.5rem 0.5rem;
 }
 
 .lane-dot {
@@ -685,20 +685,20 @@
   height: 7px;
   flex: none;
   border-radius: var(--radius-pill);
-  background: var(--tx3);
+  background: var(--text-muted);
 }
 
 .lane-dot-todo {
-  background: var(--pur);
+  background: var(--chip-pink);
 }
 .lane-dot-in_progress {
-  background: var(--acc);
+  background: var(--accent);
 }
 .lane-dot-review {
-  background: var(--amb);
+  background: var(--chip-orange);
 }
 .lane-dot-done {
-  background: var(--grn);
+  background: var(--chip-green);
 }
 
 /*
@@ -712,8 +712,9 @@
  */
 .lane-title {
   font-size: 0.8125rem;
-  font-weight: var(--weight-semibold);
-  color: var(--tx);
+  /* Plain, not bold — the reference's name is a quiet grey label. */
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
   margin: 0;
   white-space: nowrap;
 }
@@ -728,10 +729,10 @@
 .lane-count {
   font-size: 0.6875rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
-  background: var(--card);
+  color: var(--text-secondary);
+  background: var(--bg-card);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   padding: 0.1875rem 0.5rem;
   min-width: 1.25rem;
   text-align: center;
@@ -750,25 +751,23 @@
   font-family: var(--font-mono);
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .lane-wip-over {
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 
 /* ------------------------------------ card anatomy (prototype plate 1b) */
 
 .card-title {
   margin: 0;
-  /* 13.5px/600 with the design's tracking and leading (prototype ~line 291).
-     The owner read the old 12.5px as too light and too small; this is the
-     figure the reference actually uses. */
-  font-size: 0.84375rem;
-  font-weight: var(--weight-semibold);
-  line-height: 1.4;
-  letter-spacing: -0.008em;
-  color: var(--tx);
+  /*
+   * **Size, weight, leading and colour all come from `.t-body`** (LAI-606).
+   * They are gone from here on purpose: a component that keeps its own copy is
+   * the one that does not move when `TYPE_ROLES.body` does, and the guarantee
+   * is worth more than the convenience of setting it locally.
+   */
   text-wrap: pretty;
   /* Two lines, then an ellipsis — the design clamps, and an unclamped title
      pushes the footer around as cards differ in length. */
@@ -780,7 +779,7 @@
 
 /* Done cards recede — the column already says they are finished. */
 .lane-done .card-title {
-  color: var(--tx2);
+  color: var(--text-secondary);
   opacity: 0.66;
 }
 
@@ -793,7 +792,7 @@
 /**
  * One chip style, for every tag (LAI-066, D-027).
  *
- * The per-tone rules that used to live here — `--purs` for `agent`, `--accs`
+ * The per-tone rules that used to live here — `--chip-pink-bg` for `agent`, `--accent-bg`
  * for `presence` and so on — went with the demo module that invented them.
  * **D-027 refused a per-tag palette on purpose**: a colour has to be chosen,
  * stored, kept distinguishable in both themes, and explained to whoever adds
@@ -805,10 +804,10 @@
   font-weight: var(--weight-bold);
   line-height: 1;
   padding: 0.1875rem 0.3125rem;
-  border-radius: var(--radius-sm);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  color: var(--tx2);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
 }
 
 /* The exception, stated before the footer rather than as one marker among many. */
@@ -831,13 +830,13 @@
   min-width: 0;
   margin: 0;
   padding: 0.25rem 0.375rem;
-  background: var(--reds);
-  border-left: 2px solid var(--red);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--blocked-bg);
+  border-left: 2px solid var(--overdue);
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
   font-size: 0.65625rem;
   font-weight: var(--weight-semibold);
   line-height: 1.35;
-  color: var(--red);
+  color: var(--overdue);
   white-space: nowrap;
 }
 
@@ -925,14 +924,14 @@
 }
 
 .card-dot-p1 {
-  background: var(--red);
+  background: var(--overdue);
 }
 .card-dot-p2 {
-  background: var(--amb);
+  background: var(--chip-orange);
 }
 .card-dot-p3 {
   background: transparent;
-  border: 1.5px solid var(--tx3);
+  border: 1.5px solid var(--text-muted);
 }
 
 .card-deps {
@@ -940,9 +939,7 @@
   align-items: center;
   gap: 0.1875rem;
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
-  font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .card-deps svg {
@@ -969,9 +966,9 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-pill);
-  background: var(--pur);
-  color: var(--card);
-  border: 1.5px solid var(--card);
+  background: var(--chip-pink);
+  color: var(--bg-card);
+  border: 1.5px solid var(--bg-card);
 }
 
 .card-bot svg {
@@ -987,10 +984,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px dashed var(--bd2);
+  border: 1px dashed var(--border-default);
   border-radius: var(--radius-pill);
-  color: var(--tx3);
-  font-size: var(--text-sm);
+  color: var(--text-muted);
 }
 
 /* The ghost row at the foot of each column (prototype). */
@@ -999,22 +995,22 @@
   font: inherit;
   font-size: 0.65625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
   background: none;
-  border: 1px dashed var(--bd2);
-  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
   padding: 0.375rem;
   cursor: pointer;
 }
 
 .lane-add:hover {
-  color: var(--acc);
-  border-color: var(--accb);
-  background: var(--accs);
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
 }
 
 .lane-add:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -1029,25 +1025,25 @@
   font-size: 0.5625rem;
   font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
-  background: var(--grns);
-  border: 1px solid var(--grnb);
-  color: var(--grn);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
+  color: var(--chip-green);
 }
 
 .live-connecting,
 .live-dropped {
-  background: var(--ambs);
-  border-color: var(--ambb);
-  color: var(--amb);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+  color: var(--chip-orange);
 }
 
 /* Neutral, not amber. Amber reads as "working on it", which is true of a
    reconnect and false of a refusal — that one is settled, and the board's own
    permission message is the thing worth the reader's attention. */
 .live-refused {
-  background: var(--tub);
-  border-color: var(--bd);
-  color: var(--tx3);
+  background: var(--bg-column);
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
 }
 
 .live-dot {
@@ -1068,14 +1064,14 @@
   font-size: 0.5rem;
   font-weight: var(--weight-heavy);
   padding: 0.0625rem 0.25rem;
-  border-radius: var(--radius-sm);
-  background: var(--tub);
-  color: var(--tx3);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  color: var(--text-muted);
 }
 
 .card-sprint-on {
-  background: var(--purs);
-  color: var(--pur);
+  background: var(--chip-pink-bg);
+  color: var(--chip-pink);
 }
 
 /* ----------------------------------------------------- card footer (LAI-263) */
@@ -1091,9 +1087,7 @@
   gap: 0.1875rem;
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.59375rem;
-  font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .card-comments svg,
@@ -1109,7 +1103,7 @@
   font-family: var(--font-mono);
   font-size: 0.59375rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -1164,7 +1158,7 @@
   overscroll-behavior: contain;
   /* The thin scrollbar the reference shows on a full column. */
   scrollbar-width: thin;
-  scrollbar-color: var(--bd2) transparent;
+  scrollbar-color: var(--border-default) transparent;
 }
 
 .kanban .lane-body::-webkit-scrollbar {
@@ -1172,7 +1166,7 @@
 }
 
 .kanban .lane-body::-webkit-scrollbar-thumb {
-  background: var(--bd2);
+  background: var(--border-default);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
@@ -1216,7 +1210,7 @@
 
 /* A rule between the tags and the footer, as the reference draws it. */
 .card-foot {
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 0.5625rem;
   margin-top: 0.125rem;
 }
@@ -1259,16 +1253,16 @@
   padding: 0 0.125rem;
   border: 0;
   background: none;
-  color: var(--tx3);
+  color: var(--text-muted);
   font-size: 0.6875rem;
   line-height: 1;
   cursor: grab;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
 }
 
 .lane-grip:hover {
-  color: var(--tx2);
-  background: var(--card);
+  color: var(--text-secondary);
+  background: var(--bg-card);
 }
 
 .lane-grip:active {
@@ -1292,7 +1286,7 @@
   bottom: 0;
   width: 2px;
   border-radius: var(--radius-pill);
-  background: var(--acc);
+  background: var(--accent);
 }
 
 /* What a drop on this lane will set, shown only while a card is over a lane
@@ -1301,10 +1295,10 @@
   font-family: var(--font-mono);
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
-  color: var(--acc);
-  background: var(--accs);
-  border: 1px solid var(--accb);
-  border-radius: var(--radius-sm);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-chip);
   padding: 0.0625rem 0.1875rem;
   white-space: nowrap;
 }
@@ -1314,16 +1308,16 @@
   flex: none;
   border: 0;
   background: none;
-  color: var(--tx3);
+  color: var(--text-muted);
   cursor: pointer;
   padding: 0 0.125rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   line-height: 1;
 }
 
 .lane-menu:hover {
-  color: var(--tx);
-  background: var(--card);
+  color: var(--text-primary);
+  background: var(--bg-card);
 }
 
 /*
@@ -1349,10 +1343,10 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--tx2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font-size: 1rem;
   line-height: 1;
   font-weight: var(--weight-medium);
@@ -1360,9 +1354,9 @@
 }
 
 .lane-new:hover {
-  border-color: var(--accb);
-  color: var(--acc);
-  background: var(--accs);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-bg);
 }
 
 /*
@@ -1391,10 +1385,10 @@
 .lane-order-select {
   font-size: 0.625rem;
   font-family: inherit;
-  color: var(--tx);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
   padding: 0.0625rem 0.1875rem;
 }
 
@@ -1405,18 +1399,18 @@
   gap: 0.3125rem;
   height: 1.625rem;
   padding: 0 0.5rem;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--tx2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font-size: 0.6875rem;
   font-weight: var(--weight-medium);
   cursor: pointer;
 }
 
 .view-settings-open:hover {
-  color: var(--tx);
-  border-color: var(--accb);
+  color: var(--text-primary);
+  border-color: var(--accent-border);
 }
 
 .view-settings-open svg {
@@ -1460,20 +1454,20 @@
   height: 1.25rem;
   flex: none;
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   background: none;
-  color: var(--tx2);
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 0;
 }
 
 .swim-toggle:hover {
-  background: var(--tub);
-  border-color: var(--bd);
+  background: var(--bg-column);
+  border-color: var(--border-subtle);
 }
 
 .swim-toggle:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -1513,7 +1507,7 @@
   margin: 0;
   font-size: 0.8125rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx);
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
@@ -1521,9 +1515,9 @@
   font-family: var(--font-mono);
   font-size: 0.625rem;
   font-weight: var(--weight-bold);
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
   border-radius: 5px;
   padding: 0.0625rem 0.3125rem;
 }
@@ -1531,7 +1525,7 @@
 .swim-empty {
   margin: 0;
   font-size: 0.75rem;
-  color: var(--tx3);
+  color: var(--text-muted);
   padding: var(--space-4) 0;
 }
 
@@ -1573,13 +1567,19 @@
 
 /* The name reads as pressable, because it is (LAI-602). */
 .lane-title-editable {
-  font-size: 0.8125rem;
-  font-weight: var(--weight-semibold);
   border: 1px solid transparent;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   background: none;
+  /*
+   * `font: inherit` is a **shorthand** and resets weight to `normal`, so it
+   * has to come first — it sat below `font-size` and `font-weight` and killed
+   * them both, which is why the name rendered at 400 no matter what the rule
+   * above said. Same for `color: inherit` against `.lane-title`'s colour.
+   */
   font: inherit;
-  color: inherit;
+  font-size: 0.8125rem;
+  font-weight: var(--weight-medium);
+  color: var(--text-secondary);
   padding: 0.0625rem 0.25rem;
   margin-inline-start: -0.25rem;
   cursor: text;
@@ -1588,8 +1588,8 @@
 }
 
 .lane-title-editable:hover {
-  background: var(--card);
-  border-color: var(--bd);
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
 }
 
 .lane-rename {
@@ -1606,10 +1606,10 @@
   min-width: 0;
   font: inherit;
   padding: 0.125rem 0.375rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--acc);
-  background: var(--card);
-  color: var(--tx);
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--accent);
+  background: var(--bg-card);
+  color: var(--text-primary);
   outline: none;
 }
 
@@ -1630,16 +1630,281 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--bd);
-  background: var(--card);
-  color: var(--tx2);
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 0.75rem;
 }
 
 .lane-rename-ok:hover,
 .lane-rename-cancel:hover {
-  color: var(--tx);
-  border-color: var(--bd2);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+/*
+ * Chips: coloured text, a 55% border, no fill (LAI-606).
+ *
+ * Every chip on a card used to carry a tinted background, so a card with a
+ * tag, a sprint and a `ready` marker had three filled blocks competing with
+ * the title. The brief's rule is that colour marks *meaning*, and an outline
+ * says the same thing without painting an area.
+ *
+ * Appended rather than edited in place: these override the earlier rules
+ * wholesale, and keeping the originals next to them would leave two answers to
+ * the same question for the next reader to pick between.
+ */
+.card-tag,
+.card-sprint,
+.marker {
+  background: transparent;
+  border-radius: var(--radius-chip);
+  /* Sentence case, per the brief — no shouted tags. */
+  text-transform: none;
+}
+
+.card-tag {
+  border: 1px solid var(--border-default);
+  color: var(--chip-neutral);
+}
+
+/* Sprint codes stay mono — they are codes, like the issue key. */
+.card-sprint,
+.card-sprint-on {
+  border: 1px solid var(--border-default);
+  background: transparent;
+  color: var(--chip-neutral);
+}
+
+.marker-ready {
+  color: var(--chip-green);
+  border: 1px solid var(--chip-green-border);
+  background: transparent;
+}
+
+/* Blocked is the one exception the brief keeps filled: it is a warning. */
+.marker-blocked {
+  color: var(--overdue);
+  border: 1px solid var(--overdue-border);
+  background: var(--blocked-bg);
+}
+
+/*
+ * Dark separates by grey, not by line (LAI-606). Light keeps its borders,
+ * because #FFFFFF on #F2F4F6 is not enough step on its own.
+ */
+.dk .card {
+  border-color: transparent;
+}
+
+.dk .lane {
+  border-color: transparent;
+}
+
+/*
+ * The three greys, restored (LAI-606).
+ *
+ * `.lane` was painting `--bg-canvas` and `.card` `--bg-card-hover`, which collapses
+ * canvas and column into one value — measured: column and canvas both
+ * `#15181C` in dark, and in light the column came out *lighter* than the card.
+ * The brief's whole separation model is canvas → column → card, so with two of
+ * the three equal there is nothing holding a column apart from the page.
+ *
+ * Set here rather than by editing those rules: both were carrying another
+ * session's uncommitted change when this landed, and overriding is the one
+ * move that does not rewrite work in flight.
+ */
+.lane {
+  background: var(--bg-column);
+}
+
+.card {
+  background: var(--bg-card);
+}
+
+.card:hover {
+  background: var(--bg-card-hover);
+}
+
+/*
+ * One outlined chip colour per work-type (LAI-606).
+ *
+ * Text and border only — the fill stays transparent, so a card with three tags
+ * gains three thin outlines rather than three blocks of colour.
+ */
+.card-tag-orange {
+  color: var(--chip-orange);
+  border-color: var(--chip-orange-border);
+}
+.card-tag-green {
+  color: var(--chip-green);
+  border-color: var(--chip-green-border);
+}
+.card-tag-blue {
+  color: var(--chip-blue);
+  border-color: var(--chip-blue-border);
+}
+.card-tag-pink {
+  color: var(--chip-pink);
+  border-color: var(--chip-pink-border);
+}
+.card-tag-neutral {
+  color: var(--chip-neutral);
+  border-color: var(--border-default);
+}
+
+/*
+ * Chip geometry from the shared tokens (LAI-606).
+ *
+ * Padding and radius were set per chip, so "what a chip looks like" had three
+ * answers that had drifted apart. One rule, one answer — the colour still comes
+ * from the chip's own `--chip-*`, which is the part that legitimately varies.
+ */
+.card-tag,
+.card-sprint,
+.marker {
+  padding: var(--chip-padding);
+  border-radius: var(--radius-chip);
+  border-width: 1px;
+  border-style: solid;
+  background: transparent;
+}
+
+/*
+ * Card rhythm, per the reference close-up: 12px between the title, the chip
+ * row and the meta row, and 12px/14px around the card itself.
+ */
+.card {
+  padding: 12px 14px;
+}
+
+.card-tags {
+  margin-top: 12px;
+}
+
+.card-foot {
+  margin-top: 12px;
+}
+
+/*
+ * **Kept, not deleted** (LAI-606). The owner asked for the hairline to become
+ * transparent rather than for the element to go: it still reserves its line, so
+ * removing it later is a colour change rather than a layout one.
+ */
+.card-foot {
+  border-top-color: transparent;
+}
+
+/*
+ * Cards, made plain (LAI-606).
+ *
+ * Every chip reads the shared framing tokens, which are currently "nothing".
+ * Colour still comes from the chip's own `--chip-*` — that is the part which
+ * legitimately varies, and the only part left doing any work.
+ */
+.card-tag,
+.card-sprint,
+.marker {
+  padding: var(--chip-padding);
+  border-color: var(--chip-border);
+  background: var(--chip-bg);
+  border-radius: var(--radius-chip);
+}
+
+/* The tags need their own air now that no border supplies it. */
+.card-tags {
+  gap: 10px;
+}
+
+/* Sprint tag: the strip's own treatment — mono, muted, unboxed. */
+.card-sprint,
+.card-sprint-on {
+  color: var(--text-muted);
+  border-color: var(--chip-border);
+  background: var(--chip-bg);
+}
+
+.marker-ready {
+  color: var(--chip-green);
+  border-color: var(--chip-border);
+  background: var(--chip-bg);
+}
+
+/*
+ * Blocked stays framed — it is the one warning on a card — but its text is one
+ * colour and one weight. The key was bold, which made a card with a blocker
+ * read as three levels of emphasis where the owner wants one.
+ */
+.card-blocked,
+.card-blocked b {
+  color: var(--overdue);
+}
+
+/* No underline on a card. A link earns one by being pointed at. */
+.card-key,
+.card-open {
+  text-decoration: none;
+}
+
+.card-key:hover,
+.card-open:hover {
+  text-decoration: underline;
+}
+
+/*
+ * The meta row is one line, and the `+` is pinned to its end (LAI-606).
+ *
+ * It still wrapped: the middle group had no `min-width: 0`, so a long key or a
+ * third count pushed the `+` onto a second line and made that card taller than
+ * its neighbours. `min-width: 0` is the part that actually allows a flex child
+ * to shrink below its content — `overflow: hidden` alone does not.
+ */
+.card-foot {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.card-foot > .card-meta,
+.card-foot > .card-above {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-add,
+.card-foot > button:last-child {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px dashed var(--border-subtle);
+  color: var(--text-muted);
+  background: transparent;
+}
+
+
+/*
+ * The blocked line is one colour and one weight (LAI-606).
+ *
+ * `t-label` is 12/400 and inherits its colour, which is what this row needs —
+ * the label, the key and the title are all the same `--overdue`. The `b` around
+ * the key stays in the markup and simply stops being bold: nothing added or
+ * removed, and emphasis is a value.
+ */
+/*
+ * **Two classes, and it has to be** (LAI-606). `.t-label` sets `color:
+ * inherit` and `type.css` is imported after this file, so a single-class
+ * `.card-blocked` loses the cascade on source order and the row renders in
+ * `--text-primary`. Measured: `rgb(201, 209, 217)` where `--overdue` was
+ * meant. Scoping to `.card .card-blocked` wins on specificity instead of
+ * relying on which stylesheet happens to load last.
+ */
+.card .card-blocked,
+.card .card-blocked b {
+  color: var(--overdue);
+  font-weight: 400;
 }

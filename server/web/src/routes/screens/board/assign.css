@@ -10,17 +10,17 @@
 .assign-pick select {
   font: inherit;
   font-size: var(--text-sm);
-  color: var(--tx);
-  background: var(--card);
-  border: 1px solid var(--bd2);
-  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
   padding: 0.1875rem 0.375rem;
   cursor: pointer;
 }
 
 .assign-pick select:focus-visible,
 .assign-claim:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -28,10 +28,10 @@
   font: inherit;
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
-  color: var(--acc);
-  background: var(--accs);
-  border: 1px solid var(--accb);
-  border-radius: var(--radius-md);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-card);
   padding: 0.1875rem 0.5rem;
   cursor: pointer;
 }
@@ -44,11 +44,11 @@
 .assign-mine {
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  color: var(--grn);
+  color: var(--chip-green);
 }
 
 /* Names the winner of a lost claim — that is the whole point of the 409. */
 .assign-error {
   font-size: var(--text-xs);
-  color: var(--red);
+  color: var(--overdue);
 }

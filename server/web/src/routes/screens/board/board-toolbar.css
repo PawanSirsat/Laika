@@ -24,10 +24,10 @@
   gap: 0.3125rem;
   height: 1.625rem;
   padding: 0 0.5rem;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--tx2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
   font: inherit;
   font-size: 0.6875rem;
   font-weight: var(--weight-medium);
@@ -36,14 +36,14 @@
 }
 
 .bt-button:hover {
-  color: var(--tx);
-  border-color: var(--bd2);
+  color: var(--text-primary);
+  border-color: var(--border-default);
 }
 
 .bt-button-on {
-  color: var(--acc);
-  background: var(--accs);
-  border-color: var(--accb);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
 }
 
 .bt-button svg {
@@ -56,8 +56,8 @@
   font-family: var(--font-mono);
   font-size: 0.5625rem;
   font-weight: var(--weight-bold);
-  background: var(--acc);
-  color: #fff;
+  background: var(--accent);
+  color: var(--on-accent);
   border-radius: var(--radius-pill);
   padding: 0 0.25rem;
   min-width: 0.875rem;
@@ -71,22 +71,22 @@
   width: 1.625rem;
   height: 1.625rem;
   flex: none;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--tx2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 0;
 }
 
 .bt-icon:hover {
-  color: var(--tx);
-  border-color: var(--accb);
+  color: var(--text-primary);
+  border-color: var(--accent-border);
 }
 
 .bt-icon:focus-visible,
 .bt-button:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -105,10 +105,10 @@
   display: flex;
   flex-direction: column;
   gap: 0.4375rem;
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   padding: 0.625rem 0.75rem 0.75rem;
 }
 
@@ -127,16 +127,16 @@
   font-weight: var(--weight-heavy);
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .bt-field select {
   font: inherit;
   font-size: 0.75rem;
-  color: var(--tx);
-  background: var(--tub);
-  border: 1px solid var(--bd2);
-  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
   padding: 0.1875rem 0.25rem;
 }
 
@@ -146,13 +146,13 @@
   align-items: center;
   gap: 0.375rem;
   font-size: 0.75rem;
-  color: var(--tx);
+  color: var(--text-primary);
   cursor: pointer;
 }
 
 .bt-check input,
 .bt-radio input {
-  accent-color: var(--acc);
+  accent-color: var(--accent);
 }
 
 .bt-clear {
@@ -160,7 +160,7 @@
   font: inherit;
   font-size: 0.6875rem;
   font-weight: var(--weight-semibold);
-  color: var(--acc);
+  color: var(--accent);
   background: none;
   border: 0;
   padding: 0;
@@ -171,7 +171,7 @@
   margin: 0.25rem 0 0;
   font-size: 0.625rem;
   line-height: 1.45;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* The `⋯` menu. */
@@ -187,10 +187,10 @@
   min-width: 10rem;
   display: flex;
   flex-direction: column;
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   padding: 0.1875rem;
 }
 
@@ -198,16 +198,16 @@
   text-align: left;
   font: inherit;
   font-size: 0.75rem;
-  color: var(--tx);
+  color: var(--text-primary);
   background: none;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   padding: 0.3125rem 0.4375rem;
   cursor: pointer;
 }
 
 .bt-menu-item:hover {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 /*
@@ -273,7 +273,7 @@
    * the one thing it must not do.
    */
   padding: 0.5rem 0;
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
   min-width: 0;
 }
 
@@ -297,23 +297,23 @@
   gap: 0.375rem;
   height: 1.625rem;
   padding: 0 0.5rem;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
-  background: var(--card);
-  color: var(--tx3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-muted);
   min-width: 0;
   flex: 0 1 13rem;
 }
 
 .bt-search:focus-within {
-  border-color: var(--bd2);
-  color: var(--tx2);
+  border-color: var(--border-default);
+  color: var(--text-secondary);
 }
 
 .bt-search input {
   border: 0;
   background: none;
-  color: var(--tx);
+  color: var(--text-primary);
   font: inherit;
   font-size: 0.6875rem;
   min-width: 0;
@@ -322,7 +322,7 @@
 }
 
 .bt-search input::placeholder {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .bt-members {
@@ -339,7 +339,7 @@
   width: 1.375rem;
   height: 1.375rem;
   border-radius: 50%;
-  border: 1.5px solid var(--card);
+  border: 1.5px solid var(--bg-card);
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
   letter-spacing: 0.01em;
@@ -354,10 +354,10 @@
 }
 
 .bt-member-more {
-  background: var(--card);
-  color: var(--tx3);
+  background: var(--bg-card);
+  color: var(--text-muted);
   cursor: default;
-  border-color: var(--bd);
+  border-color: var(--border-subtle);
 }
 
 /*
@@ -365,7 +365,7 @@
  * says "filtering by this person" is half-hidden by the next avatar.
  */
 .bt-member-on {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
   position: relative;
   z-index: 1;

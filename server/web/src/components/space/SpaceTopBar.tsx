@@ -1,4 +1,3 @@
-import { Spinner } from '../../components/Spinner.tsx';
 import { useEffect, useRef } from 'react';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
@@ -146,7 +145,7 @@ export function SpaceTopBar({
               height="15"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="#fff"
+              stroke="var(--on-accent)"
               strokeWidth="2.2"
             >
               <path d="M5 20V9M12 20V4M19 20v-7" />
@@ -181,7 +180,9 @@ export function SpaceTopBar({
                   <button
                     key={member.user_id}
                     type="button"
-                    className={on ? 'space-member space-member-on' : 'space-member'}
+                    className={
+                      on ? 'space-member space-member-on t-avatar' : 'space-member t-avatar'
+                    }
                     style={{ background: colour.background, color: colour.foreground }}
                     aria-pressed={on}
                     title={on ? `Showing only ${member.name}` : `Show only ${member.name}`}
@@ -385,7 +386,14 @@ export function SpaceTopBar({
             <rect x="4" y="8" width="16" height="12" rx="3" />
             <path d="M12 4v4M9 14h.01M15 14h.01" />
           </svg>
-          Agents {agents ?? <Spinner size="sm" label="Counting agents" />}
+          {/*
+            **Nothing until presence lands** (LAI-606). This showed a spinner so
+            the chip would not claim "Agents 0" before the count existed — but
+            it then spun for ~3.2s *after* the board was usable, and a spinner
+            for something nobody is waiting on is noise. The word stays, the
+            number arrives when it arrives.
+          */}
+          Agents {agents}
         </button>
 
         <button type="button" className="space-create" onClick={onCreate}>

@@ -16,42 +16,42 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
   {
     title: 'Surfaces',
     note: 'App background, recessed columns, card surface.',
-    tokens: ['--page', '--tub', '--card'],
+    tokens: ['--bg-canvas', '--bg-column', '--bg-card'],
   },
   {
     title: 'Borders',
     note: 'Default and strong.',
-    tokens: ['--bd', '--bd2'],
+    tokens: ['--border-subtle', '--border-default'],
   },
   {
     title: 'Text',
     note: 'Primary, secondary, tertiary.',
-    tokens: ['--tx', '--tx2', '--tx3'],
+    tokens: ['--text-primary', '--text-secondary', '--text-muted'],
   },
   {
     title: 'Accent — in progress, primary action',
     note: 'Base, subtle fill, border.',
-    tokens: ['--acc', '--accs', '--accb'],
+    tokens: ['--accent', '--accent-bg', '--accent-border'],
   },
   {
     title: 'Purple — agent, to-do',
     note: 'Base, subtle fill, border.',
-    tokens: ['--pur', '--purs', '--purb'],
+    tokens: ['--chip-pink', '--chip-pink-bg', '--chip-pink-border'],
   },
   {
     title: 'Green — done, public, success',
     note: 'Base, subtle fill, border.',
-    tokens: ['--grn', '--grns', '--grnb'],
+    tokens: ['--chip-green', '--chip-green-bg', '--chip-green-border'],
   },
   {
     title: 'Amber — review, warning, stale',
     note: 'Base, subtle fill, border.',
-    tokens: ['--amb', '--ambs', '--ambb'],
+    tokens: ['--chip-orange', '--chip-orange-bg', '--chip-orange-border'],
   },
   {
     title: 'Red — blocked, error, danger',
     note: 'Base, subtle fill, border.',
-    tokens: ['--red', '--reds', '--redb'],
+    tokens: ['--overdue', '--blocked-bg', '--overdue-border'],
   },
 ];
 
@@ -59,7 +59,7 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
 export const ALL_COLOR_TOKENS: readonly string[] = COLOR_TOKENS.flatMap((g) => g.tokens);
 
 /** Themed but not a colour, so it is listed separately. */
-export const ELEVATION_TOKENS = ['--shadow'] as const;
+export const ELEVATION_TOKENS = ['--shadow-card'] as const;
 
 /** Theme-independent. */
 export const TYPE_TOKENS = [
@@ -89,9 +89,9 @@ export const SPACE_TOKENS = [
 ] as const;
 
 export const RADIUS_TOKENS = [
-  '--radius-sm',
-  '--radius-md',
-  '--radius-lg',
+  '--radius-chip',
+  '--radius-card',
+  '--radius-card',
   '--radius-pill',
 ] as const;
 
@@ -101,16 +101,16 @@ export const FAMILY_TOKENS = ['--font-ui', '--font-mono'] as const;
  * Text-on-background pairs that must meet WCAG AA, checked in both themes by
  * `contrast.test.ts`.
  *
- * `--tx3` is deliberately absent: it is the design's tertiary tone, used for
+ * `--text-muted` is deliberately absent: it is the design's tertiary tone, used for
  * de-emphasised metadata, and it does not reach AA for body text on any of our
  * surfaces. That is recorded as a finding for PM in LAI-018, not silently
  * "fixed" here — the design is the contract.
  */
 export const CONTRAST_PAIRS: readonly { readonly text: string; readonly background: string }[] = [
-  { text: '--tx', background: '--page' },
-  { text: '--tx', background: '--tub' },
-  { text: '--tx', background: '--card' },
-  { text: '--tx2', background: '--page' },
-  { text: '--tx2', background: '--tub' },
-  { text: '--tx2', background: '--card' },
+  { text: '--text-primary', background: '--bg-canvas' },
+  { text: '--text-primary', background: '--bg-column' },
+  { text: '--text-primary', background: '--bg-card' },
+  { text: '--text-secondary', background: '--bg-canvas' },
+  { text: '--text-secondary', background: '--bg-column' },
+  { text: '--text-secondary', background: '--bg-card' },
 ];

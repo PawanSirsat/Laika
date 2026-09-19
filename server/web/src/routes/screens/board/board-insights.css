@@ -12,10 +12,10 @@
   right: 1.125rem;
   z-index: 31;
   width: min(18rem, calc(100vw - 2rem));
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   padding: 0.75rem 0.875rem 0.875rem;
 }
 
@@ -29,29 +29,29 @@
   margin: 0;
   font-size: 0.8125rem;
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .bi-close {
   margin-left: auto;
   border: 0;
   background: none;
-  color: var(--tx3);
+  color: var(--text-muted);
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
   padding: 0 0.25rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
 }
 
 .bi-close:hover {
-  color: var(--tx);
-  background: var(--tub);
+  color: var(--text-primary);
+  background: var(--bg-column);
 }
 
 .bi-section {
   padding: 0.5rem 0;
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .bi-section:first-of-type {
@@ -64,7 +64,7 @@
   font-weight: var(--weight-heavy);
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .bi-big {
@@ -72,7 +72,7 @@
   font-family: var(--font-mono);
   font-size: 1.125rem;
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
   line-height: 1.2;
 }
 
@@ -80,7 +80,7 @@
   font-family: inherit;
   font-size: 0.6875rem;
   font-weight: var(--weight-medium);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* A sparkline, not a chart: enough to see a shape, not enough to pretend to
@@ -96,7 +96,7 @@
 .bi-bar {
   flex: 1 1 0;
   min-height: 1px;
-  background: var(--acc);
+  background: var(--accent);
   border-radius: 1px 1px 0 0;
   opacity: 0.75;
 }
@@ -117,7 +117,7 @@
   font-size: 0.5625rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .bi-rows dd {
@@ -125,12 +125,12 @@
   font-family: var(--font-mono);
   font-size: 0.75rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .bi-note {
   margin: 0.375rem 0 0;
   font-size: 0.625rem;
   line-height: 1.45;
-  color: var(--tx3);
+  color: var(--text-muted);
 }

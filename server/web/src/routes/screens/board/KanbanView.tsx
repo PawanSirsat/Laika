@@ -98,7 +98,7 @@ export function KanbanView({ swimlanes, collapsed, onToggleGroup, ...row }: Kanb
 
               {lane.avatarId !== undefined && (
                 <span
-                  className="swim-avatar"
+                  className="swim-avatar t-avatar"
                   aria-hidden="true"
                   {...(ink === undefined
                     ? {}

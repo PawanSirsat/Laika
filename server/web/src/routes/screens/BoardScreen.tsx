@@ -962,6 +962,23 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                * in the direction of travel, or no overflow at all.
                */
               const pane = event.currentTarget;
+
+              /*
+               * **Ask whether the pane is a scroller, not whether it overflows.**
+               *
+               * `scrollHeight > clientHeight` is true of the *ungrouped* board
+               * too: `.board-main` is `overflow-y: hidden` and still reports
+               * 172px of clipped content. Assigning `scrollTop` moves a hidden
+               * element perfectly well — script is not bound by the property
+               * that stops a person — so forwarding on that test scrolled a
+               * board that is meant to be one screenful, leaving the columns
+               * pushed up over empty space.
+               *
+               * Only `.board-grouped` sets `overflow-y: auto`, so the computed
+               * value is the honest question.
+               */
+              const overflowY = getComputedStyle(pane).overflowY;
+              if (overflowY !== 'auto' && overflowY !== 'scroll') return;
               if (pane.scrollHeight <= pane.clientHeight) return;
 
               const lane = (event.target as HTMLElement | null)?.closest<HTMLElement>('.lane-body');
@@ -1069,6 +1086,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                       // `columns.create(nextColumnName(...))`, so a column
                       // called "New column" appeared and you renamed it after.
                       setCreatingColumn(true);
+                    },
+                    onRenameColumn: (columnId: string, name: string) => {
+                      void columns.rename(columnId, name);
                     },
                     onEditColumn: (column: BoardColumn) => {
                       setEditing(column.id);

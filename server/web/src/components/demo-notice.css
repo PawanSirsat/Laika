@@ -6,10 +6,10 @@
   gap: var(--space-2);
   margin: 0;
   padding: var(--space-2) 1.125rem;
-  background: var(--ambs);
-  border-bottom: 1px solid var(--ambb);
+  background: var(--chip-orange-bg);
+  border-bottom: 1px solid var(--chip-orange-border);
   font-size: var(--text-sm);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .demo-notice-tag {
@@ -18,8 +18,8 @@
   font-size: 0.53125rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.08em;
-  color: var(--amb);
-  border: 1px solid var(--ambb);
-  border-radius: var(--radius-sm);
+  color: var(--chip-orange);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-chip);
   padding: 0.125rem 0.3125rem;
 }

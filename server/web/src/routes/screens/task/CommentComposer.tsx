@@ -110,7 +110,13 @@ export function CommentComposer({
         className="composer-field"
         value={value}
         disabled={busy}
-        rows={3}
+        /*
+         * **One line at rest** (LAI-605). It was `3`, which drew a box the
+         * height of a paragraph before anyone had typed a character — the
+         * reference is a single line that grows. `.composer-field` caps the
+         * growth so a long draft scrolls rather than pushing the thread away.
+         */
+        rows={1}
         placeholder="Leave a comment… ⌘↵ to send"
         aria-label="Comment"
         onChange={(event) => {

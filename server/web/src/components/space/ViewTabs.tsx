@@ -14,7 +14,7 @@ export interface ViewTabsProps {
  * Row two: the views of this space (prototype line 141; LAI-251).
  *
  * Replaces `SpaceTabs` from LAI-248 — same idea, the design's geometry: 34px
- * tabs at 12.5px, the active one in `--acc` with a 2px underline and weight
+ * tabs at 12.5px, the active one in `--accent` with a 2px underline and weight
  * 700, the strip scrolling horizontally rather than wrapping (a tab bar that
  * changes height moves the content under it).
  *

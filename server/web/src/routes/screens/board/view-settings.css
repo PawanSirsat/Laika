@@ -17,10 +17,10 @@
   width: min(20rem, calc(100vw - 1rem));
   max-height: min(34rem, calc(100vh - 5rem));
   overflow-y: auto;
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   padding: 0.75rem 0.875rem 0.875rem;
 }
 
@@ -39,29 +39,29 @@
   margin: 0;
   font-size: 0.8125rem;
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .vs-close {
   margin-left: auto;
   border: 0;
   background: none;
-  color: var(--tx3);
+  color: var(--text-muted);
   font-size: 1rem;
   line-height: 1;
   cursor: pointer;
   padding: 0 0.25rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
 }
 
 .vs-close:hover {
-  color: var(--tx);
-  background: var(--tub);
+  color: var(--text-primary);
+  background: var(--bg-column);
 }
 
 .vs-section {
   padding: 0.5rem 0;
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .vs-section:first-of-type {
@@ -75,7 +75,7 @@
   font-weight: var(--weight-heavy);
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .vs-radios,
@@ -96,20 +96,20 @@
   align-items: center;
   gap: 0.375rem;
   font-size: 0.75rem;
-  color: var(--tx);
+  color: var(--text-primary);
   cursor: pointer;
 }
 
 .vs-radio input,
 .vs-check input {
-  accent-color: var(--acc);
+  accent-color: var(--accent);
 }
 
 .vs-note {
   margin: 0.375rem 0 0;
   font-size: 0.6875rem;
   line-height: 1.45;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .vs-note-quiet {
@@ -127,24 +127,24 @@
   align-items: center;
   gap: 0.25rem;
   font-size: 0.6875rem;
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
   padding: 0.0625rem 0.4375rem;
   cursor: pointer;
 }
 
 .vs-chip:hover {
-  color: var(--red);
-  border-color: var(--redb);
-  background: var(--reds);
+  color: var(--overdue);
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
 }
 
 .vs-clear {
   font-size: 0.6875rem;
   font-weight: var(--weight-semibold);
-  color: var(--acc);
+  color: var(--accent);
   background: none;
   border: 0;
   cursor: pointer;
@@ -156,24 +156,24 @@
   flex-direction: column;
   gap: 0.375rem;
   padding-top: 0.5rem;
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .vs-reset {
   align-self: flex-start;
   font-size: 0.6875rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: 0.1875rem 0.5rem;
   cursor: pointer;
 }
 
 .vs-reset:hover {
-  color: var(--tx);
-  border-color: var(--bd2);
+  color: var(--text-primary);
+  border-color: var(--border-default);
 }
 
 /* ------------------------------------ Show fields, as a list (LAI-290) */
@@ -181,17 +181,17 @@
 .vs-search {
   font: inherit;
   font-size: 0.75rem;
-  color: var(--tx);
-  background: var(--tub);
-  border: 1px solid var(--bd2);
-  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
   padding: 0.25rem 0.4375rem;
   width: 100%;
   margin-bottom: 0.375rem;
 }
 
 .vs-search:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -199,7 +199,7 @@
   margin: 0.5rem 0 0.25rem;
   font-size: 0.6875rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .vs-available,
@@ -213,8 +213,8 @@
 }
 
 .vs-available {
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: 0.125rem;
   max-height: 9rem;
   overflow-y: auto;
@@ -228,10 +228,10 @@
   width: 100%;
   font: inherit;
   font-size: 0.75rem;
-  color: var(--tx);
+  color: var(--text-primary);
   background: none;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   padding: 0.25rem 0.3125rem;
   text-align: left;
 }
@@ -241,12 +241,12 @@
 }
 
 .vs-add:hover {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 .vs-plus {
   margin-left: auto;
-  color: var(--acc);
+  color: var(--accent);
   font-weight: var(--weight-bold);
 }
 
@@ -257,9 +257,9 @@
   width: 1.125rem;
   height: 1.125rem;
   flex: none;
-  border-radius: var(--radius-sm);
-  background: var(--tub);
-  color: var(--tx2);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  color: var(--text-secondary);
   font-size: 0.625rem;
   line-height: 1;
 }
@@ -273,24 +273,24 @@
 }
 
 .vs-row-locked .vs-row-name {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .vs-remove {
   flex: none;
   border: 0;
   background: none;
-  color: var(--tx3);
+  color: var(--text-muted);
   font-size: 0.875rem;
   line-height: 1;
   cursor: pointer;
   padding: 0 0.1875rem;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
 }
 
 .vs-remove:hover:not(:disabled) {
-  color: var(--red);
-  background: var(--reds);
+  color: var(--overdue);
+  background: var(--blocked-bg);
 }
 
 .vs-remove:disabled {
