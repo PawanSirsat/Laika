@@ -97,6 +97,16 @@ const COLUMNS = [
   column('c2', 'In progress', 1, ['in_progress']),
   column('c3', 'Review', 2, ['review']),
   column('c4', 'Done', 3, ['done']),
+  /*
+   * **The hidden column every real board has**, and the reason this fixture
+   * existed without one for a day.
+   *
+   * `reorderColumns` requires *every* column exactly once; the board draws
+   * only the visible ones. A fixture with nothing hidden makes those two sets
+   * identical, so a caller that sent only the visible order passed here and
+   * failed against every real project — which is exactly what happened.
+   */
+  { ...column('c5', 'Cancelled', 4, ['cancelled']), hidden: true },
 ];
 
 function stub(over: Partial<ApiStub> = {}): ApiStub {
@@ -204,8 +214,8 @@ void describe('dragging a column', () => {
       assert.ok(sent !== undefined, 'no reorder was sent');
       assert.deepEqual(
         (sent.body as { column_ids: string[] }).column_ids,
-        ['c4', 'c1', 'c2', 'c3'],
-        'the whole order must go, so a stale client cannot drop a lane',
+        ['c4', 'c1', 'c2', 'c3', 'c5'],
+        'the whole board must go — hidden columns included — or the server refuses it',
       );
     } finally {
       await h.close();
@@ -315,6 +325,7 @@ void describe('the keyboard route', () => {
         'c1',
         'c2',
         'c4',
+        'c5',
       ]);
     } finally {
       await h.close();

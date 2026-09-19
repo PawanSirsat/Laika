@@ -859,7 +859,26 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               {...(mayConfigure && !columns.visible.some(isFallbackColumn)
                 ? {
                     onReorder: (ids: readonly string[]) => {
-                      void columns.reorder(ids);
+                      /*
+                       * **Put the hidden columns back before sending.**
+                       *
+                       * The board draws `columns.visible`, so a drag can only
+                       * ever produce the visible order — but `reorderColumns`
+                       * requires *every* column of the project exactly once,
+                       * and refuses anything else so a stale client cannot
+                       * silently drop a lane.
+                       *
+                       * Every default board has a hidden `Cancelled` column, so
+                       * without this line **every** drag was refused with
+                       * "Send every column of this space exactly once". The
+                       * check is right; the caller was sending a subset.
+                       */
+                      const hidden = columns.state.columns
+                        .filter((c) => c.hidden)
+                        .sort((a, b) => a.position - b.position)
+                        .map((c) => c.id);
+
+                      void columns.reorder([...ids, ...hidden]);
                     },
                     onAddColumn: () => {
                       void columns.create(nextColumnName(columns.visible));
