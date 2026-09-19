@@ -1143,6 +1143,16 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /*
+   * **A lane never scrolls sideways, and saying so is what lets the board.**
+   *
+   * `overflow-y: auto` coerces the other axis to `auto` as well, so every lane
+   * became a horizontal scroller with nothing to scroll — and a sideways
+   * trackpad gesture over a card was captured by it instead of reaching
+   * `.board-main`, which is the pane that actually scrolls the columns. The
+   * owner's words: *"when i try to scroll left right there, not worked"*.
+   */
+  overflow-x: hidden;
   overscroll-behavior: contain;
   /* The thin scrollbar the reference shows on a full column. */
   scrollbar-width: thin;

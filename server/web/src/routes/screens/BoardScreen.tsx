@@ -823,7 +823,47 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       ) : board.state.status === 'error' ? (
         <ApiErrorState error={board.state.error} resource="this board" onRetry={board.reload} />
       ) : (
-        <div className="board-main">
+        <div
+          className="board-main"
+          onWheel={(event) => {
+            /*
+             * **Forward a sideways gesture to the board** (LAI-290).
+             *
+             * Chrome *latches* a wheel gesture to the first scroll container
+             * under the pointer. Over a card that is `.lane-body`, which
+             * scrolls vertically and not horizontally — so `deltaX` is dropped
+             * and the columns never move, while the identical gesture two
+             * pixels away over the lane's padding scrolls them 90px. Measured,
+             * both ways.
+             *
+             * No CSS fixes it: `overflow-x: hidden` leaves the lane a scroll
+             * container, and `clip` is coerced back to `hidden` whenever the
+             * other axis is `auto`. So the board takes the delta itself.
+             *
+             * Only when the gesture is **mostly** horizontal, so an ordinary
+             * vertical scroll inside a lane is untouched.
+             */
+            if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+
+            /*
+             * **Which element scrolls depends on the width.** Above 1200px it
+             * is this pane; below it `.board-main` goes `overflow-x: visible`
+             * and `.kanban` scrolls itself instead (see `board-rail.css`).
+             * Targeting the wrong one is a no-op, so ask rather than assume.
+             */
+            const pane = event.currentTarget;
+            const grid = pane.querySelector<HTMLElement>('.kanban');
+            const scroller =
+              pane.scrollWidth > pane.clientWidth
+                ? pane
+                : grid !== null && grid.scrollWidth > grid.clientWidth
+                  ? grid
+                  : null;
+
+            if (scroller === null) return;
+            scroller.scrollLeft += event.deltaX;
+          }}
+        >
           {view === 'list' ? (
             <ListView
               tasks={tasks}

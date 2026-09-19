@@ -619,3 +619,152 @@ void describe('the lanes use the width they are given (LAI-290)', () => {
     }
   });
 });
+
+/**
+ * A crowded board: real columns **and** a dozen cards in the first lane.
+ *
+ * Both scroll tests refuse to run without something to scroll — the base
+ * fixture is deliberately one task per lane, which gives a lane no vertical
+ * overflow and the row no horizontal one.
+ */
+const CROWDED_STUB: ApiStub = {
+  ...COLUMNS_STUB,
+  '/api/v1/projects/laika-core/tasks': {
+    data: Array.from({ length: 12 }, (_, i) => ({
+      ...TASKS[0],
+      id: `crowd-${String(i)}`,
+      key: `LAI-${String(100 + i)}`,
+      number: 100 + i,
+      title: `A card with a title long enough to take two lines, number ${String(i)}`,
+      status: 'todo',
+    })),
+    next_cursor: null,
+  },
+};
+
+void describe('scrolling the board (LAI-290)', () => {
+  void test('a sideways gesture over a card moves the columns', async () => {
+    /*
+     * **Chrome latches a wheel gesture to the first scroll container under the
+     * pointer.** Over a card that is `.lane-body`, which scrolls vertically and
+     * not horizontally — so `deltaX` was dropped and the columns never moved,
+     * while the identical gesture over the lane's padding scrolled them.
+     *
+     * No CSS fixes it: `overflow-x: hidden` leaves the lane a scroll container,
+     * and `clip` is coerced back to `hidden` when the other axis is `auto`.
+     */
+    const h = await open('/board?project=laika-core', CROWDED_STUB);
+
+    try {
+      // Narrow enough that the row genuinely has somewhere to scroll.
+      await h.page.setViewportSize({ width: 820, height: 900 });
+      await boardReady(h);
+
+      /** Whichever element scrolls at this width — the pane, or the grid. */
+      const scroller = () =>
+        h.page.evaluate(() => {
+          const pane = document.querySelector('.board-main');
+          const grid = document.querySelector('.kanban');
+          for (const el of [pane, grid]) {
+            if (el !== null && el.scrollWidth > el.clientWidth) {
+              return { room: el.scrollWidth - el.clientWidth, left: el.scrollLeft };
+            }
+          }
+          return { room: 0, left: 0 };
+        });
+
+      assert.ok((await scroller()).room > 0, 'the board has nowhere to scroll — proves nothing');
+
+      const card = await h.page.locator('.card').first().boundingBox();
+      assert.ok(card !== null, 'no card to aim at');
+
+      await h.page.mouse.move(card.x + card.width / 2, card.y + 10);
+      await h.page.mouse.wheel(300, 0);
+      await h.page.waitForTimeout(300);
+
+      assert.ok(
+        (await scroller()).left > 0,
+        'a sideways gesture over a card did not move the columns',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a vertical gesture over a card still scrolls that lane', async () => {
+    /*
+     * The other half: forwarding the horizontal axis must not steal the
+     * vertical one, or a lane full of cards becomes unreadable.
+     *
+     * **What this catches, measured rather than assumed.** React's `onWheel`
+     * is a passive listener, so a `preventDefault()` added there is inert and
+     * this test does not move — mutating the handler that way leaves it green.
+     * It goes red on the version that can actually do the damage: a native
+     * `addEventListener('wheel', …, { passive: false })` on `.board-main`,
+     * which is the obvious next step for anyone who wants `preventDefault` and
+     * finds the React prop ignoring them.
+     */
+    const h = await open('/board?project=laika-core', CROWDED_STUB);
+
+    try {
+      // Wide enough that the board stays a row (below 1200px it stacks and the
+      // lanes grow instead of being constrained), and short enough that a lane
+      // full of cards genuinely overflows.
+      await h.page.setViewportSize({ width: 1400, height: 560 });
+      await boardReady(h);
+
+      /*
+       * **The crowded lane, not the first one.** `CROWDED_STUB` puts every card
+       * in `todo`, which is not column zero — measuring `.lane-body` and taking
+       * the first match reports the *empty* lane, which has no overflow and
+       * fails a guard that is doing its job.
+       */
+      const crowded = '.lane-body:has(.card)';
+
+      const room = await h.page.evaluate((sel) => {
+        const lane = document.querySelector(sel);
+        return lane === null ? 0 : lane.scrollHeight - lane.clientHeight;
+      }, crowded);
+      assert.ok(room > 0, 'the lane has nowhere to scroll — this test proves nothing');
+
+      const card = await h.page.locator('.card').first().boundingBox();
+      assert.ok(card !== null, 'no card to aim at');
+
+      await h.page.mouse.move(card.x + card.width / 2, card.y + 10);
+      await h.page.mouse.wheel(0, 200);
+      await h.page.waitForTimeout(300);
+
+      const lane = await h.page.evaluate(
+        (sel) => document.querySelector(sel)?.scrollTop ?? 0,
+        crowded,
+      );
+      assert.ok(lane > 0, 'the lane did not scroll vertically');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the board itself never grows a vertical scrollbar', async () => {
+    // It is one screenful by design: the lanes reach the bottom and each
+    // scrolls its own cards. `overflow-x: auto` silently coerces the other
+    // axis to `auto`, which is how a scrollbar appeared over a 91px phantom.
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      const overflowY = await h.page.evaluate(() => {
+        const pane = document.querySelector('.board-main');
+        return pane === null ? '' : getComputedStyle(pane).overflowY;
+      });
+
+      assert.ok(
+        overflowY === 'hidden' || overflowY === 'clip',
+        `the board pane scrolls vertically (overflow-y: ${overflowY})`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

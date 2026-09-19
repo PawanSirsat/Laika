@@ -314,6 +314,21 @@
   min-height: 0;
   overflow-x: auto;
   /*
+   * **`hidden`, and it is not redundant** (LAI-290).
+   *
+   * `overflow-x: auto` alone does not leave the other axis alone: the spec
+   * coerces a `visible` counterpart to `auto`, so this pane silently became a
+   * *vertical* scroller too. It then grew a scrollbar over a 91px phantom —
+   * the clipped `.lane-move` and `.lane-order` absolutes, which are positioned
+   * against this box by the `position: relative` below — while every real box
+   * ended 18px inside it.
+   *
+   * The board is one screenful by design: the lanes reach the bottom and each
+   * scrolls its own cards. Nothing here should ever scroll vertically, so say
+   * so rather than relying on the content to stay short.
+   */
+  overflow-y: hidden;
+  /*
    * **A scroll container must be the containing block for what it scrolls.**
    *
    * Without this, absolutely-positioned descendants resolve against the page
