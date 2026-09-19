@@ -55,20 +55,42 @@ export interface AvatarColor {
  * deliberately low-chroma background, which is what keeps initials legible
  * without hand-checking every hue.
  */
-export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): AvatarColor {
-  const hue = HUES[hash(userId) % HUES.length] ?? HUES[0];
+/**
+ * The brightest lightness at which white text clears WCAG AA (with margin) on
+ * `hsl(hue 46% L)` — solved numerically per hue, because perceived luminance
+ * is wildly hue-dependent: a blue passes at 47 where the green fails until 34.
+ * One uniform lightness was measured failing AA on three of the eight hues.
+ * `avatar-contrast.test.ts` re-derives the check, so an edit here that breaks
+ * a hue is a red test, not a hand ritual.
+ */
+const MAX_LIGHT: Readonly<Record<number, number>> = {
+  212: 47,
+  262: 57,
+  292: 51,
+  322: 50,
+  352: 52,
+  22: 44,
+  162: 34,
+  186: 36,
+};
 
-  return theme === 'dark'
-    ? {
-        background: `hsl(${String(hue)} 34% 26%)`,
-        foreground: `hsl(${String(hue)} 48% 92%)`,
-        border: `hsl(${String(hue)} 36% 40%)`,
-      }
-    : {
-        background: `hsl(${String(hue)} 58% 90%)`,
-        foreground: `hsl(${String(hue)} 52% 24%)`,
-        border: `hsl(${String(hue)} 44% 72%)`,
-      };
+export function avatarColor(userId: string, theme: 'light' | 'dark' = 'light'): AvatarColor {
+  /*
+   * Solid, in both themes, with white initials (LAI-606) — the prototype's
+   * avatars are saturated per-person fills, not pastels. Dark uses the
+   * brightest AA-passing lightness so circles read against #19191D cards;
+   * light sits a step darker. The hue still comes from the id hash, so a
+   * person is the same colour everywhere.
+   */
+  const hue = HUES[hash(userId) % AVATAR_COLOR_COUNT] ?? 212;
+  const ceiling = MAX_LIGHT[hue] ?? 40;
+  const lightness = theme === 'dark' ? ceiling : Math.min(ceiling, ceiling - 4);
+
+  return {
+    background: `hsl(${String(hue)} 46% ${String(lightness)}%)`,
+    foreground: '#fff',
+    border: `hsl(${String(hue)} 46% ${String(lightness - 8)}%)`,
+  };
 }
 
 /**
