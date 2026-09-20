@@ -221,6 +221,23 @@ export function BoardToolbar({
         </div>
       )}
 
+      {/*
+        Click-away closes the popover (owner). The catcher sits under the pop
+        (z 30 vs 31) and above everything else, the same shape the ⋯ menu uses.
+      */}
+      {open !== undefined && (
+        <button
+          type="button"
+          className="bt-catcher"
+          aria-label="Close"
+          onClick={() => {
+            setOpen(undefined);
+          }}
+        />
+      )}
+
+      {/* Each pop anchors to its own button, not the row edge (owner). */}
+      <span className="bt-anchor">
       <button
         type="button"
         className={active > 0 ? 'bt-button bt-button-on' : 'bt-button'}
@@ -236,22 +253,6 @@ export function BoardToolbar({
         Filter
         {active > 0 && <span className="bt-badge">{active}</span>}
       </button>
-
-      <button
-        type="button"
-        className={grouped ? 'bt-button bt-button-on' : 'bt-button'}
-        aria-expanded={open === 'group'}
-        aria-haspopup="true"
-        onClick={() => {
-          setOpen((o) => (o === 'group' ? undefined : 'group'));
-        }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-          <path d="M12 3 3 8l9 5 9-5-9-5ZM3 14l9 5 9-5" strokeLinejoin="round" />
-        </svg>
-        {grouped ? `Group: ${groupLabel}` : 'Group'}
-      </button>
-
       {open === 'filter' && (
         <div className="bt-pop" role="dialog" aria-label="Filter">
           <label className="bt-field">
@@ -337,7 +338,23 @@ export function BoardToolbar({
           )}
         </div>
       )}
+      </span>
 
+      <span className="bt-anchor">
+      <button
+        type="button"
+        className={grouped ? 'bt-button bt-button-on' : 'bt-button'}
+        aria-expanded={open === 'group'}
+        aria-haspopup="true"
+        onClick={() => {
+          setOpen((o) => (o === 'group' ? undefined : 'group'));
+        }}
+      >
+        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+          <path d="M12 3 3 8l9 5 9-5-9-5ZM3 14l9 5 9-5" strokeLinejoin="round" />
+        </svg>
+        {grouped ? `Group: ${groupLabel}` : 'Group'}
+      </button>
       {open === 'group' && (
         <div className="bt-pop bt-pop-narrow" role="dialog" aria-label="Group by">
           {GROUPS.map((option) => (
@@ -360,6 +377,7 @@ export function BoardToolbar({
           </p>
         </div>
       )}
+      </span>
 
       <span className="bt-spacer" />
 
