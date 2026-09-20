@@ -14,6 +14,7 @@ import {
   getSprint,
   listSprints,
   removeTaskFromSprint,
+  sprintTaskCounts,
   updateSprint,
   type SprintView,
 } from '../../src/services/sprints.ts';
@@ -592,5 +593,55 @@ describe('the ?sprint= filter on tasks (AC7)', () => {
       sprint: s.id,
     });
     expect(view?.sprint_id).toBe(s.id);
+  });
+});
+
+describe('sprintTaskCounts (LAI-611)', () => {
+  it('counts each sprint separately, by status, and omits the empty ones', () => {
+    const one = sprint({ name: 'Sprint 1', starts_on: jan(1), ends_on: jan(14) });
+    const two = sprint({ name: 'Sprint 2', starts_on: jan(15), ends_on: jan(28) });
+    sprint({ name: 'Sprint 3', starts_on: jan(29), ends_on: jan(31) });
+
+    const a = task('A');
+    const b = task('B');
+    const c = task('C');
+    addTasksToSprint(t.sqlite, t.db, actor(adminId), one.id, [a, b]);
+    addTasksToSprint(t.sqlite, t.db, actor(adminId), two.id, [c]);
+    changeStatus(t.db, actor(adminId), b, 'todo');
+
+    const counts = sprintTaskCounts(t.db, actor(adminId), 'laika');
+
+    expect(counts.get(one.id)?.total).toBe(2);
+    expect(counts.get(one.id)?.by_status.backlog).toBe(1);
+    expect(counts.get(one.id)?.by_status.todo).toBe(1);
+    expect(counts.get(two.id)?.total).toBe(1);
+    // A sprint nothing is in is absent rather than a zero row — the caller
+    // holds the sprint list and knows which ids it asked about.
+    expect(counts.size).toBe(2);
+  });
+
+  it('is exact past the page size, where counting a list of tasks would be short', () => {
+    // The reason this is a grouped query and not `listTasks(...).length`.
+    // Measured rather than argued: `listTasks` returns `limit + 1` rows by
+    // design, so at 205 tasks the list-based count would say 201 and nothing
+    // about the number would reveal that it had been cut off.
+    const s = sprint({ name: 'Big', starts_on: jan(1), ends_on: jan(14) });
+    const ids = Array.from({ length: 205 }, (_, i) => task(`T${String(i)}`));
+    addTasksToSprint(t.sqlite, t.db, actor(adminId), s.id, ids);
+
+    expect(sprintTaskCounts(t.db, actor(adminId), 'laika').get(s.id)?.total).toBe(205);
+
+    const page = listTasks(t.db, actor(adminId), 'laika', {
+      limit: 200,
+      cursor: null,
+      updatedSince: null,
+      sprint: s.id,
+    });
+    expect(page.length).toBe(201);
+  });
+
+  it('refuses an actor who cannot read the project', () => {
+    const outsider = makeUser('viewer');
+    expectApiError(() => sprintTaskCounts(t.db, actor(outsider), 'laika'), 'forbidden');
   });
 });

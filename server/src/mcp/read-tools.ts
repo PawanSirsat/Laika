@@ -4,7 +4,14 @@ import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { listProjectActivity } from '../services/activity.ts';
 import { commentView, listComments } from '../services/comments.ts';
-import { getProjectContext, listMembers, listProjects, projectView } from '../services/projects.ts';
+import {
+  getProjectContext,
+  listMembers,
+  listProjects,
+  projectSlugById,
+  projectView,
+} from '../services/projects.ts';
+import { listSprints, sprintTaskCounts } from '../services/sprints.ts';
 import { getTask, listTasks, resolveTaskRef, type TaskView } from '../services/tasks.ts';
 import { ago, answer, bullets, isoDate, nameLookup, toolError } from './present.ts';
 
@@ -177,7 +184,13 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         const view = getTask(db, actor, resolveTaskRef(db, task));
         const now = clock();
 
-        const members = listMembers(db, actor, slugOf(db, actor, view.project_id));
+        // A task carries a project id and every service here takes a slug, so
+        // this hop is unavoidable — one indexed lookup through the service that
+        // asserts `project.read` on the way, rather than a scan of the readable
+        // list, which is what this was until LAI-611 needed the same hop on the
+        // write side.
+        const slug = projectSlugById(db, actor, view.project_id);
+        const members = listMembers(db, actor, slug);
         const nameOf = nameLookup(members);
 
         const related = new Map<string, TaskView>();
@@ -192,7 +205,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           .filter((row) => row.deletedAt === null)
           .map(commentView);
 
-        const activity = listProjectActivity(db, actor, slugOf(db, actor, view.project_id), {
+        const activity = listProjectActivity(db, actor, slug, {
           taskId: view.id,
           limit: 10,
           cursor: null,
@@ -329,6 +342,83 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
       }
     },
   );
+
+  // ------------------------------------------------------------ list_sprints
+
+  server.registerTool(
+    'list_sprints',
+    {
+      title: 'List sprints',
+      description:
+        'Every sprint on a project, oldest first, with its dates, status and how many tasks sit in it. The `id` each row carries is what `set_task_sprint` and `update_sprint` take.',
+      inputSchema: z.strictObject({ project: PROJECT_REF }),
+    },
+    ({ project }) => {
+      try {
+        const rows = listSprints(db, actor, project, {
+          ...PAGE,
+          updatedSince: null,
+        });
+
+        // Counted by the service in one grouped query. Bucketing a page of
+        // tasks here would be short by however many the page cut off, and
+        // nothing about the number would say so.
+        const counts = sprintTaskCounts(db, actor, project);
+        const empty = { total: 0, by_status: {} as Record<string, number> };
+
+        const sprints = rows.map((sprint) => ({
+          ...sprint,
+          task_counts: counts.get(sprint.id) ?? empty,
+        }));
+
+        const markdown = [
+          `## Sprints on ${project} (${String(sprints.length)})`,
+          '',
+          bullets(
+            sprints.map(
+              (s) =>
+                `**${s.name}** — ${isoDate(s.starts_on)} to ${isoDate(s.ends_on)}, ${s.status}, ${String(s.task_counts.total)} tasks · \`${s.id}\``,
+            ),
+            'This project has no sprints.',
+          ),
+        ].join('\n');
+
+        return answer(markdown, { sprints });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  // ------------------------------------------------------------ list_members
+
+  server.registerTool(
+    'list_members',
+    {
+      title: 'List project members',
+      description:
+        'Who is on a project and what role each holds. The `user_id` and `email` here are what `update_task` takes as an assignee — this is how you find out who you may assign work to.',
+      inputSchema: z.strictObject({ project: PROJECT_REF }),
+    },
+    ({ project }) => {
+      try {
+        const members = listMembers(db, actor, project);
+
+        const markdown = [
+          `## Members of ${project} (${String(members.length)})`,
+          '',
+          bullets(
+            members.map((m) => `**${m.name}** — ${m.role}, ${m.email} · \`${m.user_id}\``),
+            'Nobody is a member of this project.',
+          ),
+        ].join('\n');
+
+        return answer(markdown, { members });
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
 }
 
 // ------------------------------------------------------------------ helpers
@@ -380,14 +470,4 @@ function discoveredFromChain(db: Db, actor: ResolvedActor, from: TaskView): Task
   }
 
   return chain;
-}
-
-/** A task carries a project id; every service here takes a slug. */
-function slugOf(db: Db, actor: ResolvedActor, projectId: string): string {
-  const found = listProjects(db, actor, { ...PAGE, updatedSince: null }).find(
-    (p) => p.id === projectId,
-  );
-
-  if (found === undefined) throw new Error(`No readable project with id ${projectId}`);
-  return found.slug;
 }

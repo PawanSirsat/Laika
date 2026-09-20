@@ -1,9 +1,9 @@
-import { and, asc, eq, gt, gte, inArray, lte, ne, or, type SQL } from 'drizzle-orm';
+import { and, asc, eq, gt, gte, inArray, lte, ne, or, sql, type SQL } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
 import { type Db } from '../db/client.ts';
-import { type SprintStatus } from '../db/enums.ts';
+import { type SprintStatus, TASK_STATUSES, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { projects, sprints, tasks } from '../db/schema.ts';
@@ -223,6 +223,63 @@ export function listSprints(
     .limit(options.limit + 1)
     .all()
     .map(toView);
+}
+
+export interface SprintTaskCounts {
+  total: number;
+  by_status: Record<TaskStatus, number>;
+}
+
+/**
+ * How much work sits in each sprint of a project, by status (LAI-611).
+ *
+ * **One grouped query, not a page of tasks counted by the caller.** The obvious
+ * alternative — `listTasks` and bucket the rows — is wrong in a way that does
+ * not announce itself: every list service here returns `limit + 1` rows, so a
+ * project with more tasks than the page size yields a count that is silently
+ * short. A number nobody can tell is truncated is worse than no number, and
+ * `COUNT(*)` cannot be truncated.
+ *
+ * Sprints with no tasks are **absent from the map** rather than present with a
+ * zero — the caller holds the sprint list and knows which ids it asked about,
+ * and inventing rows for sprints that matched nothing would mean this function
+ * had to read the sprints table as well as the tasks one.
+ */
+export function sprintTaskCounts(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+): Map<string, SprintTaskCounts> {
+  const project = requireProjectBySlug(db, slug);
+  assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
+
+  const counts = new Map<string, SprintTaskCounts>();
+
+  const rows = db
+    .select({ sprintId: sprints.id, status: tasks.status, total: sql<number>`COUNT(*)` })
+    .from(tasks)
+    .innerJoin(sprints, eq(sprints.id, tasks.sprintId))
+    .where(eq(tasks.projectId, project.id))
+    .groupBy(sprints.id, tasks.status)
+    .all();
+
+  for (const row of rows) {
+    const entry =
+      counts.get(row.sprintId) ??
+      ({
+        total: 0,
+        by_status: Object.fromEntries(TASK_STATUSES.map((s) => [s, 0])) as Record<
+          TaskStatus,
+          number
+        >,
+      } satisfies SprintTaskCounts);
+
+    entry.by_status[row.status] = row.total;
+    entry.total += row.total;
+    counts.set(row.sprintId, entry);
+  }
+
+  return counts;
 }
 
 export function getSprint(db: Db, actor: ResolvedActor, sprintId: string): SprintView {
