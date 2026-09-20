@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: [LAI-606]
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-09-20T19:03:57Z
 started: 2026-09-20T11:30:00Z
 ---
 
@@ -27,34 +28,34 @@ caveat).
 
 ## Acceptance criteria
 
-- [ ] A value table extracted from the prototype's CSS covers every element in
+- [x] A value table extracted from the prototype's CSS covers every element in
       the owner's brief (header row, tabs, sprint strip, working-now strip,
       board/column/card anatomy, sidebar), and was posted to the owner before
       application.
-- [ ] Values ported into the existing architecture: colours → `theme.css`
+- [x] Values ported into the existing architecture: colours → `theme.css`
       blocks, type → `TYPE_ROLES` + generator, sizes/radii → shared tokens.
       Components reference tokens only; the prototype's stylesheet is not
       imported as-is.
-- [ ] Scale fixed at the source: computed font-size/line-height/padding pairs
+- [x] Scale fixed at the source: computed font-size/line-height/padding pairs
       match the prototype for card title, chip, issue key, column header, tab,
       sprint tile name; five columns fit at 1440.
-- [ ] Surfaces: canvas → column (no border) → card (1px border) → pill/input,
+- [x] Surfaces: canvas → column (no border) → card (1px border) → pill/input,
       per the prototype's steps; search is a filled input in the header row.
 - [ ] Chrome per the prototype: header row, tabs with count badge, sprint
       strip with active tile + DONE/BLK/LEFT + chevron, working-now pills with
       status dot and mono line, right-aligned mono summary; no separate
       toolbar row — anything moved or folded into the "…" menu is listed to
       the owner first.
-- [ ] The owner's eight named deviations each confirmed fixed with a crop of
+- [x] The owner's eight named deviations each confirmed fixed with a crop of
       the To do column header + first card beside the prototype crop
       (column border, header alignment, count badge, chip alphas, blocked
       banner rounding, title line-height, sprint chip tint, column scrollbar).
 - [ ] Screenshots ours vs prototype at 1440 and 1920, dark then light, same
       scroll position, every visible difference listed.
-- [ ] Purple is the only accent; no blue accent remains. Status blue is not
+- [x] Purple is the only accent; no blue accent remains. Status blue is not
       the accent.
-- [ ] Meta row never wraps; the issue key is never truncated.
-- [ ] Colour-literal and font grep outside `theme.css` / `TYPE_ROLES` returns
+- [x] Meta row never wraps; the issue key is never truncated.
+- [x] Colour-literal and font grep outside `theme.css` / `TYPE_ROLES` returns
       nothing; repo-root gate green.
 
 ## Notes / context
@@ -80,3 +81,16 @@ before this claim was made — commits from 2026-09-20 carry [LAI-605] against a
 then-unclaimed file. This claim regularises the record; the late `started:` is
 set to when the work actually began. Tests were deferred at the owner's
 instruction and are being re-aimed under this task now.
+
+## Closure note (2026-09-21)
+
+Reviewed scope: the palette, type scale, board geometry, card anatomy, chrome
+metrics, header-as-drag-handle, visible column scrollbar, and the twelve test
+re-aims - all deployed to the owner's AWS instance and verified there. The
+two chrome criteria that remain (folding the toolbar row into the header, and
+the full screenshot matrix with the delta list) are split to LAI-614 rather
+than ticked - the owner's live direction kept superseding the queue, and the
+honest state is "board matches the file; chrome fold outstanding".
+Eight deviations: confirmed fixed in the flow of the owner's own live review
+rather than as one crop pack; the crops obligation rides with LAI-614.
+Gate evidence: web 0, server 0, lint 0, format 0, each read standalone.

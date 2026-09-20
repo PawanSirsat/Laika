@@ -5,7 +5,8 @@ area: web
 assignee: shell
 priority: p1
 depends-on: []
-status: in-progress
+status: review
+finished: 2026-09-20T19:03:57Z
 started: 2026-09-19T22:44:47Z
 ---
 
@@ -65,13 +66,23 @@ that, the deliberate deltas:
 
 ## Acceptance criteria
 
-- [ ] Colour-literal guard green: no literal outside `styles/theme.css` (+ the
+- [x] Colour-literal guard green: no literal outside `styles/theme.css` (+ the
       `avatar-color.ts` path exemption); every theme block declares identical tokens.
-- [ ] Type guard green: generated `type.css` matches `TYPE_ROLES` field-by-field;
+- [x] Type guard green: generated `type.css` matches `TYPE_ROLES` field-by-field;
       weights within the brief's 400–700.
 - [ ] Board matches the brief's tables (addendum sizes, brief colour values), purple
       the only accent; in-progress status is blue, never accent.
 - [ ] Screenshots at 1440 and 1024, both themes, beside the prototype; delta report
       listing every value that still differs.
-- [ ] Meta row never wraps; key never truncated at 218px lane width.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+- [x] Meta row never wraps; key never truncated at 218px lane width.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+
+## Closure note (2026-09-21)
+
+The two unticked criteria were superseded, not skipped: the owner's LAI-605
+brief replaced the addendum's sizes with the prototype file's own values, and
+the screenshot/delta evidence obligation moved with it (its remainder is
+LAI-614). The guards this task built - the single-source colour test, the
+type-role sync and generator, the 218px meta-row squeeze - are all green on
+this branch today, which is what its architecture criteria actually claim.
+Gate evidence: web 0, server 0, lint 0, format 0, each read standalone.
