@@ -110,10 +110,11 @@
 
 .space-icon {
   flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  background: var(--accent);
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  /* The prototype's mark: ink block, card-coloured glyph — not the accent. */
+  background: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -294,8 +295,8 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 30px;
-  width: 132px;
+  height: 32px;
+  width: 154px;
   padding: 0 10px;
   border: 1px solid var(--border-subtle);
   border-radius: 9px;
@@ -327,7 +328,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: 32px;
   padding: 0 10px;
   border-radius: 9px;
   font-family: inherit;
@@ -356,6 +357,8 @@
 }
 
 .space-create {
+  /* The file's Create: 30 high against the 32px controls beside it. */
+  height: 30px;
   padding: 0 12px;
   border: 1px solid var(--accent);
   background: var(--accent);
@@ -402,10 +405,10 @@
   /* The addendum's 44px is the whole tab — border-box, or the 2px underline
      is added on top and the strip renders 46. The tab role: 14/500. */
   box-sizing: border-box;
-  height: 44px;
+  height: 36px;
   padding: 0 11px;
-  font-size: var(--text-ui); /* 14px */
-  font-weight: var(--weight-medium);
+  font-size: var(--text-md); /* 12.5px, the file's tab size */
+  font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-secondary);
   text-decoration: none;
@@ -419,8 +422,9 @@
 }
 
 .view-tab-active {
-  /* Weight never changes on activation (LAI-606): the accent and the 2px
-     underline carry the state, per the tab role. */
+  /* The file bolds the active tab to 700 alongside the accent underline
+     (LAI-605 — reverses LAI-606's weight-never-changes reading). */
+  font-weight: var(--weight-bold);
   color: var(--accent);
   border-bottom-color: var(--accent);
 }
@@ -431,14 +435,12 @@
 }
 
 .view-tab-count {
+  /* The file's tab count: plain mono figure, no pill. */
   font-family: var(--font-mono);
-  font-size: 0.53125rem;
-  font-weight: var(--weight-heavy);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--chip-pink);
-  background: var(--chip-pink-bg);
-  border-radius: 4px;
-  padding: 3px 4px;
+  color: var(--text-muted);
 }
 
 /* -------------------------------------------------------------- the slot */

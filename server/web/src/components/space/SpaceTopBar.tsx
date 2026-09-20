@@ -145,7 +145,7 @@ export function SpaceTopBar({
               height="15"
               viewBox="0 0 24 24"
               fill="none"
-              stroke="var(--on-accent)"
+              stroke="var(--bg-card)"
               strokeWidth="2.2"
             >
               <path d="M5 20V9M12 20V4M19 20v-7" />
