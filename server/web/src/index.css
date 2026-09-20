@@ -17,7 +17,11 @@
   font-family: var(--font-ui);
   font-size: 16px;
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+  /*
+   * No `-webkit-font-smoothing: antialiased` — the prototype renders with the
+   * browser default, and antialiased thins light-on-dark text by what reads
+   * as a whole weight step. Same 600, visibly lighter (LAI-605, owner crop).
+   */
 }
 
 /* Painted from tokens so the page behind the app matches the theme — otherwise
