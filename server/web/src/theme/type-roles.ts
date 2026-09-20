@@ -34,11 +34,11 @@ export interface TypeRole {
   /** Pixels, as the brief states them. Emitted as rem. */
   readonly size: number;
   /**
-   * 700 admitted by the final brief ("weights 400/500/600/700"), for the
-   * avatar role alone in practice. The variable fonts carry the whole axis,
-   * so 700 is a real face, not a synthesised bold.
+   * The prototype leans on 700 and 800 — column heads, keys and initials are
+   * heavy at small sizes (LAI-605). The variable fonts carry the whole axis,
+   * so both are real faces, not synthesised bolds.
    */
-  readonly weight: 400 | 500 | 600 | 700;
+  readonly weight: 400 | 500 | 600 | 700 | 800;
   /**
    * A unitless ratio, or a CSS length such as `'20px'`.
    *
@@ -66,26 +66,26 @@ export interface TypeRole {
 export const TYPE_ROLES = {
   display: {
     family: 'ui',
-    size: 22,
-    weight: 600,
-    leading: 1.2,
-    tracking: -0.01,
+    size: 19,
+    weight: 800,
+    leading: 1.1,
+    tracking: -0.024,
     color: 'text-primary',
   },
-  title: { family: 'ui', size: 16, weight: 600, leading: 1.3, tracking: 0, color: 'text-primary' },
+  title: { family: 'ui', size: 15, weight: 600, leading: 1.3, tracking: 0, color: 'text-primary' },
   heading: {
     family: 'ui',
-    size: 12,
-    weight: 600,
+    size: 10.5,
+    weight: 800,
     leading: 1,
-    tracking: 0.08,
+    tracking: 0.07,
     color: 'text-primary',
     transform: 'uppercase',
   },
   tab: {
     family: 'ui',
-    size: 14,
-    weight: 500,
+    size: 12.5,
+    weight: 600,
     leading: 1,
     tracking: 0,
     color: 'text-secondary',
@@ -93,15 +93,15 @@ export const TYPE_ROLES = {
   },
   body: {
     family: 'ui',
-    size: 16,
+    size: 13.5,
     weight: 600,
-    leading: 1.3,
-    tracking: -0.01,
+    leading: 1.4,
+    tracking: -0.008,
     color: 'text-primary',
   },
   'body-sm': {
     family: 'ui',
-    size: 14,
+    size: 11.5,
     weight: 400,
     leading: 1.45,
     tracking: 0,
@@ -109,8 +109,8 @@ export const TYPE_ROLES = {
   },
   label: {
     family: 'ui',
-    size: 12,
-    weight: 500,
+    size: 8.5,
+    weight: 700,
     leading: 1,
     tracking: 0,
     color: 'inherit',
@@ -118,7 +118,7 @@ export const TYPE_ROLES = {
   },
   'field-label': {
     family: 'ui',
-    size: 12,
+    size: 10,
     weight: 400,
     leading: 1.3,
     tracking: 0,
@@ -126,7 +126,7 @@ export const TYPE_ROLES = {
   },
   value: {
     family: 'ui',
-    size: 13,
+    size: 11,
     weight: 400,
     leading: 1.3,
     tracking: 0,
@@ -135,8 +135,8 @@ export const TYPE_ROLES = {
   },
   meta: {
     family: 'mono',
-    size: 12,
-    weight: 400,
+    size: 9,
+    weight: 700,
     leading: 1,
     tracking: 0,
     color: 'text-muted',
@@ -145,47 +145,47 @@ export const TYPE_ROLES = {
   },
   overline: {
     family: 'ui',
-    size: 11,
-    weight: 600,
+    size: 9.5,
+    weight: 800,
     leading: 1,
-    tracking: 0.06,
+    tracking: 0.09,
     color: 'text-muted',
     transform: 'uppercase',
   },
   caption: {
     family: 'ui',
-    size: 13,
-    weight: 500,
+    size: 9,
+    weight: 700,
     leading: 1.3,
     tracking: 0,
     color: 'inherit',
   },
   control: {
     family: 'ui',
-    size: 14,
-    weight: 500,
+    size: 11.5,
+    weight: 700,
     leading: 1,
     tracking: 0,
     color: 'inherit',
     truncate: true,
   },
-  input: { family: 'ui', size: 14, weight: 400, leading: 1, tracking: 0, color: 'text-primary' },
+  input: { family: 'ui', size: 11.5, weight: 500, leading: 1, tracking: 0, color: 'text-primary' },
   code: {
     family: 'mono',
-    size: 13,
-    weight: 600,
+    size: 10,
+    weight: 800,
     leading: 1,
-    tracking: 0,
+    tracking: 0.02,
     color: 'text-secondary',
     tabular: true,
     truncate: true,
   },
   'code-sm': {
     family: 'mono',
-    size: 11,
-    weight: 600,
+    size: 8.5,
+    weight: 700,
     leading: 1,
-    tracking: 0.02,
+    tracking: 0,
     color: 'inherit',
   },
   /*
@@ -197,8 +197,8 @@ export const TYPE_ROLES = {
    */
   avatar: {
     family: 'ui',
-    size: 12,
-    weight: 700,
+    size: 9.5,
+    weight: 800,
     leading: 1,
     tracking: 0.02,
     color: 'inherit',
@@ -220,9 +220,9 @@ export type RoleName = keyof typeof TYPE_ROLES;
  */
 export const DENSITY = {
   dense: {
-    body: { size: 14, leading: 1.3 },
-    meta: { size: 12 },
-    label: { size: 11 },
+    body: { size: 12, leading: 1.3 },
+    meta: { size: 8 },
+    label: { size: 8 },
   },
 } as const satisfies Record<
   string,

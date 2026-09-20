@@ -186,8 +186,8 @@
    * render with no inline style.
    */
   grid-auto-flow: column;
-  grid-auto-columns: minmax(var(--lane-floor, 16rem), 1fr);
-  gap: 24px;
+  grid-auto-columns: minmax(var(--lane-floor, 15.5rem), 1fr);
+  gap: 12px;
   /*
    * **Stretch, not start** (LAI-270). `start` sized every column to its own
    * cards, so five columns of different lengths left the ragged row the owner
@@ -206,11 +206,10 @@
    * lane. Caught by the other SHELL session, in both themes.
    */
   background: var(--bg-column);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  /* The design's tub: roomier at the top than at the sides. */
-  /* The prototype's column: roomy top, tighter sides (LAI-606). */
-  padding: 20px 16px 16px;
+  border: 1px solid var(--border-column);
+  border-radius: var(--radius-column);
+  /* The prototype's column: 12px top, 10px sides (LAI-605). */
+  padding: 12px 10px 10px;
   min-height: 8rem;
 }
 
@@ -224,7 +223,8 @@
 .lane-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 9px;
+  padding-right: 2px;
 }
 
 .lane-item {
@@ -278,7 +278,7 @@
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
   /* The prototype's rhythm at app scale: 20 round, 16 at the foot. */
-  padding: 20px 20px 16px;
+  padding: 13px 13px 11px;
   /* `pointer`, not `grab`. The card was `grab` — honest about dragging and
      silent about the thing people actually do, which is open it. The design
      file uses `cursor:pointer` 46 times and `grab` never; dragging still works
@@ -291,8 +291,8 @@
    decide. Border and surface both change, so the state is legible without it.
    Not a border-*width* change, which would reflow the column on every hover. */
 .card:hover {
+  /* The prototype hovers with the stronger line only — the surface holds. */
   border-color: var(--border-default);
-  background: var(--bg-column);
 }
 
 .card:active {
@@ -674,10 +674,11 @@
 .lane-head {
   display: flex;
   align-items: center;
-  gap: 0.4375rem;
+  gap: 7px;
   justify-content: flex-start;
-  /* Tight to the top, per the reference — 0.5rem above the name was too much. */
-  padding: 0.125rem 0.5rem 0.5rem;
+  /* The prototype: the dot's left edge lines up with the card border below —
+     4px here plus the column's 10px equals the card's own inset (LAI-605). */
+  padding: 0 4px 10px;
 }
 
 .lane-dot {
@@ -728,21 +729,20 @@
  * is a quiet filled chip in the body font.
  */
 .lane-count {
-  /* The prototype's badge: a 22px rounded square in mono (LAI-606). */
+  /* The prototype's badge: mono 9.5/700, card-filled, edged, r5 (LAI-605). */
   font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: var(--weight-semibold);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-bold);
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   color: var(--text-secondary);
   background: var(--bg-pill);
-  border: 1px solid transparent;
-  border-radius: 6px;
-  min-width: 22px;
-  min-height: 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 6px;
+  padding: 3px 4px;
 }
 
 /*
@@ -752,13 +752,13 @@
  * status, the badge now agrees for the two columns the eye hunts for.
  */
 .lane-count-in_progress {
-  background: transparent;
+  background: var(--chip-blue-bg);
   color: var(--chip-blue);
   border-color: var(--chip-blue-border);
 }
 
 .lane-count-done {
-  background: transparent;
+  background: var(--chip-green-bg);
   color: var(--chip-green);
   border-color: var(--chip-green-border);
 }
@@ -1005,18 +1005,17 @@
  * blocked line needed.
  */
 .lane .lane-add {
-  /* The prototype's plain text button — no dashed box (LAI-606). */
+  /* The prototype's plain text footer (LAI-605): 10.5/600 muted, no box. */
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  height: 40px;
-  padding: 0 8px;
+  padding: 5px 3px 0;
   border: 0;
   border-radius: var(--radius-control);
   background: none;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   cursor: pointer;
 }
 
@@ -1731,11 +1730,6 @@
   background: var(--blocked-bg);
 }
 
-/* Hover raises the card one grey step (LAI-606). */
-.card:hover {
-  background: var(--bg-card-hover);
-}
-
 /*
  * One outlined chip colour per work-type (LAI-606).
  *
@@ -1912,39 +1906,37 @@
   border-color: var(--chip-green-border);
 }
 
-/* Chip box: h22 via padding on the 12px label line. */
+/* Chip box: the prototype's — 3px 5px on the 8.5px label line, r4. */
 .card .card-tag,
 .card .marker {
-  padding: 3px 10px;
+  padding: var(--chip-padding);
   border-radius: var(--radius-chip);
-  min-height: 22px;
   display: inline-flex;
   align-items: center;
 }
 
-/* The sprint chip: mono, accent, its own smaller radius. */
+/* The sprint chip: mono on the faint accent tint, not a bare outline. */
 .card .card-sprint,
 .card .card-sprint-on {
   color: var(--accent);
-  background: transparent;
+  background: var(--accent-bg);
   border: 1px solid var(--accent-border);
-  border-radius: var(--radius-xs);
-  padding: 2px 6px;
-  min-height: 18px;
+  border-radius: var(--radius-chip);
+  padding: 3px 4px;
   display: inline-flex;
   align-items: center;
 }
 
-/* Blocked: 3px left bar, tinted, one line. */
+/* Blocked: fully rounded, the 2px bar curving inside it (LAI-605). */
 .card .card-blocked {
   color: var(--overdue);
   background: var(--blocked-bg);
-  border-left: 3px solid var(--overdue);
-  border-radius: 0 4px 4px 0;
-  min-height: 28px;
-  padding: 0 10px;
+  border-left: 2px solid var(--overdue);
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 5px 6px;
   align-items: center;
-  margin-top: 14px;
+  margin-top: 8px;
 }
 
 .card .card-blocked b {
@@ -1952,23 +1944,24 @@
   font-weight: 400;
 }
 
-/* Row rhythm: title ·10· chips ·14· divider ·14· meta. */
+/* Row rhythm: the prototype's 8px beat, meta row 9 above its rule. */
 .card .card-tags {
-  margin-top: 10px;
-  gap: 6px;
+  margin-top: 8px;
+  gap: 4px;
 }
 
 .card .card-foot {
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 8px;
+  padding-top: 9px;
   border-top-color: var(--border-subtle);
-  min-height: 36px;
+  gap: 7px;
+  align-items: flex-end;
 }
 
-/* Priority dot grows to the prototype's 12px; the ring stays the none-state. */
+/* Priority dot: the prototype's 9px; the ring stays the none-state. */
 .card .card-dot {
-  width: 12px;
-  height: 12px;
+  width: 9px;
+  height: 9px;
 }
 
 .card .card-dot-p1 {
@@ -1978,23 +1971,23 @@
   background: var(--priority-medium);
 }
 
-/* The 36px avatar, and the accent bot badge as a small square. */
+/* The 26px avatar, and the accent bot badge as a 15px square. */
 .card .card-avatar {
-  width: 36px;
-  height: 36px;
+  width: 26px;
+  height: 26px;
   border: 0;
 }
 
 .card .card-bot {
-  width: 14px;
-  height: 14px;
-  border-radius: 4px;
+  width: 15px;
+  height: 15px;
+  border-radius: var(--radius-xs);
   background: var(--accent);
   color: var(--on-accent);
   border: 0;
   outline: 2px solid var(--bg-card);
-  right: -2px;
-  bottom: -2px;
+  right: -4px;
+  bottom: -4px;
 }
 
 /* Selected / keyboard-focused card wears the accent border. */

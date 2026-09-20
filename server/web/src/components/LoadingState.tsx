@@ -62,7 +62,7 @@ function BoardSkeleton({
        * quietly.
        */
       style={{
-        gridTemplateColumns: `repeat(${String(columns)}, minmax(var(--lane-floor, 16rem), 1fr))${
+        gridTemplateColumns: `repeat(${String(columns)}, minmax(var(--lane-floor, 15.5rem), 1fr))${
           addTile ? ' auto' : ''
         }`,
       }}

@@ -169,7 +169,7 @@ export function LaneRow({
        * "no lane below 206px, the row scrolls instead" still holds.
        */
       style={{
-        gridTemplateColumns: `repeat(${String(lanes.length)}, minmax(var(--lane-floor, 16rem), 1fr))${
+        gridTemplateColumns: `repeat(${String(lanes.length)}, minmax(var(--lane-floor, 15.5rem), 1fr))${
           onAddColumn === undefined ? '' : ' auto'
         }`,
       }}
