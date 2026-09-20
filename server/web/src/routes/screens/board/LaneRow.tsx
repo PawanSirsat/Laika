@@ -243,32 +243,38 @@ export function LaneRow({
               if (!column.statuses.includes(task.status)) onMove(task.id, dot);
             }}
           >
-            <header className="lane-head">
-              {onReorder !== undefined && showColumnConfig && (
-                <button
-                  type="button"
-                  className="lane-grip"
-                  draggable
-                  aria-label={`Reorder ${column.name}`}
-                  title="Drag to reorder"
-                  onDragStart={(event) => {
-                    /*
-                     * The grip is draggable, **not the `<section>`**. A
-                     * draggable lane swallows the card drags inside it and turns
-                     * three pixels of padding into a column drag.
-                     */
-                    event.dataTransfer.setData(COLUMN_MIME, column.id);
-                    event.dataTransfer.effectAllowed = 'move';
-                    setDraggingColumn(column.id);
-                  }}
-                  onDragEnd={() => {
-                    setDraggingColumn(undefined);
-                    setColumnOver(undefined);
-                  }}
-                >
-                  <span aria-hidden="true">⠿</span>
-                </button>
-              )}
+            {/*
+              **The header is the drag handle, and there is no grip icon**
+              (LAI-605, owner): hovering the column's top shows a grab cursor
+              and dragging it moves the column. The header, **not the
+              `<section>`** — a draggable lane swallows the card drags inside
+              it and turns three pixels of padding into a column drag. Not
+              while renaming either, or selecting text in the input starts a
+              column drag. Keyboard reorder lives in the position select below.
+            */}
+            <header
+              className={
+                onReorder !== undefined && showColumnConfig && renaming?.id !== column.id
+                  ? 'lane-head lane-head-drag'
+                  : 'lane-head'
+              }
+              draggable={
+                onReorder !== undefined && showColumnConfig && renaming?.id !== column.id
+              }
+              title={
+                onReorder !== undefined && showColumnConfig ? 'Drag to reorder' : undefined
+              }
+              onDragStart={(event) => {
+                if (onReorder === undefined || !showColumnConfig) return;
+                event.dataTransfer.setData(COLUMN_MIME, column.id);
+                event.dataTransfer.effectAllowed = 'move';
+                setDraggingColumn(column.id);
+              }}
+              onDragEnd={() => {
+                setDraggingColumn(undefined);
+                setColumnOver(undefined);
+              }}
+            >
 
               {/* The prototype leads each column with a dot in the lane's own
                   colour. It comes from the column's primary status — never its

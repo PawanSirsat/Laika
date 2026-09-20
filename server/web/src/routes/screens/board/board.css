@@ -1265,30 +1265,15 @@
 }
 
 /*
- * The drag handle. **On a button in the header, never on the `<section>`** — a
- * draggable lane swallows the card drags inside it, and three pixels of lane
- * padding becomes a column drag.
+ * The header is the drag handle — no grip icon (LAI-605, owner). The cursor
+ * is the affordance. On the header, never on the `<section>`: a draggable
+ * lane swallows the card drags inside it.
  */
-.lane-grip {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 0.125rem;
-  border: 0;
-  background: none;
-  color: var(--text-muted);
-  font-size: 0.6875rem;
-  line-height: 1;
+.lane-head-drag {
   cursor: grab;
-  border-radius: var(--radius-chip);
 }
 
-.lane-grip:hover {
-  color: var(--text-secondary);
-  background: var(--bg-card);
-}
-
-.lane-grip:active {
+.lane-head-drag:active {
   cursor: grabbing;
 }
 
@@ -1564,24 +1549,20 @@
  * title does not shift sideways the moment you point at it. And `:focus-within`
  * keeps every one of them reachable by keyboard, where there is no hover.
  */
-.lane-grip,
 .lane-menu,
 .lane-order {
   opacity: 0;
   transition: opacity 0.12s ease;
 }
 
-.lane-head:hover .lane-grip,
 .lane-head:hover .lane-menu,
 .lane-head:hover .lane-order,
-.lane-head:focus-within .lane-grip,
 .lane-head:focus-within .lane-menu,
 .lane-head:focus-within .lane-order {
   opacity: 1;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .lane-grip,
   .lane-menu,
   .lane-order {
     transition: none;
