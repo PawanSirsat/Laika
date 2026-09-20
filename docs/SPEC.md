@@ -1086,11 +1086,18 @@ read them.
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
 | `get_task_context` | `{ task }` | task, description, `blocked_by` + their statuses, comments, recent activity, branch, `discovered_from` chain |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
-| `create_task` | `{ project, title, description?, priority?, blocked_by?, discovered_from? }` | created task, `created_via: 'mcp'` |
+| `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
+| `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
+| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from? }` | created task, `created_via: 'mcp'` |
+| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint? }` | task. Every field optional; an omitted one is left alone. **No `status`** |
 | `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
 | `update_status` | `{ task, status, note? }` | task; validated transition |
+| `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |
 | `finish_task` | `{ task, summary, checklist? }` | task → **`review`**, summary posted as a comment |
+| `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
+| `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
+| `update_project_context` | `{ project, context_md, mode }` | the document's new length. `mode` is `replace` or `append` |
 | `log_unlisted_work` | `{ repo, note }` | records work or an idea outside any project, for triage |
 
 `get_task_context` and `get_project_context` are deliberately **fat** — one call
@@ -1122,6 +1129,47 @@ it is rather than for what it was hoped to be.
 contradiction in this document must not be settled by whichever half someone
 implemented first.
 
+**Seven tools added 2026-09-20 (LAI-611), taking the surface to eighteen.**
+Sprints, post-creation task edits, assignment and the context document were
+UI-only until then, so an agent could work the board but not manage it. A real
+153-task import hit every one of those walls.
+
+The vocabulary below is **the code's, not this section's earlier guesses** — each
+was checked against the artefact rather than against the task that asked for it,
+and each disagreed:
+
+- **A sprint's field is `status`, not `state`, and its values are
+  `planned | active | completed`.** There is no `closed` — `db/enums.ts` has the
+  three, and so do the service, the REST body and §6.4.
+- **Sprints are addressed by id, never by name.** `update_sprint` takes no
+  project, so a name would have to be resolved across every readable project,
+  and two projects may each have a "Sprint 3". `list_sprints` and `create_sprint`
+  both return the id in their markdown as well as their payload.
+- **Dates are `YYYY-MM-DD`**, with unix-ms still accepted for an agent holding
+  one. §4.15 gives sprint dates date-only semantics, so the date is the honest
+  input and the integer is the storage detail.
+- **A task's prose fields are `description` and `acceptance`** on this surface,
+  where the REST body spells them `description_md` and `acceptance_md`.
+  `create_task` has taken `description` since LAI-408, and an agent that files a
+  task and then edits it must not find the second call spells the field
+  differently. One surface, one set of names.
+- **`assignee` takes a user id or the email of a project member.** An id passes
+  through untouched, so the write is identical to the REST one; an email is
+  resolved against `list_members`, which needs only `project.read` where the org
+  directory is behind `member_list.read`. Assigning work to somebody who is not
+  on the project is not a thing this makes easy. **There is no `assign_task`** —
+  a separate tool would be a second name for one service call.
+- **There is no `due_date`, on this surface or any other.** D-014 gives tasks no
+  planned dates on purpose; `started_at` and `completed_at` are actuals. Adding
+  one is a schema change and its own task, and no tool invents it.
+- **`update_task` cannot change `status`.** Moving a task is `update_status`,
+  because §5 validates transitions and a field edit would route around the
+  table. An agent still finishes into `review` and never into `done`.
+- **`mode` on `update_project_context` is required**, deliberately: there is no
+  safe default between adding a paragraph and discarding the document. `append`
+  is a read-then-write and can lose a simultaneous addition — `context_md` is a
+  single markdown field with no revision column.
+
 ### 7.2 Tool contract
 
 - **Guardrail: tools never bulk-mutate.** One task per call.
@@ -1131,8 +1179,9 @@ implemented first.
   board would file a task instead — so there is no human write path to mirror.
   Humans read it (`GET /api/v1/unlisted`) and act on it
   (`POST /api/v1/unlisted/:id/promote`). The parity tests of §13.3 therefore
-  cover the ten tools that have twins; this one is exempt, and **the exemption is
-  named**, so the missing pair reads as intended rather than as a gap. *(This
+  cover the seventeen tools that have twins; this one is exempt, and **the
+  exemption is named**, so the missing pair reads as intended rather than as a
+  gap. *(This
   sentence deliberately carries **one** number and not two: it said "nine … a
   missing tenth" until LAI-433, and the guard pins only the first, so moving one
   and not the other would have left the sentence contradicting itself with
