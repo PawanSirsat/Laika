@@ -299,8 +299,8 @@
   padding: 0 12px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  /* The prototype's search sits one surface step below its bar (LAI-605). */
-  background: var(--bg-input);
+  /* Card surface — the owner tried the darker input step and reverted it. */
+  background: var(--bg-card);
   color: var(--text-muted);
   min-width: 0;
   flex: 0 1 380px;
@@ -316,7 +316,9 @@
   background: none;
   color: var(--text-primary);
   font: inherit;
-  font-size: 0.6875rem;
+  /* Bigger and bolder than the 11px it launched with (owner). */
+  font-size: 0.78125rem;
+  font-weight: var(--weight-semibold);
   min-width: 0;
   width: 100%;
   outline: none;

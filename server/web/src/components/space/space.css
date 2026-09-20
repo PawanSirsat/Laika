@@ -300,7 +300,7 @@
   padding: 0 10px;
   border: 1px solid var(--border-subtle);
   border-radius: 9px;
-  background: var(--bg-input);
+  background: var(--bg-canvas);
   color: var(--text-muted);
 }
 
@@ -315,8 +315,8 @@
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 0.71875rem;
-  font-weight: var(--weight-medium);
+  font-size: 0.78125rem;
+  font-weight: var(--weight-semibold);
   color: var(--text-primary);
   outline: none;
   padding: 0;
