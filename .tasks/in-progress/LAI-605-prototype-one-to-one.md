@@ -2,11 +2,12 @@
 id: LAI-605
 title: Implement the prototype 1:1 — structure, scale, colours; accent stays purple
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-606]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-20T11:30:00Z
 ---
 
 ## Goal
@@ -71,3 +72,11 @@ caveat).
 - `support.js` (dc-runtime) is standalone — it loads React itself; serve the
   scratchpad and open `prototype-render.dc.html`.
 - No new dependencies.
+
+## Deviation note (2026-09-21)
+
+The restyle work was built and deployed on the owner's direct instruction
+before this claim was made — commits from 2026-09-20 carry [LAI-605] against a
+then-unclaimed file. This claim regularises the record; the late `started:` is
+set to when the work actually began. Tests were deferred at the owner's
+instruction and are being re-aimed under this task now.
