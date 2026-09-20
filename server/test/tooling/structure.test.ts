@@ -85,6 +85,10 @@ function webPatternExempt(rel: string): boolean {
 }
 
 const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
+  [
+    'routes/screens/board/tag-colors.ts',
+    'covered by the TAG_COLORS suite in test/routes/screens/board/task-card.test.ts — the map and the card that wears it are one subject',
+  ],
   ['api/client.ts', 'covered by test/api.test.ts, which stubs fetch for it and errors.ts together'],
   ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
