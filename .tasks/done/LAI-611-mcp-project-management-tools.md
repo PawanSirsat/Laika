@@ -6,7 +6,7 @@ assignee: core
 priority: p1
 depends-on: []
 discovered-from: LAI-605
-status: review
+status: done
 started: 2026-09-20T15:20:15Z
 finished: 2026-09-20T15:37:56Z
 ---
@@ -43,7 +43,7 @@ instance) hit every one of these walls; the owner has asked for the extension.
 - [x] Agent guarantees hold: agents finish into `review`, never `done`;
       transition validation unchanged; every tool calls the service that calls
       `can()`.
-- [ ] SPEC §7.1's tool table updated by CHIEF in the same landing (§4.4
+- [x] SPEC §7.1's tool table updated by CHIEF in the same landing (§4.4
       procedure - the count assertion in the drift tests will force it).
       **Not CORE's to tick — `docs/` is CHIEF's.** The two failing assertions
       are quoted verbatim below.
@@ -231,3 +231,51 @@ Run per CLAUDE.md §5, each redirected to its own file with its own exit code.
 
 **Every failure in the gate is one of the two halves named above.** Nothing
 CORE owns is red.
+
+---
+
+## Accepted (CHIEF, 2026-09-20)
+
+**Accepted.** Merged as `1225d9f`; the `docs/` half is `376c08c`.
+
+**What was checked, against the code rather than against this file.** The tool
+names were read out of `server/src/mcp/` — seventeen `registerTool` calls in
+`read-tools.ts` and `write-tools.ts` plus `laika_whoami` in `server.ts`, which is
+the eighteen §7.1 now lists. Every new tool reaches data only through
+`services/`; the two new service functions, `projectSlugById` and
+`sprintTaskCounts`, each assert `project.read`, which is an existing §3.1 action
+and not an invented one. The only removals in `write-tools.ts` are inside
+`create_task`, refactoring its schema into the shared `TASK_FIELDS` — so
+`finish_task`, `update_status` and `changeStatus` are byte-for-byte untouched,
+which is what makes "agents finish into review" and "transition validation
+unchanged" true rather than asserted. `update_task` carries no `status` in its
+`strictObject`, and the test at `project-tools.test.ts:682` proves both halves of
+that: the schema does not mention it, and a call passing it is refused rather
+than ignored.
+
+**The assertions are specific.** `must()` asserts every setup write's status, so
+the LAI-407 shape — a fixture that 422s into a test asserting against state that
+was never built — cannot occur here. The four `isError` checks are each paired
+with something only the real refusal path produces: the `YYYY-MM-DD` message, the
+task still `backlog`, the context still empty. Eleven assertions pin a §6.3
+`code`.
+
+**The §4.4 half.** §7.1 gained the seven rows and `create_task`'s four new
+params; §7.2's sentence moved from *"ten"* to **"seventeen"** (eighteen served,
+`log_unlisted_work` exempt under D-024). The vocabulary the AC got wrong is now
+recorded in §7.1 as the code's, not as this task's: `status` over `state` with no
+`closed`, sprints by id, `YYYY-MM-DD`, `description`/`acceptance`, assignee by id
+or member email, no `assign_task`, no `due_date`, no `status` on `update_task`,
+and `mode` required.
+
+**`due_date` did not ship and that is correct.** D-014 gives tasks no planned
+dates; adding the column is a schema change and its own task. Recorded in §7.1 so
+the next reader does not file it as a gap.
+
+**What remains.** `LAI-176` (SHELL, p1) is the third half — `cli/` and
+`plugin/README.md` still say eleven. It is filed and in `.tasks/backlog/`.
+
+**A duplicate is still in flight.** SHELL filed this task and the `shell` branch
+carries its own copy at `.tasks/backlog/`. Per §2 the copy furthest back is the
+one that goes; it will surface as a two-copy collision when `shell` next merges
+`master`, and whoever merges deletes the `backlog/` copy and keeps this one.
