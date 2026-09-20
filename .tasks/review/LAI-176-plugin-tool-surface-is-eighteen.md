@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: [LAI-611]
 discovered-from: LAI-611
-status: in-progress
+status: review
+finished: 2026-09-20T15:55:40Z
 started: 2026-09-20T15:53:29Z
 ---
 
@@ -40,17 +41,17 @@ do there. Assertion 3 is the hardcoded list and is SHELL's to update.
 
 ## Acceptance criteria
 
-- [ ] `cli/test/plugin-mcp.test.ts`'s `'and they are these eleven'` lists all
+- [x] `cli/test/plugin-mcp.test.ts`'s `'and they are these eleven'` lists all
       eighteen, renamed to match: the eleven it has now plus `create_sprint`,
       `list_members`, `list_sprints`, `set_task_sprint`, `update_project_context`,
       `update_sprint`, `update_task` (the assertion sorts, so alphabetical).
-- [ ] `plugin/README.md`'s two "eleven" claims — the table row
+- [x] `plugin/README.md`'s two "eleven" claims — the table row
       `| MCP tools — **eleven**, §7.1 |` and the paragraph beginning
       **"Eleven tools, not ten and not eight."** — say eighteen, and the
       paragraph's argument still reads correctly.
-- [ ] `pnpm test` in `cli/` exits 0 against a tree carrying LAI-611 and the
+- [x] `pnpm test` in `cli/` exits 0 against a tree carrying LAI-611 and the
       SPEC §7.1 rows.
-- [ ] Nothing under `server/` or `docs/` is edited by this task.
+- [x] Nothing under `server/` or `docs/` is edited by this task.
 
 ## Notes / context
 
