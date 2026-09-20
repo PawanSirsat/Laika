@@ -131,6 +131,7 @@ export const RADIUS_TOKENS = [
   '--radius-chip',
   '--radius-xs',
   '--radius-card',
+  '--radius-column',
   '--radius-control',
   '--radius-pill',
 ] as const;

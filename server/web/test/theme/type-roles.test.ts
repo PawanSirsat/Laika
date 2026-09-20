@@ -15,9 +15,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
-import { DENSITY, rem, ROLE_NAMES, ROLES } from '../src/theme/type-roles.ts';
+import { DENSITY, rem, ROLE_NAMES, ROLES } from '../../src/theme/type-roles.ts';
 
-const CSS = readFileSync(new URL('../src/styles/type.css', import.meta.url).pathname, 'utf8');
+const CSS = readFileSync(new URL('../../src/styles/type.css', import.meta.url).pathname, 'utf8');
 
 /** The declarations inside one `.t-<name>` block. */
 function block(name: string): Record<string, string> {
@@ -112,18 +112,18 @@ void describe('every role matches its declaration', () => {
     });
   }
 
-  void test('the brief’s weight rule: 400 to 700, nothing heavier', () => {
+  void test('the prototype’s weight rule: 400 to 800, nothing outside it', () => {
     /*
-     * The final brief loads 400/500/600/700 (avatar initials are 12/700).
-     * The earlier version of this rule capped at 600 with a rationale about
-     * unloaded faces being synthesised — obsolete twice over: the families are
-     * variable fonts carrying the whole axis, and the brief now names 700.
-     * The cap that remains is 800+: nothing in the role system may ask for a
-     * heavier face than the brief loads.
+     * LAI-605 rebased the scale on the prototype file, which leans on 800 —
+     * column heads, keys, initials and the space title are all heavy at small
+     * sizes, and the variable fonts carry the whole axis. The cap that
+     * remains is anything outside 400–800, and any weight the fonts do not
+     * actually load. This rule capped at 700 for the earlier brief; the
+     * prototype supersedes it.
      */
     for (const name of ROLE_NAMES) {
       const { weight } = ROLES[name];
-      assert.ok([400, 500, 600, 700].includes(weight), `${name} is ${String(weight)}`);
+      assert.ok([400, 500, 600, 700, 800].includes(weight), `${name} is ${String(weight)}`);
     }
   });
 
