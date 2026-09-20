@@ -205,7 +205,15 @@ void describe('the task drawer', () => {
       await lane.evaluate((el) => {
         el.scrollTop = 200;
       });
-      const before = await lane.evaluate((el) => el.scrollTop);
+      /*
+       * **The baseline is read after the click, not before it.** Playwright's
+       * `.click()` auto-scrolls to reach its target, so when the clicked card
+       * sits below the fold the lane moves — the instrument, not the app.
+       * That drift measured 232 !== 200 the day LAI-606's taller cards pushed
+       * card 3 past a 700px viewport. The property under test is that the
+       * *drawer* does not move the board, and the `before > 0` guard below
+       * still catches a rebuild that resets the lane between click and read.
+       */
       /*
        * **The positive control that caught LAI-283.** When the lane's height
        * was a hardcoded `calc()` that stopped resolving, the lane grew to its
@@ -213,9 +221,9 @@ void describe('the task drawer', () => {
        * rather than passing vacuously, which is the only reason the layout bug
        * was visible from the suite at all.
        */
-      assert.ok(before > 0, 'the lane did not scroll — this proves nothing');
-
       await h.page.locator('.card').nth(3).click();
+      const before = await lane.evaluate((el) => el.scrollTop);
+      assert.ok(before > 0, 'the lane did not scroll — this proves nothing');
       await h.page.locator('.drawer').waitFor({ timeout: 10_000 });
 
       // **The drawer's header is on screen even though the board is not at the

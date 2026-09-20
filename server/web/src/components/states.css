@@ -352,14 +352,10 @@
 .skeleton-board {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(var(--lane-floor, 12.875rem), 1fr);
-  /*
-   * `0.75rem`, which is `.board-main`'s and `.kanban`'s gap in
-   * `board-rail.css`. It read `0.6875rem` and measured 11px against the real
-   * board's 12px — close enough to look right in a screenshot and still move
-   * every lane when the data landed.
-   */
-  gap: 0.75rem;
+  grid-auto-columns: minmax(var(--lane-floor, 16rem), 1fr);
+  /* `.kanban`'s values (LAI-606 moved them to 16rem/24px) — the mirror test
+     reads them out of `.kanban`, so drift here is a red, not a comment. */
+  gap: 24px;
   align-items: start;
   overflow: hidden;
 }
