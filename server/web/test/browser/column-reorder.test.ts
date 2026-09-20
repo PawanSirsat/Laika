@@ -201,7 +201,7 @@ void describe('dragging a column', () => {
       assert.deepEqual(await titles(h), ['To do', 'In progress', 'Review', 'Done']);
 
       // Grip of the last lane onto the first.
-      await drag(h, '.lane:nth-of-type(4) .lane-grip', '.lane:nth-of-type(1)');
+      await drag(h, '.lane:nth-of-type(4) .lane-head-drag', '.lane:nth-of-type(1)');
       await h.page.waitForTimeout(150);
 
       assert.deepEqual(
@@ -236,7 +236,7 @@ void describe('dragging a column', () => {
 
     try {
       await board(h);
-      await drag(h, '.lane:nth-of-type(4) .lane-grip', '.lane:nth-of-type(1)');
+      await drag(h, '.lane:nth-of-type(4) .lane-head-drag', '.lane:nth-of-type(1)');
       await h.page.waitForTimeout(250);
 
       assert.deepEqual(
@@ -287,7 +287,7 @@ void describe('the two drags cannot be confused', () => {
     try {
       await board(h);
 
-      await drag(h, '.lane:nth-of-type(1) .lane-grip', '.lane:nth-of-type(3)');
+      await drag(h, '.lane:nth-of-type(1) .lane-head-drag', '.lane:nth-of-type(3)');
       await h.page.waitForTimeout(150);
 
       // **Not `endsWith('/status')`** — `/api/v1/setup/status` is a boot call
@@ -393,37 +393,45 @@ async function settledOpacity(h: Harness, selector: string, index = 0): Promise<
 
 void describe('the head reveals its own chrome', () => {
   /*
-   * The grip and the `…` menu are hidden at rest and revealed by hovering **the
-   * head**, not the lane (LAI-603). It was `.lane:hover`, which lit them up
-   * whenever the pointer was anywhere in a column — including down among the
-   * cards, where the controls are not.
+   * The `…` menu and the order select are hidden at rest and revealed by
+   * hovering **the head**, not the lane (LAI-603) — `.lane:hover` used to
+   * light them up from anywhere in the column. The grip icon is gone
+   * (LAI-605, owner): the header itself is the drag handle and the grab
+   * cursor is the affordance, so what this suite guards is the menu's reveal
+   * and the header's cursor.
    *
    * `opacity`, never `display`: the controls keep their space, so the title
-   * does not shift when you point at it and **the grip stays draggable**, which
-   * the drags above depend on.
+   * does not shift when you point at it.
    */
   void test('hidden at rest, revealed by the head, and not by the body', async () => {
     const h = await open('/board?project=laika-core', stub());
     try {
-      assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '0', 'visible at rest');
       assert.equal(await settledOpacity(h, '.lane-head .lane-menu'), '0', 'visible at rest');
 
       await h.page.locator('.lane-head').first().hover();
       assert.equal(
-        await settledOpacity(h, '.lane-head .lane-grip'),
+        await settledOpacity(h, '.lane-head .lane-menu'),
         '1',
         'the head did not reveal it',
       );
       assert.equal(
-        await settledOpacity(h, '.lane-head .lane-grip', 1),
+        await settledOpacity(h, '.lane-head .lane-menu', 1),
         '0',
         'a sibling lane lit up',
       );
 
+      // The header is the drag handle now — the cursor is the affordance the
+      // grip icon used to be (LAI-605).
+      const cursor = await h.page
+        .locator('.lane-head-drag')
+        .first()
+        .evaluate((el) => getComputedStyle(el).cursor);
+      assert.equal(cursor, 'grab', 'the header does not offer the grab cursor');
+
       // The lane body is the half that used to reveal them, and must not.
       await h.page.locator('.lane-body').nth(1).hover();
       assert.equal(
-        await settledOpacity(h, '.lane-head .lane-grip', 1),
+        await settledOpacity(h, '.lane-head .lane-menu', 1),
         '0',
         'the body still reveals them',
       );
@@ -434,22 +442,23 @@ void describe('the head reveals its own chrome', () => {
 
   void test('the keyboard reaches them with no pointer at all', async () => {
     // `:focus-within` was narrowed to `.lane-head` alongside `:hover`. Drop it
-    // and the grip becomes unreachable without a mouse.
+    // and the menu becomes unreachable without a mouse. (The grip is gone;
+    // keyboard reorder lives in the order select, also revealed here.)
     const h = await open('/board?project=laika-core', stub());
     try {
-      await h.page.locator('.lane-head .lane-grip').first().focus();
+      await h.page.locator('.lane-head .lane-menu').first().focus();
       assert.equal(
-        await settledOpacity(h, '.lane-head .lane-grip'),
+        await settledOpacity(h, '.lane-head .lane-menu'),
         '1',
         'focus does not reveal it',
       );
       await h.page
-        .locator('.lane-head .lane-grip')
+        .locator('.lane-head .lane-menu')
         .first()
         .evaluate((el: HTMLElement) => {
           el.blur();
         });
-      assert.equal(await settledOpacity(h, '.lane-head .lane-grip'), '0', 'it stays up after blur');
+      assert.equal(await settledOpacity(h, '.lane-head .lane-menu'), '0', 'it stays up after blur');
     } finally {
       await h.close();
     }
@@ -493,9 +502,10 @@ void describe('the head reveals its own chrome', () => {
 void describe('the count badge maps status to hue', () => {
   /*
    * LAI-606, reversing LAI-603's one-grey rule on the owner's instruction:
-   * In-progress and Done wear their status colour as an outline — transparent
-   * fill, text and border in the hue — and every other lane keeps the plain
-   * filled pill. This is the assertion shape the removed uniformity test left
+   * In-progress and Done wear their status colour — text and border in the
+   * hue over the hue's own tinted fill (the prototype file's badge, LAI-605)
+   * — and every other lane keeps the plain card-filled pill with the subtle
+   * edge. This is the assertion shape the removed uniformity test left
    * for whoever built that brief to define.
    *
    * Colours are probe-resolved from the theme's own tokens, never hardcoded
@@ -517,6 +527,16 @@ void describe('the count badge maps status to hue', () => {
           probe.remove();
           return value;
         };
+        // Backgrounds resolve through backgroundColor — an alpha fill read
+        // through `color` would normalise differently.
+        const resolveBg = (token: string): string => {
+          const probe = document.createElement('span');
+          probe.style.backgroundColor = `var(${token})`;
+          document.body.append(probe);
+          const value = getComputedStyle(probe).backgroundColor;
+          probe.remove();
+          return value;
+        };
         const lanes = [...document.querySelectorAll('.lane')].map((lane) => {
           const badge = lane.querySelector('.lane-count');
           const style = badge === null ? null : getComputedStyle(badge);
@@ -531,9 +551,13 @@ void describe('the count badge maps status to hue', () => {
           lanes,
           blue: resolve('--chip-blue'),
           blueBorder: resolve('--chip-blue-border'),
+          blueFill: resolveBg('--chip-blue-bg'),
           green: resolve('--chip-green'),
           greenBorder: resolve('--chip-green-border'),
+          greenFill: resolveBg('--chip-green-bg'),
           plain: resolve('--text-secondary'),
+          plainFill: resolveBg('--bg-pill'),
+          plainBorder: resolve('--border-subtle'),
         };
       });
 
@@ -542,20 +566,19 @@ void describe('the count badge maps status to hue', () => {
       assert.ok(statuses.includes('in_progress'), `no in_progress lane in ${statuses.join()}`);
       assert.ok(statuses.includes('done'), `no done lane in ${statuses.join()}`);
 
-      const transparent = 'rgba(0, 0, 0, 0)';
       for (const lane of seen.lanes) {
         if (lane.status === 'in_progress') {
           assert.equal(lane.text, seen.blue, 'in-progress count is not chip-blue');
           assert.equal(lane.border, seen.blueBorder, 'in-progress outline is not chip-blue');
-          assert.equal(lane.fill, transparent, 'in-progress badge kept a fill');
+          assert.equal(lane.fill, seen.blueFill, 'in-progress badge is not the blue tint');
         } else if (lane.status === 'done') {
           assert.equal(lane.text, seen.green, 'done count is not chip-green');
           assert.equal(lane.border, seen.greenBorder, 'done outline is not chip-green');
-          assert.equal(lane.fill, transparent, 'done badge kept a fill');
+          assert.equal(lane.fill, seen.greenFill, 'done badge is not the green tint');
         } else {
           assert.equal(lane.text, seen.plain, `${lane.status} count left the plain colour`);
-          assert.equal(lane.border, transparent, `${lane.status} badge grew an outline`);
-          assert.notEqual(lane.fill, transparent, `${lane.status} badge lost its pill fill`);
+          assert.equal(lane.border, seen.plainBorder, `${lane.status} badge lost its subtle edge`);
+          assert.equal(lane.fill, seen.plainFill, `${lane.status} badge lost its pill fill`);
         }
       }
     } finally {

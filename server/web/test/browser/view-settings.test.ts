@@ -249,9 +249,11 @@ void describe('grouping', () => {
         'cards must still move between columns while grouped',
       );
 
-      // Drawn once, not once per row — columns are project-level.
+      // Drawn once, not once per row — columns are project-level. The grip
+      // icon is gone (LAI-605); the draggable header is the control now, and
+      // only the first row's headers may carry it.
       assert.equal(
-        await h.page.locator('.lane-grip').count(),
+        await h.page.locator('.lane-head-drag').count(),
         COLUMNS.length,
         'column controls should be on the first row only',
       );

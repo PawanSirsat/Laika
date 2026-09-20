@@ -204,9 +204,12 @@
   border: 1px solid var(--overdue-border);
 }
 .mr-tag-decision {
-  color: var(--chip-pink);
-  background: var(--chip-pink-bg);
-  border: 1px solid var(--chip-pink-border);
+  /* Blue, not pink: the prototype palette (LAI-605) folded pink into the red
+     family, which made DECISION identical to DEAD's overdue red. Blue is the
+     one hue nothing else on this screen wears. */
+  color: var(--chip-blue);
+  background: var(--chip-blue-bg);
+  border: 1px solid var(--chip-blue-border);
 }
 
 .mr-meaning {

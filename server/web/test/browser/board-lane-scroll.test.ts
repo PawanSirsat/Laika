@@ -230,9 +230,10 @@ const STUB: ApiStub = {
   '/api/v1/projects/laika-core/tags': { tags: [] },
 };
 
-/** The addendum's column floor (LAI-606): min 256px. The mockup's raw 206 was
- * mockup-scale and retired with the rest of its px. */
-const DESIGN_LANE = 256;
+/** The prototype's column floor (LAI-605): min 248px — the file's own
+ * `minmax(248px, 1fr)`. The addendum's 256 preceded it; the mockup's raw 206
+ * was mockup-scale and retired before either. */
+const DESIGN_LANE = 248;
 
 /**
  * Resize, then **wait for the layout to stop moving** rather than for a clock.
