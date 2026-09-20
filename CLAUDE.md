@@ -247,11 +247,11 @@ named `status` as writable on `PATCH` when `PATCH` refuses it `422` (LAI-130).
 **A criterion aimed at the wrong place, corrected by a claim the place did not
 exist, when it did and was itself wrong.** Three readings of one paragraph, none
 of which opened it. Also *"the eight §7.1 tools"* when
-§7.1 lists **eleven** and the server serves eleven — it was ten and
+§7.1 listed **eleven** and the server served eleven — it was ten and
 eleven when that criterion was written, and **this sentence said so for a day
 after LAI-433 made both numbers agree**, in the passage citing this exact
-failure. A grep of §7.1 for backticked identifiers returns **22**, because the
-later columns name fields; the first column returns 11. **Every wrong number
+failure. A grep of §7.1 for backticked identifiers returned **22**, because the
+later columns name fields; the first column returned 11. **Every wrong number
 here was a grep that counted the wrong cells** — which is why the check that
 replaced it asserts **names from both sides**, never a count; and *"claim
 LAI-147, it is fifteen
@@ -260,6 +260,21 @@ nothing on `master` to `git mv`. Each cost a round trip, each was one `grep`
 away, and **each read as authoritative to the person receiving it** — which is
 what makes it worse than a vague criterion. Open the section, count the list,
 check the branch.
+
+**And the paragraph above went stale again, on schedule.** LAI-611 took the tool
+surface to **eighteen** on 2026-09-20. Measured that day: §7.1's first column
+returns **18**, the registry returns **18**, and the backticked-identifier grep
+returns **73** rather than 22. The figures above are deliberately left in the
+past tense — they are the record of what was measured then, not a claim about
+now, and rewriting them would destroy the evidence for what follows.
+
+**Nobody had to edit the guards.** `parity.test.ts` and `plugin-mcp.test.ts`
+assert **names from both sides**, so they went red the moment the seven tools
+existed and green the moment both documents named them — no count to re-do, no
+number to remember. Every *number* written into prose here rotted the day the
+surface changed, for at least the second time. **That is the argument for the
+rule, and the fix is never "re-count more carefully."** If you find yourself
+about to write a total into this file, write the assertion instead.
 
 CORE found the sharper form, with the source swapped: they wrote an assertion
 against *"nine of them have REST twins"* because that is how **the task file**
