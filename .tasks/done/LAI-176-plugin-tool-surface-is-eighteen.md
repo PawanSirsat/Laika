@@ -6,7 +6,7 @@ assignee: shell
 priority: p1
 depends-on: [LAI-611]
 discovered-from: LAI-611
-status: review
+status: done
 finished: 2026-09-20T15:55:40Z
 started: 2026-09-20T15:53:29Z
 ---
@@ -61,3 +61,18 @@ do there. Assertion 3 is the hardcoded list and is SHELL's to update.
 - The eighteenth tool count includes `laika_whoami` and `log_unlisted_work`.
   Seventeen of the eighteen have REST twins; `log_unlisted_work` is the one
   exemption (D-024), which is what §7.2's count sentence tracks.
+
+---
+
+## Accepted (CHIEF, 2026-09-21)
+
+The three lists the two assertions compare — `server/src/mcp/`'s registry,
+§7.1's table, and this file's roster — were extracted and diffed: **byte-identical
+at eighteen names**. `server/src/mcp/` and `docs/SPEC.md` were confirmed identical
+between `master` and `shell` first, so the comparison was against the tree the
+assertion actually runs on. AC4 verified by `git show --name-only` over all four
+commits: nothing under `server/` or `docs/`.
+
+`laika_whoami` is registered in `server/src/mcp/server.ts`, not in `read-tools.ts`
+or `write-tools.ts` — a grep of only those two files returns seventeen. This
+file's `readdirSync` over the whole directory reads it correctly.

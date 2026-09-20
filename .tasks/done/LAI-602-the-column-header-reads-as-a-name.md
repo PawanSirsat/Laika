@@ -6,7 +6,7 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-296
-status: review
+status: done
 finished: 2026-09-20T19:00:38Z
 started: 2026-09-19T21:01:11Z
 ---

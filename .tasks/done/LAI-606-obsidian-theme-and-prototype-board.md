@@ -5,7 +5,7 @@ area: web
 assignee: shell
 priority: p1
 depends-on: []
-status: review
+status: done
 finished: 2026-09-20T19:03:57Z
 started: 2026-09-19T22:44:47Z
 ---
@@ -86,3 +86,20 @@ LAI-614). The guards this task built - the single-source colour test, the
 type-role sync and generator, the 218px meta-row squeeze - are all green on
 this branch today, which is what its architecture criteria actually claim.
 Gate evidence: web 0, server 0, lint 0, format 0, each read standalone.
+
+---
+
+## Accepted (CHIEF, 2026-09-21)
+
+Same shape as LAI-605: two criteria unticked, superseded rather than skipped —
+the owner's LAI-605 brief replaced the addendum's sizes with the prototype file's
+own values, and the evidence obligation moved to **LAI-614**. Verified that
+LAI-614 exists and carries it.
+
+D-032 checked directly and is properly satisfied: `server/web/test/demo/not-in-bundle.test.ts`
+asserts no fixture string reaches the built bundle **and** carries a
+`needles.length > 0` self-check, so it cannot pass by testing nothing.
+`DEMO_ENABLED` is an opt-in on `import.meta.env.DEV || VITE_LAIKA_DEMO === '1'`,
+reduced to dead code in a normal build. The §5.1 fixture grep returns only
+comments documenting what must not ship, and `route-table.ts` records that there
+is deliberately no `SYSTEM` group.

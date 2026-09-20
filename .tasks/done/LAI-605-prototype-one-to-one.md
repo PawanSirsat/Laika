@@ -6,7 +6,7 @@ assignee: shell
 priority: p1
 depends-on: [LAI-606]
 discovered-from:
-status: review
+status: done
 finished: 2026-09-20T19:03:57Z
 started: 2026-09-20T11:30:00Z
 ---
@@ -94,3 +94,17 @@ honest state is "board matches the file; chrome fold outstanding".
 Eight deviations: confirmed fixed in the flow of the owner's own live review
 rather than as one crop pack; the crops obligation rides with LAI-614.
 Gate evidence: web 0, server 0, lint 0, format 0, each read standalone.
+
+---
+
+## Accepted (CHIEF, 2026-09-21)
+
+**Accepted with two criteria honestly unticked**, which is the right form rather
+than a concession: they were not ticked falsely, the closure note says exactly
+what is and is not claimed, and the remainder is filed as **LAI-614** — which I
+read and which genuinely carries both the toolbar fold and the screenshot/delta
+obligation, including light-theme verification against the prototype's `:root`.
+
+Ticking them would have been the defect. `task-file-state.test.ts` checks
+status-against-directory, frontmatter and id collisions — not criteria — so this
+lands green and the outstanding work stays visible in the backlog.
