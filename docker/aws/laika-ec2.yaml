@@ -1,0 +1,151 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Laika self-hosted board - one Graviton instance, Docker, ECR image, SQLite on the instance volume (LAI-605)
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: ECR image URI to run
+    Default: 926583575159.dkr.ecr.us-east-1.amazonaws.com/laika:latest
+  InstanceType:
+    Type: String
+    Default: t4g.micro
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: Latest Amazon Linux 2023 arm64 AMI, resolved at deploy time
+
+Resources:
+  # The app secret is born inside Secrets Manager and only ever read by the
+  # instance role at boot - it never appears in this template, in a shell, or
+  # in any context.
+  LaikaSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Laika session signing secret
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: secret
+        PasswordLength: 48
+        ExcludePunctuation: true
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: laika-pull-and-secret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:BatchCheckLayerAvailability
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/laika
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Ref LaikaSecret
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+
+  # Port 80 only. Shell access is SSM Session Manager, so no port 22 exists.
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Laika - HTTP in, SSM for shell
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIpv6: ::/0
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref AmiId
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SecurityGroupIds:
+        - !GetAtt SecurityGroup.GroupId
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 15
+            VolumeType: gp3
+            Encrypted: true
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          dnf install -y docker
+          systemctl enable --now docker
+
+          mkdir -p /opt/laika /data
+          # The image runs as node (uid 1000) and refuses a root-owned volume.
+          chown 1000:1000 /data
+
+          # The Elastic IP attaches moments after boot; wait for the address
+          # to settle before writing it into the public URL.
+          sleep 75
+          TOKEN=$(curl -sX PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 300')
+          PUBLIC_IP=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/public-ipv4)
+
+          SECRET=$(aws secretsmanager get-secret-value --secret-id '${LaikaSecret}' \
+            --region ${AWS::Region} --query 'SecretString' --output text | python3 -c 'import json,sys; print(json.load(sys.stdin)["secret"])')
+
+          umask 077
+          cat > /opt/laika/.env <<EOF
+          NODE_ENV=production
+          PORT=3000
+          LAIKA_DB_PATH=/data/laika.db
+          LAIKA_SECRET=$SECRET
+          LAIKA_PUBLIC_URL=http://$PUBLIC_IP
+          EOF
+
+          aws ecr get-login-password --region ${AWS::Region} \
+            | docker login --username AWS --password-stdin ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+          docker pull '${ImageUri}'
+          docker run -d --name laika --restart unless-stopped \
+            -p 80:3000 -v /data:/data --env-file /opt/laika/.env '${ImageUri}'
+      Tags:
+        - Key: Name
+          Value: laika
+
+  ElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      InstanceId: !Ref Instance
+
+Outputs:
+  Url:
+    Value: !Sub http://${ElasticIp.PublicIp}
+  InstanceId:
+    Value: !Ref Instance
+  SsmShell:
+    Description: Open a shell on the instance without SSH
+    Value: !Sub aws ssm start-session --target ${Instance} --profile laika --region ${AWS::Region}

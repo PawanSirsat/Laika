@@ -15,15 +15,22 @@
   margin-right: 1.125rem;
 }
 
-.kanban,
+/*
+ * **The list keeps its bottom margin; the board does not.**
+ *
+ * The board is a full-height column that ends at the viewport, so a margin
+ * under it is dead space below the lanes rather than breathing room after
+ * content — the owner's words were *"use the space we have … the bottom as
+ * well"*. A list scrolls the page and still wants the gap.
+ */
 .list {
   margin-bottom: var(--space-6);
 }
 
 .board-views {
   display: flex;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 
@@ -31,16 +38,16 @@
   font: inherit;
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
-  background: var(--card);
+  color: var(--text-secondary);
+  background: var(--bg-card);
   border: none;
   padding: var(--space-2) var(--space-3);
   cursor: pointer;
 }
 
 .board-view-on {
-  background: var(--accs);
-  color: var(--acc);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 .board-view:focus-visible,
@@ -49,7 +56,7 @@
 .list-sort:focus-visible,
 .lane-move-select:focus-visible,
 .board-alert-close:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -66,21 +73,21 @@
   align-items: center;
   gap: var(--space-2);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .board-filter select {
   font: inherit;
   font-size: var(--text-sm);
-  color: var(--tx);
-  background: var(--card);
-  border: 1px solid var(--bd2);
-  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
   padding: 2px var(--space-2);
 }
 
 .board-filter-check input {
-  accent-color: var(--acc);
+  accent-color: var(--accent);
 }
 
 .board-clear,
@@ -88,10 +95,10 @@
   font: inherit;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: var(--space-1) var(--space-3);
   cursor: pointer;
 }
@@ -101,10 +108,10 @@
   align-items: center;
   gap: var(--space-3);
   font-size: var(--text-sm);
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
-  border-radius: var(--radius-md);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-3);
   margin: 0 0 var(--space-4);
 }
@@ -113,10 +120,10 @@
   font: inherit;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--red);
+  color: var(--overdue);
   background: transparent;
-  border: 1px solid var(--redb);
-  border-radius: var(--radius-sm);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-chip);
   padding: 0 var(--space-2);
   margin-left: auto;
   cursor: pointer;
@@ -158,8 +165,29 @@
  */
 .kanban {
   display: grid;
-  grid-template-columns: repeat(5, minmax(12.875rem, 1fr));
-  gap: 0.75rem;
+  /*
+   * **Implicit tracks, so nothing counts the columns** (LAI-266). This was
+   * `repeat(5, minmax(12.875rem, 1fr))` when a board had exactly five lanes.
+   *
+   * `repeat()` takes an `<integer>` and **not** a custom property: a repeat
+   * count written as a variable is invalid and silently drops the whole
+   * declaration, so the count cannot
+   * simply be parameterised. `grid-auto-flow: column` with `grid-auto-columns`
+   * creates one track per child instead, and the number stops appearing
+   * anywhere.
+   *
+   * The floor is a variable so View settings can narrow or widen the lanes
+   * without a second grid rule.
+   */
+  /*
+   * The template is set inline from the lane count (see `LaneRow.tsx`) — the
+   * `+` tile needs an `auto` track while the lanes share the rest, and
+   * `grid-auto-columns` cannot say that. These stay as the fallback for a
+   * render with no inline style.
+   */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(var(--lane-floor, 15.5rem), 1fr);
+  gap: 12px;
   /*
    * **Stretch, not start** (LAI-270). `start` sized every column to its own
    * cards, so five columns of different lengths left the ragged row the owner
@@ -170,25 +198,33 @@
 }
 
 .lane {
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  /* The design's tub: roomier at the top than at the sides. */
-  padding: 0.75rem 0.625rem;
+  /*
+   * **`--bg-column`, not `--bg-canvas`.** Darkening the lane to the canvas colour made
+   * the column vanish into the background — three greys collapsed to two.
+   * The separation is canvas -> column -> card, and the fix for a card that
+   * did not stand out was to raise the *card* (`--bg-card-hover`), not to sink the
+   * lane. Caught by the other SHELL session, in both themes.
+   */
+  background: var(--bg-column);
+  border: 1px solid var(--border-column);
+  border-radius: var(--radius-column);
+  /* The prototype's column: 12px top, 10px sides (LAI-605). */
+  padding: 12px 10px 10px;
   min-height: 8rem;
 }
 
 /* The drop target has to be visible before the mouse is released, or a drag is
    a guess. */
 .lane-over {
-  border-color: var(--acc);
-  background: var(--accs);
+  border-color: var(--accent);
+  background: var(--accent-bg);
 }
 
 .lane-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: 9px;
+  padding-right: 2px;
 }
 
 .lane-item {
@@ -208,10 +244,10 @@
   font: inherit;
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
   background: none;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   padding: 0.125rem 0.25rem;
   cursor: pointer;
   opacity: 0.75;
@@ -220,8 +256,8 @@
 .lane-move-select:hover,
 .lane-move-select:focus-visible {
   opacity: 1;
-  color: var(--tx2);
-  background: var(--card);
+  color: var(--text-secondary);
+  background: var(--bg-card);
 }
 
 /* ----------------------------------------------------------------- card */
@@ -232,13 +268,17 @@
    and swallows the whole board. */
 .card {
   position: relative;
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow);
-  /* The design's own figures (prototype line ~290): 13px round, 11px at the
-     foot, which reads as more air than `--space-3`'s uniform 12. */
-  padding: 0.8125rem 0.8125rem 0.6875rem;
+  /*
+   * `--bg-card`, with `--bg-card-hover` reserved for `:hover` — the two were
+   * once swapped here and corrected by a tail override; the correction now
+   * lives where the value does (LAI-606 consolidation).
+   */
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  /* The prototype's rhythm at app scale: 20 round, 16 at the foot. */
+  padding: 13px 13px 11px;
   /* `pointer`, not `grab`. The card was `grab` — honest about dragging and
      silent about the thing people actually do, which is open it. The design
      file uses `cursor:pointer` 46 times and `grab` never; dragging still works
@@ -247,12 +287,12 @@
 }
 
 /* Existing tokens only (D-020). No shadow lift: there is one elevation token,
-   `--shadow`, and a hover shadow would mean inventing a second — not mine to
+   `--shadow-card`, and a hover shadow would mean inventing a second — not mine to
    decide. Border and surface both change, so the state is legible without it.
    Not a border-*width* change, which would reflow the column on every hover. */
 .card:hover {
-  border-color: var(--bd2);
-  background: var(--tub);
+  /* The prototype hovers with the stronger line only — the surface holds. */
+  border-color: var(--border-default);
 }
 
 .card:active {
@@ -289,7 +329,7 @@
 .card-moving {
   opacity: 0.6;
   cursor: progress;
-  border-color: var(--accb);
+  border-color: var(--accent-border);
 }
 
 .card-head {
@@ -308,7 +348,7 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  color: var(--tx2);
+  color: var(--text-secondary);
   /* A key is one token. In a narrow column it was breaking after the hyphen —
      `LC-` above `4` — which reads as two things and matches no task. */
   white-space: nowrap;
@@ -316,33 +356,29 @@
 
 .card-priority {
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
   border-radius: var(--radius-pill);
   padding: 0 var(--space-2);
 }
 
 .card-priority-p1 {
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
 }
 .card-priority-p2 {
-  color: var(--amb);
-  background: var(--ambs);
-  border: 1px solid var(--ambb);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
 }
 .card-priority-p3 {
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
 }
 
 .card-title {
-  font-size: var(--text-sm);
-  color: var(--tx);
-  margin: var(--space-2) 0;
-  line-height: 1.4;
+  color: var(--text-primary);
+  margin: 0;
 }
 
 .card-foot {
@@ -359,24 +395,24 @@
 }
 
 .marker-ready {
-  color: var(--grn);
-  background: var(--grns);
-  border: 1px solid var(--grnb);
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
 }
 .marker-blocked {
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
 }
 .marker-deps {
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
 }
 /*
  * Stale, in the design's own vocabulary (§11.4.1).
  *
- * The prototype has no card-level stale marker — its clock, `--amb` and the
+ * The prototype has no card-level stale marker — its clock, `--chip-orange` and the
  * "Stale · N days quiet" phrasing come from the dashboard panel — so this
  * borrows that rather than inventing a colour. It shares amber with
  * `.marker-unknown`, which is tolerable because the two say different words and
@@ -384,9 +420,9 @@
  * never chose, to keep it apart from one the design never mentions.
  */
 .marker-stale {
-  color: var(--amb);
-  background: var(--ambs);
-  border: 1px solid var(--ambb);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
@@ -399,28 +435,20 @@
 
 /* A dependency outside the loaded set — stated, not guessed. */
 .marker-unknown {
-  color: var(--amb);
-  background: var(--ambs);
-  border: 1px solid var(--ambb);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
 }
 
 .card-avatar {
   width: 1.5rem;
   height: 1.5rem;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--bd2);
+  border: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-bold);
   flex: none;
-}
-
-.card-unassigned {
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  color: var(--tx2);
 }
 
 /* ----------------------------------------------------------------- list */
@@ -429,9 +457,9 @@
   width: 100%;
   border-collapse: collapse;
   font-size: var(--text-sm);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   overflow: hidden;
 }
 
@@ -439,11 +467,11 @@
 .list td {
   text-align: left;
   padding: var(--space-2) var(--space-3);
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .list th {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 .list tbody tr:last-child td {
@@ -456,7 +484,7 @@
   font-weight: var(--weight-bold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--tx2);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   padding: 0;
@@ -467,7 +495,7 @@
 .list-updated {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 
@@ -478,13 +506,13 @@
 }
 
 .list-priority-p1 {
-  color: var(--red);
+  color: var(--overdue);
 }
 .list-priority-p2 {
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 .list-priority-p3 {
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 /* Opens the detail panel. A button so it is focusable and keyboard-activatable;
@@ -495,22 +523,22 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   font-weight: var(--weight-bold);
-  color: var(--tx2);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   padding: 0;
   cursor: pointer;
   text-decoration: underline;
-  text-decoration-color: var(--bd2);
+  text-decoration-color: var(--border-default);
   text-underline-offset: 2px;
 }
 
 .card-open:hover {
-  color: var(--acc);
+  color: var(--accent);
 }
 
 .card-open:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -523,10 +551,10 @@
   gap: var(--space-3);
   padding: var(--space-4);
   margin-bottom: var(--space-4);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
 }
 
 .new-task-title {
@@ -552,14 +580,14 @@
   height: 1.9375rem;
   width: 11.625rem;
   padding: 0 0.6875rem;
-  border: 1px solid var(--bd);
+  border: 1px solid var(--border-subtle);
   border-radius: 0.5625rem;
-  background: var(--card);
-  color: var(--tx3);
+  background: var(--bg-card);
+  color: var(--text-muted);
 }
 
 .board-search:focus-within {
-  border-color: var(--accb);
+  border-color: var(--accent-border);
 }
 
 .board-search svg {
@@ -578,7 +606,7 @@
   font: inherit;
   font-size: 0.71875rem;
   font-weight: var(--weight-medium);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .board-search input:focus {
@@ -586,7 +614,7 @@
 }
 
 .board-search input::placeholder {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .board-search kbd {
@@ -594,9 +622,9 @@
   font-family: var(--font-mono);
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
   padding: 0.125rem 0.25rem;
 }
 
@@ -628,8 +656,8 @@
   margin: 0;
   padding: var(--space-2) 1.125rem;
   font-size: var(--text-sm);
-  color: var(--tx3);
-  border-bottom: 1px solid var(--bd);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 /* ------------------------------------- lane headers (prototype: five lanes) */
@@ -646,9 +674,11 @@
 .lane-head {
   display: flex;
   align-items: center;
-  gap: 0.4375rem;
+  gap: 7px;
   justify-content: flex-start;
-  padding: 0 0.25rem;
+  /* The prototype: the dot's left edge lines up with the card border below —
+     4px here plus the column's 10px equals the card's own inset (LAI-605). */
+  padding: 0 4px 10px;
 }
 
 .lane-dot {
@@ -656,56 +686,81 @@
   height: 7px;
   flex: none;
   border-radius: var(--radius-pill);
-  background: var(--tx3);
+  background: var(--text-muted);
 }
 
 .lane-dot-todo {
-  background: var(--pur);
+  background: var(--chip-purple);
 }
 .lane-dot-in_progress {
-  background: var(--acc);
+  background: var(--chip-blue);
 }
 .lane-dot-review {
-  background: var(--amb);
+  background: var(--chip-orange);
 }
 .lane-dot-done {
-  background: var(--grn);
+  background: var(--chip-green);
 }
 
+/*
+ * **The column's own name, as written** (LAI-602).
+ *
+ * It was `uppercase` at `0.07em` tracking, which is what made a row of columns
+ * read as shouted labels rather than as names — and it silently renamed them:
+ * a column called `To Do` displayed as `TO DO`, so the header and the rename
+ * field disagreed about what the column is called. The reference sets them in
+ * their own case at normal tracking.
+ */
 .lane-title {
-  font-size: 0.65625rem;
-  font-weight: var(--weight-heavy);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--tx2);
+  /*
+   * Size, weight, case, tracking and colour all come from `.t-heading`
+   * (LAI-606) — uppercase included, as a CSS transform, so the DOM keeps the
+   * column's real name and every locator finding lanes by text still works.
+   */
   margin: 0;
   white-space: nowrap;
 }
 
 /* The count pill takes the lane's colour, so the eye reads column and volume
    together rather than as two separate facts. */
+/*
+ * A plain rounded badge beside the name (LAI-602). The monospace face and the
+ * border were doing the shouting the uppercase title started; the reference's
+ * is a quiet filled chip in the body font.
+ */
 .lane-count {
+  /* The prototype's badge: mono 9.5/700, card-filled, edged, r5 (LAI-605). */
   font-family: var(--font-mono);
-  font-size: 0.59375rem;
+  font-size: var(--text-sm);
   font-weight: var(--weight-bold);
-  color: var(--tx2);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  /* A rounded square, not a pill — the reference's badge. */
-  border-radius: 5px;
-  padding: 0.1875rem 0.25rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--text-secondary);
+  background: var(--bg-pill);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-xs);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 4px;
 }
 
+/*
+ * In-progress and Done carry their status colour, outlined — transparent
+ * fill, border and text in the status hue (LAI-606). This reverses LAI-603's
+ * one-colour rule at the owner's instruction; the dot keeps saying which
+ * status, the badge now agrees for the two columns the eye hunts for.
+ */
 .lane-count-in_progress {
-  color: var(--acc);
-  background: var(--accs);
-  border-color: var(--accb);
+  background: var(--chip-blue-bg);
+  color: var(--chip-blue);
+  border-color: var(--chip-blue-border);
 }
 
 .lane-count-done {
-  color: var(--grn);
-  background: var(--grns);
-  border-color: var(--grnb);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+  border-color: var(--chip-green-border);
 }
 
 /* Sample data — no board-column entity exists to hold a limit. See demo/wip.ts. */
@@ -714,25 +769,23 @@
   font-family: var(--font-mono);
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .lane-wip-over {
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 
 /* ------------------------------------ card anatomy (prototype plate 1b) */
 
 .card-title {
   margin: 0;
-  /* 13.5px/600 with the design's tracking and leading (prototype ~line 291).
-     The owner read the old 12.5px as too light and too small; this is the
-     figure the reference actually uses. */
-  font-size: 0.84375rem;
-  font-weight: var(--weight-semibold);
-  line-height: 1.4;
-  letter-spacing: -0.008em;
-  color: var(--tx);
+  /*
+   * **Size, weight, leading and colour all come from `.t-body`** (LAI-606).
+   * They are gone from here on purpose: a component that keeps its own copy is
+   * the one that does not move when `TYPE_ROLES.body` does, and the guarantee
+   * is worth more than the convenience of setting it locally.
+   */
   text-wrap: pretty;
   /* Two lines, then an ellipsis — the design clamps, and an unclamped title
      pushes the footer around as cards differ in length. */
@@ -744,20 +797,21 @@
 
 /* Done cards recede — the column already says they are finished. */
 .lane-done .card-title {
-  color: var(--tx2);
+  color: var(--text-secondary);
   opacity: 0.66;
 }
 
 .card-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.25rem;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 /**
  * One chip style, for every tag (LAI-066, D-027).
  *
- * The per-tone rules that used to live here — `--purs` for `agent`, `--accs`
+ * The per-tone rules that used to live here — `--chip-pink-bg` for `agent`, `--accent-bg`
  * for `presence` and so on — went with the demo module that invented them.
  * **D-027 refused a per-tag palette on purpose**: a colour has to be chosen,
  * stored, kept distinguishable in both themes, and explained to whoever adds
@@ -769,10 +823,10 @@
   font-weight: var(--weight-bold);
   line-height: 1;
   padding: 0.1875rem 0.3125rem;
-  border-radius: var(--radius-sm);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  color: var(--tx2);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
 }
 
 /* The exception, stated before the footer rather than as one marker among many. */
@@ -795,13 +849,13 @@
   min-width: 0;
   margin: 0;
   padding: 0.25rem 0.375rem;
-  background: var(--reds);
-  border-left: 2px solid var(--red);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--blocked-bg);
+  border-left: 2px solid var(--overdue);
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
   font-size: 0.65625rem;
   font-weight: var(--weight-semibold);
   line-height: 1.35;
-  color: var(--red);
+  color: var(--overdue);
   white-space: nowrap;
 }
 
@@ -889,14 +943,14 @@
 }
 
 .card-dot-p1 {
-  background: var(--red);
+  background: var(--overdue);
 }
 .card-dot-p2 {
-  background: var(--amb);
+  background: var(--chip-orange);
 }
 .card-dot-p3 {
   background: transparent;
-  border: 1.5px solid var(--tx3);
+  border: 1.5px solid var(--text-muted);
 }
 
 .card-deps {
@@ -904,9 +958,7 @@
   align-items: center;
   gap: 0.1875rem;
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
-  font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .card-deps svg {
@@ -933,9 +985,9 @@
   align-items: center;
   justify-content: center;
   border-radius: var(--radius-pill);
-  background: var(--pur);
-  color: var(--card);
-  border: 1.5px solid var(--card);
+  background: var(--chip-pink);
+  color: var(--bg-card);
+  border: 1.5px solid var(--bg-card);
 }
 
 .card-bot svg {
@@ -944,41 +996,43 @@
   stroke: currentColor;
 }
 
-.card-unassigned {
-  width: 1.625rem;
-  height: 1.625rem;
-  flex: none;
+/* The ghost row at the foot of each column (prototype). */
+/*
+ * Scoped under `.lane`, and it has to be: `.t-control` declares
+ * `color: inherit` and `type.css` loads after this file, so a single-class
+ * `.lane-add` loses its colour on bundle order and rendered text-primary at
+ * rest — measured. Two classes beat the role on specificity, the same fix the
+ * blocked line needed.
+ */
+.lane .lane-add {
+  /* The prototype's plain text footer (LAI-605): 10.5/600 muted, no box. */
   display: flex;
   align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--bd2);
-  border-radius: var(--radius-pill);
-  color: var(--tx3);
-  font-size: var(--text-sm);
-}
-
-/* The ghost row at the foot of each column (prototype). */
-.lane-add {
+  justify-content: flex-start;
+  gap: 6px;
   width: 100%;
-  font: inherit;
-  font-size: 0.65625rem;
-  font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  padding: 5px 3px 0;
+  border: 0;
+  border-radius: var(--radius-control);
   background: none;
-  border: 1px dashed var(--bd2);
-  border-radius: var(--radius-md);
-  padding: 0.375rem;
+  color: var(--text-muted);
   cursor: pointer;
 }
 
-.lane-add:hover {
-  color: var(--acc);
-  border-color: var(--accb);
-  background: var(--accs);
+.lane .lane-add svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.lane .lane-add:hover,
+.lane .lane-add:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-card-hover);
 }
 
 .lane-add:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -993,25 +1047,25 @@
   font-size: 0.5625rem;
   font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
-  background: var(--grns);
-  border: 1px solid var(--grnb);
-  color: var(--grn);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
+  color: var(--chip-green);
 }
 
 .live-connecting,
 .live-dropped {
-  background: var(--ambs);
-  border-color: var(--ambb);
-  color: var(--amb);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+  color: var(--chip-orange);
 }
 
 /* Neutral, not amber. Amber reads as "working on it", which is true of a
    reconnect and false of a refusal — that one is settled, and the board's own
    permission message is the thing worth the reader's attention. */
 .live-refused {
-  background: var(--tub);
-  border-color: var(--bd);
-  color: var(--tx3);
+  background: var(--bg-column);
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
 }
 
 .live-dot {
@@ -1032,14 +1086,14 @@
   font-size: 0.5rem;
   font-weight: var(--weight-heavy);
   padding: 0.0625rem 0.25rem;
-  border-radius: var(--radius-sm);
-  background: var(--tub);
-  color: var(--tx3);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  color: var(--text-muted);
 }
 
 .card-sprint-on {
-  background: var(--purs);
-  color: var(--pur);
+  background: var(--chip-pink-bg);
+  color: var(--chip-pink);
 }
 
 /* ----------------------------------------------------- card footer (LAI-263) */
@@ -1055,9 +1109,7 @@
   gap: 0.1875rem;
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.59375rem;
-  font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .card-comments svg,
@@ -1073,7 +1125,7 @@
   font-family: var(--font-mono);
   font-size: 0.59375rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -1115,21 +1167,52 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /*
+   * **A lane never scrolls sideways, and saying so is what lets the board.**
+   *
+   * `overflow-y: auto` coerces the other axis to `auto` as well, so every lane
+   * became a horizontal scroller with nothing to scroll — and a sideways
+   * trackpad gesture over a card was captured by it instead of reaching
+   * `.board-main`, which is the pane that actually scrolls the columns. The
+   * owner's words: *"when i try to scroll left right there, not worked"*.
+   */
+  overflow-x: hidden;
   overscroll-behavior: contain;
-  /* The thin scrollbar the reference shows on a full column. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--bd2) transparent;
 }
 
+/*
+ * **The full column's scrollbar is visible at rest** (LAI-605, owner: a long
+ * list must show its scroller so people know there is more). Painted webkit
+ * scrollbars never auto-hide; `scrollbar-width`/`scrollbar-color` must NOT be
+ * set alongside them — Chrome 121+ then discards the webkit styling and falls
+ * back to the macOS overlay bar that hides at rest, which is the bug this
+ * block replaces. The Firefox pair lives behind the support check instead.
+ */
 .kanban .lane-body::-webkit-scrollbar {
-  width: 8px;
+  width: 9px;
+}
+
+.kanban .lane-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .kanban .lane-body::-webkit-scrollbar-thumb {
-  background: var(--bd2);
+  background: var(--border-default);
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
+}
+
+.kanban .lane-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .kanban .lane-body {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) transparent;
+  }
 }
 
 /* Pinned: it is the column's footer, not the last card's neighbour. */
@@ -1170,7 +1253,814 @@
 
 /* A rule between the tags and the footer, as the reference draws it. */
 .card-foot {
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
   padding-top: 0.5625rem;
   margin-top: 0.125rem;
+}
+
+/* ------------------------------------------ column configuration (LAI-266) */
+
+/*
+ * Density and width, driven from View settings. One custom property and two
+ * classes rather than a second grid rule — the floor already existed.
+ */
+/* Rescaled around the new 16rem default (LAI-606). */
+.kanban-cols-narrow {
+  --lane-floor: 12.875rem;
+}
+
+.kanban-cols-wide {
+  --lane-floor: 17rem;
+}
+
+.kanban-dense .card {
+  padding: 0.4375rem 0.5rem;
+}
+
+.kanban-dense .card-title {
+  font-size: 0.78125rem;
+}
+
+.kanban-dense .lane-item + .lane-item {
+  margin-top: 0.3125rem;
+}
+
+/*
+ * The header is the drag handle — no grip icon (LAI-605, owner). The cursor
+ * is the affordance. On the header, never on the `<section>`: a draggable
+ * lane swallows the card drags inside it.
+ */
+.lane-head-drag {
+  cursor: grab;
+}
+
+.lane-head-drag:active {
+  cursor: grabbing;
+}
+
+/*
+ * Where the column would land. **`::before` on the lane, taking no layout
+ * space** — a marker that reflowed would make every other lane jump while the
+ * pointer is still moving. The 0.75rem gutter gives it room.
+ */
+.lane-drop-before {
+  position: relative;
+}
+
+.lane-drop-before::before {
+  content: '';
+  position: absolute;
+  left: -0.4375rem;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+}
+
+/* What a drop on this lane will set, shown only while a card is over a lane
+   whose name does not already answer it. */
+.lane-target {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-chip);
+  padding: 0.0625rem 0.1875rem;
+  white-space: nowrap;
+}
+
+.lane-menu {
+  margin-left: auto;
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0 0.125rem;
+  border-radius: var(--radius-chip);
+  line-height: 1;
+}
+
+.lane-menu:hover {
+  color: var(--text-primary);
+  background: var(--bg-card);
+}
+
+/*
+ * The create tile, where the thing it creates will appear.
+ *
+ * **Deliberately not `.lane`.** `board-lane-scroll.test.ts` counts that class
+ * to check the board rendered, and a ghost that counted would make every lane
+ * measurement off by one.
+ */
+.lane-new {
+  /*
+   * **A square tile, not a lane** (LAI-290). It was a full-height dashed
+   * column, which read as loudly as a real one; the reference's is a small
+   * square at the end of the row, level with the lane headers.
+   *
+   * `align-self: start` is what keeps it from stretching — the grid's
+   * `align-items: stretch` would otherwise make it as tall as the board.
+   */
+  align-self: start;
+  width: 2rem;
+  height: 2rem;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.lane-new:hover {
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+/*
+ * Keyboard equivalent of the column drag, copying `.lane-move`'s block exactly:
+ * out of the visual flow until focused, then restored. The same argument
+ * applies — drag has no keyboard story, so the control that does must exist and
+ * must not cost a row of chrome on every lane.
+ */
+.lane-order {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.lane-order:focus-within {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+}
+
+.lane-order-select {
+  font-size: 0.625rem;
+  font-family: inherit;
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  padding: 0.0625rem 0.1875rem;
+}
+
+/* The View settings trigger, in the space slot. */
+.view-settings-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 1.625rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.view-settings-open:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-border);
+}
+
+.view-settings-open svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  stroke: currentColor;
+}
+
+/* ------------------------------------------------- swimlanes (LAI-290) */
+
+/*
+ * A grouped board is rows of the *same* columns, not different columns. The
+ * row is the new thing; everything inside it is the plain board's `.kanban`.
+ */
+.swimlanes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-width: 0;
+}
+
+.swim {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+  min-width: 0;
+}
+
+.swim-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  padding: 0 0.125rem;
+}
+
+.swim-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.swim-toggle:hover {
+  background: var(--bg-column);
+  border-color: var(--border-subtle);
+}
+
+.swim-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Rotated rather than swapped for a second glyph, so the two states are one
+   element and cannot disagree about size. */
+.swim-chevron {
+  display: inline-block;
+  font-size: 0.875rem;
+  line-height: 1;
+  transition: transform 0.12s ease;
+}
+
+.swim-chevron-open {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swim-chevron {
+    transition: none;
+  }
+}
+
+.swim-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  flex: none;
+  border-radius: var(--radius-pill);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.02em;
+}
+
+.swim-name {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.swim-count {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  padding: 0.0625rem 0.3125rem;
+}
+
+.swim-empty {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  padding: var(--space-4) 0;
+}
+
+/*
+ * The header's controls appear on hover (LAI-602).
+ *
+ * The reference shows a column as **name + count** and nothing else; the grip,
+ * the `⋯` and the order select only arrive when the pointer does. Ours drew all
+ * of them always, which is what made a row of four columns read as cluttered
+ * rather than as four columns.
+ *
+ * `opacity`, not `display`, deliberately: the controls keep their space, so the
+ * title does not shift sideways the moment you point at it. And `:focus-within`
+ * keeps every one of them reachable by keyboard, where there is no hover.
+ */
+.lane-menu,
+.lane-order {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.lane-head:hover .lane-menu,
+.lane-head:hover .lane-order,
+.lane-head:focus-within .lane-menu,
+.lane-head:focus-within .lane-order {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lane-menu,
+  .lane-order {
+    transition: none;
+  }
+}
+
+/* The name reads as pressable, because it is (LAI-602). */
+.lane-title-editable {
+  border: 1px solid transparent;
+  border-radius: var(--radius-chip);
+  background: none;
+  /*
+   * `font: inherit` is a **shorthand** and resets weight to `normal`, so it
+   * has to come first — it sat below `font-size` and `font-weight` and killed
+   * them both, which is why the name rendered at 400 no matter what the rule
+   * above said. Same for `color: inherit` against `.lane-title`'s colour.
+   */
+  font: inherit;
+  color: var(--text-secondary);
+  padding: 0.0625rem 0.25rem;
+  margin-inline-start: -0.25rem;
+  cursor: text;
+  text-align: start;
+  min-width: 0;
+}
+
+.lane-title-editable:hover {
+  background: var(--bg-card);
+  border-color: var(--border-subtle);
+}
+
+.lane-rename {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  position: relative;
+}
+
+.lane-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--accent);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  outline: none;
+}
+
+/* Under the field, as the reference has them — not squeezing the header. */
+.lane-rename-actions {
+  position: absolute;
+  top: calc(100% + 0.25rem);
+  inset-inline-end: 0;
+  display: flex;
+  gap: 0.25rem;
+  z-index: 2;
+}
+
+.lane-rename-ok,
+.lane-rename-cancel {
+  width: 1.5rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.lane-rename-ok:hover,
+.lane-rename-cancel:hover {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+/*
+ * Chip anatomy — one block, one answer (LAI-606 consolidation).
+ *
+ * This replaces five overlapping blocks appended across the session, whose
+ * net cascade is reproduced here exactly. The framing (padding, border
+ * colour, fill) reads the shared `--chip-*` levers, currently "nothing";
+ * the per-hue colour classes are kept even though `.t-label`'s
+ * `color: inherit` currently beats them on bundle order — the tinted-chip
+ * phase re-scopes them rather than this one changing anything visible.
+ *
+ * **Order matters here**: the base `.marker`/`.card-sprint` framing must stay
+ * *after* the early `.marker-*` state rules (~line 380), because it wins some
+ * of their properties on order alone. Folding it upward flips those winners.
+ */
+.card-tag,
+.card-sprint,
+.marker {
+  padding: var(--chip-padding);
+  border-width: 1px;
+  border-style: solid;
+  border-color: var(--chip-border);
+  background: var(--chip-bg);
+  border-radius: var(--radius-chip);
+  text-transform: none;
+}
+
+.card-tag {
+  color: var(--chip-neutral);
+}
+
+.card-sprint,
+.card-sprint-on {
+  color: var(--text-muted);
+  border: 1px solid var(--chip-border);
+  background: var(--chip-bg);
+}
+
+.card-tag-orange {
+  color: var(--chip-orange);
+  border-color: var(--chip-orange-border);
+}
+.card-tag-green {
+  color: var(--chip-green);
+  border-color: var(--chip-green-border);
+}
+.card-tag-blue {
+  color: var(--chip-blue);
+  border-color: var(--chip-blue-border);
+}
+.card-tag-pink {
+  color: var(--chip-pink);
+  border-color: var(--chip-pink-border);
+}
+.card-tag-neutral {
+  color: var(--chip-neutral);
+  border-color: var(--border-default);
+}
+
+/* Unrendered today; kept because the cascade above was built around it. */
+.marker-blocked {
+  color: var(--overdue);
+  border: 1px solid var(--overdue-border);
+  background: var(--blocked-bg);
+}
+
+/*
+ * One outlined chip colour per work-type (LAI-606).
+ *
+ * Text and border only — the fill stays transparent, so a card with three tags
+ * gains three thin outlines rather than three blocks of colour.
+ */
+.card-tag-orange {
+  color: var(--chip-orange);
+  border-color: var(--chip-orange-border);
+}
+.card-tag-green {
+  color: var(--chip-green);
+  border-color: var(--chip-green-border);
+}
+.card-tag-blue {
+  color: var(--chip-blue);
+  border-color: var(--chip-blue-border);
+}
+.card-tag-pink {
+  color: var(--chip-pink);
+  border-color: var(--chip-pink-border);
+}
+.card-tag-neutral {
+  color: var(--chip-neutral);
+  border-color: var(--border-default);
+}
+
+/*
+ * Chip geometry from the shared tokens (LAI-606).
+ *
+ * Padding and radius were set per chip, so "what a chip looks like" had three
+ * answers that had drifted apart. One rule, one answer — the colour still comes
+ * from the chip's own `--chip-*`, which is the part that legitimately varies.
+ */
+.card-tag,
+.card-sprint,
+.marker {
+  padding: var(--chip-padding);
+  border-radius: var(--radius-chip);
+  border-width: 1px;
+  border-style: solid;
+  background: transparent;
+}
+
+/*
+ * Cards, made plain (LAI-606).
+ *
+ * Every chip reads the shared framing tokens, which are currently "nothing".
+ * Colour still comes from the chip's own `--chip-*` — that is the part which
+ * legitimately varies, and the only part left doing any work.
+ */
+.card-tag,
+.card-sprint,
+.marker {
+  padding: var(--chip-padding);
+  border-color: var(--chip-border);
+  background: var(--chip-bg);
+  border-radius: var(--radius-chip);
+}
+
+.marker-ready {
+  color: var(--chip-green);
+  border-color: var(--chip-border);
+  background: var(--chip-bg);
+}
+
+/*
+ * Blocked stays framed — it is the one warning on a card — but its text is one
+ * colour and one weight. The key was bold, which made a card with a blocker
+ * read as three levels of emphasis where the owner wants one.
+ */
+/* No underline on a card. A link earns one by being pointed at. */
+.card-key,
+.card-open {
+  text-decoration: none;
+}
+
+.card-key:hover,
+.card-open:hover {
+  text-decoration: underline;
+}
+
+/*
+ * The meta row is one line, and the `+` is pinned to its end (LAI-606).
+ *
+ * It still wrapped: the middle group had no `min-width: 0`, so a long key or a
+ * third count pushed the `+` onto a second line and made that card taller than
+ * its neighbours. `min-width: 0` is the part that actually allows a flex child
+ * to shrink below its content — `overflow: hidden` alone does not.
+ */
+.card-foot {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 12px;
+  /* The hairline is reserved, not drawn — turning it back on is one colour. */
+  border-top-color: transparent;
+}
+
+.card-foot > .card-meta,
+.card-foot > .card-above {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * The `.card-add` rule that stood here was deleted (LAI-606 consolidation):
+ * nothing renders the class, and its `button:last-child` half was a trap — a
+ * card whose trailing spans were all hidden by view settings would have had
+ * its *key* restyled as a 28px dashed box.
+ */
+
+/*
+ * **Two classes, and it has to be** (LAI-606). `.t-label` sets `color:
+ * inherit` and `type.css` is imported after this file, so a single-class
+ * `.card-blocked` loses the cascade on source order and the row renders in
+ * `--text-primary`. Measured: `rgb(201, 209, 217)` where `--overdue` was
+ * meant. Scoping to `.card .card-blocked` wins on specificity instead of
+ * relying on which stylesheet happens to load last.
+ */
+.card .card-blocked,
+.card .card-blocked b {
+  color: var(--overdue);
+  font-weight: 400;
+}
+
+/* =====================================================================
+ * The prototype's card anatomy (LAI-606, phase 5).
+ *
+ * Everything here is scoped `.card …` on purpose: the type roles declare
+ * `color: inherit` and `type.css` loads after this file, so a single class
+ * loses its colour on bundle order — measured three times now (blocked line,
+ * footer button, tag hues). Two classes win on specificity instead.
+ * ===================================================================== */
+
+/* Tags and the ready marker: tinted — text, 12% fill, 30% border. */
+.card .card-tag {
+  color: var(--chip-neutral);
+  background: var(--chip-neutral-bg);
+  border-color: var(--chip-neutral-border);
+}
+
+.card .card-tag-orange {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+}
+.card .card-tag-green {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+.card .card-tag-blue {
+  color: var(--chip-blue);
+  background: var(--chip-blue-bg);
+  border-color: var(--chip-blue-border);
+}
+.card .card-tag-pink {
+  color: var(--chip-pink);
+  background: var(--chip-pink-bg);
+  border-color: var(--chip-pink-border);
+}
+.card .card-tag-purple {
+  color: var(--chip-purple);
+  background: var(--chip-purple-bg);
+  border-color: var(--chip-purple-border);
+}
+
+.card .marker-ready {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+/* Chip box: the prototype's — 3px 5px on the 8.5px label line, r4. */
+.card .card-tag,
+.card .marker {
+  padding: var(--chip-padding);
+  border-radius: var(--radius-chip);
+  display: inline-flex;
+  align-items: center;
+}
+
+/* The sprint chip: mono on the faint accent tint, not a bare outline. */
+.card .card-sprint,
+.card .card-sprint-on {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-chip);
+  padding: 3px 4px;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Blocked: fully rounded, the 2px bar curving inside it (LAI-605). */
+.card .card-blocked {
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border-left: 2px solid var(--overdue);
+  border-radius: 6px;
+  overflow: hidden;
+  padding: 5px 6px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.card .card-blocked b {
+  color: var(--overdue);
+  font-weight: 400;
+}
+
+/* Row rhythm: the prototype's 8px beat, meta row 9 above its rule. */
+.card .card-tags {
+  margin-top: 8px;
+  gap: 4px;
+}
+
+.card .card-foot {
+  margin-top: 8px;
+  padding-top: 9px;
+  border-top-color: var(--border-subtle);
+  gap: 7px;
+  align-items: flex-end;
+}
+
+/* Priority dot: the prototype's 9px; the ring stays the none-state. */
+.card .card-dot {
+  width: 9px;
+  height: 9px;
+}
+
+.card .card-dot-p1 {
+  background: var(--priority-high);
+}
+.card .card-dot-p2 {
+  background: var(--priority-medium);
+}
+
+/* The 26px avatar, and the accent bot badge as a 15px square. */
+.card .card-avatar {
+  width: 26px;
+  height: 26px;
+  border: 0;
+}
+
+.card .card-bot {
+  width: 15px;
+  height: 15px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--on-accent);
+  border: 0;
+  outline: 2px solid var(--bg-card);
+  right: -4px;
+  bottom: -4px;
+}
+
+/* Selected / keyboard-focused card wears the accent border. */
+.card:has(.card-open:focus-visible) {
+  border-color: var(--accent);
+}
+
+/* Done column: titles recede — the column is the state. */
+.lane[data-status='done'] .card-title {
+  color: var(--text-muted);
+}
+
+/*
+ * "just now" — the accent, while a card is fresh (LAI-606). A `var()`
+ * reference, not a colour: the single-source rule bans literals, not tokens.
+ * Scoped to beat `.t-meta`'s own colour on specificity.
+ */
+.card .card-age-now {
+  color: var(--accent);
+  font-weight: var(--weight-medium);
+}
+
+/*
+ * Dense mode, per the addendum (LAI-606): the same board, closer together.
+ * Size/leading changes live in the DENSITY map; these are the box metrics.
+ */
+.kanban-dense .lane {
+  padding: 16px 12px 12px;
+}
+
+.kanban-dense .lane-body {
+  gap: 12px;
+}
+
+.kanban-dense .card {
+  padding: 14px 14px 12px;
+}
+
+.kanban-dense .card-tags {
+  margin-top: 8px;
+}
+
+.kanban-dense .card .card-tag,
+.kanban-dense .card .marker {
+  min-height: 20px;
+  padding: 2px 8px;
+}
+
+.kanban-dense .card .card-foot {
+  min-height: 28px;
+}
+
+.kanban-dense .card .card-avatar {
+  width: 28px;
+  height: 28px;
+}
+
+/*
+ * The key never truncates; counts and age give way first (LAI-606).
+ *
+ * The meta row's children all had `min-width: 0`, so the flexbox shrank
+ * whatever it liked — measured: a 36px avatar squeezed the *key* to "L…",
+ * which is the one thing on the row a person actually cites. The dot, key
+ * and sprint chip are fixed; the counts and age keep their `min-width: 0`
+ * and ellipsis, so they are what compresses when space runs out.
+ */
+.card .card-foot > .card-key,
+.card .card-foot > .card-dot,
+.card .card-foot > .card-sprint,
+.card .card-foot > .card-sprint-on {
+  flex-shrink: 0;
+  min-width: max-content;
+  overflow: visible;
 }

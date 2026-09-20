@@ -193,7 +193,12 @@ void describe('the card', () => {
           const s = getComputedStyle(el);
           return { padding: s.padding };
         });
-      assert.equal(box.padding, '13px 13px 11px', 'the design’s card padding');
+      /*
+       * LAI-605: the prototype file's own card — 13px round, 11 at the foot.
+       * (The addendum's 20/20/16 was the interim scale before the owner chose
+       * the file's numbers.)
+       */
+      assert.equal(box.padding, '13px 13px 11px', 'the prototype’s card padding');
 
       const title = await h.page
         .locator('.card-title')
@@ -202,6 +207,7 @@ void describe('the card', () => {
           const s = getComputedStyle(el);
           return { size: s.fontSize, weight: s.fontWeight, clamp: s.webkitLineClamp };
         });
+      // `.t-body` carries the title: the file's 13.5/600 (LAI-605).
       assert.equal(title.size, '13.5px');
       assert.equal(title.weight, '600');
       assert.equal(title.clamp, '2', 'the title must clamp rather than push the footer about');
@@ -265,7 +271,108 @@ void describe('the card', () => {
        * thing the owner reported.
        */
       const height = (await banner.boundingBox())?.height ?? 0;
-      assert.ok(height < 28, `the banner is ${String(Math.round(height))}px — it wrapped`);
+      // 28px IS the banner's height now (min-height, LAI-606); one line of
+      // 13px caption inside it tops out well under 34, two lines cannot fit.
+      assert.ok(height <= 30, `the banner is ${String(Math.round(height))}px — it wrapped`);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * The meta row at the brief's worst case: 218px lanes (LAI-606).
+ *
+ * Two properties, asserted the honest way each: the key by `scrollWidth`
+ * (an ellipsis is invisible to a bounding box), the single line by the row's
+ * *height* against its tallest child — child `top`s are useless under
+ * `align-items: center`, where a 36px avatar and a 12px dot legitimately
+ * start at different y on the same line. That false positive was measured
+ * before this comment was written.
+ */
+void describe('the meta row at 218px', () => {
+  void test('the key never truncates and the row never wraps', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await h.page.evaluate(() => {
+        const grid = document.querySelector<HTMLElement>('.kanban');
+        if (grid === null) return;
+        grid.style.setProperty('--lane-floor', '218px');
+        grid.style.gridTemplateColumns = 'repeat(4, 218px)';
+      });
+      await h.page.waitForTimeout(400);
+
+      const m = await h.page.evaluate(() => {
+        const truncated: string[] = [];
+        document.querySelectorAll('.card-key').forEach((k) => {
+          if (k.scrollWidth > k.clientWidth + 1) truncated.push(k.textContent?.trim() ?? '?');
+        });
+        const tallFeet = [...document.querySelectorAll('.card-foot')].filter((f) => {
+          const tallest = Math.max(
+            0,
+            ...[...f.children].map((c) => c.getBoundingClientRect().height),
+          );
+          const style = getComputedStyle(f);
+          const inner =
+            f.getBoundingClientRect().height -
+            parseFloat(style.paddingTop) -
+            parseFloat(style.paddingBottom) -
+            parseFloat(style.borderTopWidth);
+          /*
+           * Against the larger of the tallest child and the row's own 36px
+           * min-height — a row of small children (no avatar) is legitimately
+           * taller than its tallest child because the *floor* holds it open.
+           * The first version flagged exactly those rows as wrapped.
+           */
+          return inner > Math.max(tallest, 36) + 4;
+        }).length;
+        return { truncated, tallFeet, lanes: document.querySelectorAll('.lane').length };
+      });
+
+      assert.ok(m.lanes > 0, 'no lanes — nothing measured');
+      assert.deepEqual(m.truncated, [], 'a key truncated at 218px');
+      assert.equal(m.tallFeet, 0, 'a meta row wrapped at 218px');
+
+      /*
+       * **The squeeze that makes the wrap half falsifiable.** At 218 this
+       * fixture's rows happen to fit, so `flex-wrap: wrap` passed the check
+       * above — mutation-tested, it survived. At 170 the fullest row cannot
+       * fit; only `nowrap` keeps it one line, so this is the assertion that
+       * dies when the property is broken.
+       */
+      await h.page.evaluate(() => {
+        const grid = document.querySelector<HTMLElement>('.kanban');
+        if (grid !== null) grid.style.gridTemplateColumns = 'repeat(4, 120px)';
+      });
+      await h.page.waitForTimeout(300);
+
+      const squeezed = await h.page.evaluate(() => {
+        const feet = [...document.querySelectorAll('.card-foot')];
+        const wrapped = feet.filter((f) => {
+          const tallest = Math.max(
+            0,
+            ...[...f.children].map((c) => c.getBoundingClientRect().height),
+          );
+          const style = getComputedStyle(f);
+          const inner =
+            f.getBoundingClientRect().height -
+            parseFloat(style.paddingTop) -
+            parseFloat(style.paddingBottom) -
+            parseFloat(style.borderTopWidth);
+          return inner > Math.max(tallest, 36) + 4;
+        }).length;
+        const overflowing = feet.filter((f) => f.scrollWidth > f.clientWidth + 1).length;
+        return { wrapped, overflowing };
+      });
+      assert.equal(squeezed.wrapped, 0, 'a meta row wrapped at 120px — nowrap is not holding');
+      // The guard on the guard: if nothing overflows at 120px, this test can
+      // never catch a wrap and must say so instead of passing quietly.
+      assert.ok(
+        squeezed.overflowing > 0,
+        'no meta row even overflows at 120px — the squeeze proves nothing',
+      );
     } finally {
       await h.close();
     }

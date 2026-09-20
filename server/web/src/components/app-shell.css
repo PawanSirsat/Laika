@@ -8,11 +8,24 @@
  * here, beside the rail it describes, rather than guessed at by the overlay.
  */
 .shell {
-  --rail-width: 13.25rem;
+  /* The addendum's 280px rail (LAI-606). */
+  --rail-width: 17.5rem;
   display: flex;
-  min-height: 100vh;
-  background: var(--page);
-  color: var(--tx);
+  /*
+   * **`height`, not `min-height`** (LAI-601).
+   *
+   * With `min-height` the shell grows past the viewport and the *document*
+   * scrolls — and the rail is `position: sticky`, which cannot hold once the
+   * page itself is moving. Scrolling the timeline carried the sidebar, the
+   * theme switch and the user chip up off the screen with it.
+   *
+   * Pinning the shell to the viewport makes `.shell-main` below the scroller,
+   * so the rail stays put because nothing it sits in ever moves.
+   */
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg-canvas);
+  color: var(--text-primary);
   font-family: var(--font-ui);
   font-size: var(--text-base);
 }
@@ -41,10 +54,10 @@
   left: var(--space-2);
   top: calc(var(--space-2) * -8);
   z-index: 10;
-  background: var(--card);
-  color: var(--tx);
-  border: 1px solid var(--bd2);
-  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-3);
   font-weight: var(--weight-semibold);
   transition: top 120ms ease;
@@ -52,7 +65,7 @@
 
 .skip-link:focus-visible {
   top: var(--space-2);
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -87,6 +100,18 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
+  /* Lets `.shell-main` shrink below its content so it can scroll (LAI-601). */
+  min-height: 0;
+}
+
+/*
+ * The one thing that scrolls (LAI-601). Screens that manage their own scroll —
+ * the board pins its lanes to the viewport — simply never overflow it.
+ */
+.shell-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .shell-head {
@@ -95,8 +120,8 @@
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-5);
-  border-bottom: 1px solid var(--bd);
-  background: var(--card);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-card);
 }
 
 .shell-head-right {
@@ -128,15 +153,15 @@
 .shell-navtoggle {
   display: none;
   background: transparent;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: var(--space-2);
   cursor: pointer;
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .shell-navtoggle:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -147,7 +172,7 @@
   width: 1rem;
   height: 2px;
   background: currentColor;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
 }
 
 .shell-navtoggle-bars::before,
@@ -167,7 +192,7 @@
 .shell-scrim {
   position: fixed;
   inset: 0;
-  background: var(--bd2);
+  background: var(--border-default);
   z-index: 4;
 }
 

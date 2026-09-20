@@ -1,0 +1,299 @@
+/*
+ * The board's View settings popover (LAI-266). Tokens only.
+ *
+ * Positioned from the trigger's own box, portalled to `document.body` — see
+ * `ViewSettings.tsx` for why the portal is not optional.
+ */
+
+.view-settings-catcher {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+.view-settings {
+  position: fixed;
+  z-index: 31;
+  width: min(20rem, calc(100vw - 1rem));
+  max-height: min(34rem, calc(100vh - 5rem));
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 0.75rem 0.875rem 0.875rem;
+}
+
+.view-settings:focus {
+  outline: none;
+}
+
+.vs-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.vs-title {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.vs-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-chip);
+}
+
+.vs-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-column);
+}
+
+.vs-section {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.vs-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.vs-label {
+  margin: 0 0 0.375rem;
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.vs-radios,
+.vs-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+
+.vs-fields {
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.vs-radio,
+.vs-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.vs-radio input,
+.vs-check input {
+  accent-color: var(--accent);
+}
+
+.vs-note {
+  margin: 0.375rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.vs-note-quiet {
+  margin-top: 0;
+}
+
+.vs-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.vs-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  padding: 0.0625rem 0.4375rem;
+  cursor: pointer;
+}
+
+.vs-chip:hover {
+  color: var(--overdue);
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
+}
+
+.vs-clear {
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0 0.25rem;
+}
+
+.vs-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.vs-reset {
+  align-self: flex-start;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: 0.1875rem 0.5rem;
+  cursor: pointer;
+}
+
+.vs-reset:hover {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+/* ------------------------------------ Show fields, as a list (LAI-290) */
+
+.vs-search {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  padding: 0.25rem 0.4375rem;
+  width: 100%;
+  margin-bottom: 0.375rem;
+}
+
+.vs-search:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.vs-sub {
+  margin: 0.5rem 0 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.vs-available,
+.vs-selected {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.vs-available {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  padding: 0.125rem;
+  max-height: 9rem;
+  overflow-y: auto;
+}
+
+.vs-add,
+.vs-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  width: 100%;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  padding: 0.25rem 0.3125rem;
+  text-align: left;
+}
+
+.vs-add {
+  cursor: pointer;
+}
+
+.vs-add:hover {
+  background: var(--bg-column);
+}
+
+.vs-plus {
+  margin-left: auto;
+  color: var(--accent);
+  font-weight: var(--weight-bold);
+}
+
+.vs-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  flex: none;
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  color: var(--text-secondary);
+  font-size: 0.625rem;
+  line-height: 1;
+}
+
+.vs-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-row-locked .vs-row-name {
+  color: var(--text-muted);
+}
+
+.vs-remove {
+  flex: none;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.1875rem;
+  border-radius: var(--radius-chip);
+}
+
+.vs-remove:hover:not(:disabled) {
+  color: var(--overdue);
+  background: var(--blocked-bg);
+}
+
+.vs-remove:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

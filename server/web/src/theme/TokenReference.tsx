@@ -95,9 +95,9 @@ function ThemePanel({ theme }: { readonly theme: Theme }) {
       <div className="tr-group">
         <h3 className="tr-group-title">Text on surfaces</h3>
         <p className="tr-group-note">Each text tone on each surface, for eyeballing contrast.</p>
-        {(['--page', '--tub', '--card'] as const).map((bg) => (
+        {(['--bg-canvas', '--bg-column', '--bg-card'] as const).map((bg) => (
           <div key={bg} className="tr-textrow" style={{ background: `var(${bg})` }}>
-            {(['--tx', '--tx2', '--tx3'] as const).map((fg) => (
+            {(['--text-primary', '--text-secondary', '--text-muted'] as const).map((fg) => (
               <span key={fg} style={{ color: `var(${fg})` }}>
                 {fg} on {bg}
               </span>

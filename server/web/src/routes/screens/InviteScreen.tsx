@@ -1,3 +1,4 @@
+import { Spinner } from '../../components/Spinner.tsx';
 import { useState } from 'react';
 import { Button } from '../../components/forms/Button.tsx';
 import { PasswordInput } from '../../components/forms/PasswordInput.tsx';
@@ -131,6 +132,7 @@ export function InviteScreen({
         <div className="auth-card auth-card-invite">
           <p className="auth-kicker">ACCEPT INVITE</p>
           <p className="auth-note" role="status">
+            <Spinner size="sm" />
             Checking your invite…
           </p>
         </div>
@@ -294,13 +296,7 @@ export function InviteScreen({
           error={touched && !matchCheck.ok ? matchCheck.message : undefined}
         />
 
-        <Button
-          type="submit"
-          fullWidth
-          busy={submitting}
-          busyLabel="Creating your account…"
-          variant="invite"
-        >
+        <Button type="submit" fullWidth busy={submitting} variant="invite">
           {`Join ${invite.org_name} as ${roleLabel}`}
         </Button>
 

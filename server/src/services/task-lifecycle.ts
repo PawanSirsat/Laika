@@ -34,20 +34,83 @@ export const ALLOWED_TRANSITIONS: Readonly<Record<TaskStatus, readonly TaskStatu
   cancelled: ['backlog'],
 };
 
-export function canTransition(from: TaskStatus, to: TaskStatus): boolean {
-  return ALLOWED_TRANSITIONS[from].includes(to);
+/**
+ * Who is asking — because the answer differs (LAI-266).
+ *
+ * `agent` gets the table above, unchanged. `human` gets the widened one below.
+ * The caller decides which by asking `isAgentPrincipal`; this module stays pure
+ * and knows nothing about principals.
+ */
+export type TransitionRule = 'human' | 'agent';
+
+/**
+ * The same rules, for a person dragging a card.
+ *
+ * Board columns are configuration now, so a project can put `todo` and `done`
+ * side by side and dragging between them is the obvious gesture. The table above
+ * refuses it, and SPEC §11.4.1's *"an illegal drag snaps back and surfaces the
+ * error"* is an honest answer to a question the board should not have been
+ * asking. So a person may move a task between any two non-`cancelled` statuses.
+ *
+ * **What does not widen, and why each one holds:**
+ *
+ *  - **Cancellation is untouched.** `done → cancelled` stays refused — the
+ *    argument above still stands, cancelling something already finished is
+ *    meaningless — and `cancelled → backlog` stays the only way out.
+ *  - **A no-op is still a conflict**, for the same reason as before: it would
+ *    write an `activity` row claiming a change happened.
+ *  - **Permission is a different question and is unchanged.** Moving to `review`
+ *    still requires the assignee, a project lead or org Admin/Owner
+ *    (`services/tasks.ts`). Widening *reachability* does not widen *authority*.
+ *
+ * **Derived from `ALLOWED_TRANSITIONS`, never written out by hand.** Two literal
+ * tables would be two places to remember the cancellation rules, and the second
+ * one is the one that drifts.
+ */
+function humanTransitions(from: TaskStatus): readonly TaskStatus[] {
+  // Leaving `cancelled` is the one case where the agent table is already the
+  // whole answer: a cancelled task is reinstated to `backlog` or not at all.
+  if (from === 'cancelled') return ALLOWED_TRANSITIONS.cancelled;
+
+  const open = (Object.keys(ALLOWED_TRANSITIONS) as TaskStatus[]).filter(
+    (s) => s !== 'cancelled' && s !== from,
+  );
+
+  // `cancelled` is reachable only where it already was — which is everywhere
+  // except from `done`.
+  return ALLOWED_TRANSITIONS[from].includes('cancelled') ? [...open, 'cancelled'] : open;
 }
 
-export function assertTransition(from: TaskStatus, to: TaskStatus): void {
+/** The legal targets from `from`, for this kind of caller. */
+export function transitionsFrom(from: TaskStatus, rule: TransitionRule): readonly TaskStatus[] {
+  return rule === 'agent' ? ALLOWED_TRANSITIONS[from] : humanTransitions(from);
+}
+
+export function canTransition(from: TaskStatus, to: TaskStatus, rule: TransitionRule): boolean {
+  return transitionsFrom(from, rule).includes(to);
+}
+
+/**
+ * `rule` is **required rather than defaulted**, deliberately.
+ *
+ * A default would keep this diff small and let the next call site inherit a rule
+ * nobody chose — and the rule is the difference between an agent being able to
+ * mark its own work done and not. Five call sites is few enough that making the
+ * compiler ask each one is worth the noise. Same posture as `withProject`'s
+ * overloads: *"Three signatures say it and the compiler checks it."*
+ */
+export function assertTransition(from: TaskStatus, to: TaskStatus, rule: TransitionRule): void {
   if (from === to) {
     throw new ApiError('conflict', `That task is already ${to}`, { from, to });
   }
 
-  if (!canTransition(from, to)) {
+  if (!canTransition(from, to, rule)) {
     throw new ApiError('unprocessable', `Cannot move a task from ${from} to ${to}`, {
       from,
       to,
-      allowed: ALLOWED_TRANSITIONS[from],
+      // The list must come from the table that produced the refusal, or the
+      // error body contradicts the error.
+      allowed: transitionsFrom(from, rule),
     });
   }
 }

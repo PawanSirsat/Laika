@@ -1,0 +1,235 @@
+/*
+ * Every colour in Laika, and the only file allowed to contain one (LAI-606).
+ *
+ * ## The rule this file exists to make true
+ *
+ * A colour literal — `#hex`, `rgb()`, `hsl()` — anywhere else in `src/` is a
+ * defect, and `tokens.test.ts` fails the build on one. That is what makes a
+ * theme a thirty-line change instead of an archaeology exercise: adding one is
+ * copying a block below, renaming its selector, and editing values.
+ *
+ * ## Two kinds of token, deliberately separated
+ *
+ * **Theme blocks** hold colour and nothing else. Every block declares the
+ * *same* list — no theme may invent a token, because a component reading it
+ * would then break on the themes that lack it. Add to one, add to all.
+ *
+ * **Shared tokens** sit outside the blocks: type, weight, radius, spacing,
+ * transitions. They are the same in every theme by definition, and repeating
+ * them per block is how they drift apart.
+ *
+ * ## Semantic names only
+ *
+ * `--bg-card`, not `--violet-400`. A component asking for "card background"
+ * keeps meaning something when the palette changes; one asking for "violet"
+ * has to be edited. This is the difference between a theme and a repaint.
+ *
+ * ## Where these values come from (LAI-605)
+ *
+ * The prototype's own theme blocks, read from the design project's current
+ * `Laika Prototype.dc.html` — dark from its `.dk`, light from its `:root` —
+ * with one override the owner set: every *accent* use is purple, while the
+ * prototype's blue survives only as the in-progress status colour
+ * (`--chip-blue`). Status is never the accent.
+ */
+
+/* ===================================================================
+ * Obsidian dark — the default. Values: the prototype's `.dk` block.
+ * =================================================================== */
+:root {
+  /* ---- surfaces: canvas → column → card, and the steps are the design ---- */
+  --bg-canvas: #0c0c0f;
+  --bg-column: #141418;
+  --bg-card: #1b1b20;
+  --bg-card-hover: #1f1f24;
+  /* The neutral count badge fills with the card colour — one step up. */
+  --bg-pill: #1b1b20;
+  /* The search field sits one step *below* its bar: the canvas colour. */
+  --bg-input: #0c0c0f;
+  /* The prototype's sidebar is a card-coloured panel with a border. */
+  --sidebar-tint: #1b1b20;
+
+  /* ---- borders ---- */
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --border-default: rgba(255, 255, 255, 0.2);
+  /* Cards draw the subtle line; columns draw none — tub against canvas. */
+  --border-card: rgba(255, 255, 255, 0.08);
+  --border-column: transparent;
+
+  /* ---- text ---- */
+  --text-primary: #f3f3f5;
+  --text-secondary: #a4a4ae;
+  --text-muted: #9a9aa4;
+
+  /* ---- accent: one colour, for "this one" ---- */
+  --accent: #a78bfa;
+  --accent-bg: rgba(167, 139, 250, 0.14);
+  --accent-border: rgba(167, 139, 250, 0.4);
+  /* Near-black ink on the solid accent fill — the prototype's, not white. */
+  --on-accent: #0b1020;
+
+  /* ---- meaning: overdue and blocked ---- */
+  --overdue: #f4636d;
+  --overdue-border: rgba(244, 99, 109, 0.36);
+  --blocked-bg: rgba(244, 99, 109, 0.12);
+
+  /* ---- chips: the prototype's hue triples, per tag family ---- */
+  --chip-orange: #f0ac47;
+  --chip-orange-bg: rgba(240, 172, 71, 0.13);
+  --chip-orange-border: rgba(240, 172, 71, 0.34);
+  --chip-green: #2fd08a;
+  --chip-green-bg: rgba(47, 208, 138, 0.13);
+  --chip-green-border: rgba(47, 208, 138, 0.32);
+  /*
+   * The prototype's blue. It doubles as the in-progress status colour there;
+   * here it is *only* status — the accent above is purple and never this.
+   */
+  --chip-blue: #5b8cff;
+  --chip-blue-bg: rgba(91, 140, 255, 0.14);
+  --chip-blue-border: rgba(91, 140, 255, 0.4);
+  --chip-pink: #f4636d;
+  --chip-pink-bg: rgba(244, 99, 109, 0.12);
+  --chip-pink-border: rgba(244, 99, 109, 0.36);
+  --chip-purple: #a78bfa;
+  --chip-purple-bg: rgba(167, 139, 250, 0.14);
+  --chip-purple-border: rgba(167, 139, 250, 0.4);
+  /* Neutral tags: secondary text on the tub, edged with the subtle line. */
+  --chip-neutral: #a4a4ae;
+  --chip-neutral-bg: #141418;
+  --chip-neutral-border: rgba(255, 255, 255, 0.08);
+
+  /* ---- priority: filled high and medium, muted low ---- */
+  --priority-high: #f4636d;
+  --priority-medium: #f0ac47;
+  --priority-low: #9a9aa4;
+
+  /* ---- overlays ---- */
+  --scrim: rgba(0, 0, 0, 0.55);
+  --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.5);
+
+  /* ---- elevation ---- */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* ===================================================================
+ * Obsidian light. The prototype's `:root` block, accent swapped to the
+ * owner's light purple. Same token list, different values — nothing else.
+ * =================================================================== */
+:root[data-theme='light'] {
+  --bg-canvas: #eef0f6;
+  --bg-column: #e7e9f1;
+  --bg-card: #ffffff;
+  --bg-card-hover: #fafafa;
+  --bg-pill: #ffffff;
+  --bg-input: #eef0f6;
+  --sidebar-tint: #ffffff;
+
+  --border-subtle: rgba(15, 23, 42, 0.09);
+  --border-default: rgba(15, 23, 42, 0.2);
+  --border-card: rgba(15, 23, 42, 0.09);
+  --border-column: transparent;
+
+  --text-primary: #171a21;
+  --text-secondary: #5a6070;
+  --text-muted: #606775;
+
+  --accent: #7c3aed;
+  --accent-bg: rgba(124, 58, 237, 0.09);
+  --accent-border: rgba(124, 58, 237, 0.34);
+  --on-accent: #ffffff;
+
+  --overdue: #c42630;
+  --overdue-border: rgba(196, 38, 48, 0.32);
+  --blocked-bg: rgba(196, 38, 48, 0.08);
+
+  --chip-orange: #8f5a08;
+  --chip-orange-bg: rgba(143, 90, 8, 0.1);
+  --chip-orange-border: rgba(143, 90, 8, 0.3);
+  --chip-green: #0a6f4c;
+  --chip-green-bg: rgba(10, 111, 76, 0.1);
+  --chip-green-border: rgba(10, 111, 76, 0.3);
+  --chip-blue: #2158e0;
+  --chip-blue-bg: rgba(33, 88, 224, 0.09);
+  --chip-blue-border: rgba(33, 88, 224, 0.34);
+  --chip-pink: #c42630;
+  --chip-pink-bg: rgba(196, 38, 48, 0.08);
+  --chip-pink-border: rgba(196, 38, 48, 0.32);
+  --chip-purple: #6d3ddb;
+  --chip-purple-bg: rgba(109, 61, 219, 0.1);
+  --chip-purple-border: rgba(109, 61, 219, 0.34);
+  --chip-neutral: #5a6070;
+  --chip-neutral-bg: #e7e9f1;
+  --chip-neutral-border: rgba(15, 23, 42, 0.09);
+
+  --priority-high: #c42630;
+  --priority-medium: #8f5a08;
+  --priority-low: #606775;
+
+  --scrim: rgba(24, 24, 27, 0.4);
+  --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.22);
+
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.07);
+}
+
+/* ===================================================================
+ * Shared across every theme: type, shape, spacing, motion.
+ * Outside the blocks on purpose — repeating them per theme is how they
+ * drift apart.
+ * =================================================================== */
+:root {
+  /*
+   * The prototype's families (LAI-606, owner decision): Plus Jakarta Sans for
+   * UI, JetBrains Mono for keys and sprint codes. Both self-hosted — the
+   * prototype loads them from Google Fonts, which SPEC §13.4 forbids, so the
+   * @fontsource imports in index.css are the source. Inter was briefly the UI
+   * face earlier the same day; the final brief defers to the prototype, and
+   * the package stays installed but unreferenced.
+   */
+  --font-ui: 'Plus Jakarta Sans Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, Menlo, monospace;
+
+  /*
+   * The prototype's scale (LAI-605). It is authored small — the board reads
+   * at 13.5px titles and 10.5px column heads — and the owner chose the file's
+   * numbers over the earlier addendum's.
+   */
+  --text-xs: 0.53125rem; /* 8.5px — chips, sidebar group headings */
+  --text-sm: 0.5625rem; /* 9px — blocked banner, column meta, counts */
+  --text-base: 0.625rem; /* 10px — issue keys, sprint tile names */
+  --text-ui: 0.71875rem; /* 11.5px — buttons, working-now names, search */
+  --text-md: 0.78125rem; /* 12.5px — tabs */
+  --text-lg: 0.84375rem; /* 13.5px — card titles */
+  --text-xl: 1.1875rem; /* 19px — space title */
+  --text-mono: 0.625rem; /* 10px — keys */
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --weight-heavy: 800;
+
+  --leading-body: 1.45;
+
+  /* 4px grid. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* The prototype's radius ladder: chip 4 · count 5 · blocked 6 · card 9 ·
+     column 12 · pill. Controls (buttons, search) share the card's 9. */
+  --radius-chip: 4px;
+  --radius-xs: 5px;
+  --chip-padding: 3px 5px;
+  --chip-border: var(--chip-neutral-border);
+  --chip-bg: var(--chip-neutral-bg);
+  --radius-card: 9px;
+  --radius-column: 12px;
+  --radius-control: 9px;
+  --radius-pill: 999px;
+
+  /* Colour only. Nothing else animates. */
+  --transition: background-color 120ms ease, border-color 120ms ease;
+}

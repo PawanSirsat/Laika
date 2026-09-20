@@ -53,6 +53,8 @@ const CreateBody = strictObject({
   prefix: Prefix,
   description: z.string().trim().max(2000).optional(),
   visibility: z.enum(PROJECT_VISIBILITIES).optional(),
+  // LAI-266. `null` is "never"; a number is a count of days.
+  board_hide_done_days: z.number().int().min(0).nullable().optional(),
 });
 
 const UpdateBody = strictObject({

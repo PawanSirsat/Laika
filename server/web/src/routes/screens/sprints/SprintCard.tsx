@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import type { Sprint } from '../../../api/sprints.ts';
 import { LockIcon } from '../../../components/LockIcon.tsx';
 import { formatRange, sprintDays, type SprintProgress } from './sprint-derive.ts';
@@ -16,6 +17,8 @@ export interface SprintCardProps {
   readonly canManage: boolean;
   readonly canAssign: boolean;
   readonly busy: boolean;
+  /** Which mutation is in flight — see `UseSprints.pending`. */
+  readonly pending: string | undefined;
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly onEdit: () => void;
@@ -40,7 +43,7 @@ export interface SprintCardProps {
  * The server is still the decision; this only avoids offering a 403.
  */
 export function SprintCard(props: SprintCardProps) {
-  const { sprint, tasks, progress, canManage, canAssign, busy } = props;
+  const { sprint, tasks, progress, canManage, canAssign, busy, pending } = props;
   const days = sprintDays(sprint.starts_on, sprint.ends_on);
 
   return (
@@ -133,6 +136,7 @@ export function SprintCard(props: SprintCardProps) {
               onClick={props.onActivate}
               disabled={busy}
             >
+              {pending === `activate:${sprint.id}` && <Spinner size="sm" />}
               Activate
             </button>
           )}
@@ -153,6 +157,7 @@ export function SprintCard(props: SprintCardProps) {
                 onClick={props.onDelete}
                 disabled={busy}
               >
+                {pending === `remove:${sprint.id}` && <Spinner size="sm" />}
                 Delete
               </button>
             </>

@@ -1,0 +1,102 @@
+/*
+ * The in-column create box (LAI-290). Tokens only.
+ *
+ * Sized and bordered like a card, because it becomes one.
+ */
+
+.composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-card);
+  padding: 0.5rem;
+  box-shadow: var(--shadow-card);
+}
+
+.composer-title {
+  font: inherit;
+  font-size: 0.84375rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.35;
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  resize: none;
+  padding: 0;
+  width: 100%;
+}
+
+.composer-title:focus-visible {
+  outline: none;
+}
+
+.composer-title::placeholder {
+  color: var(--text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.composer-error {
+  margin: 0;
+  font-size: 0.6875rem;
+  color: var(--overdue);
+}
+
+.composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.composer-prio select {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  padding: 0.0625rem 0.1875rem;
+  cursor: pointer;
+}
+
+.composer-prio-p1 select {
+  color: var(--overdue);
+  border-color: var(--overdue-border);
+  background: var(--blocked-bg);
+}
+
+.composer-target {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.composer-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.composer-submit:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.composer-submit:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

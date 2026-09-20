@@ -230,8 +230,10 @@ const STUB: ApiStub = {
   '/api/v1/projects/laika-core/tags': { tags: [] },
 };
 
-/** Measured from `docs/design/Laika Prototype.dc.html`: `206px` lanes, 11px gap. */
-const DESIGN_LANE = 206;
+/** The prototype's column floor (LAI-605): min 248px — the file's own
+ * `minmax(248px, 1fr)`. The addendum's 256 preceded it; the mockup's raw 206
+ * was mockup-scale and retired before either. */
+const DESIGN_LANE = 248;
 
 /**
  * Resize, then **wait for the layout to stop moving** rather than for a clock.
@@ -507,6 +509,450 @@ void describe('the lanes fill the window (LAI-283)', () => {
         200,
         `the lanes measured ${seen.join(' and ')} — they are not following the window`,
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * A board with **real columns**, so the `+` tile renders.
+ *
+ * The rest of this file predates `board_columns` and has no such route, so it
+ * takes the 404 fallback — which draws one lane per status and, deliberately,
+ * no column controls at all. A layout test for the tile written against that
+ * stub measures a tile that is not there: it passed against the broken layout
+ * and the fixed one alike, which is how the first version of this block was
+ * caught being worthless.
+ */
+const COLUMNS_STUB: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/board-columns': {
+    columns: [
+      // Five, matching what `boardReady` expects of the fallback board — this
+      // fixture differs only in that the columns are *real*, so the tile draws.
+      ['c1', 'Backlog', ['backlog']],
+      ['c2', 'To do', ['todo']],
+      ['c3', 'In progress', ['in_progress']],
+      ['c4', 'Review', ['review']],
+      ['c5', 'Done', ['done']],
+    ].map(([id, name, statuses], position) => ({
+      id,
+      project_id: 'p1',
+      name,
+      position,
+      hidden: false,
+      statuses,
+      primary_status: (statuses as string[])[0],
+    })),
+  },
+};
+
+void describe('the lanes use the width they are given (LAI-290)', () => {
+  void test('no column-sized gap is left beside the add-column tile', async () => {
+    /*
+     * **The `+` tile is a grid item, so it used to get a whole track.**
+     * `grid-auto-columns` sizes *every* implicit track the same, so the tile's
+     * was `minmax(206px, 1fr)` — a full column's share, measured at 301px on a
+     * 1552px board — to draw a 32px button. The lanes were short by exactly
+     * that, which is what the owner saw as empty space on the right.
+     *
+     * Asserted as arithmetic rather than by eye: what the lanes, the gaps and
+     * the tile occupy must account for the whole row.
+     */
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1800, height: 1000 });
+      await boardReady(h);
+
+      const box = await h.page.evaluate(() => {
+        const kanban = document.querySelector('.kanban');
+        if (kanban === null) return null;
+        const lanes = [...document.querySelectorAll('.lane')].map(
+          (l) => l.getBoundingClientRect().width,
+        );
+        const tile = document.querySelector('.lane-new');
+        const gap = Number.parseFloat(getComputedStyle(kanban).columnGap) || 0;
+        return {
+          width: kanban.getBoundingClientRect().width,
+          lanes,
+          tile: tile === null ? 0 : tile.getBoundingClientRect().width,
+          gap,
+        };
+      });
+
+      assert.ok(box !== null, 'no board rendered');
+
+      assert.ok(box.tile > 0, 'the add-column tile is not rendered — this test proves nothing');
+
+      const items = box.lanes.length + 1;
+      const used =
+        box.lanes.reduce((n, w) => n + w, 0) + box.tile + box.gap * Math.max(0, items - 1);
+
+      // A pixel or two of rounding is fine; a whole column of slack is the bug.
+      assert.ok(
+        box.width - used < 24,
+        `the lanes left ${String(Math.round(box.width - used))}px unused — the tile is taking a column's share`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the lanes reach the bottom of the window', async () => {
+    // The board is a full-height column; a margin under it is dead space, not
+    // breathing room. The owner's words: "use the space … the bottom as well".
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      const gap = await h.page.evaluate(() => {
+        const lanes = [...document.querySelectorAll('.lane')];
+        const lowest = Math.max(...lanes.map((l) => l.getBoundingClientRect().bottom));
+        return window.innerHeight - lowest;
+      });
+
+      assert.ok(gap < 40, `the lanes stop ${String(Math.round(gap))}px short of the bottom`);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * A crowded board: real columns **and** a dozen cards in the first lane.
+ *
+ * Both scroll tests refuse to run without something to scroll — the base
+ * fixture is deliberately one task per lane, which gives a lane no vertical
+ * overflow and the row no horizontal one.
+ */
+const CROWDED_STUB: ApiStub = {
+  ...COLUMNS_STUB,
+  '/api/v1/projects/laika-core/tasks': {
+    data: Array.from({ length: 12 }, (_, i) => ({
+      ...TASKS[0],
+      id: `crowd-${String(i)}`,
+      key: `LAI-${String(100 + i)}`,
+      number: 100 + i,
+      title: `A card with a title long enough to take two lines, number ${String(i)}`,
+      status: 'todo',
+    })),
+    next_cursor: null,
+  },
+};
+
+void describe('scrolling the board (LAI-290)', () => {
+  void test('a sideways gesture over a card moves the columns', async () => {
+    /*
+     * **Chrome latches a wheel gesture to the first scroll container under the
+     * pointer.** Over a card that is `.lane-body`, which scrolls vertically and
+     * not horizontally — so `deltaX` was dropped and the columns never moved,
+     * while the identical gesture over the lane's padding scrolled them.
+     *
+     * No CSS fixes it: `overflow-x: hidden` leaves the lane a scroll container,
+     * and `clip` is coerced back to `hidden` when the other axis is `auto`.
+     */
+    const h = await open('/board?project=laika-core', CROWDED_STUB);
+
+    try {
+      // Narrow enough that the row genuinely has somewhere to scroll.
+      await h.page.setViewportSize({ width: 820, height: 900 });
+      await boardReady(h);
+
+      /** Whichever element scrolls at this width — the pane, or the grid. */
+      const scroller = () =>
+        h.page.evaluate(() => {
+          const pane = document.querySelector('.board-main');
+          const grid = document.querySelector('.kanban');
+          for (const el of [pane, grid]) {
+            if (el !== null && el.scrollWidth > el.clientWidth) {
+              return { room: el.scrollWidth - el.clientWidth, left: el.scrollLeft };
+            }
+          }
+          return { room: 0, left: 0 };
+        });
+
+      assert.ok((await scroller()).room > 0, 'the board has nowhere to scroll — proves nothing');
+
+      const card = await h.page.locator('.card').first().boundingBox();
+      assert.ok(card !== null, 'no card to aim at');
+
+      await h.page.mouse.move(card.x + card.width / 2, card.y + 10);
+      await h.page.mouse.wheel(300, 0);
+      await h.page.waitForTimeout(300);
+
+      assert.ok(
+        (await scroller()).left > 0,
+        'a sideways gesture over a card did not move the columns',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a vertical gesture over a card still scrolls that lane', async () => {
+    /*
+     * The other half: forwarding the horizontal axis must not steal the
+     * vertical one, or a lane full of cards becomes unreadable.
+     *
+     * **What this catches, measured rather than assumed.** React's `onWheel`
+     * is a passive listener, so a `preventDefault()` added there is inert and
+     * this test does not move — mutating the handler that way leaves it green.
+     * It goes red on the version that can actually do the damage: a native
+     * `addEventListener('wheel', …, { passive: false })` on `.board-main`,
+     * which is the obvious next step for anyone who wants `preventDefault` and
+     * finds the React prop ignoring them.
+     */
+    const h = await open('/board?project=laika-core', CROWDED_STUB);
+
+    try {
+      // Wide enough that the board stays a row (below 1200px it stacks and the
+      // lanes grow instead of being constrained), and short enough that a lane
+      // full of cards genuinely overflows.
+      await h.page.setViewportSize({ width: 1400, height: 560 });
+      await boardReady(h);
+
+      /*
+       * **The crowded lane, not the first one.** `CROWDED_STUB` puts every card
+       * in `todo`, which is not column zero — measuring `.lane-body` and taking
+       * the first match reports the *empty* lane, which has no overflow and
+       * fails a guard that is doing its job.
+       */
+      const crowded = '.lane-body:has(.card)';
+
+      const room = await h.page.evaluate((sel) => {
+        const lane = document.querySelector(sel);
+        return lane === null ? 0 : lane.scrollHeight - lane.clientHeight;
+      }, crowded);
+      assert.ok(room > 0, 'the lane has nowhere to scroll — this test proves nothing');
+
+      const card = await h.page.locator('.card').first().boundingBox();
+      assert.ok(card !== null, 'no card to aim at');
+
+      await h.page.mouse.move(card.x + card.width / 2, card.y + 10);
+      await h.page.mouse.wheel(0, 200);
+      await h.page.waitForTimeout(300);
+
+      const lane = await h.page.evaluate(
+        (sel) => document.querySelector(sel)?.scrollTop ?? 0,
+        crowded,
+      );
+      assert.ok(lane > 0, 'the lane did not scroll vertically');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the board itself never grows a vertical scrollbar', async () => {
+    // It is one screenful by design: the lanes reach the bottom and each
+    // scrolls its own cards. `overflow-x: auto` silently coerces the other
+    // axis to `auto`, which is how a scrollbar appeared over a 91px phantom.
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      const overflowY = await h.page.evaluate(() => {
+        const pane = document.querySelector('.board-main');
+        return pane === null ? '' : getComputedStyle(pane).overflowY;
+      });
+
+      assert.ok(
+        overflowY === 'hidden' || overflowY === 'clip',
+        `the board pane scrolls vertically (overflow-y: ${overflowY})`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * The board's own row sits below WORKING NOW, above the lanes (LAI-293).
+ *
+ * It used to portal into the space bar. The owner's reference puts it directly
+ * on top of the columns, and getting there needed no slot from anyone: a board
+ * screen's own output already renders straight after `<PresenceStrip>`.
+ *
+ * **Asserted by geometry, not by class name.** A row that is in the right part
+ * of the DOM but painted somewhere else is the failure worth catching, and only
+ * a rectangle can tell the difference.
+ */
+void describe('where the board row sits (LAI-293)', () => {
+  void test('below WORKING NOW and above the first lane', async () => {
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      const m = await h.page.evaluate(() => {
+        const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+        const presence = document.querySelector('[class*="presence"]')?.getBoundingClientRect();
+        return {
+          presenceBottom: presence?.bottom ?? null,
+          barTop: box('.board-bar')?.top ?? null,
+          laneTop: box('.lane')?.top ?? null,
+        };
+      });
+
+      assert.ok(m.barTop !== null, 'the board row is not rendered at all');
+      assert.ok(m.laneTop !== null, 'no lane to measure against');
+      assert.ok(
+        m.presenceBottom !== null,
+        'WORKING NOW is absent — this test cannot tell where the row sits',
+      );
+      assert.ok(
+        m.presenceBottom <= m.barTop,
+        `the row is above WORKING NOW (${String(m.barTop)} < ${String(m.presenceBottom)})`,
+      );
+      assert.ok(
+        m.barTop < m.laneTop,
+        `the row is not above the lanes (${String(m.barTop)} >= ${String(m.laneTop)})`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('and no longer inside the space bar', async () => {
+    // The other half: moved, not copied.
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      assert.equal(
+        await h.page.locator('.space-bar .bt').count(),
+        0,
+        'the toolbar is still in the space bar',
+      );
+      assert.equal(await h.page.locator('.board-bar .bt').count(), 1, 'exactly one row expected');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('its edges line up with the lanes below it', async () => {
+    /*
+     * `.board` aligns its children with `margin-inline`, not padding, so a row
+     * that sets its own horizontal padding lands inset from the columns. That
+     * is the mistake this catches — it looks deliberate and reads as bolted on.
+     *
+     * **Measure the contents, not the container.** `getBoundingClientRect()`
+     * returns the *border* box, so padding on `.board-bar` does not move its
+     * own edges at all — it moves what is inside. Asserting on `.board-bar`
+     * passed happily with the padding restored, which is how this comment came
+     * to be here: the mutation survived and the test was the thing at fault.
+     */
+    const h = await open('/board?project=laika-core', COLUMNS_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await boardReady(h);
+
+      const m = await h.page.evaluate(() => {
+        const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
+        const bar = box('.board-bar .bt');
+        const main = box('.board-main');
+        return bar === null || main === null
+          ? null
+          : {
+              bl: Math.round(bar.left),
+              br: Math.round(bar.right),
+              ml: Math.round(main.left),
+              mr: Math.round(main.right),
+            };
+      });
+
+      assert.ok(m !== null, 'the row or the lane area is missing');
+      assert.equal(m.bl, m.ml, 'the row starts at a different x from the columns');
+      assert.equal(m.br, m.mr, 'the row ends at a different x from the columns');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * A grouped board scrolls; an ungrouped one still does not (LAI-296).
+ *
+ * `.board-main` is `overflow-y: hidden` so the plain board cannot grow the
+ * phantom scrollbar LAI-290 removed. Grouped, that same rule made every row
+ * below the second unreachable — the board is one lane row *per group*, which
+ * is taller than any viewport as soon as there are three or four people.
+ *
+ * Both halves are asserted here **in one file**, because the bug was fixing one
+ * without noticing the other.
+ */
+void describe('a grouped board can reach its last row (LAI-296)', () => {
+  void test('grouped, it scrolls', async () => {
+    const h = await open('/board?project=laika-core&group=assignee', CROWDED_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1400, height: 700 });
+      await h.page.locator('.swim').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(400);
+
+      const room = await h.page.evaluate(() => {
+        const pane = document.querySelector('.board-main');
+        return pane === null ? 0 : pane.scrollHeight - pane.clientHeight;
+      });
+      assert.ok(room > 0, 'the grouped board is not tall enough to prove anything');
+
+      /*
+       * **A wheel gesture, not `scrollTop = n`.** Assigning `scrollTop` moves
+       * an `overflow: hidden` element perfectly well — script is not bound by
+       * the property that stops a *person* scrolling. The first version of
+       * this test did exactly that and **passed with the fix removed**, which
+       * is the whole defect it exists to catch.
+       *
+       * The computed style is asserted too: the gesture proves a person can
+       * reach the lower rows, the property says why.
+       */
+      const overflowY = await h.page.evaluate(() => {
+        const pane = document.querySelector('.board-main');
+        return pane === null ? '' : getComputedStyle(pane).overflowY;
+      });
+      assert.ok(
+        overflowY === 'auto' || overflowY === 'scroll',
+        `a grouped board cannot be scrolled by hand (overflow-y: ${overflowY})`,
+      );
+
+      const box = await h.page.locator('.swim').first().boundingBox();
+      assert.ok(box !== null, 'no row to aim at');
+      await h.page.mouse.move(box.x + box.width / 2, box.y + 40);
+      await h.page.mouse.wheel(0, 400);
+      await h.page.waitForTimeout(350);
+
+      const top = await h.page.evaluate(
+        () => document.querySelector('.board-main')?.scrollTop ?? 0,
+      );
+      assert.ok(top > 0, 'the grouped board refused to scroll — its lower rows are unreachable');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('ungrouped, it still refuses to', async () => {
+    // The half that must not regress: LAI-290 removed a vertical scrollbar
+    // that scrolled over a 91px phantom with no content under it.
+    const h = await open('/board?project=laika-core', CROWDED_STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1400, height: 700 });
+      await boardReady(h);
+
+      const overflowY = await h.page.evaluate(() => {
+        const pane = document.querySelector('.board-main');
+        return pane === null ? '' : getComputedStyle(pane).overflowY;
+      });
+      assert.equal(overflowY, 'hidden', 'the plain board can scroll vertically again');
     } finally {
       await h.close();
     }

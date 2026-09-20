@@ -15,9 +15,9 @@
   flex-direction: column;
   gap: var(--space-3);
   padding: var(--space-4);
-  background: var(--card);
-  border-left: 1px solid var(--bd);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border-left: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-card);
   overflow-y: auto;
 }
 
@@ -33,44 +33,44 @@
   font-size: var(--text-lg);
   font-weight: var(--weight-heavy);
   letter-spacing: -0.018em;
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .ctx-project {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .ctx-close {
   flex: none;
   padding: var(--space-1) var(--space-3);
   font-size: var(--text-sm);
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
   cursor: pointer;
 }
 
 .ctx-close:hover {
-  border-color: var(--bd2);
-  color: var(--tx);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 
 /* The empty state. This is the screen's whole job: a blank textarea labelled
    "Context" teaches nobody what to write. */
 .ctx-guide {
   padding: var(--space-3);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
 }
 
 .ctx-guide-lead {
   margin: 0 0 var(--space-3);
   font-size: var(--text-sm);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .ctx-guide-cols {
@@ -85,14 +85,14 @@
   font-weight: var(--weight-bold);
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .ctx-guide-list {
   margin: 0;
   padding-left: var(--space-4);
   font-size: var(--text-sm);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .ctx-guide-list li {
@@ -100,7 +100,7 @@
 }
 
 .ctx-guide-why {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* Monospace and plain. The value is served verbatim to every agent session, so
@@ -112,21 +112,21 @@
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   line-height: 1.6;
-  color: var(--tx);
-  background: var(--page);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   resize: vertical;
 }
 
 .ctx-editor:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
 .ctx-editor[readonly] {
-  background: var(--tub);
-  color: var(--tx2);
+  background: var(--bg-column);
+  color: var(--text-secondary);
 }
 
 .ctx-foot {
@@ -142,23 +142,23 @@
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .ctx-count-near {
-  color: var(--amb);
+  color: var(--chip-orange);
   font-weight: var(--weight-bold);
 }
 
 .ctx-count-over {
-  color: var(--red);
+  color: var(--overdue);
   font-weight: var(--weight-bold);
 }
 
 .ctx-edited {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .ctx-actions {
@@ -170,22 +170,22 @@
 
 .ctx-dirty {
   font-size: var(--text-xs);
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 
 .ctx-saved {
   font-size: var(--text-xs);
-  color: var(--grn);
+  color: var(--chip-green);
 }
 
 .ctx-save {
   padding: var(--space-1) var(--space-3);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: #fff;
-  background: var(--acc);
-  border: 1px solid var(--acc);
-  border-radius: var(--radius-sm);
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-chip);
   cursor: pointer;
 }
 
@@ -197,15 +197,15 @@
 .ctx-readonly {
   margin: 0 0 0 auto;
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .ctx-error {
   margin: 0;
   padding: var(--space-2) var(--space-3);
   font-size: var(--text-sm);
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
-  border-radius: var(--radius-sm);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-chip);
 }

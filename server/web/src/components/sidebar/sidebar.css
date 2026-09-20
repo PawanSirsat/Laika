@@ -9,8 +9,8 @@
   width: 13.25rem; /* 212px */
   flex: none;
   box-sizing: border-box;
-  background: var(--card);
-  border-right: 1px solid var(--bd);
+  background: var(--bg-card);
+  border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -30,21 +30,21 @@
 .sidebar-head {
   flex: none;
   padding: 0.875rem 0.75rem; /* the prototype's 14px 12px */
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   align-items: center;
   gap: 0.5625rem;
 }
 
-/* The logo is the collapse control: 28px, radius 9, ground --tx, glyph --card. */
+/* The logo is the collapse control: 28px, radius 9, ground --text-primary, glyph --bg-card. */
 .sidebar-logo {
   width: 1.75rem;
   height: 1.75rem;
   flex: none;
   border: none;
   border-radius: 0.5625rem;
-  background: var(--tx);
-  color: var(--card);
+  background: var(--text-primary);
+  color: var(--bg-card);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -57,7 +57,7 @@
 }
 
 .sidebar-logo:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -74,7 +74,7 @@
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -97,8 +97,8 @@
   font-size: 0.53125rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.1em;
-  /* --tx3 is below AA for body text but clears 3:1 for these all-caps labels. */
-  color: var(--tx3);
+  /* --text-muted is below AA for body text but clears 3:1 for these all-caps labels. */
+  color: var(--text-muted);
   margin: 0;
   padding: 0.75rem 0.5rem 0.3125rem;
   white-space: nowrap;
@@ -109,7 +109,7 @@
 .sidebar-minirule {
   margin: 8px 6px 5px;
   height: 1px;
-  background: var(--bd);
+  background: var(--border-subtle);
 }
 
 .sidebar-list {
@@ -125,10 +125,10 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  height: 1.9375rem; /* the prototype's 31px rows */
-  padding: 0 0.5625rem;
-  border-radius: var(--radius-md);
-  color: var(--tx2);
+  height: 36px; /* the addendum's rows (LAI-606) */
+  padding: 0 12px;
+  border-radius: var(--radius-card);
+  color: var(--text-secondary);
   text-decoration: none;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
@@ -161,23 +161,23 @@
 
 .sidebar-link-active .sidebar-link-bar,
 .sidebar-link-active .sidebar-dot {
-  background: var(--acc);
+  background: var(--accent);
 }
 
 .sidebar-link:hover {
-  background: var(--tub);
-  color: var(--tx);
+  background: var(--bg-column);
+  color: var(--text-primary);
 }
 
 .sidebar-link:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
 /* Active is colour *and* weight *and* fill *and* the bar — never colour alone. */
 .sidebar-link-active {
-  background: var(--accs);
-  color: var(--acc);
+  background: var(--accent-bg);
+  color: var(--accent);
   font-weight: var(--weight-heavy);
 }
 
@@ -193,7 +193,7 @@
 
 .sidebar-chevron {
   flex: none;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* The collapsed rail's two letters (prototype `n.abbr`). Hidden while wide. */
@@ -213,19 +213,19 @@
   min-width: 1.25rem;
   padding: 0 var(--space-1);
   border-radius: var(--radius-pill);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
   font-family: var(--font-mono);
   font-size: var(--text-sm);
   line-height: 1.25rem;
   text-align: center;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .sidebar-link-active .sidebar-count {
-  background: var(--accs);
-  border-color: var(--accb);
-  color: var(--acc);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--accent);
 }
 
 /* ---------------------------------------------------------------- spaces */
@@ -266,23 +266,23 @@
   font-size: 0.71875rem; /* 11.5px */
   font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--tx2);
+  color: var(--text-secondary);
   white-space: nowrap;
   cursor: pointer;
 }
 
 .spaces-head-toggle:hover {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 .spaces-head-toggle:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
 .spaces-caret {
   flex: none;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .spaces-create {
@@ -293,16 +293,16 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .spaces-create:hover {
-  background: var(--tub);
-  color: var(--tx);
+  background: var(--bg-column);
+  color: var(--text-primary);
 }
 
 .spaces-create:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -320,12 +320,12 @@
   top: 132px;
   z-index: 41;
   width: 284px;
-  background: var(--card);
-  border: 1px solid var(--bd2);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
   border-radius: 12px;
   /* The design's 0 18px 44px drop, coloured by the theme's own border token
      rather than a raw rgba — colours live in tokens.css and nowhere else. */
-  box-shadow: 0 18px 44px var(--bd2);
+  box-shadow: 0 18px 44px var(--border-default);
   padding: 12px;
   display: flex;
   flex-direction: column;
@@ -369,17 +369,17 @@
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: var(--tx2);
+  color: var(--text-secondary);
   cursor: pointer;
   padding: 0;
 }
 
 .spaces-pop-close:hover {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 .spaces-pop-close:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -390,14 +390,14 @@
   gap: 8px;
   height: 34px;
   padding: 0 10px;
-  border: 1px solid var(--bd2);
+  border: 1px solid var(--border-default);
   border-radius: 9px;
-  background: var(--page);
-  color: var(--tx3);
+  background: var(--bg-canvas);
+  color: var(--text-muted);
 }
 
 .spaces-pop-search:focus-within {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -1px;
 }
 
@@ -409,13 +409,13 @@
   font-family: inherit;
   font-size: 0.71875rem;
   font-weight: var(--weight-medium);
-  color: var(--tx);
+  color: var(--text-primary);
   outline: none;
   padding: 0;
 }
 
 .spaces-pop-search input::placeholder {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .spaces-pop-empty {
@@ -424,7 +424,7 @@
   font-size: 0.6875rem;
   font-weight: var(--weight-medium);
   line-height: 1.5;
-  color: var(--tx3);
+  color: var(--text-muted);
   text-wrap: pretty;
 }
 
@@ -445,7 +445,7 @@
   height: 38px;
   padding: 0 8px;
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   background: transparent;
   font-family: inherit;
   text-align: left;
@@ -453,11 +453,11 @@
 }
 
 .spaces-pop-row:hover {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 .spaces-pop-row:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -487,7 +487,7 @@
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--tx);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -498,7 +498,7 @@
   font-size: 0.59375rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -511,19 +511,19 @@
   height: 34px;
   margin-top: 2px;
   padding: 10px 8px 0;
-  border-top: 1px solid var(--bd);
-  color: var(--tx2);
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
   text-decoration: none;
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
 }
 
 .spaces-pop-all:hover {
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .spaces-pop-all:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
@@ -534,7 +534,7 @@
 
 .spaces-pop-chevron {
   flex: none;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* ---------------------------------------------------------------- footer */
@@ -546,7 +546,7 @@
   flex-direction: column;
   gap: 0.5625rem; /* the prototype's 9px */
   padding: 0.6875rem 0.75rem; /* 11px 12px */
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .sidebar-footer .theme-switch {
@@ -584,7 +584,7 @@
   font-size: 0.6875rem;
   font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--tx);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -597,7 +597,7 @@
   line-height: 1;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--pur);
+  color: var(--chip-pink);
 }
 
 /* Not in the design, which has no sign-out at all; quiet on purpose. */
@@ -608,24 +608,24 @@
   font-family: inherit;
   font-size: 0.625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
   cursor: pointer;
   padding: 2px 4px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
 }
 
 .sidebar-signout:hover {
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .sidebar-signout:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
 .sidebar-signout:disabled {
   cursor: default;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* -------------------------------------------------------------- collapse */
@@ -677,7 +677,7 @@
 
   .sidebar-open {
     transform: translateX(0);
-    box-shadow: var(--shadow);
+    box-shadow: var(--shadow-card);
   }
 }
 

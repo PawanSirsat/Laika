@@ -21,6 +21,7 @@ export interface ShellSidebarProps {
  */
 export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: ShellSidebarProps) {
   const {
+    spaceName,
     route: { path, navigate, params },
     session,
     me,
@@ -31,6 +32,12 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
   } = useShell();
 
   const projectSlug = params.get('project') ?? undefined;
+
+  /*
+   * The name comes from the shell now (LAI-299), not a fetch of its own: the
+   * space bar needs the same string when this rail is collapsed or off-canvas,
+   * and two components fetching one project is one too many.
+   */
   // Gated on the session: `/login` and first boot render this shell too, and an
   // ungated fetch 401s on every sign-in page load.
   const {
@@ -52,6 +59,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       onOpenSpace={openSpace}
       orgRole={me?.org_role}
       orgName={orgName}
+      spaceName={spaceName}
       counts={{ '/sprints': sprintCount }}
       user={me}
       onSignOut={signOut}

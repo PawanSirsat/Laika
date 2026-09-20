@@ -1,154 +1,130 @@
-import { demoWipLimit } from '../../../demo/wip.ts';
-import { useState } from 'react';
-import { EmptyState } from '../../../components/EmptyState.tsx';
-import { TaskCard } from './TaskCard.tsx';
-import { BOARD_COLUMNS, COLUMN_LABELS, type BoardColumn } from '../../../api/board-derive.ts';
-import type { Member, Task } from '../../../api/tasks.ts';
+import { useCallback } from 'react';
+import { LaneRow, type LaneRowProps } from './LaneRow.tsx';
+import type { Swimlane } from './group-lanes.ts';
 import type { Theme } from '../../../theme/theme.ts';
+import { avatarColor } from '../../../theme/avatar-color.ts';
+import { initials } from '../../../theme/initials.ts';
+import './board.css';
 
-export interface KanbanViewProps {
-  readonly columns: Record<BoardColumn, Task[]>;
-  readonly byId: ReadonlyMap<string, Task>;
-  readonly members: ReadonlyMap<string, Member>;
+export interface KanbanViewProps extends Omit<LaneRowProps, 'showColumnConfig' | 'theme'> {
+  /**
+   * Restated rather than inherited through the `Omit`.
+   *
+   * `tokens.test.ts` checks that any file computing an `avatarColor()` has a
+   * **live** theme — it looks for `readonly theme: Theme` or a `useTheme()`
+   * call, because a stale theme renders light-mode avatars in dark mode and
+   * nothing else looks wrong. Inheriting the prop satisfies the compiler and
+   * not the guard, and the guard is right to insist: a reader of this file
+   * could not otherwise tell where the theme came from.
+   */
   readonly theme: Theme;
-  readonly movingId: string | undefined;
-  readonly onMove: (taskId: string, to: BoardColumn) => void;
-  readonly filtered: boolean;
-  readonly onOpen: (taskId: string) => void;
-  /** Opens the create form. Absent for anyone who may not create tasks. */
-  readonly onAdd?: (() => void) | undefined;
-  readonly canAdd?: boolean | undefined;
-  readonly sprintLabels?:
-    ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
+  /**
+   * Grouped rows, or `undefined` for the plain board.
+   *
+   * When present, `lanes` is ignored — each swimlane carries its own, built by
+   * the same `groupByColumn` against the same columns.
+   */
+  readonly swimlanes?: readonly Swimlane[] | undefined;
+  /** Collapsed rows, by `Swimlane.key`. */
+  readonly collapsed?: ReadonlySet<string> | undefined;
+  readonly onToggleGroup?: ((key: string) => void) | undefined;
 }
 
-/** Empty-column copy, from the prototype — per lane, not one generic sentence. */
-function emptyCopy(column: BoardColumn, filtered: boolean): string {
-  if (filtered) return 'Nothing here for this filter';
-  return column === 'review' ? 'Nothing waiting on review' : 'Nothing in this lane';
-}
+/**
+ * The board: one row of columns, or several (LAI-290).
+ *
+ * ## What this replaces
+ *
+ * LAI-266's grouping returned one *lane* per group, so choosing "group by
+ * assignee" deleted the status columns and put people in their place. That is
+ * not grouping a board — it is changing what a column means.
+ *
+ * A grouped board keeps the columns and repeats them in a **row** per group.
+ * So this component does one thing: decide whether to draw one `LaneRow` or
+ * several, each behind a collapsible header. Everything a lane does lives in
+ * `LaneRow` and is identical either way, which is what stops the grouped board
+ * drifting from the plain one.
+ *
+ * ## Column configuration appears once
+ *
+ * The grip, the `⋯` and the order select are drawn on the **first** row only.
+ * Columns are project-level, so reordering from row four would reorder every
+ * row — correct, but four copies of the same control invite the reader to
+ * think otherwise.
+ */
+export function KanbanView({ swimlanes, collapsed, onToggleGroup, ...row }: KanbanViewProps) {
+  const toggle = useCallback(
+    (key: string) => {
+      onToggleGroup?.(key);
+    },
+    [onToggleGroup],
+  );
 
-export function KanbanView({
-  columns,
-  byId,
-  members,
-  theme,
-  movingId,
-  onMove,
-  filtered,
-  onOpen,
-  onAdd,
-  canAdd = false,
-  sprintLabels,
-}: KanbanViewProps) {
-  const [dragging, setDragging] = useState<string | undefined>(undefined);
-  const [over, setOver] = useState<BoardColumn | undefined>(undefined);
+  if (swimlanes === undefined) return <LaneRow {...row} />;
+
+  if (swimlanes.length === 0) {
+    return (
+      <p className="swim-empty" role="status">
+        Nothing to group — no tasks match.
+      </p>
+    );
+  }
 
   return (
-    <div className="kanban">
-      {BOARD_COLUMNS.map((column) => {
-        const tasks = columns[column];
-        const wip = demoWipLimit(column);
+    <div className="swimlanes">
+      {swimlanes.map((lane, index) => {
+        const shut = collapsed?.has(lane.key) ?? false;
+        const ink = lane.avatarId === undefined ? undefined : avatarColor(lane.avatarId, row.theme);
 
         return (
-          <section
-            key={column}
-            className={[over === column ? 'lane lane-over' : 'lane', 'lane-' + column].join(' ')}
-            aria-labelledby={`lane-${column}`}
-            onDragOver={(event) => {
-              // Without preventDefault the drop never fires — the browser's
-              // default is "this is not a drop target".
-              event.preventDefault();
-              event.dataTransfer.dropEffect = 'move';
-              setOver(column);
-            }}
-            onDragLeave={() => {
-              setOver((c) => (c === column ? undefined : c));
-            }}
-            onDrop={(event) => {
-              event.preventDefault();
-              setOver(undefined);
-              const id = event.dataTransfer.getData('text/plain');
-              const task = id === '' ? undefined : byId.get(id);
-              // A drop onto the column a task is already in is not a move.
-              if (task !== undefined && task.status !== column) onMove(task.id, column);
-            }}
-          >
-            <header className="lane-head">
-              {/* The prototype leads each column with a dot in the lane's own
-                  colour — the same colour the card's status pill uses. */}
-              <span className={`lane-dot lane-dot-${column}`} aria-hidden="true" />
-              <h3 className="lane-title" id={`lane-${column}`}>
-                {COLUMN_LABELS[column]}
-              </h3>
-              <span className={`lane-count lane-count-${column}`}>{tasks.length}</span>
-              {wip !== undefined && (
-                <span className={tasks.length > wip ? 'lane-wip lane-wip-over' : 'lane-wip'}>
-                  WIP {tasks.length}/{wip}
+          <section key={lane.key} className="swim" aria-labelledby={`swim-${lane.key || 'none'}`}>
+            <header className="swim-head">
+              <button
+                type="button"
+                className="swim-toggle"
+                aria-expanded={!shut}
+                onClick={() => {
+                  toggle(lane.key);
+                }}
+              >
+                <span
+                  className={shut ? 'swim-chevron' : 'swim-chevron swim-chevron-open'}
+                  aria-hidden="true"
+                >
+                  ›
+                </span>
+                <span className="visually-hidden">{shut ? 'Expand' : 'Collapse'} </span>
+              </button>
+
+              {lane.avatarId !== undefined && (
+                <span
+                  className="swim-avatar t-avatar"
+                  aria-hidden="true"
+                  {...(ink === undefined
+                    ? {}
+                    : { style: { background: ink.background, color: ink.foreground } })}
+                >
+                  {initials(lane.name)}
                 </span>
               )}
+
+              <h3 className="swim-name" id={`swim-${lane.key || 'none'}`}>
+                {lane.name}
+              </h3>
+              <span className="swim-count">{lane.count}</span>
             </header>
 
-            <div className="lane-body">
-              {tasks.length === 0 ? (
-                <EmptyState headline={emptyCopy(column, filtered)} />
-              ) : (
-                tasks.map((task) => (
-                  <div key={task.id} className="lane-item">
-                    <TaskCard
-                      task={task}
-                      byId={byId}
-                      members={members}
-                      theme={theme}
-                      moving={movingId === task.id}
-                      onDragStart={setDragging}
-                      onDragEnd={() => {
-                        setDragging(undefined);
-                        setOver(undefined);
-                      }}
-                      onOpen={onOpen}
-                      sprintLabels={sprintLabels}
-                    />
-
-                    {/*
-                      Keyboard equivalent of the drag. A board operable only by
-                      mouse locks people out of the product's main screen, and
-                      HTML drag-and-drop has no keyboard story of its own.
-                    */}
-                    <label className="lane-move">
-                      <span className="visually-hidden">Move {task.key} to</span>
-                      <select
-                        className="lane-move-select"
-                        value={task.status}
-                        disabled={movingId === task.id}
-                        onChange={(event) => {
-                          const to = event.target.value as BoardColumn;
-                          if (to !== task.status) onMove(task.id, to);
-                        }}
-                      >
-                        {BOARD_COLUMNS.map((c) => (
-                          <option key={c} value={c}>
-                            {COLUMN_LABELS[c]}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {canAdd && onAdd !== undefined && (
-              <button type="button" className="lane-add" onClick={onAdd}>
-                + Add task
-              </button>
+            {!shut && (
+              <LaneRow
+                {...row}
+                lanes={lane.lanes}
+                // Configuration on the first row only — see the docblock.
+                showColumnConfig={index === 0}
+              />
             )}
           </section>
         );
       })}
-      <span className="visually-hidden" aria-live="polite">
-        {dragging === undefined ? '' : `Moving ${byId.get(dragging)?.key ?? ''}`}
-      </span>
     </div>
   );
 }

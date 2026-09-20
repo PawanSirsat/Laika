@@ -4,17 +4,24 @@
  * self-hosted board that phones home on every page load contradicts SPEC §13.4.
  * `test/csp-compatibility.test.ts` fails if a remote font URL ever appears.
  */
+/* Plus Jakarta Sans is the UI face — the prototype's own family — with
+   JetBrains Mono for keys and codes. Self-hosted: SPEC §13.4 forbids a CDN. */
 @import '@fontsource-variable/plus-jakarta-sans';
 @import '@fontsource-variable/jetbrains-mono';
 
 /* Every colour, type step and radius. Light on :root, dark on .dk. */
-@import './theme/tokens.css';
+@import './styles/theme.css';
+@import './styles/type.css';
 
 :root {
   font-family: var(--font-ui);
   font-size: 16px;
   line-height: 1.5;
-  -webkit-font-smoothing: antialiased;
+  /*
+   * No `-webkit-font-smoothing: antialiased` — the prototype renders with the
+   * browser default, and antialiased thins light-on-dark text by what reads
+   * as a whole weight step. Same 600, visibly lighter (LAI-605, owner crop).
+   */
 }
 
 /* Painted from tokens so the page behind the app matches the theme — otherwise
@@ -23,8 +30,8 @@ html,
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--page);
-  color: var(--tx);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
 }
 
 code,

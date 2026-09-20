@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useState } from 'react';
 import type { Sprint, SprintInput } from '../../../api/sprints.ts';
 import {
@@ -152,7 +153,8 @@ export function SprintForm({ sprint, busy, onSubmit, onCancel }: SprintFormProps
 
       <div className="sprint-form-actions">
         <button type="submit" className="sprint-button sprint-button-primary" disabled={busy}>
-          {busy ? 'Saving…' : sprint === undefined ? 'Create sprint' : 'Save changes'}
+          {busy && <Spinner size="sm" />}
+          {sprint === undefined ? 'Create sprint' : 'Save changes'}
         </button>
         <button type="button" className="sprint-button" onClick={onCancel} disabled={busy}>
           Cancel

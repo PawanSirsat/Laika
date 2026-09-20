@@ -85,12 +85,21 @@ function webPatternExempt(rel: string): boolean {
 }
 
 const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
+  [
+    'routes/screens/board/tag-colors.ts',
+    'covered by the TAG_COLORS suite in test/routes/screens/board/task-card.test.ts — the map and the card that wears it are one subject',
+  ],
   ['api/client.ts', 'covered by test/api.test.ts, which stubs fetch for it and errors.ts together'],
   ['api/errors.ts', 'covered by test/api.test.ts — the envelope and the wrapper are one subject'],
   ['api/me.ts', 'a single typed GET; asserted through the client in api.test.ts'],
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-setup-status.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-board.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  ['api/use-columns.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'routes/screens/board/use-view-preferences.ts',
+    'a React hook — no renderer in this package (CONVENTIONS §4). The pure half it wraps, view-preferences.ts, is mirrored.',
+  ],
   ['api/use-projects.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-members.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],

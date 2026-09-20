@@ -102,7 +102,7 @@ void after(async () => {
 });
 
 void describe('the task drawer', () => {
-  void test('is the design’s 1120px, and the scrim spares the rail', async () => {
+  void test('is the design’s 1120px, centred, with the scrim over everything', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
@@ -117,16 +117,26 @@ void describe('the task drawer', () => {
       */
       assert.equal(Math.round(drawer.width), 1120, 'the drawer is the design’s 1120px');
 
-      // **The scrim covers the view, not the sidebar.** Switching space with a
-      // task open is the behaviour this protects.
+      /*
+       * **The scrim covers everything, the rail included** (LAI-604).
+       *
+       * It used to stop at the rail so a space could be switched with a task
+       * open. The owner asked for the reference's *modal*, and a modal dims
+       * what is behind it — including the rail. That capability is genuinely
+       * gone, which is why this comment says so rather than the assertion
+       * quietly changing number.
+       */
       const scrim = await h.page.locator('.drawer-scrim').boundingBox();
       const rail = await h.page.locator('#sidebar').boundingBox();
       assert.ok(scrim && rail);
+      assert.equal(Math.round(scrim.x), 0, 'the scrim leaves the rail uncovered');
+
+      // Centred: the same gap either side, which is what "floating" means.
+      const left = Math.round(drawer.x);
+      const right = Math.round(1600 - (drawer.x + drawer.width));
       assert.ok(
-        scrim.x >= rail.x + rail.width - 1,
-        `the scrim starts at ${String(Math.round(scrim.x))} and the rail ends at ${String(
-          Math.round(rail.x + rail.width),
-        )} — it covers the rail`,
+        Math.abs(left - right) <= 1,
+        `the dialog is not centred (${String(left)} vs ${String(right)})`,
       );
 
       // **And it reaches the bottom of the window.** This assertion is here
@@ -146,15 +156,16 @@ void describe('the task drawer', () => {
         'the scrim does not reach the right edge',
       );
 
-      // And the rail is genuinely still usable, not merely uncovered.
-      await h.page.locator('.sidebar-link', { hasText: 'Tokens' }).click();
-      await h.page.waitForURL(/\/tokens/, { timeout: 10_000 });
+      // A modal closes rather than letting the rail through: clicking the
+      // scrim is the way out, and it must work.
+      await h.page.mouse.click(20, 500);
+      await h.page.locator('.drawer').waitFor({ state: 'detached', timeout: 10_000 });
     } finally {
       await h.close();
     }
   });
 
-  void test('takes the full width when there is not 1120px to give', async () => {
+  void test('shrinks to the window when there is not 1120px to give', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 700, height: 900 });
@@ -162,11 +173,13 @@ void describe('the task drawer', () => {
 
       const drawer = await h.page.locator('.drawer').boundingBox();
       assert.ok(drawer);
-      assert.equal(
-        Math.round(drawer.width),
-        700,
-        'below 840px the drawer fills the viewport rather than overflowing it',
-      );
+      /*
+       * `92vw` since LAI-604 — a modal keeps a margin rather than filling the
+       * window edge to edge, which is what stops it reading as a page. What
+       * still matters, and is asserted below, is that it never overflows.
+       */
+      assert.equal(Math.round(drawer.width), 644, 'the dialog is not 92vw of a 700px window');
+      assert.ok(drawer.x > 0 && drawer.x + drawer.width < 700, 'the dialog touches an edge');
       const overflow = await h.page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
       );
@@ -192,7 +205,15 @@ void describe('the task drawer', () => {
       await lane.evaluate((el) => {
         el.scrollTop = 200;
       });
-      const before = await lane.evaluate((el) => el.scrollTop);
+      /*
+       * **The baseline is read after the click, not before it.** Playwright's
+       * `.click()` auto-scrolls to reach its target, so when the clicked card
+       * sits below the fold the lane moves — the instrument, not the app.
+       * That drift measured 232 !== 200 the day LAI-606's taller cards pushed
+       * card 3 past a 700px viewport. The property under test is that the
+       * *drawer* does not move the board, and the `before > 0` guard below
+       * still catches a rebuild that resets the lane between click and read.
+       */
       /*
        * **The positive control that caught LAI-283.** When the lane's height
        * was a hardcoded `calc()` that stopped resolving, the lane grew to its
@@ -200,9 +221,9 @@ void describe('the task drawer', () => {
        * rather than passing vacuously, which is the only reason the layout bug
        * was visible from the suite at all.
        */
-      assert.ok(before > 0, 'the lane did not scroll — this proves nothing');
-
       await h.page.locator('.card').nth(3).click();
+      const before = await lane.evaluate((el) => el.scrollTop);
+      assert.ok(before > 0, 'the lane did not scroll — this proves nothing');
       await h.page.locator('.drawer').waitFor({ timeout: 10_000 });
 
       // **The drawer's header is on screen even though the board is not at the
@@ -211,7 +232,20 @@ void describe('the task drawer', () => {
       // were above the fold.
       const box = await h.page.locator('.drawer').boundingBox();
       assert.ok(box);
-      assert.equal(Math.round(box.y), 0, 'the drawer opened off-screen');
+      /*
+       * **Fully on screen, not pinned to the top** (LAI-604). This asserted
+       * `y === 0`, which was right for a full-height docked drawer. Centred,
+       * the property it was protecting is the real one and is stated directly:
+       * the dialog is entirely within the window even though the board behind
+       * it is scrolled.
+       */
+      const view = h.page.viewportSize();
+      assert.ok(view);
+      assert.ok(box.y >= 0, `the dialog opened above the fold (y=${String(Math.round(box.y))})`);
+      assert.ok(
+        box.y + box.height <= view.height + 1,
+        'the dialog runs off the bottom of the window',
+      );
       /*
        * **Wait for the panel, not for a duration.** The drawer's shell is
        * rendered by `SpaceLayout` the moment `?task=` is set, while its

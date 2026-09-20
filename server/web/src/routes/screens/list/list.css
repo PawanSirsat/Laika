@@ -19,7 +19,7 @@
   min-height: 0;
   /* The pane's own air, matching the board's. */
   padding: 0.875rem 1.125rem 1.125rem;
-  background: var(--page);
+  background: var(--bg-canvas);
 }
 
 /*
@@ -30,10 +30,10 @@
   overflow-x: auto;
   overscroll-behavior-x: contain;
   min-width: 0;
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
 }
 
 .list {
@@ -71,8 +71,8 @@
 
 .list thead th {
   padding: 0.5625rem 0.875rem;
-  background: var(--page);
-  border-bottom: 1px solid var(--bd);
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-subtle);
   text-align: left;
   vertical-align: middle;
 }
@@ -88,7 +88,7 @@
   line-height: 1;
   letter-spacing: 0.09em;
   text-transform: uppercase;
-  color: var(--tx3);
+  color: var(--text-muted);
   background: none;
   border: none;
   padding: 0;
@@ -98,7 +98,7 @@
 
 .list-sort:hover,
 .list-sort:focus-visible {
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 /* ------------------------------------------------------------------- the rows */
@@ -108,18 +108,18 @@
 }
 
 .list-row:hover {
-  background: var(--tub);
+  background: var(--bg-column);
 }
 
 .list tbody td {
   padding: 0.625rem 0.875rem;
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
   vertical-align: middle;
 }
 
-/* A finished row steps back without disappearing — the design's `--tx2`. */
+/* A finished row steps back without disappearing — the design's `--text-secondary`. */
 .list-row-muted .list-title {
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .list-key {
@@ -127,7 +127,7 @@
   font-size: 0.65625rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .list-open {
@@ -141,7 +141,7 @@
 
 .list-open:hover,
 .list-open:focus-visible {
-  color: var(--acc);
+  color: var(--accent);
   text-decoration: underline;
 }
 
@@ -170,7 +170,7 @@
   font-size: 0.78125rem;
   font-weight: var(--weight-semibold);
   line-height: 1.3;
-  color: var(--tx);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -188,14 +188,14 @@
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .list-blocked {
   font-size: 0.5625rem;
   font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--red);
+  color: var(--overdue);
 }
 
 /* ------------------------------------------------------- status and priority */
@@ -225,33 +225,33 @@
  * into disagreeing about what amber means.
  */
 .list-tone-flat {
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
 }
 
 .list-tone-accent {
-  color: var(--acc);
-  background: var(--accs);
-  border: 1px solid var(--accb);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
 }
 
 .list-tone-good {
-  color: var(--grn);
-  background: var(--grns);
-  border: 1px solid var(--grnb);
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border: 1px solid var(--chip-green-border);
 }
 
 .list-tone-warn {
-  color: var(--amb);
-  background: var(--ambs);
-  border: 1px solid var(--ambb);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
 }
 
 .list-tone-bad {
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
 }
 
 /* The pill is the only place the tone paints a box; the text columns take the
@@ -264,7 +264,7 @@
 
 .list-tone-flat.list-pri,
 .list-tone-flat.list-updated {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* -------------------------------------------------------------- the assignee */
@@ -293,8 +293,8 @@
 /* Unassigned is a dashed ring around nothing — the design's own mark for it. */
 .list-avatar-empty {
   background: transparent;
-  color: var(--tx3);
-  border: 1.5px dashed var(--bd2);
+  color: var(--text-muted);
+  border: 1.5px dashed var(--border-default);
 }
 
 .list-who {
@@ -303,7 +303,7 @@
   font-size: 0.71875rem;
   font-weight: var(--weight-semibold);
   line-height: 1.2;
-  color: var(--tx2);
+  color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -314,7 +314,7 @@
   font-size: 0.5625rem;
   font-weight: var(--weight-bold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .list-updated {
@@ -340,15 +340,15 @@
   font-size: 0.65625rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx3);
-  background: var(--page);
+  color: var(--text-muted);
+  background: var(--bg-canvas);
   border: none;
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
   padding: 0.625rem 0.875rem;
   cursor: pointer;
 }
 
 .list-create:hover,
 .list-create:focus-visible {
-  color: var(--acc);
+  color: var(--accent);
 }

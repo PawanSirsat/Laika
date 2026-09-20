@@ -47,6 +47,8 @@ export interface ShellValue {
    */
   readonly sprintCount: number | undefined;
   readonly orgName: string | undefined;
+  /** The open project's name, for the rail's wordmark and the bar's fallback. */
+  readonly spaceName: string | undefined;
   /**
    * The instance the browser is pointed at, read from the location — the
    * prototype's `laika.kvelld.internal` is a fixture and this is correct for

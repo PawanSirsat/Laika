@@ -11,9 +11,9 @@
 }
 
 .org-card {
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: var(--space-4);
 }
 
@@ -27,19 +27,19 @@
 .org-card-head h2 {
   font-size: var(--text-md);
   font-weight: var(--weight-heavy);
-  color: var(--tx);
+  color: var(--text-primary);
   margin: 0;
 }
 
 .org-count {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .org-note {
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
   line-height: 1.5;
   margin: var(--space-3) 0 0;
   max-width: 70ch;
@@ -60,7 +60,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) 0;
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .org-people li:last-child,
@@ -113,19 +113,19 @@
   gap: var(--space-2);
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .org-person-email {
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .org-person-role {
   flex: none;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .org-chip {
@@ -133,23 +133,23 @@
   font-weight: var(--weight-heavy);
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
   padding: 0.0625rem 0.25rem;
 }
 
 .org-chip-you {
-  color: var(--acc);
-  background: var(--accs);
-  border-color: var(--accb);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
 }
 
 .org-chip-off {
-  color: var(--amb);
-  background: var(--ambs);
-  border-color: var(--ambb);
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
 }
 
 .org-invite-form {
@@ -177,22 +177,22 @@
  */
 .org-issued {
   margin-top: var(--space-3);
-  background: var(--purs);
-  border: 1px solid var(--purb);
-  border-radius: var(--radius-md);
+  background: var(--chip-pink-bg);
+  border: 1px solid var(--chip-pink-border);
+  border-radius: var(--radius-card);
   padding: var(--space-3);
 }
 
 .org-issued-head {
   font-size: var(--text-sm);
   font-weight: var(--weight-heavy);
-  color: var(--tx);
+  color: var(--text-primary);
   margin: 0;
 }
 
 .org-issued-body {
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
   line-height: 1.5;
   margin: var(--space-1) 0 var(--space-2);
 }
@@ -202,10 +202,10 @@
   display: block;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
   padding: var(--space-2);
   margin-bottom: var(--space-2);
   overflow-wrap: anywhere;
@@ -227,21 +227,21 @@
 }
 .org-fact dt {
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .org-fact dd {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--tx);
+  color: var(--text-primary);
   display: flex;
   flex-direction: column;
   gap: 2px;
 }
 .org-fact-note {
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* The provider and the key tail are one sentence — `anthropic ···9f2a`.
@@ -261,7 +261,7 @@
 .org-key {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 @media (max-width: 40rem) {
@@ -284,13 +284,13 @@
   font: inherit;
   font-size: var(--text-xs);
   padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--bd);
-  background: var(--card);
-  color: var(--tx);
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  color: var(--text-primary);
 }
 .org-role-select:disabled {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .org-deactivate,
@@ -298,42 +298,42 @@
   font: inherit;
   font-size: var(--text-xs);
   padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   background: transparent;
   cursor: pointer;
 }
 /* Deactivating locks somebody out; reactivating does not. They read differently
    because they are different actions (D-048), not one toggle. */
 .org-deactivate {
-  border: 1px solid var(--redb);
-  color: var(--red);
+  border: 1px solid var(--overdue-border);
+  color: var(--overdue);
 }
 .org-deactivate:hover:not(:disabled) {
-  background: var(--reds);
+  background: var(--blocked-bg);
 }
 .org-reactivate {
-  border: 1px solid var(--bd);
-  color: var(--tx2);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
 }
 .org-reactivate:hover:not(:disabled) {
-  border-color: var(--bd2);
-  color: var(--tx);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 .org-deactivate:disabled,
 .org-reactivate:disabled {
-  color: var(--tx3);
-  border-color: var(--bd);
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
   cursor: default;
 }
 
 .org-error {
   margin: 0 0 var(--space-2);
   padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   font-size: var(--text-sm);
-  color: var(--red);
-  background: var(--reds);
-  border: 1px solid var(--redb);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
 }
 
 /* --- another person's tokens (LAI-238) ------------------------------------ */
@@ -342,20 +342,20 @@
   font: inherit;
   font-size: var(--text-xs);
   padding: 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--bd);
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border-subtle);
   background: transparent;
-  color: var(--tx2);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 .org-tokens-toggle:hover {
-  border-color: var(--bd2);
-  color: var(--tx);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 .org-tokens-toggle[aria-expanded='true'] {
-  border-color: var(--bd2);
-  background: var(--tub);
-  color: var(--tx);
+  border-color: var(--border-default);
+  background: var(--bg-column);
+  color: var(--text-primary);
 }
 
 /* The row is a wrap-enabled flex line, so the panel takes a line of its own
@@ -379,7 +379,7 @@
   min-width: 100%;
   margin-top: var(--space-3);
   padding-top: var(--space-3);
-  border-top: 1px dashed var(--bd);
+  border-top: 1px dashed var(--border-subtle);
 }
 
 .org-tokens-head {
@@ -389,13 +389,13 @@
   gap: 2px;
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .org-tokens-note {
   font-size: var(--text-xs);
   font-weight: var(--weight-normal);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* The shared `.tok-list` carries the Tokens screen's own page margins, which are
@@ -408,7 +408,7 @@
 .org-tokens-empty {
   margin: 0;
   font-size: var(--text-sm);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* A person's row is name-then-controls on a wide screen and stacked on a narrow

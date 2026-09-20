@@ -160,14 +160,28 @@ describe('status transitions (AC4)', () => {
     }
   });
 
-  it('refuses an illegal jump with unprocessable, listing what is allowed', async () => {
+  it('lets a person jump straight to done, because columns are configurable', async () => {
+    // LAI-266. This request was a 422 before the §5 table split by principal;
+    // a board whose columns are user-made makes `todo → done` an ordinary drag.
     const task = await newTask();
 
-    const res = await post(`/api/v1/tasks/${task.id}/status`, { status: 'done' });
+    expect((await post(`/api/v1/tasks/${task.id}/status`, { status: 'done' })).status).toBe(200);
+  });
+
+  it('refuses an impossible move with unprocessable, listing what is allowed', async () => {
+    // `done → cancelled` is the one refusal that survives the widening for a
+    // person — cancelling something already finished is meaningless — so it is
+    // what keeps the 422 path and its `allowed` payload under test at all.
+    const task = await newTask();
+    expect((await post(`/api/v1/tasks/${task.id}/status`, { status: 'done' })).status).toBe(200);
+
+    const res = await post(`/api/v1/tasks/${task.id}/status`, { status: 'cancelled' });
 
     expect(res.status).toBe(422);
     const body = (await res.json()) as { error: { details: { allowed: string[] } } };
+    // The human list, because a human was refused — not `ALLOWED_TRANSITIONS.done`.
     expect(body.error.details.allowed).toContain('todo');
+    expect(body.error.details.allowed).not.toContain('cancelled');
   });
 
   it('refuses a status outside the enum', async () => {

@@ -1,7 +1,8 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { addDependency, removeDependency, type Member, type Task } from '../../../api/tasks.ts';
-import { COLUMN_LABELS } from '../../../api/board-derive.ts';
+import { statusLabel } from '../../../api/board-derive.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -145,6 +146,7 @@ export function DependenciesSection({
                 void act(() => addDependency(task.id, picked));
               }}
             >
+              {busy && <Spinner size="sm" />}
               Link
             </button>
             <button
@@ -242,9 +244,7 @@ function DependencyChip({ task, relation, members, theme, busy, onRemove }: Depe
       </span>
       {/* The blocker's own state, on the right where the design puts it — it is
           the answer to "is this still in my way". */}
-      <span className={`dep-status dep-status-${task.status}`}>
-        {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
-      </span>
+      <span className={`dep-status dep-status-${task.status}`}>{statusLabel(task.status)}</span>
       <span
         className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
         title={who?.name ?? 'Unassigned'}

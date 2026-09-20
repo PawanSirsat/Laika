@@ -1,0 +1,259 @@
+/*
+ * The column settings dialog (LAI-266). Tokens only.
+ *
+ * A small centred dialog rather than the 1120px task drawer — this configures a
+ * lane, it does not present a document.
+ */
+
+.column-dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--scrim);
+}
+
+.column-dialog {
+  position: fixed;
+  z-index: 41;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(24rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 4rem);
+  overflow-y: auto;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 0.875rem 1rem 1rem;
+}
+
+.column-dialog:focus {
+  outline: none;
+}
+
+.cd-head {
+  display: flex;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.cd-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.cd-close {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.125rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0.25rem;
+  border-radius: var(--radius-chip);
+}
+
+.cd-close:hover {
+  color: var(--text-primary);
+  background: var(--bg-column);
+}
+
+.cd-error {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  border-radius: var(--radius-card);
+  padding: 0.375rem 0.5rem;
+}
+
+.cd-section {
+  padding: 0.625rem 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.cd-section:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.cd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cd-label {
+  margin: 0 0 0.25rem;
+  font-size: 0.625rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.cd-hint {
+  margin: 0.25rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.cd-input,
+.cd-select {
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  padding: 0.3125rem 0.4375rem;
+  width: 100%;
+}
+
+.cd-input:focus-visible,
+.cd-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cd-statuses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3125rem;
+}
+
+.cd-status {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.cd-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.cd-check input {
+  accent-color: var(--accent);
+}
+
+.cd-status-name {
+  font-weight: var(--weight-medium);
+}
+
+.cd-primary {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-chip);
+  padding: 0 0.1875rem;
+}
+
+.cd-from {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.cd-from-warn {
+  color: var(--chip-orange);
+}
+
+.cd-danger {
+  border-top: 1px solid var(--overdue-border);
+}
+
+.cd-delete,
+.cd-cancel,
+.cd-submit,
+.cd-confirm {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+  border-radius: var(--radius-card);
+  padding: 0.3125rem 0.625rem;
+  cursor: pointer;
+}
+
+.cd-delete {
+  color: var(--overdue);
+  background: none;
+  border: 1px solid var(--overdue-border);
+}
+
+.cd-delete:disabled {
+  color: var(--text-muted);
+  border-color: var(--border-subtle);
+  cursor: not-allowed;
+}
+
+.cd-actions {
+  display: flex;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+}
+
+.cd-cancel {
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  margin-left: auto;
+}
+
+.cd-confirm {
+  color: var(--on-accent);
+  background: var(--overdue);
+  border: 1px solid var(--overdue);
+}
+
+.cd-confirm:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* --- create-a-column (LAI-291) -------------------------------------------- */
+
+/* The asterisk the reference shows beside a required label. Decorative — the
+   `required` meaning is carried by the disabled Submit and by the field itself,
+   not by a red star, which a screen reader announces as "asterisk". */
+.cd-required {
+  color: var(--overdue);
+}
+
+/* The affirmative action, so it reads as the way out of the dialog rather than
+   one of two equal buttons. Pushed right of Cancel. */
+.cd-submit {
+  margin-left: auto;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+}
+
+.cd-submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+/* Disabled until the name is there: a Submit that answers 422 is a worse way to
+   say "this field is required" than a button that plainly cannot be pressed. */
+.cd-submit:disabled {
+  color: var(--text-muted);
+  background: var(--bg-column);
+  border-color: var(--border-subtle);
+  cursor: default;
+}

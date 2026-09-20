@@ -1,4 +1,4 @@
-import { blockedState, COLUMN_LABELS, updatedAge } from '../../../api/board-derive.ts';
+import { blockedState, statusLabel, updatedAge } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 
 /**
@@ -120,7 +120,7 @@ export function listRows({
       key: task.key,
       title: task.title,
       muted: task.status === 'done' || task.status === 'cancelled',
-      status: task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status],
+      status: statusLabel(task.status),
       statusTone: statusTone(task.status),
       priority: task.priority.toUpperCase(),
       priorityTone: priorityTone(task.priority),

@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 export const SLOT_ID = 'space-slot';
@@ -77,4 +77,79 @@ export function SpaceBand({ children }: SpaceBandProps) {
 
   if (host === null) return null;
   return createPortal(children, host);
+}
+
+/** Where a view puts its own control in the space bar (LAI-266). */
+export const BAR_SLOT_ID = 'space-bar-actions';
+
+/**
+ * Portal a view-specific control into the space bar.
+ *
+ * Distinct from {@link SpaceSlot}, which renders the row *below* the bar and is
+ * hidden when empty. Anything permanent belongs here, or that row stops
+ * collapsing and the board grows a band the design does not have.
+ */
+export function SpaceBarSlot({ children }: { readonly children: ReactNode }) {
+  const [host, setHost] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setHost(document.getElementById(BAR_SLOT_ID));
+  }, []);
+
+  if (host === null) return null;
+  return createPortal(children, host);
+}
+
+const FiltersClaimContext = createContext<{
+  readonly owned: boolean;
+  readonly claim: ((owned: boolean) => void) | undefined;
+}>({ owned: false, claim: undefined });
+
+/**
+ * Lets a view say *"I filter this space myself"* (LAI-290).
+ *
+ * The bar carries Priority, Tag, Assignee and Ready-only for every view. The
+ * board now collapses those four behind its own **Filter** button, so on the
+ * board they were drawn **twice**, both copies writing the same `?priority=`,
+ * `?tag=`, `?assignee=`, `?ready=`.
+ *
+ * **Deleting them from the bar was the wrong fix**, and it is worth writing
+ * down: `SpaceLayout` renders the bar for *every* view, and only the board has
+ * a toolbar. Timeline, Calendar and Capacity would have lost filtering
+ * altogether — the bar is the only place they have.
+ *
+ * **A claim, not a path check.** `SpaceLayout` already branches on
+ * `path === '/board'` for the presence strip, and copying that here would say
+ * the filters hide *because the route is the board* — true today, and a
+ * contingent fact. What is actually true is that they hide **because a view
+ * supplied its own**, which is the thing worth asserting: the next view to grow
+ * a toolbar gets the behaviour without anyone remembering this file.
+ */
+export function SpaceFilterClaim({ children }: { readonly children: ReactNode }) {
+  const [owned, setOwned] = useState(false);
+  const value = useMemo(() => ({ owned, claim: setOwned }), [owned]);
+
+  return <FiltersClaimContext.Provider value={value}>{children}</FiltersClaimContext.Provider>;
+}
+
+/**
+ * Claim the space's filtering for as long as the calling view is mounted.
+ *
+ * Releases on unmount, so switching from the board to Timeline hands the bar's
+ * own controls straight back.
+ */
+export function useClaimSpaceFilters(): void {
+  const { claim } = useContext(FiltersClaimContext);
+
+  useEffect(() => {
+    claim?.(true);
+    return () => {
+      claim?.(false);
+    };
+  }, [claim]);
+}
+
+/** Whether some view has claimed filtering — read by the bar. */
+export function useSpaceFiltersClaimed(): boolean {
+  return useContext(FiltersClaimContext).owned;
 }

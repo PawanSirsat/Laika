@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { TagPicker } from './TagPicker.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
-import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { describeEvent, statusTransition } from '../../../api/activity.ts';
 import { updatedAge } from '../../../api/board-derive.ts';
 import { isAgentComment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
-import { COLUMN_LABELS, type BoardColumn } from '../../../api/board-derive.ts';
+import { statusLabel } from '../../../api/board-derive.ts';
 import { describeActor } from './actor-presentation.ts';
 import {
   listWatchers,
@@ -17,6 +16,7 @@ import {
   watchTask,
   type Member,
   type Task,
+  type TaskStatus,
 } from '../../../api/tasks.ts';
 import { TaskMeta } from '../task/TaskMeta.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
@@ -43,7 +43,7 @@ export interface TaskDetailPanelProps {
   readonly moving: boolean;
   readonly moveError: string | undefined;
   /** The same call the board uses — not a second implementation (LAI-056). */
-  readonly onMove: (taskId: string, to: BoardColumn) => void;
+  readonly onMove: (taskId: string, to: TaskStatus) => void;
   readonly onClose: () => void;
   /** The signed-in user's id, for Claim. */
   readonly meId?: string | undefined;
@@ -224,7 +224,7 @@ export function TaskDetailPanel({
           <span className="panel-key">{task.key}</span>
           <span className={`panel-state panel-state-${task.status}`}>
             <span className="panel-state-dot" aria-hidden="true" />
-            {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
+            {statusLabel(task.status)}
           </span>
           <span className={`panel-prio panel-prio-${task.priority}`}>
             <span className="panel-prio-dot" aria-hidden="true" />
@@ -508,7 +508,16 @@ export function TaskDetailPanel({
                 hidden={tab !== 'comments'}
               >
                 {detail.comments.length === 0 ? (
-                  <EmptyState headline="No comments yet" />
+                  /*
+                   * **One quiet line, not a full empty state** (LAI-605).
+                   *
+                   * `EmptyState` is built for a screen with nothing on it — an
+                   * icon, a headline and room around both. Here it sat above a
+                   * composer that is already inviting a comment, so an
+                   * *absence* took more of the panel than several comments
+                   * would, and pushed the composer below the fold.
+                   */
+                  <p className="cmt-none">No comments yet</p>
                 ) : (
                   <ul className="cmt-list">
                     {detail.comments.map((comment) => {
@@ -542,10 +551,10 @@ export function TaskDetailPanel({
                                     width="16"
                                     height="12"
                                     rx="3"
-                                    stroke="#fff"
+                                    stroke="var(--on-accent)"
                                     strokeWidth="3"
                                   />
-                                  <path d="M12 4v4" stroke="#fff" strokeWidth="3" />
+                                  <path d="M12 4v4" stroke="var(--on-accent)" strokeWidth="3" />
                                 </svg>
                               </span>
                             )}
@@ -623,12 +632,7 @@ export function TaskDetailPanel({
                       });
                     }}
                     send={
-                      <Button
-                        type="submit"
-                        busy={detail.posting}
-                        busyLabel="Posting…"
-                        disabled={draft.trim() === ''}
-                      >
+                      <Button type="submit" busy={detail.posting} disabled={draft.trim() === ''}>
                         Comment
                       </Button>
                     }

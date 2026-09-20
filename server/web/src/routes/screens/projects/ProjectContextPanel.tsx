@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -217,7 +218,8 @@ export function ProjectContextPanel({
                   disabled={saving || !dirty}
                   onClick={save}
                 >
-                  {saving ? 'Saving…' : 'Save'}
+                  {saving && <Spinner size="sm" />}
+                  Save
                 </button>
               </div>
             ) : (

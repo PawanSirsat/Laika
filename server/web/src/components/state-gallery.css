@@ -2,8 +2,8 @@
 
 .gallery {
   padding: var(--space-5);
-  background: var(--page);
-  color: var(--tx);
+  background: var(--bg-canvas);
+  color: var(--text-primary);
   font-family: var(--font-ui);
 }
 
@@ -15,7 +15,7 @@
 
 .gallery-sub {
   font-size: var(--text-sm);
-  color: var(--tx2);
+  color: var(--text-secondary);
   margin: var(--space-1) 0 var(--space-5);
   max-width: 60ch;
 }
@@ -27,16 +27,16 @@
 }
 
 .gallery-item {
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: var(--shadow);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
   overflow: hidden;
 }
 
 .gallery-item > header {
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .gallery-item-title {
@@ -47,14 +47,14 @@
 
 .gallery-item-note {
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
   margin: var(--space-1) 0 0;
 }
 
-/* --tub so the specimen sits on the recessed surface a real screen would use. */
+/* --bg-column so the specimen sits on the recessed surface a real screen would use. */
 .gallery-stage {
   padding: var(--space-4);
-  background: var(--tub);
+  background: var(--bg-column);
   min-height: 9rem;
   display: flex;
   flex-direction: column;

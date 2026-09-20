@@ -23,7 +23,7 @@
   margin: 0;
   flex: 1;
   font-size: var(--text-sm);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 /* Section eyebrow with a rule running to the edge, as the design has it. */
@@ -35,13 +35,13 @@
   font-size: 0.59375rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.09em;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .projects-rule {
   flex: 1;
   height: 1px;
-  background: var(--bd);
+  background: var(--border-subtle);
 }
 
 /* Three across, as the design lays them out. */
@@ -71,10 +71,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   padding: var(--space-4) var(--space-4) 0;
   overflow: hidden;
 }
@@ -93,7 +93,7 @@
   font-size: 0.90625rem;
   font-weight: var(--weight-heavy);
   letter-spacing: -0.016em;
-  color: var(--tx);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -105,16 +105,16 @@
   font-weight: var(--weight-heavy);
   letter-spacing: 0.06em;
   padding: 0.1875rem 0.3125rem;
-  border-radius: var(--radius-sm);
-  background: var(--tub);
-  border: 1px solid var(--bd);
-  color: var(--tx3);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
 }
 
 .project-chip-public {
-  background: var(--grns);
-  border-color: var(--grnb);
-  color: var(--grn);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+  color: var(--chip-green);
 }
 
 /* The repo the project tracks. Mono, because it is an identifier. */
@@ -122,7 +122,7 @@
   margin: 0;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -133,7 +133,7 @@
   font-size: 0.71875rem;
   font-weight: var(--weight-medium);
   line-height: 1.5;
-  color: var(--tx2);
+  color: var(--text-secondary);
   text-wrap: pretty;
 }
 
@@ -144,15 +144,15 @@
   gap: var(--space-2);
   margin: auto -1rem 0;
   padding: var(--space-3) var(--space-4);
-  background: var(--page);
-  border-top: 1px solid var(--bd);
+  background: var(--bg-canvas);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .project-key,
 .project-slug {
   font-family: var(--font-mono);
   font-size: 0.5625rem;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .project-foot-spacer {
@@ -164,26 +164,26 @@
   font: inherit;
   font-size: 0.65625rem;
   font-weight: var(--weight-bold);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-card);
   padding: 0.3125rem 0.625rem;
   cursor: pointer;
 }
 
 .project-members {
   background: none;
-  border: 1px solid var(--bd2);
-  color: var(--tx2);
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
 }
 
 .project-open {
-  background: var(--acc);
-  border: 1px solid var(--acc);
-  color: var(--card);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--bg-card);
 }
 
 .project-members:focus-visible,
 .project-open:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -192,10 +192,10 @@
 .projects-form {
   margin: 0 1.125rem var(--space-4);
   padding: var(--space-4);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   max-width: 34rem;
 }
 
@@ -221,19 +221,19 @@
 .project-bar {
   display: flex;
   height: 6px;
-  border-radius: var(--radius-sm);
-  background: var(--tub);
+  border-radius: var(--radius-chip);
+  background: var(--bg-column);
   overflow: hidden;
 }
 
 .project-bar-done {
-  background: var(--grn);
+  background: var(--chip-green);
 }
 .project-bar-review {
-  background: var(--amb);
+  background: var(--chip-orange);
 }
 .project-bar-active {
-  background: var(--acc);
+  background: var(--accent);
 }
 
 .project-counts {
@@ -243,12 +243,12 @@
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.5625rem;
-  color: var(--tx3);
+  color: var(--text-muted);
   flex-wrap: wrap;
 }
 
 .project-count-main {
-  color: var(--tx2);
+  color: var(--text-secondary);
   font-weight: var(--weight-semibold);
 }
 
@@ -257,7 +257,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.1875rem;
-  color: var(--red);
+  color: var(--overdue);
   font-weight: var(--weight-semibold);
 }
 
@@ -286,16 +286,19 @@
 }
 
 .project-face {
-  width: 1.375rem;
-  height: 1.375rem;
+  /* The board toolbar's stack, at the space card's scale (the owner pointed at
+     it as the reference): vivid solid circles, initials that fit, a ring in the
+     card's own ground thick enough to separate the pile. */
+  width: 2.125rem;
+  height: 2.125rem;
   border-radius: var(--radius-pill);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.5rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-heavy);
-  box-shadow: 0 0 0 1.5px var(--card);
-  margin-left: -6px;
+  box-shadow: 0 0 0 2.5px var(--bg-card);
+  margin-left: -8px;
 }
 
 .project-face:first-child {
@@ -303,8 +306,8 @@
 }
 
 .project-people-note {
-  font-size: 0.5625rem;
-  color: var(--tx3);
+  font-size: var(--text-ui);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

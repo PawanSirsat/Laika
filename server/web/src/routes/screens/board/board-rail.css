@@ -9,9 +9,9 @@
 }
 
 .rail-card {
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: 0.6875rem 0.6875rem 0.5625rem;
   display: flex;
   flex-direction: column;
@@ -28,14 +28,14 @@
   margin: 0;
   font-size: var(--text-xs);
   font-weight: var(--weight-heavy);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .rail-head code {
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: 0.53125rem;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .rail-count {
@@ -43,7 +43,7 @@
   font-family: var(--font-mono);
   font-size: 0.5625rem;
   font-weight: var(--weight-bold);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* The stream's own state — green live, amber reconnecting. */
@@ -52,17 +52,17 @@
   height: 6px;
   flex: none;
   border-radius: var(--radius-pill);
-  background: var(--tx3);
+  background: var(--text-muted);
 }
 
 .rail-dot-live {
-  background: var(--grn);
+  background: var(--chip-green);
   animation: rail-pulse 2s ease-in-out infinite;
 }
 
 .rail-dot-connecting,
 .rail-dot-dropped {
-  background: var(--amb);
+  background: var(--chip-orange);
 }
 
 @keyframes rail-pulse {
@@ -86,11 +86,11 @@
 .rail-gap {
   margin: 0;
   font-size: 0.59375rem;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .rail-gap {
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 
 .rail-feed,
@@ -110,7 +110,7 @@
   gap: 0.4375rem;
   align-items: flex-start;
   padding: 0.375rem 0;
-  border-bottom: 1px solid var(--bd);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .rail-feed li:last-child {
@@ -124,7 +124,7 @@
   font-weight: var(--weight-semibold);
   /* 1.5 so the timestamp sits on the avatar's optical centre, not its top. */
   line-height: 1.5;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* The 18px initials circle from the design, and the anchor for the agent dot. */
@@ -150,7 +150,7 @@
 /**
  * Agent marker: the design's corner dot, not a word.
  *
- * The border is `--card` so the dot reads as lifted off the avatar rather than
+ * The border is `--bg-card` so the dot reads as lifted off the avatar rather than
  * merged into it — which means it tracks the panel it sits on in both themes,
  * where a fixed white would only work in one.
  */
@@ -166,33 +166,33 @@
   bottom: -0.1875rem;
   width: 0.6875rem;
   height: 0.6875rem;
-  border: 1.5px solid var(--card);
+  border: 1.5px solid var(--bg-card);
 }
 
-/* An agent: a rounded square, the design's `--pur`. */
+/* An agent: a rounded square, the design's `--chip-pink`. */
 .rail-feed-bot-agent {
-  border-radius: var(--radius-sm);
-  background: var(--pur);
+  border-radius: var(--radius-chip);
+  background: var(--chip-pink);
 }
 
-/* The system: a circle, and the same quiet `--tx3` the dashboard gives it. */
+/* The system: a circle, and the same quiet `--text-muted` the dashboard gives it. */
 .rail-feed-bot-system {
   border-radius: var(--radius-pill);
-  background: var(--tx3);
+  background: var(--text-muted);
 }
 
 .rail-feed-what {
   flex: 1;
   min-width: 0;
   font-size: 0.59375rem;
-  color: var(--tx2);
+  color: var(--text-secondary);
   line-height: 1.4;
 }
 
 /* The actor's name is the subject of the sentence, so it carries the ink. */
 .rail-feed-what b {
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .rail-session-who {
@@ -202,29 +202,29 @@
   margin: 0;
   font-size: 0.59375rem;
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .rail-pill {
   font-size: 0.5rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.05em;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   padding: 0.0625rem 0.25rem;
-  background: var(--tub);
-  color: var(--tx3);
+  background: var(--bg-column);
+  color: var(--text-muted);
 }
 
 .rail-pill-running {
-  background: var(--purs);
-  color: var(--pur);
+  background: var(--chip-pink-bg);
+  color: var(--chip-pink);
 }
 
 .rail-session-task,
 .rail-session-meta {
   margin: 0;
   font-size: 0.53125rem;
-  color: var(--tx3);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -234,14 +234,14 @@
   display: block;
   height: 3px;
   border-radius: 2px;
-  background: var(--tub);
+  background: var(--bg-column);
   overflow: hidden;
 }
 
 .rail-bar span {
   display: block;
   height: 100%;
-  background: var(--pur);
+  background: var(--chip-pink);
 }
 
 .rail-stale li {
@@ -253,7 +253,7 @@
 .rail-stale-title {
   font-size: 0.59375rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx);
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -264,7 +264,7 @@
   align-items: center;
   gap: 0.375rem;
   font-size: 0.53125rem;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .rail-stale-meta code {
@@ -313,6 +313,27 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-x: auto;
+  /*
+   * **`hidden`, and it is not redundant** (LAI-290).
+   *
+   * `overflow-x: auto` alone does not leave the other axis alone: the spec
+   * coerces a `visible` counterpart to `auto`, so this pane silently became a
+   * *vertical* scroller too. It then grew a scrollbar over a 91px phantom —
+   * the clipped `.lane-move` and `.lane-order` absolutes, which are positioned
+   * against this box by the `position: relative` below — while every real box
+   * ended 18px inside it.
+   *
+   * **Ungrouped**, the board is one screenful by design: the lanes reach the
+   * bottom and each scrolls its own cards, so nothing here scrolls vertically
+   * and this says so rather than relying on the content to stay short.
+   *
+   * **Grouped is a different shape**, and this comment claimed otherwise for as
+   * long as swimlanes have existed (LAI-296). A grouped board is one lane row
+   * *per group* stacked down the page — five assignees is five full rows — and
+   * this rule made every row below the second unreachable. `.board-grouped`
+   * below is the exception, set by the screen that knows which shape it drew.
+   */
+  overflow-y: hidden;
   /*
    * **A scroll container must be the containing block for what it scrolls.**
    *
@@ -408,4 +429,16 @@
   .rail-card {
     flex: 1 1 15rem;
   }
+}
+
+/*
+ * A grouped board scrolls itself (LAI-296).
+ *
+ * The lanes inside each row keep their own card scrolling; what is added here
+ * is the page-level scroll *between* rows, which the ungrouped board has no
+ * need of and must not get — the phantom-scrollbar fix in `.board-main` above
+ * is why it is opt-in rather than simply `auto`.
+ */
+.board-main.board-grouped {
+  overflow-y: auto;
 }

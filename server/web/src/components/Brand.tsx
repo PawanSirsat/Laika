@@ -16,7 +16,7 @@ export interface BrandProps {
  *
  * Two marks rather than one because the design uses two. The sidebar's is a
  * small accent dot; the auth card's is a tile carrying the glyph, and `5a`
- * names its ground (`--tx`) and its stroke (`--card`) — so the glyph is drawn
+ * names its ground (`--text-primary`) and its stroke (`--bg-card`) — so the glyph is drawn
  * rather than approximated. It is inline SVG, not an asset: the CSP is
  * `script-src 'self'` with no external hosts (LAI-205), and a mark that needs a
  * network request is a mark that can fail to appear.

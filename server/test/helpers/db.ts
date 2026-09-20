@@ -6,6 +6,7 @@ import { openDb, type Db } from '../../src/db/client.ts';
 import { runMigrations } from '../../src/db/migrate.ts';
 import { newId } from '../../src/db/ids.ts';
 import { orgs, projects, users } from '../../src/db/schema.ts';
+import { createDefaultBoardColumns } from '../../src/services/board-columns.ts';
 
 export interface TestDb {
   db: Db;
@@ -80,6 +81,13 @@ export function seed(db: Db, now = Date.now()): Seed {
       updatedAt: now,
     })
     .run();
+
+  // This helper inserts the project row directly rather than going through
+  // `createProject`, so it has to seed the board itself (LAI-266). Without it
+  // every service test would be running against a project with no columns —
+  // which is a state the production code cannot produce, so the suite would be
+  // testing something that does not exist.
+  createDefaultBoardColumns(db, projectId, now);
 
   return { orgId, userId, projectId };
 }

@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -274,7 +275,8 @@ export function TokensScreen({ me }: TokensScreenProps) {
               disabled={pending || name.trim() === ''}
               onClick={mint}
             >
-              {pending ? 'Creating…' : 'Create token'}
+              {pending && <Spinner size="sm" />}
+              Create token
             </button>
           </div>
         </section>

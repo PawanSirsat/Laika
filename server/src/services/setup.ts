@@ -6,6 +6,7 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction } from '../db/numbering.ts';
 import { orgs, projectMemberships, projects, users } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { createDefaultBoardColumns } from './board-columns.ts';
 
 /**
  * First-run setup (SPEC §6.4, LAI-009) — the M1 exit criterion.
@@ -235,6 +236,11 @@ export function createFirstOrg(sqlite: Database.Database, db: Db, input: SetupIn
           updatedAt: now,
         })
         .run();
+
+      // The very first project on a fresh install gets its board here, not from
+      // the migration backfill — that only sees projects that already exist
+      // (LAI-266). Miss this and first boot produces a space with no columns.
+      createDefaultBoardColumns(db, projectId, now);
 
       // The Owner leads the project they created; without this they hold only
       // the implicit lead that org role grants, and removing their org role

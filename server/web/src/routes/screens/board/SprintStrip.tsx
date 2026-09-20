@@ -10,6 +10,16 @@ export interface SprintStripProps {
   readonly tasks: readonly Task[];
   /** The sprint the board is scoped to, or `undefined` for all sprints. */
   readonly selected: string | undefined;
+  /**
+   * Whether the sprint list is still in flight.
+   *
+   * **Load-bearing, not cosmetic.** Without it the strip cannot tell *"no
+   * sprints yet"* from *"this project has none"*, so it drew nothing and then
+   * appeared at full height, moving the whole board down 57px (LAI-297). The
+   * board's own skeleton had already been matched to the pixel; this was the
+   * entire remaining jump.
+   */
+  readonly loading?: boolean | undefined;
   readonly onSelect: (sprintId: string | undefined) => void;
 }
 
@@ -46,9 +56,7 @@ function pct(done: number, total: number): number {
  * Selecting a sprint scopes the board through `?sprint=`, which the tasks
  * endpoint has always accepted.
  */
-export function SprintStrip({ sprints, tasks, selected, onSelect }: SprintStripProps) {
-  if (sprints.length === 0) return null;
-
+export function SprintStrip({ sprints, tasks, selected, onSelect, loading }: SprintStripProps) {
   const now = Date.now();
   const current = sprints.find((s) => s.id === selected);
   const counts = countFor(tasks, selected);
@@ -80,6 +88,35 @@ export function SprintStrip({ sprints, tasks, selected, onSelect }: SprintStripP
       observer.disconnect();
     };
   }, [sprints.length]);
+
+  /*
+   * **No placeholder inside the strip** (LAI-606).
+   *
+   * LAI-297 reserved the height *and* pulsed two ghost chips while the list
+   * loaded. Reserving is still right — it is what stops the board jumping
+   * 57px. The animation is not: measured, it ran to ~6s, long past the board
+   * being usable, and the owner's complaint about loader noise is exactly this.
+   *
+   * **Reserving layout and animating a placeholder are separable**, and only
+   * the first is needed for ambient data. Nobody waits on the sprint list;
+   * they wait on the board, which is already there.
+   */
+
+  /*
+   * **The early return moved below the hooks, and it had to.**
+   *
+   * It was the first line of the component: `if (sprints.length === 0) return
+   * null`. That is a conditional hook call — the first render of a board has
+   * no sprints yet and ran **zero** hooks, and the render after they arrived
+   * ran three, which is the "rendered more hooks than during the previous
+   * render" error. It survived because the strip was usually mounted with its
+   * sprints already in hand; giving it a loading state makes the empty render
+   * the normal one.
+   *
+   * Loading is not empty: a project genuinely without sprints draws nothing,
+   * which is what the strip is for.
+   */
+  if (sprints.length === 0 && loading !== true) return null;
 
   return (
     <section className="strip" aria-label="Sprints">

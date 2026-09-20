@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import './task-panel.css';
@@ -148,7 +149,14 @@ export function InlineEdit({ value, placeholder, shape, mayEdit, label, onSave }
         </p>
       )}
       <p className="inline-edit-hint">
-        {shape === 'line' ? 'Enter saves' : '⌘↵ saves'} · Escape cancels
+        {busy ? (
+          <>
+            <Spinner size="sm" label={`Saving ${label}`} />
+            Saving…
+          </>
+        ) : (
+          `${shape === 'line' ? 'Enter saves' : '⌘↵ saves'} · Escape cancels`
+        )}
       </p>
     </div>
   );

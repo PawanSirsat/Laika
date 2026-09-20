@@ -8,7 +8,14 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, type ApiStub, type StubCall } from './harness.ts';
+import {
+  closeBrowser,
+  open,
+  setTheme,
+  type ApiStub,
+  type Harness,
+  type StubCall,
+} from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -126,30 +133,67 @@ void describe('the space bar', () => {
       /*
        * **Wait for the name, not for the element.**
        *
-       * The bar renders `spaceName ?? slug`, so `.space-name` exists from the
+       * The rail renders the listed name first, so `.sidebar-wordmark` exists from the
        * first paint carrying `laika-core`, and `GET /projects/:slug` replaces
        * it a beat later. Waiting on the element therefore returns on the
        * *fallback*, and this asserted against whichever of the two the machine
        * happened to be showing — green most runs, red about one in two under
        * load. The fallback is correct behaviour; the assertion was racing it.
        */
-      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      /*
+       * **The identity moved to the rail** (LAI-293). The bar carried the
+       * project name and icon while the rail two inches away said `Laika`;
+       * the owner asked for the rail to name the project and the bar to stop
+       * repeating it.
+       *
+       * The race this test was written for is unchanged and still the point:
+       * the wordmark renders the listed name first and the by-slug answer a
+       * beat later, so waiting on the *element* returns on the fallback.
+       * Wait for the value.
+       */
+      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
-        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
+        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
         undefined,
         { timeout: 15_000 },
       );
 
+      assert.equal(await h.page.locator('.sidebar-wordmark').innerText(), 'Laika Core');
+      assert.equal(await h.page.locator('.sidebar-orgline').innerText(), 'Borealis Labs');
+
+      /*
+       * And the bar does not *show* either — moved, not copied.
+       *
+       * **`count()` was wrong here and LAI-299 proved it.** The bar's name is
+       * always in the DOM now and hidden by CSS when the rail is showing it,
+       * so a presence check returns 1 in both the correct and the broken
+       * state. The icon did not come back, so `count()` still fits it.
+       */
+      // The bar names it too since LAI-299 — see the describe below for why
+      // the "hide it when the rail has it" rule could not be computed.
       assert.equal(await h.page.locator('.space-name').innerText(), 'Laika Core');
+      // The icon came back with the name in LAI-299 — the owner's reference
+      // has both on the bar's first line.
+      assert.equal(await h.page.locator('.space-icon').count(), 1);
 
-      const icon = await h.page.locator('.space-icon').boundingBox();
-      assert.ok(icon, 'the space icon is missing');
-      assert.equal(Math.round(icon.width), 26, 'the icon is the design’s 26px square');
-
-      // Four avatars and `+2`, from six real members — never the design's
-      // four fixtures.
-      assert.equal(await h.page.locator('.space-member').count(), 4);
-      assert.equal(await h.page.locator('.space-member-more').innerText(), '+2');
+      /*
+       * Four avatars and `+2`, from six real members — never the design's four
+       * fixtures.
+       *
+       * **Asserted on the timeline since LAI-293.** The faces are an assignee
+       * filter, so on the *board* they now live in that view's own row and the
+       * bar correctly has none. The property this protects — real members,
+       * clustered, never fixtures — is unchanged; only the view it must be
+       * measured on moved.
+       */
+      const t = await open('/timeline?project=laika-core', STUB);
+      try {
+        await t.page.locator('.space-member').first().waitFor({ timeout: 20_000 });
+        assert.equal(await t.page.locator('.space-member').count(), 4);
+        assert.equal(await t.page.locator('.space-member-more').innerText(), '+2');
+      } finally {
+        await t.close();
+      }
 
       const bar = await h.page.locator('#sidebar').innerText();
       assert.doesNotMatch(bar, /Mira Kellner/);
@@ -164,10 +208,10 @@ void describe('the space bar', () => {
     // fields. Asserted against a fixture shaped like the real endpoint.
     const h = await open('/board?project=laika-core', STUB);
     try {
-      const name = h.page.locator('.space-name');
+      const name = h.page.locator('.sidebar-wordmark');
       await name.waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
-        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
+        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
         undefined,
         { timeout: 10_000 },
       );
@@ -219,10 +263,16 @@ void describe('the space bar', () => {
         timeout: 5000,
       });
 
-      // **A dropdown since LAI-270**, as the reference has it — selecting is
-      // what writes the URL now, not pressing a button until it cycles round.
+      /*
+       * **A dropdown since LAI-270**, as the reference has it — selecting is
+       * what writes the URL, not pressing a button until it cycles round.
+       * **Behind `Filter` since LAI-290**, for the same reason: the bar drew it
+       * twice once the board had its own toolbar. What this test protects is
+       * unchanged — choosing a priority writes `?priority=`.
+       */
+      await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
       await h.page
-        .locator('.space-select', { hasText: 'Priority' })
+        .locator('.bt-field', { hasText: 'Priority' })
         .locator('select')
         .selectOption('p1');
       await h.page.waitForFunction(
@@ -283,7 +333,7 @@ void describe('the space bar', () => {
   void test('the bar fits, both themes, at every width', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
 
       for (const theme of ['light', 'dark']) {
         // Back to a width where the rail is on-canvas: below 900px the sidebar
@@ -312,7 +362,7 @@ void describe('the space bar', () => {
     }
   });
 
-  void test('the tabs are the design’s 34px, and the active one is underlined', async () => {
+  void test('the tabs are the file’s 36px, and the active one is underlined', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       const active = h.page.locator('.view-tab-active');
@@ -320,13 +370,15 @@ void describe('the space bar', () => {
 
       const box = await active.boundingBox();
       assert.ok(box);
-      assert.equal(Math.round(box.height), 34, 'a tab is the design’s 34px tall');
+      assert.equal(Math.round(box.height), 36, 'a tab is the file’s 36px tall');
 
       const style = await active.evaluate((el) => {
         const s = getComputedStyle(el);
         return { border: s.borderBottomWidth, weight: s.fontWeight, colour: s.color };
       });
       assert.equal(style.border, '2px', 'the active tab carries the design’s 2px underline');
+      // 700 since LAI-605: the file bolds the active tab alongside the accent
+      // underline, reversing LAI-606's weight-never-changes reading.
       assert.equal(style.weight, '700');
       // The underline and the text are the same accent, which is what makes
       // the state readable without relying on the colour alone.
@@ -335,6 +387,164 @@ void describe('the space bar', () => {
         .first()
         .evaluate((el) => getComputedStyle(el).color);
       assert.notEqual(style.colour, inactive, 'the active tab is not distinguished at all');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * One control per filter, wherever the filter lives (LAI-290).
+ *
+ * The board grew its own `Filter` button while the bar kept Priority, Tag,
+ * Assignee and Ready-only inline, so each of those four was drawn **twice**,
+ * both copies writing the same URL param. Two controls for one piece of state
+ * is a defect even when they agree — they disagree the moment one is changed
+ * from a link.
+ *
+ * The other half is why the bar's copies are *hidden* and not deleted: every
+ * non-board view of a space has no toolbar, and the bar is the only filtering
+ * it has.
+ */
+void describe('the bar does not draw filters a view already owns', () => {
+  void test('the board shows one priority control, not two', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.bt-button').first().waitFor({ timeout: 20_000 });
+
+      assert.equal(
+        await h.page.locator('.space-select').count(),
+        0,
+        'the bar is still drawing its own filters while the board owns them',
+      );
+      assert.equal(
+        await h.page.locator('.bt-button', { hasText: 'Filter' }).count(),
+        1,
+        'the board lost its Filter button',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a view with no toolbar keeps the bar’s own filters', async () => {
+    // The regression the obvious fix would have caused: deleting the four from
+    // `SpaceTopBar` strips filtering from Timeline, Calendar and Capacity,
+    // which have nowhere else to put it.
+    const h = await open('/timeline?project=laika-core', STUB);
+    try {
+      await h.page.locator('.space-bar').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(400);
+
+      assert.equal(
+        await h.page.locator('.bt-button', { hasText: 'Filter' }).count(),
+        0,
+        'the timeline has a board toolbar — this test is no longer measuring anything',
+      );
+      assert.ok(
+        (await h.page.locator('.space-select').count()) >= 2,
+        'the timeline lost its filters — the bar is its only place for them',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * The project is named exactly once, in every state (LAI-299).
+ *
+ * LAI-293 moved the name to the rail's wordmark. The rail is not always there:
+ * it collapses to icons, and below 900px it slides off-canvas — and in both
+ * states nothing on screen named the project. The owner found the second one.
+ *
+ * **Measured by visibility, not by presence.** The bar's copy is always in the
+ * DOM and hidden with CSS, so `locator.count()` cannot tell the states apart —
+ * it returns 1 whether or not anyone can read it. That is the assertion a
+ * broken fix would satisfy.
+ */
+/*
+ * **The bar names the project unconditionally** (LAI-299). It was hidden while
+ * the rail had it; that rule is not computable — a window positioned partly off
+ * the display leaves the rail off *screen* while the page still has it at
+ * `x = 0`, so the board had no name at all. Naming it twice is the accepted
+ * cost of never naming it nowhere.
+ */
+void describe('the project is named in the bar, wherever the rail is', () => {
+  /** What a person can actually read, in each of the two places. */
+  const naming = (h: Harness) =>
+    h.page.evaluate(() => {
+      const visible = (el: Element | null) =>
+        el !== null &&
+        el.getBoundingClientRect().width > 0 &&
+        getComputedStyle(el).display !== 'none';
+
+      const rail = document.querySelector('#sidebar, .sidebar');
+      const box = rail?.getBoundingClientRect();
+      // Off-canvas counts as absent: it is in the DOM and nobody can read it.
+      const railOnScreen = box !== undefined && box.left >= 0 && box.width > 0;
+      const wordmark = document.querySelector('.sidebar-wordmark');
+      const barName = document.querySelector('.space-name');
+
+      return {
+        rail: railOnScreen && visible(wordmark) ? (wordmark?.textContent ?? null) : null,
+        bar: visible(barName) ? (barName?.textContent ?? null) : null,
+      };
+    });
+
+  void test('wide with the rail open, both name it — deliberately', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 900 });
+      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(
+        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
+        undefined,
+        { timeout: 15_000 },
+      );
+
+      const m = await naming(h);
+      assert.equal(m.rail, 'Laika Core');
+      assert.equal(m.bar, 'Laika Core', 'the bar stopped naming the project');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('below 900px the rail is off-canvas, so the bar names it', async () => {
+    // The owner's report: their window was narrow, the rail was off screen,
+    // and the board had no name on it anywhere.
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 880, height: 900 });
+      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(500);
+
+      const m = await naming(h);
+      assert.equal(m.rail, null, 'the rail is on screen — this test is measuring the wrong state');
+      assert.equal(m.bar, 'Laika Core', 'nothing names the project at this width');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('collapsed, the bar names it', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+
+    try {
+      await h.page.setViewportSize({ width: 1600, height: 900 });
+      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
+
+      // The rail's own header button is what collapses it.
+      await h.page.locator('.sidebar-logo').click();
+      await h.page.waitForSelector('.shell-rail-mini', { timeout: 10_000 });
+      await h.page.waitForTimeout(400);
+
+      const m = await naming(h);
+      assert.equal(m.rail, null, 'the wordmark survived the collapse — wrong state');
+      assert.equal(m.bar, 'Laika Core', 'nothing names the project while the rail is collapsed');
     } finally {
       await h.close();
     }

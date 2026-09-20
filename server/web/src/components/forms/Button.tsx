@@ -1,3 +1,4 @@
+import { Spinner } from '../Spinner.tsx';
 import './forms.css';
 
 /**
@@ -21,7 +22,6 @@ export interface ButtonProps {
    * user but mean different things, and only one of them resolves by waiting.
    */
   readonly busy?: boolean;
-  readonly busyLabel?: string | undefined;
   readonly onClick?: (() => void) | undefined;
   readonly fullWidth?: boolean;
 }
@@ -32,7 +32,6 @@ export function Button({
   type = 'button',
   disabled = false,
   busy = false,
-  busyLabel,
   onClick,
   fullWidth = false,
 }: ButtonProps) {
@@ -49,7 +48,22 @@ export function Button({
       aria-busy={busy || undefined}
       onClick={onClick}
     >
-      {busy ? (busyLabel ?? children) : children}
+      {/*
+        **A spinner beside the label, and the label does not change** (LAI-293).
+        It read `busy ? (busyLabel ?? children) : children`, so every button
+        swapped its text and resized mid-click — "Create task" is 11 characters
+        and "Creating…" is 9, and the button moved under the cursor that had
+        just pressed it.
+
+        The `busyLabel` prop went with it rather than being left for anyone who
+        wanted the old behaviour back: a prop with no callers is how a retired
+        decision creeps back in.
+
+        `aria-busy` above already says "working" to a screen reader, so the
+        spinner is decorative and announces nothing on top of it.
+      */}
+      {busy && <Spinner size="sm" />}
+      {children}
     </button>
   );
 }

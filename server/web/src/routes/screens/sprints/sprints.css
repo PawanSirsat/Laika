@@ -30,17 +30,17 @@
   font: inherit;
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-3);
   cursor: pointer;
 }
 
 .sprint-button:hover:not(:disabled) {
-  border-color: var(--bd2);
-  color: var(--tx);
+  border-color: var(--border-default);
+  color: var(--text-primary);
 }
 
 .sprint-button:disabled {
@@ -49,22 +49,22 @@
 }
 
 .sprint-button-primary {
-  color: var(--acc);
-  background: var(--accs);
-  border-color: var(--accb);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
 }
 
 .sprint-button-danger {
-  color: var(--red);
-  background: var(--reds);
-  border-color: var(--redb);
+  color: var(--overdue);
+  background: var(--blocked-bg);
+  border-color: var(--overdue-border);
 }
 
 .sprint-button:focus-visible,
 .sprint-input:focus-visible,
 .sprint-task-remove:focus-visible,
 .sprint-alert-close:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
@@ -79,17 +79,17 @@
 }
 
 .sprint-card {
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   padding: var(--space-4);
 }
 
 /* The active sprint is the one being worked; the accent rail is the only
    difference, so a colour-blind reader still has the `active` chip. */
 .sprint-card-active {
-  border-left: 3px solid var(--acc);
+  border-left: 3px solid var(--accent);
 }
 
 .sprint-card-completed {
@@ -113,7 +113,7 @@
 .sprint-name {
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -123,40 +123,40 @@
   font-weight: var(--weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-chip);
   padding: 2px var(--space-2);
-  color: var(--tx2);
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  color: var(--text-secondary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
 }
 
 .sprint-status-active {
-  color: var(--acc);
-  background: var(--accs);
-  border-color: var(--accb);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
 }
 
 .sprint-status-completed {
-  color: var(--grn);
-  background: var(--grns);
-  border-color: var(--grnb);
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
 }
 
 .sprint-range {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  color: var(--tx2);
+  color: var(--text-secondary);
   margin: 0;
   display: flex;
   gap: var(--space-3);
 }
 
 .sprint-days {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .sprint-goal {
-  color: var(--tx2);
+  color: var(--text-secondary);
   font-size: var(--text-sm);
   margin: var(--space-3) 0 0;
 }
@@ -174,21 +174,21 @@
   flex: 1;
   height: 6px;
   border-radius: 999px;
-  background: var(--tub);
-  border: 1px solid var(--bd);
+  background: var(--bg-column);
+  border: 1px solid var(--border-subtle);
   overflow: hidden;
 }
 
 .sprint-bar-fill {
   display: block;
   height: 100%;
-  background: var(--grn);
+  background: var(--chip-green);
 }
 
 .sprint-count {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
   margin: 0;
   white-space: nowrap;
 }
@@ -208,7 +208,7 @@
   list-style: none;
   margin: var(--space-4) 0 0;
   padding: var(--space-3) 0 0;
-  border-top: 1px solid var(--bd);
+  border-top: 1px solid var(--border-subtle);
   display: grid;
   gap: var(--space-2);
 }
@@ -219,13 +219,13 @@
   align-items: center;
   gap: var(--space-3);
   font-size: var(--text-sm);
-  color: var(--tx);
+  color: var(--text-primary);
 }
 
 .sprint-task-key {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -240,30 +240,30 @@
 .sprint-task-status {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .sprint-task-done {
-  color: var(--grn);
+  color: var(--chip-green);
 }
 
 .sprint-task-in_progress {
-  color: var(--acc);
+  color: var(--accent);
 }
 
 .sprint-task-review {
-  color: var(--amb);
+  color: var(--chip-orange);
 }
 
 .sprint-task-cancelled {
-  color: var(--tx3);
+  color: var(--text-muted);
   text-decoration: line-through;
 }
 
 .sprint-task-remove {
   font: inherit;
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
   background: none;
   border: none;
   cursor: pointer;
@@ -272,7 +272,7 @@
 
 .sprint-task-empty,
 .sprint-assign-empty {
-  color: var(--tx3);
+  color: var(--text-muted);
   font-size: var(--text-sm);
 }
 
@@ -281,10 +281,10 @@
 .sprint-form,
 .sprint-assign,
 .sprint-confirm {
-  background: var(--card);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
   padding: var(--space-4);
   margin-bottom: var(--space-4);
   display: grid;
@@ -295,7 +295,7 @@
 .sprint-assign-title {
   font-size: var(--text-base);
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -307,21 +307,21 @@
 .sprint-label {
   font-size: var(--text-sm);
   font-weight: var(--weight-semibold);
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .sprint-optional {
   font-weight: var(--weight-normal);
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .sprint-input {
   font: inherit;
   font-size: var(--text-sm);
-  color: var(--tx);
-  background: var(--page);
-  border: 1px solid var(--bd);
-  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
   padding: var(--space-2) var(--space-3);
 }
 
@@ -339,13 +339,13 @@
 .sprint-note,
 .sprint-confirm-note {
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
   margin: 0;
 }
 
 .sprint-error {
   font-size: var(--text-xs);
-  color: var(--red);
+  color: var(--overdue);
 }
 
 .sprint-form-actions {
@@ -360,10 +360,10 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  background: var(--reds);
-  border: 1px solid var(--redb);
-  color: var(--red);
-  border-radius: var(--radius-md);
+  background: var(--blocked-bg);
+  border: 1px solid var(--overdue-border);
+  color: var(--overdue);
+  border-radius: var(--radius-card);
   padding: var(--space-3);
   font-size: var(--text-sm);
   margin-bottom: var(--space-4);
@@ -380,11 +380,11 @@
 }
 
 .sprint-confirm {
-  border-color: var(--redb);
+  border-color: var(--overdue-border);
 }
 
 .sprint-confirm-body {
-  color: var(--tx);
+  color: var(--text-primary);
   font-size: var(--text-sm);
   margin: 0;
 }
@@ -415,21 +415,21 @@
  * ======================================================================== */
 
 .sprint-card {
-  background: var(--card);
-  border: 1px solid var(--bd);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
   border-radius: 11px;
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-card);
   padding: 0.8125rem 0.875rem;
 }
 
 .sprint-card:hover {
-  border-color: var(--bd2);
+  border-color: var(--border-default);
 }
 
 /* The running sprint is marked on its edge, not by a different fill — a filled
    row would compete with the status pill that already says it. */
 .sprint-card-active {
-  border-left: 3px solid var(--acc);
+  border-left: 3px solid var(--accent);
 }
 
 .sprint-row {
@@ -446,11 +446,11 @@
   font-size: 0.78125rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .sprint-card-active .sprint-id {
-  color: var(--acc);
+  color: var(--accent);
 }
 
 .sprint-status {
@@ -465,18 +465,18 @@
   text-transform: uppercase;
   padding: 0.3125rem 0.375rem;
   border-radius: 5px;
-  background: var(--tub);
-  color: var(--tx3);
+  background: var(--bg-column);
+  color: var(--text-muted);
 }
 
 .sprint-status-active {
-  background: var(--accs);
-  color: var(--acc);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 .sprint-status-completed {
-  background: var(--grns);
-  color: var(--grn);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
 }
 
 .sprint-headline {
@@ -500,7 +500,7 @@
   font-weight: var(--weight-bold);
   line-height: 1.2;
   letter-spacing: -0.012em;
-  color: var(--tx);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -512,7 +512,7 @@
   font-size: 0.625rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -521,7 +521,7 @@
   font-size: 0.71875rem;
   font-weight: var(--weight-medium);
   line-height: 1.4;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .sprint-figures {
@@ -543,11 +543,11 @@
   font-size: 0.8125rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
-  color: var(--tx2);
+  color: var(--text-secondary);
 }
 
 .sprint-card-active .sprint-frac {
-  color: var(--acc);
+  color: var(--accent);
 }
 
 .sprint-pct {
@@ -555,7 +555,7 @@
   font-size: 0.59375rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .sprint-blocked {
@@ -566,29 +566,29 @@
   font-size: 0.59375rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
-  color: var(--red);
+  color: var(--overdue);
 }
 
 .sprint-bar {
   display: block;
   height: 5px;
   border-radius: 3px;
-  background: var(--tub);
+  background: var(--bg-column);
   overflow: hidden;
 }
 
 .sprint-bar-fill {
   display: block;
   height: 100%;
-  background: var(--tx3);
+  background: var(--text-muted);
 }
 
 .sprint-card-active .sprint-bar-fill {
-  background: var(--acc);
+  background: var(--accent);
 }
 
 .sprint-card-completed .sprint-bar-fill {
-  background: var(--grn);
+  background: var(--chip-green);
 }
 
 .sprint-flow {
@@ -596,7 +596,7 @@
   font-size: 0.5625rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .sprint-actions {
@@ -613,7 +613,7 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  color: var(--tx3);
+  color: var(--text-muted);
   background: none;
   border: none;
   padding: 0;
@@ -622,7 +622,7 @@
 
 .sprint-open:hover,
 .sprint-open:focus-visible {
-  color: var(--acc);
+  color: var(--accent);
 }
 
 .sprint-footnote {
@@ -631,5 +631,5 @@
   font-size: 0.65625rem;
   font-weight: var(--weight-medium);
   line-height: 1.5;
-  color: var(--tx3);
+  color: var(--text-muted);
 }

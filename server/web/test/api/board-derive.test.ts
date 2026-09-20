@@ -10,13 +10,14 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  BOARD_COLUMNS,
   blockedState,
   blockers,
   byIdIndex,
   groupByColumn,
+  hideOldDone,
   staleFor,
 } from '../../src/api/board-derive.ts';
+import type { BoardColumn } from '../../src/api/columns.ts';
 import type { Task } from '../../src/api/tasks.ts';
 
 function task(over: Partial<Task> & { id: string }): Task {
@@ -92,26 +93,99 @@ void describe('blockedState', () => {
   });
 });
 
-void describe('groupByColumn', () => {
-  void test('has all five columns even when empty', () => {
-    const groups = groupByColumn([]);
-    assert.deepEqual(Object.keys(groups).sort(), [...BOARD_COLUMNS].sort());
+void describe('groupByColumn (LAI-266)', () => {
+  const col = (over: Partial<BoardColumn> & { id: string; statuses: string[] }): BoardColumn => ({
+    project_id: 'p',
+    name: over.id,
+    position: 0,
+    hidden: false,
+    primary_status: over.statuses[0] ?? null,
+    ...over,
+    statuses: over.statuses,
   });
 
-  void test('cancelled is dropped, not given a column', () => {
-    const groups = groupByColumn([task({ id: '1', status: 'cancelled' })]);
-    assert.equal(Object.values(groups).flat().length, 0);
+  const DEFAULT: BoardColumn[] = [
+    col({ id: 'todo', statuses: ['todo', 'backlog'], position: 0 }),
+    col({ id: 'wip', statuses: ['in_progress'], position: 1 }),
+    col({ id: 'review', statuses: ['review'], position: 2 }),
+    col({ id: 'done', statuses: ['done'], position: 3 }),
+  ];
+
+  void test('draws one lane per column, even when empty', () => {
+    const lanes = groupByColumn([], DEFAULT);
+    assert.deepEqual(
+      lanes.map((l) => l.column.id),
+      ['todo', 'wip', 'review', 'done'],
+    );
+  });
+
+  void test('orders lanes by position, not by the order they arrived in', () => {
+    // The fixture arrives shuffled on purpose: a function that simply returned
+    // its input would pass a pre-sorted fixture and fail this one.
+    const lanes = groupByColumn([], [DEFAULT[3]!, DEFAULT[0]!, DEFAULT[2]!, DEFAULT[1]!]);
+    assert.deepEqual(
+      lanes.map((l) => l.column.id),
+      ['todo', 'wip', 'review', 'done'],
+    );
+  });
+
+  void test('a multi-status column collects every status it lists', () => {
+    const lanes = groupByColumn(
+      [task({ id: '1', status: 'backlog' }), task({ id: '2', status: 'todo' })],
+      DEFAULT,
+    );
+    assert.deepEqual(
+      lanes[0]?.tasks.map((t) => t.id),
+      ['1', '2'],
+    );
+  });
+
+  void test('a status no column lists is drawn nowhere', () => {
+    // `cancelled` is in the hidden column, so it reaches the board as unlisted —
+    // which is how it disappeared before columns existed. The fixture contains
+    // one, or the assertion would be vacuous.
+    const lanes = groupByColumn(
+      [task({ id: '1', status: 'cancelled' }), task({ id: '2', status: 'todo' })],
+      DEFAULT,
+    );
+    assert.equal(lanes.flatMap((l) => l.tasks).length, 1);
+  });
+
+  void test('a status a column does list is drawn, cancelled included', () => {
+    // The other value of the same property: it disappears because nobody claims
+    // it, not because it is special-cased.
+    const lanes = groupByColumn(
+      [task({ id: '1', status: 'cancelled' })],
+      [col({ id: 'bin', statuses: ['cancelled'] })],
+    );
+    assert.equal(lanes[0]?.tasks.length, 1);
+  });
+
+  void test('a status two columns claim files once, into the earlier lane', () => {
+    const lanes = groupByColumn(
+      [task({ id: '1', status: 'review' })],
+      [
+        col({ id: 'first', statuses: ['review'], position: 0 }),
+        col({ id: 'second', statuses: ['review'], position: 1 }),
+      ],
+    );
+    assert.equal(lanes.flatMap((l) => l.tasks).length, 1, 'never drawn twice');
+    assert.equal(lanes[0]?.tasks.length, 1);
+    assert.equal(lanes[1]?.tasks.length, 0);
   });
 
   void test('sorts p1 before p2 before p3, then by number', () => {
-    const groups = groupByColumn([
-      task({ id: '3', status: 'todo', priority: 'p3' }),
-      task({ id: '1', status: 'todo', priority: 'p1' }),
-      task({ id: '2', status: 'todo', priority: 'p2' }),
-      task({ id: '4', status: 'todo', priority: 'p1' }),
-    ]);
+    const lanes = groupByColumn(
+      [
+        task({ id: '3', status: 'todo', priority: 'p3' }),
+        task({ id: '1', status: 'todo', priority: 'p1' }),
+        task({ id: '2', status: 'todo', priority: 'p2' }),
+        task({ id: '4', status: 'todo', priority: 'p1' }),
+      ],
+      DEFAULT,
+    );
     assert.deepEqual(
-      groups.todo.map((t) => t.id),
+      lanes[0]?.tasks.map((t) => t.id),
       ['1', '4', '2', '3'],
     );
   });
@@ -122,19 +196,59 @@ void describe('groupByColumn', () => {
       task({ id: '1', status: 'review', priority: 'p2' }),
     ];
     assert.deepEqual(
-      groupByColumn(input).review.map((t) => t.id),
-      groupByColumn(input).review.map((t) => t.id),
+      groupByColumn(input, DEFAULT)[2]?.tasks.map((t) => t.id),
+      groupByColumn(input, DEFAULT)[2]?.tasks.map((t) => t.id),
     );
   });
+});
 
-  void test('files each task under its own status', () => {
-    const groups = groupByColumn([
-      task({ id: '1', status: 'backlog' }),
-      task({ id: '2', status: 'done' }),
-    ]);
-    assert.equal(groups.backlog.length, 1);
-    assert.equal(groups.done.length, 1);
-    assert.equal(groups.todo.length, 0);
+void describe('hideOldDone (LAI-266)', () => {
+  const DAY = 86_400_000;
+  const now = 10 * DAY;
+
+  void test('never means never', () => {
+    const tasks = [task({ id: '1', status: 'done', completed_at: 0 })];
+    const { kept, hidden } = hideOldDone(tasks, null, now);
+
+    assert.equal(kept.length, 1);
+    assert.equal(hidden, 0);
+  });
+
+  void test('drops done work older than the cutoff and keeps the rest', () => {
+    // Both sides of the boundary, or the test passes for a function that hides
+    // everything or nothing.
+    const old = task({ id: '1', status: 'done', completed_at: now - 8 * DAY });
+    const fresh = task({ id: '2', status: 'done', completed_at: now - 2 * DAY });
+    const { kept, hidden } = hideOldDone([old, fresh], 7, now);
+
+    assert.deepEqual(
+      kept.map((t) => t.id),
+      ['2'],
+    );
+    assert.equal(hidden, 1, 'the count is what the board discloses — it must be real');
+  });
+
+  void test('touches nothing that is not done', () => {
+    // `cancelled` is not "finished", and unfinished work has no completion date
+    // to be old. A fixture of each, all older than the cutoff.
+    const tasks = [
+      task({ id: '1', status: 'todo', completed_at: 0 }),
+      task({ id: '2', status: 'in_progress', completed_at: 0 }),
+      task({ id: '3', status: 'review', completed_at: 0 }),
+      task({ id: '4', status: 'cancelled', completed_at: 0 }),
+    ];
+    const { kept, hidden } = hideOldDone(tasks, 1, now);
+
+    assert.equal(kept.length, 4);
+    assert.equal(hidden, 0);
+  });
+
+  void test('keeps a done task whose completion was never recorded', () => {
+    // `completed_at` is null for work that finished before LAI-126 stamped it.
+    // Hiding it would be guessing at an age nobody wrote down.
+    const { kept } = hideOldDone([task({ id: '1', status: 'done', completed_at: null })], 1, now);
+
+    assert.equal(kept.length, 1);
   });
 });
 

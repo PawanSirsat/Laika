@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
+import { useDelayed } from '../../components/use-delayed.ts';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
@@ -15,10 +16,21 @@ import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard } from '../../api/use-board.ts';
-import type { BoardColumn } from '../../api/board-derive.ts';
+import { groupByColumn, hideOldDone } from '../../api/board-derive.ts';
+import { isFallbackColumn, useColumns } from '../../api/use-columns.ts';
+import { setHideDoneAfter } from '../../api/projects.ts';
+import { BoardInsights } from './board/BoardInsights.tsx';
+import { BoardToolbar } from './board/BoardToolbar.tsx';
+import { ColumnDialog } from './board/ColumnDialog.tsx';
+import { NewColumnDialog } from './board/NewColumnDialog.tsx';
+import { ViewSettings } from './board/ViewSettings.tsx';
+import { useViewPreferences } from './board/use-view-preferences.ts';
+import { groupNotice, groupSwimlanes, isGroupBy } from './board/group-lanes.ts';
+import type { BoardColumn } from '../../api/columns.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
   listMembers,
+  canConfigureProject,
   canCreateTask,
   type Member,
   type Task,
@@ -91,6 +103,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const openTaskId = params.get('task') ?? undefined;
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
+  /*
+   * Whether the sprint list is still in flight — the strip cannot reserve its
+   * height without knowing, and an empty list means two different things
+   * (LAI-297).
+   */
+  const [sprintsLoading, setSprintsLoading] = useState(true);
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   const [creating, setCreating] = useState(false);
@@ -216,6 +234,37 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   }, [slug]);
 
   const board = useBoard(slug, filter);
+
+  /**
+   * **Nothing for the first 150ms** (LAI-293). Against a local instance the
+   * board usually answers in under 50ms, so rendering the skeleton the moment
+   * loading starts made every navigation blink — which reads as broken rather
+   * than fast. Held 300ms once shown, so a 160ms response does not flash it.
+   */
+  const showBoardSkeleton = useDelayed(board.state.status === 'loading');
+  const columns = useColumns(slug);
+  const [creatingColumn, setCreatingColumn] = useState(false);
+  const prefs = useViewPreferences(slug);
+  const [settingsAt, setSettingsAt] = useState<{ top: number; right: number } | undefined>(
+    undefined,
+  );
+  const [editing, setEditing] = useState<string | undefined>(undefined);
+  /** Which column's inline composer is open (LAI-290). */
+  const [composingIn, setComposingIn] = useState<string | undefined>(undefined);
+  const [insightsOpen, setInsightsOpen] = useState(false);
+  /**
+   * Labels to offer in the filter, from the tasks already loaded.
+   *
+   * Not a second request: `?tag=` filters server-side over the whole project,
+   * but the *list* of labels worth offering is the one actually in use here.
+   */
+  const knownTags = useMemo(
+    () => [...new Set(board.state.tasks.flatMap((t) => t.tags))].sort(),
+    [board.state.tasks],
+  );
+  const [overflowAt, setOverflowAt] = useState<{ top: number; right: number } | undefined>(
+    undefined,
+  );
   // The first consumer the SSE endpoint has ever had (LAI-070).
   const stream = useEvents(slug);
 
@@ -257,12 +306,25 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     if (slug === undefined) return;
     const controller = new AbortController();
 
+    setSprintsLoading(true);
     listSprints(slug, {}, controller.signal)
       .then((page) => {
         setSprints(page.data);
       })
       .catch(() => {
         setSprints([]);
+      })
+      .finally(() => {
+        /*
+         * **`finally`, and not inside the `then`.** A failed sprint list must
+         * also stop reserving the strip's height, or a project whose sprints
+         * endpoint is down keeps a 57px empty band for ever — which is the
+         * LAI-297 jump frozen rather than fixed.
+         *
+         * Guarded on the signal so an aborted request does not write state
+         * into an unmounted screen.
+         */
+        if (!controller.signal.aborted) setSprintsLoading(false);
       });
 
     // The tag filter moved to the space bar with the rest of them (LAI-270),
@@ -279,12 +341,53 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     return () => {
       controller.abort();
     };
-  }, [slug, board.state.tasks]);
+    /*
+     * **`slug` alone** (LAI-609). This also depended on `board.state.tasks`,
+     * which is a fresh array on every board fetch — so every task load
+     * re-fetched the entire sprint list, and the board asked for sprints three
+     * times on a single open.
+     *
+     * The effect never reads `tasks`. It was presumably there so the strip's
+     * progress would follow the board, but progress is **not** in the sprint
+     * payload — `GET /sprints` returns name, dates, status and goal, and
+     * `SprintStrip` counts `2/2` itself from the tasks it is handed. So the
+     * re-fetch returned identical rows and changed nothing on screen.
+     */
+  }, [slug]);
 
   const mayCreate =
     me !== undefined &&
     project !== undefined &&
     canCreateTask(me.org_role, project.id, me.memberships);
+
+  /** Lead-only — a narrower rule than creating a task. */
+  const mayConfigure =
+    me !== undefined &&
+    project !== undefined &&
+    canConfigureProject(me.org_role, project.id, me.memberships);
+
+  /*
+   * **The add-column tile's gate, one expression for the board and its
+   * skeleton** (LAI-295).
+   *
+   * `mayConfigure` needs `project`, and `project` is the thing the board is
+   * fetching — so while the skeleton is on screen it is *always* false, and a
+   * skeleton consulting it would never reserve a tile that is about to appear.
+   * Measured: lanes drew 329px against the real board's 318px, the tile's 32px
+   * and its gap shared out among four lanes.
+   *
+   * Columns load separately and carry the same project id, so the answer is
+   * available early. `project?.id` still wins once it arrives, which keeps a
+   * mid-switch board from being judged against the previous project's columns.
+   */
+  const boardProjectId = project?.id ?? columns.state.columns[0]?.project_id;
+  const mayAddColumn =
+    me !== undefined &&
+    boardProjectId !== undefined &&
+    canConfigureProject(me.org_role, boardProjectId, me.memberships) &&
+    !columns.visible.some(isFallbackColumn);
+
+  /** `Column 5`, skipping any name already taken. */
 
   /**
    * Search is **client-side, over the tasks already loaded**.
@@ -304,29 +407,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     };
   }, [needle, agentOnly]);
 
-  const columns = useMemo(() => {
-    if (needle === '' && !agentOnly) return board.columns;
-
-    const next = {} as typeof board.columns;
-    for (const [column, tasks] of Object.entries(board.columns)) {
-      next[column as BoardColumn] = tasks.filter(matches);
-    }
-    return next;
-  }, [board.columns, needle, agentOnly, matches]);
-
   /**
-   * The same filter applied to the flat list.
+   * Cards into lanes, against the project's own columns (LAI-266).
    *
-   * `ListView` takes `tasks`, not `columns`, so filtering only the columns
-   * would have left search working on the board and silently doing nothing in
-   * list view — one control with two behaviours depending on a toggle.
+   * The join lives here rather than in `useBoard` because the two halves come
+   * from different hooks with different refresh rates — columns change almost
+   * never, tasks constantly.
    */
-  const tasks = useMemo(
-    () => (needle === '' && !agentOnly ? board.state.tasks : board.state.tasks.filter(matches)),
-    [board.state.tasks, needle, agentOnly, matches],
-  );
-
-  /** `S1`, `S2`… in the sprint order the strip shows. Real data. */
   const sprintLabels = useMemo(() => {
     const map = new Map<string, { label: string; active: boolean }>();
     sprints.forEach((sprint, index) => {
@@ -335,10 +422,89 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     return map;
   }, [sprints]);
 
-  const shownCount = useMemo(
-    () => Object.values(columns).reduce((n, list) => n + list.length, 0),
-    [columns],
+  const group = params.get('group') ?? 'column';
+  const grouped = isGroupBy(group);
+
+  /**
+   * The space's own hide-done setting, applied before anything else sees the
+   * tasks — it is not a filter this reader chose, it is the board's shape.
+   */
+  const visibleTasks = useMemo(
+    () => hideOldDone(board.state.tasks, project?.board_hide_done_days ?? null, Date.now()),
+    [board.state.tasks, project?.board_hide_done_days],
   );
+
+  /**
+   * Search and the agent toggle are applied **before** grouping, not after.
+   *
+   * A swimlane's count is the number on its header, and filtering afterwards
+   * would leave that number describing a set the row no longer draws.
+   */
+  const shownTasks = useMemo(
+    () => (needle === '' && !agentOnly ? visibleTasks.kept : visibleTasks.kept.filter(matches)),
+    [visibleTasks.kept, needle, agentOnly, matches],
+  );
+
+  const collapsedGroups = useMemo(
+    () => new Set(prefs.preferences.collapsedGroups),
+    [prefs.preferences.collapsedGroups],
+  );
+
+  const toggleGroup = useCallback(
+    (key: string) => {
+      const next = new Set(prefs.preferences.collapsedGroups);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      prefs.set({ ...prefs.preferences, collapsedGroups: [...next] });
+    },
+    [prefs],
+  );
+
+  /** The plain board: one row of columns. */
+  const shownLanes = useMemo(
+    () => groupByColumn(shownTasks, columns.visible),
+    [shownTasks, columns.visible],
+  );
+
+  /**
+   * The grouped board: a row per group, each holding **the same columns**.
+   * `undefined` when ungrouped, which is what `KanbanView` branches on.
+   */
+  const swimlanes = useMemo(
+    () =>
+      grouped
+        ? groupSwimlanes(shownTasks, group, columns.visible, { members, sprintLabels })
+        : undefined,
+    [grouped, group, shownTasks, columns.visible, members, sprintLabels],
+  );
+
+  /**
+   * The same filter applied to the flat list.
+   *
+   * `ListView` takes `tasks`, not `columns`, so filtering only the columns
+   * would have left search working on the board and silently doing nothing in
+   * list view — one control with two behaviours depending on a toggle.
+   */
+  const tasks = shownTasks;
+
+  /** `S1`, `S2`… in the sprint order the strip shows. Real data. */
+  /** What the panel shows as removable chips — the same params the bar writes. */
+  const activeFilters = useMemo(() => {
+    const found: { key: string; label: string }[] = [];
+    if (priority !== undefined) found.push({ key: 'priority', label: `Priority ${priority}` });
+    if (assignee !== undefined) found.push({ key: 'assignee', label: 'Assignee' });
+    if (tagScope !== undefined) found.push({ key: 'tag', label: `Tag ${tagScope}` });
+    if (sprintScope !== undefined) found.push({ key: 'sprint', label: 'Sprint' });
+    if (readyParam === 'true') found.push({ key: 'ready', label: 'Ready only' });
+    if (agentOnly) found.push({ key: 'agent', label: 'Agent-created' });
+    if (needle !== '') found.push({ key: 'q', label: `“${query}”` });
+    return found;
+  }, [priority, assignee, tagScope, sprintScope, readyParam, agentOnly, needle, query]);
+
+  const editingColumn =
+    editing === undefined ? undefined : columns.visible.find((c) => c.id === editing);
+
+  const shownCount = shownTasks.length;
 
   // Read from the board's own list so the panel re-renders after a move —
   // holding a copy would show a stale status the moment the drag succeeded.
@@ -398,6 +564,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         <SpaceBand>
           <SprintStrip
             sprints={sprints}
+            loading={sprintsLoading}
             tasks={allTasks}
             selected={sprintScope}
             onSelect={(id) => {
@@ -436,6 +603,210 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       />
 
       {/*
+        **The board's own row, directly under WORKING NOW** (LAI-293).
+        
+        It lived in the space bar until the owner asked for the reference's
+        shape: one compact row sitting on top of the columns. No portal and no
+        slot is needed to get there — `SpaceLayout` renders `<PresenceStrip>`
+        (WORKING NOW) and then `{children}`, so the board's own output is
+        *already* the next thing below it. Measured before relying on it.
+        
+        That also removes a seam: the row would otherwise have been a container
+        owned by one task and contents owned by another, with the height agreed
+        by correspondence.
+      */}
+      <div className="board-bar">
+        <BoardToolbar
+          priority={priority}
+          assignee={assignee}
+          tag={tagScope}
+          ready={readyParam === 'true'}
+          agentOnly={agentOnly}
+          tags={knownTags}
+          members={[...members.values()]}
+          group={group}
+          onPriority={(value) => {
+            setParam('priority', value);
+          }}
+          onAssignee={(value) => {
+            setParam('assignee', value);
+          }}
+          onTag={(value) => {
+            setParam('tag', value);
+          }}
+          onReady={(value) => {
+            setParam('ready', value ? 'true' : undefined);
+          }}
+          onAgentOnly={(value) => {
+            setParam('agent', value ? 'true' : undefined);
+          }}
+          query={query}
+          theme={theme}
+          onQuery={(value) => {
+            setParam('q', value === '' ? undefined : value);
+          }}
+          onGroup={(value) => {
+            setParam('group', value === 'column' ? undefined : value);
+          }}
+          onClearFilters={() => {
+            const next = new URLSearchParams(params);
+            for (const key of ['priority', 'assignee', 'tag', 'ready', 'agent', 'q']) {
+              next.delete(key);
+            }
+            onParamsChange(next);
+          }}
+          onInsights={() => {
+            setInsightsOpen(true);
+          }}
+          onViewSettings={(anchor) => {
+            setSettingsAt((at) => (at === undefined ? anchor : undefined));
+          }}
+          onRefresh={() => {
+            board.reload();
+            columns.reload();
+          }}
+          onOverflow={(anchor) => {
+            setOverflowAt((at) => (at === undefined ? anchor : undefined));
+          }}
+        />
+      </div>
+
+      {settingsAt !== undefined && (
+        <ViewSettings
+          preferences={prefs.preferences}
+          onChange={prefs.set}
+          onReset={prefs.reset}
+          anchor={settingsAt}
+          onClose={() => {
+            setSettingsAt(undefined);
+          }}
+          hideDoneAfterDays={project?.board_hide_done_days ?? null}
+          {...(mayConfigure && slug !== undefined
+            ? {
+                onHideDoneChange: (days: number | null) => {
+                  // Take the server's project back rather than patching the
+                  // field locally: the same reason moves are not optimistic.
+                  void setHideDoneAfter(slug, days).then((updated) => {
+                    setProject(updated);
+                  });
+                },
+              }
+            : {})}
+          group={group}
+          onGroupChange={(next) => {
+            setParam('group', next === 'column' ? undefined : next);
+          }}
+          filters={activeFilters}
+          onClearFilter={(key) => {
+            setParam(key, undefined);
+          }}
+          onClearFilters={() => {
+            const next = new URLSearchParams(params);
+            for (const filter of activeFilters) next.delete(filter.key);
+            onParamsChange(next);
+          }}
+        />
+      )}
+
+      {/*
+        The `⋯` menu. **Only actions that exist** — an overflow with a greyed
+        list of things Laika cannot do is the decoration the four icons were
+        supposed to avoid.
+      */}
+      {overflowAt !== undefined && (
+        <>
+          <div
+            className="bt-catcher"
+            aria-hidden="true"
+            onClick={() => {
+              setOverflowAt(undefined);
+            }}
+          />
+          <div
+            className="bt-menu"
+            role="menu"
+            style={{ top: `${String(overflowAt.top)}px`, right: `${String(overflowAt.right)}px` }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              className="bt-menu-item"
+              onClick={() => {
+                setOverflowAt(undefined);
+                onParamsChange(new URLSearchParams({ project: slug ?? '' }), { push: true });
+                window.location.assign(`/projects?project=${encodeURIComponent(slug ?? '')}`);
+              }}
+            >
+              Space settings
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="bt-menu-item"
+              onClick={() => {
+                setOverflowAt(undefined);
+                setParam('view', view === 'list' ? undefined : 'list');
+              }}
+            >
+              {view === 'list' ? 'Show as board' : 'Show as list'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {insightsOpen && slug !== undefined && (
+        <BoardInsights
+          slug={slug}
+          onClose={() => {
+            setInsightsOpen(false);
+          }}
+        />
+      )}
+
+      {creatingColumn && (
+        <NewColumnDialog
+          // Every column, visible and hidden, so the picker can say which one a
+          // status would move away from.
+          all={columns.state.columns}
+          busy={columns.busy}
+          error={columns.error}
+          onCreate={(name, status) => {
+            void columns.create(name, status).then(() => {
+              setCreatingColumn(false);
+            });
+          }}
+          onClose={() => {
+            setCreatingColumn(false);
+          }}
+        />
+      )}
+
+      {editingColumn !== undefined && (
+        <ColumnDialog
+          column={editingColumn}
+          all={columns.visible}
+          taskCount={shownTasks.filter((t) => editingColumn.statuses.includes(t.status)).length}
+          busy={columns.busy}
+          error={columns.error}
+          onRename={(name) => {
+            void columns.rename(editingColumn.id, name);
+          }}
+          onSetStatuses={(statuses) => {
+            void columns.setStatuses(editingColumn.id, statuses);
+          }}
+          onDelete={(reassignTo) => {
+            void columns.remove(editingColumn.id, reassignTo).then(() => {
+              setEditing(undefined);
+            });
+          }}
+          onClose={() => {
+            setEditing(undefined);
+            columns.dismissError();
+          }}
+        />
+      )}
+
+      {/*
         Mounted here rather than in the shell: it reports the state of *this*
         board's stream, and `useEvents` is scoped to this project. It has existed
         since LAI-019 and appeared only in the design gallery — the pill said
@@ -454,6 +825,26 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {/* WORKING NOW moved up to the space bar in LAI-251: it is about the
           space, not about the board, and every view of a space shows it. */}
 
+      {grouped && (
+        <p className="board-scope" role="status">
+          {groupNotice(group)}
+        </p>
+      )}
+
+      {/*
+        **Says what it is hiding.** This setting removes work from the board
+        rather than restyling it, so without a line saying so it is a silent
+        lie — somebody would look for a finished task and conclude it had been
+        deleted. Mandatory, not a nicety.
+      */}
+      {visibleTasks.hidden > 0 && (
+        <p className="board-scope" role="status">
+          {visibleTasks.hidden} finished {visibleTasks.hidden === 1 ? 'task is' : 'tasks are'}{' '}
+          hidden — this space hides work done more than {project?.board_hide_done_days ?? 0}{' '}
+          {project?.board_hide_done_days === 1 ? 'day' : 'days'} ago. Nothing is deleted.
+        </p>
+      )}
+
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">
           {shownCount} of {board.byId.size} loaded {board.byId.size === 1 ? 'task' : 'tasks'} match.{' '}
@@ -462,7 +853,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         </p>
       )}
 
-      {mayCreate && creating && (
+      {/*
+        **The List view only** (LAI-290). A list has no columns, so a banner is
+        the right shape there; the board creates in the column you clicked. The
+        `view ===` guard stops it leaking onto the board when somebody opens it
+        from the list and then switches tabs.
+      */}
+      {mayCreate && creating && view === 'list' && (
         <NewTaskForm
           slug={slug}
           onCreated={board.reload}
@@ -472,6 +869,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         />
       )}
 
+      {/*
+        **One alert region, not two stacked banners.** A refused card move and a
+        refused column edit are the same kind of news — the server said no and
+        gave a reason — and two boxes for it would compete for the same corner
+        of the screen.
+      */}
       {board.moveError !== undefined && (
         <p className="board-alert" role="alert">
           {board.moveError}
@@ -481,12 +884,145 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         </p>
       )}
 
+      {columns.error !== undefined && (
+        <p className="board-alert" role="alert">
+          {columns.error}
+          <button type="button" className="board-alert-close" onClick={columns.dismissError}>
+            Dismiss
+          </button>
+        </p>
+      )}
+
       {board.state.status === 'loading' ? (
-        <LoadingState shape="card" count={4} label="Loading tasks" />
+        /* `null` until the delay elapses — deliberately not the empty board,
+           which would render "Nothing in this lane" and then replace it. */
+        !showBoardSkeleton ? null /*
+          **The board's shape, not a stack of cards** (LAI-293). This was
+          `shape="card" count={4}` — a vertical list where the board is a grid —
+          so the whole layout jumped when tasks arrived. `LoadingState`'s own
+          rule is that a skeleton mirrors what it replaces; this was the one
+          place it did not.
+
+          The column count comes from the project's **real** columns, because
+          they are configuration now (LAI-266): a fixed four replaced by five
+          real lanes is the same reflow, just narrower. Falls back to four only
+          while the columns themselves are still loading.
+
+          **And it follows the view.** This branch serves the list too —
+          `ListView` does no fetching of its own — so a board skeleton in front
+          of a table would be the same mismatch one screen over.
+          **Inside `.board-main`, not instead of it** (LAI-295). The skeleton
+          was a sibling of that container, so it lost its padding and its flex
+          layout: measured on the running instance, the lanes sat 14px high and
+          a pixel narrower than the board that replaced them.
+        */ : (
+          <div className="board-main">
+            {view === 'list' ? (
+              <LoadingState shape="table" count={8} label="Loading tasks" />
+            ) : (
+              <LoadingState
+                shape="board"
+                columns={columns.visible.length > 0 ? columns.visible.length : 4}
+                count={2}
+                // The same condition that gives `LaneRow` its `onAddColumn`.
+                addTile={mayAddColumn}
+                label="Loading tasks"
+              />
+            )}
+          </div>
+        )
       ) : board.state.status === 'error' ? (
         <ApiErrorState error={board.state.error} resource="this board" onRetry={board.reload} />
       ) : (
-        <div className="board-main">
+        <div
+          /*
+           * Grouped, the page scrolls between rows; ungrouped it must not —
+           * see `.board-grouped` in `board-rail.css`. Driven by whether
+           * swimlanes were actually drawn, not by the group param, so a group
+           * that produced no rows does not leave the board scrollable.
+           */
+          className={swimlanes === undefined ? 'board-main' : 'board-main board-grouped'}
+          onWheel={(event) => {
+            /*
+             * **Forward a sideways gesture to the board** (LAI-290).
+             *
+             * Chrome *latches* a wheel gesture to the first scroll container
+             * under the pointer. Over a card that is `.lane-body`, which
+             * scrolls vertically and not horizontally — so `deltaX` is dropped
+             * and the columns never move, while the identical gesture two
+             * pixels away over the lane's padding scrolls them 90px. Measured,
+             * both ways.
+             *
+             * No CSS fixes it: `overflow-x: hidden` leaves the lane a scroll
+             * container, and `clip` is coerced back to `hidden` whenever the
+             * other axis is `auto`. So the board takes the delta itself.
+             *
+             * Only when the gesture is **mostly** horizontal, so an ordinary
+             * vertical scroll inside a lane is untouched.
+             */
+            if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) {
+              /*
+               * **The same latching, vertically, on a grouped board**
+               * (LAI-600). Grouped, the page scrolls between swimlane rows —
+               * but the pointer is usually over a `.lane-body`, which is a
+               * scroll container whether or not it has anything to scroll. A
+               * lane holding one card, or none, swallows `deltaY` and the
+               * board does not move.
+               *
+               * Forwarded **only when that lane has run out**, so scrolling
+               * inside a full lane still works: `scrollTop` already at the end
+               * in the direction of travel, or no overflow at all.
+               */
+              const pane = event.currentTarget;
+
+              /*
+               * **Ask whether the pane is a scroller, not whether it overflows.**
+               *
+               * `scrollHeight > clientHeight` is true of the *ungrouped* board
+               * too: `.board-main` is `overflow-y: hidden` and still reports
+               * 172px of clipped content. Assigning `scrollTop` moves a hidden
+               * element perfectly well — script is not bound by the property
+               * that stops a person — so forwarding on that test scrolled a
+               * board that is meant to be one screenful, leaving the columns
+               * pushed up over empty space.
+               *
+               * Only `.board-grouped` sets `overflow-y: auto`, so the computed
+               * value is the honest question.
+               */
+              const overflowY = getComputedStyle(pane).overflowY;
+              if (overflowY !== 'auto' && overflowY !== 'scroll') return;
+              if (pane.scrollHeight <= pane.clientHeight) return;
+
+              const lane = (event.target as HTMLElement | null)?.closest<HTMLElement>('.lane-body');
+              if (lane !== null && lane !== undefined) {
+                const room = lane.scrollHeight - lane.clientHeight;
+                const atEnd = event.deltaY > 0 ? lane.scrollTop >= room - 1 : lane.scrollTop <= 0;
+                if (room > 0 && !atEnd) return;
+              }
+
+              pane.scrollTop += event.deltaY;
+              return;
+            }
+
+            /*
+             * **Which element scrolls depends on the width.** Above 1200px it
+             * is this pane; below it `.board-main` goes `overflow-x: visible`
+             * and `.kanban` scrolls itself instead (see `board-rail.css`).
+             * Targeting the wrong one is a no-op, so ask rather than assume.
+             */
+            const pane = event.currentTarget;
+            const grid = pane.querySelector<HTMLElement>('.kanban');
+            const scroller =
+              pane.scrollWidth > pane.clientWidth
+                ? pane
+                : grid !== null && grid.scrollWidth > grid.clientWidth
+                  ? grid
+                  : null;
+
+            if (scroller === null) return;
+            scroller.scrollLeft += event.deltaX;
+          }}
+        >
           {view === 'list' ? (
             <ListView
               tasks={tasks}
@@ -503,20 +1039,74 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             />
           ) : (
             <KanbanView
-              columns={columns}
+              lanes={shownLanes}
+              {...(swimlanes === undefined ? {} : { swimlanes })}
+              collapsed={collapsedGroups}
+              onToggleGroup={toggleGroup}
               byId={board.byId}
               members={members}
               theme={theme}
+              fields={prefs.preferences.fields}
+              cardsDraggable
+              density={prefs.preferences.density}
+              columnWidth={prefs.preferences.columnWidth}
               movingId={board.movingId}
               onMove={(id, to) => {
                 void board.move(id, to);
               }}
               filtered={filtered}
               onOpen={openTaskInUrl}
-              onAdd={() => {
-                setCreating(true);
-              }}
               canAdd={mayCreate}
+              {...(slug === undefined ? {} : { slug })}
+              {...(composingIn === undefined ? {} : { composingIn })}
+              onAdd={(status) => {
+                // The lane hands back its own primary status; find the column
+                // that owns it so the composer can name where it will land.
+                const column = columns.visible.find((c) => c.primary_status === status);
+                setComposingIn(column?.id);
+              }}
+              onCreated={board.reload}
+              onCloseComposer={() => {
+                setComposingIn(undefined);
+              }}
+              {...(mayAddColumn
+                ? {
+                    onReorder: (ids: readonly string[]) => {
+                      /*
+                       * **Put the hidden columns back before sending.**
+                       *
+                       * The board draws `columns.visible`, so a drag can only
+                       * ever produce the visible order — but `reorderColumns`
+                       * requires *every* column of the project exactly once,
+                       * and refuses anything else so a stale client cannot
+                       * silently drop a lane.
+                       *
+                       * Every default board has a hidden `Cancelled` column, so
+                       * without this line **every** drag was refused with
+                       * "Send every column of this space exactly once". The
+                       * check is right; the caller was sending a subset.
+                       */
+                      const hidden = columns.state.columns
+                        .filter((c) => c.hidden)
+                        .sort((a, b) => a.position - b.position)
+                        .map((c) => c.id);
+
+                      void columns.reorder([...ids, ...hidden]);
+                    },
+                    onAddColumn: () => {
+                      // **Ask, then create** (LAI-291). This used to call
+                      // `columns.create(nextColumnName(...))`, so a column
+                      // called "New column" appeared and you renamed it after.
+                      setCreatingColumn(true);
+                    },
+                    onRenameColumn: (columnId: string, name: string) => {
+                      void columns.rename(columnId, name);
+                    },
+                    onEditColumn: (column: BoardColumn) => {
+                      setEditing(column.id);
+                    },
+                  }
+                : {})}
               sprintLabels={sprintLabels}
             />
           )}
@@ -538,6 +1128,23 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         permission is already resolved. A Viewer sees tags and gets no way to
         change them, rather than a control that answers 403.
       */}
+      {/*
+        **A drawer opened before the board has loaded** (LAI-293). `openTask` is
+        found in the board's own task list, so a deep link to
+        `/board?task=LC-12` — or a reload with the drawer open — rendered the
+        chrome with nothing inside it until the fetch landed.
+
+        Gated on `loading` rather than on `openTask === undefined` alone: once
+        the board *has* loaded and the id is still not there, the task does not
+        exist, and a skeleton that never resolves is a worse answer than an
+        empty drawer.
+      */}
+      {openTaskId !== undefined && openTask === undefined && board.state.status === 'loading' && (
+        <TaskDrawerContent>
+          <LoadingState shape="drawer" count={4} label="Loading this task" />
+        </TaskDrawerContent>
+      )}
+
       {openTask !== undefined && (
         <TaskDrawerContent>
           <TaskDetailPanel

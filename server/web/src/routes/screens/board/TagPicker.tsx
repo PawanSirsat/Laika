@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useRef, useState } from 'react';
 import {
   listProjectTags,
@@ -171,6 +172,7 @@ export function TagPicker({ slug, taskId, tags, mayEdit, onChanged }: TagPickerP
             add(draft);
           }}
         >
+          {busy && <Spinner size="sm" />}
           Add
         </button>
       </div>

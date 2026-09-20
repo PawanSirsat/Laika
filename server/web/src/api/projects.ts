@@ -31,6 +31,8 @@ export interface Project {
   readonly repo: string | null;
   readonly visibility: 'public' | 'private';
   readonly context_md: string;
+  /** Days after which finished work leaves the board; `null` never (LAI-266). */
+  readonly board_hide_done_days: number | null;
   readonly archived_at: number | null;
   readonly created_at: number;
   readonly updated_at: number;
@@ -224,5 +226,20 @@ export async function joinProject(slug: string, signal?: AbortSignal): Promise<M
   return request<MemberList>(`/projects/${encodeURIComponent(slug)}/join`, {
     method: 'POST',
     ...(signal === undefined ? {} : { signal }),
+  });
+}
+
+/**
+ * How long finished work stays on the board (LAI-266).
+ *
+ * **A project setting, not a personal one**, and the only part of View settings
+ * that is. It does not restyle the board, it removes work from it — so as a
+ * per-viewer preference two people would disagree about whether a task exists.
+ * Lead-only, through the `project.settings.edit` route that already exists.
+ */
+export function setHideDoneAfter(slug: string, days: number | null): Promise<Project> {
+  return request<Project>(`/projects/${encodeURIComponent(slug)}`, {
+    method: 'PATCH',
+    body: { board_hide_done_days: days },
   });
 }

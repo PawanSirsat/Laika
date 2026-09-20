@@ -27,10 +27,11 @@ import {
   RADIUS_TOKENS,
   SPACE_TOKENS,
   TYPE_TOKENS,
+  SHARED_MISC_TOKENS,
   WEIGHT_TOKENS,
 } from '../src/theme/token-list.ts';
 
-const TOKENS_CSS = fileURLToPath(new URL('../src/theme/tokens.css', import.meta.url));
+const TOKENS_CSS = fileURLToPath(new URL('../src/styles/theme.css', import.meta.url));
 
 /**
  * Custom properties declared under a selector, across **every** block using it.
@@ -72,7 +73,7 @@ function blockVars(css: string, selector: string): Map<string, string> {
     cursor = i;
   }
 
-  assert.notEqual(found, 0, `no ${selector} block in tokens.css`);
+  assert.notEqual(found, 0, `no ${selector} block in theme.css`);
   return out;
 }
 
@@ -81,8 +82,19 @@ let dark: Map<string, string>;
 
 void before(async () => {
   const css = await readFile(TOKENS_CSS, 'utf8');
-  light = blockVars(css, ':root');
-  dark = blockVars(css, '.dk');
+  /*
+   * **The polarity flipped with the move to `styles/theme.css`** (LAI-606).
+   * Dark is now the bare `:root` — the default theme needs no attribute — and
+   * light hangs on `:root[data-theme='light']`. The bare-`:root` scan also
+   * collects the shared type/space/radius block, exactly as it used to collect
+   * it from the light side; the shared-token filtering below moved with it.
+   *
+   * `blockVars(':root')` does not swallow the light block: after matching
+   * `:root` the parser demands `{` next, and the light selector continues with
+   * `[data-theme…`, so it is skipped there and matched by its full name.
+   */
+  dark = blockVars(css, ':root');
+  light = blockVars(css, ":root[data-theme='light']");
   assert.ok(light.size > 10 && dark.size > 10, 'token blocks look empty — the parser is wrong');
 });
 
@@ -90,36 +102,38 @@ void describe('every themed token exists in both themes', () => {
   void test('colour tokens', () => {
     const missingDark = ALL_COLOR_TOKENS.filter((t) => !dark.has(t));
     const missingLight = ALL_COLOR_TOKENS.filter((t) => !light.has(t));
-    assert.deepEqual(missingLight, [], 'declared in .dk but not :root');
+    assert.deepEqual(missingDark, [], 'listed but missing from the dark block');
     assert.deepEqual(
-      missingDark,
+      missingLight,
       [],
-      'declared in :root but not .dk — switching to dark would leave these at the light value',
+      'declared in dark but not light — switching theme would strand these at the dark value',
     );
   });
 
   void test('elevation tokens', () => {
     for (const t of ELEVATION_TOKENS) {
-      assert.ok(light.has(t), `${t} missing from :root`);
-      assert.ok(dark.has(t), `${t} missing from .dk`);
+      assert.ok(dark.has(t), `${t} missing from the dark block`);
+      assert.ok(light.has(t), `${t} missing from the light block`);
     }
   });
 
   void test('the two themes declare exactly the same names', () => {
-    assert.deepEqual([...dark.keys()].sort(), [...light.keys()].filter((k) => dark.has(k)).sort());
-    const onlyLight = [...light.keys()].filter((k) => !dark.has(k));
-    // Type, spacing and radius are theme-independent and live in the second
-    // :root block, so they legitimately appear only in light. Everything else
-    // appearing only in light is a bug.
+    assert.deepEqual([...light.keys()].sort(), [...dark.keys()].filter((k) => light.has(k)).sort());
+    const onlyDark = [...dark.keys()].filter((k) => !light.has(k));
+    // Type, spacing, radius, families and the shared misc tokens are
+    // theme-independent and live in the second bare-:root block, so they
+    // legitimately appear only on the dark side of this comparison. Everything
+    // else appearing only in dark is a stranded theme value.
     const themeIndependent = new Set<string>([
       ...TYPE_TOKENS,
       ...WEIGHT_TOKENS,
       ...SPACE_TOKENS,
       ...RADIUS_TOKENS,
       ...FAMILY_TOKENS,
+      ...SHARED_MISC_TOKENS,
     ]);
     assert.deepEqual(
-      onlyLight.filter((k) => !themeIndependent.has(k)),
+      onlyDark.filter((k) => !themeIndependent.has(k)),
       [],
     );
   });
@@ -136,11 +150,12 @@ void describe('token-list.ts matches tokens.css', () => {
       ...SPACE_TOKENS,
       ...RADIUS_TOKENS,
       ...FAMILY_TOKENS,
+      ...SHARED_MISC_TOKENS,
     ];
     assert.deepEqual(
       listed.filter((t) => !declared.has(t)),
       [],
-      'token-list.ts names tokens that tokens.css does not declare',
+      'token-list.ts names tokens that theme.css does not declare',
     );
   });
 
@@ -153,12 +168,13 @@ void describe('token-list.ts matches tokens.css', () => {
       ...SPACE_TOKENS,
       ...RADIUS_TOKENS,
       ...FAMILY_TOKENS,
+      ...SHARED_MISC_TOKENS,
     ]);
     const unlisted = [...new Set([...light.keys(), ...dark.keys()])].filter((t) => !listed.has(t));
     assert.deepEqual(
       unlisted,
       [],
-      'tokens.css declares tokens token-list.ts does not know about — they would be missing from ' +
+      'theme.css declares tokens token-list.ts does not know about — they would be missing from ' +
         'the reference page and unchecked for contrast',
     );
   });

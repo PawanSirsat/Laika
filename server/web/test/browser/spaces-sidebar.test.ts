@@ -226,15 +226,23 @@ void describe('the view tabs', () => {
       await tab.click();
       await h.page.waitForURL(/capacity\?project=laika-core/, { timeout: 10_000 });
 
-      // The whole of the owner's report: the bar must name the space, not
-      // fall back to "No space".
+      /*
+       * The whole of the owner's report: the space must be **named**, not
+       * fall back to "No space".
+       *
+       * The name lives in the rail's wordmark since LAI-293. The regression
+       * this guards is the same one and is if anything sharper here: the rail
+       * falls back to the *product* name, so a failure now reads as a
+       * plausible `Laika` rather than an obvious `No space`.
+       */
       await h.page.waitForFunction(
-        () => (document.querySelector('.space-name')?.textContent ?? '') !== '',
+        () => (document.querySelector('.sidebar-wordmark')?.textContent ?? '') !== '',
         undefined,
         { timeout: 10_000 },
       );
-      const name = await h.page.locator('.space-name').innerText();
-      assert.notEqual(name, 'No space', 'the space bar lost the space');
+      const name = await h.page.locator('.sidebar-wordmark').innerText();
+      assert.notEqual(name, 'No space', 'the rail lost the space');
+      assert.notEqual(name, 'Laika', 'the rail fell back to the product name');
       assert.match(name, /Laika Core|laika-core/);
     } finally {
       await h.close();
@@ -356,21 +364,33 @@ void describe('the new chrome fits', () => {
    * Both themes at 1440 / 1280 / 420, page overflow 0 at each — the LAI-244
    * lesson is that one width proves nothing and a floor alone is half an
    * assertion. The theme is set through the app's own storage key so the dark
-   * half exercises `initTheme`, and the `dk` check proves the setup ran —
-   * a setup step with no assertion cannot fail at all.
+   * half exercises `initTheme`, and two checks prove the setup ran — a setup
+   * step with no assertion cannot fail at all. Light asserts the `data-theme`
+   * attribute (dark is the bare `:root` since LAI-606, so its absence alone
+   * proves nothing), and the canvas paint must differ between the two loops,
+   * which no broken init can satisfy.
    */
   void test('no page overflow with the spaces sidebar and the tab bar', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
+      const canvases: Partial<Record<'light' | 'dark', string>> = {};
       for (const theme of ['light', 'dark'] as const) {
         await h.page.evaluate((t: string) => {
           localStorage.setItem('laika.theme', t);
         }, theme);
         await h.page.reload();
         await h.page.locator('.view-tab').first().waitFor({ timeout: 20_000 });
-        const dark = await h.page.evaluate(() => document.documentElement.classList.contains('dk'));
-        assert.equal(dark, theme === 'dark', `the ${theme} theme did not apply`);
+        const state = await h.page.evaluate(() => ({
+          attr: document.documentElement.getAttribute('data-theme'),
+          canvas: getComputedStyle(document.body).backgroundColor,
+        }));
+        assert.equal(
+          state.attr,
+          theme === 'light' ? 'light' : null,
+          `the ${theme} theme did not apply`,
+        );
+        canvases[theme] = state.canvas;
 
         for (const width of [1440, 1280, 420]) {
           await h.page.setViewportSize({ width, height: 1000 });
@@ -389,6 +409,11 @@ void describe('the new chrome fits', () => {
           );
         }
       }
+      assert.notEqual(
+        canvases.light,
+        canvases.dark,
+        'the two themes painted the same canvas — initTheme never ran',
+      );
     } finally {
       await h.close();
     }
@@ -552,8 +577,11 @@ void describe('the prototype geometry (LAI-249)', () => {
       const toggle = footer.locator('.theme-switch');
       assert.match(await toggle.innerText(), /Switch to dark/);
       await toggle.click();
+      // Dark is the bare `:root` since LAI-606 — the attribute leaving is the
+      // flip. The start state was light ('Switch to dark' above), so absence
+      // here is the transition, not a page that never themed.
       await h.page.waitForFunction(
-        () => document.documentElement.classList.contains('dk'),
+        () => document.documentElement.getAttribute('data-theme') !== 'light',
         undefined,
         { timeout: 5000 },
       );

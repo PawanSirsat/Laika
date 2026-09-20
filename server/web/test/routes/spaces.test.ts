@@ -32,6 +32,7 @@ const project = (
   repo: null,
   visibility: 'private',
   context_md: '',
+  board_hide_done_days: null,
   archived_at: null,
   created_at: 1,
   updated_at: 1,

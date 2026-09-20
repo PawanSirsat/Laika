@@ -1,0 +1,398 @@
+/*
+ * The board's controls, inside the space bar (LAI-290). Tokens only.
+ *
+ * In the bar rather than a row below it — see `BoardToolbar.tsx` for why that
+ * distinction is load-bearing.
+ */
+
+.bt {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.bt-spacer {
+  flex: 1 1 auto;
+}
+
+.bt-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bt-button:hover {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+.bt-button-on {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.bt-button svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  stroke: currentColor;
+}
+
+.bt-badge {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: var(--radius-pill);
+  padding: 0 0.25rem;
+  min-width: 0.875rem;
+  text-align: center;
+}
+
+.bt-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.bt-icon:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-border);
+}
+
+.bt-icon:focus-visible,
+.bt-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.bt-icon svg {
+  width: 0.875rem;
+  height: 0.875rem;
+  stroke: currentColor;
+}
+
+/* Anchors a button's pop to the button itself, not the row (LAI-605). */
+.bt-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.bt-pop {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  /* Hangs from the button's right edge — the buttons live at the row's right,
+     so growing leftward is what keeps the pop on screen. */
+  right: 0;
+  /* Above the click-away catcher (30), like the ⋯ menu's 31. */
+  z-index: 31;
+  width: 15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 0.625rem 0.75rem 0.75rem;
+}
+
+.bt-pop-narrow {
+  width: 12rem;
+}
+
+.bt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+}
+
+.bt-label {
+  font-size: 0.5625rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.bt-field select {
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: var(--bg-column);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
+  padding: 0.1875rem 0.25rem;
+}
+
+.bt-check,
+.bt-radio {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.bt-check input,
+.bt-radio input {
+  accent-color: var(--accent);
+}
+
+.bt-clear {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.bt-note {
+  margin: 0.25rem 0 0;
+  font-size: 0.625rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The `⋯` menu. */
+.bt-catcher {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  /* It is a button, and a button has a UA background — invisible on purpose. */
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+
+.bt-menu {
+  position: fixed;
+  z-index: 31;
+  min-width: 10rem;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 0.1875rem;
+}
+
+.bt-menu-item {
+  text-align: left;
+  font: inherit;
+  font-size: 0.75rem;
+  color: var(--text-primary);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  padding: 0.3125rem 0.4375rem;
+  cursor: pointer;
+}
+
+.bt-menu-item:hover {
+  background: var(--bg-column);
+}
+
+/*
+ * Narrow widths (LAI-290).
+ *
+ * The toolbar is Filter + Group + four icons, which does not fit a 420px bar
+ * alongside the space name and the search box — `space-bar.test.ts` and
+ * `list-view.test.ts` both caught it pushing the page sideways.
+ *
+ * The buttons lose their **words**, not their function: every one keeps its
+ * icon, its `title` and its accessible name, so nothing becomes unreachable.
+ * `min-width: 0` on the row is what actually lets flex shrink it — without it
+ * a flex item refuses to go below its content width, which is the usual cause
+ * of an overflow that no amount of `overflow` fixes.
+ */
+@media (max-width: 47.5rem) {
+  .bt {
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .bt-button {
+    gap: 0;
+    padding: 0 0.375rem;
+  }
+
+  /* The label goes; the icon, the badge and the accessible name stay. */
+  .bt-button {
+    font-size: 0;
+  }
+
+  .bt-button svg,
+  .bt-badge {
+    font-size: 0.5625rem;
+  }
+
+  .bt-spacer {
+    flex-basis: 0;
+  }
+
+  .bt-pop {
+    width: min(15rem, calc(100vw - 2rem));
+  }
+}
+
+/*
+ * The row's own container, below WORKING NOW and above the lanes (LAI-293).
+ *
+ * `.bt` keeps `flex: 1 1 auto` because it used to be one child of the space
+ * bar's flex row. Standing alone it needs a box of its own, and that box's job
+ * is to line the row up with the columns underneath it — so the padding is the
+ * board's, not a number picked to look right.
+ */
+.board-bar {
+  display: flex;
+  align-items: center;
+  /*
+   * **No horizontal padding, on purpose.** `.board` has none either — it aligns
+   * its children with `margin-inline: 1.125rem`
+   * (`board.css`, `.board > :not(.screen-bar)…`), and this row is one of those
+   * children, so it picks the alignment up for free. Adding padding here would
+   * *add* to that margin and push the row out of line with the lanes, which is
+   * the one thing it must not do.
+   */
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-subtle);
+  min-width: 0;
+}
+
+/*
+ * It is a row now, not a bar item — it must not also stretch inside a flex
+ * parent that no longer exists.
+ */
+.board-bar > .bt {
+  flex: 1 1 auto;
+}
+
+/*
+ * Search and the member faces, moved out of the space bar (LAI-293).
+ *
+ * They are filters, so they belong with the other filters. Sized against the
+ * row rather than the bar they came from — the bar is a taller line.
+ */
+.bt-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  /* Card surface — the owner tried the darker input step and reverted it. */
+  background: var(--bg-card);
+  color: var(--text-muted);
+  min-width: 0;
+  flex: 0 1 380px;
+}
+
+.bt-search:focus-within {
+  border-color: var(--border-default);
+  color: var(--text-secondary);
+}
+
+.bt-search input {
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  /* Bigger and bolder than the 11px it launched with (owner). */
+  font-size: 0.78125rem;
+  font-weight: var(--weight-semibold);
+  min-width: 0;
+  width: 100%;
+  outline: none;
+}
+
+.bt-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.bt-members {
+  /* The prototype's member stack: a bordered pill the circles sit in. */
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 10px 0 4px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  margin-inline: 2px 4px;
+}
+
+.bt-member,
+.bt-member-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  /* The pill must never squeeze a circle into an oval. */
+  flex: none;
+  border-radius: 50%;
+  /* The gap ring between overlapping circles — the canvas, not a colour. */
+  border: 2px solid var(--bg-canvas);
+  cursor: pointer;
+  padding: 0;
+}
+
+/* Overlapped, as the reference has them — the first one keeps its full edge. */
+.bt-member + .bt-member {
+  margin-left: -8px;
+}
+
+/* "+1" is a figure, not another face: plain muted text, no circle. */
+.bt-member-more {
+  width: auto;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-weight: var(--weight-semibold);
+  cursor: default;
+  padding-inline: 6px 0;
+}
+
+/*
+ * The pressed face stays on top of the ones overlapping it, or the ring that
+ * says "filtering by this person" is half-hidden by the next avatar.
+ */
+.bt-member-on {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  position: relative;
+  z-index: 1;
+}

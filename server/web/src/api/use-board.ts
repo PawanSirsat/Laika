@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { byIdIndex, groupByColumn, type BoardColumn } from './board-derive.ts';
+import { byIdIndex } from './board-derive.ts';
 import { ApiError } from './errors.ts';
-import { changeStatus, listTasks, type Task, type TaskFilter } from './tasks.ts';
+import { changeStatus, listTasks, type Task, type TaskFilter, type TaskStatus } from './tasks.ts';
 
 export interface BoardState {
   readonly status: 'loading' | 'ready' | 'error';
@@ -11,13 +11,12 @@ export interface BoardState {
 
 export interface UseBoard {
   readonly state: BoardState;
-  readonly columns: Record<BoardColumn, Task[]>;
   readonly byId: ReadonlyMap<string, Task>;
   /** Set while a drop is in flight, so the card can show it is moving. */
   readonly movingId: string | undefined;
   /** The server's reason for refusing the last move. Cleared on the next one. */
   readonly moveError: string | undefined;
-  readonly move: (taskId: string, to: BoardColumn) => Promise<void>;
+  readonly move: (taskId: string, to: TaskStatus) => Promise<void>;
   readonly reload: () => void;
   readonly dismissMoveError: () => void;
 }
@@ -83,7 +82,7 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
     // depending on the object itself would re-run on every render.
   }, [slug, filterKey, attempt]);
 
-  const move = useCallback(async (taskId: string, to: BoardColumn): Promise<void> => {
+  const move = useCallback(async (taskId: string, to: TaskStatus): Promise<void> => {
     setMoveError(undefined);
     setMovingId(taskId);
 
@@ -99,14 +98,19 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
     } catch (cause) {
       // The card never moved, so there is nothing to undo — that is the whole
       // point of awaiting. Surface the server's reason verbatim; it is more
-      // specific than anything invented here ("done cannot go back to backlog").
+      // specific than anything invented here ("only the assignee, a project lead
+      // or an admin may send a task to review").
+      //
+      // The example used to be "done cannot go back to backlog", and LAI-266
+      // widened the §5 table for people — so a person can now do exactly that,
+      // and a comment naming it as a refusal would describe behaviour the code
+      // no longer has.
       setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
     } finally {
       setMovingId(undefined);
     }
   }, []);
 
-  const columns = useMemo(() => groupByColumn(state.tasks), [state.tasks]);
   const byId = useMemo(() => byIdIndex(state.tasks), [state.tasks]);
 
   const reload = useCallback((): void => {
@@ -117,5 +121,5 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
     setMoveError(undefined);
   }, []);
 
-  return { state, columns, byId, movingId, moveError, move, reload, dismissMoveError };
+  return { state, byId, movingId, moveError, move, reload, dismissMoveError };
 }

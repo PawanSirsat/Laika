@@ -69,6 +69,15 @@ export interface UseSprints {
   readonly state: SprintsState;
   /** Set while any mutation is in flight, so controls can disable. */
   readonly busy: boolean;
+  /**
+   * Which mutation is in flight — `activate:<id>`, `remove:<id>`, and so on.
+   *
+   * `busy` is screen-wide and correct for *disabling*: one mutation at a time
+   * is the rule here. It is wrong for a *spinner*, which claims a specific
+   * control is the one working. Keying the flight lets a card spin the button
+   * that was actually pressed instead of all four.
+   */
+  readonly pending: string | undefined;
   /** The server's reason for refusing the last action. Never invented here. */
   readonly actionError: string | undefined;
   readonly dismissError: () => void;
@@ -116,7 +125,7 @@ async function allTasks(slug: string, signal: AbortSignal): Promise<[Task[], boo
 export function useSprints(slug: string | undefined): UseSprints {
   const [state, setState] = useState<SprintsState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const [pending, setPending] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
 
   useEffect(() => {
@@ -169,9 +178,9 @@ export function useSprints(slug: string | undefined): UseSprints {
    *
    * Returns whether it succeeded, so a form knows whether to close.
    */
-  const run = useCallback(async (action: () => Promise<unknown>): Promise<boolean> => {
+  const run = useCallback(async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
     setActionError(undefined);
-    setBusy(true);
+    setPending(key);
 
     try {
       await action();
@@ -184,36 +193,41 @@ export function useSprints(slug: string | undefined): UseSprints {
       setActionError(cause instanceof ApiError ? cause.message : 'That change could not be saved.');
       return false;
     } finally {
-      setBusy(false);
+      setPending(undefined);
     }
   }, []);
 
   const create = useCallback(
-    (input: SprintInput) => run(() => createSprint(slug ?? '', input)),
+    (input: SprintInput) => run('create', () => createSprint(slug ?? '', input)),
     [run, slug],
   );
   const update = useCallback(
-    (id: string, patch: Partial<SprintInput>) => run(() => updateSprint(id, patch)),
+    (id: string, patch: Partial<SprintInput>) => run(`update:${id}`, () => updateSprint(id, patch)),
     [run],
   );
   const activate = useCallback(
-    (id: string) => run(() => updateSprint(id, { status: 'active' })),
+    (id: string) => run(`activate:${id}`, () => updateSprint(id, { status: 'active' })),
     [run],
   );
-  const remove = useCallback((id: string) => run(() => deleteSprint(id)), [run]);
+  const remove = useCallback((id: string) => run(`remove:${id}`, () => deleteSprint(id)), [run]);
   const assign = useCallback(
-    (id: string, taskIds: readonly string[]) => run(() => addTasksToSprint(id, taskIds)),
+    (id: string, taskIds: readonly string[]) =>
+      run(`assign:${id}`, () => addTasksToSprint(id, taskIds)),
     [run],
   );
   const unassign = useCallback(
-    (id: string, taskId: string) => run(() => removeTaskFromSprint(id, taskId)),
+    (id: string, taskId: string) =>
+      run(`unassign:${taskId}`, () => removeTaskFromSprint(id, taskId)),
     [run],
   );
+
+  const busy = pending !== undefined;
 
   return useMemo(
     () => ({
       state,
       busy,
+      pending,
       actionError,
       dismissError,
       reload,
@@ -227,6 +241,7 @@ export function useSprints(slug: string | undefined): UseSprints {
     [
       state,
       busy,
+      pending,
       actionError,
       dismissError,
       reload,

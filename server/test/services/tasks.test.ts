@@ -206,9 +206,40 @@ describe('status transitions (AC4)', () => {
     expect(changes).toHaveLength(4);
   });
 
-  it('refuses an illegal jump', () => {
+  /*
+   * `backlog → done` used to be refused for everyone. LAI-266 split the table:
+   * it is refused for an agent and permitted for a person.
+   *
+   * **The two halves are asserted separately and neither is optional.** The old
+   * single assertion is now satisfied by the agent half alone, so keeping only
+   * that one would leave the widening — the actual change — untested; and
+   * keeping only the human half would not notice an agent acquiring the ability
+   * to mark its own work done, which is the thing §5 exists to prevent.
+   */
+  it('refuses an illegal jump for a token-bearing agent', () => {
     const task = newTask();
-    expect(() => changeStatus(t.db, actor(adminId), task.id, 'done')).toThrow(ApiError);
+    const agent: ResolvedActor = {
+      ...actor(adminId),
+      token: { id: 'tok_1', scope: 'full', projectIds: null },
+    };
+
+    try {
+      changeStatus(t.db, agent, task.id, 'done');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as ApiError).code).toBe('unprocessable');
+      expect((err as ApiError).details).toMatchObject({ from: 'backlog', to: 'done' });
+    }
+
+    // And it did not move.
+    expect(getTask(t.db, actor(adminId), task.id).status).toBe('backlog');
+  });
+
+  it('permits the same jump for a person in a browser', () => {
+    // `loadActor` carries no token, which is what a session cookie resolves to.
+    const task = newTask();
+
+    expect(changeStatus(t.db, actor(adminId), task.id, 'done').status).toBe('done');
   });
 
   it('refuses a no-op transition', () => {

@@ -9,6 +9,7 @@ import { activity, projectMemberships, projects, tasks, users } from '../db/sche
 import { ApiError } from '../errors.ts';
 import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
+import { createDefaultBoardColumns } from './board-columns.ts';
 
 /**
  * Re-exported so `routes/projects.ts` can validate a role or a visibility
@@ -41,6 +42,8 @@ export interface ProjectView {
   repo: string | null;
   visibility: 'public' | 'private';
   context_md: string;
+  /** LAI-266. `null` means done work stays on the board for ever. */
+  board_hide_done_days: number | null;
   archived_at: number | null;
   created_at: number;
   updated_at: number;
@@ -108,6 +111,7 @@ export function projectView(row: typeof projects.$inferSelect): ProjectView {
     repo: row.repo,
     visibility: row.visibility,
     context_md: row.contextMd,
+    board_hide_done_days: row.boardHideDoneDays,
     archived_at: row.archivedAt,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
@@ -375,6 +379,10 @@ export function createProject(
       .values({ id: newId(), projectId: id, userId: actor.userId, role: 'lead', createdAt: now })
       .run();
 
+    // A project without columns has no board at all (LAI-266). In the same
+    // transaction, so a project can never exist in that state.
+    createDefaultBoardColumns(db, id, now);
+
     appendActivity(db, {
       orgId,
       projectId: id,
@@ -497,6 +505,8 @@ export interface UpdateProjectInput {
   visibility?: 'public' | 'private' | undefined;
   /** `true` archives, `false` restores. Absent leaves it alone. */
   archived?: boolean | undefined;
+  /** Days after which finished work leaves the board; `null` never (LAI-266). */
+  board_hide_done_days?: number | null | undefined;
   now?: number;
 }
 
@@ -518,6 +528,15 @@ export function updateProject(
   if (input.repo !== undefined) {
     if (input.repo !== null) assertRepoShape(input.repo);
     changes.repo = input.repo;
+  }
+  if (input.board_hide_done_days !== undefined) {
+    // `null` is "never", which is the default. A number is a count of days, so
+    // zero would mean "hide it the moment it is done" — a real request, and one
+    // nobody makes by accident, so it is allowed rather than special-cased.
+    if (input.board_hide_done_days !== null && input.board_hide_done_days < 0) {
+      throw new ApiError('unprocessable', 'Days must not be negative');
+    }
+    changes.boardHideDoneDays = input.board_hide_done_days;
   }
   if (input.visibility !== undefined) changes.visibility = input.visibility;
 

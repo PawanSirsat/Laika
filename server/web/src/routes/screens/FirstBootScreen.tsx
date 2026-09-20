@@ -245,7 +245,7 @@ export function FirstBootScreen({
         </fieldset>
 
         <footer className="boot-footer">
-          <Button type="submit" busy={submitting} busyLabel="Creating instance…">
+          <Button type="submit" busy={submitting}>
             Create instance
           </Button>
           <p className="boot-footnote">

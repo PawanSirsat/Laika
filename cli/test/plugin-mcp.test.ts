@@ -65,22 +65,31 @@ void describe('the tool surface, from both sides', () => {
     assert.deepEqual(registeredTools(), specTools());
   });
 
-  void test('and they are these eleven', () => {
+  void test('and they are these eighteen', () => {
     // Spelled out, so a tool appearing or vanishing is a deliberate edit here
-    // rather than a number nobody re-counted. Verified against a live
-    // `tools/list` on 2026-09-01, which returned exactly this set.
+    // rather than a number nobody re-counted. Eleven verified against a live
+    // `tools/list` on 2026-09-01; LAI-611 added the seven project-management
+    // tools on 2026-09-20 (assign_task deliberately absent - it folded into
+    // update_task.assignee).
     assert.deepEqual(registeredTools(), [
       'add_comment',
+      'create_sprint',
       'create_task',
       'finish_task',
       'get_project_context',
       'get_task_context',
       'laika_whoami',
+      'list_members',
       'list_projects',
       'list_ready_tasks',
+      'list_sprints',
       'log_unlisted_work',
+      'set_task_sprint',
       'start_working',
+      'update_project_context',
+      'update_sprint',
       'update_status',
+      'update_task',
     ]);
   });
 });

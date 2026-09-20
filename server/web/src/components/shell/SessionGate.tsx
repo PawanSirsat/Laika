@@ -1,3 +1,5 @@
+import { Spinner } from '../Spinner.tsx';
+import { useDelayed } from '../use-delayed.ts';
 import { useEffect, useState, type ReactNode } from 'react';
 import { ApiErrorState } from '../ApiErrorState.tsx';
 import { EmptyState } from '../EmptyState.tsx';
@@ -32,6 +34,25 @@ export function SessionGate({ children }: SessionGateProps) {
    * on the board.
    */
   const [returnTo, setReturnTo] = useState<string | undefined>(undefined);
+
+  /*
+   * **Nothing at all while the session resolves** (LAI-608).
+   *
+   * The owner, on seeing it: *"i dont like that loading your account, remove
+   * that, why we need that"* — and they are right that it earns nothing. The
+   * check is a single `/me` call; on any healthy instance it is done inside
+   * the 150ms delay, so this now renders **nothing** and the app simply
+   * appears.
+   *
+   * What survives is a bare spinner for the case where the call is genuinely
+   * slow, because the alternative is an indefinitely blank page with no way to
+   * tell "working" from "broken" — `session.status === 'error'` catches a
+   * *failure*, not a hang. No words: the gate cannot say what is coming.
+   *
+   * Declared with the other hooks, above every conditional return. A hook
+   * below one is the defect SprintStrip carried into LAI-297.
+   */
+  const stillResolving = useDelayed(session.status === 'loading');
 
   const routeIsPublic = isPublic(route) || route === undefined;
 
@@ -78,7 +99,7 @@ export function SessionGate({ children }: SessionGateProps) {
   if (!routeIsPublic && session.status === 'loading') {
     return (
       <div className="shell-gate">
-        <LoadingState shape="card" count={2} label="Loading your account" />
+        {stillResolving && <Spinner size="sm" label="Signing you in" />}
       </div>
     );
   }

@@ -12,7 +12,7 @@
   height: 1.75rem;
   flex: none;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--bd2);
+  border: 1px solid var(--border-default);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,7 +66,7 @@
 .pp-name {
   font-size: var(--text-sm);
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
@@ -85,7 +85,7 @@
 .pp-branch {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--tx2);
+  color: var(--text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -98,19 +98,19 @@
 }
 
 .pp-branch {
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /*
  * *Somebody is working, elsewhere*.
  *
  * Ordinary text, deliberately: it is a normal state, so no warning colour and no
- * dashed placeholder. `--tx3` is the same weight as the location it stands in
+ * dashed placeholder. `--text-muted` is the same weight as the location it stands in
  * for, which is exactly how much attention it deserves.
  */
 .pp-elsewhere {
   font-size: var(--text-xs);
-  color: var(--tx3);
+  color: var(--text-muted);
   font-style: italic;
   white-space: nowrap;
 }
@@ -125,9 +125,9 @@
   height: 5px;
   flex: none;
   border-radius: 50%;
-  background: var(--grn);
+  background: var(--chip-green);
 }
 
 .pp-dot-agent {
-  background: var(--pur);
+  background: var(--chip-pink);
 }

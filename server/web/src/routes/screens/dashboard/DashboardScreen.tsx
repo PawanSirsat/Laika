@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
 import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
-import { COLUMN_LABELS, updatedAge } from '../../../api/board-derive.ts';
+import { statusLabel, updatedAge } from '../../../api/board-derive.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
@@ -657,9 +657,7 @@ export function DashboardScreen() {
                       <span className="dash-stale-age">
                         {updatedAge(task.updated_at, now)} quiet
                       </span>
-                      <span className="dash-stale-status">
-                        {task.status === 'cancelled' ? 'Cancelled' : COLUMN_LABELS[task.status]}
-                      </span>
+                      <span className="dash-stale-status">{statusLabel(task.status)}</span>
                     </span>
                   </li>
                 ))}

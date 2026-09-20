@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getHealth } from './health.ts';
 import { getOrg } from './org.ts';
+import { getProject } from './projects.ts';
 import { countSprints } from './sprints.ts';
 import { subscribeToEvents } from './event-stream.ts';
 
@@ -26,6 +27,13 @@ export interface ShellContext {
   readonly version: string | undefined;
   /** Sprints in the active project, or `undefined` when there is no number. */
   readonly sprintCount: number | undefined;
+  /**
+   * The open project's name, by slug.
+   *
+   * Two readers, which is why it lives in the shell: the rail's wordmark, and
+   * the space bar when the rail cannot show it (LAI-299).
+   */
+  readonly spaceName: string | undefined;
   /**
    * The organisation's name, for the sidebar's identity line (LAI-249) —
    * "Kvelld Dynamics" in the prototype is a fixture. `undefined` until
@@ -59,6 +67,21 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
   const [version, setVersion] = useState<string | undefined>(undefined);
   const [sprintCount, setSprintCount] = useState<number | undefined>(undefined);
   const [orgName, setOrgName] = useState<string | undefined>(undefined);
+  /**
+   * The open project's name (LAI-299).
+   *
+   * **Here rather than in either consumer, because there are two.** The rail
+   * draws it as its wordmark and the space bar draws it when the rail cannot —
+   * collapsed, or off-canvas below 900px. Fetching it in `ShellSidebar`, where
+   * it started, left the bar unable to reach it without a second request for
+   * the same string.
+   *
+   * By slug, not from the spaces list: `useSpaces` asks for
+   * `listProjects({ limit: 20 })`, so a project past the twentieth is not in
+   * it — which is how "No space" appeared over a project that plainly existed
+   * (LAI-259).
+   */
+  const [spaceName, setSpaceName] = useState<string | undefined>(undefined);
   /**
    * Bumped whenever the stream says this project changed, which re-runs the
    * count below (LAI-122).
@@ -108,6 +131,28 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
     };
   }, []);
 
+  useEffect(() => {
+    if (!enabled || slug === undefined) {
+      setSpaceName(undefined);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    getProject(slug, controller.signal)
+      .then((project) => {
+        if (!controller.signal.aborted) setSpaceName(project.name);
+      })
+      .catch(() => {
+        // The rail falls back to the listed name and then to the product name;
+        // the bar falls back to the slug. Neither is worth an error state.
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [slug, enabled]);
+
   // The org line is gated exactly like the sprint count: `GET /org` needs a
   // session, and the sidebar it feeds is not rendered without one.
   useEffect(() => {
@@ -151,5 +196,10 @@ export function useShellContext(slug: string | undefined, enabled: boolean): She
     };
   }, [slug, enabled, generation]);
 
-  return { version, sprintCount, orgName };
+  return {
+    spaceName,
+    version,
+    sprintCount,
+    orgName,
+  };
 }

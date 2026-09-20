@@ -20,33 +20,49 @@
   top: 0;
   right: 0;
   bottom: 0;
-  left: var(--rail-width, 0px);
+  /* The whole window, the rail included: a modal dims everything behind it. */
+  left: 0;
   z-index: 20;
   /* The design's own scrim. A raw rgba rather than a token because no token is
-     a dimming layer — `--bd2` is a border colour and reads far too light here. */
-  background: rgba(15, 23, 42, 0.45);
+     a dimming layer — `--border-default` is a border colour and reads far too light here. */
+  background: var(--scrim);
 }
 
+/*
+ * **A centred modal, not a right-hand drawer** (LAI-603).
+ *
+ * The owner's reference opens the task as a dialog floating over the board,
+ * clear of every edge. The two-column content LAI-285 built is unchanged — it
+ * is the *placement* that moves, so the description keeps its width and the
+ * 288px field rail keeps its own.
+ */
 .drawer {
   position: fixed;
-  top: 0;
-  right: 0;
-  bottom: 0;
+  top: 50%;
+  left: 50%;
+  right: auto;
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  /* Never taller than the window, and never touching it. */
+  height: min(86vh, 56rem);
+  max-height: 86vh;
+  border-radius: var(--radius-card);
   /*
    * **1120px, not 840** (LAI-285). The design's drawer is two columns — the
    * task as a document beside a 288px rail of fields — and at 840 the two
    * together left the description about 500px wide, narrower than the board
    * card the reader came from.
    */
-  width: min(1120px, 100%);
+  width: min(1120px, 92vw);
   /* 840px is the whole drawer, border included — without this the 1px
      border-left makes it 841 and the design's number stops being the one on
      screen. The same trap as the tab strip's 34px. */
   box-sizing: border-box;
   z-index: 21;
-  background: var(--card);
-  border-left: 1px solid var(--bd);
-  box-shadow: -24px 0 60px rgba(15, 23, 42, 0.18);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  /* Even on all sides now that it floats, rather than thrown from one edge. */
+  box-shadow: var(--shadow-modal);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -68,11 +84,13 @@
 
 @keyframes drawer-slidein {
   from {
-    transform: translateX(16px);
+    /* Keeps the centring transform — animating `translateX` alone would throw
+       the dialog half a screen left for the length of the animation. */
+    transform: translate(-50%, calc(-50% + 12px));
     opacity: 0;
   }
   to {
-    transform: translateX(0);
+    transform: translate(-50%, -50%);
     opacity: 1;
   }
 }

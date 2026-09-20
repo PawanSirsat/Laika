@@ -6,8 +6,8 @@
   gap: 0.625rem;
   /* 48px overall, as the design has it. */
   padding: 0.4375rem 1.125rem;
-  background: var(--page);
-  border-bottom: 1px solid var(--bd);
+  background: var(--bg-canvas);
+  border-bottom: 1px solid var(--border-subtle);
   flex-wrap: wrap;
 }
 
@@ -17,7 +17,7 @@
   font-size: 0.59375rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.09em;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 .presence-people {
@@ -34,21 +34,21 @@
   gap: 0.5rem;
   height: 2.125rem;
   padding: 0.125rem 0.6875rem 0.125rem 0.1875rem;
-  border: 1px solid var(--bd);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-pill);
-  background: var(--card);
+  background: var(--bg-card);
   font: inherit;
   cursor: pointer;
   text-align: left;
 }
 
 .presence-chip-on {
-  border-color: var(--accb);
-  background: var(--accs);
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
 }
 
 .presence-chip:focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
@@ -78,8 +78,8 @@
   width: 0.875rem;
   height: 0.875rem;
   border-radius: var(--radius-pill);
-  background: var(--pur);
-  border: 2px solid var(--card);
+  background: var(--chip-pink);
+  border: 2px solid var(--bg-card);
 }
 
 .presence-who {
@@ -95,7 +95,7 @@
   gap: 0.3125rem;
   font-size: 0.65625rem;
   font-weight: var(--weight-bold);
-  color: var(--tx);
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
@@ -103,21 +103,21 @@
   width: 5px;
   height: 5px;
   border-radius: var(--radius-pill);
-  background: var(--tx3);
+  background: var(--text-muted);
 }
 
 .presence-dot-live,
 .presence-dot-active {
-  background: var(--grn);
+  background: var(--chip-green);
 }
 
 .presence-dot-idle {
-  background: var(--amb);
+  background: var(--chip-orange);
 }
 
 .presence-where {
   font-size: 0.53125rem;
-  color: var(--tx3);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -126,7 +126,7 @@
   font: inherit;
   font-size: 0.59375rem;
   font-weight: var(--weight-semibold);
-  color: var(--acc);
+  color: var(--accent);
   background: none;
   border: none;
   cursor: pointer;
@@ -136,7 +136,7 @@
   flex: none;
   margin: 0;
   font-size: 0.53125rem;
-  color: var(--tx3);
+  color: var(--text-muted);
 }
 
 /* The design's right-hand summary. Pushed to the end of the strip. */
@@ -146,6 +146,6 @@
   padding-left: var(--space-3);
   font-size: 0.65625rem;
   font-weight: var(--weight-semibold);
-  color: var(--tx3);
+  color: var(--text-muted);
   white-space: nowrap;
 }

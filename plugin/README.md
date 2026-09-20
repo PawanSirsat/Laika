@@ -98,15 +98,15 @@ and how to set them, and it never prints your token.
 
 | | Status |
 | --- | --- |
-| MCP tools — **eleven**, §7.1 | ✅ served at `${LAIKA_URL}/mcp` |
+| MCP tools — **eighteen**, §7.1 | ✅ served at `${LAIKA_URL}/mcp` |
 | Heartbeat hooks | ✅ LAI-418 — `SessionStart`, `Stop`, throttled `PostToolUse` |
 | `npx laika init` | ✅ LAI-422 — writes both variables to `~/.claude/settings.json` |
 | `/laika:status` | ✅ |
 | `/laika:setup`, `/laika:tasks`, `/laika:standup` | LAI-420 |
 | Agent protocol skill | LAI-421 |
 
-**Eleven tools, not ten and not eight.** §7.1's table lists eleven and
-`server/src/mcp/` registers eleven; both smaller numbers have appeared in task
+**Eighteen tools since LAI-611** (eleven before it). §7.1's table and
+`server/src/mcp/` agree at eighteen; smaller stale counts have appeared in task
 files and in `CLAUDE.md`, and the count is asserted in
 `cli/test/plugin-mcp.test.ts` against the spec and the registry so the next drift
 is loud rather than repeated.

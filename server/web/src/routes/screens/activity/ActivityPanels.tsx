@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { describeEvent } from '../../../api/activity.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -173,7 +174,10 @@ export function ActivityPanels({
             {presence !== undefined && <span className="rail-count">{agents.length}</span>}
           </header>
           {presence === undefined ? (
-            <p className="rail-empty">Loading…</p>
+            <p className="rail-empty">
+              <Spinner size="sm" />
+              Loading…
+            </p>
           ) : agents.length === 0 ? (
             /* Three states, and this is the one that used to be a bare heading:
                nobody is running an agent, said rather than implied. */

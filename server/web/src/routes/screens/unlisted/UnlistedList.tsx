@@ -1,3 +1,4 @@
+import { Spinner } from '../../../components/Spinner.tsx';
 import { useState } from 'react';
 import {
   dismissUnlisted,
@@ -207,7 +208,8 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
                       disabled={busy || slug.trim() === '' || title.trim() === ''}
                       onClick={promote}
                     >
-                      {busy ? 'Creating…' : 'Create task'}
+                      {busy && <Spinner size="sm" />}
+                      Create task
                     </button>
                   </div>
                 </div>
