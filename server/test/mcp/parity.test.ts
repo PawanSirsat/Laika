@@ -333,7 +333,130 @@ const PAIRS: ReadonlyMap<string, Pair> = new Map<string, Pair>([
       note: 'both answer "who am I" and neither writes anything',
     },
   ],
+
+  // ------------------------------------------------- the LAI-611 tools
+  [
+    'create_sprint',
+    {
+      note: 'The MCP tool takes `2026-01-01` where the route takes unix-ms — §4.15 gives sprint dates date-only semantics, so the tool spells the field `start_date`. Both reach `createSprint` with the same integer, which is what makes this pair a comparison of the write rather than of the parsing.',
+      rest: async (s) => {
+        await must(s, '/api/v1/projects/core/sprints', {
+          method: 'POST',
+          body: JSON.stringify({ name: 'Sprint 1', starts_on: JAN1, ends_on: JAN14 }),
+        });
+      },
+      mcp: async (_s, c) => {
+        await callTool(c, 'create_sprint', {
+          project: 'core',
+          name: 'Sprint 1',
+          start_date: '2026-01-01',
+          end_date: '2026-01-14',
+        });
+      },
+    },
+  ],
+  [
+    'update_sprint',
+    {
+      // The sprint is created over REST on **both** sides, so the only thing
+      // the comparison is left looking at is the edit.
+      rest: async (s) => {
+        const sprint = await seedSprint(s);
+        await must(
+          s,
+          `/api/v1/sprints/${sprint}`,
+          { method: 'PATCH', body: JSON.stringify({ name: 'Renamed' }) },
+          200,
+        );
+      },
+      mcp: async (s, c) => {
+        const sprint = await seedSprint(s);
+        await callTool(c, 'update_sprint', { sprint, name: 'Renamed' });
+      },
+    },
+  ],
+  [
+    'set_task_sprint',
+    {
+      note: 'Its twin is `POST /sprints/:id/tasks` with a single id. The route takes an array because a human dragging a selection moves several at once; §7.2 forbids a tool bulk-mutating, so the tool takes one — the same service call either way.',
+      rest: async (s) => {
+        const task = await seedTask(s);
+        const sprint = await seedSprint(s);
+        await must(
+          s,
+          `/api/v1/sprints/${sprint}/tasks`,
+          { method: 'POST', body: JSON.stringify({ task_ids: [task] }) },
+          200,
+        );
+      },
+      mcp: async (s, c) => {
+        await seedTask(s);
+        const sprint = await seedSprint(s);
+        await callTool(c, 'set_task_sprint', { task: 'COR-1', sprint });
+      },
+    },
+  ],
+  [
+    'update_task',
+    {
+      rest: async (s) => {
+        const task = await seedTask(s);
+        await must(
+          s,
+          `/api/v1/tasks/${task}`,
+          { method: 'PATCH', body: JSON.stringify({ title: 'Renamed' }) },
+          200,
+        );
+      },
+      mcp: async (s, c) => {
+        await seedTask(s);
+        await callTool(c, 'update_task', { task: 'COR-1', title: 'Renamed' });
+      },
+    },
+  ],
+  [
+    'update_project_context',
+    {
+      note: '`mode: replace` is the twin of `PATCH /projects/:slug/context`, which takes a whole document. `append` has no REST twin because it is a read-then-write the human does in their editor.',
+      rest: async (s) => {
+        await must(
+          s,
+          '/api/v1/projects/core/context',
+          { method: 'PATCH', body: JSON.stringify({ context_md: 'A brief' }) },
+          200,
+        );
+      },
+      mcp: async (_s, c) => {
+        await callTool(c, 'update_project_context', {
+          project: 'core',
+          context_md: 'A brief',
+          mode: 'replace',
+        });
+      },
+    },
+  ],
+  [
+    'list_sprints',
+    { rest: readsNothingRest, mcp: readsNothingMcp('list_sprints', { project: 'core' }) },
+  ],
+  [
+    'list_members',
+    { rest: readsNothingRest, mcp: readsNothingMcp('list_members', { project: 'core' }) },
+  ],
 ]);
+
+/** January 2026, so a date in a fixture reads as a date. */
+const JAN1 = Date.UTC(2026, 0, 1);
+const JAN14 = Date.UTC(2026, 0, 14);
+
+/** One sprint over REST, so a tool under test is the only thing being measured. */
+async function seedSprint(side: Side): Promise<string> {
+  const res = await must(side, '/api/v1/projects/core/sprints', {
+    method: 'POST',
+    body: JSON.stringify({ name: 'Sprint 1', starts_on: JAN1, ends_on: JAN14 }),
+  });
+  return ((await res.json()) as { id: string }).id;
+}
 
 /** One task, so a read tool has something to read. Returns its id. */
 async function seedTask(side: Side): Promise<string> {
@@ -577,6 +700,14 @@ describe('§7.1 lists the tools the server actually serves', () => {
       'ten',
       'eleven',
       'twelve',
+      'thirteen',
+      'fourteen',
+      'fifteen',
+      'sixteen',
+      'seventeen',
+      'eighteen',
+      'nineteen',
+      'twenty',
     ];
 
     expect(

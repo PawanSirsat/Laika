@@ -137,6 +137,23 @@ export function requireProjectBySlug(db: Db, slug: string): typeof projects.$inf
 }
 
 /**
+ * The slug of a project this actor may read, from its id.
+ *
+ * Every service in this layer is addressed by slug, because that is what a URL
+ * and a tool argument carry — but a task row carries a `project_id`, so anything
+ * starting from a task needs this hop. One indexed lookup rather than a scan of
+ * the readable list, and `project.read` is asserted here so an id that belongs
+ * to a project the actor cannot see answers 404 rather than leaking its slug.
+ */
+export function projectSlugById(db: Db, actor: ResolvedActor, projectId: string): string {
+  const row = db.select().from(projects).where(eq(projects.id, projectId)).get();
+  if (row === undefined) throw ApiError.notFound(`No project with id "${projectId}"`);
+
+  assertCan(withProject(actor, row.id), 'project.read', { projectId: row.id });
+  return row.slug;
+}
+
+/**
  * A project is visible to org owners and admins, and to anyone holding a
  * membership. §3.2's "View project | ✓ | ✓ | assigned | assigned".
  *
