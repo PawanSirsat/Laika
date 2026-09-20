@@ -1178,13 +1178,22 @@
    */
   overflow-x: hidden;
   overscroll-behavior: contain;
-  /* The thin scrollbar the reference shows on a full column. */
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-default) transparent;
 }
 
+/*
+ * **The full column's scrollbar is visible at rest** (LAI-605, owner: a long
+ * list must show its scroller so people know there is more). Painted webkit
+ * scrollbars never auto-hide; `scrollbar-width`/`scrollbar-color` must NOT be
+ * set alongside them — Chrome 121+ then discards the webkit styling and falls
+ * back to the macOS overlay bar that hides at rest, which is the bug this
+ * block replaces. The Firefox pair lives behind the support check instead.
+ */
 .kanban .lane-body::-webkit-scrollbar {
-  width: 8px;
+  width: 9px;
+}
+
+.kanban .lane-body::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .kanban .lane-body::-webkit-scrollbar-thumb {
@@ -1192,6 +1201,18 @@
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: content-box;
+}
+
+.kanban .lane-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .kanban .lane-body {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) transparent;
+  }
 }
 
 /* Pinned: it is the column's footer, not the last card's neighbour. */
