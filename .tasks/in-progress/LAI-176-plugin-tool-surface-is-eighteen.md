@@ -2,11 +2,12 @@
 id: LAI-176
 title: The plugin's tool surface says eleven; LAI-611 makes it eighteen
 area: plugin
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-611]
 discovered-from: LAI-611
-status: backlog
+status: in-progress
+started: 2026-09-20T15:53:29Z
 ---
 
 ## Goal
