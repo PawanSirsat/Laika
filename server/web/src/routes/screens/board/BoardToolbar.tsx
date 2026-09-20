@@ -238,145 +238,145 @@ export function BoardToolbar({
 
       {/* Each pop anchors to its own button, not the row edge (owner). */}
       <span className="bt-anchor">
-      <button
-        type="button"
-        className={active > 0 ? 'bt-button bt-button-on' : 'bt-button'}
-        aria-expanded={open === 'filter'}
-        aria-haspopup="true"
-        onClick={() => {
-          setOpen((o) => (o === 'filter' ? undefined : 'filter'));
-        }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-          <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
-        </svg>
-        Filter
-        {active > 0 && <span className="bt-badge">{active}</span>}
-      </button>
-      {open === 'filter' && (
-        <div className="bt-pop" role="dialog" aria-label="Filter">
-          <label className="bt-field">
-            <span className="bt-label">Priority</span>
-            <select
-              value={priority ?? ''}
-              onChange={(event) => {
-                onPriority(
-                  event.target.value === '' ? undefined : (event.target.value as TaskPriority),
-                );
-              }}
-            >
-              <option value="">Any</option>
-              {PRIORITIES.map((p) => (
-                <option key={p} value={p}>
-                  {p.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </label>
+        <button
+          type="button"
+          className={active > 0 ? 'bt-button bt-button-on' : 'bt-button'}
+          aria-expanded={open === 'filter'}
+          aria-haspopup="true"
+          onClick={() => {
+            setOpen((o) => (o === 'filter' ? undefined : 'filter'));
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+            <path d="M4 6h16M7 12h10M10 18h4" strokeLinecap="round" />
+          </svg>
+          Filter
+          {active > 0 && <span className="bt-badge">{active}</span>}
+        </button>
+        {open === 'filter' && (
+          <div className="bt-pop" role="dialog" aria-label="Filter">
+            <label className="bt-field">
+              <span className="bt-label">Priority</span>
+              <select
+                value={priority ?? ''}
+                onChange={(event) => {
+                  onPriority(
+                    event.target.value === '' ? undefined : (event.target.value as TaskPriority),
+                  );
+                }}
+              >
+                <option value="">Any</option>
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {p.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="bt-field">
-            <span className="bt-label">Assignee</span>
-            <select
-              value={assignee ?? ''}
-              onChange={(event) => {
-                onAssignee(event.target.value === '' ? undefined : event.target.value);
-              }}
-            >
-              <option value="">Anyone</option>
-              <option value="none">Unassigned</option>
-              {members.map((m) => (
-                <option key={m.user_id} value={m.user_id}>
-                  {m.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label className="bt-field">
+              <span className="bt-label">Assignee</span>
+              <select
+                value={assignee ?? ''}
+                onChange={(event) => {
+                  onAssignee(event.target.value === '' ? undefined : event.target.value);
+                }}
+              >
+                <option value="">Anyone</option>
+                <option value="none">Unassigned</option>
+                {members.map((m) => (
+                  <option key={m.user_id} value={m.user_id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="bt-field">
-            <span className="bt-label">Label</span>
-            <select
-              value={tag ?? ''}
-              onChange={(event) => {
-                onTag(event.target.value === '' ? undefined : event.target.value);
-              }}
-            >
-              <option value="">Any</option>
-              {tags.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label className="bt-field">
+              <span className="bt-label">Label</span>
+              <select
+                value={tag ?? ''}
+                onChange={(event) => {
+                  onTag(event.target.value === '' ? undefined : event.target.value);
+                }}
+              >
+                <option value="">Any</option>
+                {tags.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          <label className="bt-check">
-            <input
-              type="checkbox"
-              checked={ready}
-              onChange={(event) => {
-                onReady(event.target.checked);
-              }}
-            />
-            Ready only
-          </label>
+            <label className="bt-check">
+              <input
+                type="checkbox"
+                checked={ready}
+                onChange={(event) => {
+                  onReady(event.target.checked);
+                }}
+              />
+              Ready only
+            </label>
 
-          <label className="bt-check">
-            <input
-              type="checkbox"
-              checked={agentOnly}
-              onChange={(event) => {
-                onAgentOnly(event.target.checked);
-              }}
-            />
-            Agent-created only
-          </label>
+            <label className="bt-check">
+              <input
+                type="checkbox"
+                checked={agentOnly}
+                onChange={(event) => {
+                  onAgentOnly(event.target.checked);
+                }}
+              />
+              Agent-created only
+            </label>
 
-          {active > 0 && (
-            <button type="button" className="bt-clear" onClick={onClearFilters}>
-              Clear all
-            </button>
-          )}
-        </div>
-      )}
+            {active > 0 && (
+              <button type="button" className="bt-clear" onClick={onClearFilters}>
+                Clear all
+              </button>
+            )}
+          </div>
+        )}
       </span>
 
       <span className="bt-anchor">
-      <button
-        type="button"
-        className={grouped ? 'bt-button bt-button-on' : 'bt-button'}
-        aria-expanded={open === 'group'}
-        aria-haspopup="true"
-        onClick={() => {
-          setOpen((o) => (o === 'group' ? undefined : 'group'));
-        }}
-      >
-        <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-          <path d="M12 3 3 8l9 5 9-5-9-5ZM3 14l9 5 9-5" strokeLinejoin="round" />
-        </svg>
-        {grouped ? `Group: ${groupLabel}` : 'Group'}
-      </button>
-      {open === 'group' && (
-        <div className="bt-pop bt-pop-narrow" role="dialog" aria-label="Group by">
-          {GROUPS.map((option) => (
-            <label key={option.value} className="bt-radio">
-              <input
-                type="radio"
-                name="bt-group"
-                checked={group === option.value}
-                onChange={() => {
-                  onGroup(option.value);
-                  setOpen(undefined);
-                }}
-              />
-              {option.label}
-            </label>
-          ))}
-          <p className="bt-note">
-            Grouping draws a row per group, each holding the same columns. Cards still move between
-            columns; dragging between rows is not a move.
-          </p>
-        </div>
-      )}
+        <button
+          type="button"
+          className={grouped ? 'bt-button bt-button-on' : 'bt-button'}
+          aria-expanded={open === 'group'}
+          aria-haspopup="true"
+          onClick={() => {
+            setOpen((o) => (o === 'group' ? undefined : 'group'));
+          }}
+        >
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+            <path d="M12 3 3 8l9 5 9-5-9-5ZM3 14l9 5 9-5" strokeLinejoin="round" />
+          </svg>
+          {grouped ? `Group: ${groupLabel}` : 'Group'}
+        </button>
+        {open === 'group' && (
+          <div className="bt-pop bt-pop-narrow" role="dialog" aria-label="Group by">
+            {GROUPS.map((option) => (
+              <label key={option.value} className="bt-radio">
+                <input
+                  type="radio"
+                  name="bt-group"
+                  checked={group === option.value}
+                  onChange={() => {
+                    onGroup(option.value);
+                    setOpen(undefined);
+                  }}
+                />
+                {option.label}
+              </label>
+            ))}
+            <p className="bt-note">
+              Grouping draws a row per group, each holding the same columns. Cards still move
+              between columns; dragging between rows is not a move.
+            </p>
+          </div>
+        )}
       </span>
 
       <span className="bt-spacer" />

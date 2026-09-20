@@ -258,12 +258,8 @@ export function LaneRow({
                   ? 'lane-head lane-head-drag'
                   : 'lane-head'
               }
-              draggable={
-                onReorder !== undefined && showColumnConfig && renaming?.id !== column.id
-              }
-              title={
-                onReorder !== undefined && showColumnConfig ? 'Drag to reorder' : undefined
-              }
+              draggable={onReorder !== undefined && showColumnConfig && renaming?.id !== column.id}
+              title={onReorder !== undefined && showColumnConfig ? 'Drag to reorder' : undefined}
               onDragStart={(event) => {
                 if (onReorder === undefined || !showColumnConfig) return;
                 event.dataTransfer.setData(COLUMN_MIME, column.id);
@@ -275,7 +271,6 @@ export function LaneRow({
                 setColumnOver(undefined);
               }}
             >
-
               {/* The prototype leads each column with a dot in the lane's own
                   colour. It comes from the column's primary status — never its
                   name — so the colour and what a drop does cannot disagree, and
