@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-602
-status: in-progress
+status: review
+finished: 2026-09-20T19:00:38Z
 started: 2026-09-19T21:01:11Z
 ---
 
@@ -42,3 +43,9 @@ before claiming.
 - [x] Never taller than the viewport.
 - [x] The two-column content is unchanged.
 - [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+
+## Closure note (2026-09-21)
+
+Built, shipped and deployed; the move to review was overtaken by the owner's
+rapid-fire briefs. Still true as written - the modal survived the later
+restyles unchanged apart from tokens.

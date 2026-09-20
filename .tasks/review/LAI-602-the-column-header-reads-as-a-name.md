@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-296
-status: in-progress
+status: review
+finished: 2026-09-20T19:00:38Z
 started: 2026-09-19T21:01:11Z
 ---
 
@@ -56,3 +57,12 @@ competes with the dot to say the same thing.
       cancels the `✓` it fires before.
 - [x] The coloured dot survives.
 - [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+
+## Closure note (2026-09-21)
+
+Built, shipped and long since deployed; the move to review was overtaken by
+the owner's rapid-fire briefs. Two criteria describe the state at build time
+and were later superseded on the owner's instruction: the plain one-colour
+count became the prototype's tinted status badge (LAI-605/606), and the
+hover-revealed grip was removed entirely - the header itself is the drag
+handle now (LAI-605). Both supersessions carry their own tests.
