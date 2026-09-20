@@ -299,7 +299,8 @@
   padding: 0 12px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  background: var(--bg-card);
+  /* The prototype's search sits one surface step below its bar (LAI-605). */
+  background: var(--bg-input);
   color: var(--text-muted);
   min-width: 0;
   flex: 0 1 380px;
