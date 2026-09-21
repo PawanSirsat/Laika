@@ -45,6 +45,8 @@ export interface SidebarProps {
    * (LAI-259); this keeps the by-slug answer that fixed it, moved here with
    * the name itself.
    */
+  /** Accepted and currently unused: the rail's wordmark is always the
+   * product (owner, 2026-09-21); callers still pass the open space's name. */
   readonly spaceName?: string | undefined;
   /** Counts by route path. No entry, no badge — that is how it stays honest. */
   readonly counts?: Readonly<Record<string, number | undefined>> | undefined;
@@ -76,7 +78,6 @@ export function Sidebar({
   onOpenSpace,
   orgRole,
   orgName,
-  spaceName,
   counts,
   user,
   onSignOut,
@@ -94,18 +95,6 @@ export function Sidebar({
    * project reached by URL alone need not be on it. Both are already props —
    * this needs no new plumbing and no second request.
    */
-  /*
-   * The list is the *fallback*, not the source: it is already loaded, so it
-   * names the space on the first paint instead of flashing the product name
-   * while the by-slug request is in flight.
-   */
-  const listed =
-    projectSlug === undefined
-      ? undefined
-      : (allSpaces?.find((s) => s.slug === projectSlug)?.name ??
-        spaces?.find((s) => s.slug === projectSlug)?.name);
-  const openSpace = spaceName ?? listed;
-
   const railClass = ['sidebar', open ? 'sidebar-open' : '', collapsed ? 'sidebar-collapsed' : '']
     .filter((c) => c !== '')
     .join(' ');
@@ -154,7 +143,10 @@ export function Sidebar({
               screens have no space to name. A blank wordmark there would read
               as a loading state that never resolves.
             */}
-            <span className="sidebar-wordmark">{openSpace ?? 'Laika'}</span>
+            {/* Always the product, never the open project (owner, 2026-09-21
+                — reverses LAI-293): the space bar already names the project,
+                and the rail's identity is the app. */}
+            <span className="sidebar-wordmark">Laika</span>
             {/*
               The org's real name, from `GET /org` — "Kvelld Dynamics" in the
               prototype is a fixture. `undefined` renders nothing rather than a

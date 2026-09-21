@@ -126,7 +126,7 @@ export function SpacesSection({
                     active ? 'sidebar-link space-row sidebar-link-active' : 'sidebar-link space-row'
                   }
                   aria-current={active ? 'page' : undefined}
-                  title={`${space.name} — ${space.meta}`}
+                  title={`${space.slug} — ${space.meta}`}
                   onClick={(event) => {
                     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                     event.preventDefault();
@@ -145,13 +145,12 @@ export function SpacesSection({
                     {space.key}
                   </span>
                   {/*
-                    **The slug** (LAI-271) — the reference names a space
-                    `laika-core`. The display name is not discarded: it is the
-                    row's `title`, the space bar's headline, and what the
-                    More-spaces popover lists, which is where a reader is
-                    actually choosing between spaces.
+                    **The display name** (owner, 2026-09-21 — reverses
+                    LAI-271's slug): the lowercase slug read as a bug once real
+                    projects appeared. The slug still lives in the row's
+                    `title` alongside the meta line.
                   */}
-                  <span className="sidebar-label">{space.slug}</span>
+                  <span className="sidebar-label">{space.name}</span>
                 </a>
               </li>
             );

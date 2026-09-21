@@ -136,7 +136,7 @@ void describe('the board follows the space', () => {
 
       // The rail names a space by its **slug** since LAI-271, as the
       // reference does; the display name stays in the bar's headline.
-      await h.page.locator('.sidebar-link', { hasText: 'beta-space' }).click();
+      await h.page.locator('.sidebar-link', { hasText: 'Beta Space' }).click();
       await h.page.waitForURL(/project=beta-space/, { timeout: 10_000 });
 
       // The whole defect: the URL and the headline moved and the cards did not.
@@ -146,9 +146,10 @@ void describe('the board follows the space', () => {
       const after = await cardKeys(h.page);
       assert.match(after, /BE-1/, 'the board did not follow the space');
       assert.doesNotMatch(after, /AL-1/, "the previous space's cards are still on screen");
-      // The rail names the open project since LAI-293; the bar no longer does.
-      // What this asserts is unchanged — switching space renames the identity.
-      assert.equal(await h.page.locator('.sidebar-wordmark').innerText(), 'Beta Space');
+      // The identity moved back to the bar (owner, 2026-09-21): switching
+      // space renames the bar's headline, and the rail stays the product.
+      assert.equal(await h.page.locator('.space-name').innerText(), 'Beta Space');
+      assert.equal(await h.page.locator('.sidebar-wordmark').innerText(), 'Laika');
     } finally {
       await h.close();
     }
@@ -164,12 +165,12 @@ void describe('the board follows the space', () => {
 
       // The rail names a space by its **slug** since LAI-271, as the
       // reference does; the display name stays in the bar's headline.
-      await h.page.locator('.sidebar-link', { hasText: 'beta-space' }).click();
+      await h.page.locator('.sidebar-link', { hasText: 'Beta Space' }).click();
       await h.page.waitForFunction(() => document.body.innerText.includes('BE-1'), undefined, {
         timeout: 15_000,
       });
 
-      await h.page.locator('.sidebar-link', { hasText: 'alpha-space' }).click();
+      await h.page.locator('.sidebar-link', { hasText: 'Alpha Space' }).click();
       await h.page.waitForFunction(() => document.body.innerText.includes('AL-1'), undefined, {
         timeout: 15_000,
       });

@@ -95,11 +95,12 @@ void describe('the SPACES section', () => {
       const names = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
       // Three spaces plus the More spaces row — the design's number. **Drawn
       // by name since LAI-260**, so the list never moves under the pointer.
+      // Display names, not slugs, since the owner's 2026-09-21 call.
       // `.space-row` is a *space*; the More-spaces row opens a popover and is
       // deliberately not one.
       assert.deepEqual(
         names,
-        ['laika-core', 'laika-web', 'laika-infra'],
+        ['Laika Core', 'Laika Web', 'Laika Infra'],
         `saw ${names.join(', ')}`,
       );
       assert.ok(
@@ -110,7 +111,7 @@ void describe('the SPACES section', () => {
       // **A row is a dot and a name** (LAI-262): no counts, no member figure,
       // no two-letter key while the rail is expanded.
       const row = await h.page.locator('.space-row').first().innerText();
-      assert.equal(row.trim(), 'laika-core', `the row carries more than its name: ${row}`);
+      assert.equal(row.trim(), 'Laika Core', `the row carries more than its name: ${row}`);
 
       const sidebar = await h.page.locator('#sidebar').innerText();
       // The design cases this one "Spaces", 11.5px/700 with a caret — not the
@@ -133,7 +134,7 @@ void describe('the SPACES section', () => {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const active = h.page.locator('.sidebar-link-active');
       assert.equal(await active.count(), 1, 'more than one row is marked current');
-      assert.match(await active.innerText(), /laika-core/);
+      assert.match(await active.innerText(), /Laika Core/);
     } finally {
       await h.close();
     }
@@ -228,22 +229,23 @@ void describe('the view tabs', () => {
 
       /*
        * The whole of the owner's report: the space must be **named**, not
-       * fall back to "No space".
-       *
-       * The name lives in the rail's wordmark since LAI-293. The regression
-       * this guards is the same one and is if anything sharper here: the rail
-       * falls back to the *product* name, so a failure now reads as a
-       * plausible `Laika` rather than an obvious `No space`.
+       * fall back to "No space". The name moved from the rail's wordmark to
+       * the space bar's headline (owner, 2026-09-21 — the rail is the product
+       * again), so the bar is where the regression would now show.
        */
       await h.page.waitForFunction(
-        () => (document.querySelector('.sidebar-wordmark')?.textContent ?? '') !== '',
+        () => (document.querySelector('.space-name')?.textContent ?? '') !== '',
         undefined,
         { timeout: 10_000 },
       );
-      const name = await h.page.locator('.sidebar-wordmark').innerText();
-      assert.notEqual(name, 'No space', 'the rail lost the space');
-      assert.notEqual(name, 'Laika', 'the rail fell back to the product name');
-      assert.match(name, /Laika Core|laika-core/);
+      const name = await h.page.locator('.space-name').innerText();
+      assert.notEqual(name, 'No space', 'the bar lost the space');
+      assert.match(name, /Laika Core/);
+      assert.equal(
+        await h.page.locator('.sidebar-wordmark').innerText(),
+        'Laika',
+        'the rail must always be the product now',
+      );
     } finally {
       await h.close();
     }
@@ -282,7 +284,7 @@ void describe('a space row is active for any view of it', () => {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
       const active = h.page.locator('.sidebar-link-active');
       assert.equal(await active.count(), 1, 'exactly one row must be current');
-      assert.match(await active.innerText(), /laika-core/);
+      assert.match(await active.innerText(), /Laika Core/);
     } finally {
       await h.close();
     }
@@ -302,7 +304,7 @@ void describe('the list does not move under the pointer (LAI-260)', () => {
       const before = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
 
       // Click a space that is *not* the current one — the case that reordered.
-      await h.page.locator('.sidebar-link', { hasText: 'laika-web' }).click();
+      await h.page.locator('.sidebar-link', { hasText: 'Laika Web' }).click();
       await h.page.waitForURL(/project=laika-web/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
 
@@ -310,7 +312,7 @@ void describe('the list does not move under the pointer (LAI-260)', () => {
       assert.deepEqual(after, before, `the rows moved: ${before.join(',')} -> ${after.join(',')}`);
 
       // And again, to a third space.
-      await h.page.locator('.sidebar-link', { hasText: 'laika-infra' }).click();
+      await h.page.locator('.sidebar-link', { hasText: 'Laika Infra' }).click();
       await h.page.waitForURL(/project=laika-infra/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
       assert.deepEqual(await h.page.locator('.space-row .sidebar-label').allInnerTexts(), before);
@@ -336,8 +338,8 @@ void describe('what was opened survives a reload', () => {
       await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
 
       for (const [name, slug] of [
-        ['laika-web', 'laika-web'],
-        ['laika-infra', 'laika-infra'],
+        ['Laika Web', 'laika-web'],
+        ['Laika Infra', 'laika-infra'],
       ] as const) {
         await h.page.locator('.sidebar-link', { hasText: name }).click();
         await h.page.waitForURL(new RegExp(`project=${slug}`), { timeout: 10_000 });
@@ -349,10 +351,10 @@ void describe('what was opened survives a reload', () => {
       const keys = await h.page.locator('.space-row .sidebar-label').allInnerTexts();
       assert.deepEqual(
         keys,
-        ['laika-core', 'laika-web', 'laika-infra'],
+        ['Laika Core', 'Laika Web', 'Laika Infra'],
         `storage lost what was opened: ${keys.join(', ')}`,
       );
-      assert.ok(!keys.includes('laika-docs'), 'a space nobody opened is on the list');
+      assert.ok(!keys.includes('Laika Docs'), 'a space nobody opened is on the list');
     } finally {
       await h.close();
     }
