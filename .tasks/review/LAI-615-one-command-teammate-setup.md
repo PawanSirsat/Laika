@@ -6,7 +6,8 @@ assignee: shell
 priority: p2
 depends-on: []
 discovered-from: LAI-614
-status: in-progress
+status: review
+finished: 2026-09-21T09:19:29Z
 started: 2026-09-21T09:15:00Z
 ---
 
