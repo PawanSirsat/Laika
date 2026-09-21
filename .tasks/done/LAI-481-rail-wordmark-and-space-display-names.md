@@ -75,3 +75,29 @@ choice — it avoids churning every call site for a prop that may return — but
 unused prop with a comment explaining it is unused is a thing that outlives its
 explanation. Worth removing when the sidebar is next touched; not worth a task
 on its own.
+
+## Follow-up after acceptance (CHIEF, 2026-09-21)
+
+`a79dae5` re-aims `server/web/test/browser/space-bar.test.ts`, the **third**
+suite asserting on `.sidebar-wordmark`, which `416a0fc` missed and which CHIEF's
+per-workspace gate caught as three deterministic failures.
+
+**The miss has a cause worth keeping.** SHELL's impact grep for affected files
+ended in `head -8` and truncated before this file appeared — *"I searched, got a
+partial answer, and reported it as complete."* That is the same shape as the
+root gate bailing and hiding workspaces (LAI-480) and the `grep "Tests "` blind
+to `Failed`: **a truncated instrument reporting as a complete one.** The
+untruncated grep returns four files; the fourth,
+`test/components/shell-chrome.test.ts`, only asserts the class exists and was
+always green.
+
+**The re-aim is right, and it is the part worth checking.** Each assertion was
+**redirected, not deleted**, and each test keeps the thing it actually protects:
+the by-slug race (now waiting on `.space-name`'s *value*, not its element — the
+original point survives the move), the "No space" regression, and the
+never-nameless-at-any-width rule. The rail gained a **positive** assertion that
+it reads `Laika`, with a message, so the suite still fails if the old behaviour
+returns. A weakened test would have simply dropped the wordmark check.
+
+This commit also carries LAI-615's script fixes under this id — declared by
+SHELL rather than hidden, and reviewed here.

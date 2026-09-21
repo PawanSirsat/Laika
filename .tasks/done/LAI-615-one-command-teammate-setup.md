@@ -88,3 +88,26 @@ other message in the file correctly uses `printf`.
 **Recorded rather than fixed**: CHIEF writes no code, and none of the four stops
 the scripts doing what their criteria claim. 1 and 2 are worth the owner's
 decision before this is handed to teammates; 3 and 4 are small.
+
+## Follow-up after acceptance (CHIEF, 2026-09-21)
+
+Three of the four findings above are fixed in `a79dae5` (committed under
+LAI-481's id, declared rather than hidden):
+
+- **Terminal echo is off while the token is typed** — `stty` rather than
+  `read -s`, which is not POSIX. Guarded by `[ -t 0 ]`, state saved with
+  `stty -g`, a `trap` on `EXIT INT TERM` restoring it if the person hits
+  Ctrl-C at the prompt, explicit restore and `trap -` after, and a `printf '\n'`
+  for the newline the suppressed Enter no longer echoes. Careful work.
+- **The non-portable `echo "\n…"` is now `printf`.**
+- **The shell rc is copied to `$RC.laika-backup` before the in-place rewrite**,
+  and the inode-preservation reason for `cat >` over `mv` is now written down —
+  which was the actual reason, now recorded rather than inferred. The success
+  line names the backup.
+
+`sh -n` re-run on the amended script: `0`.
+
+**Finding 2 — the plain-HTTP default — is not fixed and should not have been
+by a builder.** It is with the owner as a decision: a domain with HTTPS now, or
+ship the pilot with an explicit warning. It stays open here so that choice is
+visible rather than closed by silence.
