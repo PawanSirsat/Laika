@@ -141,36 +141,38 @@ void describe('the space bar', () => {
        * load. The fallback is correct behaviour; the assertion was racing it.
        */
       /*
-       * **The identity moved to the rail** (LAI-293). The bar carried the
-       * project name and icon while the rail two inches away said `Laika`;
-       * the owner asked for the rail to name the project and the bar to stop
-       * repeating it.
+       * **The identity is the bar's again** (owner, 2026-09-21 — reverses
+       * LAI-293, which had moved it to the rail). The rail is the product
+       * now: it reads `Laika` on every route, and the project is named by
+       * the bar's headline.
        *
-       * The race this test was written for is unchanged and still the point:
-       * the wordmark renders the listed name first and the by-slug answer a
-       * beat later, so waiting on the *element* returns on the fallback.
-       * Wait for the value.
+       * The race this test was written for is unchanged and still the point,
+       * it just moved with the name: the headline renders the listed name
+       * first and the by-slug answer a beat later, so waiting on the
+       * *element* returns on the fallback. Wait for the value.
        */
-      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
-        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
+        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
         undefined,
         { timeout: 15_000 },
       );
 
-      assert.equal(await h.page.locator('.sidebar-wordmark').innerText(), 'Laika Core');
+      assert.equal(
+        await h.page.locator('.sidebar-wordmark').innerText(),
+        'Laika',
+        'the rail must name the product, not the project',
+      );
       assert.equal(await h.page.locator('.sidebar-orgline').innerText(), 'Borealis Labs');
 
       /*
-       * And the bar does not *show* either — moved, not copied.
+       * And the bar carries the project — the whole point of the reversal.
        *
        * **`count()` was wrong here and LAI-299 proved it.** The bar's name is
-       * always in the DOM now and hidden by CSS when the rail is showing it,
-       * so a presence check returns 1 in both the correct and the broken
-       * state. The icon did not come back, so `count()` still fits it.
+       * always in the DOM, so a presence check returns 1 in both the correct
+       * and the broken state; assert the text. The icon never had that
+       * problem, so `count()` still fits it.
        */
-      // The bar names it too since LAI-299 — see the describe below for why
-      // the "hide it when the rail has it" rule could not be computed.
       assert.equal(await h.page.locator('.space-name').innerText(), 'Laika Core');
       // The icon came back with the name in LAI-299 — the owner's reference
       // has both on the bar's first line.
@@ -206,12 +208,14 @@ void describe('the space bar', () => {
     // The regression: the headline read "No space" over a project that
     // plainly existed, on every screen, because the bar wanted list-only
     // fields. Asserted against a fixture shaped like the real endpoint.
+    // The headline is the bar's again since 2026-09-21, which is where the
+    // regression would now show.
     const h = await open('/board?project=laika-core', STUB);
     try {
-      const name = h.page.locator('.sidebar-wordmark');
+      const name = h.page.locator('.space-name');
       await name.waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
-        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
+        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
         undefined,
         { timeout: 10_000 },
       );
@@ -492,20 +496,26 @@ void describe('the project is named in the bar, wherever the rail is', () => {
       };
     });
 
-  void test('wide with the rail open, both name it — deliberately', async () => {
+  void test('wide with the rail open, the bar names it and the rail is the product', async () => {
+    /*
+     * The pair changed on 2026-09-21: the rail says `Laika` everywhere and
+     * the *bar* carries the project. What this describe exists to prevent is
+     * unchanged and is asserted on the bar — the board must never be
+     * nameless, at any width.
+     */
     const h = await open('/board?project=laika-core', STUB);
 
     try {
       await h.page.setViewportSize({ width: 1600, height: 900 });
-      await h.page.locator('.sidebar-wordmark').waitFor({ timeout: 20_000 });
+      await h.page.locator('.space-name').waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
-        () => document.querySelector('.sidebar-wordmark')?.textContent === 'Laika Core',
+        () => document.querySelector('.space-name')?.textContent === 'Laika Core',
         undefined,
         { timeout: 15_000 },
       );
 
       const m = await naming(h);
-      assert.equal(m.rail, 'Laika Core');
+      assert.equal(m.rail, 'Laika', 'the rail must name the product');
       assert.equal(m.bar, 'Laika Core', 'the bar stopped naming the project');
     } finally {
       await h.close();
