@@ -1,0 +1,37 @@
+#!/bin/sh
+# laika-claude — start Claude Code connected to your Laika board, with presence.
+#
+# Use it exactly like `claude`; every flag passes straight through:
+#   laika-claude
+#   laika-claude --dangerously-skip-permissions
+#
+# It runs in whatever directory you are standing in, so projects, history and
+# resumed sessions behave exactly as they do with plain `claude`. The only
+# difference is the Laika plugin: the MCP tools, the /laika:* commands, and the
+# heartbeats that make your session visible on the board's Capacity screen.
+#
+# Settings come from ~/.laika/env, written by install.sh. Each person has their
+# own token there — a token is personal, and the board attributes every action
+# and every session to whoever owns it.
+set -eu
+
+CONFIG="${LAIKA_CONFIG:-$HOME/.laika/env}"
+
+if [ -r "$CONFIG" ]; then
+  # shellcheck disable=SC1090
+  . "$CONFIG"
+fi
+
+if [ -z "${LAIKA_URL:-}" ] || [ -z "${LAIKA_TOKEN:-}" ]; then
+  echo "laika-claude: not configured yet." >&2
+  echo "  Run the installer:  $(dirname "$0")/install.sh" >&2
+  echo "  Or set LAIKA_URL and LAIKA_TOKEN in $CONFIG" >&2
+  exit 1
+fi
+
+export LAIKA_URL LAIKA_TOKEN
+
+# The plugin is the directory above this script's own.
+PLUGIN_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+exec claude --plugin-dir "$PLUGIN_DIR" "$@"
