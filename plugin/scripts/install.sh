@@ -33,10 +33,24 @@ printf '  Get one at %s → sidebar SETTINGS → Tokens → create.\n' "$URL"
 printf '  It is shown once. Use YOUR OWN — the board attributes every action\n'
 printf '  and every live session to the person who owns the token.\n\n'
 printf 'Token (lai_...): '
+# Echo off while it is typed: this script exists for onboarding walkthroughs,
+# which are exactly the sessions that get screen-shared and recorded. `read -s`
+# is bash/zsh only, so stty is the portable way, and the trap puts the terminal
+# back even if the person hits Ctrl-C at the prompt.
+if [ -t 0 ]; then
+  STTY_STATE="$(stty -g 2>/dev/null || true)"
+  [ -n "$STTY_STATE" ] && trap 'stty "$STTY_STATE" 2>/dev/null || true' EXIT INT TERM
+  stty -echo 2>/dev/null || true
+fi
 read -r TOKEN || TOKEN=''
+if [ -t 0 ] && [ -n "${STTY_STATE:-}" ]; then
+  stty "$STTY_STATE" 2>/dev/null || true
+  trap - EXIT INT TERM
+fi
+printf '\n'
 
 if [ -z "$TOKEN" ]; then
-  echo "\nNo token given — nothing was written. Re-run when you have one." >&2
+  printf '\nNo token given — nothing was written. Re-run when you have one.\n' >&2
   exit 1
 fi
 
@@ -70,12 +84,18 @@ esac
 ALIAS_LINE="alias laika-claude=\"$LAUNCHER\""
 if [ -f "$RC" ] && grep -q 'alias laika-claude=' "$RC"; then
   # Replace the old line rather than stacking another one.
+  #
+  # `cat > "$RC"` rather than `mv`: it preserves the inode, so an editor with
+  # the file open, or a symlinked dotfile, keeps working. The cost is that an
+  # interruption mid-write could truncate somebody's shell rc — hence the
+  # backup beside it, which is cheap and makes that recoverable.
   TMP="$(mktemp)"
   grep -v 'alias laika-claude=' "$RC" > "$TMP"
   printf '%s\n' "$ALIAS_LINE" >> "$TMP"
+  cp "$RC" "$RC.laika-backup" 2>/dev/null || true
   cat "$TMP" > "$RC"
   rm -f "$TMP"
-  printf '  ✓ updated the laika-claude command in %s\n' "$RC"
+  printf '  ✓ updated the laika-claude command in %s (backup: %s.laika-backup)\n' "$RC" "$RC"
 else
   printf '\n# Laika\n%s\n' "$ALIAS_LINE" >> "$RC"
   printf '  ✓ added the laika-claude command to %s\n' "$RC"
