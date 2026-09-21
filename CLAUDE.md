@@ -855,6 +855,36 @@ file. The rules below are the ones that are true of every line of code.
   vacancy is the same defect as an assertion a broken setup satisfies, moved up
   to the package level.
 
+- **Use `head` for a sample, never for a census.** If a number or a completeness
+  claim is going into a report, **the command that produced it must not have a
+  `head` in it** — and the same goes for anything else that stops early.
+
+  This is the shape the three rules above keep describing, and on 2026-09-21 it
+  turned up three times in one day in **three different tools**:
+
+  | the instrument | what it hid |
+  | --- | --- |
+  | `pnpm -r` bailing at the first failing workspace | **2876 assertions never ran** (LAI-480) |
+  | `grep "Tests "` past a `Failed` on the next line | a red run reported green, six times |
+  | an impact grep ending in `head -8` | the **third** test file the change broke |
+
+  The third is the clearest. A builder grepped for the files a UI change
+  affected, took the first eight, found two test suites, re-aimed both and
+  reported *"19/19 green"* — all true. The untruncated grep returns **four**
+  files; the one past the cut had three assertions on the old behaviour, and
+  they went red on `master` the moment the merge was gated. Their own account of
+  it is the sentence to remember: ***"I searched, got a partial answer, and
+  reported it as complete."***
+
+  **A truncated answer is indistinguishable from a complete one** — that is the
+  whole danger, and it is why care does not fix this and a rule has to. Nothing
+  in `# pass 19` says nineteen was not the total; nothing in `EXIT 1` says two
+  workspaces never started. §3's id sweep learned the same lesson from the other
+  end — `git log` and `ls-tree` each miss ids the other finds, and **neither
+  reports that it is short.**
+
+  `head` is for *looking*. Drop it the moment you are going to *say a number*.
+
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
 - **`pnpm format` checks the whole repo; `pnpm format:fix` writes only what your
