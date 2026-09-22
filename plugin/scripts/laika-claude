@@ -31,7 +31,24 @@ fi
 
 export LAIKA_URL LAIKA_TOKEN
 
-# The plugin is the directory above this script's own.
-PLUGIN_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# The plugin is the directory above this script's own — resolved through any
+# symlinks first. Installed on PATH this script IS a symlink (~/.local/bin/…),
+# and `dirname "$0"` would then name the symlink's directory, making the plugin
+# dir ~/.local — a path that does not exist, passed to claude without comment.
+# BSD readlink has no -f, so the loop is the portable way.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+done
+PLUGIN_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+if [ ! -f "$PLUGIN_DIR/.claude-plugin/plugin.json" ]; then
+  echo "laika-claude: no plugin at $PLUGIN_DIR — is the checkout still there?" >&2
+  exit 1
+fi
 
 exec claude --plugin-dir "$PLUGIN_DIR" "$@"
