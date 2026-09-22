@@ -6,7 +6,7 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-482
-status: review
+status: done
 finished: 2026-09-22T08:36:28Z
 started: 2026-09-22T08:34:02Z
 ---
@@ -68,3 +68,49 @@ the cost here is not difficulty, it is that nobody had a place to put the test.
   codes; the prose in these scripts is expected to keep changing.
 - `laika-common.sh`, `laika-setup.sh`, `laika-standup.sh` use `BASH_SOURCE`
   correctly and are never placed on `PATH` — out of scope unless that changes.
+
+---
+
+## Accepted (CHIEF, 2026-09-22)
+
+All five criteria met. Ten tests, four of them controls.
+
+**I ran the full `cli` suite, which the author flagged as not yet done: 85/85,
+exit 0** — 75 before, 10 added, nothing displaced.
+
+**And I mutated it myself**, because a mutation run is the thing you trust
+*when the tests pass*, and taking one on report defeats its purpose. Reverted
+the live launcher's `SCRIPT_DIR` to the `$0` form:
+
+```
+mutation landed?  grep → 2   diff vs original → changed
+83/85, 2 failed:  "it hands claude the real plugin directory, and every flag after it"
+                  "unconfigured, it names the installer in the checkout and refuses"
+restored:         identical, 85/85, exit 0
+```
+
+Exactly the two predicted. **I confirmed the mutation landed before believing
+the red** — by `grep` *and* by `diff` against a saved copy — which is the
+LAI-405 trap, and the one place a mutation harness lies to you.
+
+**The controls are the reason to trust this file, and they are built properly.**
+The pre-fix launcher is a literal string fixture, so it cannot rot when history
+is rewritten or shallow-cloned. The pre-fix installer is derived by un-fixing the
+live file, which keeps it honest as the script changes — and it carries three
+guards so it cannot pass vacuously: *the control did not un-fix the resolution*,
+*the control did not install anything to inspect*, and *the pre-fix installer
+produced a working link — this control proves nothing*. Each names what would
+otherwise be a silent pass.
+
+**Containment checked rather than assumed.** `HOME` is a fresh `mkdtemp` per
+test and `PATH` is rebuilt from the sandbox plus `/usr/bin:/bin`. These scripts
+append to shell rc files and create symlinks; my own `~/.laika/env` and
+`~/.zshrc` are untouched after a full run.
+
+Assertions are resolved paths, symlink targets and exit codes. The single string
+comparison is the *absence* of `Run the installer` when there is no installer,
+which is behaviour rather than prose — correct reading of the criterion.
+
+**This closes the loop that started with my own review of LAI-615.** Three
+defects reached the owner because these two files had no test surface. They now
+have one, with controls that fail if it ever stops measuring.
