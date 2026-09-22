@@ -15,6 +15,30 @@
 # and every session to whoever owns it.
 set -eu
 
+# ---------------------------------------------------------------------------
+# Where this script really lives.
+#
+# **Resolved once, before anything uses it** (LAI-482). Installed on PATH this
+# script IS a symlink (~/.local/bin/laika-claude), so `dirname "$0"` names the
+# symlink's directory rather than the checkout — which produced a --plugin-dir
+# of ~/.local, a path that does not exist, handed to claude with exit 0 and no
+# complaint (LAI-616), and an installer hint pointing at ~/.local/bin/install.sh,
+# where there is no installer. Two uses, one defect, because each derived the
+# path for itself. There is one derivation now and everything reads from it.
+#
+# BSD readlink has no -f, so the loop is the portable way.
+# ---------------------------------------------------------------------------
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
+PLUGIN_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 CONFIG="${LAIKA_CONFIG:-$HOME/.laika/env}"
 
 if [ -r "$CONFIG" ]; then
@@ -24,27 +48,20 @@ fi
 
 if [ -z "${LAIKA_URL:-}" ] || [ -z "${LAIKA_TOKEN:-}" ]; then
   echo "laika-claude: not configured yet." >&2
-  echo "  Run the installer:  $(dirname "$0")/install.sh" >&2
+  # Only offer the installer if it is actually there. Naming a path with
+  # nothing at it is what LAI-482 was about, and a half-copied checkout would
+  # reproduce it by a different route.
+  if [ -x "$SCRIPT_DIR/install.sh" ]; then
+    echo "  Run the installer:  $SCRIPT_DIR/install.sh" >&2
+  else
+    echo "  Expected an installer at $SCRIPT_DIR/install.sh and found none —" >&2
+    echo "  the checkout looks incomplete. Re-clone, or set the two values below." >&2
+  fi
   echo "  Or set LAIKA_URL and LAIKA_TOKEN in $CONFIG" >&2
   exit 1
 fi
 
 export LAIKA_URL LAIKA_TOKEN
-
-# The plugin is the directory above this script's own — resolved through any
-# symlinks first. Installed on PATH this script IS a symlink (~/.local/bin/…),
-# and `dirname "$0"` would then name the symlink's directory, making the plugin
-# dir ~/.local — a path that does not exist, passed to claude without comment.
-# BSD readlink has no -f, so the loop is the portable way.
-SELF="$0"
-while [ -L "$SELF" ]; do
-  LINK="$(readlink "$SELF")"
-  case "$LINK" in
-    /*) SELF="$LINK" ;;
-    *) SELF="$(dirname "$SELF")/$LINK" ;;
-  esac
-done
-PLUGIN_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
 
 if [ ! -f "$PLUGIN_DIR/.claude-plugin/plugin.json" ]; then
   echo "laika-claude: no plugin at $PLUGIN_DIR — is the checkout still there?" >&2

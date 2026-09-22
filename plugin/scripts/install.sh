@@ -13,7 +13,19 @@
 # alias line, not a pile of them.
 set -eu
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# Resolved through symlinks, the same way the launcher does (LAI-482): if this
+# installer is ever reached through one, a bare dirname would make LAUNCHER
+# point at a path with no script at it, and the symlink it then creates would
+# dangle silently.
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+done
+SCRIPT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
 CONFIG_DIR="$HOME/.laika"
 CONFIG="$CONFIG_DIR/env"
 
