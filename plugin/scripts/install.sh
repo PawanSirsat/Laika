@@ -81,24 +81,49 @@ case "${SHELL:-}" in
   *) RC="$HOME/.profile" ;;
 esac
 
-ALIAS_LINE="alias laika-claude=\"$LAUNCHER\""
-if [ -f "$RC" ] && grep -q 'alias laika-claude=' "$RC"; then
-  # Replace the old line rather than stacking another one.
-  #
-  # `cat > "$RC"` rather than `mv`: it preserves the inode, so an editor with
-  # the file open, or a symlinked dotfile, keeps working. The cost is that an
-  # interruption mid-write could truncate somebody's shell rc — hence the
-  # backup beside it, which is cheap and makes that recoverable.
-  TMP="$(mktemp)"
-  grep -v 'alias laika-claude=' "$RC" > "$TMP"
-  printf '%s\n' "$ALIAS_LINE" >> "$TMP"
-  cp "$RC" "$RC.laika-backup" 2>/dev/null || true
-  cat "$TMP" > "$RC"
-  rm -f "$TMP"
-  printf '  ✓ updated the laika-claude command in %s (backup: %s.laika-backup)\n' "$RC" "$RC"
+# A real command on PATH beats an alias: an alias only exists in interactive
+# shells that have sourced the rc since it was added, which is why the first
+# thing people hit is `command not found` in the terminal they already had
+# open. A symlink in a PATH directory works immediately, everywhere, including
+# non-interactive shells. The alias stays as the fallback for a machine with no
+# writable PATH directory.
+BIN=""
+for CANDIDATE in "$HOME/.local/bin" "$HOME/bin" /usr/local/bin; do
+  case ":$PATH:" in
+    *":$CANDIDATE:"*)
+      if [ -d "$CANDIDATE" ] && [ -w "$CANDIDATE" ]; then BIN="$CANDIDATE"; break; fi
+      ;;
+  esac
+done
+
+if [ -z "$BIN" ] && mkdir -p "$HOME/.local/bin" 2>/dev/null; then
+  BIN="$HOME/.local/bin"
+  NEEDS_PATH=yes
+fi
+
+if [ -n "$BIN" ]; then
+  ln -sf "$LAUNCHER" "$BIN/laika-claude"
+  printf '  ✓ installed the laika-claude command in %s\n' "$BIN"
+  if [ "${NEEDS_PATH:-no}" = yes ]; then
+    printf '\n# Laika\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"
+    printf '  ✓ added %s to your PATH in %s — open a new terminal\n' "$BIN" "$RC"
+  fi
 else
-  printf '\n# Laika\n%s\n' "$ALIAS_LINE" >> "$RC"
-  printf '  ✓ added the laika-claude command to %s\n' "$RC"
+  # No writable PATH directory: fall back to an alias.
+  ALIAS_LINE="alias laika-claude=\"$LAUNCHER\""
+  if [ -f "$RC" ] && grep -q 'alias laika-claude=' "$RC"; then
+    TMP="$(mktemp)"
+    grep -v 'alias laika-claude=' "$RC" > "$TMP"
+    printf '%s\n' "$ALIAS_LINE" >> "$TMP"
+    cp "$RC" "$RC.laika-backup" 2>/dev/null || true
+    cat "$TMP" > "$RC"
+    rm -f "$TMP"
+    printf '  ✓ updated the laika-claude command in %s (backup: %s.laika-backup)\n' "$RC" "$RC"
+  else
+    printf '\n# Laika\n%s\n' "$ALIAS_LINE" >> "$RC"
+    printf '  ✓ added the laika-claude command to %s\n' "$RC"
+  fi
+  printf '    (an alias — it applies to terminals opened from now on)\n'
 fi
 
 printf '\nDone. Start a new terminal, then from ANY project folder:\n\n'
