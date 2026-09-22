@@ -2,11 +2,12 @@
 id: LAI-482
 title: The launcher's "not configured" message still uses the unresolved $0
 area: plugin
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-616
-status: backlog
+status: in-progress
+started: 2026-09-22T08:28:14Z
 ---
 
 ## Goal
