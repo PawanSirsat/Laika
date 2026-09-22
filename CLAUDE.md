@@ -885,6 +885,22 @@ file. The rules below are the ones that are true of every line of code.
 
   `head` is for *looking*. Drop it the moment you are going to *say a number*.
 
+  **The same lesson one scale up: two data points look like a count and are a
+  sample.** A defect found twice in one file has not been counted — **it has
+  been sampled**, and "two instances" is a `head -2` on the real answer that
+  nobody typed.
+
+  Measured on LAI-482. CHIEF found `dirname "$0"` in the launcher's unconfigured
+  message and filed it as *the* residual instance. The task said **sweep the
+  file rather than patch the line**, and the sweep found a second live site:
+  `install.sh` derived `SCRIPT_DIR` the same way, and `LAUNCHER` is built from
+  it — so reached through a symlink it created a **dangling** link, silently.
+  **Patching the one that was found would have shipped the one that was not.**
+
+  So when the same defect turns up twice in one place, the next move is a sweep
+  of every site, not a fix of the second one. **And the sweep is a census**, so
+  by the rule above it does not end in a `head`.
+
 - Formatting and lint are enforced by the repo config, not by taste. Run them
   before you move a task to review.
 - **`pnpm format` checks the whole repo; `pnpm format:fix` writes only what your
