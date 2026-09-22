@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-616
-status: in-progress
+status: review
+finished: 2026-09-22T08:28:51Z
 started: 2026-09-22T08:28:14Z
 ---
 
@@ -41,16 +42,16 @@ rather than a wall.
 
 ## Acceptance criteria
 
-- [ ] The message names the **real** installer path when the launcher is
+- [x] The message names the **real** installer path when the launcher is
       invoked through a symlink on PATH.
-- [ ] Verified by **running it through a symlink** with `~/.laika/env` absent,
+- [x] Verified by **running it through a symlink** with `~/.laika/env` absent,
       not by reading the script — the whole class of bug here is that reading
       does not show it (LAI-616 was found the same way).
-- [ ] The fix does not reintroduce the ordering trap: whatever resolves the
+- [x] The fix does not reintroduce the ordering trap: whatever resolves the
       path must run **before** any message that prints it. Moving the existing
       `readlink` loop above the configuration check is the obvious shape, and
       it also means one resolution serves both uses.
-- [ ] A missing `install.sh` beside the resolved launcher is not claimed to
+- [x] A missing `install.sh` beside the resolved launcher is not claimed to
       exist — say where it should be, or say the checkout is incomplete.
 
 ## Notes / context
