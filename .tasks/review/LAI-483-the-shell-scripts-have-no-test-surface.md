@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-482
-status: in-progress
+status: review
+finished: 2026-09-22T08:36:28Z
 started: 2026-09-22T08:34:02Z
 ---
 
@@ -34,21 +35,21 @@ the cost here is not difficulty, it is that nobody had a place to put the test.
 
 ## Acceptance criteria
 
-- [ ] A test in `cli/test/` runs **`install.sh` end to end in a sandbox `HOME`**,
+- [x] A test in `cli/test/` runs **`install.sh` end to end in a sandbox `HOME`**,
       non-interactively, and asserts: the symlink is created in a PATH
       directory, it **resolves to an existing file**, and `~/.laika/env` is
       mode `600`.
-- [ ] A test runs **`laika-claude` through that symlink** with a stub `claude`
+- [x] A test runs **`laika-claude` through that symlink** with a stub `claude`
       on `PATH`, and asserts `--plugin-dir` is the **real checkout** and that
       user flags survive **in order** after it.
-- [ ] The **unconfigured** path is asserted: no `~/.laika/env`, invoked through
+- [x] The **unconfigured** path is asserted: no `~/.laika/env`, invoked through
       the symlink, and the installer hint names a path that **exists**.
-- [ ] **A negative control is kept as a fixture and asserted to FAIL.** A copy
+- [x] **A negative control is kept as a fixture and asserted to FAIL.** A copy
       of the pre-fix launcher (the `dirname "$0"` form) must produce the wrong
       path, and the test must assert that it does. Without this the suite can go
       green against a harness that resolves nothing — the exact shape CLAUDE.md
       §5 keeps describing, and the reason all three defects above were provable.
-- [ ] No test writes outside its sandbox `HOME`. These scripts append to shell
+- [x] No test writes outside its sandbox `HOME`. These scripts append to shell
       rc files and create symlinks; a test that touches the real `$HOME` is a
       worse bug than the ones it catches.
 
