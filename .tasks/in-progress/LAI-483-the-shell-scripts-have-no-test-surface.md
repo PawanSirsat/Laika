@@ -2,11 +2,12 @@
 id: LAI-483
 title: The installer and launcher have no test surface — three defects reached the owner
 area: plugin
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-482
-status: backlog
+status: in-progress
+started: 2026-09-22T08:34:02Z
 ---
 
 ## Goal
