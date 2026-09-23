@@ -1,6 +1,7 @@
 import { AssignControl } from '../board/AssignControl.tsx';
 import { ALL_STATUSES, boardStatusLabel } from '../../../api/board-derive.ts';
 import type { BoardColumn } from '../../../api/columns.ts';
+import type { Sprint } from '../../../api/sprints.ts';
 import {
   updateTask,
   PRIORITIES,
@@ -18,6 +19,16 @@ export interface TaskMetaProps {
   readonly task: Task;
   /** The board's columns — a renamed column names the status here too. */
   readonly columns: readonly BoardColumn[];
+  /** Every sprint on the project, for the sprint control. */
+  readonly sprints: readonly Sprint[];
+  /** False for a Viewer — assigning to a sprint is member+ (§3.2). */
+  readonly maySetSprint: boolean;
+  /** `null` clears the sprint. */
+  readonly onSprintChange: (sprintId: string | null) => void;
+  /** A sprint change is in flight. */
+  readonly sprintBusy: boolean;
+  /** The server's reason the last sprint change failed. */
+  readonly sprintError: string | undefined;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   readonly spaceName: string;
@@ -64,6 +75,11 @@ function since(at: number | null, now: number): string | undefined {
 export function TaskMeta({
   task,
   columns,
+  sprints,
+  maySetSprint,
+  onSprintChange,
+  sprintBusy,
+  sprintError,
   members,
   theme,
   spaceName,
@@ -187,6 +203,43 @@ export function TaskMeta({
             </select>
           </label>
         </div>
+      </div>
+
+      <div className="meta-row">
+        <p className="meta-label">Sprint</p>
+        <div className="meta-value">
+          <label className="meta-select">
+            <span className="visually-hidden">Sprint</span>
+            <select
+              value={task.sprint_id ?? ''}
+              disabled={sprintBusy || !maySetSprint}
+              onChange={(event) => {
+                const to = event.target.value === '' ? null : event.target.value;
+                if (to !== (task.sprint_id ?? null)) onSprintChange(to);
+              }}
+            >
+              {/*
+                **`No sprint` is a real option, not an absence** (LAI-619).
+                Backlog work genuinely belongs to no sprint, and without this
+                the only way out of one was the Sprints screen. The server
+                moves a task between sprints in a single `POST` — assigning to
+                a new sprint reassigns `sprint_id` rather than refusing — so
+                only clearing needs the delete.
+              */}
+              <option value="">No sprint</option>
+              {sprints.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {sprintError !== undefined && (
+          <p className="meta-sub" role="alert">
+            {sprintError}
+          </p>
+        )}
       </div>
 
       <div className="meta-row">

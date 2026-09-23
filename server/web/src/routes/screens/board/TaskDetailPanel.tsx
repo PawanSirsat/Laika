@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { TagPicker } from './TagPicker.tsx';
+import { ApiError } from '../../../api/errors.ts';
+import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
@@ -53,6 +55,10 @@ export interface TaskDetailPanelProps {
    * stored status stays the enum the API and the agent tools depend on.
    */
   readonly columns: readonly BoardColumn[];
+  /** Every sprint on the project, for the panel's sprint control. */
+  readonly sprints: readonly Sprint[];
+  /** False for a Viewer — assigning to a sprint is member+ (§3.2). */
+  readonly maySetSprint: boolean;
   /** The signed-in user's id, for Claim. */
   readonly meId?: string | undefined;
   /** False for a Viewer — `task.assign_other` is member+ (§3.2). */
@@ -106,6 +112,8 @@ export function TaskDetailPanel({
   onMove,
   onClose,
   columns,
+  sprints,
+  maySetSprint,
   meId,
   mayAssign = false,
   mayEdit = false,
@@ -114,6 +122,39 @@ export function TaskDetailPanel({
   onAssigned,
 }: TaskDetailPanelProps) {
   const detail = useTaskDetail(slug, task.id);
+
+  const [sprintBusy, setSprintBusy] = useState(false);
+  const [sprintError, setSprintError] = useState<string | undefined>(undefined);
+
+  /*
+   * **One request to move, one to clear** (LAI-619). Measured against the
+   * server rather than assumed: `POST /sprints/:id/tasks` on a task that is
+   * already in another sprint **reassigns** it and returns the updated task —
+   * it does not refuse, and it does not need the old sprint removing first.
+   * Only clearing needs the delete, because there is no sprint to post to.
+   */
+  const changeSprint = useCallback(
+    async (sprintId: string | null): Promise<void> => {
+      setSprintError(undefined);
+      setSprintBusy(true);
+      try {
+        if (sprintId === null) {
+          if (task.sprint_id !== null) await removeTaskFromSprint(task.sprint_id, task.id);
+        } else {
+          await addTasksToSprint(sprintId, [task.id]);
+        }
+        onTaskEdited();
+      } catch (cause) {
+        // The server's reason, not a guess — a closed sprint refuses with one.
+        setSprintError(
+          cause instanceof ApiError ? cause.message : 'That sprint change could not be saved.',
+        );
+      } finally {
+        setSprintBusy(false);
+      }
+    },
+    [task.id, task.sprint_id, onTaskEdited],
+  );
   const panelRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState('');
   const [overflowOpen, setOverflowOpen] = useState(false);
@@ -744,6 +785,13 @@ export function TaskDetailPanel({
         <div className="panel-side">
           <TaskMeta
             columns={columns}
+            sprints={sprints}
+            maySetSprint={maySetSprint}
+            sprintBusy={sprintBusy}
+            sprintError={sprintError}
+            onSprintChange={(sprintId) => {
+              void changeSprint(sprintId);
+            }}
             task={task}
             members={members}
             theme={theme}

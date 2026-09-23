@@ -175,13 +175,23 @@ void describe('the task panel', () => {
       assert.equal(await h.page.locator('.discovered').count(), 1, 'no discovered-from callout');
       assert.equal(await h.page.locator('.dep-chip').count(), 1, 'no dependency chip');
       assert.equal(await h.page.locator('.dep-link').count(), 1, 'no way to link a task');
-      // Watchers are a field on the rail now, not a list in the column.
-      assert.equal(
-        await h.page.locator('.panel-meta .meta-row').count(),
-        6,
-        'the rail lost a field',
+      /*
+       * **By name, not by count** (LAI-619). This asserted `=== 6` and broke
+       * the moment a Sprint field was added — a true failure reporting the
+       * wrong thing, since nothing was lost. A count cannot say *which* field
+       * went missing, and the next person to add one gets the same puzzle.
+       *
+       * Watchers are a field on the rail now, not a list in the column.
+       */
+      // Upper-cased by CSS, so compare case-insensitively rather than pinning
+      // the presentation — `text-transform` is the theme's business, not this
+      // test's.
+      const labels = (await h.page.locator('.panel-meta .meta-label').allInnerTexts()).map((t) =>
+        t.trim().toLowerCase(),
       );
-      assert.match(await h.page.locator('.panel-meta').innerText(), /Watchers/i);
+      for (const field of ['assignee', 'status', 'priority', 'sprint', 'space', 'watchers']) {
+        assert.ok(labels.includes(field), `the rail lost ${field} — it has ${labels.join(', ')}`);
+      }
       assert.equal(await h.page.locator('.panel-permission').count(), 1, 'no permission note');
 
       // The design's three tabs, with counts.

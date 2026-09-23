@@ -11,7 +11,7 @@ import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { useEvents } from '../../api/use-events.ts';
-import { listSprints, type Sprint } from '../../api/sprints.ts';
+import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
 import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
@@ -1157,6 +1157,17 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         <TaskDrawerContent>
           <TaskDetailPanel
             slug={slug}
+            sprints={sprints}
+            /*
+             * Assigning to a sprint is member+ (§3.2) — the same rule the
+             * Sprints screen uses, asked through the same helper rather than
+             * re-derived here.
+             */
+            maySetSprint={
+              me !== undefined &&
+              boardProjectId !== undefined &&
+              canAssignToSprints(me.org_role, boardProjectId, me.memberships)
+            }
             columns={columns.state.columns}
             meId={me?.id}
             mayAssign={mayCreate}
