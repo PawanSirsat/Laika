@@ -4,6 +4,7 @@ import { TaskCard } from './TaskCard.tsx';
 import {
   MOVABLE_STATUSES,
   primaryStatus,
+  boardStatusLabel,
   statusLabel,
   type Lane,
   type MovableStatus,
@@ -452,9 +453,19 @@ export function LaneRow({
                           if (to !== task.status) onMove(task.id, to);
                         }}
                       >
+                        {/*
+                          The card's status control reads in **this board's**
+                          names too (LAI-617) — picking "Testing" still stores
+                          `review`. `lanes` carries every drawn column, which
+                          is every column a movable status can live in; a
+                          status with no owner falls back to its own name.
+                        */}
                         {MOVABLE_STATUSES.map((c) => (
                           <option key={c} value={c}>
-                            {statusLabel(c)}
+                            {boardStatusLabel(
+                              c,
+                              lanes.map((l) => l.column),
+                            )}
                           </option>
                         ))}
                       </select>

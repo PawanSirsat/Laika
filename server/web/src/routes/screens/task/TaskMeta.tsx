@@ -1,5 +1,6 @@
 import { AssignControl } from '../board/AssignControl.tsx';
-import { ALL_STATUSES, statusLabel } from '../../../api/board-derive.ts';
+import { ALL_STATUSES, boardStatusLabel } from '../../../api/board-derive.ts';
+import type { BoardColumn } from '../../../api/columns.ts';
 import {
   updateTask,
   PRIORITIES,
@@ -15,6 +16,8 @@ import './task-panel.css';
 
 export interface TaskMetaProps {
   readonly task: Task;
+  /** The board's columns — a renamed column names the status here too. */
+  readonly columns: readonly BoardColumn[];
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   readonly spaceName: string;
@@ -60,6 +63,7 @@ function since(at: number | null, now: number): string | undefined {
  */
 export function TaskMeta({
   task,
+  columns,
   members,
   theme,
   spaceName,
@@ -149,7 +153,7 @@ export function TaskMeta({
               */}
               {ALL_STATUSES.map((c) => (
                 <option key={c} value={c}>
-                  {statusLabel(c)}
+                  {boardStatusLabel(c, columns)}
                 </option>
               ))}
             </select>

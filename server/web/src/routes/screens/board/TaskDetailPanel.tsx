@@ -7,7 +7,8 @@ import { describeEvent, statusTransition } from '../../../api/activity.ts';
 import { updatedAge } from '../../../api/board-derive.ts';
 import { isAgentComment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
-import { statusLabel } from '../../../api/board-derive.ts';
+import { boardStatusLabel } from '../../../api/board-derive.ts';
+import type { BoardColumn } from '../../../api/columns.ts';
 import { describeActor } from './actor-presentation.ts';
 import {
   listWatchers,
@@ -45,6 +46,13 @@ export interface TaskDetailPanelProps {
   /** The same call the board uses — not a second implementation (LAI-056). */
   readonly onMove: (taskId: string, to: TaskStatus) => void;
   readonly onClose: () => void;
+  /**
+   * The board's columns, so a status reads as the column that owns it.
+   *
+   * A renamed column is what people expect to see on the task (LAI-617); the
+   * stored status stays the enum the API and the agent tools depend on.
+   */
+  readonly columns: readonly BoardColumn[];
   /** The signed-in user's id, for Claim. */
   readonly meId?: string | undefined;
   /** False for a Viewer — `task.assign_other` is member+ (§3.2). */
@@ -97,6 +105,7 @@ export function TaskDetailPanel({
   moveError,
   onMove,
   onClose,
+  columns,
   meId,
   mayAssign = false,
   mayEdit = false,
@@ -224,7 +233,7 @@ export function TaskDetailPanel({
           <span className="panel-key">{task.key}</span>
           <span className={`panel-state panel-state-${task.status}`}>
             <span className="panel-state-dot" aria-hidden="true" />
-            {statusLabel(task.status)}
+            {boardStatusLabel(task.status, columns)}
           </span>
           <span className={`panel-prio panel-prio-${task.priority}`}>
             <span className="panel-prio-dot" aria-hidden="true" />
@@ -734,6 +743,7 @@ export function TaskDetailPanel({
         */}
         <div className="panel-side">
           <TaskMeta
+            columns={columns}
             task={task}
             members={members}
             theme={theme}

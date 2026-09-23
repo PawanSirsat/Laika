@@ -251,7 +251,21 @@ export function useColumns(slug: string | undefined): UseColumns {
 
   return {
     state,
-    visible: state.columns.filter((c) => !c.hidden).sort((a, b) => a.position - b.position),
+    /*
+     * **A column with no statuses is not a lane** (LAI-617).
+     *
+     * Statuses belong to exactly one column, so checking one into another
+     * column *takes* it — and the loser can be left owning nothing. It was
+     * still drawn: a lane that reads `0`, says "Nothing here for this filter",
+     * and can never fill, because nothing can ever be in it. Observed on a
+     * real board as a `BACKLOGS` column after `TO DO` took `backlog`.
+     *
+     * `hidden` is the deliberate version of this (cancelled's home); owning
+     * nothing is the accidental one. Neither draws.
+     */
+    visible: state.columns
+      .filter((c) => !c.hidden && c.statuses.length > 0)
+      .sort((a, b) => a.position - b.position),
     error,
     busy,
     create,

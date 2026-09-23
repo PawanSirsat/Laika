@@ -9,6 +9,7 @@ import './column-editor.css';
 export interface ColumnDialogProps {
   readonly column: BoardColumn;
   /** Every column in the project, so the form can say where a status lives. */
+  /** Every column on the board, hidden ones included — see the call site. */
   readonly all: readonly BoardColumn[];
   /** How many cards are in this lane right now — a real number, not an adjective. */
   readonly taskCount: number;
@@ -175,7 +176,26 @@ export function ColumnDialog({
                   </label>
 
                   {!mine && from !== undefined && (
-                    <span className="cd-from">moves here from {from.name}</span>
+                    /*
+                     * **Say when taking it empties the other column** (LAI-617).
+                     *
+                     * This already named the column a status would come from.
+                     * What it did not say is that a column holding only that
+                     * one status is left holding nothing — and a column with
+                     * no statuses is no longer drawn at all, so the lane
+                     * silently disappears from the board.
+                     *
+                     * Unchecking is guarded against exactly this ("a column
+                     * needs at least one status"); checking was not, so the
+                     * same outcome was one click away in the other direction.
+                     */
+                    <span
+                      className={from.statuses.length === 1 ? 'cd-from cd-from-warn' : 'cd-from'}
+                    >
+                      {from.statuses.length === 1
+                        ? `takes it from ${from.name}, which then holds nothing and leaves the board`
+                        : `moves here from ${from.name}`}
+                    </span>
                   )}
                   {onlyOne && (
                     <span className="cd-from cd-from-warn">a column needs at least one status</span>

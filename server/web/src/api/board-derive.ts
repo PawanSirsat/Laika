@@ -55,9 +55,36 @@ export const STATUS_LABELS: Readonly<Record<TaskStatus, string>> = {
  */
 export const ALL_STATUSES = [...MOVABLE_STATUSES, 'cancelled'] as const;
 
-/** What to call a status on screen. */
+/** What to call a status on screen, ignoring how the board is arranged. */
 export function statusLabel(status: TaskStatus): string {
   return STATUS_LABELS[status];
+}
+
+/**
+ * What to call a status **on this board** (LAI-617).
+ *
+ * A column can be renamed. A status cannot — `TASK_STATUSES` is a fixed enum
+ * that the REST API, the policy layer and the MCP tools all depend on by
+ * literal value: `laika_finish_task` moves a task to `review` and tells the
+ * agent a person takes it from here. Renaming a column must not rewrite that.
+ *
+ * So the column name is the **label** and the status stays the **value**. A
+ * board with its `Review` column renamed to `Testing` showed cards reading
+ * "Review" under a header reading "TESTING", which is what made people ask
+ * whether renaming was broken.
+ *
+ * **Only when the column owns exactly one status.** Then the name identifies
+ * it exactly and the substitution is lossless. A column holding several —
+ * the shipped default merges `todo` and `backlog` — cannot stand in for any
+ * one of them, so those keep their own names and stay distinguishable.
+ */
+export function boardStatusLabel(
+  status: TaskStatus,
+  columns: readonly { readonly name: string; readonly statuses: readonly TaskStatus[] }[],
+): string {
+  const owner = columns.find((c) => c.statuses.includes(status));
+  if (owner?.statuses.length !== 1) return STATUS_LABELS[status];
+  return owner.name;
 }
 
 /**

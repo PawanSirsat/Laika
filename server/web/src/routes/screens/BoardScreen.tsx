@@ -784,7 +784,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {editingColumn !== undefined && (
         <ColumnDialog
           column={editingColumn}
-          all={columns.visible}
+          /*
+           * **Every column, not just the drawn ones** (LAI-617). This dialog
+           * is configuration: it has to see who currently owns each status in
+           * order to say what taking one would cost. `visible` excludes the
+           * hidden `Cancelled` column — so taking `cancelled` warned nothing
+           * and would have emptied it silently — and now also excludes any
+           * column already holding nothing.
+           */
+          all={columns.state.columns}
           taskCount={shownTasks.filter((t) => editingColumn.statuses.includes(t.status)).length}
           busy={columns.busy}
           error={columns.error}
@@ -1149,6 +1157,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         <TaskDrawerContent>
           <TaskDetailPanel
             slug={slug}
+            columns={columns.state.columns}
             meId={me?.id}
             mayAssign={mayCreate}
             mayEdit={mayCreate}
