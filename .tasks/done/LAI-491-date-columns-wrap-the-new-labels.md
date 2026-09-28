@@ -6,9 +6,10 @@ assignee: shell
 priority: p1
 depends-on: [LAI-486]
 discovered-from: LAI-486
-status: review
+status: done
 finished: 2026-09-28T19:35:43Z
 started: 2026-09-28T19:33:32Z
+reviewed: 2026-09-28T19:35:43Z
 ---
 
 ## Goal
@@ -57,3 +58,11 @@ Built by the CHIEF session on the owner's direct instruction, on `build`.
   *CREATED = UPDATED*, with the reason in its comment.
 
 Web **1140/1140**; lint green.
+
+## Review — 2026-09-28T19:35:43Z (CHIEF)
+
+**Accepted.** It was found in CHIEF's own final browser pass, then built and
+reviewed by the same session on the owner's instruction. It was red first, and
+the one-line property is asserted by line count, not by a width.
+
+Both themes will be re-seen on the rebuilt instance before the push.
