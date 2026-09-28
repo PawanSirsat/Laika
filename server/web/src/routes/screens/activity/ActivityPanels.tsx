@@ -1,4 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
+import { ageDays, STALE_DAYS } from '../../../api/board-derive.ts';
 import { describeEvent } from '../../../api/activity.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -24,13 +25,12 @@ export interface ActivityPanelsProps {
   readonly staleDays: number;
 }
 
-const DAY = 86_400_000;
-/** The design's threshold: five days without a status change or comment. */
-export const STALE_DAYS = 5;
-
-function ageDays(at: number, now: number): number {
-  return Math.floor((now - at) / DAY);
-}
+/*
+ * The design's threshold — five days without a status change or comment —
+ * lives in `board-derive.ts` since LAI-486, shared with the List's amber.
+ * Re-exported so `ActivityScreen` keeps its import.
+ */
+export { STALE_DAYS };
 
 /**
  * What has stopped moving, oldest first.

@@ -1,4 +1,5 @@
-import { blockedState, statusLabel, updatedAge } from '../../../api/board-derive.ts';
+import { ageDays, blockedState, STALE_DAYS, statusLabel } from '../../../api/board-derive.ts';
+import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 
 /**
@@ -40,8 +41,10 @@ export interface ListRow {
   readonly blocked: boolean;
   /** `blocked by LC-1`, ready to render. Empty when nothing blocks it. */
   readonly blockedBy: string;
-  readonly created: string;
-  readonly updated: string;
+  /** `just now` / `4 min ago` / `27 Sep, 14:05`, with the full moment (LAI-486). */
+  readonly created: TimeLabel;
+  readonly createdTone: Tone;
+  readonly updated: TimeLabel;
   readonly updatedTone: Tone;
 }
 
@@ -69,17 +72,21 @@ function priorityTone(priority: Task['priority']): Tone {
 }
 
 /**
- * How the age reads.
+ * How an age is coloured (LAI-486, D-065).
  *
- * The design gives *just now* the accent and anything over five days the amber
- * it uses for stale everywhere else — the same five-day threshold the rail's
- * Stale panel uses, so the two cannot disagree about what quiet means.
+ * - **Under an hour: the accent** — the owner asked for very recent work to
+ *   stand out, and an hour is the edge of "just touched".
+ * - **Amber: open work quiet for `STALE_DAYS`** — the rail's own threshold and
+ *   comparison. A `done` or `cancelled` task is finished, not neglected; it
+ *   used to go amber after five days like everything else, which is why every
+ *   Done row in the owner's screenshot looked like a problem.
+ * - Otherwise muted.
  */
-const STALE_MS = 5 * 24 * 60 * 60 * 1000;
-
-function updatedTone(updatedAt: number, now: number): Tone {
-  if (now - updatedAt > STALE_MS) return 'warn';
-  return updatedAge(updatedAt, now) === 'just now' ? 'accent' : 'flat';
+function ageTone(at: number, now: number, status: Task['status'], staleCounts: boolean): Tone {
+  if (timeLabel(at, now).fresh) return 'accent';
+  const finished = status === 'done' || status === 'cancelled';
+  if (staleCounts && !finished && ageDays(at, now) >= STALE_DAYS) return 'warn';
+  return 'flat';
 }
 
 export interface ListRowInput {
@@ -133,9 +140,12 @@ export function listRows({
       labels: task.tags.join(', '),
       blocked,
       blockedBy: blockerKeys.length === 0 ? '' : `blocked by ${blockerKeys.join(', ')}`,
-      created: updatedAge(task.created_at, now),
-      updated: updatedAge(task.updated_at, now),
-      updatedTone: updatedTone(task.updated_at, now),
+      created: timeLabel(task.created_at, now),
+      // Staleness is about going quiet, so only UPDATED can be amber; an old
+      // CREATED is just old.
+      createdTone: ageTone(task.created_at, now, task.status, false),
+      updated: timeLabel(task.updated_at, now),
+      updatedTone: ageTone(task.updated_at, now, task.status, true),
     };
   });
 }

@@ -277,9 +277,18 @@ void describe('the task panel', () => {
       assert.deepEqual(m.badges, ['AGENT'], 'the badge is upper-case and only on the agent');
       assert.equal(m.bots, 1, 'the bot mark rides on the agent’s avatar only');
 
-      // Short and relative, beside the name — never a timestamp to the second.
+      /*
+       * Short, beside the name — never a timestamp to the second (LAI-486's
+       * form: relative for a day, then a date and time). This used to accept
+       * `just now ago`, which pinned the defect it should have caught.
+       */
       for (const t of m.times) {
-        assert.match(t, /^[0-9]+[mhdw] ago$|^just now ago$/, `a timestamp reads "${t}"`);
+        assert.match(
+          t,
+          /^just now$|^[0-9]+ min ago$|^[0-9]+ h ago$|^[0-9]{1,2} [A-Z][a-z]{2}( [0-9]{4})?, [0-9]{2}:[0-9]{2}$/,
+          `a timestamp reads "${t}"`,
+        );
+        assert.doesNotMatch(t, /just now ago/, 'the drawer says "just now ago" again');
       }
     } finally {
       await h.close();

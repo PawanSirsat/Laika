@@ -137,16 +137,40 @@ void describe('the List row', () => {
     assert.equal(rows[0]?.blockedBy, '', 'an id must never be printed as a key');
   });
 
-  void test('ages by the clock, and ambers anything over five days', () => {
+  void test('ages read as moments, and fresh work takes the accent (LAI-486)', () => {
     const { rows } = rowsFor([
       task({ id: 'a', key: 'LC-1', updated_at: NOW }),
-      task({ id: 'b', key: 'LC-2', updated_at: NOW - 2 * DAY }),
-      task({ id: 'c', key: 'LC-3', updated_at: NOW - 9 * DAY }),
+      task({ id: 'b', key: 'LC-2', updated_at: NOW - 59 * 60_000 }),
+      task({ id: 'c', key: 'LC-3', updated_at: NOW - 2 * DAY }),
     ]);
-    assert.equal(rows[0]?.updated, 'just now');
+    assert.equal(rows[0]?.updated.text, 'just now');
     assert.equal(rows[0]?.updatedTone, 'accent');
-    assert.equal(rows[1]?.updatedTone, 'flat');
-    assert.equal(rows[2]?.updatedTone, 'warn', 'nine days is stale by the rail’s own threshold');
+    assert.equal(rows[1]?.updated.text, '59 min ago');
+    assert.equal(rows[1]?.updatedTone, 'accent', 'under an hour is fresh');
+    assert.equal(rows[2]?.updatedTone, 'flat');
+  });
+
+  void test('amber is for open work gone quiet — never for finished work (LAI-486)', () => {
+    const { rows } = rowsFor([
+      task({ id: 'a', key: 'LC-1', status: 'in_progress', updated_at: NOW - 9 * DAY }),
+      task({ id: 'b', key: 'LC-2', status: 'done', updated_at: NOW - 9 * DAY }),
+      task({ id: 'c', key: 'LC-3', status: 'cancelled', updated_at: NOW - 9 * DAY }),
+      task({ id: 'd', key: 'LC-4', status: 'todo', updated_at: NOW - 5 * DAY }),
+      task({ id: 'e', key: 'LC-5', status: 'todo', updated_at: NOW - 5 * DAY + 60_000 }),
+    ]);
+    assert.equal(rows[0]?.updatedTone, 'warn', 'nine quiet days on open work is stale');
+    assert.equal(rows[1]?.updatedTone, 'flat', 'a finished task is not neglected');
+    assert.equal(rows[2]?.updatedTone, 'flat', 'a cancelled task is not neglected');
+    assert.equal(rows[3]?.updatedTone, 'warn', 'five days is stale — the rail’s own >=');
+    assert.equal(rows[4]?.updatedTone, 'flat', 'a minute short of five days is not');
+  });
+
+  void test('CREATED is never amber: old is not the same as quiet (LAI-486)', () => {
+    const { rows } = rowsFor([
+      task({ id: 'a', key: 'LC-1', status: 'todo', created_at: NOW - 90 * DAY, updated_at: NOW }),
+    ]);
+    assert.equal(rows[0]?.createdTone, 'flat');
+    assert.match(rows[0]?.created.text ?? '', /^[0-9]{1,2} [A-Z][a-z]{2}/, 'ninety days is a date');
   });
 
   void test('says Unassigned rather than leaving the column blank', () => {

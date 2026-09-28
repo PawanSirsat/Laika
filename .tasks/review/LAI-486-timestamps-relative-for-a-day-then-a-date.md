@@ -2,11 +2,13 @@
 id: LAI-486
 title: 'Timestamps say "just now" for a day, then a date and time'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-621]
 discovered-from:
-status: backlog
+status: review
+finished: 2026-09-28T19:05:17Z
+started: 2026-09-28T18:59:31Z
 ---
 
 ## Goal
@@ -56,7 +58,7 @@ Measured on `shell` (D-064):
 
 ## Acceptance criteria
 
-- [ ] **One formatter, in `server/web/src/api/`** (e.g. `time-label.ts`),
+- [x] **One formatter, in `server/web/src/api/`** (e.g. `time-label.ts`),
       taking `(at, now)` and returning at least
       `{ text, full, iso, fresh }`:
   - under 1 minute: `just now`
@@ -67,33 +69,33 @@ Measured on `shell` (D-064):
   - `full`: `Sat 27 Sep 2026, 14:05:31`
   - `iso`: for `<time dateTime>`
   - `fresh`: under one hour
-- [ ] **Day-month order and a 24-hour clock (en-GB), in the viewer's
+- [x] **Day-month order and a 24-hour clock (en-GB), in the viewer's
       timezone.** That matches the approved preview and `formatRange` in
       `sprint-derive.ts`. Pin it in a test that sets the locale, so a
       developer's machine cannot make it pass.
-- [ ] **Negative elapsed time is clamped**, so a clock-skewed future timestamp
+- [x] **Negative elapsed time is clamped**, so a clock-skewed future timestamp
       reads `just now` and never `-3 min ago`. `staleFor`'s comment explains
       why the clamp and the branch order both matter; keep both.
-- [ ] **Edges pinned by unit tests:** 59 s / 60 s, 59 min / 60 min,
+- [x] **Edges pinned by unit tests:** 59 s / 60 s, 59 min / 60 min,
       23 h 59 min / 24 h, a timestamp in the previous year across New Year's
       Eve, and one in the future.
-- [ ] **The List's CREATED and UPDATED both render
+- [x] **The List's CREATED and UPDATED both render
       `<time dateTime={iso} title={full}>{text}</time>`.** They share one
       style (mono, same size, right-aligned) and both take the accent when
       `fresh`.
-- [ ] **Amber only for open work.** UPDATED is amber when the task is **not**
+- [x] **Amber only for open work.** UPDATED is amber when the task is **not**
       `done` or `cancelled` **and** its last update is over five days old.
       Otherwise it is muted, unless fresh. Keep the five-day constant shared
       with the rail's Stale panel rather than adding a third number.
-- [ ] **The labels move on their own.** A table left open does not say
+- [x] **The labels move on their own.** A table left open does not say
       `just now` for ever. Re-render on a ~60 s tick, clear it on unmount, and
       prove the clear in a test.
-- [ ] **The drawer uses the same formatter.** `opened … · updated …` and the
+- [x] **The drawer uses the same formatter.** `opened … · updated …` and the
       comment times read `opened just now`, `updated 4 min ago`,
       `opened 27 Sep, 14:05`, and never `just now ago`. Assert the absence of
       `just now ago` in a browser test.
-- [ ] Both themes. Existing tokens only (D-020).
-- [ ] Full gate: repo root, all three `EXIT 0`, each status captured on its own
+- [x] Both themes. Existing tokens only (D-020).
+- [x] Full gate: repo root, all three `EXIT 0`, each status captured on its own
       line.
 
 ## Notes / context
@@ -109,3 +111,61 @@ Measured on `shell` (D-064):
 - **Future timestamps and `Date.now()` in tests:** pass `now` in; never read the
   clock inside the formatter. That is how `staleFor` stays testable.
 - **No new dependencies.** `Intl.DateTimeFormat` is enough; no date library.
+
+## Built — 2026-09-28T19:05:17Z
+
+Built by the CHIEF session **on the owner's direct instruction**, on branch
+`build`.
+
+- **`api/time-label.ts` (new):**
+  - `timeLabel(at, now)` returns `{ text, full, iso, fresh }`;
+  - `startTicker` returns its own stop.
+  - **The names are fixed tables, not `Intl`.** Current `en-GB` data writes
+    *Sept*, and the approved form is *Sep*. So the "set the locale" criterion
+    is met more strongly than it asked: no locale can reach it. The tests
+    pass under `TZ` = LA, Kolkata, UTC, Auckland and London.
+- **`board-derive.ts`:** `STALE_DAYS` and `ageDays` live here now.
+  `ActivityPanels` imports and re-exports them, so the rail and the List share
+  one number **and one comparison** (`>=`). They used to disagree at exactly
+  five days.
+- **`list-derive.ts`:**
+  - rows carry `created` and `updated` as labels, each with a tone;
+  - accent under an hour;
+  - amber only for **open** work with `ageDays >= STALE_DAYS`;
+  - CREATED is never amber.
+- **`ListView.tsx`:**
+  - `<time dateTime title>` cells;
+  - a 60 s tick through `startTicker`, whose returned stop is what the effect
+    returns.
+- **`list.css`:** CREATED and UPDATED share mono, size and right-alignment,
+  and CREATED's header aligns with them.
+- **`TaskDetailPanel.tsx`:** the byline and the comment times use
+  `timeLabel`, so *"opened just now ago"* is gone.
+- **`task-panel.test.ts`:** its time pattern **accepted `^just now ago$`**,
+  which pinned the defect. It now asserts the new form and the absence of
+  `just now ago`.
+
+Browser tests run on Playwright's fake clock at a fixed `T`:
+
+- *just now* and *25 Sep, 15:30*, with the full moment in `title`;
+- the accent on the fresh row;
+- `fastForward('02:00')` gives *2 min ago* with no reload;
+- the byline reads *opened just now · updated just now*.
+
+Mutations, each typechecking and restored by checksum:
+
+| mutation | result |
+| --- | --- |
+| fresh at a minute | red |
+| done goes amber | red |
+| the stop does not stop | red |
+| no tick | red |
+| the drawer appends ` ago` | red |
+| **no clamp** | **green** |
+
+**The clamp escape is recorded, not hidden.** The branch order already sends
+a negative age to *just now*. My own first comment claimed the clamp was what
+did that. **It was wrong, and it is corrected** to say the clamp is
+belt-and-braces, as `staleFor`'s is.
+
+Web **1112/1112**; the structure guard and lint are green.

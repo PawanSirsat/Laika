@@ -206,6 +206,19 @@ export function staleFor(flaggedAt: number, now: number): string {
  * The one difference is wording. `staleFor` says `now` because it completes
  * "flagged stale …"; a footer stands alone and the design writes "just now".
  */
+/**
+ * Days without a change before open work reads as stale — the design's
+ * threshold, **one number** for the Activity rail's Stale panel and the List's
+ * amber (LAI-486). They used to be two constants with two comparisons (`>=`
+ * against `>`), and so disagreed at exactly five days.
+ */
+export const STALE_DAYS = 5;
+
+/** Whole days since `at`, floored — the unit `STALE_DAYS` is counted in. */
+export function ageDays(at: number, now: number): number {
+  return Math.floor((now - at) / 86_400_000);
+}
+
 export function updatedAge(updatedAt: number, now: number): string {
   const compact = staleFor(updatedAt, now);
   return compact === 'now' ? 'just now' : compact;

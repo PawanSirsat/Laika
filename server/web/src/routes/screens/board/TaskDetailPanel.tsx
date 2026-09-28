@@ -6,7 +6,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
 import { describeEvent, statusTransition } from '../../../api/activity.ts';
-import { updatedAge } from '../../../api/board-derive.ts';
+import { timeLabel } from '../../../api/time-label.ts';
 import { isAgentComment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
 import { boardStatusLabel } from '../../../api/board-derive.ts';
@@ -401,9 +401,28 @@ export function TaskDetailPanel({
                 ? `created via ${task.created_via}`
                 : `created via agent · ${task.created_by_client}`}
             </span>
+            {/*
+              **The List's form, and no "ago" of our own** (LAI-486).
+              `updatedAge` says `just now`, and appending ` ago` read
+              "opened just now ago". `timeLabel` carries its own ago
+              (`4 min ago`) or none (`27 Sep, 14:05`), and the full moment on
+              hover.
+            */}
             <span className="panel-byline-times">
-              opened {updatedAge(task.created_at, now)} ago · updated{' '}
-              {updatedAge(task.updated_at, now)} ago
+              opened{' '}
+              <time
+                dateTime={timeLabel(task.created_at, now).iso}
+                title={timeLabel(task.created_at, now).full}
+              >
+                {timeLabel(task.created_at, now).text}
+              </time>{' '}
+              · updated{' '}
+              <time
+                dateTime={timeLabel(task.updated_at, now).iso}
+                title={timeLabel(task.updated_at, now).full}
+              >
+                {timeLabel(task.updated_at, now).text}
+              </time>
             </span>
           </div>
 
@@ -630,10 +649,10 @@ export function TaskDetailPanel({
                               */}
                               <time
                                 className="cmt-when"
-                                dateTime={new Date(comment.created_at).toISOString()}
-                                title={new Date(comment.created_at).toLocaleString()}
+                                dateTime={timeLabel(comment.created_at, now).iso}
+                                title={timeLabel(comment.created_at, now).full}
                               >
-                                {updatedAge(comment.created_at, now)} ago
+                                {timeLabel(comment.created_at, now).text}
                               </time>
                             </p>
 
