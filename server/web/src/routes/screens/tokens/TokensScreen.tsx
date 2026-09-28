@@ -111,7 +111,7 @@ export function TokensScreen({ me }: TokensScreenProps) {
         // Replacing one reveal with another overwrites the hook, so the earlier
         // secret is displaced by the same mechanism `forget` relies on.
         setRevealed(created);
-            setName('');
+        setName('');
         setMinting(false);
         reload();
       })

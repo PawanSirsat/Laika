@@ -8,11 +8,11 @@
  * is the closest honest equivalent.
  */
 export function suggestTokenName(userAgent: string): string {
-  const platform = /Mac OS X|Macintosh/.test(userAgent)
+  const platform = /Mac OS X|Macintosh/u.test(userAgent)
     ? 'macOS'
-    : /Windows/.test(userAgent)
+    : userAgent.includes('Windows')
       ? 'Windows'
-      : /Linux|X11/.test(userAgent)
+      : /Linux|X11/u.test(userAgent)
         ? 'Linux'
         : undefined;
 

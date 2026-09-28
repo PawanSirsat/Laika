@@ -50,7 +50,15 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
   const [mintError, setMintError] = useState<string | undefined>(undefined);
   const [slug, setSlug] = useState<string | undefined>(undefined);
   const [live, setLive] = useState<LiveState>({ kind: 'idle' });
-  const [watching, setWatching] = useState(0);
+  /*
+   * **Remembered, not derived.** `forget()` blanks the secret and then drops
+   * the whole record a tick later, so a note conditioned on "revealed but
+   * blank" exists for one render and vanishes — it passed here by luck and
+   * timed out under load. The reader needs to know where the token went for
+   * longer than two frames.
+   */
+  const [forgotten, setForgotten] = useState(false);
+  const ticks = useRef(0);
 
   const promptRef = useRef<HTMLPreElement | null>(null);
   const blockRef = useRef<HTMLPreElement | null>(null);
@@ -68,6 +76,7 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
     setTimeout(() => {
       setRevealed(undefined);
     }, 0);
+    setForgotten(true);
   };
 
   const secret = revealed?.secret === '' ? undefined : revealed?.secret;
@@ -94,9 +103,10 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
     })
       .then((created) => {
         setRevealed(created);
+        setForgotten(false);
         // Minting is the moment the reader is about to go and do it, so the
         // watch arms itself rather than waiting to be asked.
-        setWatching(0);
+        ticks.current = 0;
         setLive({ kind: 'watching', ticks: 0 });
       })
       .catch((cause: unknown) => {
@@ -115,14 +125,12 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
     if (live.kind !== 'watching' || me === undefined) return;
 
     const controller = new AbortController();
-    let ticks = watching;
 
     const ask = (): void => {
       getPresence(controller.signal)
         .then((presence) => {
-          ticks += 1;
-          setWatching(ticks);
-          setLive(liveStateFrom(presence, me.id, ticks));
+          ticks.current += 1;
+          setLive(liveStateFrom(presence, me.id, ticks.current));
         })
         .catch((cause: unknown) => {
           if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -137,9 +145,11 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
       clearInterval(timer);
       controller.abort();
     };
-    // `watching` is read once to resume the count; depending on it would
-    // restart the interval on every tick.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    /*
+     * The tick count lives in a ref rather than state on purpose: as state it
+     * would be a dependency, and every tick would tear the interval down and
+     * build a new one — a watch that restarts itself is not a watch.
+     */
   }, [live.kind, me]);
 
   const viewerOnly = me !== undefined && !mayChooseScope(me.org_role);
@@ -234,7 +244,7 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
           </div>
         )}
 
-        {revealed !== undefined && secret === undefined && (
+        {forgotten && secret === undefined && (
           <p className="conn-note conn-forgotten">
             The token is gone from this page. Mint another, or revoke the old one on Tokens.
           </p>
@@ -324,7 +334,7 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
         <LiveCheck
           live={live}
           onWatch={() => {
-            setWatching(0);
+            ticks.current = 0;
             setLive({ kind: 'watching', ticks: 0 });
           }}
         />

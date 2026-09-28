@@ -52,7 +52,7 @@ void describe('the clipboard has one implementation', () => {
     // at length, and a guard that cannot tell prose from a call is one that
     // fires on its own documentation.
     const callers = files
-      .filter((path) => /navigator\.clipboard/.test(code(readFileSync(path, 'utf8'))))
+      .filter((path) => code(readFileSync(path, 'utf8')).includes('navigator.clipboard'))
       .map((path) => path.slice(SRC.length));
 
     assert.deepEqual(callers, ['components/CopyButton.tsx'], 'a second clipboard call site exists');

@@ -33,8 +33,8 @@ void describe('the installer still reads the two answers in the order the prompt
   void test('the board URL is asked for before the token', () => {
     const url = script.indexOf('URL_INPUT');
     const token = script.indexOf('read -r TOKEN');
-    assert.ok(url > 0, 'no URL prompt found');
-    assert.ok(token > 0, 'no token prompt found');
+    assert.ok(script.includes('URL_INPUT'), 'no URL prompt found');
+    assert.ok(script.includes('read -r TOKEN'), 'no token prompt found');
     assert.ok(
       url < token,
       'the installer now asks for the token first — the prompt feeds it a URL',
