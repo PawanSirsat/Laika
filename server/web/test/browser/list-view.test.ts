@@ -745,3 +745,191 @@ void describe('timestamps read as moments (LAI-486)', () => {
     }
   });
 });
+
+/*
+ * **The shared Filter popover gains Status, Sprint, Blocked only and Updated
+ * within** (LAI-487). Driven on `/list`, where no filter test existed, and once
+ * on `/board`, where the same popover lives.
+ *
+ * Server-side filters are keyed by query, so the rows really change because
+ * the request changed; `?limit=200` alone serves everything. `updated_since`
+ * is a timestamp computed at request time, so that one is asserted on the
+ * request itself.
+ */
+const DONE = task({ id: 't9', key: 'LC-9', number: 9, title: 'Shipped work', status: 'done' });
+const FILTERABLE: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/sprints': {
+    data: [
+      {
+        id: 's1',
+        project_id: 'laika-core',
+        name: 'Foundations',
+        goal: null,
+        status: 'active',
+        starts_on: 1,
+        ends_on: 2,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ],
+    next_cursor: null,
+  },
+  '/api/v1/projects/laika-core/tasks': { data: [BLOCKER, BLOCKED, DONE], next_cursor: null },
+  '/api/v1/projects/laika-core/tasks?limit=200': {
+    data: [BLOCKER, BLOCKED, DONE],
+    next_cursor: null,
+  },
+  '/api/v1/projects/laika-core/tasks?status=done&limit=200': { data: [DONE], next_cursor: null },
+  '/api/v1/projects/laika-core/tasks?sprint=s1&limit=200': { data: [BLOCKED], next_cursor: null },
+};
+
+const keysOnScreen = async (h: Harness): Promise<string[]> =>
+  (await h.page.locator('.list tbody .list-key').allInnerTexts())
+    // The cell also carries a visually hidden "— open details" for a screen
+    // reader; the key is the first line.
+    .map((k) => (k.split('\n')[0] ?? '').trim())
+    .sort();
+
+const field = (h: Harness, label: string) =>
+  h.page.locator('.bt-pop label.bt-field', { hasText: label }).locator('select');
+
+const badge = async (h: Harness): Promise<string> =>
+  (await h.page.locator('.bt-badge').count()) === 0
+    ? '0'
+    : (await h.page.locator('.bt-badge').innerText()).trim();
+
+async function openFilter(h: Harness): Promise<void> {
+  if ((await h.page.locator('.bt-pop').count()) === 0) {
+    await h.page.getByRole('button', { name: /^Filter/ }).click();
+  }
+  await h.page.locator('.bt-pop').waitFor({ timeout: 5_000 });
+}
+
+void describe('the Filter popover on the List (LAI-487)', () => {
+  void test('status, sprint, blocked and updated each write the URL, change what is asked, and count', async () => {
+    const h = await open('/list?project=laika-core', FILTERABLE);
+    const asked: string[] = [];
+    h.page.on('request', (r) => {
+      if (r.url().includes('/tasks?')) asked.push(r.url());
+    });
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.deepEqual(
+        await keysOnScreen(h),
+        ['LC-1', 'LC-6', 'LC-9'],
+        'positive control: all three',
+      );
+
+      // Status — server-side, so the rows change because the request did.
+      await openFilter(h);
+      await field(h, 'Status').selectOption('done');
+      await h.page.waitForURL(/status=done/, { timeout: 10_000 });
+      await h.page.waitForFunction(() => document.querySelectorAll('.list tbody tr').length === 1);
+      assert.deepEqual(await keysOnScreen(h), ['LC-9']);
+      assert.equal(await badge(h), '1');
+
+      // Clear all empties every filter key and keeps the project.
+      await openFilter(h);
+      await h.page.locator('.bt-pop .bt-clear').click();
+      await h.page.waitForFunction(() => !location.search.includes('status='));
+      assert.match(h.page.url(), /project=laika-core/);
+      await h.page.waitForFunction(() => document.querySelectorAll('.list tbody tr').length === 3);
+
+      // Blocked only — decided in the browser. With everything loaded, LC-6's
+      // blocker LC-1 is known and open: LC-6 stays, LC-1 and LC-9 go.
+      await openFilter(h);
+      await h.page
+        .locator('.bt-pop label.bt-check', { hasText: 'Blocked only' })
+        .locator('input')
+        .check();
+      await h.page.waitForURL(/blocked=true/, { timeout: 10_000 });
+      await h.page.waitForFunction(() => document.querySelectorAll('.list tbody tr').length === 1);
+      assert.deepEqual(await keysOnScreen(h), ['LC-6'], 'the blocked task is not the one shown');
+
+      // Sprint — the same `?sprint=` the Board's strip writes. LC-1 is in no
+      // sprint and is no longer loaded, so LC-6's blocker **cannot be judged**:
+      // it stays, because hiding maybe-blocked work from "Blocked only" is the
+      // damaging error.
+      await openFilter(h);
+      await field(h, 'Sprint').selectOption('s1');
+      await h.page.waitForURL(/sprint=s1/, { timeout: 10_000 });
+      await h.page.waitForTimeout(400);
+      assert.deepEqual(await keysOnScreen(h), ['LC-6'], 'a maybe-blocked task was hidden');
+
+      // Updated within — a window in the URL, a timestamp on the wire.
+      await openFilter(h);
+      const before = Date.now();
+      await field(h, 'Updated within').selectOption('7d');
+      await h.page.waitForURL(/updated=7d/, { timeout: 10_000 });
+      await h.page.waitForTimeout(400);
+      const sent = asked
+        .map((u) => new URL(u).searchParams.get('updated_since'))
+        .filter((v) => v !== null);
+      assert.ok(sent.length > 0, 'no request carried updated_since');
+      const since = Number(sent.at(-1));
+      const expected = before - 7 * 86_400_000;
+      assert.ok(
+        Math.abs(since - expected) < 60_000,
+        `updated_since ${String(since)} is not seven days back`,
+      );
+      assert.doesNotMatch(
+        h.page.url(),
+        /updated_since/,
+        'the timestamp leaked into the address bar',
+      );
+
+      assert.equal(await badge(h), '3', 'sprint + blocked + updated');
+
+      await openFilter(h);
+      await h.page.locator('.bt-pop .bt-clear').click();
+      await h.page.waitForFunction(
+        () => !/(sprint|blocked|updated)=/.test(location.search),
+        undefined,
+        { timeout: 10_000 },
+      );
+      assert.equal(await badge(h), '0');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a junk value in the URL is ignored, not sent and not counted', async () => {
+    const h = await open(
+      '/list?project=laika-core&status=bogus&updated=90d&blocked=yes',
+      FILTERABLE,
+    );
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.deepEqual(await keysOnScreen(h), ['LC-1', 'LC-6', 'LC-9']);
+      assert.equal(await badge(h), '0');
+      assert.deepEqual(h.unmatched, [], 'a junk status reached the server');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the same popover works on the Board', async () => {
+    const h = await open('/board?project=laika-core', FILTERABLE);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await openFilter(h);
+      const labels = (await h.page.locator('.bt-pop .bt-label').allInnerTexts()).map((t) =>
+        t.trim().toLowerCase(),
+      );
+      assert.deepEqual(labels, [
+        'status',
+        'priority',
+        'assignee',
+        'label',
+        'sprint',
+        'updated within',
+      ]);
+      await field(h, 'Status').selectOption('done');
+      await h.page.waitForURL(/status=done/, { timeout: 10_000 });
+      assert.equal(await badge(h), '1');
+    } finally {
+      await h.close();
+    }
+  });
+});
