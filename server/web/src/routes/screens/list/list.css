@@ -84,9 +84,13 @@
 .list-col-spr {
   width: 2.875rem;
 }
+/* **Wide enough for the longest date, on one line** (LAI-491). The design's
+   84px was sized for `6d`; D-065's labels run to `25 Aug 2025, 01:01` — 18
+   mono characters at 10px plus the cell's padding. Both columns hold the same
+   form, so they share one width. */
 .list-col-created,
 .list-col-updated {
-  width: 5.25rem;
+  width: 8.5rem;
 }
 
 /* ----------------------------------------------------------------- the header */
@@ -398,6 +402,7 @@
    beside a mono, right-aligned UPDATED. */
 .list-created,
 .list-updated {
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 0.625rem;
   font-weight: var(--weight-semibold);
