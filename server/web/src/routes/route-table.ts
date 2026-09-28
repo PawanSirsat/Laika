@@ -235,7 +235,23 @@ export const ROUTES: readonly Route[] = [
   },
 
   // SETTINGS
-  // SETTINGS order follows the prototype: Tokens, then Organisation.
+  /*
+   * Connect first, then Tokens, then Organisation.
+   *
+   * The prototype ordered these Tokens-then-Organisation, and Connect goes
+   * above both deliberately: it is the only entry a reader with nothing set up
+   * can act on, and the two below it are where you go *afterwards* — to revoke
+   * what this page minted, or to invite the next person.
+   */
+  {
+    orgLevel: true,
+    path: '/connect',
+    label: 'Connect',
+    group: 'SETTINGS',
+    status: 'ready',
+    phase: 'Phase 4',
+    mini: 'CN',
+  },
   {
     orgLevel: true,
     path: '/tokens',

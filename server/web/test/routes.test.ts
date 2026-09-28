@@ -81,7 +81,9 @@ void describe('sidebar groups (AC1)', () => {
     );
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
-      ['Tokens', 'Organisation'],
+      // Connect leads: it is the only entry a reader with nothing set up can
+      // act on, and the other two are where you go afterwards (LAI-622).
+      ['Connect', 'Tokens', 'Organisation'],
     );
   });
 

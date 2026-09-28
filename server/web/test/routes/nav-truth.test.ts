@@ -126,7 +126,7 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // `Unlisted work` is gated on `audit_log.export` and `navRoutes()` here
       // takes no predicate, so it is absent by the same rule it always was.
       // **Capacity left in LAI-251** — the design's tab strip carries it.
-      ['Tokens', 'Organisation'],
+      ['Connect', 'Tokens', 'Organisation'],
     );
   });
 
@@ -219,7 +219,7 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
     // assert that gating does not hide things that were never offered.
     // **Capacity left with LAI-251** — it is a space tab now, so naming it
     // here would assert that gating does not hide something never offered.
-    for (const label of ['Tokens', 'Organisation']) {
+    for (const label of ['Connect', 'Tokens', 'Organisation']) {
       assert.ok(withNone.includes(label), `${label} was hidden by an unrelated permission check`);
     }
   });

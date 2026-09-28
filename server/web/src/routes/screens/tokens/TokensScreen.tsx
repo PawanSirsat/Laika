@@ -1,6 +1,7 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
+import { CopyButton } from '../../../components/CopyButton.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
@@ -53,7 +54,6 @@ export function TokensScreen({ me }: TokensScreenProps) {
    * unmounts the element and takes the string out of the DOM with it.
    */
   const [revealed, setRevealed] = useState<CreatedToken | undefined>(undefined);
-  const [copied, setCopied] = useState(false);
 
   /**
    * Put the secret beyond reach, in two steps rather than one.
@@ -77,7 +77,6 @@ export function TokensScreen({ me }: TokensScreenProps) {
     setTimeout(() => {
       setRevealed(undefined);
     }, 0);
-    setCopied(false);
   };
 
   const reload = (signal?: AbortSignal): void => {
@@ -112,8 +111,7 @@ export function TokensScreen({ me }: TokensScreenProps) {
         // Replacing one reveal with another overwrites the hook, so the earlier
         // secret is displaced by the same mechanism `forget` relies on.
         setRevealed(created);
-        setCopied(false);
-        setName('');
+            setName('');
         setMinting(false);
         reload();
       })
@@ -180,16 +178,15 @@ export function TokensScreen({ me }: TokensScreenProps) {
           </p>
           <div className="tok-reveal-row">
             <code className="tok-secret">{revealed.secret}</code>
-            <button
-              type="button"
-              className="tok-copy"
-              onClick={() => {
-                void navigator.clipboard?.writeText(revealed.secret);
-                setCopied(true);
-              }}
-            >
-              {copied ? 'Copied' : 'Copy'}
-            </button>
+            {/*
+              The shared button (LAI-622). This was an inline
+              `navigator.clipboard?.writeText` that set `copied` beside the
+              call — so on a board served over plain HTTP, where the API does
+              not exist, it said "Copied" having copied nothing. `CopyButton`
+              reports from the resolved promise and offers a selection instead
+              when there is no clipboard.
+            */}
+            <CopyButton text={revealed.secret} className="tok-copy" />
             <button
               type="button"
               className="tok-dismiss"
