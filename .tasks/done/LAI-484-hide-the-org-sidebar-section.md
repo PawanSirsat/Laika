@@ -6,9 +6,10 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 finished: 2026-09-28T18:50:13Z
 started: 2026-09-28T18:46:12Z
+reviewed: 2026-09-28T18:50:30Z
 ---
 
 ## Goal
@@ -153,3 +154,18 @@ Mutations, each typechecking, restored by checksum:
     check. A source scan sees text, not behaviour.
 
 Web suite on `build`: **1073/1073**.
+
+## Review — 2026-09-28T18:50:30Z (CHIEF)
+
+**Accepted.** The same session built and reviewed this, on the owner's
+instruction. **The evidence is the mutations and the browser test**, recorded
+as such.
+
+- Every criterion was checked against the diff. The permission gate keeps a
+  live subject (a fixture route through `permitted()`), and its red is shown.
+- The sidebar was checked for an **owner** in real Chromium
+  (`spaces-sidebar.test.ts`): no `ORG`, no *Unlisted work*, `SETTINGS`
+  present.
+- The typed `/unlisted` route is still registered, gated and routed.
+- It will also be seen on a full instance in the final pass, before anything
+  is pushed.
