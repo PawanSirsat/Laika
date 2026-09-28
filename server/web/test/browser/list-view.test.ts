@@ -634,3 +634,114 @@ void describe('the List sort lives in the URL (LAI-485)', () => {
     }
   });
 });
+
+/*
+ * **Timestamps: relative for a day, then a date** (LAI-486, D-065).
+ *
+ * The clock is Playwright's, installed and then reloaded so the app's own
+ * `Date.now()` and `setInterval` are the fake ones. Every fixture stamp is
+ * relative to that fixed `T`, so the expected text never depends on when the
+ * suite runs.
+ */
+const T = new Date(2026, 8, 28, 15, 30, 0).getTime();
+const CLOCKED: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/tasks': {
+    data: [
+      task({
+        id: 'c1',
+        key: 'LC-1',
+        number: 1,
+        title: 'Fresh',
+        created_at: T - 30_000,
+        updated_at: T - 30_000,
+      }),
+      task({
+        id: 'c2',
+        key: 'LC-2',
+        number: 2,
+        title: 'Older',
+        created_at: T - 3 * 86_400_000,
+        updated_at: T - 3 * 86_400_000,
+      }),
+    ],
+    next_cursor: null,
+  },
+  '/api/v1/tasks/c1': task({
+    id: 'c1',
+    key: 'LC-1',
+    number: 1,
+    title: 'Fresh',
+    created_at: T - 30_000,
+    updated_at: T - 30_000,
+  }),
+};
+
+async function onTheClock(path: string): Promise<Harness> {
+  const h = await open(path, CLOCKED);
+  await h.page.clock.install({ time: T });
+  await h.page.reload();
+  await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+  return h;
+}
+
+const cell = (h: Harness, key: string, column: 'created' | 'updated') =>
+  h.page
+    .locator('.list tbody tr')
+    .filter({ has: h.page.locator('.list-key', { hasText: key }) })
+    .locator(`.list-${column} time`);
+
+void describe('timestamps read as moments (LAI-486)', () => {
+  void test('fresh work says just now, older work says a date, and the full moment is on hover', async () => {
+    const h = await onTheClock('/list?project=laika-core');
+    try {
+      assert.equal((await cell(h, 'LC-1', 'updated').innerText()).trim(), 'just now');
+      assert.equal((await cell(h, 'LC-2', 'updated').innerText()).trim(), '25 Sep, 15:30');
+      assert.equal(
+        await cell(h, 'LC-2', 'created').getAttribute('title'),
+        'Fri 25 Sep 2026, 15:30:00',
+      );
+      assert.ok(
+        (await cell(h, 'LC-1', 'created').getAttribute('datetime')) !== null,
+        'no machine-readable moment',
+      );
+      const tone = await h.page
+        .locator('.list tbody tr')
+        .filter({ has: h.page.locator('.list-key', { hasText: 'LC-1' }) })
+        .locator('.list-updated')
+        .getAttribute('class');
+      assert.match(tone ?? '', /list-tone-accent/, 'under an hour is not drawn as fresh');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a table left open keeps moving: two minutes later it says so', async () => {
+    const h = await onTheClock('/list?project=laika-core');
+    try {
+      assert.equal((await cell(h, 'LC-1', 'updated').innerText()).trim(), 'just now');
+      await h.page.clock.fastForward('02:00');
+      await h.page.waitForTimeout(200);
+      assert.equal(
+        (await cell(h, 'LC-1', 'updated').innerText()).trim(),
+        '2 min ago',
+        'the label did not move without a reload',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the drawer says "opened just now", never "just now ago"', async () => {
+    const h = await onTheClock('/list?project=laika-core&task=c1');
+    try {
+      const byline = h.page.locator('.panel-byline-times');
+      await byline.waitFor({ timeout: 20_000 });
+      const text = (await byline.innerText()).replace(/\s+/g, ' ').trim();
+      assert.match(text, /^opened just now · updated just now$/, `the byline reads "${text}"`);
+      assert.doesNotMatch(text, /just now ago/);
+    } finally {
+      await h.close();
+    }
+  });
+});

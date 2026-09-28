@@ -1,4 +1,6 @@
+import { useEffect, useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
+import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
@@ -70,8 +72,22 @@ export function ListView({
   onSort,
   onPage,
 }: ListViewProps) {
+  /*
+   * **The clock the ages are read against, moved once a minute** (LAI-486).
+   * `just now` would otherwise stay `just now` until something else happened
+   * to re-render the table. `startTicker` returns its own stop, which is what
+   * the effect returns, so leaving the List clears the interval.
+   */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(
+    () =>
+      startTicker(() => {
+        setNow(Date.now());
+      }, 60_000),
+    [],
+  );
   const rows = sortRows(
-    listRows({ tasks, byId, members, sprintLabels, now: Date.now() }),
+    listRows({ tasks, byId, members, sprintLabels, now }),
     byId,
     sort.key,
     sort.ascending,
@@ -231,9 +247,20 @@ export function ListView({
 
                   <td className="list-spr">{row.sprintTag}</td>
 
-                  <td className="list-created">{row.created}</td>
+                  {/* A <time> with the whole moment on hover (LAI-486): the
+                      cell says "27 Sep, 14:05", the tooltip says which year
+                      and second. */}
+                  <td className={`list-created list-tone-${row.createdTone}`}>
+                    <time dateTime={row.created.iso} title={row.created.full}>
+                      {row.created.text}
+                    </time>
+                  </td>
 
-                  <td className={`list-updated list-tone-${row.updatedTone}`}>{row.updated}</td>
+                  <td className={`list-updated list-tone-${row.updatedTone}`}>
+                    <time dateTime={row.updated.iso} title={row.updated.full}>
+                      {row.updated.text}
+                    </time>
+                  </td>
                 </tr>
               );
             })}

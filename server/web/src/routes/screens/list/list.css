@@ -105,7 +105,10 @@
   vertical-align: middle;
 }
 
-.list thead th:last-child {
+.list thead th:last-child,
+.list thead th:nth-last-child(2) {
+  /* CREATED and UPDATED are right-aligned numbers-with-units; their headers
+     sit over the same edge (LAI-486). */
   text-align: right;
 }
 
@@ -335,11 +338,8 @@
   border: none;
 }
 
-.list-created {
-  color: var(--text-muted);
-}
-
 .list-tone-flat.list-pri,
+.list-tone-flat.list-created,
 .list-tone-flat.list-updated {
   color: var(--text-muted);
 }
@@ -394,6 +394,9 @@
   color: var(--text-muted);
 }
 
+/* **Both dates in one form** (LAI-486): CREATED used to be plain muted text
+   beside a mono, right-aligned UPDATED. */
+.list-created,
 .list-updated {
   font-family: var(--font-mono);
   font-size: 0.625rem;
