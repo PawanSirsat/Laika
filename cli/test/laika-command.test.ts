@@ -33,6 +33,7 @@ import {
   readlinkSync,
   rmSync,
   symlinkSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -274,6 +275,69 @@ void describe('laika, run through the installed symlink', () => {
     const result = run(sb, install(sb), ['whoami']);
     assert.ok(!result.out.includes(TOKEN), 'whoami printed the token');
     assert.match(result.out, /present \(lai_ prefix, \d+ chars\)/, 'it never described the token');
+  });
+});
+
+void describe('a stale build never wins', () => {
+  /**
+   * The gap that hid this. The sandbox copied `bin/` and `src/` and no
+   * `dist/`, so it could not see what every built machine sees. Measured on a
+   * real checkout: `laika whoami` answered `unknown command "whoami"` from a
+   * dist five days old, with all ten tests above green.
+   *
+   * `dist/` is gitignored, so a fresh clone is safe — which is exactly why
+   * this is worth a test rather than a fix-and-move-on. Nobody onboarding hits
+   * it; everybody who builds does, and it never announces itself.
+   */
+  function putDist(sb: Sandbox, body: string, age: 'stale' | 'fresh'): void {
+    const dist = join(sb.checkout, 'cli', 'dist');
+    mkdirSync(dist, { recursive: true });
+    const entry = join(dist, 'index.js');
+    writeFileSync(entry, body);
+
+    const src = join(sb.checkout, 'cli', 'src', 'index.ts');
+    const now = Date.now() / 1000;
+    // A whole day either side, so a slow filesystem's timestamp granularity
+    // cannot decide the outcome.
+    utimesSync(entry, now, age === 'stale' ? now - 86400 : now + 86400);
+    utimesSync(src, now, now);
+  }
+
+  void test('source newer than the build means the source runs', () => {
+    const sb = sandbox();
+    const laika = install(sb);
+    putDist(sb, 'console.log("STALE BUILD SPEAKING");\n', 'stale');
+
+    const result = run(sb, laika, ['--help']);
+
+    assert.doesNotMatch(result.out, /STALE BUILD SPEAKING/, 'a five-day-old build answered');
+    assert.match(result.out, /laika whoami/, `did not fall through to src: ${result.out}`);
+  });
+
+  void test('CONTROL: a build newer than the source IS used', () => {
+    // Without this, "always ignore dist" would pass the test above — and dist
+    // is the path a published package and an old Node both take.
+    const sb = sandbox();
+    const laika = install(sb);
+    putDist(sb, 'console.log("FRESH BUILD SPEAKING");\n', 'fresh');
+
+    const result = run(sb, laika, ['--help']);
+
+    assert.match(result.out, /FRESH BUILD SPEAKING/, `the fresh build was ignored: ${result.out}`);
+  });
+
+  void test('whoami through a stale build still reads ~/.laika/env', () => {
+    // The two fixes meeting: the defect was found *because* the real run took
+    // the dist path, so the regression has to cover both at once.
+    const sb = sandbox();
+    const laika = install(sb);
+    putDist(sb, 'console.log("STALE BUILD SPEAKING");\n', 'stale');
+
+    const result = run(sb, laika, ['whoami']);
+
+    assert.doesNotMatch(result.out, /STALE BUILD SPEAKING/);
+    assert.doesNotMatch(result.out, /not connected to a board/);
+    assert.match(result.out, /Board {3}http:\/\/board\.test/, result.out);
   });
 });
 

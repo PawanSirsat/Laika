@@ -35,11 +35,38 @@ CLI_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
 # unflagged, and cli/test/cli.test.ts already runs the source directly — so a
 # checkout works with no build, and a built one takes the same path a published
 # package would.
+#
+# **A build older than its source never wins.** `dist/` is gitignored, so a
+# fresh clone has none and takes the src path — but on any machine that has
+# ever run `pnpm -C cli build`, a bare "prefer dist" serves frozen code for
+# ever, silently. Measured on the author's own checkout the day this shipped:
+# `laika whoami` printed `unknown command "whoami"` and offered `npx laika
+# init`, from a dist built five days earlier, while the sandbox tests were
+# green — because the sandbox copied bin/ and src/ and had no dist to go stale.
+#
+# `find -newer` is a *sample* here, not a census: the question is "does even one
+# source file postdate the build", so stopping at the first hit is the whole
+# point (CLAUDE.md §5 forbids a truncated *count*, which this is not).
+ENTRY=""
 if [ -r "$CLI_DIR/dist/index.js" ]; then
-  ENTRY="$CLI_DIR/dist/index.js"
-elif [ -r "$CLI_DIR/src/index.ts" ]; then
+  if [ -z "$(find "$CLI_DIR/src" -newer "$CLI_DIR/dist/index.js" 2>/dev/null | head -1)" ]; then
+    ENTRY="$CLI_DIR/dist/index.js"
+  fi
+fi
+
+if [ -z "$ENTRY" ] && [ -r "$CLI_DIR/src/index.ts" ]; then
   ENTRY="$CLI_DIR/src/index.ts"
-else
+fi
+
+# Only reachable with a stale dist and no src — a half-copied checkout. Running
+# the stale build beats refusing to run at all, but it is said out loud.
+if [ -z "$ENTRY" ] && [ -r "$CLI_DIR/dist/index.js" ]; then
+  echo "laika: using a build that is older than its source, and there is no source to run." >&2
+  echo "       Rebuild with:  pnpm -C \"$CLI_DIR\" build" >&2
+  ENTRY="$CLI_DIR/dist/index.js"
+fi
+
+if [ -z "$ENTRY" ]; then
   echo "laika: no CLI at $CLI_DIR — is the checkout still there?" >&2
   exit 1
 fi
