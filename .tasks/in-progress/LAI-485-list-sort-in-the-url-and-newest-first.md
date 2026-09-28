@@ -2,11 +2,12 @@
 id: LAI-485
 title: "The List's sort lives in the URL, looks clickable, and starts newest-first"
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-621]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-28T18:50:57Z
 ---
 
 ## Goal
