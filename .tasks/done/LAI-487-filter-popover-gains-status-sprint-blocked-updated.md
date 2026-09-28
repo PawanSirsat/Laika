@@ -6,9 +6,10 @@ assignee: shell
 priority: p1
 depends-on: [LAI-621]
 discovered-from:
-status: review
+status: done
 finished: 2026-09-28T19:13:45Z
 started: 2026-09-28T19:05:31Z
+reviewed: 2026-09-28T19:13:45Z
 ---
 
 ## Goal
@@ -161,3 +162,17 @@ Mutations, each typechecking, restored by checksum, all **red**:
 - a week is six days.
 
 Web **1126/1126**; the structure guard and lint are green.
+
+## Review — 2026-09-28T19:13:45Z (CHIEF)
+
+**Accepted.** The same session built and reviewed this, on the owner's
+instruction.
+
+- Every criterion has a test:
+  - the four controls, driven on `/list`, and once on `/board`;
+  - the badge, *Clear all*, junk values, the window semantics, and the
+    popover order.
+- The "cannot tell stays in" decision is recorded in the Built section and in
+  the code.
+- The popover's height and both themes will be seen on a full instance in the
+  final pass: it now holds six selects.
