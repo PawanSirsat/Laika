@@ -135,10 +135,17 @@ void describe('the List view', () => {
         Math.round((await h.page.locator(selector).first().boundingBox())?.width ?? -1);
 
       // The design's own figures: KEY 74 · STATUS 104 · PRI 42 · ASSIGNEE 150 ·
-      // SPR 46 · UPDATED 84, with SUMMARY taking what is left.
+      // SPR 46, with SUMMARY taking what is left.
       assert.equal(await width('.list-key'), 74, 'KEY');
       assert.equal(await width('.list-spr'), 46, 'SPR');
-      assert.equal(await width('.list-updated'), 84, 'UPDATED');
+      /*
+       * **UPDATED is no longer the design's 84** (LAI-491, re-aimed on
+       * purpose). 84px was sized for `6d`; D-065 made the label
+       * `25 Aug 2025, 01:01`, which wrapped onto three lines. What holds now
+       * is that the two date columns match — the one-line property itself is
+       * asserted where a long date is on screen (LAI-491's own test).
+       */
+      assert.equal(await width('.list-updated'), await width('.list-created'), 'CREATED ≠ UPDATED');
 
       const summary = await width('.list-summary');
       assert.ok(summary > 200, `SUMMARY collapsed to ${String(summary)}px`);
@@ -1078,6 +1085,61 @@ void describe('Board and List share one filter state (LAI-488)', () => {
     try {
       await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('table.list').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * **No date wraps** (LAI-491). LAI-486's labels are longer than the `6d` the
+ * design's 84px column was sized for, and wrapped onto two and three lines.
+ * Asserted by the `<time>` element's own line count, on the longest form a
+ * date takes — an old year — so a width constant is never the thing trusted.
+ */
+void describe('the date columns hold one line (LAI-491)', () => {
+  void test('the longest form, with a year, stays on one line in both columns', async () => {
+    const old = new Date(2025, 7, 25, 1, 1, 0).getTime();
+    const OLD: ApiStub = {
+      ...STUB,
+      '/api/v1/projects/laika-core/tasks': {
+        data: [
+          task({
+            id: 'o1',
+            key: 'LC-1',
+            number: 1,
+            title: 'Old',
+            created_at: old,
+            updated_at: old,
+          }),
+          task({
+            id: 'o2',
+            key: 'LC-2',
+            number: 2,
+            title: 'Fresh',
+            created_at: Date.now() - 20 * 60_000,
+            updated_at: Date.now() - 20 * 60_000,
+          }),
+        ],
+        next_cursor: null,
+      },
+    };
+    const h = await open('/list?project=laika-core', OLD);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      const lines = await h.page.evaluate(() =>
+        [...document.querySelectorAll('.list-created time, .list-updated time')].map((t) => ({
+          text: t.textContent ?? '',
+          lines: t.getClientRects().length,
+        })),
+      );
+      assert.ok(
+        lines.some((l) => l.text.includes('2025')),
+        'positive control: a dated-year label is on screen',
+      );
+      for (const l of lines) {
+        assert.equal(l.lines, 1, `"${l.text}" wraps onto ${String(l.lines)} lines`);
+      }
     } finally {
       await h.close();
     }
