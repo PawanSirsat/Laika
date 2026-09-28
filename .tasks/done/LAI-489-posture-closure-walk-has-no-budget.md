@@ -6,9 +6,10 @@ assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 finished: 2026-09-28T19:31:08Z
 started: 2026-09-28T19:22:46Z
+reviewed: 2026-09-28T19:31:08Z
 ---
 
 ## Goal
@@ -126,3 +127,15 @@ load average at **30.6** when it finished.
 defect from LAI-623 with the five-file evidence. **This task was filed first**,
 and its sweep covers all five, so LAI-625 closes as a duplicate when `shell`
 next reaches `master`.
+
+## Review — 2026-09-28T19:31:08Z (CHIEF)
+
+**Accepted.** The same session built and reviewed this, on the owner's
+instruction, in CORE's area. It is recorded as a crossing made on that
+instruction, not as a precedent.
+
+- Every criterion is met.
+- The sweep is a census of all 13 files.
+- The posture check's teeth are shown in both directions.
+- The one "flake" that was a real port collision is reproduced and fixed.
+- The server suite passes at load 30.
