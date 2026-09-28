@@ -1,4 +1,5 @@
 import { ROUTES } from './route-table.ts';
+import { FILTER_KEYS } from './screens/board/filter-keys.ts';
 
 /**
  * Nav links that keep the project you are looking at (LAI-423).
@@ -64,4 +65,40 @@ export function withProjectParam(search: string, projectSlug: string): string {
   const params = new URLSearchParams(search);
   params.set(PROJECT_PARAM, projectSlug);
   return params.toString();
+}
+
+/** The two views of one task list, which share one filter state (SPEC §11.4.1). */
+const TASK_VIEWS: readonly string[] = ['/board', '/list'];
+
+/**
+ * A space tab's `href`, **carrying the filters between Board and List**
+ * (LAI-488).
+ *
+ * SPEC §11.4.1 says the two views are *"the same task list, same filters, same
+ * URL state"*, and switching tab used to drop every filter, because the tab
+ * went through `navHref`, which writes `?project=` and nothing else.
+ *
+ * - Only between `/board` and `/list`. Every other tab is exactly
+ *   `navHref`, so nothing that already works changes.
+ * - Only `FILTER_KEYS` — the one list. Not `sort`, `dir` or `page` (the
+ *   List's own), not `group` (the Board's own), not `task`.
+ */
+export function viewTabHref(
+  path: string,
+  projectSlug: string | undefined,
+  currentPath: string,
+  current: URLSearchParams,
+): string {
+  const base = navHref(path, projectSlug);
+  if (path === currentPath) return base;
+  if (!TASK_VIEWS.includes(path) || !TASK_VIEWS.includes(currentPath)) return base;
+
+  const mark = base.indexOf('?');
+  const carried = new URLSearchParams(mark === -1 ? '' : base.slice(mark + 1));
+  for (const key of FILTER_KEYS) {
+    const value = current.get(key);
+    if (value !== null && value !== '') carried.set(key, value);
+  }
+  const query = carried.toString();
+  return query === '' ? path : `${path}?${query}`;
 }

@@ -197,6 +197,7 @@ function SpaceFrame({
             <ViewTabs
               currentPath={path}
               projectSlug={slug}
+              params={params}
               onNavigate={navigate}
               holds={permissionHolder(orgRole)}
               counts={{ '/meeting-review': pendingReviews }}

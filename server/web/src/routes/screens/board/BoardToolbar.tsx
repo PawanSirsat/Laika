@@ -48,6 +48,11 @@ export interface BoardToolbarProps {
   readonly onReady: (value: boolean) => void;
   readonly onAgentOnly: (value: boolean) => void;
   readonly onGroup: (value: string) => void;
+  /**
+   * False on the List (LAI-488): a table has no swimlanes, so a Group control
+   * there changed a label and nothing else. Absent, not disabled (LAI-082).
+   */
+  readonly showGroup: boolean;
   readonly onClearFilters: () => void;
   /** The four right-hand actions. Each does something real or is not drawn. */
   readonly onInsights: () => void;
@@ -133,6 +138,7 @@ export function BoardToolbar({
   onReady,
   onAgentOnly,
   onGroup,
+  showGroup,
   query,
   onQuery,
   theme,
@@ -438,44 +444,46 @@ export function BoardToolbar({
         )}
       </span>
 
-      <span className="bt-anchor">
-        <button
-          type="button"
-          className={grouped ? 'bt-button bt-button-on' : 'bt-button'}
-          aria-expanded={open === 'group'}
-          aria-haspopup="true"
-          onClick={() => {
-            setOpen((o) => (o === 'group' ? undefined : 'group'));
-          }}
-        >
-          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-            <path d="M12 3 3 8l9 5 9-5-9-5ZM3 14l9 5 9-5" strokeLinejoin="round" />
-          </svg>
-          {grouped ? `Group: ${groupLabel}` : 'Group'}
-        </button>
-        {open === 'group' && (
-          <div className="bt-pop bt-pop-narrow" role="dialog" aria-label="Group by">
-            {GROUPS.map((option) => (
-              <label key={option.value} className="bt-radio">
-                <input
-                  type="radio"
-                  name="bt-group"
-                  checked={group === option.value}
-                  onChange={() => {
-                    onGroup(option.value);
-                    setOpen(undefined);
-                  }}
-                />
-                {option.label}
-              </label>
-            ))}
-            <p className="bt-note">
-              Grouping draws a row per group, each holding the same columns. Cards still move
-              between columns; dragging between rows is not a move.
-            </p>
-          </div>
-        )}
-      </span>
+      {showGroup && (
+        <span className="bt-anchor">
+          <button
+            type="button"
+            className={grouped ? 'bt-button bt-button-on' : 'bt-button'}
+            aria-expanded={open === 'group'}
+            aria-haspopup="true"
+            onClick={() => {
+              setOpen((o) => (o === 'group' ? undefined : 'group'));
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
+              <path d="M12 3 3 8l9 5 9-5-9-5ZM3 14l9 5 9-5" strokeLinejoin="round" />
+            </svg>
+            {grouped ? `Group: ${groupLabel}` : 'Group'}
+          </button>
+          {open === 'group' && (
+            <div className="bt-pop bt-pop-narrow" role="dialog" aria-label="Group by">
+              {GROUPS.map((option) => (
+                <label key={option.value} className="bt-radio">
+                  <input
+                    type="radio"
+                    name="bt-group"
+                    checked={group === option.value}
+                    onChange={() => {
+                      onGroup(option.value);
+                      setOpen(undefined);
+                    }}
+                  />
+                  {option.label}
+                </label>
+              ))}
+              <p className="bt-note">
+                Grouping draws a row per group, each holding the same columns. Cards still move
+                between columns; dragging between rows is not a move.
+              </p>
+            </div>
+          )}
+        </span>
+      )}
 
       <span className="bt-spacer" />
 

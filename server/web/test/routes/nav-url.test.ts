@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
-import { navHref, withProjectParam } from '../../src/routes/nav-url.ts';
+import { navHref, withProjectParam, viewTabHref } from '../../src/routes/nav-url.ts';
 import { ROUTES, spaceTabs } from '../../src/routes/route-table.ts';
 
 const SLUG = 'laika-core';
@@ -118,6 +118,60 @@ void describe('the sidebar actually uses it', () => {
     assert.ok(
       source.includes('navHref('),
       'Sidebar does not call navHref, so nothing carries the project',
+    );
+  });
+});
+
+void describe('viewTabHref — Board and List keep one filter state (LAI-488)', () => {
+  const here = new URLSearchParams(
+    'project=laika-core&priority=p1&assignee=u1&status=review&q=login&sort=key&dir=asc&page=3&group=assignee&task=t1',
+  );
+
+  void test('Board → List carries every filter and search', () => {
+    const href = viewTabHref('/list', 'laika-core', '/board', here);
+    const sent = new URL(href, 'http://x').searchParams;
+    assert.equal(new URL(href, 'http://x').pathname, '/list');
+    assert.equal(sent.get('project'), 'laika-core');
+    for (const [key, value] of [
+      ['priority', 'p1'],
+      ['assignee', 'u1'],
+      ['status', 'review'],
+      ['q', 'login'],
+    ] as const) {
+      assert.equal(sent.get(key), value, `${key} was dropped on the way to the List`);
+    }
+  });
+
+  void test('List → Board carries them back', () => {
+    const sent = new URL(viewTabHref('/board', 'laika-core', '/list', here), 'http://x')
+      .searchParams;
+    assert.equal(sent.get('status'), 'review');
+    assert.equal(sent.get('q'), 'login');
+  });
+
+  void test('carries none of sort, dir, page, group or the open task', () => {
+    const sent = new URL(viewTabHref('/list', 'laika-core', '/board', here), 'http://x')
+      .searchParams;
+    for (const key of ['sort', 'dir', 'page', 'group', 'task']) {
+      assert.equal(sent.has(key), false, `${key} is not a filter and must not travel`);
+    }
+  });
+
+  void test('every other tab is exactly navHref', () => {
+    for (const path of ['/timeline', '/sprints', '/activity']) {
+      assert.equal(viewTabHref(path, 'laika-core', '/board', here), navHref(path, 'laika-core'));
+    }
+    // And leaving the List for another tab carries nothing either.
+    assert.equal(
+      viewTabHref('/timeline', 'laika-core', '/list', here),
+      navHref('/timeline', 'laika-core'),
+    );
+  });
+
+  void test('the tab you are on is navHref too', () => {
+    assert.equal(
+      viewTabHref('/board', 'laika-core', '/board', here),
+      navHref('/board', 'laika-core'),
     );
   });
 });
