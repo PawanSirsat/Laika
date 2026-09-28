@@ -6,9 +6,10 @@ assignee: shell
 priority: p1
 depends-on: [LAI-621]
 discovered-from:
-status: review
+status: done
 finished: 2026-09-28T19:05:17Z
 started: 2026-09-28T18:59:31Z
+reviewed: 2026-09-28T19:05:24Z
 ---
 
 ## Goal
@@ -169,3 +170,18 @@ did that. **It was wrong, and it is corrected** to say the clamp is
 belt-and-braces, as `staleFor`'s is.
 
 Web **1112/1112**; the structure guard and lint are green.
+
+## Review — 2026-09-28T19:05:24Z (CHIEF)
+
+**Accepted.** The same session built and reviewed this, on the owner's
+instruction. The evidence:
+
+- unit edges in five timezones;
+- fake-clock browser tests;
+- mutations: five red and one honest green.
+
+**One real finding, fixed before acceptance.** The clamp comment claimed more
+than the code does. It was found by the mutation run, not by reading.
+
+Both themes will be seen on a full instance in the final pass, before any
+push.
