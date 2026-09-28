@@ -514,3 +514,123 @@ void describe('a board larger than one page', () => {
     }
   });
 });
+
+/*
+ * **The List's sort is URL state** (LAI-485, D-065).
+ *
+ * It was `useState` inside `ListView`, which `BoardScreen` unmounts on every
+ * refetch — every stream tick, Refresh, create and edit — so the reader's sort
+ * snapped back to KEY ▲ whenever anyone touched any task, and a sorted List
+ * could not be linked. The default is newest-updated first, and it is not
+ * written to the URL.
+ */
+const SORTABLE: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/tasks': {
+    data: [
+      task({ id: 's1', key: 'LC-1', number: 1, title: 'Oldest touch', updated_at: 1_000 }),
+      task({ id: 's3', key: 'LC-3', number: 3, title: 'Newest touch', updated_at: 3_000 }),
+      task({ id: 's2', key: 'LC-2', number: 2, title: 'Middle touch', updated_at: 2_000 }),
+    ],
+    next_cursor: null,
+  },
+};
+
+const firstKey = async (h: Harness): Promise<string> =>
+  (await h.page.locator('.list tbody tr').first().locator('.list-key').innerText()).trim();
+
+const sortOf = async (h: Harness, label: string): Promise<string | null> =>
+  h.page.locator('.list thead th', { hasText: label }).first().getAttribute('aria-sort');
+
+void describe('the List sort lives in the URL (LAI-485)', () => {
+  void test('a bare /list is newest-updated first, and says so without writing it', async () => {
+    const h = await open('/list?project=laika-core', SORTABLE);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.match(await firstKey(h), /LC-3/, 'the newest-updated task is not first');
+      assert.equal(await sortOf(h, 'Updated'), 'descending', 'UPDATED does not say it is the sort');
+      assert.doesNotMatch(h.page.url(), /[?&](sort|dir)=/, 'the default was written to the URL');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('clicking a header writes the URL, and a reload keeps the order', async () => {
+    const h = await open('/list?project=laika-core', SORTABLE);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      await h.page
+        .locator('.list thead th', { hasText: 'Key' })
+        .first()
+        .locator('.list-sort')
+        .click();
+      await h.page.waitForURL(/sort=key/, { timeout: 10_000 });
+      assert.match(h.page.url(), /dir=asc/, 'KEY did not start ascending');
+      assert.match(await firstKey(h), /LC-1/);
+
+      await h.page.reload();
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.match(await firstKey(h), /LC-1/, 'a reload lost the sort');
+      assert.equal(await sortOf(h, 'Key'), 'ascending');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a new sort or a new filter goes back to page one', async () => {
+    // A page number from a different ordering, or a different set of rows,
+    // points at arbitrary work.
+    const h = await open('/list?project=laika-core&page=2', PAGED);
+    try {
+      await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
+      assert.match((await h.page.locator('.list-pager-count').innerText()).trim(), /^51–65/);
+
+      await h.page
+        .locator('.list thead th', { hasText: 'Summary' })
+        .first()
+        .locator('.list-sort')
+        .click();
+      await h.page.waitForURL(/sort=title/, { timeout: 10_000 });
+      assert.doesNotMatch(h.page.url(), /[?&]page=/, 'a sort change kept the page');
+
+      await h.page.locator('.list-page-button', { hasText: 'Next' }).click();
+      await h.page.waitForURL(/page=2/, { timeout: 10_000 });
+      // A filter written by the toolbar's search box, not by this screen.
+      await h.page.getByPlaceholder('Search board').fill('task');
+      await h.page.waitForURL(/[?&]q=task/, { timeout: 10_000 });
+      await h.page.waitForFunction(() => !/[?&]page=/.test(location.search), undefined, {
+        timeout: 10_000,
+      });
+      assert.match((await h.page.locator('.list-pager-count').innerText()).trim(), /^1–50/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('sort and page survive a live refresh', async () => {
+    // The defect the owner saw: any refetch remounted the table and reset it.
+    const h = await open('/list?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
+      await h.page
+        .locator('.list thead th', { hasText: 'Key' })
+        .first()
+        .locator('.list-sort')
+        .click();
+      await h.page.waitForURL(/sort=key/, { timeout: 10_000 });
+      await h.page.locator('.list-page-button', { hasText: 'Next' }).click();
+      await h.page.waitForURL(/page=2/, { timeout: 10_000 });
+      const before = await firstKey(h);
+
+      await h.page.locator('button[title="Refresh the board"]').click();
+      await h.page.waitForTimeout(600);
+      await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
+
+      assert.match((await h.page.locator('.list-pager-count').innerText()).trim(), /^51–65 of 65$/);
+      assert.equal(await firstKey(h), before, 'the refresh moved the reader');
+      assert.equal(await sortOf(h, 'Key'), 'ascending', 'the refresh reset the sort');
+    } finally {
+      await h.close();
+    }
+  });
+});

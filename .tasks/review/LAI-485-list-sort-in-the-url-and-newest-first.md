@@ -2,11 +2,13 @@
 id: LAI-485
 title: "The List's sort lives in the URL, looks clickable, and starts newest-first"
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-621]
 discovered-from:
-status: backlog
+status: review
+finished: 2026-09-28T18:58:50Z
+started: 2026-09-28T18:50:57Z
 ---
 
 ## Goal
@@ -57,28 +59,28 @@ Measured on `shell`, since LAI-621 rebuilt these files and `master` is behind
 
 ## Acceptance criteria
 
-- [ ] **Sort is in the URL** as `sort=<key>` and `dir=asc|desc`, written through
+- [x] **Sort is in the URL** as `sort=<key>` and `dir=asc|desc`, written through
       the screen's existing `setParam`, which replaces history rather than
       pushing. The keys are the `SortKey` values in `list-derive.ts`.
-- [ ] **The default is `updated`, descending, and is not written to the URL.**
+- [x] **The default is `updated`, descending, and is not written to the URL.**
       A bare `/list?project=…` renders newest-updated first. Clicking back to
       the default removes both keys rather than writing them.
-- [ ] **The URL is untrusted input.** An unknown `sort`, an unknown `dir`, or a
+- [x] **The URL is untrusted input.** An unknown `sort`, an unknown `dir`, or a
       `dir` without a `sort` renders the default and does not throw. Each case
       is unit-tested.
-- [ ] **`page=` is in the URL as well.** It is 1-based, omitted on page 1, and
+- [x] **`page=` is in the URL as well.** It is 1-based, omitted on page 1, and
       clamped like `ListView` already clamps. It **resets to 1 whenever the
       sort or any filter changes**, because a page number from a different
       ordering points at arbitrary rows.
-- [ ] **Sort and page survive a live refresh.** Browser test: set a non-default
+- [x] **Sort and page survive a live refresh.** Browser test: set a non-default
       sort and page 2, trigger a refetch (Refresh, or a stubbed stream event),
       and assert that the first row, the arrow and the page are unchanged.
       **This is the defect the owner saw.** Show the test red against the
       `useState` version before calling it done.
-- [ ] **First-click direction follows the data.** CREATED and UPDATED start
+- [x] **First-click direction follows the data.** CREATED and UPDATED start
       descending (newest first), every other column starts ascending, and a
       second click on the same column flips it.
-- [ ] **Orderings a reader would expect:**
+- [x] **Orderings a reader would expect:**
   - status in workflow order: `backlog → todo → in_progress → review → done →
     cancelled`;
   - sprints in their own order, not as strings: `S2` before `S10`, and no sprint
@@ -87,19 +89,19 @@ Measured on `shell`, since LAI-621 rebuilt these files and `master` is behind
   - **ties broken by key number**, so any sort is deterministic.
   Each is a unit test in `server/web/test/routes/screens/list/list-derive.test.ts`.
   Today that file tests only `key`.
-- [ ] **Headers read as clickable**, in both themes, with existing tokens only
+- [x] **Headers read as clickable**, in both themes, with existing tokens only
       (D-020):
   - every sortable header shows a faint, neutral sort glyph at rest;
   - the active column's label is at full strength with an accent ▲/▼;
   - hover gives the header a background, not just a colour shift;
   - `:focus-visible` shows a visible ring;
   - `title="Sort by <Column>"`.
-- [ ] **`aria-sort` stays correct**: the sorted column says `ascending` or
+- [x] **`aria-sort` stays correct**: the sorted column says `ascending` or
       `descending`, and the others say `none`.
-- [ ] **Browser tests:** clicking a header writes the URL; a reload keeps the
+- [x] **Browser tests:** clicking a header writes the URL; a reload keeps the
       order; no params gives newest-updated first. There are none for any of
       this today; `list-view.test.ts` does not click a header.
-- [ ] Full gate: repo root, all three `EXIT 0`, each status captured on its own
+- [x] Full gate: repo root, all three `EXIT 0`, each status captured on its own
       line.
 
 ## Notes / context
@@ -114,3 +116,54 @@ Measured on `shell`, since LAI-621 rebuilt these files and `master` is behind
 - **Do not add manual ordering to the List.** D-060 says the List's sort is
   untouched by `position`, and a "manual" option is a separate question.
 - **No new dependencies, no new tokens.**
+
+## Built — 2026-09-28T18:58:50Z
+
+Built by the CHIEF session **on the owner's direct instruction**, on branch
+`build`.
+
+- **`list-derive.ts`:**
+  - `readSort` / `sortParams` / `nextSort` / `firstDirection` /
+    `readPage` / `pageParam`.
+  - `DEFAULT_SORT` is updated, descending, and never written to the URL.
+  - `sortRows` compares per column, with status in workflow order, sprints
+    by number, and Unassigned last, and breaks ties by key ascending in
+    either direction.
+- **`ListView.tsx`:**
+  - sort and page are **props from the URL**, not `useState`, so a remount
+    (every refetch) no longer resets them;
+  - `title="Sort by …"` on every header;
+  - the active arrow is `.list-sort-arrow`.
+- **`BoardScreen.tsx`:**
+  - `setParams` writes several keys in one history entry, since two
+    `setParam` calls would undo each other;
+  - one effect resets `page` whenever `filterSignature` changes, whichever
+    writer changed it (the toolbar, the space bar, WORKING NOW).
+- **`board/filter-keys.ts` (new):** the one exported list of filter keys,
+  which LAI-487 extends. Mirrored by `filter-keys.test.ts`, which checks the
+  list against the keys `BoardScreen` really reads.
+- **`list.css`:**
+  - a resting `↕` via `::after` on `aria-sort='none'`, so it never enters
+    the accessible name;
+  - a hover background, a `:focus-visible` ring, full-strength text on the
+    sorted column, and an accent arrow;
+  - existing tokens only.
+
+**Red first.** The three browser tests failed against the `useState` version
+before any code changed: *"the newest-updated task is not first"*, and the
+URL waits timed out.
+
+Mutations, each typechecking, restored by checksum, all **red on the named
+test**:
+
+- no tie-breaker;
+- status alphabetical;
+- Unassigned among the names;
+- sprint compared as a string;
+- a junk `sort` trusted;
+- default KEY ascending;
+- a header click never reaches the URL;
+- the page reset disabled.
+
+Web suite on `build`: **1091/1091** before the page-reset test, which was
+added and passes. The structure guard is green, and so is lint.

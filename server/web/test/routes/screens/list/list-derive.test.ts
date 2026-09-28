@@ -8,9 +8,16 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  DEFAULT_SORT,
   LIST_COLUMNS,
   listRows,
+  nextSort,
+  pageParam,
+  readPage,
+  readSort,
+  sortParams,
   sortRows,
+  type SortKey,
 } from '../../../../src/routes/screens/list/list-derive.ts';
 import type { Member, Task } from '../../../../src/api/tasks.ts';
 
@@ -192,5 +199,175 @@ void describe('sorting', () => {
       sortRows(rows, byId, 'key', false).map((r) => r.key),
       ['LC-2', 'LC-1'],
     );
+  });
+});
+
+/* ------------------------------------------------------------ LAI-485 sort */
+
+void describe('every column sorts the way a person reads it (LAI-485)', () => {
+  const sprints = new Map([
+    ['sA', { label: 'S2' }],
+    ['sB', { label: 'S10' }],
+  ]);
+  const people = new Map<string, Member>([
+    ['u1', { user_id: 'u1', name: 'Zed Adams', email: 'z@x', role: 'member' } as Member],
+    ['u2', { user_id: 'u2', name: 'Amy Burke', email: 'a@x', role: 'member' } as Member],
+  ]);
+  const tasks = [
+    task({
+      id: 'a',
+      key: 'LC-4',
+      status: 'done',
+      priority: 'p3',
+      assignee_id: null,
+      sprint_id: null,
+      title: 'beta',
+      created_at: 40,
+      updated_at: 400,
+    }),
+    task({
+      id: 'b',
+      key: 'LC-2',
+      status: 'backlog',
+      priority: 'p1',
+      assignee_id: 'u1',
+      sprint_id: 'sB',
+      title: 'Alpha',
+      created_at: 20,
+      updated_at: 200,
+    }),
+    task({
+      id: 'c',
+      key: 'LC-3',
+      status: 'cancelled',
+      priority: 'p2',
+      assignee_id: 'u2',
+      sprint_id: 'sA',
+      title: 'gamma',
+      created_at: 30,
+      updated_at: 300,
+    }),
+    task({
+      id: 'd',
+      key: 'LC-1',
+      status: 'todo',
+      priority: 'p1',
+      assignee_id: null,
+      sprint_id: 'sA',
+      title: 'alpha',
+      created_at: 10,
+      updated_at: 100,
+    }),
+  ];
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const rows = listRows({ tasks, byId, members: people, sprintLabels: sprints, now: NOW });
+  const keys = (key: SortKey, ascending = true): string[] =>
+    sortRows(rows, byId, key, ascending).map((r) => r.key);
+
+  void test('key is numeric', () => {
+    assert.deepEqual(keys('key'), ['LC-1', 'LC-2', 'LC-3', 'LC-4']);
+  });
+
+  void test('title ignores case, and ties break by key', () => {
+    // "Alpha" and "alpha" tie; LC-1 before LC-2 by key.
+    assert.deepEqual(keys('title'), ['LC-1', 'LC-2', 'LC-4', 'LC-3']);
+  });
+
+  void test('status is the workflow, not the alphabet', () => {
+    // Alphabetical would be backlog, cancelled, done, todo.
+    assert.deepEqual(keys('status'), ['LC-2', 'LC-1', 'LC-4', 'LC-3']);
+  });
+
+  void test('priority p1 first, and ties break by key', () => {
+    assert.deepEqual(keys('priority'), ['LC-1', 'LC-2', 'LC-3', 'LC-4']);
+  });
+
+  void test('Unassigned sorts after every name when ascending', () => {
+    // Amy, Zed, then the two unassigned by key.
+    assert.deepEqual(keys('assignee'), ['LC-3', 'LC-2', 'LC-1', 'LC-4']);
+  });
+
+  void test('sprints sort by number — S2 before S10 — and no sprint last', () => {
+    assert.deepEqual(keys('sprint'), ['LC-1', 'LC-3', 'LC-2', 'LC-4']);
+  });
+
+  void test('created and updated sort by the stamp; descending is newest first', () => {
+    assert.deepEqual(keys('created'), ['LC-1', 'LC-2', 'LC-3', 'LC-4']);
+    assert.deepEqual(keys('updated', false), ['LC-4', 'LC-3', 'LC-2', 'LC-1']);
+  });
+
+  void test('ties break by key ascending whatever the direction', () => {
+    // LC-1 and LC-2 are both p1: descending by priority still lists them 1, 2.
+    const desc = keys('priority', false);
+    assert.deepEqual(desc.slice(-2), ['LC-1', 'LC-2']);
+  });
+});
+
+void describe('the sort in the URL (LAI-485, D-065)', () => {
+  const q = (s: string) => new URLSearchParams(s);
+
+  void test('no params is newest-updated first', () => {
+    assert.deepEqual(readSort(q('')), { key: 'updated', ascending: false });
+    assert.deepEqual(DEFAULT_SORT, { key: 'updated', ascending: false });
+  });
+
+  void test('the default is never written; anything else is', () => {
+    assert.deepEqual(sortParams(DEFAULT_SORT), { sort: undefined, dir: undefined });
+    assert.deepEqual(sortParams({ key: 'updated', ascending: true }), {
+      sort: 'updated',
+      dir: 'asc',
+    });
+    assert.deepEqual(sortParams({ key: 'key', ascending: true }), { sort: 'key', dir: 'asc' });
+  });
+
+  void test('a written sort reads back as itself', () => {
+    for (const key of LIST_COLUMNS.map((c) => c.key)) {
+      for (const ascending of [true, false]) {
+        const p = sortParams({ key, ascending });
+        const back = readSort(
+          q(
+            new URLSearchParams(
+              Object.entries(p).filter(([, v]) => v !== undefined) as [string, string][],
+            ).toString(),
+          ),
+        );
+        assert.deepEqual(
+          back,
+          { key, ascending },
+          `${key} ${String(ascending)} did not round-trip`,
+        );
+      }
+    }
+  });
+
+  void test('the URL is untrusted: junk is the default, never a throw', () => {
+    assert.deepEqual(readSort(q('sort=bogus&dir=asc')), DEFAULT_SORT);
+    assert.deepEqual(readSort(q('dir=asc')), DEFAULT_SORT, 'a dir with no sort');
+    assert.deepEqual(readSort(q('sort=__proto__')), DEFAULT_SORT);
+  });
+
+  void test('a known sort with a bad or missing dir starts the column its own way', () => {
+    assert.deepEqual(readSort(q('sort=key&dir=sideways')), { key: 'key', ascending: true });
+    assert.deepEqual(readSort(q('sort=created')), { key: 'created', ascending: false });
+  });
+
+  void test('first click: dates start newest first, everything else A to Z; a second click flips', () => {
+    assert.deepEqual(nextSort(DEFAULT_SORT, 'created'), { key: 'created', ascending: false });
+    assert.deepEqual(nextSort(DEFAULT_SORT, 'title'), { key: 'title', ascending: true });
+    assert.deepEqual(nextSort({ key: 'title', ascending: true }, 'title'), {
+      key: 'title',
+      ascending: false,
+    });
+    assert.deepEqual(nextSort(DEFAULT_SORT, 'updated'), { key: 'updated', ascending: true });
+  });
+
+  void test('page is 1-based in the URL, omitted on page one, and junk is page one', () => {
+    assert.equal(readPage(q('')), 0);
+    assert.equal(readPage(q('page=3')), 2);
+    assert.equal(readPage(q('page=0')), 0);
+    assert.equal(readPage(q('page=-2')), 0);
+    assert.equal(readPage(q('page=two')), 0);
+    assert.equal(pageParam(0), undefined);
+    assert.equal(pageParam(2), '3');
   });
 });
