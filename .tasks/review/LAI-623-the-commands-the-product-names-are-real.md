@@ -56,9 +56,9 @@ relies on it, so no build step is required; `dist/` is preferred when present.
       and is filed separately, not edited.
 - [x] Tests in the sandbox-HOME style of `cli/test/plugin-install.test.ts`,
       with negative controls asserted to fail.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
-      **`lint` and `format` exit `0`; `test` exits `1`, and not on this work.**
-      Left unticked rather than explained away — see "The gate" below.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+      **Ticked 2026-09-29 00:50, after LAI-489 landed.** It was submitted
+      unticked — see "The gate" below, which is kept as written.
 
 ## Notes / context
 
@@ -66,7 +66,7 @@ relies on it, so no build step is required; `dist/` is preferred when present.
 - `private: true` stays: flipping it invites an accidental publish and does not
   make `npx laika` work.
 
-## The gate
+## The gate (as submitted — superseded, kept as the record)
 
 `pnpm lint` → `0`. `pnpm format` → `0`. `pnpm test` → `1`.
 
@@ -176,3 +176,39 @@ control, committed separately as `[LAI-622]`, and `structure.test.ts` is 20/20.
 **Thirteen tests, all controls mutation-verified.** Final gate: `lint 0`,
 `format 0`, `test 1` — two `server/test/tooling/` timeouts, the LAI-625 flake,
 `cli` and `server/web` both `# fail 0`.
+
+## The gate, after merging `master` — all three `EXIT 0`
+
+The section above is left exactly as it was written, because it is the record
+of what was true at submission and of the reasoning that left a criterion
+unticked. This is the later measurement, not a correction of it.
+
+`master` brought **LAI-489**, CORE's fix for the same tooling tests. Re-run on
+this branch with it merged:
+
+```
+TEST 0
+LINT 0
+FMT  0
+  cli test:        # fail 0
+  server/web test: # fail 0
+  server test:     Tests  2040 passed (2040)
+```
+
+**My LAI-625 was a duplicate of LAI-489, which was filed first and wins**
+(CLAUDE.md §3). Closed in its own commit, after reading LAI-489 to confirm it
+covers all five files rather than taking the claim on trust.
+
+**And my diagnosis was right about four of the five and wrong about the
+fifth.** I attributed all of them to load. `build.test.ts` was not load: it
+bound a **fixed port, 3187**, and a concurrent gate's server answered its
+health check — the §4.3 hazard, fixed with a free port and an `uptime_ms`
+identity check.
+
+The filing did flag it: LAI-625's third criterion asked for `build.test.ts` to
+be looked at separately *if its failure turned out not to be a budget problem*,
+because it reported `setup failed: 422` rather than a timeout. **The one data
+point that did not fit the pattern was the one worth separating**, and writing
+it down as an open question rather than folding it into the theory is what made
+it findable. It would have been easy to call five failures one cause and be
+four-fifths right.
