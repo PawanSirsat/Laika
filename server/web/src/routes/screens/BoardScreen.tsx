@@ -11,7 +11,7 @@ import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { useEvents } from '../../api/use-events.ts';
-import { listSprints, type Sprint } from '../../api/sprints.ts';
+import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
 import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
@@ -784,7 +784,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {editingColumn !== undefined && (
         <ColumnDialog
           column={editingColumn}
-          all={columns.visible}
+          /*
+           * **Every column, not just the drawn ones** (LAI-617). This dialog
+           * is configuration: it has to see who currently owns each status in
+           * order to say what taking one would cost. `visible` excludes the
+           * hidden `Cancelled` column — so taking `cancelled` warned nothing
+           * and would have emptied it silently — and now also excludes any
+           * column already holding nothing.
+           */
+          all={columns.state.columns}
           taskCount={shownTasks.filter((t) => editingColumn.statuses.includes(t.status)).length}
           busy={columns.busy}
           error={columns.error}
@@ -1073,25 +1081,34 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 ? {
                     onReorder: (ids: readonly string[]) => {
                       /*
-                       * **Put the hidden columns back before sending.**
+                       * **Put back everything the board did not draw.**
                        *
                        * The board draws `columns.visible`, so a drag can only
                        * ever produce the visible order — but `reorderColumns`
                        * requires *every* column of the project exactly once,
                        * and refuses anything else so a stale client cannot
-                       * silently drop a lane.
+                       * silently drop a lane. The check is right; the caller
+                       * was sending a subset.
                        *
-                       * Every default board has a hidden `Cancelled` column, so
-                       * without this line **every** drag was refused with
-                       * "Send every column of this space exactly once". The
-                       * check is right; the caller was sending a subset.
+                       * **The complement, not a list of the reasons.** This
+                       * read `filter((c) => c.hidden)`, which was complete when
+                       * hidden was the only way out of `visible`. LAI-617 added
+                       * a second — a column owning no statuses — and a caller
+                       * enumerating the exclusions cannot grow with them. The
+                       * owner's board has two such columns, so **every** drag
+                       * on it was refused `expected 7, received 5`, exactly as
+                       * `Cancelled` once broke every drag on every board.
+                       *
+                       * Asking "what did I not send?" is stable under a third
+                       * reason nobody has thought of yet.
                        */
-                      const hidden = columns.state.columns
-                        .filter((c) => c.hidden)
+                      const sent = new Set(ids);
+                      const rest = columns.state.columns
+                        .filter((c) => !sent.has(c.id))
                         .sort((a, b) => a.position - b.position)
                         .map((c) => c.id);
 
-                      void columns.reorder([...ids, ...hidden]);
+                      void columns.reorder([...ids, ...rest]);
                     },
                     onAddColumn: () => {
                       // **Ask, then create** (LAI-291). This used to call
@@ -1149,6 +1166,18 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         <TaskDrawerContent>
           <TaskDetailPanel
             slug={slug}
+            sprints={sprints}
+            /*
+             * Assigning to a sprint is member+ (§3.2) — the same rule the
+             * Sprints screen uses, asked through the same helper rather than
+             * re-derived here.
+             */
+            maySetSprint={
+              me !== undefined &&
+              boardProjectId !== undefined &&
+              canAssignToSprints(me.org_role, boardProjectId, me.memberships)
+            }
+            columns={columns.state.columns}
             meId={me?.id}
             mayAssign={mayCreate}
             mayEdit={mayCreate}

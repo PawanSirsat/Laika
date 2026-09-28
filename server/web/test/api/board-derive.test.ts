@@ -10,15 +10,17 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  ALL_STATUSES,
   blockedState,
   blockers,
+  boardStatusLabel,
   byIdIndex,
   groupByColumn,
   hideOldDone,
   staleFor,
 } from '../../src/api/board-derive.ts';
 import type { BoardColumn } from '../../src/api/columns.ts';
-import type { Task } from '../../src/api/tasks.ts';
+import type { Task, TaskStatus } from '../../src/api/tasks.ts';
 
 function task(over: Partial<Task> & { id: string }): Task {
   return {
@@ -341,5 +343,49 @@ void describe('staleFor — how long, in the fewest characters (LAI-157)', () =>
     // says which one it can actually see.
     assert.equal(staleFor(10_000, 0), 'now');
     assert.equal(staleFor(9 * DAY, 0), 'now');
+  });
+});
+
+void describe('boardStatusLabel — the column names the status (LAI-617)', () => {
+  const col = (name: string, statuses: readonly TaskStatus[]) => ({ name, statuses });
+
+  void test('a column owning one status lends it its name', () => {
+    /*
+     * A board whose `Review` column is renamed `Testing` showed cards reading
+     * "Review" under a header reading "TESTING". The column is renameable; the
+     * status is a fixed enum the REST API, the policy layer and the MCP tools
+     * depend on by literal value — `laika_finish_task` moves a task to
+     * `review`. So the name is the label and the enum stays the value.
+     */
+    const columns = [col('Testing', ['review']), col('Done', ['done'])];
+    assert.equal(boardStatusLabel('review', columns), 'Testing');
+    assert.equal(boardStatusLabel('done', columns), 'Done');
+  });
+
+  void test('a column owning several keeps their own names', () => {
+    /*
+     * The shipped default merges `todo` and `backlog` into one `To do`
+     * column. Substituting the column name there would render two different
+     * statuses identically and hide a real difference — so only the lossless
+     * case substitutes.
+     */
+    const columns = [col('To do', ['todo', 'backlog'])];
+    assert.equal(boardStatusLabel('backlog', columns), 'Backlog');
+    assert.equal(boardStatusLabel('todo', columns), 'To do');
+  });
+
+  void test('an unowned status falls back to its own name', () => {
+    // Nothing owns `cancelled` here — the label must still be a word, not
+    // `undefined`, because a hidden column may be outside the list passed in.
+    assert.equal(boardStatusLabel('cancelled', [col('To do', ['todo'])]), 'Cancelled');
+    assert.equal(boardStatusLabel('review', []), 'Review');
+  });
+
+  void test('the substitution never invents a status value', () => {
+    // The label changes; the enum does not. Renaming a column must not make
+    // `review` unreachable, or an agent handing work back would fail.
+    const columns = [col('Testing', ['review'])];
+    assert.equal(boardStatusLabel('review', columns), 'Testing');
+    assert.ok((ALL_STATUSES as readonly string[]).includes('review'), 'review left the enum');
   });
 });
