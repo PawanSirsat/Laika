@@ -1497,7 +1497,10 @@ rendering choice, never a different query path.
 **List.** The same tasks as a sortable, densely readable table: key, title,
 status, assignee, priority, dependency count, updated. Sortable on every column,
 multi-filter on status / assignee / priority / ready / blocked. This is the view
-for triage and for boards too large to drag.
+for triage and for boards too large to drag. It opens **newest-updated first**,
+and its sort is URL state like the filters (D-065). Created and updated read
+`just now` / `N min ago` / `N h ago` for a day, then a date and time, with the
+full timestamp on hover.
 
 Both views:
 

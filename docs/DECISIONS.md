@@ -3479,3 +3479,56 @@ not.
 ### Revisit when
 
 Never — this is a withdrawal. The standing correction is the rule above.
+
+---
+
+## D-065 — The List opens newest-updated first and keeps its sort in the URL.
+## Timestamps are relative for a day, then a date and time.
+
+**2026-09-28, the owner, from screenshots of `/list` on the deployed
+instance.** Carried by LAI-485 (sort), LAI-486 (time), LAI-487 (filters) and
+LAI-488 (Board ↔ List alignment).
+
+### What was decided
+
+1. **Default order is `updated`, descending.** A bare `/list` shows the work
+   that moved most recently at the top. SPEC §11.4.1 said the List is
+   *"sortable on every column"* and never said which column it opens on, so
+   this fills a gap rather than reversing anything.
+2. **The sort is URL state**, like the filters: `sort=`, `dir=`, `page=`. The
+   default is left out of the URL.
+   - This is §11.4.1's *"reflected in the URL so a filtered board is
+     linkable"*, applied to the one piece of List state it did not reach.
+   - It also fixes a defect: the sort was component state, and every live
+     refresh remounted the table and reset it to KEY ▲.
+3. **Timestamps read `just now`, `N min ago`, `N h ago` for 24 hours, then
+   `27 Sep, 14:05`**, with the year added when it is not this year.
+   - Day-month order, 24-hour clock, in the viewer's timezone.
+   - The full timestamp shows on hover.
+   - The owner chose this form from a preview over two alternatives: a
+     "Yesterday" step, and relative for a week.
+4. **Under an hour is drawn in the accent colour. Amber "stale" marks open
+   work only**, meaning not `done` or `cancelled`, last updated more than five
+   days ago.
+   - Before this, every Done task older than five days was amber, which
+     marked finished work as neglected.
+5. **Board and List keep the same filters across a tab switch.** Controls
+   that cannot apply to a table (Group, the card-layout settings, "Show as
+   board") are **hidden** on the List rather than left doing nothing.
+6. **A click on a row opens the task.** Clicking a cell does not filter by its
+   value. The owner considered that option and declined it: one behaviour per
+   row, fewer mis-clicks in a dense table.
+
+### What this does not decide
+
+- **The board card keeps its compact `2h`.** It has no room for a date, and
+  the request was about the List.
+- **Filters stay single-value.** Choosing *In progress* **and** *Review* at
+  once needs a server parameter that takes a list, which would be a CORE task.
+  It was not part of the request. CHIEF has suggested it to the owner, and it
+  is not decided here either way.
+
+### Revisit when
+
+The owner asks for multi-select filters, or for the card footer to show a
+date.

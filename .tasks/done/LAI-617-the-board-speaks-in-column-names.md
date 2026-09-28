@@ -8,7 +8,8 @@ depends-on: []
 discovered-from:
 started: 2026-09-23T06:34:19Z
 finished: 2026-09-23T06:34:19Z
-status: review
+status: done
+reviewed: 2026-09-28T17:49:35Z
 ---
 
 ## Goal
@@ -94,3 +95,36 @@ three times in isolation and in the full gate. The first hypothesis — an
 untracked `.laika-local/` — was **disproven**: the test passes with that
 directory present. Most likely it raced a concurrent `pnpm build`. Nothing was
 changed to address it.
+
+## Review — 2026-09-28T17:49:35Z (CHIEF)
+
+**Accepted.** Merged as part of `shell` up to `df23d67`.
+
+**Verified on a private instance** (port 3977, 251 tasks, `Review` renamed
+`Testing`, the owner's configuration):
+
+- The drawer pill reads *Testing*, and the drawer's status select offers
+  *Testing*. The two-status *To do* column keeps *Backlog* and *To do*, so
+  the lossless-only rule holds.
+- Taking `review` into *In progress* (`PUT … statuses`, 200) emptied
+  *Testing*, and **the lane disappeared**: To do / In progress / Done.
+- The column dialog warned *"takes it from Cancelled, which then holds nothing
+  and leaves the board"*, the hidden column included.
+
+**Mutations**, each typechecking and restored by checksum:
+
+- A single-status column no longer lends its name: `board-derive.test.ts`
+  **red**.
+- A status-less column drawn as a lane: `column-reorder.test.ts` **red** (the
+  drag and keyboard routes both).
+  - LAI-620's fixture is what guards this. LAI-617 itself added no test for
+    the lane filter, the dialog warning, or the dialog seeing hidden columns.
+    None of its criteria asked for one, so this is recorded, not sent back.
+
+**Process, recorded:** the task file was created in the same commit as the code,
+straight into `review/`, with `started` = `finished`. It was built from a
+direct owner request, but §2 gives builders no file-after exception. The
+09-23 log also says *"shipped and deployed"*, which was before any review.
+
+**Nit, not filed:** `ColumnDialogProps.all` carries two stacked doc comments;
+the first is orphaned.
