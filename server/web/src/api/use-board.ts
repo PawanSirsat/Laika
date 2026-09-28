@@ -7,6 +7,15 @@ export interface BoardState {
   readonly status: 'loading' | 'ready' | 'error';
   readonly tasks: readonly Task[];
   readonly error: unknown;
+  /**
+   * Set when the page cap was reached and the server still had more.
+   *
+   * **A truncated board must never look like a whole one** (LAI-621). Every
+   * count on screen is derived from `tasks`, so a silent stop makes the lane
+   * headers state numbers that are not the project's — `TO DO 96` meaning
+   * "96 among the ones we happened to load". The screen says so instead.
+   */
+  readonly truncated: boolean;
 }
 
 export interface UseBoard {
@@ -35,11 +44,60 @@ export interface UseBoard {
  * subscription will call, and it is wired to a visible control rather than a
  * timer nobody remembers to remove.
  */
+/** Rows per request. The server's own maximum, so this is the fewest calls. */
+const PAGE_SIZE = 200;
+
+/**
+ * How many pages we will follow before stopping and saying so.
+ *
+ * 25 × 200 is 5,000 tasks — far past any board we have seen, and bounded so a
+ * cursor that never terminates cannot spin the screen forever. Reaching it is
+ * reported, never swallowed.
+ */
+const MAX_PAGES = 25;
+
+/**
+ * Every task, not the first page of them (LAI-621).
+ *
+ * `listTasks` is cursor-paginated and this asked for `limit: 200` **once**,
+ * taking the first page as the whole answer. Measured on the owner's live
+ * board: 251 tasks existed, 200 were drawn, and the 51 missing ones were
+ * invisible on the board, in the List, and in every lane count — with nothing
+ * on screen to suggest it.
+ *
+ * The board needs the whole set rather than a window, because it derives
+ * counts and groups from it: a partial list does not show less, it shows
+ * *wrong*.
+ */
+async function fetchEveryPage(
+  slug: string,
+  filter: TaskFilter,
+  signal: AbortSignal,
+): Promise<{ readonly tasks: readonly Task[]; readonly truncated: boolean }> {
+  const tasks: Task[] = [];
+  let cursor: string | undefined;
+
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const answer = await listTasks(
+      slug,
+      { ...filter, limit: PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) },
+      signal,
+    );
+    tasks.push(...answer.data);
+
+    if (answer.next_cursor === null) return { tasks, truncated: false };
+    cursor = answer.next_cursor;
+  }
+
+  return { tasks, truncated: true };
+}
+
 export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard {
   const [state, setState] = useState<BoardState>({
     status: 'loading',
     tasks: [],
     error: null,
+    truncated: false,
   });
   const [attempt, setAttempt] = useState(0);
   const [movingId, setMovingId] = useState<string | undefined>(undefined);
@@ -66,13 +124,13 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
     const controller = new AbortController();
     setState((s) => ({ ...s, status: 'loading' }));
 
-    listTasks(slug, { ...filter, limit: 200 }, controller.signal)
-      .then((page) => {
-        setState({ status: 'ready', tasks: page.data, error: null });
+    fetchEveryPage(slug, filter, controller.signal)
+      .then(({ tasks, truncated }) => {
+        setState({ status: 'ready', tasks, error: null, truncated });
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        setState({ status: 'error', tasks: [], error: cause });
+        setState({ status: 'error', tasks: [], error: cause, truncated: false });
       });
 
     return () => {
