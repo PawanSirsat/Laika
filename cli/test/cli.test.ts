@@ -51,7 +51,7 @@ void describe('the CLI is actually there', () => {
     }
 
     assert.equal(code, 1, 'no command should be a usage error, not a success');
-    assert.match(output, /npx laika init/, 'usage does not mention the one command it has');
+    assert.match(output, /laika init/, 'usage does not mention the one command it has');
   });
 
   void test('an unknown command says so rather than doing something', () => {

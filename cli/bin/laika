@@ -1,0 +1,68 @@
+#!/bin/sh
+# laika — the CLI, runnable from a checkout (LAI-623).
+#
+# `npx laika init` was printed in five places and could not work: the package is
+# `private: true` and unpublished, so on a clean machine `npx laika` resolves to
+# an unrelated public package or fails. Publishing would need the owner's npm
+# credentials, a scope (`laika` is taken), and a release step — and would still
+# not remove the checkout, because `laika-claude` needs `--plugin-dir` and the
+# heartbeat hooks live there too.
+#
+# So the checkout is the distribution, and `plugin/scripts/install.sh` puts this
+# on PATH beside `laika-claude`.
+set -eu
+
+# --------------------------------------------------------------------------
+# Where this script really lives.
+#
+# **Resolved through symlinks first.** On PATH this file IS a symlink, and a
+# bare `dirname "$0"` would name the symlink's directory — the defect that cost
+# two rounds in LAI-616 and LAI-482, where it produced a --plugin-dir of
+# ~/.local and an installer hint pointing at a file that was not there. BSD
+# readlink has no -f, so the loop is the portable way.
+# --------------------------------------------------------------------------
+SELF="$0"
+while [ -L "$SELF" ]; do
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+done
+CLI_DIR="$(cd "$(dirname "$SELF")/.." && pwd)"
+
+# Built output when it exists, source otherwise. Node 22.18+ strips types
+# unflagged, and cli/test/cli.test.ts already runs the source directly — so a
+# checkout works with no build, and a built one takes the same path a published
+# package would.
+if [ -r "$CLI_DIR/dist/index.js" ]; then
+  ENTRY="$CLI_DIR/dist/index.js"
+elif [ -r "$CLI_DIR/src/index.ts" ]; then
+  ENTRY="$CLI_DIR/src/index.ts"
+else
+  echo "laika: no CLI at $CLI_DIR — is the checkout still there?" >&2
+  exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  echo "laika: needs Node 22.18 or newer, and node is not on your PATH." >&2
+  exit 1
+fi
+
+# Running TypeScript directly needs 22.18. Say so, rather than letting node
+# fail on a type annotation — which reads like a broken install.
+case "$ENTRY" in
+  *.ts)
+    VERSION="$(node -p 'process.versions.node' 2>/dev/null || echo 0)"
+    MAJOR="${VERSION%%.*}"
+    REST="${VERSION#*.}"
+    MINOR="${REST%%.*}"
+    if [ "${MAJOR:-0}" -lt 22 ] || { [ "${MAJOR:-0}" -eq 22 ] && [ "${MINOR:-0}" -lt 18 ]; }; then
+      echo "laika: Node $VERSION cannot run this directly — 22.18 or newer strips types." >&2
+      echo "       Upgrade Node, or build once:  pnpm -C \"$CLI_DIR\" build" >&2
+      exit 1
+    fi
+    ;;
+esac
+
+exec node "$ENTRY" "$@"

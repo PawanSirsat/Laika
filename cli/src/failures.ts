@@ -22,7 +22,19 @@ export type FailureKind =
   /** Signed in, but this account may not mint a token. */
   | 'forbidden'
   /** Signed in, minted nothing, because the instance refused for another reason. */
-  | 'mint_failed';
+  | 'mint_failed'
+  /**
+   * A stored **token** was refused — distinct from `refused`, which is about an
+   * email and password.
+   *
+   * Sharing one message would send somebody whose token was revoked off to
+   * check a password that was never involved: `whoami` has no credentials to
+   * be wrong. That is the same collapse as LAI-090 and LAI-224, which is why
+   * these are two kinds rather than one with a different caller.
+   */
+  | 'token_refused'
+  /** The token is good; the account behind it may not read that. */
+  | 'token_forbidden';
 
 export interface Failure {
   readonly kind: FailureKind;
@@ -68,6 +80,22 @@ function describe(kind: FailureKind, detail?: string): string {
         'account that cannot act on the board cannot mint one either.',
       ].join('\n');
 
+    case 'token_refused':
+      return [
+        `Your token was refused${detail === undefined ? '' : ` (${detail})`}.`,
+        '',
+        'It may have been revoked, rotated or expired. Mint a new one on the',
+        "board's Connect screen, then run: laika init",
+      ].join('\n');
+
+    case 'token_forbidden':
+      return [
+        'Your token was accepted, but this account may not read that.',
+        '',
+        'On /api/v1/me this means the account has been deactivated. Ask an',
+        'owner or admin.',
+      ].join('\n');
+
     case 'mint_failed':
       return [
         `The board refused to create the token${detail === undefined ? '' : `: ${detail}`}.`,
@@ -89,4 +117,19 @@ export function failureForStatus(status: number, detail?: string): Failure {
   if (status === 401) return failure('refused', detail);
   if (status === 403) return failure('forbidden', detail);
   return failure('mint_failed', detail ?? `HTTP ${String(status)}`);
+}
+
+/**
+ * The same mapping for a call that carried a **token** rather than a password.
+ *
+ * Deliberately not a parameter on {@link failureForStatus}: a boolean argument
+ * at the call site is how the wrong message gets chosen by the caller who is
+ * not thinking about it, and the whole point of this module is that each
+ * failure says something the reader can act on.
+ */
+export function failureForTokenStatus(status: number, detail?: string): Failure {
+  if (status === 401) return failure('token_refused', detail);
+  if (status === 403) return failure('token_forbidden', detail);
+  if (status >= 500) return failure('unreachable', `the board answered ${String(status)}`);
+  return failure('not_laika', detail);
 }

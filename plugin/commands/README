@@ -25,7 +25,7 @@ which already returns markdown sorted by §4.5's rule. A script would re-sort wh
 the server sorted — a second definition of "ready" that can disagree with the
 board's own column.
 
-**`/laika:setup` configures nothing** (D-046). `npx laika init` owns
+**`/laika:setup` configures nothing** (D-046). `laika init` owns
 configuration; this reports what is set and prints the command. A second minting
 path would make LAI-422's idempotence criterion unprovable rather than merely
 unmet — "already configured" would mean "configured somewhere I happen to look".
