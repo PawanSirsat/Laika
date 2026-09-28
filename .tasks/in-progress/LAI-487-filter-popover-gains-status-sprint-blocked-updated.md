@@ -2,11 +2,12 @@
 id: LAI-487
 title: 'The shared Filter popover gains Status, Sprint, Blocked only and Updated within'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-621]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-28T19:05:31Z
 ---
 
 ## Goal
