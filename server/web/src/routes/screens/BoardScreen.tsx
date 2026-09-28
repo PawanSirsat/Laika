@@ -762,6 +762,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           onGroup={(value) => {
             setParam('group', value === 'column' ? undefined : value);
           }}
+          showGroup={view !== 'list'}
           onClearFilters={() => {
             // Every filter in the one list — this used to be a literal that
             // missed `sprint` (LAI-487). Sort, page, group and the open task
@@ -805,6 +806,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 },
               }
             : {})}
+          forList={view === 'list'}
           group={group}
           onGroupChange={(next) => {
             setParam('group', next === 'column' ? undefined : next);
@@ -850,17 +852,26 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             >
               Space settings
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="bt-menu-item"
-              onClick={() => {
-                setOverflowAt(undefined);
-                setParam('view', view === 'list' ? undefined : 'list');
-              }}
-            >
-              {view === 'list' ? 'Show as board' : 'Show as list'}
-            </button>
+            {/*
+              **Not on `/list`** (LAI-488). There it only cleared the legacy
+              `?view` while the path kept it a list, so the click did nothing;
+              the tab bar has been the view switch since LAI-256. On `/board`
+              — including a legacy `/board?view=list` link — it still works
+              and stays.
+            */}
+            {path !== '/list' && (
+              <button
+                type="button"
+                role="menuitem"
+                className="bt-menu-item"
+                onClick={() => {
+                  setOverflowAt(undefined);
+                  setParam('view', view === 'list' ? undefined : 'list');
+                }}
+              >
+                {view === 'list' ? 'Show as board' : 'Show as list'}
+              </button>
+            )}
           </div>
         </>
       )}
@@ -944,7 +955,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {/* WORKING NOW moved up to the space bar in LAI-251: it is about the
           space, not about the board, and every view of a space shows it. */}
 
-      {grouped && (
+      {/* The List draws no swimlanes, so a `?group=` it carries is kept for
+          the Board and not announced here (LAI-488). */}
+      {grouped && view !== 'list' && (
         <p className="board-scope" role="status">
           {groupNotice(group)}
         </p>

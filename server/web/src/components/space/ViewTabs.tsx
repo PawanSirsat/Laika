@@ -1,4 +1,4 @@
-import { navHref } from '../../routes/nav-url.ts';
+import { viewTabHref } from '../../routes/nav-url.ts';
 import { spaceTabs } from '../../routes/route-table.ts';
 
 export interface ViewTabsProps {
@@ -8,6 +8,8 @@ export interface ViewTabsProps {
   readonly holds?: ((permission: string) => boolean) | undefined;
   /** Counts by route path, real ones only — a fixture badge is a lie. */
   readonly counts?: Readonly<Record<string, number | undefined>> | undefined;
+  /** The current query, so Board ↔ List can carry the filters (LAI-488). */
+  readonly params?: URLSearchParams | undefined;
 }
 
 /**
@@ -23,7 +25,14 @@ export interface ViewTabsProps {
  * otherwise would be wrong even though the tab sits inside a space. `navHref`
  * makes that decision from the route table, not from here.
  */
-export function ViewTabs({ currentPath, projectSlug, onNavigate, holds, counts }: ViewTabsProps) {
+export function ViewTabs({
+  currentPath,
+  projectSlug,
+  onNavigate,
+  holds,
+  counts,
+  params,
+}: ViewTabsProps) {
   const tabs = spaceTabs(holds);
   if (projectSlug === undefined || tabs.length === 0) return null;
 
@@ -32,7 +41,12 @@ export function ViewTabs({ currentPath, projectSlug, onNavigate, holds, counts }
       <ul>
         {tabs.map((route) => {
           const active = route.path === currentPath;
-          const href = navHref(route.path, projectSlug);
+          const href = viewTabHref(
+            route.path,
+            projectSlug,
+            currentPath,
+            params ?? new URLSearchParams(),
+          );
           const count = counts?.[route.path];
 
           return (

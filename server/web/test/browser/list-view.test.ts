@@ -933,3 +933,153 @@ void describe('the Filter popover on the List (LAI-487)', () => {
     }
   });
 });
+
+/*
+ * **Board and List keep the same filters, and the List hides what cannot
+ * apply** (LAI-488). Every absence is asserted **against its presence on the
+ * Board**, so a control deleted everywhere cannot pass as "hidden on the List".
+ */
+const tabTo = async (h: Harness, label: 'Board' | 'List'): Promise<void> => {
+  await h.page
+    .locator('.view-tabs a', { hasText: new RegExp(`^${label}`) })
+    .first()
+    .click();
+};
+
+const vsLabels = async (h: Harness): Promise<string[]> => {
+  await h.page.locator('button[title="View settings"]').click();
+  await h.page.locator('.vs-label').first().waitFor({ timeout: 5_000 });
+  const labels = (await h.page.locator('.vs-label').allInnerTexts()).map((t) =>
+    t.trim().toLowerCase(),
+  );
+  await h.page.keyboard.press('Escape');
+  return labels;
+};
+
+const moreItems = async (h: Harness): Promise<string[]> => {
+  await h.page.locator('button[title="More"]').click();
+  await h.page.locator('.bt-menu').waitFor({ timeout: 5_000 });
+  const items = (await h.page.locator('.bt-menu .bt-menu-item').allInnerTexts()).map((t) =>
+    t.trim(),
+  );
+  await h.page.keyboard.press('Escape');
+  return items;
+};
+
+void describe('Board and List share one filter state (LAI-488)', () => {
+  void test('filters and search travel Board → List, and back', async () => {
+    const h = await open('/board?project=laika-core&status=done&q=shipped', FILTERABLE);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await tabTo(h, 'List');
+      await h.page.waitForURL(/\/list\?/, { timeout: 10_000 });
+      const onList = new URL(h.page.url()).searchParams;
+      assert.equal(onList.get('status'), 'done', 'status was dropped by the tab');
+      assert.equal(onList.get('q'), 'shipped', 'search was dropped by the tab');
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.deepEqual(
+        await keysOnScreen(h),
+        ['LC-9'],
+        'the List is not showing the filtered rows',
+      );
+
+      // And back, with a filter set on the List side.
+      await openFilter(h);
+      await h.page
+        .locator('.bt-pop label.bt-check', { hasText: 'Blocked only' })
+        .locator('input')
+        .check();
+      await h.page.waitForURL(/blocked=true/, { timeout: 10_000 });
+      await h.page.keyboard.press('Escape');
+      await tabTo(h, 'Board');
+      await h.page.waitForURL(/\/board\?/, { timeout: 10_000 });
+      const onBoard = new URL(h.page.url()).searchParams;
+      for (const key of ['status', 'q', 'blocked']) {
+        assert.ok(onBoard.has(key), `${key} did not come back to the Board`);
+      }
+
+      // A reload keeps them — already true, asserted so it stays true.
+      await h.page.reload();
+      await h.page.waitForTimeout(500);
+      assert.equal(new URL(h.page.url()).searchParams.get('status'), 'done');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('sort, page and group do not travel', async () => {
+    const h = await open(
+      '/list?project=laika-core&sort=key&dir=asc&page=1&group=assignee',
+      FILTERABLE,
+    );
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      await tabTo(h, 'Board');
+      await h.page.waitForURL(/\/board/, { timeout: 10_000 });
+      const sent = new URL(h.page.url()).searchParams;
+      for (const key of ['sort', 'dir', 'page', 'group']) {
+        assert.equal(sent.has(key), false, `${key} travelled to the Board`);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the Board offers Group, card settings and "Show as list" — the control', async () => {
+    const h = await open('/board?project=laika-core', FILTERABLE);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('.bt-button', { hasText: 'Group' }).count(),
+        1,
+        'no Group on the Board',
+      );
+      const labels = await vsLabels(h);
+      for (const section of ['group by', 'show fields', 'card density', 'column width', 'filter']) {
+        assert.ok(labels.includes(section), `the Board lost "${section}" — ${labels.join(', ')}`);
+      }
+      assert.ok((await moreItems(h)).includes('Show as list'));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the List hides them — absent, not disabled — and keeps Filter and Hide done', async () => {
+    const h = await open('/list?project=laika-core&group=assignee', FILTERABLE);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('.bt-button', { hasText: 'Group' }).count(),
+        0,
+        'Group is on the List',
+      );
+      assert.equal(await h.page.locator('.board-scope', { hasText: /Grouped by/i }).count(), 0);
+      const labels = await vsLabels(h);
+      for (const section of ['group by', 'show fields', 'card density', 'column width']) {
+        assert.ok(!labels.includes(section), `"${section}" is offered on the List`);
+      }
+      assert.ok(labels.includes('filter'), 'the List lost its filter chips');
+      assert.ok(labels.includes('hide done work items'), 'the List lost Hide done');
+      const items = await moreItems(h);
+      assert.ok(items.length > 0, 'positive control: the menu opened');
+      assert.ok(
+        !items.some((i) => i.startsWith('Show as')),
+        `"Show as" is on the List: ${items.join(', ')}`,
+      );
+      // `?group=` is ignored here, and not deleted: it is the Board's to keep.
+      assert.equal(new URL(h.page.url()).searchParams.get('group'), 'assignee');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a legacy /board?view=list link still renders the List', async () => {
+    const h = await open('/board?project=laika-core&view=list', FILTERABLE);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('table.list').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+});
