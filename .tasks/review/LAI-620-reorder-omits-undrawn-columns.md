@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-617
-status: in-progress
+status: review
+finished: 2026-09-28T12:48:32Z
 started: 2026-09-28T12:44:39Z
 ---
 
@@ -45,16 +46,16 @@ did not** — enumerating the exclusions is what made that possible.
 
 ## Acceptance criteria
 
-- [ ] `onReorder` sends the **complement** — every column not in the dragged
+- [x] `onReorder` sends the **complement** — every column not in the dragged
       order, appended in `position` order — rather than a list of the reasons a
       column might not be drawn.
-- [ ] A browser test drags a column on a board whose fixture contains a
+- [x] A browser test drags a column on a board whose fixture contains a
       status-less column **and** a hidden one, and asserts the request body
       carries every column id exactly once.
-- [ ] That test fails against the pre-fix caller. A fixture without a
+- [x] That test fails against the pre-fix caller. A fixture without a
       status-less column cannot show this, which is why the fixture is named in
       this criterion.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
 
 ## Notes / context
 
