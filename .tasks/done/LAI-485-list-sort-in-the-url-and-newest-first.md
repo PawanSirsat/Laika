@@ -6,9 +6,10 @@ assignee: shell
 priority: p1
 depends-on: [LAI-621]
 discovered-from:
-status: review
+status: done
 finished: 2026-09-28T18:58:50Z
 started: 2026-09-28T18:50:57Z
+reviewed: 2026-09-28T18:58:57Z
 ---
 
 ## Goal
@@ -167,3 +168,21 @@ test**:
 
 Web suite on `build`: **1091/1091** before the page-reset test, which was
 added and passes. The structure guard is green, and so is lint.
+
+## Review — 2026-09-28T18:58:57Z (CHIEF)
+
+**Accepted.** The same session built and reviewed this, on the owner's
+instruction. The evidence is the red-first browser tests, eight mutations, and
+the full web suite, and it is recorded that way.
+
+- Every criterion was checked against the diff and has a test:
+  - URL keys;
+  - the unwritten default;
+  - untrusted input;
+  - `page` 1-based and reset on sort and filter changes;
+  - survives a refresh;
+  - first-click direction;
+  - orderings and tie-breaks;
+  - `aria-sort`.
+- The header affordance will be seen in both themes on a full instance in the
+  final pass, before anything is pushed.
