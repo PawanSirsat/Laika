@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { basename, dirname, extname, join, relative, sep } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { reportDiscovery } from '../helpers/discovery.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 
@@ -262,6 +262,35 @@ function walk(dir: string): string[] {
 }
 
 const srcFiles = walk(SRC);
+
+/*
+ * **Every file is read once, on a named budget** (LAI-489's sweep). The tests
+ * below read the whole of `src/` and `web/src/`, and walked `test/` and
+ * `web/test/`, inside `it`s on vitest's 5s default — the shape that timed four
+ * other tooling files out on a loaded machine. The walks of the two `src`
+ * trees already ran at module load; the reads and the two `test` walks now
+ * happen in the `beforeAll` at the bottom of this block, and the tests read
+ * the cache.
+ */
+const contents = new Map<string, string>();
+function source(file: string): string {
+  let text = contents.get(file);
+  if (text === undefined) {
+    text = readFileSync(file, 'utf8');
+    contents.set(file, text);
+  }
+  return text;
+}
+let testTree: string[] | undefined;
+let webTestTree: string[] | undefined;
+function testFiles(): string[] {
+  testTree ??= walk(TEST);
+  return testTree;
+}
+function webTestFiles(): string[] {
+  webTestTree ??= walk(WEB_TEST);
+  return webTestTree;
+}
 const srcModules = srcFiles.filter((f) => extname(f) === '.ts' && !f.endsWith('.test.ts'));
 
 describe('the structure check can fail', () => {
@@ -315,10 +344,10 @@ describe('CONVENTIONS §3 — naming', () => {
           return [`${rel} — .tsx components are PascalCase (CONVENTIONS §3)`];
         }
 
-        const source = readFileSync(f, 'utf8');
+        const text = source(f);
         const exportsIt = new RegExp(
           `export\\s+(?:default\\s+)?(?:function|const|class)\\s+${name}\\b`,
-        ).test(source);
+        ).test(text);
 
         return exportsIt ? [] : [`${rel} — must export a component named ${name} (CONVENTIONS §3)`];
       });
@@ -328,7 +357,7 @@ describe('CONVENTIONS §3 — naming', () => {
 
   it('contains no barrel files', () => {
     const offenders = srcModules
-      .filter((f) => looksLikeBarrel(readFileSync(f, 'utf8')))
+      .filter((f) => looksLikeBarrel(source(f)))
       .map(
         (f) =>
           `${relative(SERVER_ROOT, f)} — re-export-only modules hide the import graph the layering rules depend on (CONVENTIONS §3)`,
@@ -390,7 +419,7 @@ describe('CONVENTIONS §4 — test/ mirrors src/', () => {
      * Checking the directory instead still catches a test filed somewhere
      * arbitrary, and needs no exemption list to do it.
      */
-    const offenders = walk(TEST)
+    const offenders = testFiles()
       .filter((f) => f.endsWith('.test.ts'))
       .map((f) => relative(TEST, f))
       .filter((rel) => !rel.startsWith(`helpers${sep}`) && !rel.startsWith(`tooling${sep}`))
@@ -428,6 +457,14 @@ function directoryExists(path: string): boolean {
 // ---------------------------------------------------------------------------
 
 const webSrcFiles = walk(WEB_SRC);
+
+const READ_BUDGET_MS = 60_000;
+
+beforeAll(() => {
+  for (const file of [...srcFiles, ...webSrcFiles]) source(file);
+  testFiles();
+  webTestFiles();
+}, READ_BUDGET_MS);
 const webSrcModules = webSrcFiles.filter((f) => extname(f) === '.ts' && !f.endsWith('.test.ts'));
 
 describe('CONVENTIONS §3 — naming, in server/web', () => {
@@ -467,7 +504,7 @@ describe('CONVENTIONS §3 — naming, in server/web', () => {
 
         const exportsIt = new RegExp(
           `export\\s+(?:default\\s+)?(?:function|const|class)\\s+${name}\\b`,
-        ).test(readFileSync(f, 'utf8'));
+        ).test(source(f));
 
         return exportsIt ? [] : [`${rel} — must export a component named ${name} (CONVENTIONS §3)`];
       });
@@ -484,7 +521,7 @@ describe('CONVENTIONS §3 — naming, in server/web', () => {
   it('contains no barrel files', () => {
     const offenders = webSrcFiles
       .filter((f) => extname(f) === '.ts' || extname(f) === '.tsx')
-      .filter((f) => looksLikeBarrel(readFileSync(f, 'utf8')))
+      .filter((f) => looksLikeBarrel(source(f)))
       .map(
         (f) =>
           `${relative(SERVER_ROOT, f)} — re-export-only modules hide the import graph (CONVENTIONS §3)`,
@@ -576,7 +613,7 @@ describe('CONVENTIONS §4 — web test/ mirrors web src/', () => {
    */
   it('places every web test in a directory that exists under web/src/, or in helpers/ or browser/', () => {
     const byHowTheyTest = ['helpers', 'browser'];
-    const offenders = walk(WEB_TEST)
+    const offenders = webTestFiles()
       .filter((f) => f.endsWith('.test.ts'))
       .map((f) => relative(WEB_TEST, f))
       .filter((rel) => !byHowTheyTest.some((dir) => rel.startsWith(`${dir}${sep}`)))

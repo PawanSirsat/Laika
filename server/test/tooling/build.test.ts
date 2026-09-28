@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:net';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -30,7 +31,30 @@ import { DEFAULT_GRACE_MS } from '../../src/shutdown.ts';
  */
 
 const DIST = join(SERVER_ROOT, 'dist');
-const PORT = 3187;
+/**
+ * **No fixed port** (LAI-489). This was `3187`, and every worktree runs this
+ * file: when two sessions gated at once, both bound `3187`, the second child
+ * failed to listen, `waitForHealth` got a `200` from **the other session's**
+ * server, and the test SIGTERMed its own child mid-boot — exit code `null`,
+ * read as a flaky timeout. It is CLAUDE.md §4.3's trap inside the gate.
+ *
+ * Two defences: a port the OS says is free, and a health check that proves the
+ * server answering is the one this test started.
+ */
+async function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const probe = createServer();
+    probe.unref();
+    probe.on('error', reject);
+    probe.listen(0, '127.0.0.1', () => {
+      const address = probe.address();
+      const port = typeof address === 'object' && address !== null ? address.port : 0;
+      probe.close(() => {
+        resolve(port);
+      });
+    });
+  });
+}
 
 let dataDir: string;
 
@@ -213,6 +237,8 @@ async function withBuiltServer<T>(
 ): Promise<{ result: T; exitCode: number | null }> {
   const dbDir = mkdtempSync(join(tmpdir(), 'laika-built-run-'));
 
+  // For the identity check in `waitForHealth`: our child's age.
+  const spawnedAt = Date.now();
   const child = spawn('node', [join(DIST, 'index.js')], {
     cwd: SERVER_ROOT,
     env: {
@@ -235,7 +261,7 @@ async function withBuiltServer<T>(
 
   let result: T;
   try {
-    await waitForHealth(port);
+    await waitForHealth(port, spawnedAt);
     result = await fn(`http://127.0.0.1:${String(port)}`);
   } finally {
     child.kill('SIGTERM');
@@ -252,10 +278,14 @@ describe('the built server, run the way the container runs it', () => {
     skipIfBuildFailed(ctx);
     const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
 
-    const { result, exitCode } = await withBuiltServer(PORT, emptyPublic, async (baseUrl) => {
-      const health = await fetch(`${baseUrl}/api/v1/health`);
-      return { status: health.status, body: (await health.json()) as { status: string } };
-    });
+    const { result, exitCode } = await withBuiltServer(
+      await freePort(),
+      emptyPublic,
+      async (baseUrl) => {
+        const health = await fetch(`${baseUrl}/api/v1/health`);
+        return { status: health.status, body: (await health.json()) as { status: string } };
+      },
+    );
 
     expect(result.status).toBe(200);
     expect(result.body.status).toBe('ok');
@@ -277,7 +307,7 @@ describe('the built server, run the way the container runs it', () => {
     // The assertion is a **number**, not "it exited" — it exits either way.
     const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-shutdown-'));
 
-    const { elapsed, serverLog } = await timeShutdownWithOpenStream(PORT + 3, emptyPublic);
+    const { elapsed, serverLog } = await timeShutdownWithOpenStream(await freePort(), emptyPublic);
 
     // **Measured, four ways** (LAI-142, on this machine):
     //
@@ -312,7 +342,7 @@ describe('the built server, run the way the container runs it', () => {
     // asset `tsc` does not copy.
     const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-empty-'));
 
-    const { result } = await withBuiltServer(PORT + 1, emptyPublic, async (baseUrl) => {
+    const { result } = await withBuiltServer(await freePort(), emptyPublic, async (baseUrl) => {
       const spa = await fetch(`${baseUrl}/board/LAI-1`);
       return { status: spa.status, text: await spa.text() };
     });
@@ -334,7 +364,7 @@ describe('the built server, run the way the container runs it', () => {
       'utf8',
     );
 
-    const { result } = await withBuiltServer(PORT + 2, builtPublic, async (baseUrl) => {
+    const { result } = await withBuiltServer(await freePort(), builtPublic, async (baseUrl) => {
       const spa = await fetch(`${baseUrl}/board/LAI-1`);
       return { status: spa.status, text: await spa.text() };
     });
@@ -365,6 +395,8 @@ async function timeShutdownWithOpenStream(
 ): Promise<{ elapsed: number; serverLog: string }> {
   const dbDir = mkdtempSync(join(tmpdir(), 'laika-shutdown-'));
 
+  // For the identity check in `waitForHealth`: our child's age.
+  const spawnedAt = Date.now();
   const child = spawn('node', [join(DIST, 'index.js')], {
     cwd: SERVER_ROOT,
     env: {
@@ -398,7 +430,7 @@ async function timeShutdownWithOpenStream(
   let elapsed = Number.NaN;
 
   try {
-    await waitForHealth(port);
+    await waitForHealth(port, spawnedAt);
     const base = `http://127.0.0.1:${String(port)}`;
 
     // A session, because `/events` needs an actor.
@@ -439,12 +471,30 @@ async function timeShutdownWithOpenStream(
   return { elapsed, serverLog };
 }
 
-async function waitForHealth(port: number): Promise<void> {
+/**
+ * Wait for **our** server's health (LAI-489).
+ *
+ * A `200` is not enough: another process on the port answers exactly as ours
+ * would (§4.3, LAI-402). `uptime_ms` is the tell — a server started before
+ * this child cannot have been up for less time than the child has existed. A
+ * foreign answer is **refused loudly**, never waited through.
+ */
+async function waitForHealth(port: number, spawnedAt: number): Promise<void> {
   for (let attempt = 0; attempt < 100; attempt++) {
     try {
       const res = await fetch(`http://127.0.0.1:${String(port)}/api/v1/health`);
-      if (res.ok) return;
-    } catch {
+      if (res.ok) {
+        const { uptime_ms: uptime } = (await res.json()) as { uptime_ms: number };
+        const ours = Date.now() - spawnedAt;
+        if (uptime > ours + 1_000) {
+          throw new Error(
+            `port ${String(port)} is answered by another server (up ${String(uptime)}ms; ours was spawned ${String(ours)}ms ago)`,
+          );
+        }
+        return;
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('answered by another server')) throw err;
       // not listening yet
     }
     await new Promise((r) => setTimeout(r, 100));

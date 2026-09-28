@@ -276,6 +276,13 @@ function postureUnder(nodeEnv: string): Posture {
  */
 const SPAWN_BUDGET_MS = 60_000;
 
+/**
+ * The runtime-closure walk's budget (LAI-489). Filesystem-bound rather than
+ * spawn-bound, but the same shape: seconds on a quiet machine, many on a busy
+ * one, and never an assertion's business to wait for.
+ */
+const CLOSURE_BUDGET_MS = 60_000;
+
 describe('development and production resolve the same posture as test (AC4)', () => {
   const measured = new Map<string, Posture>();
 
@@ -331,6 +338,19 @@ describe('development and production resolve the same posture as test (AC4)', ()
 });
 
 describe('the list of differences stays honest', () => {
+  /*
+   * **The closure walk runs once, here, on a named budget** (LAI-489). It
+   * `readFileSync`s every source file of every package the shipped process
+   * loads — 28 of them — and it ran inside an `it` on vitest's 5s default,
+   * which is the defect the spawn comment above names, one call further down.
+   * Measured: two full-gate runs timed out on it at load ~20 while the file
+   * passed alone in 3.6s. The tests below only read the result.
+   */
+  let branching: readonly string[] = [];
+  beforeAll(() => {
+    branching = packagesBranchingOnEnvironment();
+  }, CLOSURE_BUDGET_MS);
+
   it('gives every difference a verdict and a reason someone can disagree with', () => {
     const weak = DIFFERENCES.filter(
       (d) => d.reason.trim().length < 40 || d.trigger.trim() === '',
@@ -365,7 +385,7 @@ describe('the list of differences stays honest', () => {
       'express',
       'finalhandler',
     ]);
-    const found = packagesBranchingOnEnvironment();
+    const found = branching;
 
     const unreviewed = found.filter((name) => !known.has(name));
     expect(
