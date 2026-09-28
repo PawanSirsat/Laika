@@ -2,11 +2,12 @@
 id: LAI-490
 title: "The List's STATUS column ignores the board's column names"
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-621]
 discovered-from: LAI-617
-status: backlog
+status: in-progress
+started: 2026-09-28T19:19:51Z
 ---
 
 ## Goal
