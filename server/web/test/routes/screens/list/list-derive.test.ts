@@ -56,10 +56,20 @@ function rowsFor(tasks: readonly Task[], now = NOW) {
 }
 
 void describe('the List row', () => {
-  void test('states the design’s seven columns, in its order', () => {
+  void test('states the design’s columns, in its order, plus Created', () => {
+    /*
+     * **Eight, not the design's seven** (LAI-621). `Created` is an owner-asked
+     * addition, not drift: the design dated a task only by when it was last
+     * touched, so a row could not distinguish new work from old work someone
+     * had just commented on. It sits beside `Updated` because the two are read
+     * together.
+     *
+     * The names are asserted rather than the count, so a column appearing or
+     * vanishing fails here as an edit somebody has to mean.
+     */
     assert.deepEqual(
       LIST_COLUMNS.map((c) => c.label),
-      ['Key', 'Summary', 'Status', 'Pri', 'Assignee', 'Spr', 'Updated'],
+      ['Key', 'Summary', 'Status', 'Pri', 'Assignee', 'Spr', 'Created', 'Updated'],
     );
   });
 
