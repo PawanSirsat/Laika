@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-620
-status: in-progress
+status: review
+finished: 2026-09-28T12:58:42Z
 started: 2026-09-28T12:48:52Z
 ---
 
@@ -46,17 +47,17 @@ answerable from the screen.
 
 ## Acceptance criteria
 
-- [ ] Every task is fetched, by following `next_cursor` to exhaustion, with a
+- [x] Every task is fetched, by following `next_cursor` to exhaustion, with a
       bounded number of pages so a runaway cursor cannot hang the screen.
-- [ ] The lane counts and the List row count equal the project's real totals —
+- [x] The lane counts and the List row count equal the project's real totals —
       asserted against a fixture that returns **two** pages, which is what no
       current fixture does.
-- [ ] The List scrolls vertically inside its own box, with the header row
+- [x] The List scrolls vertically inside its own box, with the header row
       staying put, and the board's own one-screenful behaviour is unchanged.
-- [ ] The List paginates, showing which rows of how many are on screen, with
+- [x] The List paginates, showing which rows of how many are on screen, with
       controls that are reachable by keyboard.
-- [ ] `CREATED` and `UPDATED` both appear, in the same plain form.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+- [x] `CREATED` and `UPDATED` both appear, in the same plain form.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
 
 ## Notes / context
 
