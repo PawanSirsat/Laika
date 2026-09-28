@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-621
-status: in-progress
+status: review
+finished: 2026-09-28T16:41:03Z
 started: 2026-09-28T16:26:57Z
 ---
 
@@ -35,27 +36,27 @@ that before it is worth building.
 
 ## Acceptance criteria
 
-- [ ] A new org-level SETTINGS route `/connect`, **first in the group** — it is
+- [x] A new org-level SETTINGS route `/connect`, **first in the group** — it is
       the only entry a person with nothing set up can act on.
-- [ ] The page mints its own token (90-day expiry, named for the machine) and
+- [x] The page mints its own token (90-day expiry, named for the machine) and
       interpolates it into every block; before minting the blocks read `lai_…`
       and never `undefined`. The one-time secret uses `TokensScreen`'s
       two-phase `forget()` scrub, and no derived copy of the secret is held in
       a second hook.
-- [ ] A one-paste prompt that installs the plugin, proves the board answers,
+- [x] A one-paste prompt that installs the plugin, proves the board answers,
       **and writes the Laika block into the project's `CLAUDE.md`** so later
       sessions mirror work onto the board unasked. An "or run it yourself"
       block carries the same commands.
-- [ ] A **live check**: a bounded watch on presence that turns green only for
+- [x] A **live check**: a bounded watch on presence that turns green only for
       an *agent* session belonging to this reader, and stops on a hit, on its
       budget, on presence being disabled, on error, and on unmount.
-- [ ] A `CLAUDE.md` block generated with the selected project's real slug and
+- [x] A `CLAUDE.md` block generated with the selected project's real slug and
       prefix, carrying **no token** — it is committed.
-- [ ] A reference of what an agent can do, and an invite pointer for owners.
-- [ ] `CopyButton` sets "Copied" only from the resolved promise and, where the
+- [x] A reference of what an agent can do, and an invite pointer for owners.
+- [x] `CopyButton` sets "Copied" only from the resolved promise and, where the
       clipboard API is absent, selects the text and says so instead of lying.
       Exactly one module in `src/` touches `navigator.clipboard`.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` all exit `0`.
 
 ## Notes / context
 
