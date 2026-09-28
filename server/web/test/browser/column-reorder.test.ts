@@ -107,6 +107,21 @@ const COLUMNS = [
    * failed against every real project — which is exactly what happened.
    */
   { ...column('c5', 'Cancelled', 4, ['cancelled']), hidden: true },
+  /*
+   * **The column the board cannot draw, and the reason this fixture needed a
+   * second undrawable kind** (LAI-620).
+   *
+   * `visible` excludes a column for two reasons — hidden, and owning no
+   * statuses (LAI-617) — and a caller that compensates by listing the reasons
+   * covers whichever it was written against. With only `Cancelled` here, a
+   * caller appending `filter((c) => c.hidden)` passed this file and was
+   * refused `expected 7, received 5` on the owner's real board, where two
+   * columns own nothing.
+   *
+   * It is a status-less column rather than a second hidden one on purpose:
+   * the same shape as `BACKLOGS` after `TO DO` took `backlog`.
+   */
+  column('c6', 'Backlogs', 5, []),
 ];
 
 function stub(over: Partial<ApiStub> = {}): ApiStub {
@@ -214,7 +229,9 @@ void describe('dragging a column', () => {
       assert.ok(sent !== undefined, 'no reorder was sent');
       assert.deepEqual(
         (sent.body as { column_ids: string[] }).column_ids,
-        ['c4', 'c1', 'c2', 'c3', 'c5'],
+        // Every column of the project, exactly once: the three dragged, then
+        // the ones the board never drew, in their own order.
+        ['c4', 'c1', 'c2', 'c3', 'c5', 'c6'],
         'the whole board must go — hidden columns included — or the server refuses it',
       );
     } finally {
@@ -326,6 +343,7 @@ void describe('the keyboard route', () => {
         'c2',
         'c4',
         'c5',
+        'c6',
       ]);
     } finally {
       await h.close();

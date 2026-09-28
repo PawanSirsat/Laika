@@ -1081,25 +1081,34 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 ? {
                     onReorder: (ids: readonly string[]) => {
                       /*
-                       * **Put the hidden columns back before sending.**
+                       * **Put back everything the board did not draw.**
                        *
                        * The board draws `columns.visible`, so a drag can only
                        * ever produce the visible order — but `reorderColumns`
                        * requires *every* column of the project exactly once,
                        * and refuses anything else so a stale client cannot
-                       * silently drop a lane.
+                       * silently drop a lane. The check is right; the caller
+                       * was sending a subset.
                        *
-                       * Every default board has a hidden `Cancelled` column, so
-                       * without this line **every** drag was refused with
-                       * "Send every column of this space exactly once". The
-                       * check is right; the caller was sending a subset.
+                       * **The complement, not a list of the reasons.** This
+                       * read `filter((c) => c.hidden)`, which was complete when
+                       * hidden was the only way out of `visible`. LAI-617 added
+                       * a second — a column owning no statuses — and a caller
+                       * enumerating the exclusions cannot grow with them. The
+                       * owner's board has two such columns, so **every** drag
+                       * on it was refused `expected 7, received 5`, exactly as
+                       * `Cancelled` once broke every drag on every board.
+                       *
+                       * Asking "what did I not send?" is stable under a third
+                       * reason nobody has thought of yet.
                        */
-                      const hidden = columns.state.columns
-                        .filter((c) => c.hidden)
+                      const sent = new Set(ids);
+                      const rest = columns.state.columns
+                        .filter((c) => !sent.has(c.id))
                         .sort((a, b) => a.position - b.position)
                         .map((c) => c.id);
 
-                      void columns.reorder([...ids, ...hidden]);
+                      void columns.reorder([...ids, ...rest]);
                     },
                     onAddColumn: () => {
                       // **Ask, then create** (LAI-291). This used to call
