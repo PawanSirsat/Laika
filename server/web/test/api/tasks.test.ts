@@ -81,6 +81,15 @@ void describe('listTasks query string', () => {
     assert.equal(new URL(calls[0]?.url ?? '', 'http://x').searchParams.get('ready'), 'false');
   });
 
+  void test('updated_since is sent as the number it is (LAI-487)', async () => {
+    const calls = stub(page);
+    await listTasks('p', { updated_since: 1_790_000_000_000 });
+    assert.equal(
+      new URL(calls[0]?.url ?? '', 'http://x').searchParams.get('updated_since'),
+      '1790000000000',
+    );
+  });
+
   void test('escapes the slug', async () => {
     const calls = stub(page);
     await listTasks('a project/with slash');

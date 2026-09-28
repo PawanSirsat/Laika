@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { Member, TaskPriority } from '../../../api/tasks.ts';
+import type { Member, TaskPriority, TaskStatus } from '../../../api/tasks.ts';
+import { ALL_STATUSES } from '../../../api/board-derive.ts';
+import { UPDATED_LABELS, UPDATED_WINDOWS, type UpdatedWindow } from './filter-keys.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
@@ -8,6 +10,24 @@ import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
 import './board-toolbar.css';
 
 export interface BoardToolbarProps {
+  /**
+   * How many filters the URL applies, **decided by the screen** from the one
+   * filter list (LAI-487) — this component used to count five of them itself,
+   * and so missed `sprint` and `ready=false`.
+   */
+  readonly activeCount: number;
+  readonly status: TaskStatus | undefined;
+  /** A status as this board names it — a renamed column's name (LAI-617). */
+  readonly statusName: (status: TaskStatus) => string;
+  readonly onStatus: (value: TaskStatus | undefined) => void;
+  /** A sprint id, `none`, or undefined. The same `?sprint=` the strip writes. */
+  readonly sprint: string | undefined;
+  readonly sprints: readonly { readonly id: string; readonly label: string }[];
+  readonly onSprint: (value: string | undefined) => void;
+  readonly updated: UpdatedWindow | undefined;
+  readonly onUpdated: (value: UpdatedWindow | undefined) => void;
+  readonly blocked: boolean;
+  readonly onBlocked: (value: boolean) => void;
   /** Active filters, so the button can carry a count the way Jira's does. */
   readonly priority: TaskPriority | undefined;
   readonly assignee: string | undefined;
@@ -88,6 +108,17 @@ function useDismiss(open: boolean, close: () => void) {
 }
 
 export function BoardToolbar({
+  activeCount,
+  status,
+  statusName,
+  onStatus,
+  sprint,
+  sprints,
+  onSprint,
+  updated,
+  onUpdated,
+  blocked,
+  onBlocked,
   priority,
   assignee,
   tag,
@@ -116,12 +147,7 @@ export function BoardToolbar({
     setOpen(undefined);
   });
 
-  const active =
-    (priority === undefined ? 0 : 1) +
-    (assignee === undefined ? 0 : 1) +
-    (tag === undefined ? 0 : 1) +
-    (ready ? 1 : 0) +
-    (agentOnly ? 1 : 0);
+  const active = activeCount;
 
   // The bar must not draw these four a second time — see `SpaceFilterClaim`.
   useClaimSpaceFilters();
@@ -255,6 +281,27 @@ export function BoardToolbar({
         </button>
         {open === 'filter' && (
           <div className="bt-pop" role="dialog" aria-label="Filter">
+            {/* Status first: on the List there are no columns to read it from
+                (LAI-487). One value, because the server takes one. */}
+            <label className="bt-field">
+              <span className="bt-label">Status</span>
+              <select
+                value={status ?? ''}
+                onChange={(event) => {
+                  onStatus(
+                    event.target.value === '' ? undefined : (event.target.value as TaskStatus),
+                  );
+                }}
+              >
+                <option value="">Any</option>
+                {ALL_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {statusName(s)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <label className="bt-field">
               <span className="bt-label">Priority</span>
               <select
@@ -309,6 +356,46 @@ export function BoardToolbar({
               </select>
             </label>
 
+            {/* The same `?sprint=` as the Board's sprint strip, so the two can
+                never disagree — and the List, which hides the strip, can
+                finally choose one (LAI-487). */}
+            <label className="bt-field">
+              <span className="bt-label">Sprint</span>
+              <select
+                value={sprint ?? ''}
+                onChange={(event) => {
+                  onSprint(event.target.value === '' ? undefined : event.target.value);
+                }}
+              >
+                <option value="">Any</option>
+                <option value="none">No sprint</option>
+                {sprints.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="bt-field">
+              <span className="bt-label">Updated within</span>
+              <select
+                value={updated ?? ''}
+                onChange={(event) => {
+                  onUpdated(
+                    event.target.value === '' ? undefined : (event.target.value as UpdatedWindow),
+                  );
+                }}
+              >
+                <option value="">Any time</option>
+                {UPDATED_WINDOWS.map((w) => (
+                  <option key={w} value={w}>
+                    {UPDATED_LABELS[w]}
+                  </option>
+                ))}
+              </select>
+            </label>
+
             <label className="bt-check">
               <input
                 type="checkbox"
@@ -318,6 +405,17 @@ export function BoardToolbar({
                 }}
               />
               Ready only
+            </label>
+
+            <label className="bt-check">
+              <input
+                type="checkbox"
+                checked={blocked}
+                onChange={(event) => {
+                  onBlocked(event.target.checked);
+                }}
+              />
+              Blocked only
             </label>
 
             <label className="bt-check">

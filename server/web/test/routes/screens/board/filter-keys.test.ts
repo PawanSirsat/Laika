@@ -10,17 +10,27 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { before, describe, test } from 'node:test';
-import { FILTER_KEYS, filterSignature } from '../../../../src/routes/screens/board/filter-keys.ts';
+import {
+  activeFilters,
+  FILTER_KEYS,
+  filterCount,
+  filterSignature,
+  readBlocked,
+  readStatus,
+  readUpdated,
+  updatedSince,
+  withoutFilters,
+} from '../../../../src/routes/screens/board/filter-keys.ts';
 import { code } from '../../../helpers/code.ts';
 
 let board = '';
 before(async () => {
-  board = code(
-    await readFile(
-      new URL('../../../../src/routes/screens/BoardScreen.tsx', import.meta.url),
-      'utf8',
-    ),
-  );
+  // The board reads some keys directly and the rest through this module's
+  // validators (LAI-487), so "what the board reads" is both files.
+  const read = async (rel: string) => code(await readFile(new URL(rel, import.meta.url), 'utf8'));
+  board =
+    (await read('../../../../src/routes/screens/BoardScreen.tsx')) +
+    (await read('../../../../src/routes/screens/board/filter-keys.ts'));
 });
 
 void describe('FILTER_KEYS', () => {
@@ -57,5 +67,76 @@ void describe('filterSignature', () => {
 
   void test('does not depend on the order the keys were written', () => {
     assert.equal(sig('q=a&priority=p1'), sig('priority=p1&q=a'));
+  });
+});
+
+const q = (s: string) => new URLSearchParams(s);
+const names = { status: (s: string) => s.toUpperCase() };
+
+void describe('the four new filters read the URL as untrusted (LAI-487)', () => {
+  void test('status: one known status, or nothing', () => {
+    assert.equal(readStatus(q('status=review')), 'review');
+    assert.equal(readStatus(q('status=cancelled')), 'cancelled');
+    assert.equal(readStatus(q('status=bogus')), undefined, 'the server would 400 on this');
+    assert.equal(readStatus(q('')), undefined);
+  });
+
+  void test('updated: a window name, never a timestamp', () => {
+    assert.equal(readUpdated(q('updated=7d')), '7d');
+    assert.equal(readUpdated(q('updated=90d')), undefined);
+    assert.equal(readUpdated(q('updated=1790000000000')), undefined);
+  });
+
+  void test('blocked: only the literal true', () => {
+    assert.equal(readBlocked(q('blocked=true')), true);
+    assert.equal(readBlocked(q('blocked=yes')), false);
+    assert.equal(readBlocked(q('')), false);
+  });
+
+  void test('a window means the same span whenever the link is opened', () => {
+    const monday = new Date(2026, 8, 28, 15, 30).getTime();
+    const friday = new Date(2026, 9, 2, 9, 0).getTime();
+    assert.equal(monday - updatedSince('7d', monday), 7 * 86_400_000);
+    assert.equal(friday - updatedSince('7d', friday), 7 * 86_400_000);
+    assert.equal(friday - updatedSince('30d', friday), 30 * 86_400_000);
+  });
+
+  void test('today is since local midnight, not the last 24 hours', () => {
+    const afternoon = new Date(2026, 8, 28, 15, 30).getTime();
+    assert.equal(updatedSince('today', afternoon), new Date(2026, 8, 28, 0, 0).getTime());
+  });
+});
+
+void describe('the badge, the chips and Clear all read one list (LAI-487)', () => {
+  void test('the badge counts every applied filter, ready=false and sprint included', () => {
+    assert.equal(
+      filterCount(q('status=done&sprint=s1&ready=false&blocked=true&updated=today'), names),
+      5,
+    );
+  });
+
+  void test('search is shown as a chip but not counted on the button', () => {
+    assert.equal(filterCount(q('q=login'), names), 0);
+    assert.deepEqual(
+      activeFilters(q('q=login'), names).map((f) => f.key),
+      ['q'],
+    );
+  });
+
+  void test('a value the board would ignore is not counted', () => {
+    assert.equal(filterCount(q('status=bogus&updated=90d&blocked=yes'), names), 0);
+  });
+
+  void test('the chip names a status the way the board does', () => {
+    assert.equal(activeFilters(q('status=review'), names)[0]?.label, 'Status REVIEW');
+  });
+
+  void test('Clear all removes every filter and keeps project, task, group, sort and page', () => {
+    const all = `${FILTER_KEYS.map((k) => `${k}=x`).join('&')}&project=p&task=t&group=assignee&sort=key&dir=asc&page=2`;
+    const left = withoutFilters(q(all));
+    for (const key of FILTER_KEYS) assert.equal(left.has(key), false, `${key} survived Clear all`);
+    for (const key of ['project', 'task', 'group', 'sort', 'dir', 'page']) {
+      assert.equal(left.has(key), true, `Clear all removed ${key}`);
+    }
   });
 });
