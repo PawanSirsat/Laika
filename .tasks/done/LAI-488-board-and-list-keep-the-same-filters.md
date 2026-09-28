@@ -6,9 +6,10 @@ assignee: shell
 priority: p1
 depends-on: [LAI-621, LAI-487]
 discovered-from:
-status: review
+status: done
 finished: 2026-09-28T19:19:43Z
 started: 2026-09-28T19:13:54Z
+reviewed: 2026-09-28T19:19:43Z
 ---
 
 ## Goal
@@ -137,3 +138,16 @@ Mutations, all **red**:
 - the group notice on the List.
 
 Web **1136/1136**; the structure guard and lint are green.
+
+## Review — 2026-09-28T19:19:43Z (CHIEF)
+
+**Accepted.** The same session built and reviewed this, on the owner's
+instruction.
+
+- Every criterion has a test, and every absence is paired with its presence on
+  the Board, so a control deleted everywhere cannot pass as "hidden on the
+  List".
+- The extra hidden control (View settings' Group by) is stated in the Built
+  section as beyond the criteria, with its reason.
+- Both themes and the layout with the controls gone will be seen on a full
+  instance in the final pass.
