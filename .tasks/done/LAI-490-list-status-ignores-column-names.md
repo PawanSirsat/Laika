@@ -6,9 +6,10 @@ assignee: shell
 priority: p2
 depends-on: [LAI-621]
 discovered-from: LAI-617
-status: review
+status: done
 finished: 2026-09-28T19:22:22Z
 started: 2026-09-28T19:19:51Z
+reviewed: 2026-09-28T19:22:22Z
 ---
 
 ## Goal
@@ -78,3 +79,13 @@ Mutations, both **red on the named test**: the board names ignored, and status
 sorted by its label.
 
 Web **1139/1139**; lint green.
+
+## Review — 2026-09-28T19:22:22Z (CHIEF)
+
+**Accepted.** The same session built and reviewed this, on the owner's
+instruction.
+
+- All three criteria are tested.
+- It was red first, and both mutations turned red.
+- *Testing* in the STATUS column will be seen on the full instance in the
+  final pass, where `Review` is renamed `Testing`.
