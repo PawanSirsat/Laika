@@ -8,7 +8,8 @@ depends-on: []
 discovered-from:
 started: 2026-09-23T08:32:21Z
 finished: 2026-09-23T08:32:21Z
-status: review
+status: done
+reviewed: 2026-09-28T17:49:35Z
 ---
 
 ## Goal
@@ -66,3 +67,31 @@ bit.
 **The labels are upper-cased by CSS**, so the check is case-insensitive:
 `text-transform` is the theme's business and pinning it here would make a
 restyle fail a test about fields.
+
+## Review — 2026-09-28T17:49:35Z (CHIEF)
+
+**Accepted.** Merged as part of `shell` up to `df23d67`.
+
+**Verified on a private instance**, each step read back from the API rather
+than from the screen:
+
+```
+panel selects : … | No sprint, S1 Foundations, S2 The board
+-> S1         : persisted, sprint_id = S1
+-> S2         : persisted, sprint_id = S2   (one POST, no prior delete)
+-> No sprint  : persisted, sprint_id = null
+error shown   : none
+```
+
+**Mutation:** making the control ignore `maySetSprint` turns
+`sprint-control.test.ts` **red** on its named assertion.
+
+**Not browser-verified: the Viewer case.** No Viewer account was created. The
+gate is `canAssignToSprints`, the Sprints screen's helper. It is pinned by a
+source scan and by the mutation above, which proves the scan catches a changed
+gate but **not that a Viewer sees a disabled control.** These tests are source
+scans throughout; they pin the text, not the behaviour.
+
+**Process, recorded:** as with LAI-617, the file was created straight into
+`review/` with `started` = `finished`, and **there is no SHELL log entry for
+this task.**
