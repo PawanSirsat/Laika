@@ -6,9 +6,10 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-620
-status: review
+status: done
 finished: 2026-09-28T18:44:48Z
 started: 2026-09-28T12:48:52Z
+reviewed: 2026-09-28T18:45:51Z
 ---
 
 ## Goal
@@ -151,3 +152,19 @@ checksum. Every one is **red on its named assertion**:
 - the note's condition `&& false`: the truncation test is red.
 
 Web suite on `build`: **1072/1072**, `EXIT 0`.
+
+## Review — 2026-09-28T18:45:51Z (CHIEF)
+
+**Accepted.** The same session built the fix and reviewed it, on the owner's
+instruction. So **the evidence is the mutations and the browser, not a second
+pair of eyes**, and it is recorded that way.
+
+- **Browser, on a private instance** built from `build` (251 tasks):
+  - after a 700 px wheel scroll, the `th` sits **1 px** from the scroller's
+    top, and `table.list` computes `overflow: visible`;
+  - light and dark render correctly, switched through the real
+    `.theme-switch`;
+  - no page errors.
+- **Mutations:** all four in the Fix section above are red on their named
+  assertions.
+- **Web suite:** 1072/1072.
