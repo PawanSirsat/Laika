@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -294,6 +294,33 @@ const PAGED: ApiStub = {
   },
 };
 
+/*
+ * A cursor that never closes: page one carries a task and a cursor, and every
+ * later page is empty and hands the same cursor back. The only way out is the
+ * page cap, which is the path this fixture exists to reach.
+ */
+const ENDLESS: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/tasks?limit=200': {
+    data: [task({ id: 'e1', key: 'LC-300', number: 300, title: 'The only loaded task' })],
+    next_cursor: 'MORE',
+  },
+  '/api/v1/projects/laika-core/tasks?limit=200&cursor=MORE': {
+    data: [],
+    next_cursor: 'MORE',
+  },
+};
+
+/** Scroll the List with a real mouse wheel and say how far it went. */
+async function wheel(h: Harness, by: number): Promise<number> {
+  const box = await h.page.locator('.list-scroll').boundingBox();
+  if (box === null) return 0;
+  await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await h.page.mouse.wheel(0, by);
+  await h.page.waitForTimeout(300);
+  return h.page.locator('.list-scroll').evaluate((el) => el.scrollTop);
+}
+
 void describe('a board larger than one page', () => {
   void test('follows the cursor, so the rows and the count are the whole project', async () => {
     const h = await open('/list?project=laika-core', PAGED);
@@ -376,14 +403,89 @@ void describe('a board larger than one page', () => {
         'fifty rows did not overflow the box — this assertion is measuring nothing',
       );
 
-      // And it really moves, rather than merely being allowed to.
-      const moved = await h.page.evaluate(() => {
+      /*
+       * **A real wheel, not `scrollTop` from script** (LAI-621 review). Setting
+       * `scrollTop` works on `overflow-y: hidden` too — measured: that rule
+       * left this test green while the box could not be scrolled by a person.
+       * A wheel over a clipped box does nothing, which is the difference.
+       */
+      const moved = await wheel(h, 600);
+      assert.ok(moved > 0, 'the wheel did not scroll the list — the box clips instead');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the header stays at the top of the box while the rows scroll under it', async () => {
+    const h = await open('/list?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+
+      /*
+       * **Where the header is, not what it computes** (LAI-621 review). The
+       * test above asserts `position: sticky`, which stayed true while the
+       * header scrolled 700px out of view: a leftover `.list { overflow:
+       * hidden }` in `board.css` made the *table* the header's scroll
+       * container, so it stuck to the table and left with it.
+       */
+      const moved = await wheel(h, 600);
+      assert.ok(moved > 0, 'nothing scrolled, so this cannot say anything about the header');
+
+      const gap = await h.page.evaluate(() => {
         const scroller = document.querySelector('.list-scroll');
-        if (scroller === null) return 0;
-        scroller.scrollTop = 400;
-        return scroller.scrollTop;
+        const head = document.querySelector('.list thead th');
+        if (scroller === null || head === null) return null;
+        return head.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
       });
-      assert.ok(moved > 0, 'the list did not scroll when asked to');
+      assert.ok(gap !== null, 'no header or no scroller');
+      assert.ok(
+        Math.abs(gap) <= 2,
+        `the header is ${String(Math.round(gap))}px from the top of the box — it scrolled away`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the board lane counts are the whole project too, not the first page', async () => {
+    /*
+     * AC2's other half. The lanes and the List read the same array today,
+     * which is exactly why it is pinned: a later change that gives the board
+     * its own fetch would otherwise be free to stop at page one again.
+     */
+    const h = await open('/board?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.lane-count').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const counts = (await h.page.locator('.lane-count').allInnerTexts()).map((t) =>
+        Number(t.replace(/\D/g, '') || '0'),
+      );
+      const total = counts.reduce((a, b) => a + b, 0);
+      assert.equal(total, 65, `the lanes count ${String(total)} (${counts.join(' + ')}), not 65`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a board past the page cap says so rather than looking complete', async () => {
+    /*
+     * `useBoard` stops after 25 pages and records `truncated`. It used to say
+     * *"the screen says so"* while nothing read it. A cursor that never ends
+     * is the shape that reaches the cap without 5,000 fixtures.
+     */
+    const h = await open('/list?project=laika-core', ENDLESS);
+    try {
+      await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
+      const note = h.page.locator('.board-truncated');
+      await note.waitFor({ timeout: 10_000 });
+      assert.match(await note.innerText(), /first 1 task/i);
+      // The note only exists once the loop has *ended* — `truncated` is set
+      // after it — so reaching this line already proves the loop is bounded.
+      // What is left to prove is that it ended at the cap, not early. (Not an
+      // exact count: another screen part also asks `/tasks` once, and the
+      // harness records paths without their query.)
+      const asked = h.calls.filter((c) => c.path.endsWith('/tasks')).length;
+      assert.ok(asked >= 25, `only ${String(asked)} task requests — it stopped before the cap`);
     } finally {
       await h.close();
     }
