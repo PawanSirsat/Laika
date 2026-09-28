@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -230,6 +230,285 @@ void describe('the List view', () => {
         );
         assert.equal(overflow, 0, `the page scrolls sideways at ${String(width)}px`);
       }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * **Every task, on a board that does not fit in one page** (LAI-621).
+ *
+ * `useBoard` asked for `limit: 200` once and took that page as the whole
+ * answer. No fixture in this repo returned a `next_cursor`, so nothing could
+ * see it: measured on the owner's live board, 251 tasks existed and 200 were
+ * drawn — with the lane counts derived from the 200, so the headers stated
+ * numbers that were not the project's.
+ *
+ * The fixture therefore pages. Page one answers with a cursor, page two
+ * closes it, and the assertions are about the *total* — a client that stops
+ * early cannot satisfy them, which is the property the old fixture could not
+ * express.
+ *
+ * **`getComputedStyle(scroller).overflowY` is deliberately not asserted.**
+ * It was, and it could not fail: with `overflow-x: auto` the spec coerces a
+ * `visible` counterpart to `auto`, so the computed value reads `auto` however
+ * the rule is written. Measured — setting `overflow-y: visible` left every
+ * assertion green. What is asserted instead is the behaviour: more table than
+ * box, a header that stays, and a `scrollTop` that moves. Restoring the
+ * pre-fix stylesheet reds this test, which is the control that says so.
+ */
+const PAGE_ONE = Array.from({ length: 60 }, (_, i) =>
+  task({
+    id: `p1-${String(i)}`,
+    key: `LC-${String(100 + i)}`,
+    number: 100 + i,
+    title: `First page task ${String(i)}`,
+  }),
+);
+
+const PAGE_TWO = Array.from({ length: 5 }, (_, i) =>
+  task({
+    id: `p2-${String(i)}`,
+    key: `LC-${String(200 + i)}`,
+    number: 200 + i,
+    title: `Second page task ${String(i)}`,
+  }),
+);
+
+const PAGED: ApiStub = {
+  ...STUB,
+  /*
+   * Keyed by the query on purpose. Page two carries both `limit` and `cursor`,
+   * so it matches the more specific key and page one — which sends no cursor —
+   * cannot match it. A request for a third page matches neither and is
+   * recorded in `unmatched` rather than quietly served page one again.
+   */
+  '/api/v1/projects/laika-core/tasks?limit=200': {
+    data: PAGE_ONE,
+    next_cursor: 'PAGE2',
+  },
+  '/api/v1/projects/laika-core/tasks?limit=200&cursor=PAGE2': {
+    data: PAGE_TWO,
+    next_cursor: null,
+  },
+};
+
+/*
+ * A cursor that never closes: page one carries a task and a cursor, and every
+ * later page is empty and hands the same cursor back. The only way out is the
+ * page cap, which is the path this fixture exists to reach.
+ */
+const ENDLESS: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/tasks?limit=200': {
+    data: [task({ id: 'e1', key: 'LC-300', number: 300, title: 'The only loaded task' })],
+    next_cursor: 'MORE',
+  },
+  '/api/v1/projects/laika-core/tasks?limit=200&cursor=MORE': {
+    data: [],
+    next_cursor: 'MORE',
+  },
+};
+
+/** Scroll the List with a real mouse wheel and say how far it went. */
+async function wheel(h: Harness, by: number): Promise<number> {
+  const box = await h.page.locator('.list-scroll').boundingBox();
+  if (box === null) return 0;
+  await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await h.page.mouse.wheel(0, by);
+  await h.page.waitForTimeout(300);
+  return h.page.locator('.list-scroll').evaluate((el) => el.scrollTop);
+}
+
+void describe('a board larger than one page', () => {
+  void test('follows the cursor, so the rows and the count are the whole project', async () => {
+    const h = await open('/list?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
+
+      // 60 + 5. A client that stopped at page one reports 60 here.
+      assert.match(
+        (await h.page.locator('.list-pager-count').innerText()).trim(),
+        /of 65$/,
+        'the count is not the whole project — the second page was not fetched',
+      );
+
+      // Both pages were actually requested, and nothing was refused for want
+      // of a matching stub.
+      const asked = h.calls.filter((c) => c.path.endsWith('/tasks')).length;
+      assert.ok(asked >= 2, `only ${String(asked)} task request(s) — the cursor was not followed`);
+      assert.deepEqual(h.unmatched, [], 'a task request matched no fixture');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('pages the table rather than drawing every row at once', async () => {
+    const h = await open('/list?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
+
+      assert.equal(await h.page.locator('.list tbody tr').count(), 50, 'a page is not 50 rows');
+
+      const pager = h.page.locator('.list-pager-count');
+      assert.match((await pager.innerText()).trim(), /^1–50 of 65$/);
+
+      await h.page.locator('.list-page-button', { hasText: 'Next' }).click();
+      await h.page.waitForFunction(
+        () => (document.querySelector('.list-pager-count')?.textContent ?? '').startsWith('51'),
+        undefined,
+        { timeout: 10_000 },
+      );
+
+      assert.equal(await h.page.locator('.list tbody tr').count(), 15, 'the last page is short');
+      assert.match((await pager.innerText()).trim(), /^51–65 of 65$/);
+
+      // At the end, forward is refused and back is offered — disabled rather
+      // than removed, so the row does not change height as you page.
+      assert.equal(
+        await h.page.locator('.list-page-button', { hasText: 'Next' }).isDisabled(),
+        true,
+      );
+      assert.equal(
+        await h.page.locator('.list-page-button', { hasText: 'Previous' }).isDisabled(),
+        false,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the table scrolls inside its own box, under a header that stays', async () => {
+    const h = await open('/list?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+
+      const seen = await h.page.evaluate(() => {
+        const scroller = document.querySelector('.list-scroll');
+        const head = document.querySelector('.list thead th');
+        if (scroller === null || head === null) return null;
+        return {
+          headPosition: getComputedStyle(head).position,
+          // The property that matters: there is more table than box, and the
+          // box is the thing that scrolls.
+          scrollable: scroller.scrollHeight > scroller.clientHeight,
+        };
+      });
+
+      assert.ok(seen !== null, 'no list scroller on the page');
+      assert.equal(seen.headPosition, 'sticky', 'the header scrolls away with the rows');
+      assert.ok(
+        seen.scrollable,
+        'fifty rows did not overflow the box — this assertion is measuring nothing',
+      );
+
+      /*
+       * **A real wheel, not `scrollTop` from script** (LAI-621 review). Setting
+       * `scrollTop` works on `overflow-y: hidden` too — measured: that rule
+       * left this test green while the box could not be scrolled by a person.
+       * A wheel over a clipped box does nothing, which is the difference.
+       */
+      const moved = await wheel(h, 600);
+      assert.ok(moved > 0, 'the wheel did not scroll the list — the box clips instead');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the header stays at the top of the box while the rows scroll under it', async () => {
+    const h = await open('/list?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+
+      /*
+       * **Where the header is, not what it computes** (LAI-621 review). The
+       * test above asserts `position: sticky`, which stayed true while the
+       * header scrolled 700px out of view: a leftover `.list { overflow:
+       * hidden }` in `board.css` made the *table* the header's scroll
+       * container, so it stuck to the table and left with it.
+       */
+      const moved = await wheel(h, 600);
+      assert.ok(moved > 0, 'nothing scrolled, so this cannot say anything about the header');
+
+      const gap = await h.page.evaluate(() => {
+        const scroller = document.querySelector('.list-scroll');
+        const head = document.querySelector('.list thead th');
+        if (scroller === null || head === null) return null;
+        return head.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+      });
+      assert.ok(gap !== null, 'no header or no scroller');
+      assert.ok(
+        Math.abs(gap) <= 2,
+        `the header is ${String(Math.round(gap))}px from the top of the box — it scrolled away`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the board lane counts are the whole project too, not the first page', async () => {
+    /*
+     * AC2's other half. The lanes and the List read the same array today,
+     * which is exactly why it is pinned: a later change that gives the board
+     * its own fetch would otherwise be free to stop at page one again.
+     */
+    const h = await open('/board?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.lane-count').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const counts = (await h.page.locator('.lane-count').allInnerTexts()).map((t) =>
+        Number(t.replace(/\D/g, '') || '0'),
+      );
+      const total = counts.reduce((a, b) => a + b, 0);
+      assert.equal(total, 65, `the lanes count ${String(total)} (${counts.join(' + ')}), not 65`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a board past the page cap says so rather than looking complete', async () => {
+    /*
+     * `useBoard` stops after 25 pages and records `truncated`. It used to say
+     * *"the screen says so"* while nothing read it. A cursor that never ends
+     * is the shape that reaches the cap without 5,000 fixtures.
+     */
+    const h = await open('/list?project=laika-core', ENDLESS);
+    try {
+      await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
+      const note = h.page.locator('.board-truncated');
+      await note.waitFor({ timeout: 10_000 });
+      assert.match(await note.innerText(), /first 1 task/i);
+      // The note only exists once the loop has *ended* — `truncated` is set
+      // after it — so reaching this line already proves the loop is bounded.
+      // What is left to prove is that it ended at the cap, not early. (Not an
+      // exact count: another screen part also asks `/tasks` once, and the
+      // harness records paths without their query.)
+      const asked = h.calls.filter((c) => c.path.endsWith('/tasks')).length;
+      assert.ok(asked >= 25, `only ${String(asked)} task requests — it stopped before the cap`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('says when a task was made, as well as when it was touched', async () => {
+    const h = await open('/list?project=laika-core', PAGED);
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+
+      const headers = (await h.page.locator('.list thead th').allInnerTexts()).map((t) =>
+        t.replace(/[▲▼]/g, '').trim().toLowerCase(),
+      );
+      assert.ok(headers.includes('created'), `no Created column: ${headers.join(', ')}`);
+      assert.ok(headers.includes('updated'), `no Updated column: ${headers.join(', ')}`);
+
+      const first = h.page.locator('.list tbody tr').first();
+      assert.equal(await first.locator('.list-created').count(), 1, 'no created cell in a row');
+      assert.notEqual(
+        (await first.locator('.list-created').innerText()).trim(),
+        '',
+        'the created cell is empty',
+      );
     } finally {
       await h.close();
     }

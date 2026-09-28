@@ -6,6 +6,15 @@ import type { Member, Task } from '../../../api/tasks.ts';
 import { LIST_COLUMNS, listRows, sortRows, type SortKey } from './list-derive.ts';
 import './list.css';
 
+/**
+ * Rows on one page.
+ *
+ * Fifty is about two screenfuls at this row height — enough that paging is
+ * rare on an ordinary board, few enough that the browser is not laying out
+ * hundreds of rows nobody has scrolled to.
+ */
+const ROWS_PER_PAGE = 50;
+
 export interface ListViewProps {
   readonly tasks: readonly Task[];
   readonly byId: ReadonlyMap<string, Task>;
@@ -51,6 +60,7 @@ export function ListView({
     key: 'key',
     ascending: true,
   });
+  const [page, setPage] = useState(0);
 
   const rows = sortRows(
     listRows({ tasks, byId, members, sprintLabels, now: Date.now() }),
@@ -58,6 +68,23 @@ export function ListView({
     sort.key,
     sort.ascending,
   );
+
+  /*
+   * **Paged here, not by the server** (LAI-621).
+   *
+   * `useBoard` already holds every task — the board needs the whole set to
+   * count its lanes — so asking the server again per page would fetch what is
+   * already in memory and make sorting lie: a server page is a window on the
+   * server's order, and the reader sorted by *this* column.
+   *
+   * Clamped rather than trusted: sorting or filtering can shorten the list
+   * under a reader standing on the last page, and a page past the end renders
+   * as an empty table that looks like a failure.
+   */
+  const pageCount = Math.max(1, Math.ceil(rows.length / ROWS_PER_PAGE));
+  const current = Math.min(page, pageCount - 1);
+  const start = current * ROWS_PER_PAGE;
+  const shown = rows.slice(start, start + ROWS_PER_PAGE);
 
   if (rows.length === 0) {
     return (
@@ -80,6 +107,7 @@ export function ListView({
             <col className="list-col-pri" />
             <col className="list-col-assignee" />
             <col className="list-col-spr" />
+            <col className="list-col-created" />
             <col className="list-col-updated" />
           </colgroup>
 
@@ -114,7 +142,7 @@ export function ListView({
           </thead>
 
           <tbody>
-            {rows.map((row) => {
+            {shown.map((row) => {
               const ink = row.assigned ? avatarColor(row.assigneeId, theme) : undefined;
               return (
                 <tr
@@ -192,6 +220,8 @@ export function ListView({
 
                   <td className="list-spr">{row.sprintTag}</td>
 
+                  <td className="list-created">{row.created}</td>
+
                   <td className={`list-updated list-tone-${row.updatedTone}`}>{row.updated}</td>
                 </tr>
               );
@@ -209,6 +239,46 @@ export function ListView({
           </button>
         )}
       </div>
+
+      {/*
+        **Always rendered, even on one page.** The count is the useful half —
+        "1–50 of 251" is how a reader finds out the board holds more than the
+        screen does, which is exactly what nothing told them before. The
+        controls disable rather than vanish, so the row does not change height
+        as you page.
+      */}
+      <nav className="list-pager" aria-label="Task list pages">
+        <span className="list-pager-count">
+          {rows.length === 0
+            ? 'No tasks'
+            : `${String(start + 1)}\u2013${String(start + shown.length)} of ${String(rows.length)}`}
+        </span>
+        <span className="list-pager-controls">
+          <button
+            type="button"
+            className="list-page-button"
+            disabled={current === 0}
+            onClick={() => {
+              setPage(current - 1);
+            }}
+          >
+            Previous
+          </button>
+          <span className="list-pager-where">
+            Page {String(current + 1)} of {String(pageCount)}
+          </span>
+          <button
+            type="button"
+            className="list-page-button"
+            disabled={current >= pageCount - 1}
+            onClick={() => {
+              setPage(current + 1);
+            }}
+          >
+            Next
+          </button>
+        </span>
+      </nav>
     </div>
   );
 }

@@ -6,8 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-620
-status: in-progress
-finished: 2026-09-28T12:58:42Z
+status: review
+finished: 2026-09-28T18:44:48Z
 started: 2026-09-28T12:48:52Z
 ---
 
@@ -49,10 +49,10 @@ answerable from the screen.
 
 - [x] Every task is fetched, by following `next_cursor` to exhaustion, with a
       bounded number of pages so a runaway cursor cannot hang the screen.
-- [ ] The lane counts and the List row count equal the project's real totals —
+- [x] The lane counts and the List row count equal the project's real totals —
       asserted against a fixture that returns **two** pages, which is what no
       current fixture does.
-- [ ] The List scrolls vertically inside its own box, with the header row
+- [x] The List scrolls vertically inside its own box, with the header row
       staying put, and the board's own one-screenful behaviour is unchanged.
 - [x] The List paginates, showing which rows of how many are on screen, with
       controls that are reachable by keyboard.
@@ -81,7 +81,7 @@ pages):
 
 Mutations: fetching only the first page turns the paging test **red**.
 
-- [ ] **The header row does not stay put (AC3).** After a 700 px wheel scroll
+- [x] **The header row does not stay put (AC3).** After a 700 px wheel scroll
       the first `th` sits at **−522 px**: it scrolled away with the rows.
       Screenshot: the table resumes at RV-16 with no column labels.
   - **Cause:** `table.list` computes `overflow: hidden`. A sticky element
@@ -91,24 +91,24 @@ Mutations: fetching only the first page turns the paging test **red**.
     `th sticky` → `tr` → `thead` → **`table.list overflow=hidden`**.
   - Move the clipping (the corner radius, presumably) so nothing between the
     `th` and `.list-scroll` scrolls or clips.
-- [ ] **Assert where the header is, not what it computes.** The test asserts
+- [x] **Assert where the header is, not what it computes.** The test asserts
       `getComputedStyle(head).position === 'sticky'`, which is true in the
       broken state above. Scroll with `page.mouse.wheel` and assert the
       header's `getBoundingClientRect().top` is still at the scroller's top.
       Show that assertion **red** against the current stylesheet before
       fixing it.
-- [ ] **The scroll test cannot tell "scrolls" from "clipped".** It sets
+- [x] **The scroll test cannot tell "scrolls" from "clipped".** It sets
       `scrollTop` from script, and that works on `overflow-y: hidden`.
       Measured: `.list-scroll { overflow-y: hidden }` left the whole file
       **green**. That is exactly `.board-main`'s rule, the pre-fix shape. The
       comment *"it really moves, rather than merely being allowed to"* claims
       more than the assertion proves (CLAUDE.md §5). The `mouse.wheel` change
       above fixes both.
-- [ ] **AC2's lane half has no assertion.** The two-page fixture is asserted
+- [x] **AC2's lane half has no assertion.** The two-page fixture is asserted
       only through the List's `of 65`. Assert the Kanban lane counts against
       the same fixture. They read the same array today, which is why it is
       worth pinning before something changes that.
-- [ ] **`truncated` is set and never shown.** `useBoard` reports it, and its
+- [x] **`truncated` is set and never shown.** `useBoard` reports it, and its
       comment says *"the screen says so instead"*; the commit says the cap is
       *"reported rather than swallowed"*. **Nothing reads it**: `git grep
       truncated` finds no consumer of the board's. Either render it (the
@@ -122,3 +122,32 @@ this task.**
 
 **What waits on this:** LAI-485, 486, 487 and 488 (the owner's List work,
 D-065) all `depends-on: [LAI-621]`.
+
+## Fix — 2026-09-28T18:44:48Z
+
+Built by the CHIEF session **on the owner's direct instruction**
+(*"complete all"*) on branch `build`, not by SHELL. SHELL was busy in
+`Laika-shell` on LAI-622 and was told by message.
+
+- **Header:** `board/board.css` still carried the pre-LAI-256 List's styles
+  (`.list { overflow: hidden; border; radius }`, `.list th`, `.list-sort`,
+  `.list-updated`, `.list-priority*`). They were dead or colliding, and the
+  `overflow: hidden` made the table the header's scroll container. The block
+  is deleted. `list.css` owns the List.
+- **Header test:** it now wheels the box and asserts the `th` is within 2 px of
+  the scroller's top. Before the fix: `−598px`, **red**.
+- **Scroll test:** it now uses `page.mouse.wheel`, not `scrollTop` from script.
+- **Lane counts:** `/board` with the two-page fixture sums its `.lane-count`s
+  to 65.
+- **`truncated` is shown:** a `board-scope board-truncated` note appears when
+  the cap is hit, asserted with an endless-cursor fixture.
+
+Mutations, each typechecking, run against `list-view.test.ts`, restored by
+checksum. Every one is **red on its named assertion**:
+
+- `.list { overflow: hidden }` back: the header test is red.
+- `.list-scroll { overflow-y: hidden }`: the wheel test is red.
+- first page only: the lane-count test is red (`not 65`).
+- the note's condition `&& false`: the truncation test is red.
+
+Web suite on `build`: **1072/1072**, `EXIT 0`.
