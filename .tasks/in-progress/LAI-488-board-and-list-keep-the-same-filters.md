@@ -2,11 +2,12 @@
 id: LAI-488
 title: 'Board and List keep the same filters, and the List hides what cannot apply'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-621, LAI-487]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-28T19:13:54Z
 ---
 
 ## Goal
