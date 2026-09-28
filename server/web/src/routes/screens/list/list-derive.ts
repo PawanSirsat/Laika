@@ -40,6 +40,7 @@ export interface ListRow {
   readonly blocked: boolean;
   /** `blocked by LC-1`, ready to render. Empty when nothing blocks it. */
   readonly blockedBy: string;
+  readonly created: string;
   readonly updated: string;
   readonly updatedTone: Tone;
 }
@@ -132,13 +133,15 @@ export function listRows({
       labels: task.tags.join(', '),
       blocked,
       blockedBy: blockerKeys.length === 0 ? '' : `blocked by ${blockerKeys.join(', ')}`,
+      created: updatedAge(task.created_at, now),
       updated: updatedAge(task.updated_at, now),
       updatedTone: updatedTone(task.updated_at, now),
     };
   });
 }
 
-export type SortKey = 'key' | 'title' | 'status' | 'priority' | 'assignee' | 'sprint' | 'updated';
+export type SortKey =
+  'key' | 'title' | 'status' | 'priority' | 'assignee' | 'sprint' | 'created' | 'updated';
 
 /** The design's column order, and the order the header renders in. */
 export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: string }[] = [
@@ -148,6 +151,13 @@ export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: str
   { key: 'priority', label: 'Pri' },
   { key: 'assignee', label: 'Assignee' },
   { key: 'sprint', label: 'Spr' },
+  /*
+   * **Both dates, in the same form** (LAI-621). The List answered "when was
+   * this last touched" and never "when was it made", so age and lifespan could
+   * not be told apart: a task updated today is either new or a year old, and
+   * the screen said the same thing about both.
+   */
+  { key: 'created', label: 'Created' },
   { key: 'updated', label: 'Updated' },
 ];
 
@@ -165,6 +175,9 @@ function sortValue(task: Task, row: ListRow, key: SortKey): string | number {
       return row.who.toLowerCase();
     case 'sprint':
       return row.sprintTag;
+    case 'created':
+      // Same reasoning as `updated`: the raw stamp, so the arrow is honest.
+      return task.created_at;
     case 'updated':
       // Newest first when ascending would be backwards; the raw stamp sorts
       // oldest-first and the caller flips it, so the arrow means what it says.

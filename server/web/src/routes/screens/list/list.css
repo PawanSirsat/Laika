@@ -15,6 +15,10 @@
  * 18px of document scroll at 900px.
  */
 .list-pane {
+  /* A column, so `.list-scroll` can be given the height that is left and
+     `.list-pager` can sit under it without being scrolled to. */
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   min-height: 0;
   /* The pane's own air, matching the board's. */
@@ -24,9 +28,26 @@
 
 /*
  * The table scrolls sideways inside its own box rather than pushing the page.
- * Seven columns have a floor of 940px and the window does not always have it.
+ * Eight columns have a floor of 1024px and the window does not always have it.
+ */
+/*
+ * **The List scrolls itself** (LAI-621).
+ *
+ * `.board-main` sets `overflow-y: hidden` on purpose: an ungrouped board is
+ * one screenful and each lane scrolls its own cards. A table is not one
+ * screenful, so sharing that container clipped every row past the fold with
+ * no way to reach it — the owner's report. `.board-grouped` is the precedent:
+ * a view whose shape differs takes its own scrolling rather than loosening
+ * the board's.
+ *
+ * `min-height: 0` is what lets a flex item shrink below its content; without
+ * it the box grows to the table and there is nothing to scroll.
  */
 .list-scroll {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  min-height: 0;
+  overscroll-behavior: contain;
   overflow-x: auto;
   overscroll-behavior-x: contain;
   min-width: 0;
@@ -37,7 +58,7 @@
 }
 
 .list {
-  min-width: 58.75rem;
+  min-width: 64rem;
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
@@ -63,13 +84,20 @@
 .list-col-spr {
   width: 2.875rem;
 }
+.list-col-created,
 .list-col-updated {
   width: 5.25rem;
 }
 
 /* ----------------------------------------------------------------- the header */
 
+/* Stuck to the top of the scroller, so the columns stay named while you read
+   row two hundred. `background` is not optional here — a transparent header
+   would let rows show through as they pass under it. */
 .list thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   padding: 0.5625rem 0.875rem;
   background: var(--bg-canvas);
   border-bottom: 1px solid var(--border-subtle);
@@ -257,9 +285,14 @@
 /* The pill is the only place the tone paints a box; the text columns take the
    colour alone, which is what the design does. */
 .list-pri,
+.list-created,
 .list-updated {
   background: none;
   border: none;
+}
+
+.list-created {
+  color: var(--text-muted);
 }
 
 .list-tone-flat.list-pri,
@@ -351,4 +384,66 @@
 .list-create:hover,
 .list-create:focus-visible {
   color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ the pager */
+
+/*
+ * Sits under the table rather than inside the scroller, so it stays put while
+ * the rows move — the count is the part people came for and it should not have
+ * to be scrolled to.
+ */
+.list-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.625rem;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}
+
+.list-pager-count {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.list-pager-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.list-pager-where {
+  font-variant-numeric: tabular-nums;
+}
+
+.list-page-button {
+  font: inherit;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  padding: 0.25rem 0.625rem;
+  cursor: pointer;
+}
+
+.list-page-button:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+/* Disabled rather than hidden: the row keeps its height at either end, so
+   paging does not make the table jump. */
+.list-page-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.list-page-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
