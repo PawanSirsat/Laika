@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-09-28T18:50:13Z
 started: 2026-09-28T18:46:12Z
 ---
 
@@ -49,13 +50,13 @@ SETTINGS"* and has never named `ORG`.
 
 ## Acceptance criteria
 
-- [ ] **No `ORG` heading and no *Unlisted work* row in the sidebar, for an
+- [x] **No `ORG` heading and no *Unlisted work* row in the sidebar, for an
       owner or admin as well as a member.** Asserted in the browser test. An
       owner is the reader who used to see it, so an owner is the case that
       proves anything.
-- [ ] **`/unlisted` still renders the triage screen** when typed by an admin.
+- [x] **`/unlisted` still renders the triage screen** when typed by an admin.
       It is hidden, not deleted.
-- [ ] **The reachability guard is re-aimed, not loosened.**
+- [x] **The reachability guard is re-aimed, not loosened.**
       `server/web/test/routes/reachable.test.ts` exists to catch exactly this
       change, a route leaving the nav without arriving anywhere, so it will go
       red, and it should. Give `/unlisted` a `REACHED_FROM` entry that says
@@ -64,7 +65,7 @@ SETTINGS"* and has never named `ORG`.
       Capacity tab (LAI-439). `/design/states` already uses *"reached by typing
       the path"*, so there is a precedent. **Do not exempt the route from the
       check any other way.**
-- [ ] **Every test that pins `Unlisted work` in `ORG` is re-aimed.** They are
+- [x] **Every test that pins `Unlisted work` in `ORG` is re-aimed.** They are
       named here, because a criterion that only says "update the tests" cannot
       be reviewed:
       - `server/web/test/routes/reachable.test.ts:128`, *"Unlisted work stays
@@ -80,7 +81,7 @@ SETTINGS"* and has never named `ORG`.
       - `server/web/test/routes.test.ts:75-80`. The expected value `[]` is
         still correct, but the comment above it gives the reason as "gated",
         and that reason is now wrong.
-- [ ] **The permission gate keeps a live subject.** `/unlisted` was the only
+- [x] **The permission gate keeps a live subject.** `/unlisted` was the only
       nav entry with `requires`, and the block at `nav-truth.test.ts:185-237`
       proves `permitted()` through it. Once the route is ungrouped, *"appears
       for someone who holds the permission"* has nothing to find. Its
@@ -91,15 +92,15 @@ SETTINGS"* and has never named `ORG`.
       `permitted()`/`routesInGroup` path. It has to be a test that goes red if
       `permitted()` returns `true` unconditionally, **and you have to show the
       red.**
-- [ ] Prose that says `ORG` holds Unlisted work is corrected, in the
+- [x] Prose that says `ORG` holds Unlisted work is corrected, in the
       `NAV_GROUPS` comment, the `mini` comment on `Route`, and the test
       comments above. A comment that describes a sidebar that no longer exists
       is the defect §5 names.
-- [ ] Both themes, and the sidebar's geometry is still right with one group
+- [x] Both themes, and the sidebar's geometry is still right with one group
       fewer. There should be no leftover gap or rule where `ORG` used to be,
       expanded or collapsed (the collapsed rail draws a `sidebar-minirule` per
       group).
-- [ ] Full gate: repo root, all three `EXIT 0`, each captured on its own line.
+- [x] Full gate: repo root, all three `EXIT 0`, each captured on its own line.
 
 ## Notes / context
 
@@ -116,3 +117,39 @@ reads across every project, and LAI-251 and LAI-279 settled that a tab is a
 space-scoped place. The owner asked for it hidden, not moved.
 
 **No new dependencies, no new tokens.**
+
+## Built — 2026-09-28T18:50:13Z
+
+Built by the CHIEF session **on the owner's direct instruction** (*"complete
+all"*), on branch `build`.
+
+- `route-table.ts`: `/unlisted` has `group: null`. `requires`, `orgLevel`,
+  `status` and `mini: 'UW'` are kept, so putting it back is one field.
+  `'ORG'` stays in `NAV_GROUPS`, with a comment saying it is empty on purpose.
+  `permitted()` is exported, and its doc comment is corrected: it said
+  omitting `holds` means *"unrestricted"*, but the code **hides** every gated
+  entry in that case.
+- `reachable.test.ts`: `/unlisted` gets a `REACHED_FROM` entry naming the
+  typed path and the Capacity tab. The old "stays in ORG" test is now *in no
+  group and no tab*.
+- `nav-truth.test.ts`:
+  - `ORG` is empty for every reader, admin included;
+  - the gate is proven on a **fixture route** through `permitted()`;
+  - a source check keeps `routesInGroup` and `navRoutes` calling it;
+  - `/unlisted` is still routed and still gated.
+- `spaces-sidebar.test.ts`: for an **owner**, `ORG` and *Unlisted work* are
+  absent, after a positive control that the sidebar rendered at all.
+- `routes.test.ts`: the comment's reason is corrected; the expected value
+  `[]` is unchanged.
+
+Mutations, each typechecking, restored by checksum:
+
+- `group: 'ORG'` back: red in `reachable` and `nav-truth`.
+- `permitted()` always `true`: **red** in `nav-truth` (the AC's named
+  mutation).
+- `navRoutes` drops the gate: **red** in the source check.
+  - **Not caught, stated plainly:** a bypass that *keeps* the text
+    `permitted(r, holds)` (e.g. `x || permitted(r, holds)`) passes the source
+    check. A source scan sees text, not behaviour.
+
+Web suite on `build`: **1073/1073**.
