@@ -57,6 +57,17 @@ function runFormatFix(): string {
 const UNFORMATTED_TS = 'export const a   =    {b:1,c:2}\n';
 const UNFORMATTED_JSON = '{\n  "keywords": [\n    "a",\n    "b"\n  ]\n}\n';
 
+/**
+ * **Every test here spawns** (LAI-489): the hook runs `git` five times to build
+ * a repo, and each test runs the real `format:fix` pipeline, which starts
+ * Prettier. That is seconds on a quiet machine and many more on a busy one,
+ * and it ran on vitest's defaults — 10s for the hook, 5s for each test — so a
+ * loaded gate went red with nothing wrong in the pipeline ("Hook timed out in
+ * 10000ms", measured twice on 2026-09-28). The budget is on the spawning, named
+ * here, not on the suite: nothing asserted below is about time.
+ */
+const SPAWN_BUDGET_MS = 60_000;
+
 beforeEach(() => {
   repo = mkdtempSync(join(tmpdir(), 'laika-fmt-'));
   git('init', '-q');
@@ -70,13 +81,13 @@ beforeEach(() => {
   write('server/src/keep.ts', UNFORMATTED_TS);
   git('add', '-A');
   git('commit', '-qm', 'initial');
-});
+}, SPAWN_BUDGET_MS);
 
 afterEach(() => {
   rmSync(repo, { recursive: true, force: true });
-});
+}, SPAWN_BUDGET_MS);
 
-describe('format:fix scopes to this worktree (LAI-026)', () => {
+describe('format:fix scopes to this worktree (LAI-026)', { timeout: SPAWN_BUDGET_MS }, () => {
   it('leaves an unformatted file this worktree did not change alone', () => {
     const before = read('plugin/plugin.json');
 
@@ -165,53 +176,61 @@ describe('format:fix scopes to this worktree (LAI-026)', () => {
   });
 });
 
-describe('format:fix respects the repo formatting policy (LAI-001)', () => {
-  it('never touches Markdown, which `format` deliberately does not check', () => {
-    // The repo hand-wraps prose to 80 columns; Prettier repaginates every table
-    // in CLAUDE.md and docs/. Caught by doing it — an earlier draft of this
-    // script rewrote 22 lines of CLAUDE.md as a side effect of a five-line edit.
-    const prose = '# Title\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n';
-    write('CLAUDE.md', prose);
+describe(
+  'format:fix respects the repo formatting policy (LAI-001)',
+  { timeout: SPAWN_BUDGET_MS },
+  () => {
+    it('never touches Markdown, which `format` deliberately does not check', () => {
+      // The repo hand-wraps prose to 80 columns; Prettier repaginates every table
+      // in CLAUDE.md and docs/. Caught by doing it — an earlier draft of this
+      // script rewrote 22 lines of CLAUDE.md as a side effect of a five-line edit.
+      const prose = '# Title\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n';
+      write('CLAUDE.md', prose);
 
-    runFormatFix();
+      runFormatFix();
 
-    expect(read('CLAUDE.md')).toBe(prose);
-  });
+      expect(read('CLAUDE.md')).toBe(prose);
+    });
 
-  it('formats the file types `format` checks', () => {
-    write('server/src/a.ts', UNFORMATTED_TS);
-    write('server/web/b.css', 'a{color:red}\n');
-    write('server/c.yaml', 'a:    1\n');
+    it('formats the file types `format` checks', () => {
+      write('server/src/a.ts', UNFORMATTED_TS);
+      write('server/web/b.css', 'a{color:red}\n');
+      write('server/c.yaml', 'a:    1\n');
 
-    runFormatFix();
+      runFormatFix();
 
-    expect(read('server/src/a.ts')).toBe('export const a = { b: 1, c: 2 };\n');
-    expect(read('server/web/b.css')).toBe('a {\n  color: red;\n}\n');
-    expect(read('server/c.yaml')).toBe('a: 1\n');
-  });
-});
+      expect(read('server/src/a.ts')).toBe('export const a = { b: 1, c: 2 };\n');
+      expect(read('server/web/b.css')).toBe('a {\n  color: red;\n}\n');
+      expect(read('server/c.yaml')).toBe('a: 1\n');
+    });
+  },
+);
 
-describe('third-party artefacts are never formatted (LAI-026, CHIEF addition)', () => {
-  it('leaves an ignored directory alone even when this worktree changed it', () => {
-    // `docs/design/` holds imported mockups and a vendored runtime. They are a
-    // visual reference — reformatting corrupts the comparison they exist for.
-    const mockup = '<sc-if value="{{ p.hasDiff }}">\n<div>   unformatted   </div>\n';
-    write('docs/design/mockup.dc.html', mockup);
-    write('docs/design/support.js', 'var x   =   1\n');
+describe(
+  'third-party artefacts are never formatted (LAI-026, CHIEF addition)',
+  { timeout: SPAWN_BUDGET_MS },
+  () => {
+    it('leaves an ignored directory alone even when this worktree changed it', () => {
+      // `docs/design/` holds imported mockups and a vendored runtime. They are a
+      // visual reference — reformatting corrupts the comparison they exist for.
+      const mockup = '<sc-if value="{{ p.hasDiff }}">\n<div>   unformatted   </div>\n';
+      write('docs/design/mockup.dc.html', mockup);
+      write('docs/design/support.js', 'var x   =   1\n');
 
-    runFormatFix();
+      runFormatFix();
 
-    expect(read('docs/design/mockup.dc.html')).toBe(mockup);
-    expect(read('docs/design/support.js')).toBe('var x   =   1\n');
-  });
+      expect(read('docs/design/mockup.dc.html')).toBe(mockup);
+      expect(read('docs/design/support.js')).toBe('var x   =   1\n');
+    });
 
-  it('does not fail the run on a file Prettier cannot parse', () => {
-    // Before the ignore entry this exited 2 and took the whole check down.
-    write('docs/design/broken.dc.html', '<sc-if value="{{ x }}">\n');
+    it('does not fail the run on a file Prettier cannot parse', () => {
+      // Before the ignore entry this exited 2 and took the whole check down.
+      write('docs/design/broken.dc.html', '<sc-if value="{{ x }}">\n');
 
-    expect(() => runFormatFix()).not.toThrow();
-  });
-});
+      expect(() => runFormatFix()).not.toThrow();
+    });
+  },
+);
 
 /**
  * The window reaches work this branch has already committed (LAI-101).
@@ -221,75 +240,79 @@ describe('third-party artefacts are never formatted (LAI-026, CHIEF addition)', 
  * with no command that fixed it. The window is now the branch's **merge-base
  * with `master`**, which still cannot reach a file this worktree never touched.
  */
-describe('format:fix reaches committed work on this branch (LAI-101)', () => {
-  /** A `master` to fork from, so `merge-base` has something to find. */
-  function branchFromMaster(): void {
-    git('branch', '-M', 'master');
-    git('checkout', '-qb', 'work');
-  }
+describe(
+  'format:fix reaches committed work on this branch (LAI-101)',
+  { timeout: SPAWN_BUDGET_MS },
+  () => {
+    /** A `master` to fork from, so `merge-base` has something to find. */
+    function branchFromMaster(): void {
+      git('branch', '-M', 'master');
+      git('checkout', '-qb', 'work');
+    }
 
-  it('formats a file this branch committed, which `git diff HEAD` cannot see', () => {
-    branchFromMaster();
-    write('server/src/mine.ts', UNFORMATTED_TS);
-    git('add', '-A');
-    git('commit', '-qm', 'my work');
+    it('formats a file this branch committed, which `git diff HEAD` cannot see', () => {
+      branchFromMaster();
+      write('server/src/mine.ts', UNFORMATTED_TS);
+      git('add', '-A');
+      git('commit', '-qm', 'my work');
 
-    // The whole gap: with the file committed, `git diff HEAD` is empty and the
-    // old script had nothing to hand Prettier.
-    expect(read('server/src/mine.ts')).toBe(UNFORMATTED_TS);
-    runFormatFix();
-    expect(read('server/src/mine.ts')).not.toBe(UNFORMATTED_TS);
-  });
+      // The whole gap: with the file committed, `git diff HEAD` is empty and the
+      // old script had nothing to hand Prettier.
+      expect(read('server/src/mine.ts')).toBe(UNFORMATTED_TS);
+      runFormatFix();
+      expect(read('server/src/mine.ts')).not.toBe(UNFORMATTED_TS);
+    });
 
-  it('still leaves a file only `master` touched alone', () => {
-    branchFromMaster();
-    write('server/src/mine.ts', UNFORMATTED_TS);
-    git('add', '-A');
-    git('commit', '-qm', 'my work');
+    it('still leaves a file only `master` touched alone', () => {
+      branchFromMaster();
+      write('server/src/mine.ts', UNFORMATTED_TS);
+      git('add', '-A');
+      git('commit', '-qm', 'my work');
 
-    runFormatFix();
+      runFormatFix();
 
-    // LAI-026's property, unchanged: `keep.ts` was committed before the fork, so
-    // it is not this branch's work and the formatter must not reach it. Widening
-    // the window must not widen the ownership.
-    expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
-    expect(read('plugin/plugin.json')).toBe(UNFORMATTED_JSON);
-  });
+      // LAI-026's property, unchanged: `keep.ts` was committed before the fork, so
+      // it is not this branch's work and the formatter must not reach it. Widening
+      // the window must not widen the ownership.
+      expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
+      expect(read('plugin/plugin.json')).toBe(UNFORMATTED_JSON);
+    });
 
-  it('on a freshly branched worktree, behaves exactly as before', () => {
-    branchFromMaster();
+    it('on a freshly branched worktree, behaves exactly as before', () => {
+      branchFromMaster();
 
-    // No commits of its own, so the merge-base *is* `HEAD` and the diff is
-    // empty — today's behaviour, and the uncommitted half still works.
-    write('server/src/uncommitted.ts', UNFORMATTED_TS);
-    runFormatFix();
+      // No commits of its own, so the merge-base *is* `HEAD` and the diff is
+      // empty — today's behaviour, and the uncommitted half still works.
+      write('server/src/uncommitted.ts', UNFORMATTED_TS);
+      runFormatFix();
 
-    expect(read('server/src/uncommitted.ts')).not.toBe(UNFORMATTED_TS);
-    expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
-  });
+      expect(read('server/src/uncommitted.ts')).not.toBe(UNFORMATTED_TS);
+      expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
+    });
 
-  it('on `master` itself, formats nothing already committed', () => {
-    git('branch', '-M', 'master');
-    write('server/src/late.ts', UNFORMATTED_TS);
-    git('add', '-A');
-    git('commit', '-qm', 'committed on master');
+    it('on `master` itself, formats nothing already committed', () => {
+      git('branch', '-M', 'master');
+      write('server/src/late.ts', UNFORMATTED_TS);
+      git('add', '-A');
+      git('commit', '-qm', 'committed on master');
 
-    runFormatFix();
+      runFormatFix();
 
-    // `merge-base master HEAD` is `HEAD` here, so the diff is empty — which is
-    // the safe outcome and the one AC4 asks to be confirmed rather than assumed.
-    // A `master` that formatted its own history would rewrite the whole repo.
-    expect(read('server/src/late.ts')).toBe(UNFORMATTED_TS);
-  });
+      // `merge-base master HEAD` is `HEAD` here, so the diff is empty — which is
+      // the safe outcome and the one AC4 asks to be confirmed rather than assumed.
+      // A `master` that formatted its own history would rewrite the whole repo.
+      expect(read('server/src/late.ts')).toBe(UNFORMATTED_TS);
+    });
 
-  it('falls back to HEAD when there is no `master` at all', () => {
-    // Every test above this block runs in exactly this state — `git init` with
-    // no `master` — so the fallback is what has kept LAI-026's suite passing.
-    // Asserted directly rather than relied on.
-    write('server/src/uncommitted.ts', UNFORMATTED_TS);
-    runFormatFix();
+    it('falls back to HEAD when there is no `master` at all', () => {
+      // Every test above this block runs in exactly this state — `git init` with
+      // no `master` — so the fallback is what has kept LAI-026's suite passing.
+      // Asserted directly rather than relied on.
+      write('server/src/uncommitted.ts', UNFORMATTED_TS);
+      runFormatFix();
 
-    expect(read('server/src/uncommitted.ts')).not.toBe(UNFORMATTED_TS);
-    expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
-  });
-});
+      expect(read('server/src/uncommitted.ts')).not.toBe(UNFORMATTED_TS);
+      expect(read('server/src/keep.ts')).toBe(UNFORMATTED_TS);
+    });
+  },
+);

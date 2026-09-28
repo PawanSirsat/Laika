@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { reportDiscovery } from '../helpers/discovery.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 
@@ -79,7 +79,7 @@ function tsFiles(dir: string): string[] {
  * signals and both lists — and the honest statement of the reach is: **two
  * spellings, plus a list of the near-misses somebody has ruled on.**
  */
-function servedTypes(): Map<string, string> {
+function computeServedTypes(): Map<string, string> {
   const found = new Map<string, string>();
   const named = new Set<string>();
 
@@ -122,7 +122,7 @@ function servedTypes(): Map<string, string> {
  * deliberate: a classification somebody has to notice and write down covers the
  * case in front of them, and this covers the next one too.
  */
-function extendsGraph(): Map<string, string> {
+function computeExtendsGraph(): Map<string, string> {
   const graph = new Map<string, string>();
 
   for (const file of tsFiles(SRC)) {
@@ -159,7 +159,7 @@ function coveredByExtends(paired: ReadonlySet<string>): Set<string> {
 }
 
 /** The server side of every pair in LAI-213's table. */
-function pairedTypes(): Set<string> {
+function computePairedTypes(): Set<string> {
   const text = readFileSync(DRIFT_CHECK, 'utf8');
   return new Set([...text.matchAll(/server: '([A-Za-z][A-Za-z0-9]*)'/g)].map((m) => m[1] ?? ''));
 }
@@ -256,6 +256,38 @@ const NOT_SERVED = new Map<string, string>([
 ]);
 
 const NO_MIRROR = 'no client type exists';
+
+/*
+ * **Each census is taken once, on a named budget** (LAI-489). Every one of
+ * them walks `src/` and parses what it finds, and the tests below called them
+ * again and again — each inside an `it` on vitest's 5s default. On a busy
+ * machine the walks alone passed 5s and five of this file's tests went red
+ * with nothing wrong in the code. The answers do not change during a run, so
+ * they are read once here and the tests only read them.
+ */
+let served: Map<string, string> | undefined;
+let graph: Map<string, string> | undefined;
+let paired: Set<string> | undefined;
+function servedTypes(): Map<string, string> {
+  served ??= computeServedTypes();
+  return served;
+}
+function extendsGraph(): Map<string, string> {
+  graph ??= computeExtendsGraph();
+  return graph;
+}
+function pairedTypes(): Set<string> {
+  paired ??= computePairedTypes();
+  return paired;
+}
+
+const CENSUS_BUDGET_MS = 60_000;
+
+beforeAll(() => {
+  servedTypes();
+  extendsGraph();
+  pairedTypes();
+}, CENSUS_BUDGET_MS);
 
 describe('the response-type census can fail', () => {
   it('finds served types and paired types, and says how many', () => {

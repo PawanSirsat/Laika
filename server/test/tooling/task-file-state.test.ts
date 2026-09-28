@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { reportDiscovery } from '../helpers/discovery.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 
@@ -74,7 +74,28 @@ function frontmatterOf(text: string): Frontmatter {
   return fields;
 }
 
+/**
+ * Every task file, **read once** (LAI-489).
+ *
+ * This walked and read all ~500 files on every call, and eight tests call it —
+ * each inside an `it` on vitest's 5s default. On a busy machine the walk alone
+ * passed 5s and the suite went red with nothing wrong in `.tasks/`. The first
+ * read now happens in the `beforeAll` below, on a named budget.
+ */
+let scanned: TaskFile[] | undefined;
 function taskFiles(): TaskFile[] {
+  scanned ??= scanTaskFiles();
+  return scanned;
+}
+
+/** The read itself — filesystem-bound, so it gets a budget, not an assertion's. */
+const SCAN_BUDGET_MS = 60_000;
+
+beforeAll(() => {
+  taskFiles();
+}, SCAN_BUDGET_MS);
+
+function scanTaskFiles(): TaskFile[] {
   const found: TaskFile[] = [];
 
   for (const dir of stateDirs()) {
