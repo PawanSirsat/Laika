@@ -8,6 +8,17 @@
   flex-direction: column;
   gap: var(--space-5);
   padding-bottom: var(--space-6);
+
+  /* Centred as one column rather than hugging the left edge. Every child is
+     capped at 46rem for line length, so on a wide screen the page was a narrow
+     strip against the left with the rest of the viewport empty.
+
+     The cap lives on the container, not here in a second place: the width is
+     the children's 46rem plus the gutter they already carry, so centring
+     changes where the column sits and nothing about how wide it is. */
+  width: 100%;
+  max-width: calc(46rem + 2 * var(--space-4));
+  margin-inline: auto;
 }
 
 .conn-lede {
