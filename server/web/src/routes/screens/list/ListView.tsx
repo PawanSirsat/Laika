@@ -1,9 +1,8 @@
-import { useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
-import { LIST_COLUMNS, listRows, sortRows, type SortKey } from './list-derive.ts';
+import { LIST_COLUMNS, listRows, nextSort, sortRows, type ListSort } from './list-derive.ts';
 import './list.css';
 
 /**
@@ -25,6 +24,17 @@ export interface ListViewProps {
   readonly canAdd: boolean;
   readonly onOpen: (taskId: string) => void;
   readonly onAdd: () => void;
+  /**
+   * The sort and the page, **from the URL** (LAI-485). They were `useState`
+   * here, and `BoardScreen` unmounts this view on every refetch, so each
+   * stream tick reset them. Held by the address bar they survive a remount,
+   * a reload and a shared link alike.
+   */
+  readonly sort: ListSort;
+  /** 0-based; clamped below, because the URL is untrusted. */
+  readonly page: number;
+  readonly onSort: (next: ListSort) => void;
+  readonly onPage: (page: number) => void;
 }
 
 /**
@@ -55,13 +65,11 @@ export function ListView({
   canAdd,
   onOpen,
   onAdd,
+  sort,
+  page,
+  onSort,
+  onPage,
 }: ListViewProps) {
-  const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>({
-    key: 'key',
-    ascending: true,
-  });
-  const [page, setPage] = useState(0);
-
   const rows = sortRows(
     listRows({ tasks, byId, members, sprintLabels, now: Date.now() }),
     byId,
@@ -124,17 +132,20 @@ export function ListView({
                   <button
                     type="button"
                     className="list-sort"
+                    title={`Sort by ${column.label}`}
                     onClick={() => {
-                      setSort((s) => ({
-                        key: column.key,
-                        ascending: s.key === column.key ? !s.ascending : true,
-                      }));
+                      onSort(nextSort(sort, column.key));
                     }}
                   >
                     {column.label}
-                    <span aria-hidden="true">
-                      {sort.key === column.key ? (sort.ascending ? ' ▲' : ' ▼') : ''}
-                    </span>
+                    {/* The active arrow is text; the resting glyph on every
+                        other sortable header is CSS (`list.css`), so it never
+                        enters a header's name for a screen reader or a test. */}
+                    {sort.key === column.key && (
+                      <span className="list-sort-arrow" aria-hidden="true">
+                        {sort.ascending ? '▲' : '▼'}
+                      </span>
+                    )}
                   </button>
                 </th>
               ))}
@@ -259,7 +270,7 @@ export function ListView({
             className="list-page-button"
             disabled={current === 0}
             onClick={() => {
-              setPage(current - 1);
+              onPage(current - 1);
             }}
           >
             Previous
@@ -272,7 +283,7 @@ export function ListView({
             className="list-page-button"
             disabled={current >= pageCount - 1}
             onClick={() => {
-              setPage(current + 1);
+              onPage(current + 1);
             }}
           >
             Next

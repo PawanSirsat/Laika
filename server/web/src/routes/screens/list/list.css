@@ -109,6 +109,17 @@
   text-align: right;
 }
 
+/*
+ * **Every header reads as the control it is** (LAI-485, owner: *"user can see
+ * that is clickable"*). They were buttons all along, but an unsorted column
+ * showed nothing and hover only nudged the colour. Now:
+ *  - a faint two-way glyph on every sortable header at rest;
+ *  - the sorted column at full strength, with an accent arrow;
+ *  - a hover background, not just a colour;
+ *  - a visible focus ring.
+ * The padding is taken back with a negative margin so the labels do not move
+ * off the design's column grid.
+ */
 .list-sort {
   font: inherit;
   font-size: 0.5625rem;
@@ -119,14 +130,47 @@
   color: var(--text-muted);
   background: none;
   border: none;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  padding: 0.3125rem 0.4375rem;
+  margin: -0.3125rem -0.4375rem;
+  border-radius: var(--radius-xs);
   cursor: pointer;
   white-space: nowrap;
 }
 
-.list-sort:hover,
+.list-sort:hover {
+  color: var(--text-secondary);
+  background: var(--bg-column);
+}
+
 .list-sort:focus-visible {
   color: var(--text-secondary);
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* The resting glyph is generated content, so it never enters the header's
+   accessible name — `aria-sort` on the `th` is what a screen reader hears. */
+.list thead th[aria-sort='none'] .list-sort::after {
+  content: '\2195';
+  font-size: 0.6875rem;
+  opacity: 0.45;
+}
+
+.list thead th[aria-sort='none'] .list-sort:hover::after {
+  opacity: 0.8;
+}
+
+.list thead th[aria-sort='ascending'] .list-sort,
+.list thead th[aria-sort='descending'] .list-sort {
+  color: var(--text-primary);
+}
+
+.list-sort-arrow {
+  color: var(--accent);
+  font-size: 0.5rem;
 }
 
 /* ------------------------------------------------------------------- the rows */

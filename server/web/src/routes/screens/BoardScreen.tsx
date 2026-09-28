@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
@@ -9,6 +9,8 @@ import { NewTaskForm } from './board/NewTaskForm.tsx';
 import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
+import { filterSignature } from './board/filter-keys.ts';
+import { pageParam, readPage, readSort, sortParams } from './list/list-derive.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { useEvents } from '../../api/use-events.ts';
 import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
@@ -522,11 +524,52 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     value: string | undefined,
     options?: { readonly push?: boolean },
   ): void => {
-    const next = new URLSearchParams(params);
-    if (value === undefined || value === '') next.delete(key);
-    else next.set(key, value);
-    onParamsChange(next, options);
+    setParams({ [key]: value }, options);
   };
+
+  /**
+   * Several keys in **one** history write. Two `setParam` calls in a row would
+   * each start from the same `params` and the second would undo the first —
+   * which is exactly what a sort change needs to avoid, since it also resets
+   * the page (LAI-485).
+   */
+  function setParams(
+    changes: Readonly<Record<string, string | undefined>>,
+    options?: { readonly push?: boolean },
+  ): void {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === undefined || value === '') next.delete(key);
+      else next.set(key, value);
+    }
+    onParamsChange(next, options);
+  }
+
+  /*
+   * **The List's sort and page, read from the URL** (LAI-485, D-065). Read on
+   * the board too, where they are simply unused — cheaper than a branch, and
+   * the tab switch (LAI-488) decides what travels, not this.
+   */
+  const listSort = readSort(params);
+  const listPage = readPage(params);
+
+  /*
+   * **A filter change sends the List back to page one**, whoever made it: the
+   * toolbar, the space bar and WORKING NOW all write filter keys, and a page
+   * number from a different set of rows points at arbitrary work. One effect
+   * watching the filters rather than a reset in every writer, so a writer
+   * added later cannot forget it.
+   */
+  const filters = filterSignature(params);
+  const lastFilters = useRef(filters);
+  useEffect(() => {
+    if (lastFilters.current === filters) return;
+    lastFilters.current = filters;
+    if (!params.has('page')) return;
+    const next = new URLSearchParams(params);
+    next.delete('page');
+    onParamsChange(next);
+  }, [filters, params, onParamsChange]);
 
   if (projectError !== null) {
     return (
@@ -1057,6 +1100,16 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               onOpen={openTaskInUrl}
               onAdd={() => {
                 setCreating(true);
+              }}
+              sort={listSort}
+              page={listPage}
+              onSort={(next) => {
+                // A new order starts at the top: page 3 of a different order
+                // is a different set of rows.
+                setParams({ ...sortParams(next), page: undefined });
+              }}
+              onPage={(next) => {
+                setParams({ page: pageParam(next) });
               }}
             />
           ) : (
