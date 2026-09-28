@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
+import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
-import { LIST_COLUMNS, listRows, sortRows, type SortKey } from './list-derive.ts';
+import type { BoardColumn } from '../../../api/columns.ts';
+import { LIST_COLUMNS, listRows, nextSort, sortRows, type ListSort } from './list-derive.ts';
 import './list.css';
 
 /**
@@ -20,11 +22,24 @@ export interface ListViewProps {
   readonly byId: ReadonlyMap<string, Task>;
   readonly members: ReadonlyMap<string, Member>;
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
+  /** The board's columns, so STATUS says what the board says (LAI-490). */
+  readonly columns: readonly BoardColumn[];
   readonly theme: Theme;
   readonly filtered: boolean;
   readonly canAdd: boolean;
   readonly onOpen: (taskId: string) => void;
   readonly onAdd: () => void;
+  /**
+   * The sort and the page, **from the URL** (LAI-485). They were `useState`
+   * here, and `BoardScreen` unmounts this view on every refetch, so each
+   * stream tick reset them. Held by the address bar they survive a remount,
+   * a reload and a shared link alike.
+   */
+  readonly sort: ListSort;
+  /** 0-based; clamped below, because the URL is untrusted. */
+  readonly page: number;
+  readonly onSort: (next: ListSort) => void;
+  readonly onPage: (page: number) => void;
 }
 
 /**
@@ -50,20 +65,33 @@ export function ListView({
   byId,
   members,
   sprintLabels,
+  columns,
   theme,
   filtered,
   canAdd,
   onOpen,
   onAdd,
+  sort,
+  page,
+  onSort,
+  onPage,
 }: ListViewProps) {
-  const [sort, setSort] = useState<{ key: SortKey; ascending: boolean }>({
-    key: 'key',
-    ascending: true,
-  });
-  const [page, setPage] = useState(0);
-
+  /*
+   * **The clock the ages are read against, moved once a minute** (LAI-486).
+   * `just now` would otherwise stay `just now` until something else happened
+   * to re-render the table. `startTicker` returns its own stop, which is what
+   * the effect returns, so leaving the List clears the interval.
+   */
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(
+    () =>
+      startTicker(() => {
+        setNow(Date.now());
+      }, 60_000),
+    [],
+  );
   const rows = sortRows(
-    listRows({ tasks, byId, members, sprintLabels, now: Date.now() }),
+    listRows({ tasks, byId, members, sprintLabels, now, columns }),
     byId,
     sort.key,
     sort.ascending,
@@ -124,17 +152,20 @@ export function ListView({
                   <button
                     type="button"
                     className="list-sort"
+                    title={`Sort by ${column.label}`}
                     onClick={() => {
-                      setSort((s) => ({
-                        key: column.key,
-                        ascending: s.key === column.key ? !s.ascending : true,
-                      }));
+                      onSort(nextSort(sort, column.key));
                     }}
                   >
                     {column.label}
-                    <span aria-hidden="true">
-                      {sort.key === column.key ? (sort.ascending ? ' ▲' : ' ▼') : ''}
-                    </span>
+                    {/* The active arrow is text; the resting glyph on every
+                        other sortable header is CSS (`list.css`), so it never
+                        enters a header's name for a screen reader or a test. */}
+                    {sort.key === column.key && (
+                      <span className="list-sort-arrow" aria-hidden="true">
+                        {sort.ascending ? '▲' : '▼'}
+                      </span>
+                    )}
                   </button>
                 </th>
               ))}
@@ -220,9 +251,20 @@ export function ListView({
 
                   <td className="list-spr">{row.sprintTag}</td>
 
-                  <td className="list-created">{row.created}</td>
+                  {/* A <time> with the whole moment on hover (LAI-486): the
+                      cell says "27 Sep, 14:05", the tooltip says which year
+                      and second. */}
+                  <td className={`list-created list-tone-${row.createdTone}`}>
+                    <time dateTime={row.created.iso} title={row.created.full}>
+                      {row.created.text}
+                    </time>
+                  </td>
 
-                  <td className={`list-updated list-tone-${row.updatedTone}`}>{row.updated}</td>
+                  <td className={`list-updated list-tone-${row.updatedTone}`}>
+                    <time dateTime={row.updated.iso} title={row.updated.full}>
+                      {row.updated.text}
+                    </time>
+                  </td>
                 </tr>
               );
             })}
@@ -259,7 +301,7 @@ export function ListView({
             className="list-page-button"
             disabled={current === 0}
             onClick={() => {
-              setPage(current - 1);
+              onPage(current - 1);
             }}
           >
             Previous
@@ -272,7 +314,7 @@ export function ListView({
             className="list-page-button"
             disabled={current >= pageCount - 1}
             onClick={() => {
-              setPage(current + 1);
+              onPage(current + 1);
             }}
           >
             Next

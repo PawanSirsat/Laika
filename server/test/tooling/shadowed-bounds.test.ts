@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { SERVER_ROOT } from '../../src/paths.ts';
 
 /**
@@ -57,7 +57,7 @@ function withoutComments(text: string): string {
 }
 
 /** Every `.max(SOME_CONSTANT)` in a route, by file. */
-function routeBounds(): { file: string; constant: string }[] {
+function computeRouteBounds(): { file: string; constant: string }[] {
   return tsFiles(ROUTES).flatMap((file) => {
     const rel = file.slice(ROUTES.length + 1);
     const code = withoutComments(readFileSync(file, 'utf8'));
@@ -74,7 +74,7 @@ function routeBounds(): { file: string; constant: string }[] {
  * The comparison, not the declaration — a service may export a constant for a
  * route to use without enforcing it, and that is not shadowing.
  */
-function serviceEnforced(): Set<string> {
+function computeServiceEnforced(): Set<string> {
   const enforced = new Set<string>();
   for (const file of tsFiles(SERVICES)) {
     const code = withoutComments(readFileSync(file, 'utf8'));
@@ -91,6 +91,30 @@ function serviceEnforced(): Set<string> {
  * sentence saying which error is being discarded and why that is acceptable.
  */
 const ALLOWED_SHADOWS = new Map<string, string>();
+
+/*
+ * **Read once, on a named budget** (LAI-489's sweep). Both scans walk a source
+ * tree and read every file in it, and the tests called them inside `it`s on
+ * vitest's 5s default — the shape that timed four other tooling files out on a
+ * loaded machine. The answers do not change during a run.
+ */
+let bounds: { file: string; constant: string }[] | undefined;
+let enforced: Set<string> | undefined;
+function routeBounds(): { file: string; constant: string }[] {
+  bounds ??= computeRouteBounds();
+  return bounds;
+}
+function serviceEnforced(): Set<string> {
+  enforced ??= computeServiceEnforced();
+  return enforced;
+}
+
+const SCAN_BUDGET_MS = 60_000;
+
+beforeAll(() => {
+  routeBounds();
+  serviceEnforced();
+}, SCAN_BUDGET_MS);
 
 describe('a route does not shadow a service bound', () => {
   it('reads routes and services', () => {

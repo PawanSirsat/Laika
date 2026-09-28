@@ -2,11 +2,14 @@
 id: LAI-490
 title: "The List's STATUS column ignores the board's column names"
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p2
 depends-on: [LAI-621]
 discovered-from: LAI-617
-status: backlog
+status: done
+finished: 2026-09-28T19:22:22Z
+started: 2026-09-28T19:19:51Z
+reviewed: 2026-09-28T19:22:22Z
 ---
 
 ## Goal
@@ -35,16 +38,16 @@ a header reading *"TESTING"*. It still happens, one tab over.
 
 ## Acceptance criteria
 
-- [ ] The List's STATUS cell uses `boardStatusLabel` with the board's columns,
+- [x] The List's STATUS cell uses `boardStatusLabel` with the board's columns,
       including hidden ones, as the drawer does. The shipped two-status
       *To do* column keeps *Backlog* and *To do*, as LAI-617's lossless-only
       rule requires.
-- [ ] **Sorting by status is unaffected.** It sorts by the status value (in the
+- [x] **Sorting by status is unaffected.** It sorts by the status value (in the
       workflow order LAI-485 introduces), never by the displayed label, so
       renaming a column cannot reorder the List.
-- [ ] A unit test in `list-derive.test.ts` covers both: a renamed single-status
+- [x] A unit test in `list-derive.test.ts` covers both: a renamed single-status
       column changes the label, and a two-status column does not.
-- [ ] Full gate: repo root, all three `EXIT 0`, each status captured on its own
+- [x] Full gate: repo root, all three `EXIT 0`, each status captured on its own
       line.
 
 ## Notes / context
@@ -54,3 +57,35 @@ a header reading *"TESTING"*. It still happens, one tab over.
 - If LAI-485 has landed, its status sort uses the value; check that this
   change leaves it so.
 - **No new dependencies, no new tokens.**
+
+## Built — 2026-09-28T19:22:22Z
+
+Built by the CHIEF session **on the owner's direct instruction**, on branch
+`build`.
+
+- `listRows` takes the board's `columns` (optional, defaulting to none) and
+  labels through `boardStatusLabel`, so the lossless-only rule from LAI-617
+  holds.
+- `ListView` receives `columns.state.columns`, hidden ones included, from
+  `BoardScreen`.
+- Sorting is untouched: `compareBy` reads the status **value** in workflow
+  order (LAI-485), and a test pins that a renamed column cannot reorder the
+  List.
+
+**Red first:** *"a renamed single-status column lends its name"* failed before
+the change.
+
+Mutations, both **red on the named test**: the board names ignored, and status
+sorted by its label.
+
+Web **1139/1139**; lint green.
+
+## Review — 2026-09-28T19:22:22Z (CHIEF)
+
+**Accepted.** The same session built and reviewed this, on the owner's
+instruction.
+
+- All three criteria are tested.
+- It was red first, and both mutations turned red.
+- *Testing* in the STATUS column will be seen on the full instance in the
+  final pass, where `Review` is renamed `Testing`.

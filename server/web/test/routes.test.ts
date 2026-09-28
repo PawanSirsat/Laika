@@ -73,10 +73,10 @@ void describe('sidebar groups (AC1)', () => {
     // (`SPACE_TAB_PATHS`). What is left beside the spaces is genuinely org-wide.
     assert.deepEqual(
       routesInGroup('ORG').map((r) => r.label),
-      // **Empty without a predicate, since LAI-251.** `Unlisted work` is the
-      // group's only member now — Capacity became a space tab — and it
-      // requires `audit_log.export`, which an absent predicate never grants.
-      // The gated case is asserted in `nav-truth.test.ts`.
+      // **Empty for every reader, since LAI-484.** `Unlisted work` was the
+      // group's only member — Capacity became a space tab in LAI-251 — and the
+      // owner asked for it hidden, so it is `group: null` for now. The gate
+      // it carries is asserted on a fixture in `nav-truth.test.ts`.
       [],
     );
     assert.deepEqual(

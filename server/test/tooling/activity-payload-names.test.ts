@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { reportDiscovery } from '../helpers/discovery.ts';
 import * as schema from '../../src/db/schema.ts';
 import { apiFieldNames, apiPayload, appendActivity, readPayload } from '../../src/db/activity.ts';
@@ -147,11 +147,11 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
  * `db/activity.ts` is scanned along with everything else and contributes
  * nothing — it *defines* `appendActivity`, and a definition names no type.
  */
-function emittedActivityTypes(): Set<string> {
+function computeEmittedActivityTypes(): Set<string> {
   const known = new Set<string>(ACTIVITY_TYPES);
   const emitted = new Set<string>();
 
-  for (const file of sourceFiles(SRC)) {
+  for (const file of srcFiles()) {
     const source = readFileSync(file, 'utf8');
 
     // Walk each `appendActivity(` call to its closing paren and take the §4.8
@@ -220,6 +220,30 @@ function actorFor(t: TestDb, userId: string): ResolvedActor {
 const DAY = 86_400_000;
 const JAN1 = Date.UTC(2026, 0, 1);
 
+/*
+ * **Walked and read once, on a named budget** (LAI-489's sweep). The `src/`
+ * walk and the read of every file under it ran inside `it`s on vitest's 5s
+ * default, several times over — the shape that timed four other tooling files
+ * out on a loaded machine.
+ */
+let walked: string[] | undefined;
+let emitted: Set<string> | undefined;
+function srcFiles(): string[] {
+  walked ??= sourceFiles(SRC);
+  return walked;
+}
+function emittedActivityTypes(): Set<string> {
+  emitted ??= computeEmittedActivityTypes();
+  return emitted;
+}
+
+const SCAN_BUDGET_MS = 60_000;
+
+beforeAll(() => {
+  srcFiles();
+  emittedActivityTypes();
+}, SCAN_BUDGET_MS);
+
 describe('the derived list of names that must not appear', () => {
   it('finds the camelCase properties the schema actually has', () => {
     const names = drizzleOnlyNames();
@@ -269,14 +293,14 @@ describe('the sweep finds its own files', () => {
     // LAI-465. This guard's reach is a directory walk plus a regex over each
     // file's `type:` lines — both silent about what they skipped.
     reportDiscovery('activity emitters', {
-      sourceFiles: sourceFiles(SRC).length,
+      sourceFiles: srcFiles().length,
       emittedTypes: emittedActivityTypes().size,
       drizzleOnlyNames: drizzleOnlyNames().size,
     });
   });
 
   it('discovers every service file, including the seven the old list never named', () => {
-    const found = sourceFiles(SRC).map((path) => path.replace(/^.*\/src\//, ''));
+    const found = srcFiles().map((path) => path.replace(/^.*\/src\//, ''));
 
     // The six the hand-written list did name...
     for (const file of [
@@ -304,7 +328,7 @@ describe('the sweep finds its own files', () => {
     // The failure this whole task is about is a guard that passes while
     // checking nothing. A wrong path here would do exactly that silently: no
     // files → no emitted types → nothing "missed" → green.
-    expect(sourceFiles(SRC).length).toBeGreaterThan(20);
+    expect(srcFiles().length).toBeGreaterThan(20);
 
     const emitted = emittedActivityTypes();
     expect(emitted.size).toBeGreaterThan(10);

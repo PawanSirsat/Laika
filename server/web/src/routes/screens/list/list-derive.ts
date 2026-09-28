@@ -1,4 +1,5 @@
-import { blockedState, statusLabel, updatedAge } from '../../../api/board-derive.ts';
+import { ageDays, blockedState, boardStatusLabel, STALE_DAYS } from '../../../api/board-derive.ts';
+import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 
 /**
@@ -40,8 +41,10 @@ export interface ListRow {
   readonly blocked: boolean;
   /** `blocked by LC-1`, ready to render. Empty when nothing blocks it. */
   readonly blockedBy: string;
-  readonly created: string;
-  readonly updated: string;
+  /** `just now` / `4 min ago` / `27 Sep, 14:05`, with the full moment (LAI-486). */
+  readonly created: TimeLabel;
+  readonly createdTone: Tone;
+  readonly updated: TimeLabel;
   readonly updatedTone: Tone;
 }
 
@@ -69,17 +72,21 @@ function priorityTone(priority: Task['priority']): Tone {
 }
 
 /**
- * How the age reads.
+ * How an age is coloured (LAI-486, D-065).
  *
- * The design gives *just now* the accent and anything over five days the amber
- * it uses for stale everywhere else — the same five-day threshold the rail's
- * Stale panel uses, so the two cannot disagree about what quiet means.
+ * - **Under an hour: the accent** — the owner asked for very recent work to
+ *   stand out, and an hour is the edge of "just touched".
+ * - **Amber: open work quiet for `STALE_DAYS`** — the rail's own threshold and
+ *   comparison. A `done` or `cancelled` task is finished, not neglected; it
+ *   used to go amber after five days like everything else, which is why every
+ *   Done row in the owner's screenshot looked like a problem.
+ * - Otherwise muted.
  */
-const STALE_MS = 5 * 24 * 60 * 60 * 1000;
-
-function updatedTone(updatedAt: number, now: number): Tone {
-  if (now - updatedAt > STALE_MS) return 'warn';
-  return updatedAge(updatedAt, now) === 'just now' ? 'accent' : 'flat';
+function ageTone(at: number, now: number, status: Task['status'], staleCounts: boolean): Tone {
+  if (timeLabel(at, now).fresh) return 'accent';
+  const finished = status === 'done' || status === 'cancelled';
+  if (staleCounts && !finished && ageDays(at, now) >= STALE_DAYS) return 'warn';
+  return 'flat';
 }
 
 export interface ListRowInput {
@@ -94,6 +101,14 @@ export interface ListRowInput {
    */
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
   readonly now: number;
+  /**
+   * The board's columns, hidden ones included, so a status reads as the column
+   * that owns it (LAI-490) — the List said *Review* under a board whose column
+   * says *Testing*. Absent means "no board to ask", and every status falls back
+   * to its own name.
+   */
+  readonly columns?:
+    readonly { readonly name: string; readonly statuses: readonly Task['status'][] }[] | undefined;
 }
 
 export function listRows({
@@ -102,6 +117,7 @@ export function listRows({
   members,
   sprintLabels,
   now,
+  columns = [],
 }: ListRowInput): readonly ListRow[] {
   return tasks.map((task) => {
     const member = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -121,7 +137,9 @@ export function listRows({
       key: task.key,
       title: task.title,
       muted: task.status === 'done' || task.status === 'cancelled',
-      status: statusLabel(task.status),
+      // The label only — sorting reads the value (`compareBy`), so renaming a
+      // column can never reorder the List.
+      status: boardStatusLabel(task.status, columns),
       statusTone: statusTone(task.status),
       priority: task.priority.toUpperCase(),
       priorityTone: priorityTone(task.priority),
@@ -133,9 +151,12 @@ export function listRows({
       labels: task.tags.join(', '),
       blocked,
       blockedBy: blockerKeys.length === 0 ? '' : `blocked by ${blockerKeys.join(', ')}`,
-      created: updatedAge(task.created_at, now),
-      updated: updatedAge(task.updated_at, now),
-      updatedTone: updatedTone(task.updated_at, now),
+      created: timeLabel(task.created_at, now),
+      // Staleness is about going quiet, so only UPDATED can be amber; an old
+      // CREATED is just old.
+      createdTone: ageTone(task.created_at, now, task.status, false),
+      updated: timeLabel(task.updated_at, now),
+      updatedTone: ageTone(task.updated_at, now, task.status, true),
     };
   });
 }
@@ -161,43 +182,146 @@ export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: str
   { key: 'updated', label: 'Updated' },
 ];
 
-function sortValue(task: Task, row: ListRow, key: SortKey): string | number {
+/**
+ * The workflow order, which is how a person reads status — not the alphabet,
+ * which put `cancelled` second and `todo` last (LAI-485).
+ */
+const STATUS_ORDER: readonly Task['status'][] = [
+  'backlog',
+  'todo',
+  'in_progress',
+  'review',
+  'done',
+  'cancelled',
+];
+
+/** `S2` → 2, so S2 sorts before S10. No sprint sorts after every sprint. */
+function sprintNumber(tag: string): number {
+  const n = /\d+/.exec(tag)?.[0];
+  return n === undefined ? Number.POSITIVE_INFINITY : Number(n);
+}
+
+/**
+ * One column's comparison, before direction (LAI-485).
+ *
+ * **Unassigned sorts after every name** rather than alphabetically among them:
+ * "Unassigned" is the absence of a person, not a person called Unassigned.
+ */
+function compareBy(key: SortKey, a: Task, b: Task, ra: ListRow, rb: ListRow): number {
   switch (key) {
     case 'key':
-      return task.number;
+      return a.number - b.number;
     case 'title':
-      return task.title.toLowerCase();
+      return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
     case 'status':
-      return task.status;
+      return STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
     case 'priority':
-      return task.priority;
+      return a.priority.localeCompare(b.priority);
     case 'assignee':
-      return row.who.toLowerCase();
-    case 'sprint':
-      return row.sprintTag;
+      if (ra.assigned !== rb.assigned) return ra.assigned ? -1 : 1;
+      return ra.who.toLowerCase().localeCompare(rb.who.toLowerCase());
+    case 'sprint': {
+      const x = sprintNumber(ra.sprintTag);
+      const y = sprintNumber(rb.sprintTag);
+      return x === y ? 0 : x < y ? -1 : 1;
+    }
     case 'created':
-      // Same reasoning as `updated`: the raw stamp, so the arrow is honest.
-      return task.created_at;
+      // The raw stamp, so the arrow means what it says.
+      return a.created_at - b.created_at;
     case 'updated':
-      // Newest first when ascending would be backwards; the raw stamp sorts
-      // oldest-first and the caller flips it, so the arrow means what it says.
-      return task.updated_at;
+      return a.updated_at - b.updated_at;
   }
 }
 
+/**
+ * Sort the rows. **Ties break by key number, ascending, whatever the
+ * direction** (LAI-485) — sorting by status or priority used to leave each
+ * group in whatever order the rows arrived, so the same click could give a
+ * different list twice.
+ */
 export function sortRows(
   rows: readonly ListRow[],
   byId: ReadonlyMap<string, Task>,
   key: SortKey,
   ascending: boolean,
 ): readonly ListRow[] {
-  const decorated = rows.map((row) => {
+  const decorated = rows.flatMap((row) => {
     const task = byId.get(row.id);
-    return { row, value: task === undefined ? '' : sortValue(task, row, key) };
+    return task === undefined ? [] : [{ row, task }];
   });
-  decorated.sort((a, b) => {
-    const order = a.value < b.value ? -1 : a.value > b.value ? 1 : 0;
-    return ascending ? order : -order;
+  decorated.sort((x, y) => {
+    const primary = compareBy(key, x.task, y.task, x.row, y.row);
+    if (primary !== 0) return ascending ? primary : -primary;
+    return x.task.number - y.task.number;
   });
   return decorated.map((d) => d.row);
+}
+
+/* ------------------------------------------------------ the sort in the URL */
+
+export interface ListSort {
+  readonly key: SortKey;
+  readonly ascending: boolean;
+}
+
+/**
+ * **Newest-updated first** (D-065). Not written to the URL: a bare `/list`
+ * means this, so writing it would make two addresses for one list.
+ */
+export const DEFAULT_SORT: ListSort = { key: 'updated', ascending: false };
+
+const SORT_KEYS: ReadonlySet<string> = new Set(LIST_COLUMNS.map((c) => c.key));
+
+/**
+ * Which way a column starts when it is first clicked: **dates newest first**,
+ * everything else A→Z. A reader clicking CREATED wants the new work, and
+ * clicking it twice to get there was the old behaviour.
+ */
+export function firstDirection(key: SortKey): boolean {
+  return key !== 'created' && key !== 'updated';
+}
+
+/** A header click: a new column starts its own way, the same column flips. */
+export function nextSort(current: ListSort, clicked: SortKey): ListSort {
+  return current.key === clicked
+    ? { key: clicked, ascending: !current.ascending }
+    : { key: clicked, ascending: firstDirection(clicked) };
+}
+
+/**
+ * The sort a URL asks for. **The URL is untrusted input**: an unknown `sort`,
+ * or a `dir` with no `sort`, is the default rather than an error; a known
+ * `sort` with a missing or unknown `dir` starts the column's own way.
+ */
+export function readSort(params: URLSearchParams): ListSort {
+  const key = params.get('sort');
+  if (key === null || !SORT_KEYS.has(key)) return DEFAULT_SORT;
+  const dir = params.get('dir');
+  const sortKey = key as SortKey;
+  if (dir === 'asc') return { key: sortKey, ascending: true };
+  if (dir === 'desc') return { key: sortKey, ascending: false };
+  return { key: sortKey, ascending: firstDirection(sortKey) };
+}
+
+/** The params for a sort — both absent for the default. */
+export function sortParams(sort: ListSort): {
+  readonly sort: string | undefined;
+  readonly dir: string | undefined;
+} {
+  if (sort.key === DEFAULT_SORT.key && sort.ascending === DEFAULT_SORT.ascending) {
+    return { sort: undefined, dir: undefined };
+  }
+  return { sort: sort.key, dir: sort.ascending ? 'asc' : 'desc' };
+}
+
+/** `?page=` is 1-based for people; this is 0-based. Junk reads as page one. */
+export function readPage(params: URLSearchParams): number {
+  const raw = params.get('page');
+  if (raw === null || !/^\d+$/.test(raw)) return 0;
+  return Math.max(0, Number(raw) - 1);
+}
+
+/** Page one is not written, for the same reason the default sort is not. */
+export function pageParam(page: number): string | undefined {
+  return page <= 0 ? undefined : String(page + 1);
 }

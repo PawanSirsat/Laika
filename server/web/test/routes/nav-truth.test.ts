@@ -19,8 +19,10 @@ import {
   isShipped,
   NAV_GROUPS,
   navRoutes,
+  permitted,
   ROUTES,
   routesInGroup,
+  type Route,
 } from '../../src/routes/route-table.ts';
 import { code } from '../helpers/code.ts';
 
@@ -152,15 +154,17 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // today**, which means the filter above is currently guarding nothing
     // observable; it stays because the next hidden route re-creates the case,
     // and the rule is what matters rather than today's list.
-    // **`ORG` is genuinely empty without a predicate since LAI-251**, and that
-    // is the filter's first real customer rather than a defect: its only
-    // member is gated, so a reader without `audit_log.export` must not see the
-    // heading. Asserted as the specific expected case, not waved through.
+    // **`ORG` is empty for every reader since LAI-484** — the owner asked for
+    // the section hidden, and `/unlisted` (its only member) is `group: null`
+    // for now. The filter is what keeps an empty heading off the screen, so
+    // this is its real customer. Asserted as the specific expected case, for
+    // an admin as well: the reader who used to see it is the one that matters.
     const empty = NAV_GROUPS.filter((g) => routesInGroup(g).length === 0);
-    assert.deepEqual(empty, ['ORG'], 'only ORG may be empty, and only when ungated');
-    assert.ok(
-      routesInGroup('ORG', () => true).length > 0,
-      'ORG must have a member for a reader who holds the permission',
+    assert.deepEqual(empty, ['ORG'], 'only ORG may be empty');
+    assert.deepEqual(
+      routesInGroup('ORG', () => true).map((r) => r.path),
+      [],
+      'ORG has a member again — if that is deliberate, LAI-484 is being reversed',
     );
   });
 
@@ -191,24 +195,47 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
     assert.ok(gated.length > 0, 'no route requires a permission — this file is checking air');
   });
 
-  void test('unlisted work appears for someone who holds the permission', () => {
-    const labels = navRoutes(holdsAll).map((r) => r.label);
-    assert.ok(labels.includes('Unlisted work'), 'an admin cannot reach the triage queue');
+  /*
+   * **The gate is proven on a fixture, since LAI-484.** `/unlisted` was the
+   * only grouped, gated route, and it left the sidebar. Tests that looked for
+   * it in `navRoutes()` would now pass because it has **no group**, not
+   * because it is gated: a broken setup satisfying the assertion (CLAUDE.md
+   * §5). So the rule is asserted on a route built here, through the same
+   * `permitted()` the nav functions call, and the source check below keeps
+   * the nav functions calling it.
+   */
+  const GATED: Route = {
+    path: '/fixture-gated',
+    label: 'Fixture gated',
+    group: 'ORG',
+    requires: 'audit_log.export',
+    status: 'ready',
+    phase: 'fixture',
+  };
+
+  void test('a gated entry is offered to someone who holds the permission', () => {
+    assert.equal(permitted(GATED, holdsAll), true, 'an admin cannot reach a gated screen');
   });
 
   void test('and is absent — not disabled — for someone who does not', () => {
-    const labels = navRoutes(holdsNone).map((r) => r.label);
-    assert.ok(
-      !labels.includes('Unlisted work'),
-      'the queue is offered to someone who cannot open it',
-    );
+    assert.equal(permitted(GATED, holdsNone), false, 'a gated screen is offered to a Member');
   });
 
   void test('omitting the predicate hides it, rather than revealing it', () => {
     // The dangerous default. A caller that forgets to pass permissions must not
     // thereby publish every gated screen.
-    const labels = navRoutes().map((r) => r.label);
-    assert.ok(!labels.includes('Unlisted work'), 'gated entries default to visible');
+    assert.equal(permitted(GATED), false, 'gated entries default to visible');
+  });
+
+  void test('both nav functions ask the gate, so the fixture speaks for the sidebar', async () => {
+    const table = code(
+      await readFile(new URL('../../src/routes/route-table.ts', import.meta.url), 'utf8'),
+    );
+    for (const fn of ['routesInGroup', 'navRoutes']) {
+      const body = new RegExp(`export function ${fn}\\([\\s\\S]*?\\n}`).exec(table)?.[0] ?? '';
+      assert.notEqual(body, '', `${fn} is gone from route-table.ts`);
+      assert.match(body, /permitted\(r, holds\)/, `${fn} no longer asks permitted()`);
+    }
   });
 
   void test('ungated entries are unaffected by the predicate', () => {
@@ -224,15 +251,12 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
     }
   });
 
-  void test('the group filter honours it too, or the heading appears empty', () => {
-    // `ORG` since LAI-248 — `REVIEW` is gone, its project-scoped members are
-    // tabs, and what is left beside the spaces reads across the whole org.
-    const org = routesInGroup('ORG', holdsNone).map((r) => r.label);
-    assert.ok(!org.includes('Unlisted work'));
-    assert.ok(
-      routesInGroup('ORG', holdsAll)
-        .map((r) => r.label)
-        .includes('Unlisted work'),
-    );
+  void test('Unlisted work is offered to nobody while it is hidden (LAI-484)', () => {
+    // Hidden, not deleted: the route is still gated and still routed — the
+    // owner's "for now" — but no reader, admin included, is offered it.
+    const route = ROUTES.find((r) => r.path === '/unlisted');
+    assert.ok(route !== undefined, '/unlisted was deleted, not hidden');
+    assert.equal(route.requires, 'audit_log.export', 'the gate went with the sidebar entry');
+    assert.ok(!navRoutes(holdsAll).some((r) => r.path === '/unlisted'), 'offered to an admin');
   });
 });

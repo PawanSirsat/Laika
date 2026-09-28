@@ -16,6 +16,14 @@ export interface ViewSettingsProps {
   readonly onHideDoneChange?: ((days: number | null) => void) | undefined;
   readonly group: string;
   readonly onGroupChange: (group: string) => void;
+  /**
+   * Opened from the List (LAI-488). Grouping, card fields, density and column
+   * width all shape **Kanban cards** — the List has neither groups nor cards —
+   * so there they are **absent**, not disabled (LAI-082): a control that
+   * cannot do anything should not be offered. Filter and Hide done apply to
+   * both views and stay.
+   */
+  readonly forList?: boolean | undefined;
   /** Active URL filters, as removable chips. */
   readonly filters: readonly { readonly key: string; readonly label: string }[];
   readonly onClearFilter: (key: string) => void;
@@ -83,6 +91,7 @@ export function ViewSettings({
   filters,
   onClearFilter,
   onClearFilters,
+  forList = false,
 }: ViewSettingsProps) {
   const panel = useRef<HTMLDivElement | null>(null);
   const [query, setQuery] = useState('');
@@ -132,29 +141,31 @@ export function ViewSettings({
           </button>
         </header>
 
-        <section className="vs-section">
-          <h3 className="vs-label">Group by</h3>
-          <div className="vs-radios">
-            {GROUPS.map((option) => (
-              <label key={option.value} className="vs-radio">
-                <input
-                  type="radio"
-                  name="vs-group"
-                  checked={group === option.value}
-                  onChange={() => {
-                    onGroupChange(option.value);
-                  }}
-                />
-                {option.label}
-              </label>
-            ))}
-          </div>
-          {group !== 'column' && (
-            <p className="vs-note">
-              Grouped views are read-only — drag is off, and columns cannot be edited.
-            </p>
-          )}
-        </section>
+        {!forList && (
+          <section className="vs-section">
+            <h3 className="vs-label">Group by</h3>
+            <div className="vs-radios">
+              {GROUPS.map((option) => (
+                <label key={option.value} className="vs-radio">
+                  <input
+                    type="radio"
+                    name="vs-group"
+                    checked={group === option.value}
+                    onChange={() => {
+                      onGroupChange(option.value);
+                    }}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+            {group !== 'column' && (
+              <p className="vs-note">
+                Grouped views are read-only — drag is off, and columns cannot be edited.
+              </p>
+            )}
+          </section>
+        )}
 
         <section className="vs-section">
           <h3 className="vs-label">Filter</h3>
@@ -221,143 +232,149 @@ export function ViewSettings({
           </p>
         </section>
 
-        <section className="vs-section">
-          <h3 className="vs-label">Show fields</h3>
+        {!forList && (
+          <>
+            <section className="vs-section">
+              <h3 className="vs-label">Show fields</h3>
 
-          {/*
+              {/*
             **A search and a removable list**, which is the reference's shape —
             it was a column of checkboxes. With nine fields the difference is
             cosmetic; the point is that adding a tenth does not make the panel
             longer, because unselected fields live behind the search.
           */}
-          <input
-            type="search"
-            className="vs-search"
-            placeholder="Search fields"
-            aria-label="Search fields"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-            }}
-          />
+              <input
+                type="search"
+                className="vs-search"
+                placeholder="Search fields"
+                aria-label="Search fields"
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                }}
+              />
 
-          {hidden.length > 0 && (
-            <ul className="vs-available">
-              {hidden.map((key) => (
-                <li key={key}>
-                  <button
-                    type="button"
-                    className="vs-add"
-                    onClick={() => {
-                      setField(key, true);
-                      setQuery('');
-                    }}
-                  >
+              {hidden.length > 0 && (
+                <ul className="vs-available">
+                  {hidden.map((key) => (
+                    <li key={key}>
+                      <button
+                        type="button"
+                        className="vs-add"
+                        onClick={() => {
+                          setField(key, true);
+                          setQuery('');
+                        }}
+                      >
+                        <span className="vs-icon" aria-hidden="true">
+                          {FIELD_ICONS[key]}
+                        </span>
+                        {FIELD_LABELS[key]}
+                        <span className="vs-plus" aria-hidden="true">
+                          +
+                        </span>
+                        <span className="visually-hidden"> — add this field</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              <h4 className="vs-sub">Selected fields</h4>
+              <ul className="vs-selected">
+                {ALWAYS_ON.map((field) => (
+                  <li key={field.key} className="vs-row vs-row-locked">
+                    <span className="vs-icon" aria-hidden="true">
+                      {field.icon}
+                    </span>
+                    <span className="vs-row-name">{field.label}</span>
+                    {/* Disabled rather than absent — the reference greys `Summary`
+                    the same way, and a field simply missing reads as a bug. */}
+                    <button
+                      type="button"
+                      className="vs-remove"
+                      data-field={field.key}
+                      disabled
+                      title={field.why}
+                      aria-label={`${field.label} cannot be removed — ${field.why}`}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+
+                {shown.map((key) => (
+                  <li key={key} className="vs-row">
                     <span className="vs-icon" aria-hidden="true">
                       {FIELD_ICONS[key]}
                     </span>
-                    {FIELD_LABELS[key]}
-                    <span className="vs-plus" aria-hidden="true">
-                      +
-                    </span>
-                    <span className="visually-hidden"> — add this field</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+                    <span className="vs-row-name">{FIELD_LABELS[key]}</span>
+                    <button
+                      type="button"
+                      className="vs-remove"
+                      data-field={key}
+                      aria-label={`Remove ${FIELD_LABELS[key]}`}
+                      onClick={() => {
+                        setField(key, false);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
 
-          <h4 className="vs-sub">Selected fields</h4>
-          <ul className="vs-selected">
-            {ALWAYS_ON.map((field) => (
-              <li key={field.key} className="vs-row vs-row-locked">
-                <span className="vs-icon" aria-hidden="true">
-                  {field.icon}
-                </span>
-                <span className="vs-row-name">{field.label}</span>
-                {/* Disabled rather than absent — the reference greys `Summary`
-                    the same way, and a field simply missing reads as a bug. */}
-                <button
-                  type="button"
-                  className="vs-remove"
-                  data-field={field.key}
-                  disabled
-                  title={field.why}
-                  aria-label={`${field.label} cannot be removed — ${field.why}`}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
+            <section className="vs-section">
+              <h3 className="vs-label">Card density</h3>
+              <div className="vs-radios">
+                {DENSITIES.map((option) => (
+                  <label key={option.value} className="vs-radio">
+                    <input
+                      type="radio"
+                      name="vs-density"
+                      checked={preferences.density === option.value}
+                      onChange={() => {
+                        onChange({ ...preferences, density: option.value });
+                      }}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </section>
 
-            {shown.map((key) => (
-              <li key={key} className="vs-row">
-                <span className="vs-icon" aria-hidden="true">
-                  {FIELD_ICONS[key]}
-                </span>
-                <span className="vs-row-name">{FIELD_LABELS[key]}</span>
-                <button
-                  type="button"
-                  className="vs-remove"
-                  data-field={key}
-                  aria-label={`Remove ${FIELD_LABELS[key]}`}
-                  onClick={() => {
-                    setField(key, false);
-                  }}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-        </section>
+            <section className="vs-section">
+              <h3 className="vs-label">Column width</h3>
+              <div className="vs-radios">
+                {WIDTHS.map((option) => (
+                  <label key={option.value} className="vs-radio">
+                    <input
+                      type="radio"
+                      name="vs-width"
+                      checked={preferences.columnWidth === option.value}
+                      onChange={() => {
+                        onChange({ ...preferences, columnWidth: option.value });
+                      }}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
 
-        <section className="vs-section">
-          <h3 className="vs-label">Card density</h3>
-          <div className="vs-radios">
-            {DENSITIES.map((option) => (
-              <label key={option.value} className="vs-radio">
-                <input
-                  type="radio"
-                  name="vs-density"
-                  checked={preferences.density === option.value}
-                  onChange={() => {
-                    onChange({ ...preferences, density: option.value });
-                  }}
-                />
-                {option.label}
-              </label>
-            ))}
-          </div>
-        </section>
-
-        <section className="vs-section">
-          <h3 className="vs-label">Column width</h3>
-          <div className="vs-radios">
-            {WIDTHS.map((option) => (
-              <label key={option.value} className="vs-radio">
-                <input
-                  type="radio"
-                  name="vs-width"
-                  checked={preferences.columnWidth === option.value}
-                  onChange={() => {
-                    onChange({ ...preferences, columnWidth: option.value });
-                  }}
-                />
-                {option.label}
-              </label>
-            ))}
-          </div>
-        </section>
-
-        <footer className="vs-foot">
-          <button type="button" className="vs-reset" onClick={onReset}>
-            Reset to defaults
-          </button>
-          <p className="vs-note vs-note-quiet">
-            Fields, density and width are yours alone and stay in this browser.
-          </p>
-        </footer>
+        {!forList && (
+          <footer className="vs-foot">
+            <button type="button" className="vs-reset" onClick={onReset}>
+              Reset to defaults
+            </button>
+            <p className="vs-note vs-note-quiet">
+              Fields, density and width are yours alone and stay in this browser.
+            </p>
+          </footer>
+        )}
       </div>
     </>,
     document.body,

@@ -36,6 +36,12 @@
  * design to inherit. **Capacity left this group in LAI-251**: the design's
  * strip carries it, and a route's scope lives in its link rather than in the
  * bar it is offered from.
+ *
+ * **`ORG` is empty on purpose, for now** (owner, 2026-09-28, LAI-484). The
+ * owner asked for the section hidden, and `/unlisted` was its only member, so
+ * that route's `group` is `null` and the sidebar's empty-group filter drops the
+ * heading. The group stays in this list so putting Unlisted work back is one
+ * field on its route, not a restructure. Do not "tidy" it away.
  */
 export const NAV_GROUPS = ['ORG', 'SETTINGS'] as const;
 export type NavGroup = (typeof NAV_GROUPS)[number];
@@ -115,6 +121,8 @@ export interface Route {
    * `n.abbr`. The design supplies `TK` and `OR`; Capacity and Unlisted work
    * are not in its sidebar at all, so `CA` and `UW` are ours, formed the same
    * way. Only grouped routes need one — nothing else renders in the rail.
+   * (`/unlisted` keeps `UW` while it is hidden, LAI-484, for the day it
+   * returns.)
    */
   readonly mini?: string;
 }
@@ -186,12 +194,18 @@ export const ROUTES: readonly Route[] = [
     phase: 'Phase 5',
   },
   // A queue a human works through, and audit-shaped: admin-up only (§4.14).
+  /*
+   * **Hidden from the sidebar, not removed** (owner, 2026-09-28, LAI-484).
+   * The screen still renders at `/unlisted` for an admin, and the same list
+   * with promote and dismiss is on the Capacity tab (LAI-439). Putting it back
+   * in the sidebar is `group: 'ORG'` again; everything else is kept for that.
+   */
   {
     orgLevel: true,
     requires: 'audit_log.export',
     path: '/unlisted',
     label: 'Unlisted work',
-    group: 'ORG' /* reads across every project */,
+    group: null /* hidden for now — was 'ORG' (LAI-484) */,
     status: 'ready',
     phase: 'Phase 3',
     mini: 'UW',
@@ -370,10 +384,16 @@ export function isShipped(route: Route): boolean {
  * Does the reader hold what this entry requires?
  *
  * An entry with no `requires` is open to anyone signed in. `holds` is supplied
- * by the caller — the shell knows the actor, this table does not — and omitting
- * it means "unrestricted", which is what the tests and the pre-auth render want.
+ * by the caller — the shell knows the actor, this table does not. **Omitting it
+ * hides every gated entry**: a caller that forgets to say who is asking must
+ * not publish what the endpoints behind it would refuse (`nav-truth.test.ts`).
+ *
+ * Exported so the gate can be tested on a fixture route (LAI-484): with
+ * `/unlisted` out of the sidebar, no route in the table is both grouped and
+ * gated, and a gate proven only through `ROUTES` would be proven through
+ * nothing.
  */
-function permitted(route: Route, holds?: (permission: string) => boolean): boolean {
+export function permitted(route: Route, holds?: (permission: string) => boolean): boolean {
   if (route.requires === undefined) return true;
   return holds?.(route.requires) === true;
 }

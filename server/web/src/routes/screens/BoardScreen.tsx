@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
@@ -9,6 +9,17 @@ import { NewTaskForm } from './board/NewTaskForm.tsx';
 import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
+import {
+  activeFilters,
+  filterCount,
+  filterSignature,
+  readBlocked,
+  readStatus,
+  readUpdated,
+  updatedSince,
+  withoutFilters,
+} from './board/filter-keys.ts';
+import { pageParam, readPage, readSort, sortParams } from './list/list-derive.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { useEvents } from '../../api/use-events.ts';
 import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
@@ -16,7 +27,13 @@ import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard } from '../../api/use-board.ts';
-import { groupByColumn, hideOldDone } from '../../api/board-derive.ts';
+import {
+  blockedState,
+  boardStatusLabel,
+  groupByColumn,
+  hideOldDone,
+  statusLabel,
+} from '../../api/board-derive.ts';
 import { isFallbackColumn, useColumns } from '../../api/use-columns.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
@@ -36,6 +53,7 @@ import {
   type Task,
   type TaskFilter,
   type TaskPriority,
+  type TaskStatus,
 } from '../../api/tasks.ts';
 import { getProject, listProjects, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
@@ -141,8 +159,28 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    */
   const tagScope = params.get('tag') ?? undefined;
 
+  /*
+   * **The four the owner asked for** (LAI-487). Each is read through a
+   * validator, because the URL is untrusted and the server refuses a status it
+   * does not know with a `400` that would blank the board.
+   */
+  const statusScope = readStatus(params);
+  const updatedWindow = readUpdated(params);
+  const blockedOnly = readBlocked(params);
+  /*
+   * The window becomes a timestamp **when the window changes**, not on every
+   * render — `Date.now()` in the filter would change its identity each time
+   * and refetch in a loop.
+   */
+  const since = useMemo(
+    () => (updatedWindow === undefined ? undefined : updatedSince(updatedWindow, Date.now())),
+    [updatedWindow],
+  );
+
   const filter: TaskFilter = useMemo(
     () => ({
+      ...(statusScope === undefined ? {} : { status: statusScope }),
+      ...(since === undefined ? {} : { updated_since: since }),
       ...(priority === undefined ? {} : { priority }),
       ...(assignee === undefined ? {} : { assignee }),
       ...(ready === undefined ? {} : { ready }),
@@ -152,11 +190,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       // asks for the subset rather than loading everything and filtering here.
       ...(tagScope === undefined ? {} : { tag: tagScope }),
     }),
-    [priority, assignee, ready, sprintScope, tagScope],
+    [statusScope, since, priority, assignee, ready, sprintScope, tagScope],
   );
 
-  const filtered =
-    priority !== undefined || assignee !== undefined || ready !== undefined || agentOnly;
+  // Every filter the URL applies, from the one list (LAI-487). This read four
+  // of them and so called a tag- or sprint-scoped board unfiltered.
+  const filtered = filterCount(params, { status: statusLabel }) > 0 || query.trim() !== '';
 
   /** `mcp` is what an agent writes through — see `created_via` on every task. */
   const AGENT_VIA = 'mcp';
@@ -402,10 +441,20 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const matches = useMemo(() => {
     return (task: Task): boolean => {
       if (agentOnly && task.created_via !== AGENT_VIA) return false;
+      /*
+       * Blocked is decided here, not by the server: it needs the dependency
+       * graph (LAI-487). **"Cannot tell" stays in**, i.e. `!== false`, not
+       * `=== true`. Under a server-side filter a blocker can sit outside the
+       * loaded set (another sprint, another status), and `blockedState` then
+       * answers `undefined` rather than guessing. Hiding a task that may be
+       * blocked from a *Blocked only* view is the damaging error, the same
+       * judgement `blockedState` itself records for the card.
+       */
+      if (blockedOnly && blockedState(task, board.byId) === false) return false;
       if (needle === '') return true;
       return task.title.toLowerCase().includes(needle) || task.key.toLowerCase().includes(needle);
     };
-  }, [needle, agentOnly]);
+  }, [needle, agentOnly, blockedOnly, board.byId]);
 
   /**
    * Cards into lanes, against the project's own columns (LAI-266).
@@ -441,8 +490,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * would leave that number describing a set the row no longer draws.
    */
   const shownTasks = useMemo(
-    () => (needle === '' && !agentOnly ? visibleTasks.kept : visibleTasks.kept.filter(matches)),
-    [visibleTasks.kept, needle, agentOnly, matches],
+    () =>
+      needle === '' && !agentOnly && !blockedOnly
+        ? visibleTasks.kept
+        : visibleTasks.kept.filter(matches),
+    [visibleTasks.kept, needle, agentOnly, blockedOnly, matches],
   );
 
   const collapsedGroups = useMemo(
@@ -489,17 +541,16 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
   /** `S1`, `S2`… in the sprint order the strip shows. Real data. */
   /** What the panel shows as removable chips — the same params the bar writes. */
-  const activeFilters = useMemo(() => {
-    const found: { key: string; label: string }[] = [];
-    if (priority !== undefined) found.push({ key: 'priority', label: `Priority ${priority}` });
-    if (assignee !== undefined) found.push({ key: 'assignee', label: 'Assignee' });
-    if (tagScope !== undefined) found.push({ key: 'tag', label: `Tag ${tagScope}` });
-    if (sprintScope !== undefined) found.push({ key: 'sprint', label: 'Sprint' });
-    if (readyParam === 'true') found.push({ key: 'ready', label: 'Ready only' });
-    if (agentOnly) found.push({ key: 'agent', label: 'Agent-created' });
-    if (needle !== '') found.push({ key: 'q', label: `“${query}”` });
-    return found;
-  }, [priority, assignee, tagScope, sprintScope, readyParam, agentOnly, needle, query]);
+  /*
+   * The chips, the badge and *Clear all* all read the one list (LAI-487), and
+   * a status is named the way this board names it (a renamed column, LAI-617).
+   */
+  const filterNames = useMemo(
+    () => ({ status: (s: TaskStatus) => boardStatusLabel(s, columns.state.columns) }),
+    [columns.state.columns],
+  );
+  const applied = useMemo(() => activeFilters(params, filterNames), [params, filterNames]);
+  const activeCount = applied.filter((f) => f.key !== 'q').length;
 
   const editingColumn =
     editing === undefined ? undefined : columns.visible.find((c) => c.id === editing);
@@ -522,11 +573,52 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     value: string | undefined,
     options?: { readonly push?: boolean },
   ): void => {
-    const next = new URLSearchParams(params);
-    if (value === undefined || value === '') next.delete(key);
-    else next.set(key, value);
-    onParamsChange(next, options);
+    setParams({ [key]: value }, options);
   };
+
+  /**
+   * Several keys in **one** history write. Two `setParam` calls in a row would
+   * each start from the same `params` and the second would undo the first —
+   * which is exactly what a sort change needs to avoid, since it also resets
+   * the page (LAI-485).
+   */
+  function setParams(
+    changes: Readonly<Record<string, string | undefined>>,
+    options?: { readonly push?: boolean },
+  ): void {
+    const next = new URLSearchParams(params);
+    for (const [key, value] of Object.entries(changes)) {
+      if (value === undefined || value === '') next.delete(key);
+      else next.set(key, value);
+    }
+    onParamsChange(next, options);
+  }
+
+  /*
+   * **The List's sort and page, read from the URL** (LAI-485, D-065). Read on
+   * the board too, where they are simply unused — cheaper than a branch, and
+   * the tab switch (LAI-488) decides what travels, not this.
+   */
+  const listSort = readSort(params);
+  const listPage = readPage(params);
+
+  /*
+   * **A filter change sends the List back to page one**, whoever made it: the
+   * toolbar, the space bar and WORKING NOW all write filter keys, and a page
+   * number from a different set of rows points at arbitrary work. One effect
+   * watching the filters rather than a reset in every writer, so a writer
+   * added later cannot forget it.
+   */
+  const filters = filterSignature(params);
+  const lastFilters = useRef(filters);
+  useEffect(() => {
+    if (lastFilters.current === filters) return;
+    lastFilters.current = filters;
+    if (!params.has('page')) return;
+    const next = new URLSearchParams(params);
+    next.delete('page');
+    onParamsChange(next);
+  }, [filters, params, onParamsChange]);
 
   if (projectError !== null) {
     return (
@@ -617,6 +709,28 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       */}
       <div className="board-bar">
         <BoardToolbar
+          activeCount={activeCount}
+          status={statusScope}
+          statusName={filterNames.status}
+          onStatus={(value) => {
+            setParam('status', value);
+          }}
+          sprint={sprintScope}
+          sprints={sprints.map((s) => ({
+            id: s.id,
+            label: `${sprintLabels.get(s.id)?.label ?? ''} · ${s.name}`,
+          }))}
+          onSprint={(value) => {
+            setParam('sprint', value);
+          }}
+          updated={updatedWindow}
+          onUpdated={(value) => {
+            setParam('updated', value);
+          }}
+          blocked={blockedOnly}
+          onBlocked={(value) => {
+            setParam('blocked', value ? 'true' : undefined);
+          }}
           priority={priority}
           assignee={assignee}
           tag={tagScope}
@@ -648,12 +762,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           onGroup={(value) => {
             setParam('group', value === 'column' ? undefined : value);
           }}
+          showGroup={view !== 'list'}
           onClearFilters={() => {
-            const next = new URLSearchParams(params);
-            for (const key of ['priority', 'assignee', 'tag', 'ready', 'agent', 'q']) {
-              next.delete(key);
-            }
-            onParamsChange(next);
+            // Every filter in the one list — this used to be a literal that
+            // missed `sprint` (LAI-487). Sort, page, group and the open task
+            // are not filters and stay.
+            onParamsChange(withoutFilters(params));
           }}
           onInsights={() => {
             setInsightsOpen(true);
@@ -692,18 +806,17 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 },
               }
             : {})}
+          forList={view === 'list'}
           group={group}
           onGroupChange={(next) => {
             setParam('group', next === 'column' ? undefined : next);
           }}
-          filters={activeFilters}
+          filters={applied}
           onClearFilter={(key) => {
             setParam(key, undefined);
           }}
           onClearFilters={() => {
-            const next = new URLSearchParams(params);
-            for (const filter of activeFilters) next.delete(filter.key);
-            onParamsChange(next);
+            onParamsChange(withoutFilters(params));
           }}
         />
       )}
@@ -739,17 +852,26 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             >
               Space settings
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="bt-menu-item"
-              onClick={() => {
-                setOverflowAt(undefined);
-                setParam('view', view === 'list' ? undefined : 'list');
-              }}
-            >
-              {view === 'list' ? 'Show as board' : 'Show as list'}
-            </button>
+            {/*
+              **Not on `/list`** (LAI-488). There it only cleared the legacy
+              `?view` while the path kept it a list, so the click did nothing;
+              the tab bar has been the view switch since LAI-256. On `/board`
+              — including a legacy `/board?view=list` link — it still works
+              and stays.
+            */}
+            {path !== '/list' && (
+              <button
+                type="button"
+                role="menuitem"
+                className="bt-menu-item"
+                onClick={() => {
+                  setOverflowAt(undefined);
+                  setParam('view', view === 'list' ? undefined : 'list');
+                }}
+              >
+                {view === 'list' ? 'Show as board' : 'Show as list'}
+              </button>
+            )}
           </div>
         </>
       )}
@@ -833,7 +955,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {/* WORKING NOW moved up to the space bar in LAI-251: it is about the
           space, not about the board, and every view of a space shows it. */}
 
-      {grouped && (
+      {/* The List draws no swimlanes, so a `?group=` it carries is kept for
+          the Board and not announced here (LAI-488). */}
+      {grouped && view !== 'list' && (
         <p className="board-scope" role="status">
           {groupNotice(group)}
         </p>
@@ -1051,12 +1175,23 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               byId={board.byId}
               members={members}
               sprintLabels={sprintLabels}
+              columns={columns.state.columns}
               theme={theme}
               filtered={filtered}
               canAdd={mayCreate}
               onOpen={openTaskInUrl}
               onAdd={() => {
                 setCreating(true);
+              }}
+              sort={listSort}
+              page={listPage}
+              onSort={(next) => {
+                // A new order starts at the top: page 3 of a different order
+                // is a different set of rows.
+                setParams({ ...sortParams(next), page: undefined });
+              }}
+              onPage={(next) => {
+                setParams({ page: pageParam(next) });
               }}
             />
           ) : (

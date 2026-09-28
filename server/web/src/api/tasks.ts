@@ -154,6 +154,12 @@ export interface TaskFilter {
    * since LAI-079 — so the board never loads everything and filters in memory.
    */
   readonly tag?: string | undefined;
+  /**
+   * Unix ms, inclusive: only tasks changed at or after it (SPEC §6.3). The
+   * server has always accepted it; the client declares it for the board's
+   * *Updated within* filter (LAI-487).
+   */
+  readonly updated_since?: number | undefined;
   readonly limit?: number | undefined;
   readonly cursor?: string | undefined;
 }
@@ -166,6 +172,7 @@ function toQuery(filter: TaskFilter): string {
   if (filter.ready !== undefined) params.set('ready', String(filter.ready));
   if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
   if (filter.tag !== undefined) params.set('tag', filter.tag);
+  if (filter.updated_since !== undefined) params.set('updated_since', String(filter.updated_since));
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
 
