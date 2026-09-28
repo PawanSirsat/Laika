@@ -33,6 +33,12 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   '/board': 'the SPACES section — every space row opens its board',
   '/capacity': 'the space tab strip — an org-level view, reached from any space (LAI-251)',
   '/projects': 'the SPACES section — the *More spaces* row',
+  // Hidden from the sidebar at the owner's request (2026-09-28, LAI-484) and
+  // reached by typing the path, like `/design/states`. The triage itself is
+  // not stranded: the Capacity tab carries the same list, with promote and
+  // dismiss, for the same admins (LAI-439).
+  '/unlisted':
+    'typing the path — hidden from the sidebar for now (LAI-484); the Capacity tab carries the same list',
 };
 
 const holds = () => true;
@@ -125,9 +131,12 @@ void describe('the tab bar is honest about scope', () => {
     }
   });
 
-  void test('Unlisted work stays in ORG — the design has no tab for it', () => {
-    const org = new Set(routesInGroup('ORG', holds).map((r) => r.path));
-    assert.ok(org.has('/unlisted'), 'Unlisted work left the sidebar without becoming a tab');
-    assert.ok(!SPACE_TAB_PATHS.includes('/unlisted'));
+  void test('Unlisted work is in no group and no tab — hidden, not moved (LAI-484)', () => {
+    // The owner asked for it hidden, not relocated: a tab is a space-scoped
+    // place (LAI-251, LAI-279) and this screen reads across every project.
+    const grouped = NAV_GROUPS.flatMap((g) => routesInGroup(g, holds).map((r) => r.path));
+    assert.ok(!grouped.includes('/unlisted'), 'Unlisted work is back in the sidebar');
+    assert.ok(!SPACE_TAB_PATHS.includes('/unlisted'), 'Unlisted work became a space tab');
+    assert.ok(REACHED_FROM['/unlisted'] !== undefined, 'hidden without saying how it is reached');
   });
 });

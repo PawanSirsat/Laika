@@ -153,11 +153,15 @@ void describe('the SPACES section', () => {
         assert.doesNotMatch(sidebar, new RegExp(group), `${group} is still a sidebar group`);
       }
       // **Capacity left the sidebar in LAI-251** — the design's tab strip
-      // carries it. `ORG` remains for Unlisted work, which has no tab in the
-      // design to inherit; this reader is an owner, so the group renders.
+      // carries it. **`ORG` left in LAI-484**: the owner asked for the section
+      // hidden for now. This reader is an **owner** — the one who used to see
+      // it — so its absence here is the hiding, not the permission gate.
       assert.doesNotMatch(sidebar, /Capacity/, 'Capacity is offered twice');
-      assert.match(sidebar, /ORG/);
-      assert.match(sidebar, /Unlisted work/);
+      // Positive control first: the sidebar rendered its other sections, so
+      // the two absences below cannot be a blank rail.
+      assert.match(sidebar, /SETTINGS/, 'the sidebar did not render at all');
+      assert.doesNotMatch(sidebar, /\bORG\b/, 'the ORG heading is back');
+      assert.doesNotMatch(sidebar, /Unlisted work/, 'Unlisted work is back in the sidebar');
     } finally {
       await h.close();
     }
