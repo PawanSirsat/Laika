@@ -138,3 +138,41 @@ control, committed separately as `[LAI-622]`, and `structure.test.ts` is 20/20.
    waiting on, and the reporter's own output was stuck behind the same blocked
    loop. Worth recording because the symptom names no test: it looks like a
    broken runner, not a broken test. Fixed with a promisified `execFile`.
+
+4. **A stale `dist/` served frozen code, and the tests could not see it.**
+   The shim preferred `cli/dist/index.js` whenever it was readable. Running the
+   command for real, on this checkout, after all ten tests were green:
+
+   ```
+   $ ./cli/bin/laika whoami
+   laika: unknown command "whoami"
+     npx laika init     authenticate, create a token, and save it
+   ```
+
+   Both defects the task exists to fix, answered by a build five days old.
+
+   **The sandbox could not catch it because the sandbox was cleaner than
+   reality** — it copied `bin/` and `src/` and had no `dist/` to go stale. Same
+   family as an assertion a broken setup satisfies, one level up: a *fixture*
+   that omits the thing that breaks.
+
+   `dist/` is gitignored, so a fresh clone takes the src path and a new
+   teammate never hits this; every machine that has ever run `pnpm -C cli build`
+   does, silently and for ever. The shim now takes `dist` only when no source
+   file postdates it, with three tests including a control asserting a **fresh**
+   `dist` is still used — without which "always ignore dist" would pass.
+
+   Verified end to end against the live board afterwards, which is the check
+   that should have come first:
+
+   ```
+   Board   http://52.72.203.206
+   Token   present (lai_ prefix, 44 chars)
+   Config  /Users/…/.laika/env
+     Signed in   Pawan Sirsat <…> (owner)
+     Projects    2
+   ```
+
+**Thirteen tests, all controls mutation-verified.** Final gate: `lint 0`,
+`format 0`, `test 1` — two `server/test/tooling/` timeouts, the LAI-625 flake,
+`cli` and `server/web` both `# fail 0`.
