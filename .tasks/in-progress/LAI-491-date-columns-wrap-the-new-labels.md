@@ -2,11 +2,12 @@
 id: LAI-491
 title: "The List's date columns wrap the new labels onto two and three lines"
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-486]
 discovered-from: LAI-486
-status: backlog
+status: in-progress
+started: 2026-09-28T19:33:32Z
 ---
 
 ## Goal
