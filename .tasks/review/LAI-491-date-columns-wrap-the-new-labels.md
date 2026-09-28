@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: [LAI-486]
 discovered-from: LAI-486
-status: in-progress
+status: review
+finished: 2026-09-28T19:35:43Z
 started: 2026-09-28T19:33:32Z
 ---
 
@@ -33,12 +34,26 @@ Every row with a date becomes taller than its neighbours.
 
 ## Acceptance criteria
 
-- [ ] No date cell wraps. This is asserted in a browser on the longest form,
+- [x] No date cell wraps. This is asserted in a browser on the longest form,
       `DD Mon YYYY, HH:MM`, by the `<time>` element's line count, not by a
       width constant.
-- [ ] CREATED and UPDATED stay the same width, since they hold the same form.
-- [ ] The design-width test re-aims its UPDATED figure deliberately, saying why
+- [x] CREATED and UPDATED stay the same width, since they hold the same form.
+- [x] The design-width test re-aims its UPDATED figure deliberately, saying why
       84 px no longer applies (D-065 changed the content). KEY and SPR stay
       pinned.
-- [ ] Both themes. Existing tokens only.
-- [ ] Full gate.
+- [x] Both themes. Existing tokens only.
+- [x] Full gate.
+
+## Built — 2026-09-28T19:35:43Z
+
+Built by the CHIEF session on the owner's direct instruction, on `build`.
+
+- `.list-col-created` and `.list-col-updated` are now `8.5rem`, and the cells
+  have `white-space: nowrap`.
+- **Red first:** the new test failed on the old CSS with *"20 min ago" wraps
+  onto 2 lines*. It is green now, with `25 Aug 2025, 01:01` on screen as its
+  positive control.
+- The design-width test keeps KEY 74 and SPR 46. Its UPDATED 84 became
+  *CREATED = UPDATED*, with the reason in its comment.
+
+Web **1140/1140**; lint green.
