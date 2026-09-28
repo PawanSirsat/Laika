@@ -395,3 +395,34 @@ void describe('the sort in the URL (LAI-485, D-065)', () => {
     assert.equal(pageParam(2), '3');
   });
 });
+
+void describe('the STATUS cell speaks the board’s column names (LAI-490)', () => {
+  const tasks = [
+    task({ id: 'r', key: 'LC-1', status: 'review' }),
+    task({ id: 'b', key: 'LC-2', status: 'backlog' }),
+    task({ id: 't', key: 'LC-3', status: 'todo' }),
+  ];
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const columns = [
+    { name: 'To do', statuses: ['todo', 'backlog'] as const },
+    { name: 'Testing', statuses: ['review'] as const },
+  ];
+  const rows = listRows({ tasks, byId, members, sprintLabels, now: NOW, columns });
+  const status = (key: string) => rows.find((r) => r.key === key)?.status;
+
+  void test('a renamed single-status column lends its name', () => {
+    assert.equal(status('LC-1'), 'Testing', 'the List says Review under a board that says Testing');
+  });
+
+  void test('a two-status column keeps each status its own name — the lossless rule', () => {
+    assert.equal(status('LC-2'), 'Backlog');
+    assert.equal(status('LC-3'), 'To do');
+  });
+
+  void test('sorting by status follows the value, never the label', () => {
+    // Renamed to "Testing", `review` still sorts between in_progress and done;
+    // alphabetically by label it would come after "To do".
+    const order = sortRows(rows, byId, 'status', true).map((r) => r.key);
+    assert.deepEqual(order, ['LC-2', 'LC-3', 'LC-1']);
+  });
+});

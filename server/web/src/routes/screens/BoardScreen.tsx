@@ -1175,6 +1175,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               byId={board.byId}
               members={members}
               sprintLabels={sprintLabels}
+              columns={columns.state.columns}
               theme={theme}
               filtered={filtered}
               canAdd={mayCreate}

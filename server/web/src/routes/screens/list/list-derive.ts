@@ -1,4 +1,4 @@
-import { ageDays, blockedState, STALE_DAYS, statusLabel } from '../../../api/board-derive.ts';
+import { ageDays, blockedState, boardStatusLabel, STALE_DAYS } from '../../../api/board-derive.ts';
 import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 
@@ -101,6 +101,14 @@ export interface ListRowInput {
    */
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
   readonly now: number;
+  /**
+   * The board's columns, hidden ones included, so a status reads as the column
+   * that owns it (LAI-490) — the List said *Review* under a board whose column
+   * says *Testing*. Absent means "no board to ask", and every status falls back
+   * to its own name.
+   */
+  readonly columns?:
+    readonly { readonly name: string; readonly statuses: readonly Task['status'][] }[] | undefined;
 }
 
 export function listRows({
@@ -109,6 +117,7 @@ export function listRows({
   members,
   sprintLabels,
   now,
+  columns = [],
 }: ListRowInput): readonly ListRow[] {
   return tasks.map((task) => {
     const member = task.assignee_id === null ? undefined : members.get(task.assignee_id);
@@ -128,7 +137,9 @@ export function listRows({
       key: task.key,
       title: task.title,
       muted: task.status === 'done' || task.status === 'cancelled',
-      status: statusLabel(task.status),
+      // The label only — sorting reads the value (`compareBy`), so renaming a
+      // column can never reorder the List.
+      status: boardStatusLabel(task.status, columns),
       statusTone: statusTone(task.status),
       priority: task.priority.toUpperCase(),
       priorityTone: priorityTone(task.priority),
