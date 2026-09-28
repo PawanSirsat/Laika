@@ -2,11 +2,12 @@
 id: LAI-489
 title: "environment-posture's closure walk runs on vitest's 5s default and times out under load"
 area: server
-assignee: unclaimed
+assignee: core
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-28T19:22:46Z
 ---
 
 ## Goal
