@@ -853,6 +853,20 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         </p>
       )}
 
+      {/*
+        **A board past the page cap says so** (LAI-621). `useBoard` stops after
+        its page cap and records `truncated`; every lane count and the List's
+        total are derived from what loaded, so without this line they state
+        numbers that are not the project's.
+      */}
+      {board.state.status === 'ready' && board.state.truncated && (
+        <p className="board-scope board-truncated" role="status">
+          Showing the first {board.state.tasks.length}{' '}
+          {board.state.tasks.length === 1 ? 'task' : 'tasks'} — this space has more than the board
+          loads at once, so every count here covers only these. Narrow the filter to see the rest.
+        </p>
+      )}
+
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">
           {shownCount} of {board.byId.size} loaded {board.byId.size === 1 ? 'task' : 'tasks'} match.{' '}
