@@ -6,7 +6,8 @@ assignee: shell
 priority: p1
 depends-on: [LAI-621, LAI-487]
 discovered-from:
-status: in-progress
+status: review
+finished: 2026-09-28T19:19:43Z
 started: 2026-09-28T19:13:54Z
 ---
 
@@ -47,19 +48,19 @@ filters, same URL state"*, and *"share one filter state, reflected in the URL"*.
 
 ## Acceptance criteria
 
-- [ ] **The Board ↔ List tab switch carries every key in LAI-487's exported
+- [x] **The Board ↔ List tab switch carries every key in LAI-487's exported
       filter-key list, plus search (`q`).**
   - It does **not** carry `sort`, `dir` or `page` (List-only, LAI-485),
     `group` (Board-only) or `task`.
   - Every other tab's link is unchanged: Timeline, Calendar and the rest still
     carry only `?project=`.
-- [ ] **Browser test, both directions:**
+- [x] **Browser test, both directions:**
   - Set priority, assignee, status and search on `/board`, click *List*, and
     assert the URL **and** the rows.
   - Then set a filter on `/list`, click *Board*, and assert the same.
   - A reload on either side keeps them. That is already true and is asserted so
     it stays true.
-- [ ] **On `/list`, these are absent, not disabled** (LAI-082: a disabled
+- [x] **On `/list`, these are absent, not disabled** (LAI-082: a disabled
       control still advertises something that cannot happen):
   - the Group button and the group notice;
   - View settings' *Show fields*, *Card density* and *Column width* sections;
@@ -67,16 +68,16 @@ filters, same URL state"*, and *"share one filter state, reflected in the URL"*.
   Each is asserted absent on `/list` **and present on `/board`**. The Board is
   the control, so a test that only looks at the List cannot be passing because
   the control was deleted everywhere.
-- [ ] **A `?group=` in a List URL is ignored and not deleted.** It stays in the
+- [x] **A `?group=` in a List URL is ignored and not deleted.** It stays in the
       URL, so returning to the Board keeps the grouping the reader chose.
       Since `group` is not carried (first AC), this matters only for a URL
       typed or shared with `group` on `/list`.
-- [ ] **A legacy `?view=list` link still renders the List.**
+- [x] **A legacy `?view=list` link still renders the List.**
       `BoardScreen.tsx:131` treats `path === '/list' || params.get('view') ===
       'list'` as the List. Removing the menu item from `/list` must not remove
       that branch, because old links depend on it.
-- [ ] Both themes; no layout gap where a hidden control used to be.
-- [ ] Full gate: repo root, all three `EXIT 0`, each status captured on its own
+- [x] Both themes; no layout gap where a hidden control used to be.
+- [x] Full gate: repo root, all three `EXIT 0`, each status captured on its own
       line.
 
 ## Notes / context
@@ -93,3 +94,46 @@ filters, same URL state"*, and *"share one filter state, reflected in the URL"*.
 - **LAI-614** (backlog) reshapes the same toolbar. Whichever lands second merges
   onto the other.
 - **No new dependencies, no new tokens.**
+
+## Built — 2026-09-28T19:19:43Z
+
+Built by the CHIEF session **on the owner's direct instruction**, on branch
+`build`.
+
+- **`nav-url.ts`:** `viewTabHref` carries `FILTER_KEYS` (search included) only
+  between `/board` and `/list`. Every other tab, and the tab you are on, is
+  exactly `navHref`. It does not carry `sort`, `dir`, `page`, `group` or
+  `task`.
+- **`ViewTabs.tsx` / `SpaceLayout.tsx`:** the tabs receive the current params
+  and build hrefs with `viewTabHref`.
+- **On `/list`, absent rather than disabled:**
+  - the toolbar's Group button (`showGroup`);
+  - the group notice;
+  - View settings' **Group by**, Show fields, Card density and Column width,
+    and the footer that only resets those (`forList`);
+  - the "Show as" menu item, gated on the **path**, so a legacy
+    `/board?view=list` keeps a working "Show as board".
+  - Filter and Hide done stay.
+- **Beyond the criteria, stated:** View settings also has a **Group by**
+  radio, a second Group control. It does nothing on the List either, so it is
+  hidden with the rest.
+- A `?group=` on `/list` is ignored and kept, as the test asserts.
+
+Tests:
+
+- unit tests for `viewTabHref`, both directions, the non-carried keys, and
+  other tabs unchanged;
+- browser tests: Board → List → Board with rows asserted and a reload; sort,
+  page and group not travelling; every absence on `/list` checked **against
+  its presence on `/board`**; the legacy `?view=list` link.
+
+Mutations, all **red**:
+
+- the tabs carry nothing;
+- `sort` travels;
+- Group shown on the List;
+- card settings on the List;
+- "Show as" on the List;
+- the group notice on the List.
+
+Web **1136/1136**; the structure guard and lint are green.
