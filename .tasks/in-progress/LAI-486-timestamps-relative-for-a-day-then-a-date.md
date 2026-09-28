@@ -2,11 +2,12 @@
 id: LAI-486
 title: 'Timestamps say "just now" for a day, then a date and time'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: [LAI-621]
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-28T18:59:31Z
 ---
 
 ## Goal
