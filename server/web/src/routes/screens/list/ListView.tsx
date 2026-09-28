@@ -4,6 +4,7 @@ import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
+import type { BoardColumn } from '../../../api/columns.ts';
 import { LIST_COLUMNS, listRows, nextSort, sortRows, type ListSort } from './list-derive.ts';
 import './list.css';
 
@@ -21,6 +22,8 @@ export interface ListViewProps {
   readonly byId: ReadonlyMap<string, Task>;
   readonly members: ReadonlyMap<string, Member>;
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
+  /** The board's columns, so STATUS says what the board says (LAI-490). */
+  readonly columns: readonly BoardColumn[];
   readonly theme: Theme;
   readonly filtered: boolean;
   readonly canAdd: boolean;
@@ -62,6 +65,7 @@ export function ListView({
   byId,
   members,
   sprintLabels,
+  columns,
   theme,
   filtered,
   canAdd,
@@ -87,7 +91,7 @@ export function ListView({
     [],
   );
   const rows = sortRows(
-    listRows({ tasks, byId, members, sprintLabels, now }),
+    listRows({ tasks, byId, members, sprintLabels, now, columns }),
     byId,
     sort.key,
     sort.ascending,
