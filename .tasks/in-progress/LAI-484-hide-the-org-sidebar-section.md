@@ -2,11 +2,12 @@
 id: LAI-484
 title: 'Hide the ORG sidebar section for now'
 area: web
-assignee: unclaimed
+assignee: shell
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-09-28T18:46:12Z
 ---
 
 ## Goal
