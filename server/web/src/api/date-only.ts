@@ -43,10 +43,7 @@ export function dateLabel(ms: number): string {
  * tomorrow: the comparison is strict against the start of today, so the whole
  * due day counts as on time.
  */
-export function isOverdue(
-  task: Pick<Task, 'due_on' | 'status'>,
-  now: number,
-): boolean {
+export function isOverdue(task: Pick<Task, 'due_on' | 'status'>, now: number): boolean {
   if (task.due_on === null) return false;
   if (task.status === 'done' || task.status === 'cancelled') return false;
   return task.due_on < startOfUtcDay(now);

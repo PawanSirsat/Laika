@@ -49,7 +49,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_at: 1,
     updated_at: 1,
     ...over,
-  } as Task;
+  };
 }
 
 function col(id: string, statuses: string[], position: number): BoardColumn {
