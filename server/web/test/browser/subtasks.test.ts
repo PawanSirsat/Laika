@@ -248,7 +248,7 @@ void describe('subtasks and due dates on the cards', () => {
   const text = async (locator: ReturnType<typeof byKey>) =>
     (await locator.innerText()).replace(/\s+/g, ' ').trim();
 
-  void test('a parent counts, a child names its parent, a past date is red and a future one is not', async () => {
+  void test('a parent counts, a child names its parent, a past date is red and a future one is absent', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
@@ -262,9 +262,9 @@ void describe('subtasks and due dates on the cards', () => {
       assert.match(await due.innerText(), /12 Jul/);
       assert.doesNotMatch(await due.innerText(), /2026/);
       assert.ok(await due.evaluate((el) => el.classList.contains('card-due-overdue')));
-      const later = byKey(h, 'LC-4').locator('.card-due');
-      assert.equal(await later.count(), 1);
-      assert.ok(!(await later.evaluate((el) => el.classList.contains('card-due-overdue'))));
+      // LAI-701: a date that is neither today nor past is not drawn at all.
+      assert.equal(await byKey(h, 'LC-4').count(), 1, 'positive control: the card is there');
+      assert.equal(await byKey(h, 'LC-4').locator('.card-due').count(), 0);
     } finally {
       await h.close();
     }
@@ -288,7 +288,8 @@ void describe('subtasks and due dates on the cards', () => {
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.card-subtasks').count(), 1, 'nothing to hide');
-      assert.equal(await h.page.locator('.card-due').count(), 2, 'nothing to hide');
+      // One overdue card (LC-1); LC-4's date is next year, so it draws nothing (LAI-701).
+      assert.equal(await h.page.locator('.card-due').count(), 1, 'nothing to hide');
 
       await h.page.locator('.bt-icon[title="View settings"]').click();
       await h.page.locator('.vs-remove[data-field="subtasks"]').click();

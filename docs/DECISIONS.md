@@ -3684,3 +3684,41 @@ the fourth block, together — not one without the other.
 
 Any session's third block fills, or a fourth session starts and takes
 `LAI-300`.
+
+## D-069 — The card drops stale, comment count and age; the due date shows only when it is today or past
+
+**Date:** 2026-10-06 · **Decided by:** the owner, carried by CHIEF · **Status:** accepted
+
+The owner, twice on 2026-10-06, from crops of a board card: *"don't show
+stale, we can show only the due date if that is gone or for today … also
+remove this from card, I don't need that"* (the comment count and the `3h`
+age), and again an hour later, *"the stale I don't want; show the due date if
+that is near or gone; then don't show the comment and 4h"*. Carried by
+LAI-701.
+
+### What was decided
+
+1. **No stale marker, no comment count, no age on a card.** They are removed
+   from `CardFields`, so View settings no longer offers them and a stored
+   preference that still names them is ignored. **Nothing about the data
+   changes**: the server still flags staleness (§11.6) and Activity lists it;
+   the drawer counts comments in its tabs; the List keeps *Updated*.
+2. **The due date is news, not a schedule.** A card draws it only for open
+   work due **today** (amber, *Due today*) or **before today** (red, ⚠ and
+   the short date). A date still ahead draws nothing, and `done` /
+   `cancelled` draw nothing whatever the date. The full date is in the chip's
+   title, and the drawer and the List carry every date.
+3. **"Near" means today.** The owner's first words were *"gone or for
+   today"*; the second, *"near or gone"*. Read as the first, because it was
+   the precise one. A window of a few days is one constant in `dueState` if
+   the owner wants it.
+
+### What this does not decide
+
+The List and the drawer are unchanged; this is about a card's footer, which
+had run out of room — `stale 12` was being clipped by the avatar.
+
+### Revisit when
+
+The owner asks for upcoming dates on cards, or for staleness to be visible on
+the board again.
