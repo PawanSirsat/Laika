@@ -1,7 +1,11 @@
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendActivity } from '../../src/db/activity.ts';
-import { ensureActivityTriggers, runMigrations } from '../../src/db/migrate.ts';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { openDb } from '../../src/db/client.ts';
+import { ensureActivityTriggers, MIGRATIONS_FOLDER, runMigrations } from '../../src/db/migrate.ts';
 import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts';
 import { eq } from 'drizzle-orm';
 import { newId } from '../../src/db/ids.ts';
@@ -260,5 +264,101 @@ describe('refusing to continue without the guarantee', () => {
     // And the state it refused really was broken, rather than merely unfamiliar.
     t.db.run(sql`DELETE FROM activity`);
     expect(t.db.all(sql`SELECT id FROM activity`)).toEqual([]);
+  });
+});
+
+/**
+ * The `tasks` rebuild (LAI-493, D-066).
+ *
+ * Adding a CHECK to `tasks` made drizzle-kit emit its first rebuild of that
+ * table: `__new_tasks`, copy, drop, rename. Six tables reference `tasks(id)`,
+ * and `PRAGMA foreign_keys=OFF` around the rebuild is exactly the window in
+ * which a dangling reference can be created without anything complaining. This
+ * populates a database on the migration **before** the rebuild, migrates, and
+ * asks SQLite itself whether every reference still resolves.
+ */
+describe('the tasks rebuild keeps every row and every foreign key (LAI-493)', () => {
+  function folderWithoutTheLast(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const dropped = journal.entries.pop();
+    // The guard on this guard: the entry we cut must be the tasks rebuild, or
+    // this proves nothing about it.
+    expect(dropped?.tag).toMatch(/^0024_/);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it('migrates a populated pre-rebuild database with nothing dangling', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: folderWithoutTheLast() });
+      expect(
+        db
+          .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('tasks')`)
+          .map((r) => r.name),
+      ).not.toContain('parent_task_id');
+
+      const s = seed(db);
+      const now = Date.now();
+      const a = newId();
+      const b = newId();
+      db.run(sql`
+        INSERT INTO tasks (id, project_id, number, title, status, priority, created_by, created_via, created_at, updated_at)
+        VALUES (${a}, ${s.projectId}, 1, 'A', 'backlog', 'p2', ${s.userId}, 'api', ${now}, ${now}),
+               (${b}, ${s.projectId}, 2, 'B', 'backlog', 'p2', ${s.userId}, 'api', ${now}, ${now})
+      `);
+      db.run(
+        sql`INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (${b}, ${a}, ${now})`,
+      );
+      db.run(sql`
+        INSERT INTO comments (id, task_id, author_id, body_md, created_via, created_at, updated_at)
+        VALUES (${newId()}, ${a}, ${s.userId}, 'hello', 'api', ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO task_watchers (id, task_id, user_id, created_at, updated_at)
+        VALUES (${newId()}, ${a}, ${s.userId}, ${now}, ${now})
+      `);
+
+      runMigrations(db);
+
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+      // Enforcement is back on for the connection the server goes on to use.
+      expect(db.get<{ foreign_keys: number }>(sql`PRAGMA foreign_keys`)?.foreign_keys).toBe(1);
+      expect(
+        db
+          .select()
+          .from(tasks)
+          .all()
+          .map((r) => r.title)
+          .sort(),
+      ).toEqual(['A', 'B']);
+      expect(
+        db.all(sql`SELECT task_id FROM task_dependencies WHERE depends_on_task_id = ${a}`),
+      ).toHaveLength(1);
+      expect(db.all(sql`SELECT id FROM comments WHERE task_id = ${a}`)).toHaveLength(1);
+      expect(db.all(sql`SELECT user_id FROM task_watchers WHERE task_id = ${a}`)).toHaveLength(1);
+      expect(
+        db
+          .all<{ name: string }>(
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks'`,
+          )
+          .map((r) => r.name),
+      ).toContain('tasks_parent_task_id_idx');
+      // The two new columns arrive null, not absent and not zero.
+      expect(db.select().from(tasks).where(eq(tasks.id, a)).get()).toMatchObject({
+        parentTaskId: null,
+        dueOn: null,
+        plannedStart: null,
+      });
+    } finally {
+      sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

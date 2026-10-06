@@ -274,7 +274,32 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
   }
 
   try {
-    migrate(db, { migrationsFolder });
+    // **`PRAGMA foreign_keys` is a no-op inside a transaction, and drizzle's
+    // migrator opens one** (`BEGIN` in `sqlite-core/dialect`, around every
+    // file). So the `PRAGMA foreign_keys=OFF` drizzle-kit writes at the top of
+    // a table rebuild never takes effect, and `DROP TABLE` then performs its
+    // implicit `DELETE FROM` with foreign keys **on** — every `ON DELETE
+    // CASCADE` row in a referencing table goes with the old table, silently.
+    // LAI-493's rebuild of `tasks` was the first of a table something
+    // references, and `migrate.test.ts` found the dependency rows gone.
+    //
+    // Enforcement is switched off here, **outside** the transaction, where the
+    // pragma works, and switched back on whatever happens; the check below
+    // then asks SQLite whether anything is dangling, which is the question the
+    // rebuild's `PRAGMA foreign_keys=ON` was meant to be followed by.
+    db.run(sql`PRAGMA foreign_keys = OFF`);
+    try {
+      migrate(db, { migrationsFolder });
+    } finally {
+      db.run(sql`PRAGMA foreign_keys = ON`);
+    }
+    const dangling = db.all(sql`PRAGMA foreign_key_check`);
+    if (dangling.length > 0) {
+      throw new Error(
+        `Migrations left ${String(dangling.length)} dangling foreign key reference(s); refusing to boot on a database that cannot be trusted. First: ${JSON.stringify(dangling[0])}`,
+      );
+    }
+
     ensureActivityTriggers(db);
 
     // Recovers `started_at` / `completed_at` from the audit trail for tasks that
