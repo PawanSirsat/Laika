@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-290
-status: review
+status: done
 started: 2026-10-06T06:43:34Z
 finished: 2026-10-06T06:47:00Z
 ---
@@ -71,3 +71,13 @@ with the parent's key. LAI-289 asked for the §4.5 rows and the D-014 reversal;
 it keeps §11.4.1's columns/swimlanes text, §11.4.3 and the LAI-266 exemption
 retirement, and should be annotated at review. LAI-286 (`branch` on
 `TaskView`) is folded into LAI-493.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted. Read the diff, not the ticks: every §4.5 row says `nullable`;
+the §1.1 list no longer carries dates and the D-013/D-014 paragraph no longer
+claims they stayed; D-066 names what it supersedes in D-063 and what it
+reverses in D-014; §7.1's first column is untouched (`plugin-mcp` and `parity`
+green). The red is the two `schema-spec-drift` assertions the task quotes and
+no other. **Held on local `master`, not pushed** (CLAUDE.md §4.4 step 3) until
+LAI-493 turns it green. **LAI-493 may start against this.**
