@@ -2162,3 +2162,75 @@
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+
+/* --------------------------------------- a subtask row's controls (LAI-700) */
+
+/* The status pill, as a menu: the select carries the pill's own type and
+   colour, with a caret drawn by the label so it follows the tone. */
+.sub-status {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+.sub-status select {
+  appearance: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  border-radius: inherit;
+  padding: 0.1875rem 1rem 0.1875rem 0.3125rem;
+  cursor: pointer;
+}
+
+.sub-status::after {
+  content: '';
+  position: absolute;
+  right: 0.375rem;
+  top: 50%;
+  width: 0.25rem;
+  height: 0.25rem;
+  margin-top: -0.1875rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+  pointer-events: none;
+}
+
+/* The avatar, as a picker: the select covers it, invisible, so the avatar is
+   what is seen and the native menu is what opens. */
+.sub-assign {
+  position: relative;
+  cursor: pointer;
+}
+
+.sub-assign select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.sub-status:focus-within,
+.sub-assign:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sub-status:hover,
+.sub-assign:hover {
+  filter: brightness(1.08);
+}
+
+.sub-status select:disabled,
+.sub-assign select:disabled {
+  cursor: progress;
+}

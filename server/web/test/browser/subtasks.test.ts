@@ -139,7 +139,10 @@ const STUB: ApiStub = {
     next_cursor: null,
   },
   '/api/v1/projects/laika-core/members': {
-    members: [{ user_id: 'u1', name: 'Ada Lovelace', email: 'a@example.com', role: 'lead' }],
+    members: [
+      { user_id: 'u1', name: 'Ada Lovelace', email: 'a@example.com', role: 'lead' },
+      { user_id: 'u2', name: 'Grace Hopper', email: 'g@example.com', role: 'member' },
+    ],
   },
   '/api/v1/projects/laika-core/mentionable': { users: [{ id: 'u1', name: 'Ada Lovelace' }] },
   '/api/v1/projects/laika-core/sprints': empty,
@@ -149,6 +152,7 @@ const STUB: ApiStub = {
   '/api/v1/tasks/t1/comments': empty,
   '/api/v1/tasks/t1/watchers': { watchers: [] },
   '/api/v1/tasks/t3': OPEN,
+  '/api/v1/tasks/t3/status': { ...OPEN, status: 'done' },
   '/api/v1/tasks/t3/comments': empty,
   '/api/v1/tasks/t3/watchers': { watchers: [] },
   '/api/v1/org': {
@@ -331,6 +335,106 @@ void describe('subtasks and due dates on the List', () => {
       const first = await h.page.locator('.list-row').first().locator('.list-key').innerText();
       assert.match(first, /LC-1/, 'soonest due first');
       assert.match(h.page.url(), /sort=due/);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * LAI-700: a subtask row changes its own status and assignee, as Jira's does,
+ * without opening the child. Asserted by the request each control sends and
+ * by the address bar staying on the parent.
+ */
+void describe('a subtask row changes status and assignee in place (LAI-700)', () => {
+  const row = (h: Awaited<ReturnType<typeof open>>, key: string) =>
+    h.page.locator('.sub-row', { hasText: key });
+
+  void test('the status menu offers every status and moves that child', async () => {
+    const h = await open('/board?project=laika-core&task=t1', STUB);
+    try {
+      await drawer(h);
+      const menu = row(h, 'LC-3').locator('.sub-status select');
+      await menu.waitFor({ timeout: 10_000 });
+      assert.equal(
+        await menu.getAttribute('aria-label'),
+        null,
+        'named by its label, not a stray attribute',
+      );
+      const values = await menu
+        .locator('option')
+        .evaluateAll((els: Element[]) => els.map((el) => (el as HTMLOptionElement).value));
+      assert.deepEqual(values, ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled']);
+      assert.equal(await menu.inputValue(), 'in_progress');
+
+      await menu.selectOption('done');
+      await h.page.waitForTimeout(400);
+
+      const post = h.calls.find((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/status');
+      assert.ok(post !== undefined, 'no status POST went out');
+      assert.deepEqual(post.body, { status: 'done' });
+      assert.match(h.page.url(), /task=t1/, 'changing the status opened the child');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the avatar assigns that child to a member, and back to nobody', async () => {
+    const h = await open('/board?project=laika-core&task=t1', STUB);
+    try {
+      await drawer(h);
+      const picker = row(h, 'LC-3').locator('.sub-assign select');
+      await picker.waitFor({ timeout: 10_000, state: 'attached' });
+      const labels = await picker.locator('option').allInnerTexts();
+      assert.deepEqual(labels, ['Unassigned', 'Ada Lovelace (you)', 'Grace Hopper']);
+      assert.equal(await picker.inputValue(), 'u1');
+
+      await picker.selectOption('u2');
+      await h.page.waitForTimeout(400);
+      const assign = h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
+      assert.deepEqual(assign[0]?.body, { assignee_id: 'u2' });
+
+      await picker.selectOption('');
+      await h.page.waitForTimeout(400);
+      const again = h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
+      assert.deepEqual(again[1]?.body, { assignee_id: null });
+      assert.match(h.page.url(), /task=t1/, 'assigning opened the child');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('both controls are named with the child’s key', async () => {
+    const h = await open('/board?project=laika-core&task=t1', STUB);
+    try {
+      await drawer(h);
+      await h.page.getByRole('combobox', { name: 'Status of LC-3' }).waitFor({ timeout: 10_000 });
+      assert.equal(await h.page.getByRole('combobox', { name: 'Assignee of LC-3' }).count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a Viewer sees the status and the avatar and can change neither', async () => {
+    const viewer: ApiStub = {
+      ...STUB,
+      '/api/v1/me': {
+        id: 'u2',
+        email: 'g@example.com',
+        name: 'Grace Hopper',
+        org_role: 'viewer',
+        is_active: true,
+        memberships: [{ project_id: 'laika-core', role: 'viewer' }],
+      },
+    };
+    const h = await open('/board?project=laika-core&task=t1', viewer);
+    try {
+      await drawer(h);
+      // Positive control: the rows are here before their absences prove anything.
+      await row(h, 'LC-3').waitFor({ timeout: 10_000 });
+      assert.equal(await row(h, 'LC-3').locator('.dep-status').count(), 1);
+      assert.equal(await row(h, 'LC-3').locator('.dep-avatar').count(), 1);
+      assert.equal(await h.page.locator('.sub-row select').count(), 0);
     } finally {
       await h.close();
     }
