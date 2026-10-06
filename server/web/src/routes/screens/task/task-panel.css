@@ -1961,3 +1961,26 @@
   line-height: 1.6;
   color: var(--text-muted);
 }
+
+/* The picker brings its own heading; inside the Labels row the row's label
+   is the heading, so the picker's is not drawn. */
+.meta-tags .tagp-head {
+  display: none;
+}
+
+/* The section headings of the document column read alike (D-066): Description,
+   Subtasks, Linked tasks, Activity — sentence case, the document's own weight,
+   not the mono uppercase the dependencies heading had on its own. */
+.panel-main .dep-title {
+  font-family: var(--font-ui);
+  font-size: 0.9375rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-primary);
+}
+
+.panel-main .dep-title .panel-count {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+}

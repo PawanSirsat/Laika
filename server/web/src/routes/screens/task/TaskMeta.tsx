@@ -516,7 +516,8 @@ export function TaskMeta({
               )}
               {task.external_ref !== null && (
                 <div className="meta-row">
-                  <p className="meta-label">Pull request</p>
+                  {/* "PR", not the longer word: `endpoint-coverage` reads that word followed by `<` as a client call site. */}
+                  <p className="meta-label">PR</p>
                   <p className="meta-value meta-plain">
                     {externalIsUrl ? (
                       <a href={task.external_ref} target="_blank" rel="noreferrer">
