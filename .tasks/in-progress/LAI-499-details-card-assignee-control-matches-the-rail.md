@@ -2,10 +2,11 @@
 id: LAI-499
 title: 'The Details card’s Assignee control is drawn like the rail’s other fields'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: [LAI-494]
-status: backlog
+status: in-progress
+started: 2026-10-06T09:57:29Z
 ---
 
 ## Goal
