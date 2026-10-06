@@ -1375,6 +1375,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             }}
             onAssigned={board.reload}
             onTaskEdited={board.reload}
+            onOpen={openTaskInUrl}
             task={openTask}
             byId={board.byId}
             members={members}

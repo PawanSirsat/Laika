@@ -744,14 +744,24 @@ void describe('timestamps read as moments (LAI-486)', () => {
     }
   });
 
-  void test('the drawer says "opened just now", never "just now ago"', async () => {
+  void test('the drawer’s foot gives both moments in full, never "just now ago"', async () => {
+    /*
+     * The byline under the title is gone (D-066): the two times are the foot of
+     * the rail now, written out as the Jira screenshot has them. The thing
+     * LAI-486 fixed — an "ago" appended to a label that carries its own — can
+     * no longer happen here, and this keeps it that way.
+     */
     const h = await onTheClock('/list?project=laika-core&task=c1');
     try {
-      const byline = h.page.locator('.panel-byline-times');
-      await byline.waitFor({ timeout: 20_000 });
-      const text = (await byline.innerText()).replace(/\s+/g, ' ').trim();
-      assert.match(text, /^opened just now · updated just now$/, `the byline reads "${text}"`);
-      assert.doesNotMatch(text, /just now ago/);
+      const foot = h.page.locator('.panel-foot-times');
+      await foot.waitFor({ timeout: 20_000 });
+      const text = (await foot.innerText()).replace(/\s+/g, ' ').trim();
+      assert.match(
+        text,
+        /^Created \w{3} \d{1,2} \w{3} \d{4}, \d{2}:\d{2}:\d{2} Updated /,
+        `the foot reads "${text}"`,
+      );
+      assert.doesNotMatch(text, /ago/);
     } finally {
       await h.close();
     }
