@@ -1531,6 +1531,15 @@ and its sort is URL state like the filters (D-065). Created and updated read
 `just now` / `N min ago` / `N h ago` for a day, then a date and time, with the
 full timestamp on hover.
 
+Rows **select** (D-067): a checkbox on every row and one in the header for the
+page, with *Select all* over every row the filter left. Once anything is
+selected a bar offers status, priority, assignee, sprint and cancel for the
+whole selection, sent as **one request per task** — there is no bulk endpoint
+and §7.2 keeps it that way — and reports what was refused, by key, with the
+server's reason. The status cell is itself a menu of the legal targets (§5),
+issuing the same `POST /api/v1/tasks/:id/status` as a drag. A viewer gets none
+of it.
+
 Both views:
 
 - share one filter state, reflected in the URL so a filtered board is linkable;
@@ -1538,8 +1547,9 @@ Both views:
 - paginate through the same cursor API (§6.3) — the kanban board loads per
   column, and a column with more results says so rather than silently truncating.
 
-**Explicitly not in v1:** swimlanes, WIP limits, custom columns, saved views,
-bulk edit. Columns are the status enum; when that is not enough, use the list.
+**Explicitly not in v1:** swimlanes, WIP limits, custom columns, saved views.
+Columns are the status enum; when that is not enough, use the list, which is
+where many tasks become one gesture (D-067).
 
 #### 11.4.2 UI screens → API coverage
 
