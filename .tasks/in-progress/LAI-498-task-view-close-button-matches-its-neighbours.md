@@ -2,10 +2,11 @@
 id: LAI-498
 title: 'The task view’s close button is drawn like the three buttons beside it'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: [LAI-494]
-status: backlog
+status: in-progress
+started: 2026-10-06T09:11:53Z
 ---
 
 ## Goal
