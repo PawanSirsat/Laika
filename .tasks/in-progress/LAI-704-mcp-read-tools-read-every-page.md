@@ -2,11 +2,12 @@
 id: LAI-704
 title: 'The MCP read tools read every row, not the first 201'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-702
-status: backlog
+status: in-progress
+started: 2026-10-06T12:39:10Z
 ---
 
 ## Goal
