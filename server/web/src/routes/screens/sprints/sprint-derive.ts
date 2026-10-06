@@ -37,18 +37,10 @@ const DAY = 24 * 60 * 60 * 1000;
  */
 export const MIN_SPRINT_DAYS = 2;
 
-/** `YYYY-MM-DD` (what `<input type="date">` speaks) → unix-ms at UTC midnight. */
-export function dateInputToMs(value: string): number | null {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
-
-  const ms = Date.parse(`${value}T00:00:00.000Z`);
-  return Number.isNaN(ms) ? null : ms;
-}
-
-/** unix-ms → `YYYY-MM-DD`, read in UTC so it round-trips `dateInputToMs`. */
-export function msToDateInput(ms: number): string {
-  return new Date(ms).toISOString().slice(0, 10);
-}
+// The two date-input helpers moved to `api/date-only.ts` (D-066), where the
+// task view shares them; re-exported so every caller here is unchanged.
+export { dateInputToMs, msToDateInput } from '../../../api/date-only.ts';
+import { dateInputToMs, msToDateInput } from '../../../api/date-only.ts';
 
 /**
  * Inclusive day count: a sprint from the 1st to the 14th is 14 days.

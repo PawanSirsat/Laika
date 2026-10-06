@@ -33,6 +33,9 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_via: 'web',
     created_by_client: null,
     discovered_from: null,
+    parent_task_id: null,
+    due_on: null,
+    planned_start: null,
     ready: false,
     blocked_by: [],
     blocks: [],
@@ -46,7 +49,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_at: 1,
     updated_at: 1,
     ...over,
-  } as Task;
+  };
 }
 
 function col(id: string, statuses: string[], position: number): BoardColumn {

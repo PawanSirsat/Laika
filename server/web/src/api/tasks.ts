@@ -119,6 +119,23 @@ export interface Task {
    */
   readonly started_at: number | null;
   readonly completed_at: number | null;
+  /**
+   * The task this is a **subtask** of, or `null` (§4.5, D-066). One level —
+   * a task with a parent never has children — same project, and not a
+   * dependency: `ready` ignores it. Its children are `GET …/tasks?parent=`.
+   */
+  readonly parent_task_id: string | null;
+  /**
+   * The plan, as distinct from the actuals above (D-066): unix-ms at a UTC
+   * midnight, date-only like a sprint's `starts_on`. "Overdue" is derived
+   * here from `due_on` and the status (`api/date-only.ts`), never served.
+   */
+  readonly due_on: number | null;
+  readonly planned_start: number | null;
+  /** Last branch seen working on it — the plugin writes it (LAI-286). */
+  readonly branch: string | null;
+  /** e.g. a GitHub PR URL (LAI-286). */
+  readonly external_ref: string | null;
   readonly created_at: number;
   readonly updated_at: number;
 }
@@ -160,6 +177,8 @@ export interface TaskFilter {
    * *Updated within* filter (LAI-487).
    */
   readonly updated_since?: number | undefined;
+  /** A task id: only its subtasks (§6.4, D-066). */
+  readonly parent?: string | undefined;
   readonly limit?: number | undefined;
   readonly cursor?: string | undefined;
 }
@@ -173,6 +192,7 @@ function toQuery(filter: TaskFilter): string {
   if (filter.sprint !== undefined) params.set('sprint', filter.sprint);
   if (filter.tag !== undefined) params.set('tag', filter.tag);
   if (filter.updated_since !== undefined) params.set('updated_since', String(filter.updated_since));
+  if (filter.parent !== undefined) params.set('parent', filter.parent);
   if (filter.limit !== undefined) params.set('limit', String(filter.limit));
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
 
@@ -195,6 +215,8 @@ export interface CreateTaskInput {
   readonly title: string;
   readonly priority?: TaskPriority | undefined;
   readonly status?: TaskStatus | undefined;
+  /** Files it as a subtask of that task (D-066). */
+  readonly parent_task_id?: string | undefined;
 }
 
 /**
@@ -215,6 +237,7 @@ export function createTask(slug: string, input: CreateTaskInput): Promise<Task> 
       created_via: 'web',
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.status === undefined ? {} : { status: input.status }),
+      ...(input.parent_task_id === undefined ? {} : { parent_task_id: input.parent_task_id }),
     },
   });
 }
@@ -407,6 +430,11 @@ export interface TaskEdit {
   readonly priority?: TaskPriority;
   readonly assignee_id?: string | null;
   readonly sprint_id?: string | null;
+  /** `null` detaches it from its parent; a string re-parents it (D-066). */
+  readonly parent_task_id?: string | null;
+  /** `null` clears; unix-ms at a UTC midnight sets (`api/date-only.ts`). */
+  readonly due_on?: number | null;
+  readonly planned_start?: number | null;
 }
 
 export function updateTask(taskId: string, edit: TaskEdit): Promise<Task> {
