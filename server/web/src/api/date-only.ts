@@ -35,6 +35,12 @@ export function dateLabel(ms: number): string {
   return `${String(d.getUTCDate())} ${MONTHS[d.getUTCMonth()] ?? ''} ${String(d.getUTCFullYear())}`;
 }
 
+/** `12 Jul` — a card's form, where a year is a width the footer cannot give. */
+export function dateLabelShort(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getUTCDate())} ${MONTHS[d.getUTCMonth()] ?? ''}`;
+}
+
 /**
  * Past its due date and still open.
  *

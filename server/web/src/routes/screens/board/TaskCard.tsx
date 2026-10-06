@@ -4,7 +4,7 @@ import { initials } from '../../../theme/initials.ts';
 import { blockedState, blockers, staleFor, updatedAge } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import type { CardFields } from './card-fields.ts';
-import { dateLabel, isOverdue } from '../../../api/date-only.ts';
+import { dateLabelShort, isOverdue } from '../../../api/date-only.ts';
 import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-derive.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
@@ -263,9 +263,12 @@ export function TaskCard({
               overdue ? 'card-due card-due-overdue card-above t-meta' : 'card-due card-above t-meta'
             }
             title={overdue ? 'Past due and still open' : 'Due'}
+            data-due={task.due_on}
           >
             {overdue && <span aria-hidden="true">⚠</span>}
-            <time dateTime={new Date(task.due_on).toISOString()}>{dateLabel(task.due_on)}</time>
+            <time dateTime={new Date(task.due_on).toISOString()}>
+              {dateLabelShort(task.due_on)}
+            </time>
           </span>
         )}
 

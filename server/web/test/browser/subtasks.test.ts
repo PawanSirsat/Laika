@@ -254,7 +254,9 @@ void describe('subtasks and due dates on the cards', () => {
       assert.equal(await byKey(h, 'LC-4').locator('.card-parent').count(), 0);
 
       const due = byKey(h, 'LC-1').locator('.card-due');
-      assert.match(await due.innerText(), /12 Jul 2026/);
+      // The card's form has no year; the List and the drawer carry it.
+      assert.match(await due.innerText(), /12 Jul/);
+      assert.doesNotMatch(await due.innerText(), /2026/);
       assert.ok(await due.evaluate((el) => el.classList.contains('card-due-overdue')));
       const later = byKey(h, 'LC-4').locator('.card-due');
       assert.equal(await later.count(), 1);
