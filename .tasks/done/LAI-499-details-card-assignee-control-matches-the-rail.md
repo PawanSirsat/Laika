@@ -5,7 +5,8 @@ area: web
 assignee: chief
 priority: p2
 depends-on: [LAI-494]
-status: review
+status: done
+closed: 2026-10-06T10:03:09Z
 finished: 2026-10-06T10:02:53Z
 started: 2026-10-06T09:57:29Z
 ---
@@ -57,4 +58,12 @@ board card's own.
   Claim, light assigned.
 - Gate on this branch: test 0 (server 2065/2065, web 1199/1199, cli 85/85),
   lint 0, format 0.
+
+## Review
+
+Accepted 2026-10-06T10:03:09Z by CHIEF, who built it on the owner's instruction. Two
+source files, both `server/web/`, and this file. AC3's "60% of the card" was
+replaced by a right-edge check, recorded above with the reason; it asserts the
+same property without depending on whether the fixture task is assigned. Shown
+red before the change and red under a mutation of the rule it guards.
 
