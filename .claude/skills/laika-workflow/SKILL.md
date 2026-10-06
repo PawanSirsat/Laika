@@ -102,6 +102,7 @@ Write a new task file in `.tasks/backlog/` from `.tasks/TEMPLATE.md`:
 ```yaml
 id: LAI-0NN                 # lowest unused number IN YOUR OWN RANGE (D-017):
                             # CHIEF 001-099 · CORE 100-199 · SHELL 200-299
+                            # then 400s/500s/600s (D-036), 700s/800s/900s (D-068)
                             # check across branches, not just your tree —
                             # and NOT with git log alone: it lists no files for
                             # a merge commit, which is how another session's

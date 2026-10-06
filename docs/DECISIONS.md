@@ -3653,3 +3653,34 @@ made on that instruction, not a precedent.
 - Keyboard range selection (shift-click), and selection on the board.
 - A real delete.
 
+
+## D-068 — CHIEF's second id block is exhausted; ranges continue in a third
+
+**Date:** 2026-10-06 · **Decided by:** CHIEF · **Status:** accepted
+
+Filing the subtask-row follow-up turned up D-036's situation again: **`LAI-400`–
+`LAI-499` is completely full.** Two CHIEF sessions filed into it the same day
+(LAI-492…499), and the last free number went minutes before this one was
+needed.
+
+**Decision: a third block per session, taken when the second fills**, on the
+same terms as D-036 — lowest unused number in your own block, checked across
+every branch, and `LAI-300`–`LAI-399` stays reserved for a fourth session.
+
+| Session | Second block (D-036) | Third block |
+| --- | --- | --- |
+| CHIEF | `LAI-400`–`LAI-499` (full) | **`LAI-700`–`LAI-799`** |
+| CORE | `LAI-500`–`LAI-599` | `LAI-800`–`LAI-899` |
+| SHELL | `LAI-600`–`LAI-699` | `LAI-900`–`LAI-999` |
+
+CHIEF's next id is **`LAI-700`**.
+
+**What this costs, written down so it is not rediscovered:** every id sweep in
+CLAUDE.md §3 greps `LAI-[0-9]\{3\}`. That still matches all three blocks. The
+first id past `LAI-999` will need a four-digit pattern **and** a decision on
+the fourth block, together — not one without the other.
+
+### Revisit when
+
+Any session's third block fills, or a fourth session starts and takes
+`LAI-300`.
