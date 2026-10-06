@@ -2,11 +2,12 @@
 id: LAI-495
 title: 'Subtasks: the section in the task view, and the markers on cards and rows'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-494]
 discovered-from: LAI-290
-status: backlog
+status: in-progress
+started: 2026-10-06T09:07:58Z
 ---
 
 ## Goal
