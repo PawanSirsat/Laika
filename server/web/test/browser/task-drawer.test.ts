@@ -326,4 +326,39 @@ void describe('the task drawer', () => {
       await h.close();
     }
   });
+
+  void test('the close button is the fourth of the header’s buttons, not a different control', async () => {
+    /*
+     * LAI-498, from the owner's screenshot after LAI-494: the eye, the share
+     * and the `⋯` were 2rem squares with one radius, and the `×` beside them
+     * was a shorter pill with a larger one. Measured against the `⋯` in the
+     * same header, so a change to the row's geometry moves both.
+     */
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await openDrawer(h);
+      await h.page.locator('.panel-head').waitFor({ timeout: 10_000 });
+
+      const more = h.page.locator('.panel-head-action[aria-label="More actions"]');
+      const close = h.page.locator('.panel-close');
+      const a = await more.boundingBox();
+      const b = await close.boundingBox();
+      assert.ok(a && b, 'both buttons must be on screen');
+      assert.equal(Math.round(b.height), Math.round(a.height), 'the × is a different height');
+      assert.ok(b.width >= b.height - 1, `the × is narrower than it is tall (${String(b.width)})`);
+
+      const style = (locator: typeof close) =>
+        locator.evaluate((el) => {
+          const c = getComputedStyle(el);
+          return { radius: c.borderTopLeftRadius, border: c.borderTopColor, color: c.color };
+        });
+      assert.deepEqual(
+        await style(close),
+        await style(more),
+        'the × is styled unlike its neighbours',
+      );
+    } finally {
+      await h.close();
+    }
+  });
 });
