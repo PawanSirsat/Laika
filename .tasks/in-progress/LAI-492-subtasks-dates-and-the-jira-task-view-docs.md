@@ -2,11 +2,12 @@
 id: LAI-492
 title: 'Subtasks, due and start dates, and the Jira-shaped task view — the docs half'
 area: docs
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-290
-status: backlog
+status: in-progress
+started: 2026-10-06T06:43:34Z
 ---
 
 ## Goal
