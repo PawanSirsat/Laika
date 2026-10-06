@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { listUserTokens, type TokenView } from '../../../api/tokens.ts';
 
@@ -38,8 +39,16 @@ export function useUserTokens(userId: string | undefined): {
     const controller = new AbortController();
     setState({ status: 'loading' });
 
-    listUserTokens(userId, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listUserTokens(
+        userId,
+        controller.signal,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         if (controller.signal.aborted) return;
         setState({ status: 'ready', tokens: page.data });
       })

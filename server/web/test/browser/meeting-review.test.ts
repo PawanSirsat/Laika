@@ -428,3 +428,32 @@ void describe('discard is separated from apply', () => {
     }
   });
 });
+
+/**
+ * LAI-703: the screen read one page of the **default 50** tasks to find a
+ * proposal's before. A task past the first page then had no before at all —
+ * on Onroute, 278 of 328.
+ */
+void describe('a task on the second page still has its before (LAI-703)', () => {
+  void test('the change shows its before when the task is on page two', async () => {
+    const h = await open(
+      '/meeting-review?project=laika-core',
+      stub({
+        '/api/v1/projects/laika-core/tasks?limit=200': { data: [], next_cursor: 'P2' },
+        '/api/v1/projects/laika-core/tasks?limit=200&cursor=P2': {
+          data: [TASK],
+          next_cursor: null,
+        },
+      }),
+    );
+    try {
+      const changed = h.page.locator('.mr-proposal', { hasText: 'CHANGED' }).first();
+      await changed.waitFor({ timeout: 20_000 });
+      await changed.locator('.mr-change-from').first().waitFor({ timeout: 10_000 });
+      assert.ok((await changed.locator('.mr-change-from').count()) > 0);
+      assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+});

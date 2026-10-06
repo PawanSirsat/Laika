@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -81,8 +82,12 @@ export function TokensScreen({ me }: TokensScreenProps) {
   };
 
   const reload = (signal?: AbortSignal): void => {
-    listTokens(signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listTokens(signal, cursor === undefined ? { limit: 200 } : { limit: 200, cursor }),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         setTokens(page.data);
         setNow(Date.now());
       })

@@ -1,3 +1,4 @@
+import { everyPage } from '../api/every-page.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { isTombstone, listProjects, type Project } from '../api/projects.ts';
 import { promote, readRecent, recentSpaces, toSpace, writeRecent, type Space } from './spaces.ts';
@@ -10,16 +11,18 @@ import { promote, readRecent, recentSpaces, toSpace, writeRecent, type Space } f
  * `401` on every sign-in page load, the same trap `useShellContext` documents
  * for the sprint count.
  *
- * One page is deliberate. The sidebar shows three spaces; walking the cursor to
- * build a list that gets sliced to three is work nobody sees. *More spaces*
- * goes to the Projects screen, which paginates properly.
+ * **Every page** (LAI-703). This read one page of 20 on the grounds that the
+ * sidebar shows three — but `all` feeds the More-spaces popover, which then
+ * listed twenty spaces of however many as if that were all of them. Projects
+ * are few and a page is 200, so reading to the end costs one request in
+ * practice and makes the popover's list true.
  */
 export function useSpaces(
   enabled: boolean,
   current?: string,
 ): {
   readonly spaces: readonly Space[];
-  /** Every fetched space, for the More-spaces popover (LAI-249). One page — see above. */
+  /** Every space, for the More-spaces popover (LAI-249). */
   readonly all: readonly Space[];
   readonly open: (slug: string) => void;
 } {
@@ -32,8 +35,15 @@ export function useSpaces(
     if (!enabled) return;
     const controller = new AbortController();
 
-    listProjects({ limit: 20 }, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listProjects(
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         if (controller.signal.aborted) return;
         // A deleted project arrives as a tombstone, which has no name to show.
         setProjects(page.data.filter((row): row is Project => !isTombstone(row)));

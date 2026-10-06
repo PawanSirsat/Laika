@@ -28,6 +28,7 @@ import type { BulkRun } from './list/list-bulk.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { useEvents } from '../../api/use-events.ts';
 import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
+import { everyPage } from '../../api/every-page.ts';
 import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
@@ -134,6 +135,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const [sprintsLoading, setSprintsLoading] = useState(true);
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
+  /** The strip's list hit `everyPage`'s cap, so its counts are a floor. */
+  const [stripPartial, setStripPartial] = useState(false);
   const [creating, setCreating] = useState(false);
   /**
    * The List's selection and its bulk run (LAI-496), **held here** because
@@ -225,8 +228,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     if (slug !== undefined) return;
     const controller = new AbortController();
 
-    listProjects({}, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listProjects(
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         // The most recently active project, not the alphabetically first —
         // and written **into the URL**, so the address bar names what is on
         // screen. Holding it only in state is how someone ends up reading
@@ -366,8 +376,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     const controller = new AbortController();
 
     setSprintsLoading(true);
-    listSprints(slug, {}, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listSprints(slug, cursor === undefined ? {} : { cursor }, controller.signal),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         setSprints(page.data);
       })
       .catch(() => {
@@ -389,9 +403,22 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     // The tag filter moved to the space bar with the rest of them (LAI-270),
     // and the bar fetches its own vocabulary.
 
-    listTasks(slug, { limit: 200 }, controller.signal)
-      .then((page) => {
-        setAllTasks(page.data);
+    /*
+     * **Every page, not the first** (LAI-702). This read one page of 200,
+     * oldest-updated first, and the strip counted that as the project: on
+     * Onroute (328 tasks) S3 read 7/42 while it held 157, because its 149
+     * Review tasks were the most recently moved and fell past the page.
+     */
+    everyPage((cursor) =>
+      listTasks(
+        slug,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items, truncated }) => {
+        setAllTasks(items);
+        setStripPartial(truncated);
       })
       .catch(() => {
         setAllTasks([]);
@@ -685,6 +712,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             sprints={sprints}
             loading={sprintsLoading}
             tasks={allTasks}
+            partial={stripPartial}
             selected={sprintScope}
             onSelect={(id) => {
               setParam('sprint', id);

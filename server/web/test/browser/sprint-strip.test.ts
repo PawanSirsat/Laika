@@ -499,3 +499,77 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
     }
   });
 });
+
+/**
+ * LAI-702: the strip counted one page of the project's tasks. On production
+ * Onroute's S3 read 7/42 while it held 157, because its 149 Review tasks were
+ * the most recently updated and so fell outside the first 200. Here, page two
+ * carries three more S3 tasks in Review.
+ */
+void describe('the strip counts every page of tasks (LAI-702)', () => {
+  const S3 = [task('t1', 'LC-1', 'backlog', 's3'), task('t2', 'LC-2', 'done', 's3')];
+  const LATER = [
+    task('t3', 'LC-3', 'review', 's3'),
+    task('t4', 'LC-4', 'review', 's3'),
+    task('t5', 'LC-5', 'review', 's3'),
+  ];
+  const PAGED: ApiStub = {
+    ...STUB,
+    '/api/v1/projects/laika-core/tasks?limit=200': { data: S3, next_cursor: 'P2' },
+    '/api/v1/projects/laika-core/tasks?limit=200&cursor=P2': { data: LATER, next_cursor: null },
+    // The board itself, scoped to the sprint — all five, in one page.
+    '/api/v1/projects/laika-core/tasks?sprint=s3&limit=200': {
+      data: [...S3, ...LATER],
+      next_cursor: null,
+    },
+  };
+
+  void test('a sprint’s chip and the DONE figure count the second page too', async () => {
+    const h = await open('/board?project=laika-core&sprint=s3', PAGED);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      const chip = h.page.locator('.strip-chip').nth(2).locator('.strip-chip-frac');
+      await h.page.waitForFunction(
+        () =>
+          /1\s*\/\s*5/.test(document.querySelectorAll('.strip-chip-frac')[2]?.textContent ?? ''),
+        { timeout: 10_000 },
+      );
+      assert.equal((await chip.innerText()).replace(/\s+/g, ''), '1/5');
+      const stats = (await h.page.locator('.strip-stats').innerText()).replace(/\s+/g, ' ');
+      assert.match(stats, /DONE 1\s*\/\s*5/, `the summary read "${stats}"`);
+      // The board under it agrees: five cards, three of them in Review.
+      assert.equal(await h.page.locator('.card').count(), 5);
+      assert.ok(
+        h.calls.some((c) => c.path === '/api/v1/projects/laika-core/tasks' && c.method === 'GET'),
+      );
+      assert.deepEqual(h.unmatched, [], 'a request matched no stub');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a list too long to read says its counts are partial', async () => {
+    let served = 0;
+    const endless: ApiStub = {
+      ...PAGED,
+      // Every page points at another: the helper's cap must stop it and say so.
+      '/api/v1/projects/laika-core/tasks?limit=200': () => {
+        served += 1;
+        return {
+          data: [task(`x${String(served)}`, `LC-${String(100 + served)}`, 'todo', 's3')],
+          next_cursor: `N${String(served)}`,
+        };
+      },
+    };
+    const h = await open('/board?project=laika-core&sprint=s3', endless);
+    try {
+      await h.page.locator('.strip-partial').waitFor({ timeout: 20_000 });
+      assert.match(
+        (await h.page.locator('.strip-partial').getAttribute('title')) ?? '',
+        /partial|first/i,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

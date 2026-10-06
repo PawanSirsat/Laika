@@ -1,3 +1,4 @@
+import { everyPage } from '../../api/every-page.ts';
 import { useEffect, useState, type ReactNode } from 'react';
 import { useShell } from '../shell/shell-context.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
@@ -113,8 +114,16 @@ function SpaceFrame({
         // No cluster beats a wrong one.
       });
 
-    listMeetingReviews(slug, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listMeetingReviews(
+        slug,
+        controller.signal,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         if (controller.signal.aborted) return;
         setPendingReviews(page.data.filter((r) => r.status === 'pending').length);
       })

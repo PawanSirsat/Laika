@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { listAllUsers } from '../../../api/users.ts';
 import { listInvites } from '../../../api/invites.ts';
@@ -53,8 +54,14 @@ export function useOrganisation(canManage: boolean): UseOrganisation {
     // the only way to reach the `Reactivate` control.
     const people = listAllUsers(controller.signal, { includeInactive: true });
     const invites = canManage
-      ? listInvites(controller.signal).then(
-          (page) => ({ rows: page.data, error: null as unknown }),
+      ? everyPage((cursor) =>
+          listInvites(
+            controller.signal,
+            cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+          ),
+        ).then(
+          // Every page, not the first (LAI-703).
+          ({ items }) => ({ rows: items, error: null as unknown }),
           (error: unknown) => ({ rows: [] as readonly PendingInvite[], error }),
         )
       : Promise.resolve({ rows: [] as readonly PendingInvite[], error: null });

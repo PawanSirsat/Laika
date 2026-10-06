@@ -2,11 +2,13 @@
 id: LAI-703
 title: 'Every screen reads the whole list, not page one'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-702]
 discovered-from: LAI-702
-status: backlog
+status: review
+started: 2026-10-06T12:30:15Z
+finished: 2026-10-06T12:39:10Z
 ---
 
 ## Goal
@@ -44,21 +46,52 @@ the org has 58 unlisted-work rows.
 
 ## Acceptance criteria
 
-- [ ] One shared helper reads every page through `next_cursor`, with a page
+- [x] One shared helper reads every page through `next_cursor`, with a page
       cap that reports `truncated` rather than stopping silently; it has its
       own unit test (pages followed, cursor passed through, cap reported).
-- [ ] Every call site under *Wrong today* and *Correct today, wrong past a
+- [x] Every call site under *Wrong today* and *Correct today, wrong past a
       page* reads every page through it. Functions that took no cursor gain
       an optional one without changing how existing callers call them.
-- [ ] Browser tests for the live four: Calendar, Activity, Meeting review and
+- [x] Browser tests for the live four: Calendar, Activity, Meeting review and
       Unlisted each served two pages, asserting a row from the second page is
       on screen — red against the one-page code.
-- [ ] A guard test fails if a screen calls a page-returning list function
+- [x] A guard test fails if a screen calls a page-returning list function
       and reads `.data` without going through the helper, with an explicit
       list of allowed exceptions and why (the `use-events` window).
-- [ ] Both themes untouched; the gate exits 0 on all three.
+- [x] Both themes untouched; the gate exits 0 on all three.
 
 ## Notes / context
 
 `api/use-board.ts`' `fetchEveryPage` is the pattern; the helper generalises
 it. No new dependency, no server change (the server half is LAI-704).
+
+## Built — CHIEF, 2026-10-06
+
+**What changed.** The helper is LAI-702's `api/every-page.ts`, extended with an
+optional trailing `PageQuery` for the seven list functions that took no
+cursor (task comments and history, invites, meeting reviews, both token
+lists) — existing calls are unchanged. Every call site in the census now reads
+through `everyPage`: Calendar, Activity, Meeting review (tasks and reviews),
+the Space bar's review badge, Unlisted and Capacity (unlisted work and the
+space count), the project pickers on Board, Sprints, Dashboard and Timeline,
+the Board's sprints, the sidebar's spaces, a task's comments and history,
+tokens, a user's tokens, invites and the Subtasks section. The unlisted list
+gained a `limit`, so it reads 200 at a time like the rest.
+
+**Guard.** `test/api/one-page-reads.test.ts` finds every call of a
+page-returning function under `src/` and fails on one not inside `everyPage`,
+with seven named exceptions (their own loops, Load more, the live window), a
+positive control, and a check that no exception goes stale.
+
+**Measured, and the instrument checked.** Each new browser test was run
+against its screen's pre-fix version: Activity, Unlisted, Calendar and Meeting
+review each fail exactly the new test and nothing else; the guard fails
+against the old Calendar and the old task detail. The first attempt at this
+**proved nothing** — zsh read `$pre:server` as a modifier, `git show` failed,
+and each screen was swapped for an empty file; caught by the 0-pass counts and
+re-run with the variable braced and the swap verified (non-empty, different,
+no `everyPage`). Web `1219/1219`, lint, format, `tsc` exit 0.
+
+**Not surfaced on screen:** `truncated` beyond the strip. The cap is 25 pages
+(5,000 rows) per list; reaching it elsewhere is reported by the helper and
+not yet drawn.

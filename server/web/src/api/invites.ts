@@ -1,3 +1,4 @@
+import { pageSuffix, type PageQuery } from './every-page.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
 
@@ -133,8 +134,14 @@ export interface CreatedInvite {
 }
 
 /** Pending invites for the org. `admin+` — the server decides, not the screen. */
-export function listInvites(signal?: AbortSignal): Promise<Page<PendingInvite>> {
-  return request<Page<PendingInvite>>('/invites', signal === undefined ? {} : { signal });
+export function listInvites(
+  signal?: AbortSignal,
+  page: PageQuery = {},
+): Promise<Page<PendingInvite>> {
+  return request<Page<PendingInvite>>(
+    `/invites${pageSuffix(page)}`,
+    signal === undefined ? {} : { signal },
+  );
 }
 
 export function createInvite(input: CreateInviteInput): Promise<CreatedInvite> {

@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useState } from 'react';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { ApiError } from '../../../api/errors.ts';
@@ -76,8 +77,18 @@ export function SubtasksSection({
 
   useEffect(() => {
     const controller = new AbortController();
-    listTasks(slug, { parent: task.id, limit: 200 }, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listTasks(
+        slug,
+        cursor === undefined
+          ? { parent: task.id, limit: 200 }
+          : { parent: task.id, limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         if (!controller.signal.aborted) {
           setChildren([...page.data].sort((a, b) => a.number - b.number));
         }

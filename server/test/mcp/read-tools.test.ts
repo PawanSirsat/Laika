@@ -556,3 +556,84 @@ describe('get_task_context knows the parent and the subtasks (D-066)', () => {
     await client.close();
   });
 });
+
+/**
+ * LAI-704: the read tools took one page (`limit: 200`, so 201 rows) from each
+ * list service and treated it as the whole list. On production Onroute held
+ * 328 tasks, and `get_project_context` counted 201 of them.
+ */
+describe('the read tools read every row, not the first page (LAI-704)', () => {
+  const MANY = 230;
+
+  async function bulk(slug: string, n: number, status: string): Promise<void> {
+    for (let i = 0; i < n; i += 1) {
+      await task(slug, { title: `Bulk ${String(i)}`, status, priority: 'p3' });
+    }
+  }
+
+  it('get_project_context counts every task', async () => {
+    await project('core', 'COR');
+    await bulk('core', MANY, 'done');
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_project_context',
+      arguments: { project: 'core' },
+    });
+
+    expect(payload(result).open_task_count).toBe(MANY);
+    expect((payload(result).task_counts as Record<string, number>).done).toBe(MANY);
+
+    await client.close();
+  });
+
+  it('pages on the services’ own sort key, so no row is counted twice or missed', async () => {
+    await project('core', 'COR');
+    const created: string[] = [];
+    for (let i = 0; i < MANY; i += 1) {
+      created.push((await task('core', { title: `Bulk ${String(i)}`, status: 'done' })).id ?? '');
+    }
+    // Edited in reverse, so the order by \`updated_at\` — the one the services
+    // page on — is the opposite of the order by \`created_at\`. A cursor taken
+    // from the wrong timestamp then re-reads or skips rows; only the right one
+    // counts each task once.
+    for (const id of [...created].reverse()) {
+      await must(
+        `/api/v1/tasks/${id}`,
+        { method: 'PATCH', body: JSON.stringify({ title: 'Edited' }) },
+        200,
+      );
+    }
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_project_context',
+      arguments: { project: 'core' },
+    });
+    expect(payload(result).open_task_count).toBe(MANY);
+
+    await client.close();
+  });
+
+  it('list_ready_tasks finds the most urgent ready task even past the first page', async () => {
+    await project('core', 'COR');
+    // Two hundred and thirty **ready** p3 tasks first — more than a page of
+    // them — so the p1 one is the most recently updated, last in the services'
+    // order, and past the first page of ready tasks.
+    await bulk('core', MANY, 'backlog');
+    const urgent = await task('core', { title: 'The urgent one', priority: 'p1' });
+    for (let i = 0; i < 3; i += 1)
+      await task('core', { title: `Routine ${String(i)}`, priority: 'p3' });
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'list_ready_tasks',
+      arguments: { project: 'core', limit: 1 },
+    });
+
+    const tasks = payload(result).tasks as { key: string }[];
+    expect(tasks.map((t) => t.key)).toEqual([urgent.key]);
+
+    await client.close();
+  });
+}, 60_000);

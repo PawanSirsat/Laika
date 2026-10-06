@@ -6,8 +6,13 @@ import './sprint-strip.css';
 
 export interface SprintStripProps {
   readonly sprints: readonly Sprint[];
-  /** Every loaded task, so counts can be taken per sprint. */
+  /** Every task in the project, so counts can be taken per sprint (LAI-702). */
   readonly tasks: readonly Task[];
+  /**
+   * The task list stopped at its page cap, so every count is a floor. Said on
+   * screen, because a partial count that looks whole is the LAI-702 defect.
+   */
+  readonly partial?: boolean | undefined;
   /** The sprint the board is scoped to, or `undefined` for all sprints. */
   readonly selected: string | undefined;
   /**
@@ -56,7 +61,14 @@ function pct(done: number, total: number): number {
  * Selecting a sprint scopes the board through `?sprint=`, which the tasks
  * endpoint has always accepted.
  */
-export function SprintStrip({ sprints, tasks, selected, onSelect, loading }: SprintStripProps) {
+export function SprintStrip({
+  sprints,
+  tasks,
+  selected,
+  onSelect,
+  loading,
+  partial = false,
+}: SprintStripProps) {
   const now = Date.now();
   const current = sprints.find((s) => s.id === selected);
   const counts = countFor(tasks, selected);
@@ -200,6 +212,14 @@ export function SprintStrip({ sprints, tasks, selected, onSelect, loading }: Spr
             <dd>
               {counts.done}
               <span>/{counts.total}</span>
+              {partial && (
+                <span
+                  className="strip-partial"
+                  title="Counted from the first tasks only — this project has more than the board reads at once"
+                >
+                  +
+                </span>
+              )}
             </dd>
           </div>
           <div className="strip-stat strip-stat-blocked">
