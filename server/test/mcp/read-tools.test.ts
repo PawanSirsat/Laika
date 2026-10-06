@@ -490,3 +490,69 @@ describe('read tools never mutate (AC3)', () => {
     await client.close();
   });
 });
+
+describe('get_task_context knows the parent and the subtasks (D-066)', () => {
+  it('returns the parent for a child, and null for a root', async () => {
+    await project('core', 'COR');
+    const parent = await task('core', { title: 'Parent' });
+    const child = await task('core', { title: 'Child', parent_task_id: parent.id });
+
+    const client = await connect(await mint());
+    const asChild = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: child.key },
+    });
+    expect(payload(asChild).parent).toMatchObject({
+      key: parent.key,
+      title: 'Parent',
+      status: 'backlog',
+    });
+    expect(text(asChild)).toContain('### Parent');
+    expect(text(asChild)).toContain(parent.key);
+
+    const asRoot = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: parent.key },
+    });
+    expect(payload(asRoot).parent).toBeNull();
+
+    await client.close();
+  });
+
+  it('lists the subtasks with their assignee, and counts done over not-cancelled', async () => {
+    await project('core', 'COR');
+    const parent = await task('core', { title: 'Parent' });
+    const done = await task('core', { title: 'Done one', parent_task_id: parent.id });
+    const open = await task('core', { title: 'Open one', parent_task_id: parent.id });
+    const dropped = await task('core', { title: 'Dropped', parent_task_id: parent.id });
+    await must(
+      `/api/v1/tasks/${done.id}/status`,
+      { method: 'POST', body: JSON.stringify({ status: 'done' }) },
+      200,
+    );
+    await must(
+      `/api/v1/tasks/${dropped.id}/status`,
+      { method: 'POST', body: JSON.stringify({ status: 'cancelled' }) },
+      200,
+    );
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: parent.key },
+    });
+
+    const subtasks = payload(result).subtasks as {
+      key: string;
+      status: string;
+      assignee_id: string | null;
+    }[];
+    expect(subtasks.map((s) => s.key).sort()).toEqual([done.key, open.key, dropped.key].sort());
+    expect(subtasks.every((s) => 'assignee_id' in s)).toBe(true);
+    expect(payload(result).subtasks_done).toBe(1);
+    expect(payload(result).subtasks_total).toBe(2);
+    expect(text(result)).toContain('### Subtasks (1/2 done)');
+
+    await client.close();
+  });
+});

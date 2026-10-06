@@ -16,6 +16,7 @@
 
 import { sql } from 'drizzle-orm';
 import {
+  type AnySQLiteColumn,
   check,
   foreignKey,
   index,
@@ -336,6 +337,25 @@ export const tasks = sqliteTable(
      * parent is still open — this is deliberately *not* a dependency.
      */
     discoveredFrom: text('discovered_from'),
+    /**
+     * The task this is a **subtask** of (§4.5, §4.6, D-066). Containment, not
+     * blocking: `ready` ignores it and a parent's status never moves with its
+     * children. **One level** — a parent is never itself a child — and that is
+     * the service's rule (`assertParentAllowed`), because a CHECK cannot see
+     * another row. `ON DELETE SET NULL` rather than Jira's cascade: an orphaned
+     * subtask is a task someone can still see.
+     */
+    parentTaskId: text('parent_task_id').references((): AnySQLiteColumn => tasks.id, {
+      onDelete: 'set null',
+    }),
+    /**
+     * The plan, as distinct from `started_at` / `completed_at`, which are the
+     * actuals (D-066). Unix-ms with **date-only semantics** — a UTC midnight —
+     * exactly as a sprint's `starts_on` (§4.15). Neither is validated against
+     * the other, as Jira does not.
+     */
+    dueOn: integer('due_on'),
+    plannedStart: integer('planned_start'),
     branch: text('branch'),
     externalRef: text('external_ref'),
     staleFlaggedAt: integer('stale_flagged_at'),
@@ -353,6 +373,7 @@ export const tasks = sqliteTable(
     index('tasks_sprint_id_idx').on(t.sprintId),
     index('tasks_created_by_idx').on(t.createdBy),
     index('tasks_discovered_from_idx').on(t.discoveredFrom),
+    index('tasks_parent_task_id_idx').on(t.parentTaskId),
     check('tasks_status_check', oneOf('status', TASK_STATUSES)),
     check('tasks_priority_check', oneOf('priority', TASK_PRIORITIES)),
     check('tasks_created_via_check', oneOf('created_via', CREATED_VIA)),
@@ -361,6 +382,7 @@ export const tasks = sqliteTable(
       'tasks_discovered_from_check',
       sql.raw('discovered_from IS NULL OR discovered_from <> id'),
     ),
+    check('tasks_parent_task_id_check', sql.raw('parent_task_id IS NULL OR parent_task_id <> id')),
   ],
 );
 

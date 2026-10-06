@@ -40,6 +40,9 @@ import { parseBody, strictObject, z } from '../validation.ts';
  */
 const ACCEPTANCE_MAX = 10_000;
 
+/** A date with date-only semantics: unix-ms at a UTC midnight, as §4.15 (D-066). */
+const DateOnly = z.number().int().finite();
+
 const CreateBody = strictObject({
   title: z.string().trim().min(1).max(300),
   description_md: z.string().max(100_000).optional(),
@@ -49,6 +52,11 @@ const CreateBody = strictObject({
   status: z.enum(TASK_STATUSES).optional(),
   assignee_id: z.string().min(1).optional(),
   discovered_from: z.string().min(1).optional(),
+  // A subtask of that task — one level, same project; the service refuses the
+  // rest with `422` and `details.reason` (D-066).
+  parent_task_id: z.string().min(1).optional(),
+  due_on: DateOnly.optional(),
+  planned_start: DateOnly.optional(),
   created_via: z.enum(CREATED_VIA).optional(),
 });
 
@@ -65,6 +73,11 @@ const UpdateBody = strictObject({
   priority: z.enum(TASK_PRIORITIES).optional(),
   // `null` unassigns; absent leaves it alone. They are different requests.
   assignee_id: z.string().min(1).nullable().optional(),
+  // `null` detaches from the parent; a string re-parents (D-066).
+  parent_task_id: z.string().min(1).nullable().optional(),
+  // `null` clears each date; absent leaves it alone.
+  due_on: DateOnly.nullable().optional(),
+  planned_start: DateOnly.nullable().optional(),
 });
 
 const StatusBody = strictObject({ status: z.enum(TASK_STATUSES) });
@@ -121,6 +134,11 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
       ...(c.req.query('tag') === undefined || c.req.query('tag') === ''
         ? {}
         : { tag: c.req.query('tag') }),
+      // Only that task's subtasks (§6.4, D-066) — the `tag` idiom, because an
+      // empty value over a query string means absent.
+      ...(c.req.query('parent') === undefined || c.req.query('parent') === ''
+        ? {}
+        : { parent: c.req.query('parent') }),
       status: parseEnum(c.req.query('status'), TASK_STATUSES, 'status'),
       priority: parseEnum(c.req.query('priority'), TASK_PRIORITIES, 'priority'),
       assignee: c.req.query('assignee'),

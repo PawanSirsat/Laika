@@ -14,6 +14,7 @@ import {
   getTask,
   listTasks,
   removeTaskDependency,
+  subtaskProgress,
   updateTask,
 } from '../../src/services/tasks.ts';
 import { addComment, deleteComment } from '../../src/services/comments.ts';
@@ -915,11 +916,16 @@ describe('started_at and completed_at', () => {
         'created_by_client',
         'created_via',
         'blocked_by',
+        'branch',
         'description_md',
         'discovered_from',
+        'due_on',
+        'external_ref',
         'id',
         'key',
         'number',
+        'parent_task_id',
+        'planned_start',
         'priority',
         'project_id',
         'ready',
@@ -1011,5 +1017,217 @@ describe('completed_at when a task is reopened', () => {
     expect(done.completed_at).toBe(3_000);
     expect(reopened.completed_at).toBe(3_000);
     expect(reopened.status).toBe('in_progress');
+  });
+});
+
+describe('subtasks — parent_task_id (SPEC §4.5, §4.6, D-066)', () => {
+  function reason(fn: () => unknown): { code: string; reason: string } {
+    try {
+      fn();
+    } catch (err) {
+      if (err instanceof ApiError) {
+        const details = err.details as { field?: string; reason?: string };
+        expect(details.field).toBe('parent_task_id');
+        return { code: err.code, reason: details.reason ?? '' };
+      }
+      throw err;
+    }
+    throw new Error('did not throw');
+  }
+
+  it('creates a subtask and serves parent_task_id on the view', () => {
+    const parent = newTask('Parent');
+    const child = newTask('Child', { parent_task_id: parent.id });
+
+    expect(child.parent_task_id).toBe(parent.id);
+    expect(parent.parent_task_id).toBeNull();
+    expect(getTask(t.db, actor(adminId), child.id).parent_task_id).toBe(parent.id);
+  });
+
+  it('names the parent in task.created only when there is one', () => {
+    const parent = newTask('Parent');
+    const child = newTask('Child', { parent_task_id: parent.id });
+
+    const payloadOf = (taskId: string) =>
+      JSON.parse(
+        t.db
+          .select()
+          .from(activity)
+          .where(eq(activity.taskId, taskId))
+          .all()
+          .find((row) => row.type === 'task.created')?.payloadJson ?? '{}',
+      ) as Record<string, unknown>;
+
+    expect(payloadOf(child.id)).toMatchObject({ parent_task_id: parent.id });
+    expect(payloadOf(parent.id)).not.toHaveProperty('parent_task_id');
+  });
+
+  it('refuses a task as its own parent', () => {
+    const task = newTask('Loop');
+    expect(
+      reason(() => updateTask(t.db, actor(adminId), task.id, { parent_task_id: task.id })),
+    ).toEqual({ code: 'unprocessable', reason: 'self' });
+  });
+
+  it('refuses a parent that does not exist, or lives in another project, with one answer', () => {
+    createProject(t.sqlite, t.db, actor(adminId), { name: 'Other', slug: 'other', prefix: 'OTH' });
+    const elsewhere = createTask(t.sqlite, t.db, actor(adminId), 'other', { title: 'Far' });
+
+    expect(reason(() => newTask('Child', { parent_task_id: 'nope' }))).toEqual({
+      code: 'unprocessable',
+      reason: 'project',
+    });
+    expect(reason(() => newTask('Child', { parent_task_id: elsewhere.id }))).toEqual({
+      code: 'unprocessable',
+      reason: 'project',
+    });
+  });
+
+  it('is one level deep: a child cannot be a parent, a parent cannot become a child', () => {
+    const parent = newTask('Parent');
+    const child = newTask('Child', { parent_task_id: parent.id });
+    const other = newTask('Other');
+
+    expect(reason(() => newTask('Grandchild', { parent_task_id: child.id }))).toEqual({
+      code: 'unprocessable',
+      reason: 'depth',
+    });
+    expect(
+      reason(() => updateTask(t.db, actor(adminId), parent.id, { parent_task_id: other.id })),
+    ).toEqual({ code: 'unprocessable', reason: 'depth' });
+  });
+
+  it('sets, moves and clears the parent through updateTask, as task.updated', () => {
+    const a = newTask('A');
+    const b = newTask('B');
+    const child = newTask('Child');
+
+    expect(
+      updateTask(t.db, actor(adminId), child.id, { parent_task_id: a.id }).parent_task_id,
+    ).toBe(a.id);
+    expect(
+      updateTask(t.db, actor(adminId), child.id, { parent_task_id: b.id }).parent_task_id,
+    ).toBe(b.id);
+    // Absent leaves it alone; null clears it.
+    expect(updateTask(t.db, actor(adminId), child.id, { title: 'Renamed' }).parent_task_id).toBe(
+      b.id,
+    );
+    expect(
+      updateTask(t.db, actor(adminId), child.id, { parent_task_id: null }).parent_task_id,
+    ).toBeNull();
+
+    const rows = t.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, child.id))
+      .all()
+      .filter((row) => row.type === 'task.updated')
+      .map((row) => JSON.parse(row.payloadJson) as { changed?: string[] });
+    expect(rows.filter((r) => r.changed?.includes('parent_task_id'))).toHaveLength(3);
+    // Setting the same parent again writes nothing.
+    const before = rows.length;
+    updateTask(t.db, actor(adminId), child.id, { parent_task_id: null });
+    expect(
+      t.db
+        .select()
+        .from(activity)
+        .where(eq(activity.taskId, child.id))
+        .all()
+        .filter((row) => row.type === 'task.updated'),
+    ).toHaveLength(before);
+  });
+
+  it('lists a parent’s children with ?parent=, and still pages', () => {
+    const parent = newTask('Parent');
+    const c1 = newTask('C1', { parent_task_id: parent.id, now: 1000 });
+    const c2 = newTask('C2', { parent_task_id: parent.id, now: 2000 });
+    newTask('Unrelated');
+
+    const all = listTasks(t.db, actor(adminId), 'laika', { ...LIST, parent: parent.id });
+    expect(all.map((v) => v.id).sort()).toEqual([c1.id, c2.id].sort());
+
+    const page = listTasks(t.db, actor(adminId), 'laika', { ...LIST, limit: 1, parent: parent.id });
+    // limit + 1 rows come back so the route can tell there is more.
+    expect(page).toHaveLength(2);
+    const next = listTasks(t.db, actor(adminId), 'laika', {
+      ...LIST,
+      limit: 1,
+      parent: parent.id,
+      cursor: { sortKey: page[0]!.updated_at, id: page[0]!.id },
+    });
+    expect(next.map((v) => v.id)).toEqual([page[1]!.id]);
+  });
+
+  it('counts progress as done over not-cancelled', () => {
+    const parent = newTask('Parent');
+    const done = newTask('Done', { parent_task_id: parent.id });
+    newTask('Open', { parent_task_id: parent.id });
+    const dropped = newTask('Dropped', { parent_task_id: parent.id });
+    changeStatus(t.db, actor(adminId), done.id, 'done');
+    changeStatus(t.db, actor(adminId), dropped.id, 'cancelled');
+
+    const children = listTasks(t.db, actor(adminId), 'laika', { ...LIST, parent: parent.id });
+    expect(subtaskProgress(children)).toEqual({ done: 1, total: 2 });
+    expect(subtaskProgress([])).toEqual({ done: 0, total: 0 });
+  });
+
+  it('is containment, not blocking: readiness and status ignore the other side', () => {
+    const parent = newTask('Parent');
+    const child = newTask('Child', { parent_task_id: parent.id });
+
+    expect(child.ready).toBe(true);
+    expect(parent.ready).toBe(true);
+
+    changeStatus(t.db, actor(adminId), child.id, 'done');
+    const after = getTask(t.db, actor(adminId), parent.id);
+    expect(after.status).toBe('backlog');
+    expect(after.ready).toBe(true);
+  });
+});
+
+describe('due_on and planned_start (SPEC §4.5, D-066)', () => {
+  const DAY = 86_400_000;
+
+  it('are null until set, and are stored and served when given at creation', () => {
+    expect(newTask('Bare')).toMatchObject({ due_on: null, planned_start: null });
+    const dated = newTask('Dated', { due_on: 3 * DAY, planned_start: DAY });
+    expect(dated.due_on).toBe(3 * DAY);
+    expect(dated.planned_start).toBe(DAY);
+  });
+
+  it('are set and cleared by updateTask, each named in task.updated', () => {
+    const task = newTask('Later');
+
+    const set = updateTask(t.db, actor(adminId), task.id, { due_on: 5 * DAY, planned_start: DAY });
+    expect(set.due_on).toBe(5 * DAY);
+    expect(set.planned_start).toBe(DAY);
+
+    const cleared = updateTask(t.db, actor(adminId), task.id, { due_on: null });
+    expect(cleared.due_on).toBeNull();
+    expect(cleared.planned_start).toBe(DAY);
+
+    const changed = t.db
+      .select()
+      .from(activity)
+      .where(eq(activity.taskId, task.id))
+      .all()
+      .filter((row) => row.type === 'task.updated')
+      .map((row) => (JSON.parse(row.payloadJson) as { changed: string[] }).changed);
+    expect(changed).toEqual([['due_on', 'planned_start'], ['due_on']]);
+  });
+
+  it('serves branch and external_ref on the view (LAI-286)', () => {
+    const task = newTask('Branched');
+    t.db
+      .update(tasks)
+      .set({ branch: 'lai-1-branched', externalRef: 'https://example.test/pr/1' })
+      .where(eq(tasks.id, task.id))
+      .run();
+
+    expect(getTask(t.db, actor(adminId), task.id)).toMatchObject({
+      branch: 'lai-1-branched',
+      external_ref: 'https://example.test/pr/1',
+    });
+    expect(newTask('Plain')).toMatchObject({ branch: null, external_ref: null });
   });
 });

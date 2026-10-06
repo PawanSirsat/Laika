@@ -530,3 +530,79 @@ describe('GET /me/watching and GET /projects/:slug/mentionable (LAI-143)', () =>
     expect((await req('/api/v1/projects/nope/mentionable')).status).toBe(404);
   });
 });
+
+/**
+ * Subtasks and dates over HTTP (D-066, LAI-493): the body shapes, the one
+ * list filter, and the error the client is promised.
+ */
+describe('subtasks and dates on the wire (D-066)', () => {
+  const DAY = 86_400_000;
+
+  it('creates a subtask, serves parent_task_id, and lists children with ?parent=', async () => {
+    const parent = await newTask('Parent');
+    const child = await newTask('Child', { parent_task_id: parent.id });
+    await newTask('Unrelated');
+
+    const read = (await (await req(`/api/v1/tasks/${child.id}`)).json()) as {
+      parent_task_id: string | null;
+    };
+    expect(read.parent_task_id).toBe(parent.id);
+
+    const list = await req(`/api/v1/projects/laika/tasks?parent=${parent.id}`);
+    expect(list.status).toBe(200);
+    const page = (await list.json()) as { data: { id: string }[] };
+    expect(page.data.map((t) => t.id)).toEqual([child.id]);
+  });
+
+  it('sets and clears the parent and both dates on PATCH', async () => {
+    const parent = await newTask('Parent');
+    const task = await newTask('Loose');
+
+    const set = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ parent_task_id: parent.id, due_on: 5 * DAY, planned_start: DAY }),
+    });
+    expect(set.status).toBe(200);
+    expect(await set.json()).toMatchObject({
+      parent_task_id: parent.id,
+      due_on: 5 * DAY,
+      planned_start: DAY,
+    });
+
+    const cleared = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ parent_task_id: null, due_on: null, planned_start: null }),
+    });
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({
+      parent_task_id: null,
+      due_on: null,
+      planned_start: null,
+    });
+  });
+
+  it('refuses a depth of two with 422 and names the reason', async () => {
+    const parent = await newTask('Parent');
+    const child = await newTask('Child', { parent_task_id: parent.id });
+
+    const res = await post('/api/v1/projects/laika/tasks', {
+      title: 'Grandchild',
+      parent_task_id: child.id,
+    });
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as {
+      error: { code: string; details: { field: string; reason: string } };
+    };
+    expect(body.error.code).toBe('unprocessable');
+    expect(body.error.details).toEqual({ field: 'parent_task_id', reason: 'depth' });
+  });
+
+  it('refuses a date that is not an integer timestamp', async () => {
+    const task = await newTask('Dated');
+    const res = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ due_on: '2026-07-12' }),
+    });
+    expect(res.status).toBe(422);
+  });
+});

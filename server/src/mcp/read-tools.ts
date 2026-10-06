@@ -12,7 +12,13 @@ import {
   projectView,
 } from '../services/projects.ts';
 import { listSprints, sprintTaskCounts } from '../services/sprints.ts';
-import { getTask, listTasks, resolveTaskRef, type TaskView } from '../services/tasks.ts';
+import {
+  getTask,
+  listTasks,
+  resolveTaskRef,
+  subtaskProgress,
+  type TaskView,
+} from '../services/tasks.ts';
 import { ago, answer, bullets, isoDate, nameLookup, toolError } from './present.ts';
 
 /**
@@ -176,7 +182,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     {
       title: 'Get task context',
       description:
-        'Everything needed to start on one task in a single call: the task, what it depends on and whether those are done, what it blocks, its comments, its recent activity, and the chain of tasks it was discovered from.',
+        'Everything needed to start on one task in a single call: the task, what it depends on and whether those are done, what it blocks, its parent and its subtasks with how many are done, its comments, its recent activity, and the chain of tasks it was discovered from.',
       inputSchema: z.strictObject({ task: TASK_REF }),
     },
     ({ task }) => {
@@ -213,6 +219,30 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
 
         const chain = discoveredFromChain(db, actor, view);
 
+        // Containment, read from both ends (D-066). The parent is read through
+        // `getTask` so a parent this token cannot see is reported as such
+        // rather than failing the call — the same stance as the chain above.
+        let parent: ReturnType<typeof summarise> | null = null;
+        if (view.parent_task_id !== null) {
+          try {
+            parent = summarise(getTask(db, actor, view.parent_task_id), view.parent_task_id);
+          } catch {
+            parent = summarise(undefined, view.parent_task_id);
+          }
+        }
+        const subtasks = listTasks(db, actor, slug, {
+          ...PAGE,
+          updatedSince: null,
+          parent: view.id,
+        }).map((t) => ({
+          id: t.id,
+          key: t.key,
+          title: t.title,
+          status: t.status,
+          assignee_id: t.assignee_id,
+        }));
+        const { done: subtasksDone, total: subtasksTotal } = subtaskProgress(subtasks);
+
         const markdown = [
           `## \`${view.key}\` ${view.title}`,
           '',
@@ -242,6 +272,21 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
             'Not discovered from another task.',
           ),
           '',
+          '### Parent',
+          parent === null
+            ? '_Not a subtask._'
+            : parent.visible
+              ? `\`${parent.key}\` ${parent.title} — **${parent.status}**`
+              : `\`${parent.id}\` _(not visible to you)_`,
+          '',
+          `### Subtasks (${String(subtasksDone)}/${String(subtasksTotal)} done)`,
+          bullets(
+            subtasks.map(
+              (t) => `\`${t.key}\` ${t.title} — **${t.status}**, ${nameOf(t.assignee_id)}`,
+            ),
+            'None.',
+          ),
+          '',
           `### Comments (${String(comments.length)})`,
           bullets(
             comments.map((c) => `${nameOf(c.author_id)}, ${ago(c.created_at, now)}: ${c.body_md}`),
@@ -260,6 +305,10 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           blocked_by: view.blocked_by.map((id) => summarise(related.get(id), id)),
           blocks: view.blocks.map((id) => summarise(related.get(id), id)),
           discovered_from_chain: chain.map((t) => ({ key: t.key, title: t.title, id: t.id })),
+          parent,
+          subtasks,
+          subtasks_done: subtasksDone,
+          subtasks_total: subtasksTotal,
           comments,
           recent_activity: activity,
         });

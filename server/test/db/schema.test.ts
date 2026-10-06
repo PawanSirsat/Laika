@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readPragmas } from '../../src/db/client.ts';
 import { newId } from '../../src/db/ids.ts';
@@ -236,5 +236,60 @@ describe('closed vocabularies are enforced by CHECK, not only by types', () => {
 
     insert();
     expectSqliteError(insert, /UNIQUE constraint failed/i);
+  });
+});
+
+describe('subtasks — parent_task_id (SPEC §4.5, D-066)', () => {
+  it('refuses a task that is its own parent, by CHECK', () => {
+    const { projectId, userId } = seed(t.db);
+    const now = Date.now();
+    const id = newId();
+
+    expectSqliteError(() => {
+      t.db.run(sql`
+        INSERT INTO tasks (id, project_id, number, title, status, priority, created_by, created_via, parent_task_id, created_at, updated_at)
+        VALUES (${id}, ${projectId}, 1, 'x', 'backlog', 'p2', ${userId}, 'api', ${id}, ${now}, ${now})
+      `);
+    }, /CHECK constraint failed/i);
+  });
+
+  it('nulls the children’s parent when the parent row is deleted, never cascades', () => {
+    const { projectId, userId } = seed(t.db);
+    const now = Date.now();
+    const parent = newId();
+    const child = newId();
+    const base = {
+      projectId,
+      status: 'backlog' as const,
+      priority: 'p2' as const,
+      createdBy: userId,
+      createdVia: 'api' as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    t.db
+      .insert(tasks)
+      .values({ ...base, id: parent, number: 1, title: 'Parent' })
+      .run();
+    t.db
+      .insert(tasks)
+      .values({ ...base, id: child, number: 2, title: 'Child', parentTaskId: parent })
+      .run();
+
+    // No service deletes a task, so SQL is the only way to exercise the FK action.
+    t.db.run(sql`DELETE FROM tasks WHERE id = ${parent}`);
+
+    const row = t.db.select().from(tasks).where(eq(tasks.id, child)).get();
+    expect(row?.title).toBe('Child');
+    expect(row?.parentTaskId).toBeNull();
+  });
+
+  it('indexes parent_task_id (§4.13)', () => {
+    const names = t.db
+      .all<{ name: string }>(
+        sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'tasks'`,
+      )
+      .map((r) => r.name);
+    expect(names).toContain('tasks_parent_task_id_idx');
   });
 });
