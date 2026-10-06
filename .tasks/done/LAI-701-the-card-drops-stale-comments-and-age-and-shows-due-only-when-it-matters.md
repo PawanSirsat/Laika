@@ -5,7 +5,7 @@ area: web
 assignee: chief
 priority: p1
 depends-on: [LAI-495]
-status: review
+status: done
 started: 2026-10-06T10:27:43Z
 finished: 2026-10-06T11:20:30Z
 ---
@@ -74,3 +74,13 @@ here: deleting `.card .card-due-today` turns it red.
 **Mutations (by the builder, each restored by copy and checksum):**
 `dueState` never `today`; `done` / `cancelled` keep their chip; the footer back
 to `nowrap`; both chip colour rules removed — all red after `12d49f0`.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted. Read against the diff: `stale`, `comments` and `age` are gone from
+`CardFields`, `FIELD_LABELS` and the card, and a stored record naming them is
+read without error; `dueState` agrees with `isOverdue` by construction and is
+tested at both edges of the due day; the card draws the chip only on its
+answer; `card-footer.test` now checks each chip against its own token in
+both themes. SPEC §11.4.1 / §11.4.2.1 and D-069 cover the two criteria that
+were open. Gate on `master`, push, deploy.
