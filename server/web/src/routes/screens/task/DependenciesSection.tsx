@@ -76,8 +76,10 @@ export function DependenciesSection({
 
   return (
     <section className="panel-section">
+      {/* "Linked tasks", as Jira names the section (D-066); the relations are
+          still BLOCKED BY and BLOCKS, which are the two Jira link types we have. */}
       <h3 className="panel-section-title dep-title">
-        Dependencies
+        Linked tasks
         <span className="panel-count">{task.blocked_by.length + task.blocks.length}</span>
         <span className="dep-rule" aria-hidden="true" />
         {mayEdit && !adding && (
@@ -88,7 +90,7 @@ export function DependenciesSection({
               setAdding(true);
             }}
           >
-            + Link task
+            + Add linked task
           </button>
         )}
       </h3>

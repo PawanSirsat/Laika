@@ -15,7 +15,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -89,6 +89,25 @@ const SUBJECT = task({
   blocks: [],
 });
 
+/** A subtask of the blocker — for the breadcrumb and the detach (D-066). */
+const CHILD = task({
+  id: 't4',
+  key: 'LC-4',
+  number: 4,
+  title: 'A subtask of the blocker',
+  parent_task_id: 't1',
+});
+/** Past due and still open — the red chip. */
+const LATE = task({
+  id: 't5',
+  key: 'LC-5',
+  number: 5,
+  title: 'Overdue work',
+  status: 'in_progress',
+  due_on: Date.UTC(2026, 6, 12),
+  branch: 'lc-5-overdue',
+});
+
 const COMMENTS = [
   {
     id: 'c1',
@@ -135,7 +154,10 @@ const STUB: ApiStub = {
     next_cursor: null,
   },
   '/api/v1/projects/laika-core': CORE,
-  '/api/v1/projects/laika-core/tasks': { data: [BLOCKER, SOURCE, SUBJECT], next_cursor: null },
+  '/api/v1/projects/laika-core/tasks': {
+    data: [BLOCKER, SOURCE, SUBJECT, CHILD, LATE],
+    next_cursor: null,
+  },
   '/api/v1/projects/laika-core/members': {
     members: [
       { user_id: 'u1', name: 'Ada Lovelace', email: 'a@example.com', role: 'lead' },
@@ -155,6 +177,12 @@ const STUB: ApiStub = {
   '/api/v1/tasks/t3/watchers': { watchers: ['u1', 'u2'] },
   '/api/v1/tasks/t3/dependencies': SUBJECT,
   '/api/v1/tasks/t3': SUBJECT,
+  '/api/v1/tasks/t4': CHILD,
+  '/api/v1/tasks/t4/comments': { data: [], next_cursor: null },
+  '/api/v1/tasks/t4/watchers': { watchers: [] },
+  '/api/v1/tasks/t5': LATE,
+  '/api/v1/tasks/t5/comments': { data: [], next_cursor: null },
+  '/api/v1/tasks/t5/watchers': { watchers: [] },
   '/api/v1/org': {
     id: 'o',
     name: 'Borealis Labs',
@@ -182,7 +210,6 @@ void describe('the task panel', () => {
     try {
       await openSubject(h);
 
-      assert.equal(await h.page.locator('.discovered').count(), 1, 'no discovered-from callout');
       assert.equal(await h.page.locator('.dep-chip').count(), 1, 'no dependency chip');
       assert.equal(await h.page.locator('.dep-link').count(), 1, 'no way to link a task');
       /*
@@ -199,17 +226,38 @@ void describe('the task panel', () => {
       const labels = (await h.page.locator('.panel-meta .meta-label').allInnerTexts()).map((t) =>
         t.trim().toLowerCase(),
       );
-      for (const field of ['assignee', 'status', 'priority', 'sprint', 'space', 'watchers']) {
-        assert.ok(labels.includes(field), `the rail lost ${field} — it has ${labels.join(', ')}`);
-      }
+      /*
+       * The Details card's rows, in the owner's order (D-066): the Jira ones
+       * first, then what we have that Jira does not draw. Status is the
+       * control above the card, not a row, so it is not in this list.
+       */
+      assert.deepEqual(labels, [
+        'assignee',
+        'priority',
+        'parent',
+        'due date',
+        'labels',
+        'sprint',
+        'start date',
+        'reporter',
+        'created via',
+        'watchers',
+        'discovered from',
+      ]);
+      assert.equal(await h.page.locator('.meta-status select').count(), 1, 'no status control');
       assert.equal(await h.page.locator('.panel-permission').count(), 1, 'no permission note');
 
-      // The design's three tabs, with counts.
+      // Jira's four tabs, with counts; History is what Activity was.
       const tabs = await h.page.locator('.panel-tab').allInnerTexts();
-      assert.equal(tabs.length, 3);
+      assert.equal(tabs.length, 4);
+      assert.match(tabs.join(' '), /All/);
       assert.match(tabs.join(' '), /Comments/);
-      assert.match(tabs.join(' '), /Activity/);
+      assert.match(tabs.join(' '), /History/);
       assert.match(tabs.join(' '), /Changes/);
+
+      // The discovered-from trail is a row that opens the source.
+      const discovered = h.page.locator('.meta-row', { hasText: 'Discovered from' });
+      assert.match(await discovered.innerText(), /LC-2/);
     } finally {
       await h.close();
     }
@@ -243,7 +291,8 @@ void describe('the task panel', () => {
 
       const m = await h.page.evaluate(() => {
         const row = document.querySelector('.cmt');
-        const avatar = document.querySelector('.cmt-avatar');
+        // A comment's avatar — the composer above the thread has a smaller one.
+        const avatar = document.querySelector('.cmt .cmt-avatar');
         if (row === null || avatar === null) return null;
         const s2 = getComputedStyle(row);
         return {
@@ -389,8 +438,10 @@ void describe('the task panel', () => {
         the task, not a field describing it. `u1` is in the stub's watcher list,
         so it offers to stop.
       */
-      const toggle = h.page.locator('.panel-head-action', { hasText: /watch/i });
-      assert.match(await toggle.innerText(), /Unwatch/);
+      const toggle = h.page.locator('.panel-head-watch');
+      assert.equal(await toggle.getAttribute('aria-label'), 'Unwatch');
+      // The eye carries the count — two watchers in the fixture.
+      assert.equal((await toggle.locator('.panel-head-count').innerText()).trim(), '2');
       await toggle.click();
       await h.page.waitForTimeout(400);
 
@@ -463,6 +514,227 @@ void describe('the task panel', () => {
       assert.equal(await h.page.locator('.dep-remove').count(), 0, 'a Viewer can unlink');
       assert.equal(await h.page.locator('.panel-title button.inline-edit').count(), 0);
       assert.equal(await h.page.locator('.panel-permission').count(), 1);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * The Jira-shaped view (D-066, LAI-494): the breadcrumb, the Details rows
+ * that are new, the dates on the wire, and the rail's foot.
+ */
+async function openById(h: Awaited<ReturnType<typeof open>>): Promise<void> {
+  await h.page.locator('.drawer').waitFor({ timeout: 20_000 });
+  await h.page.locator('.panel-meta').waitFor({ timeout: 10_000 });
+}
+
+void describe('the Jira-shaped task view (D-066)', () => {
+  void test('a subtask’s breadcrumb names its parent and opens it', async () => {
+    const h = await open('/board?project=laika-core&task=t4', STUB);
+    try {
+      await openById(h);
+      const crumb = h.page.locator('.panel-crumb-parent');
+      assert.match(await crumb.innerText(), /LC-1/);
+      assert.match(await h.page.locator('.panel-crumbs').innerText(), /LC-1\s*\/\s*LC-4/);
+      // The parent row says the same thing, and a child never offers subtasks.
+      const parentRow = h.page.locator('.meta-row-parent');
+      assert.match(await parentRow.innerText(), /LC-1/);
+
+      await crumb.click();
+      await h.page.waitForTimeout(300);
+      assert.match(h.page.url(), /task=t1/, 'the breadcrumb did not open the parent');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a top-level task has no crumb, and offers "Add parent" that PATCHes parent_task_id', async () => {
+    const h = await open('/board?project=laika-core&task=t3', STUB);
+    try {
+      await openById(h);
+      assert.equal(await h.page.locator('.panel-crumb-parent').count(), 0);
+      assert.equal((await h.page.locator('.panel-crumbs').innerText()).trim(), 'LC-3');
+
+      await h.page.locator('.meta-row-parent .meta-add-link').click();
+      const pick = h.page.locator('#parent-pick');
+      // One level: a task that is itself a subtask is never offered.
+      const offered = await pick.locator('option').allInnerTexts();
+      assert.ok(
+        offered.some((o) => o.startsWith('LC-1')),
+        'the blocker is not offered',
+      );
+      assert.ok(!offered.some((o) => o.startsWith('LC-4')), 'a subtask is offered as a parent');
+      await pick.selectOption('t1');
+      await h.page.locator('.meta-row-parent .dep-confirm').click();
+      await h.page.waitForTimeout(400);
+
+      const patch = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
+      assert.ok(patch !== undefined, 'no PATCH went out');
+      assert.deepEqual(patch.body, { parent_task_id: 't1' });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('"Detach from parent" in the ⋯ menu PATCHes null', async () => {
+    const h = await open('/board?project=laika-core&task=t4', STUB);
+    try {
+      await openById(h);
+      await h.page.locator('.panel-head-action[aria-label="More actions"]').click();
+      await h.page.locator('.panel-overflow button', { hasText: 'Detach from parent' }).click();
+      await h.page.waitForTimeout(400);
+
+      const patch = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t4');
+      assert.ok(patch !== undefined, 'no PATCH went out');
+      assert.deepEqual(patch.body, { parent_task_id: null });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a due date is set as a UTC midnight and cleared with null', async () => {
+    const h = await open('/board?project=laika-core&task=t3', STUB);
+    try {
+      await openById(h);
+      await h.page.locator('.meta-row-due .meta-add-link').click();
+      await h.page.locator('#due-date').fill('2026-07-12');
+      await h.page.locator('.meta-row-due .dep-confirm').click();
+      await h.page.waitForTimeout(400);
+
+      const set = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
+      assert.ok(set !== undefined, 'no PATCH went out');
+      // `due_on` is unix-ms at a UTC midnight (§4.5), never a string.
+      assert.deepEqual(set.body, { due_on: Date.UTC(2026, 6, 12) });
+    } finally {
+      await h.close();
+    }
+
+    const late = await open('/board?project=laika-core&task=t5', STUB);
+    try {
+      await openById(late);
+      assert.match(await late.page.locator('.meta-row-due').innerText(), /12 Jul 2026/);
+      await late.page.locator('.meta-row-due .dep-remove').click();
+      await late.page.waitForTimeout(400);
+      const clear = late.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t5');
+      assert.ok(clear !== undefined, 'no PATCH went out');
+      assert.deepEqual(clear.body, { due_on: null });
+    } finally {
+      await late.close();
+    }
+  });
+
+  void test('the overdue chip is red only while the task is open, in both themes', async () => {
+    /*
+     * The theme switch sits under the modal's scrim, so the theme is set with
+     * the drawer closed and the task re-opened by URL — the real toggle, used
+     * the way a person would use it.
+     */
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      const colours: string[] = [];
+      for (const theme of ['light', 'dark']) {
+        await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+        await setTheme(h.page, theme);
+        await h.page.goto(`${h.origin}/board?project=laika-core&task=t5`);
+        await openById(h);
+        const chip = h.page.locator('.meta-row-due .meta-date-chip');
+        assert.ok(await chip.evaluate((el) => el.classList.contains('meta-date-overdue')));
+        assert.match(await chip.innerText(), /⚠/);
+        const colour = await chip.evaluate((el) => getComputedStyle(el).borderColor);
+        assert.notEqual(colour, 'rgba(0, 0, 0, 0)', `${theme}: the chip lost its border`);
+        colours.push(colour);
+        await h.page.goto(`${h.origin}/board?project=laika-core`);
+      }
+      // The tokens differ between themes; a chip painted once would not.
+      assert.notEqual(colours[0], colours[1], 'the overdue chip ignores the theme');
+    } finally {
+      await h.close();
+    }
+
+    // Finished late is finished: the same date on a done task is not overdue.
+    const done = await open('/board?project=laika-core&task=t5', {
+      ...STUB,
+      '/api/v1/projects/laika-core/tasks': {
+        data: [BLOCKER, SOURCE, SUBJECT, CHILD, { ...LATE, status: 'done' }],
+        next_cursor: null,
+      },
+      '/api/v1/tasks/t5': { ...LATE, status: 'done' },
+    });
+    try {
+      await openById(done);
+      assert.equal(await done.page.locator('.meta-date-overdue').count(), 0);
+      assert.match(await done.page.locator('.meta-row-due').innerText(), /12 Jul 2026/);
+    } finally {
+      await done.close();
+    }
+  });
+
+  void test('reporter is who filed it, the foot carries both dates in full, Development only when there is any', async () => {
+    const h = await open('/board?project=laika-core&task=t3', STUB);
+    try {
+      await openById(h);
+      const reporter = h.page.locator('.meta-row', { hasText: 'Reporter' });
+      assert.match(await reporter.innerText(), /Ada Lovelace/);
+
+      const foot = (await h.page.locator('.panel-foot-times').innerText()).replace(/\s+/g, ' ');
+      assert.match(foot, /^Created \w{3} \d{1,2} \w{3} \d{4}, \d{2}:\d{2}:\d{2} Updated \w{3} /);
+      assert.doesNotMatch(foot, /ago/);
+
+      // t3 has no branch, no PR and no commits: no Development card.
+      const heads = await h.page.locator('.meta-card-head').allInnerTexts();
+      assert.ok(heads.some((t) => t.includes('Details')));
+      assert.ok(
+        !heads.some((t) => t.includes('Development')),
+        'Development drawn with nothing in it',
+      );
+    } finally {
+      await h.close();
+    }
+
+    const branched = await open('/board?project=laika-core&task=t5', STUB);
+    try {
+      await openById(branched);
+      const dev = branched.page.locator('.meta-card-head', { hasText: 'Development' });
+      assert.equal(await dev.count(), 1, 'a task with a branch has no Development card');
+      await dev.click();
+      assert.match(await branched.page.locator('.panel-meta').innerText(), /lc-5-overdue/);
+    } finally {
+      await branched.close();
+    }
+  });
+
+  void test('the All tab merges the thread and the history in time order', async () => {
+    const h = await open('/board?project=laika-core', {
+      ...STUB,
+      '/api/v1/projects/laika-core/activity': {
+        data: [
+          {
+            id: 'e1',
+            seq: 1,
+            type: 'task.status_changed',
+            project_id: 'laika-core',
+            task_id: 't3',
+            actor_id: 'u1',
+            actor_kind: 'user',
+            actor_token_id: null,
+            payload: { from: 'backlog', to: 'in_progress' },
+            created_at: NOW - 3_600_000,
+          },
+        ],
+        next_cursor: null,
+      },
+    });
+    try {
+      await openSubject(h);
+      // All is the default tab, and it holds both kinds.
+      const on = await h.page.locator('.panel-tab-on').innerText();
+      assert.match(on, /All/);
+      const rows = await h.page
+        .locator('#panel-all > ul > li')
+        .evaluateAll((els: Element[]) => els.map((el) => el.className));
+      // Oldest first: the 2h-old comment, the 1h-old event, the 2-minute comment.
+      assert.deepEqual(rows, ['cmt', 'panel-event', 'cmt']);
     } finally {
       await h.close();
     }
