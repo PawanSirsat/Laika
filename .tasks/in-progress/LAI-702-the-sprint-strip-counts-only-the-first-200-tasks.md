@@ -2,11 +2,12 @@
 id: LAI-702
 title: 'The sprint strip counts only the first 200 tasks, so a sprint reads 7/42 when it holds 157'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-701
-status: backlog
+status: in-progress
+started: 2026-10-06T12:26:13Z
 ---
 
 ## Goal
