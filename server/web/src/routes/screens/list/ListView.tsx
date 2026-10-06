@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
+import { Spinner } from '../../../components/Spinner.tsx';
 import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -411,10 +412,12 @@ export function ListView({
                           setStatusMenu({ id: row.id, at: anchorOf(event.currentTarget) });
                         }}
                       >
-                        {moving ? 'Moving…' : row.status}
-                        <span className="list-status-caret" aria-hidden="true">
-                          ▾
-                        </span>
+                        {/* The label stays while the move is in flight and a
+                            spinner joins it (LAI-293): a pill that swaps its
+                            word resizes under the pointer. The caret is CSS,
+                            so it never enters the pill's text. */}
+                        {moving && <Spinner />}
+                        {row.status}
                       </button>
                     ) : (
                       <span className={`list-status list-tone-${row.statusTone}`}>

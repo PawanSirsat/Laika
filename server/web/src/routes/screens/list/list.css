@@ -570,9 +570,16 @@
   opacity: 0.7;
 }
 
-.list-status-caret {
+/* The caret is generated content, like the sort glyph: it never enters the
+   pill's text, so a test or a screen reader reads the status alone. */
+.list-status-button::after {
+  content: '\25BE';
   font-size: 0.5625rem;
   opacity: 0.8;
+}
+
+.list-status-button .spinner {
+  margin-right: 0.0625rem;
 }
 
 /* ------------------------------------------------------------------ the menu */
@@ -745,7 +752,8 @@
   color: var(--accent);
 }
 
-.list-bulk-caret {
+.list-bulk-action[aria-haspopup='menu']::after {
+  content: '\25BE';
   font-size: 0.625rem;
   opacity: 0.7;
 }

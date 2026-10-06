@@ -135,9 +135,6 @@ export function BulkBar({
     >
       {icon}
       {text}
-      <span className="list-bulk-caret" aria-hidden="true">
-        ▾
-      </span>
     </button>
   );
 
