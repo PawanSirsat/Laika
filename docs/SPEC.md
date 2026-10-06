@@ -38,15 +38,20 @@ The design commitments that follow from that:
 
 Multi-org / multi-tenant hosting, Postgres, WebSockets, custom fields, file
 uploads, a plugin system of our own, mobile apps, SSO/SAML/SCIM, zero-downtime
-deploys, **story points**, time tracking, **per-task planned or due dates**, and
-email as a *primary* interface (transactional invite mail only).
+deploys, **story points**, time tracking, and email as a *primary* interface
+(transactional invite mail only).
 
 **Changed 2026-08-24 (D-013, D-014).** "Sprints" and "Gantt charts" were on this
 list and are not any more: sprints ship in Phase 2 (§4.15) and a **sprint-based**
-timeline in Phase 2.5 (§11.4.3). Note what did **not** move — *story points* and
-*per-task planned/due dates* remain non-goals. The timeline draws its axis from
-sprint boundaries, never from dates on individual tasks. That distinction is the
-whole reason the feature is cheap; see D-014 before adding a date column.
+timeline in Phase 2.5 (§11.4.3). *Story points* remain a non-goal.
+
+**Changed 2026-10-06 (D-066).** *Per-task planned or due dates* were on this
+list and are not any more: `tasks.due_on` and `tasks.planned_start` exist
+(§4.5). D-014's cost — a task-dated timeline is a layout engine, not a
+rendering pass — was put to the owner and accepted; **the timeline stays
+sprint-based until a task makes it otherwise** (LAI-289). Tasks also carry a
+one-level `parent_task_id` (subtasks). Epics, story points and attachments stay
+out.
 
 ---
 
@@ -376,6 +381,9 @@ which is the check working on the document it exists to pin.
 | `created_by` | FK `users` |
 | `created_via` | `web` \| `mcp` \| `api` \| `webhook` \| `meeting` |
 | `discovered_from` | nullable self-FK |
+| `parent_task_id` | nullable self-FK, `ON DELETE SET NULL` — the task this is a **subtask** of (D-066). **One level**: a parent is never itself a child, and a task with children cannot be given a parent; the service refuses both `422`, as it refuses another project's task. Containment, not blocking — `ready` ignores it, and a parent's status is never moved by its children |
+| `due_on` | nullable — integer unix-ms with **date-only semantics**, exactly as a sprint's `starts_on` (§4.15). A plan, not an actual; "overdue" is derived by the reader and never stored (D-066) |
+| `planned_start` | nullable — same shape as `due_on`. Neither date is validated against the other |
 | `branch` | nullable, last branch seen working on it |
 | `external_ref` | nullable, e.g. a GitHub PR |
 | `stale_flagged_at` | nullable, set by cron (§11.6) |
@@ -390,11 +398,11 @@ second time, and a reopened task keeps the record of having been finished before
 (LAI-146). A `completed_at` on a task that is not `done` is a fact about its
 **history**; `status` is the only claim about its **state**.
 
-**`started_at` and `completed_at` are actuals, not a plan.** D-014 gives tasks no
-dates so the timeline stays a rendering pass over sprint boundaries rather than a
-scheduling engine. These record what *happened*; a Gantt bar asserts what is
-*planned*. Serialising them does not reverse D-014, and **drawing task bars from
-them is a separate decision** that needs the owner rather than a UI change.
+**`started_at` and `completed_at` are actuals, not a plan.** `planned_start` and
+`due_on` are the plan (D-066), and the two pairs are kept apart on purpose:
+these record what *happened*; the dates assert what is *intended*. The timeline
+still draws sprint boundaries — **drawing task bars from either pair is a
+separate task** (LAI-289), not a UI change.
 
 **`ready` is derived, not stored.** A task is ready when
 `status IN ('backlog','todo') AND assignee_id IS NULL AND every dependency is
@@ -413,6 +421,12 @@ cycles are rejected at write time.
 `discovered_from` is a **different** relationship — provenance, not blocking — and
 is a column on `tasks`, so a discovered task can be worked before its parent
 finishes.
+
+`parent_task_id` is a **third** relationship — containment (D-066). A subtask
+belongs to its parent the way a checklist line belongs to a checklist; it is
+worked and finished on its own, blocks nothing, and is blocked by nothing on
+account of the parent. Progress (`n/m done`) is derived by the reader from the
+children's statuses, never stored.
 
 ### 4.7 `comments`
 
@@ -546,6 +560,11 @@ inspecting the payload of a generic update.
 is the description. If they disagree, the constraint wins and this list is the
 bug — adding a verb is a schema change and therefore a task.
 
+**Subtasks and dates added no verb** (D-066, the same shape as tags, D-027).
+`task.created` carries `parent_task_id` in its payload **only when set**, so a
+top-level task's row is unchanged; setting, moving or clearing a parent, a due
+date or a planned start is `task.updated` with the field named in `changed`.
+
 `org.created` is written once, by first-run setup (§6.4 `POST /setup`), with the
 Owner as actor. An audit trail that begins at the first *project* has a hole
 where the instance itself was created.
@@ -629,7 +648,8 @@ one.
 `heartbeats(user_id, created_at)`, `tokens(token_hash)` unique,
 `project_memberships(project_id, user_id)` unique, `projects(slug)` unique,
 `unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`,
-`sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`.
+`sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`,
+`tasks(parent_task_id)`.
 `tags(project_id, name)` unique and `task_tags(tag_id)` — the `?tag=` filter
 reads from the tag side, so the join needs an index from that end too.
 
@@ -722,8 +742,9 @@ The join between §4.5 and §4.16.
   `--tub`/`--bd` pair.
 - Changing a task's tags is `task.updated` with `{ field: 'tags', from, to }`.
 
-**Non-goal: hierarchy.** Tags are flat. `priority`, `sprint_id` and
-`discovered_from` already carry the structured groupings.
+**Non-goal: hierarchy in tags.** Tags are flat. `priority`, `sprint_id`,
+`discovered_from` and `parent_task_id` (§4.5, D-066) already carry the
+structured groupings.
 
 ### 4.18 `task_watchers`
 
@@ -983,7 +1004,7 @@ GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
-GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&tag=&updated_since=&cursor=
+GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=
 GET    /api/v1/projects/:slug/sprints        POST /api/v1/projects/:slug/sprints   (lead+)
 GET    /api/v1/sprints/:id                   PATCH /api/v1/sprints/:id   DELETE /api/v1/sprints/:id  (lead+)
 POST   /api/v1/sprints/:id/tasks             body { task_ids[] }  — assign into the sprint
@@ -1024,10 +1045,14 @@ GET    /api/v1/health
 ```
 
 `PATCH /tasks/:id` accepts a partial
-`{ title, description_md, acceptance_md, tags, priority, assignee_id }`.
+`{ title, description_md, acceptance_md, tags, priority, assignee_id,
+parent_task_id, due_on, planned_start }`.
 **`null` clears a field; absent leaves it alone** — they are different requests,
-and `acceptance_md` and `assignee_id` both draw the distinction. `tags` replaces
-the whole set.
+and `acceptance_md`, `assignee_id`, `parent_task_id` and both dates draw the
+distinction. `tags` replaces the whole set. `POST /projects/:slug/tasks` takes
+the same three optional fields (`parent_task_id`, `due_on`, `planned_start`)
+beside `discovered_from`. `?parent=<id>` on the list returns that task's
+subtasks only, and pages with `cursor` like any other filter (D-066).
 
 **A project in `GET /projects` is §4.3's columns plus five derived at read
 time** (LAI-053). None is stored, which is why §4.3 does not carry them and a
@@ -1041,8 +1066,9 @@ reader should not go looking:
 | `members` | the **first five by name**, `user_id` and `name` only — enough for a row of avatars, and deliberately not a member list |
 | `last_activity_at` | the newest `activity` row for the project; **nullable, and null means no activity rather than none visible to you** |
 
-**A task's read shape is §4.5's columns**, and `TaskView` adds six that are not
-stored there — **derived at read time, so a reader who looks for them in §4 will
+**A task's read shape is §4.5's columns** — `branch` and `external_ref`
+included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
+adds six that are not stored there — **derived at read time, so a reader who looks for them in §4 will
 not find them and should not**:
 
 | field | where it comes from |
@@ -1084,12 +1110,12 @@ read them.
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`. Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
-| `get_task_context` | `{ task }` | task, description, `blocked_by` + their statuses, comments, recent activity, branch, `discovered_from` chain |
+| `get_task_context` | `{ task }` | task, description, `blocked_by` + their statuses, comments, recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`) |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
-| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from? }` | created task, `created_via: 'mcp'` |
-| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint? }` | task. Every field optional; an omitted one is left alone. **No `status`** |
+| `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only |
+| `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start? }` | task. Every field optional; an omitted one is left alone; `null` on `parent` or a date clears it. **No `status`** |
 | `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
 | `update_status` | `{ task, status, note? }` | task; validated transition |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
@@ -1159,9 +1185,9 @@ and each disagreed:
   directory is behind `member_list.read`. Assigning work to somebody who is not
   on the project is not a thing this makes easy. **There is no `assign_task`** —
   a separate tool would be a second name for one service call.
-- **There is no `due_date`, on this surface or any other.** D-014 gives tasks no
-  planned dates on purpose; `started_at` and `completed_at` are actuals. Adding
-  one is a schema change and its own task, and no tool invents it.
+- **`due_on` and `planned_start` are the only dates a tool writes** (D-066).
+  `started_at` and `completed_at` are actuals and stay read-only on every
+  surface. Both are unix-ms at a UTC midnight, as the REST body takes them.
 - **`update_task` cannot change `status`.** Moving a task is `update_status`,
   because §5 validates transitions and a field edit would route around the
   table. An agent still finishes into `review` and never into `done`.
@@ -1489,13 +1515,16 @@ rendering choice, never a different query path.
   illegal drag snaps back and surfaces the error, it does not optimistically lie.
 - Cards show: display key (`LAI-42`), title, assignee, priority, a **blocked**
   marker when any dependency is unfinished, a **ready** marker when §4.5 holds,
-  and a **stale** marker once `stale_flagged_at` is set.
+  a **stale** marker once `stale_flagged_at` is set, a **subtasks** `n/m` on a
+  parent and `↳ KEY` on a child, and the **due date** when set, red once it is
+  past and the task is still open (D-066). Each is a card-field toggle.
 - Agent-authored recent activity is badged on the card (`actor_kind: 'agent'`).
 - Column order and the `ready` marker are both **derived** — never stored, never
   cached client-side beyond the current response.
 
 **List.** The same tasks as a sortable, densely readable table: key, title,
-status, assignee, priority, dependency count, updated. Sortable on every column,
+status, assignee, priority, dependency count, due, updated — the title's
+sub-line names the parent (`↳ KEY`) and the blockers. Sortable on every column,
 multi-filter on status / assignee / priority / ready / blocked. This is the view
 for triage and for boards too large to drag. It opens **newest-updated first**,
 and its sort is URL state like the filters (D-065). Created and updated read
@@ -1593,9 +1622,19 @@ anything missing sends the task back.
   stale markers**; drag between columns issuing a real status call with snap-back
   on rejection; filters by assignee/priority/ready; live update over SSE;
   agent-authored badge; empty column states.
-- **Task detail** — description, dependencies with **BLOCKED BY** relations and
-  their statuses, comments distinguishing human from agent, activity trail,
-  `created_via` provenance, claim/status controls, `discovered-from` link.
+- **Task detail** — laid out as a Jira issue view (D-066): a header with the
+  breadcrumb `↳ PARENT-KEY / KEY` (the parent key opens the parent) and plain
+  icon actions — watch with the watcher count, share, `⋯`, close; the left
+  column holding the title, a collapsible description, acceptance when set,
+  **Subtasks** (progress `n/m done`, one row per child that opens it, detach,
+  inline add), **Linked tasks** with **BLOCKED BY** / **BLOCKS** relations and
+  their statuses, and **Activity** with All / Comments / History / Changes
+  tabs and the composer at the top; the right rail holding the status control,
+  a **Details** card — assignee, priority, parent, due date, labels, sprint,
+  start date, reporter (`created_by`), `created_via` provenance, watchers,
+  `discovered-from` — a **Development** card (branch, external ref, commits)
+  when any of them is set, and `Created` / `Updated` at the foot. Comments
+  distinguish human from agent.
   **A watch toggle and who else is watching** (D-047, D-054), and an
   **`@` autocomplete in the comment box fed by `GET /projects/:slug/mentionable`
   — never by the member list**, because who may be mentioned is the server's
@@ -1646,11 +1685,11 @@ boundaries** (§4.15). Phase 2.5, immediately after sprints land.
 - Today's date is marked. Sprints entirely in the past are dimmed, not hidden.
 
 **The constraint that keeps this cheap:** the timeline is a *sprint* chart, not a
-*task* chart. The moment a task gets its own start and end date, this becomes a
-dependency-aware Gantt with a layout engine, a critical path, and a scheduling
-model — weeks of work and a permanent maintenance burden. Per-task planned and
-due dates remain a §1.1 non-goal specifically to protect that boundary
-(**D-014** — read it before adding a date column).
+*task* chart. Tasks now carry `planned_start` and `due_on` (§4.5, D-066), and
+**this screen does not read them yet**: a task-dated timeline is a
+dependency-aware Gantt with a layout engine, a critical path and a scheduling
+model, which D-014 priced and D-066 accepted — as its own task (LAI-289), not
+as a side effect of the columns existing.
 
 ### 11.5 Live updates — SSE
 
@@ -1868,7 +1907,9 @@ Tracked here until decided; each becomes a `DECISIONS.md` entry.
     **It does imply per-task dates**, so it reopens D-014 exactly as this question
     warned: the endpoint it waits for is **`tasks.due_date`**. Until that exists
     the screen is demo-fed and says so. **The warning was right; the owner
-    accepted the cost rather than the question being wrong.**
+    accepted the cost rather than the question being wrong.** The column now
+    exists as **`tasks.due_on`** (D-066, LAI-493); wiring the Calendar to it and
+    retiring its demo module is its own task.
 11. **Password reset and magic-link sign-in.** The login mockup shows "Forgot?"
     and "Email me a sign-in link". Neither exists in §6.1 or §6.4, and both need
     working SMTP. Either specify them (endpoints, token lifetimes, SMTP as a hard

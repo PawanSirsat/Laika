@@ -3532,3 +3532,79 @@ LAI-488 (Board ↔ List alignment).
 
 The owner asks for multi-select filters, or for the card footer to show a
 date.
+
+## D-066 — Tasks may have subtasks, a due date and a planned start, and the
+## task view takes the shape of a Jira issue.
+
+**2026-10-06, the owner, in a planning session with CHIEF**, from three
+screenshots of a Jira issue and the instruction *"do what Jira does"*. Carried
+by LAI-492 (this record and the SPEC), LAI-493 (server), LAI-494 (the task
+view) and LAI-495 (subtasks on the board and list). Built by CHIEF on the
+owner's direct instruction, on a `build` branch, as the 2026-09-28 run was — a
+crossing made on that instruction, not a precedent.
+
+### What was decided
+
+1. **A task may be a subtask of one other task, one level deep.**
+   `tasks.parent_task_id`, nullable, self-FK `ON DELETE SET NULL`, same
+   project. A parent is never itself a child; a task with children cannot be
+   given a parent; both are refused `422`. This is Jira's subtask, without
+   Jira's epic above it — epics stay on the not-features list.
+2. **No status coupling.** A parent shows `n/m done`, where `total` leaves
+   out `cancelled` children. Closing a parent with open subtasks is allowed
+   and the view says how many are still open. Jira's default is the same; its
+   stricter workflow condition is a project setting we do not have, and
+   auto-completing the parent was rejected because it writes a status change
+   nobody asked for.
+3. **Containment is not blocking.** `ready` ignores the parent. A subtask
+   that must wait for its parent, or the other way round, is a dependency and
+   is linked as one. `discovered_from` stays what it was: provenance.
+4. **Subtasks are their own cards and rows**, marked `↳ KEY`; the parent card
+   shows `n/m`; a `top` filter hides children. Hiding them under the parent
+   was rejected because a sprint and an assignee must see every piece of work
+   they hold.
+5. **`due_on` and `planned_start` exist**, nullable unix-ms with date-only
+   semantics, exactly §4.15's shape for a sprint. **This reverses D-014**, as
+   LAI-289 asked and as §14 q10 predicted. The cost D-014 named — a task-dated
+   timeline is a layout engine — was put to the owner with that cost stated and
+   taken knowingly; **the timeline stays sprint-based** until a task makes it
+   otherwise. Nothing validates one date against the other; Jira does not.
+6. **No new verb, action, endpoint or tool.** `task.created` carries the
+   parent when set; changes are `task.updated` (D-027's tags shape).
+   `task.write` covers all three fields. `POST`/`PATCH` take them;
+   `?parent=` filters the list; `create_task`/`update_task` take `parent`,
+   `due_on`, `planned_start`; `get_task_context` returns parent and subtasks.
+   A verb would have been three owners (CLAUDE.md §4.4); the field in
+   `changed` answers the audit question already.
+7. **The task view is laid out as Jira lays out an issue.** Breadcrumb and
+   plain icon actions in the header; title, description, subtasks, linked
+   tasks and activity down the left; a **Details** card on the right —
+   assignee, priority, parent, due date, labels, sprint, start date, reporter,
+   created via, watchers, discovered from — a **Development** card, and
+   `Created` / `Updated` at the foot of the rail. **This supersedes the
+   sentence in D-063 that put subtasks with "Jira's data model, not ours."**
+   D-063's frame — a centred modal — stands.
+8. **`TaskView` serves `branch` and `external_ref`** (LAI-286, folded in),
+   because the Development card needs them.
+9. **Delete sets the children's parent to null** rather than cascading as
+   Jira does. An orphaned subtask is a top-level task someone can see; a
+   cascaded one is gone.
+
+### What this does not decide
+
+- **Epics, attachments, Team, Automation, work log.** Jira's data model stays
+  Jira's. No uploads (§1.1), no second hierarchy level.
+- **Sprint inheritance.** A subtask created from its parent inherits nothing.
+  Jira moves subtasks with the parent's sprint; that is a `sprint.tasks_changed`
+  question for a later task.
+- **The timeline and the Calendar.** Both have the columns they were waiting
+  for and neither reads them yet (LAI-289; §14 q10).
+- **An "overdue" filter on the server.** Overdue is derived client-side from
+  `due_on` and status; a server parameter can follow if agents need it.
+
+### Revisit when
+
+A team asks for Jira's "cannot close with open subtasks" condition, for
+subtasks to follow the parent's sprint, or for a second level — the last of
+which is the one this decision says no to, and should be argued rather than
+drifted into.
