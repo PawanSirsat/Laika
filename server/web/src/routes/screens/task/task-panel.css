@@ -1642,6 +1642,32 @@
   padding: 0 0.5rem;
 }
 
+/*
+ * **The × is the fourth button of the row, not a different control**
+ * (LAI-498). `.panel-close` is the board drawer's own close — its own font
+ * size, the card radius, no height — and beside three 2rem squares it drew as
+ * a shorter pill. Here it takes the row's geometry, border and colour, and
+ * keeps only its glyph.
+ */
+.panel-head-actions .panel-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  font-size: 0.9375rem;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+}
+
+.panel-head-actions .panel-close:hover,
+.panel-head-actions .panel-close:focus-visible {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
 .panel-head-watch.on {
   color: var(--accent);
   border-color: var(--accent-border);

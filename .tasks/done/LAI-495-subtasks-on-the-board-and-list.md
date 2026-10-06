@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: [LAI-494]
 discovered-from: LAI-290
-status: review
+status: done
 started: 2026-10-06T09:07:58Z
 finished: 2026-10-06T09:19:18Z
 ---
@@ -76,3 +76,14 @@ Due column's width, because Summary's room is asserted.
 
 **Not done here, by design:** sprint inheritance for a subtask (D-066 names
 it a later task), and the Calendar still does not read `due_on`.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted. Against the diff: the cancelled rule is one function on each side
+and both tests carry a cancelled child; `subtasks.test` proves the section
+draws the server's answer, not the page's; `top` and `overdue` are in
+`FILTER_KEYS`, the badge, Clear all and the toolbar; the Due column sorts
+undated rows last both ways; the two card fields default on for a stored
+record. The card-footer clip the real instance found is fixed in the task,
+and the follow-up it exposed (the ready chip giving way instead) is fixed
+before the merge that lands this. Gate on `master`, then push.
