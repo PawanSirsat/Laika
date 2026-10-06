@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: [LAI-495]
 discovered-from: LAI-495
-status: review
+status: done
 started: 2026-10-06T10:26:59Z
 finished: 2026-10-06T10:32:18Z
 ---
@@ -65,3 +65,11 @@ row, and `1/2 done`, and the drawer stayed on the parent. Light and dark.
 **Harness note.** The mutation helper restores with `git checkout --`, which
 on an uncommitted file reverts the work itself; the file was copied aside and
 restored from the copy after each mutation, and compared byte-for-byte.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted. Against the diff: both controls sit outside `.sub-open`; the status
+menu uses `ALL_STATUSES` and `boardStatusLabel`; the picker lists the
+project's members, as `AssignControl` does; `mayEdit` gates status and
+`mayAssign` the assignee, each with a test that would go red. No new endpoint
+or client call. Gate on `master`, push, deploy.
