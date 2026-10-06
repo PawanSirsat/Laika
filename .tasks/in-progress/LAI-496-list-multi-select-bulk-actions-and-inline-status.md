@@ -2,10 +2,11 @@
 id: LAI-496
 title: 'The List selects rows, acts on the selection, and changes status in place'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-10-06T06:47:50Z
 ---
 
 ## Goal
