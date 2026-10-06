@@ -409,29 +409,8 @@
   background: var(--bg-column);
   border: 1px solid var(--border-subtle);
 }
-/*
- * Stale, in the design's own vocabulary (§11.4.1).
- *
- * The prototype has no card-level stale marker — its clock, `--chip-orange` and the
- * "Stale · N days quiet" phrasing come from the dashboard panel — so this
- * borrows that rather than inventing a colour. It shares amber with
- * `.marker-unknown`, which is tolerable because the two say different words and
- * co-occur rarely; the alternative was giving a spec'd state a colour the design
- * never chose, to keep it apart from one the design never mentions.
- */
-.marker-stale {
-  color: var(--chip-orange);
-  background: var(--chip-orange-bg);
-  border: 1px solid var(--chip-orange-border);
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-.marker-stale svg {
-  width: 0.75rem;
-  height: 0.75rem;
-  stroke: currentColor;
-}
+/* The card's stale pill that stood here was removed with it (LAI-701, D-069):
+   the server still flags staleness and the Activity tab still lists it. */
 
 /* A dependency outside the loaded set — stated, not guessed. */
 .marker-unknown {
@@ -1034,11 +1013,8 @@
 
 /* ----------------------------------------------------- card footer (LAI-263) */
 
-/*
- * The comment count, at last. `comment_count` has been served on every task
- * since the endpoint existed and the card never rendered it (LAI-223).
- */
-.card-comments,
+/* The dependency count. The comment count shared this rule until the owner
+   removed it from the card (LAI-701); the task view still shows comments. */
 .card-deps {
   display: inline-flex;
   align-items: center;
@@ -1048,21 +1024,10 @@
   color: var(--text-muted);
 }
 
-.card-comments svg,
 .card-deps svg {
   width: 0.6875rem;
   height: 0.6875rem;
   stroke: currentColor;
-}
-
-/* How long since the task last changed. Mono, like every other figure. */
-.card-age {
-  flex: none;
-  font-family: var(--font-mono);
-  font-size: 0.59375rem;
-  font-weight: var(--weight-semibold);
-  color: var(--text-muted);
-  white-space: nowrap;
 }
 
 /* ------------------------------------------------- the reference's columns (LAI-270) */
@@ -1760,7 +1725,19 @@
  */
 .card-foot {
   display: flex;
-  flex-wrap: nowrap;
+  /*
+   * **Wraps again, but only when it cannot fit** (LAI-701, D-069).
+   *
+   * LAI-606 made this one line, on the understanding that the comment count
+   * and the age would ellipsise first when space ran out. The owner removed
+   * both, which left nothing on the row that may honestly shrink — a key, a
+   * sprint, `1/2` or a date clipped mid-token says something false — so a
+   * full row at a narrow width pushed the avatar past the card's edge. At an
+   * ordinary width every row is still one line; an overfull one now breaks
+   * between markers instead of escaping the card.
+   */
+  flex-wrap: wrap;
+  row-gap: 6px;
   align-items: center;
   gap: var(--space-2);
   margin-top: 12px;
@@ -1939,16 +1916,6 @@
 }
 
 /*
- * "just now" — the accent, while a card is fresh (LAI-606). A `var()`
- * reference, not a colour: the single-source rule bans literals, not tokens.
- * Scoped to beat `.t-meta`'s own colour on specificity.
- */
-.card .card-age-now {
-  color: var(--accent);
-  font-weight: var(--weight-medium);
-}
-
-/*
  * Dense mode, per the addendum (LAI-606): the same board, closer together.
  * Size/leading changes live in the DENSITY map; these are the box metrics.
  */
@@ -2020,4 +1987,25 @@
 .card-due-overdue {
   color: var(--overdue);
   font-weight: var(--weight-bold);
+}
+
+/* Due today (LAI-701): amber, the board's "needs attention, not yet late". */
+.card-due-today {
+  color: var(--chip-orange);
+  font-weight: var(--weight-bold);
+}
+
+/*
+ * **Scoped under `.card`, or neither colour shows** (LAI-701). The chip also
+ * carries `.t-meta`, and `type.css` loads after this file, so a single-class
+ * rule loses on source order and both states paint `--text-muted` — measured
+ * by the card-footer test, which found overdue and today painting alike. The
+ * same cascade `.card .card-blocked` already answers above.
+ */
+.card .card-due-overdue {
+  color: var(--overdue);
+}
+
+.card .card-due-today {
+  color: var(--chip-orange);
 }

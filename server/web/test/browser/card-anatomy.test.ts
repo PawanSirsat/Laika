@@ -221,44 +221,11 @@ void describe('the card', () => {
     }
   });
 
-  void test('shows the comment count it has always been served', async () => {
-    const h = await open('/board?project=laika-core', STUB);
-    try {
-      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
-
-      /*
-       * **Scoped by key, not by title.** A blocked card repeats its blocker's
-       * title inside the banner, so `hasText: 'Presence strip'` matched the
-       * blocked card too and this read the wrong card's count.
-       */
-      const byKey = (key: string) =>
-        h.page
-          .locator('.card')
-          .filter({ has: h.page.locator('.card-key', { hasText: new RegExp(`^${key}\\b`) }) });
-
-      // LC-6 has three comments; LC-1 has none.
-      assert.equal(await byKey('LC-6').locator('.card-comments').innerText(), '3');
-      assert.equal(
-        await byKey('LC-1').locator('.card-comments').count(),
-        0,
-        'a zero count must be absent, not rendered as 0',
-      );
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('dates itself from updated_at, against the clock', async () => {
-    const h = await open('/board?project=laika-core', STUB);
-    try {
-      await h.page.locator('.card-age').first().waitFor({ timeout: 20_000 });
-      // The fixture is two hours old; anything else means the age is being
-      // measured from a stored epoch rather than from now.
-      assert.equal(await h.page.locator('.card-age').first().innerText(), '2h');
-    } finally {
-      await h.close();
-    }
-  });
+  /*
+   * The comment count and the age tests that stood here were removed with
+   * the fields themselves (LAI-701): the owner took both off the card.
+   * `card-footer.test.ts` proves their absence on a task that has comments.
+   */
 
   void test('keeps the blocked banner on one line, however long the blocker', async () => {
     const h = await open('/board?project=laika-core', STUB);
@@ -296,7 +263,7 @@ void describe('the card', () => {
  * before this comment was written.
  */
 void describe('the meta row at 218px', () => {
-  void test('the key never truncates and the row never wraps', async () => {
+  void test('the key never truncates; the row is one line at 218px and breaks, not escapes, at 120px', async () => {
     const h = await open('/board?project=laika-core', STUB);
 
     try {
@@ -341,11 +308,13 @@ void describe('the meta row at 218px', () => {
       assert.equal(m.tallFeet, 0, 'a meta row wrapped at 218px');
 
       /*
-       * **The squeeze that makes the wrap half falsifiable.** At 218 this
-       * fixture's rows happen to fit, so `flex-wrap: wrap` passed the check
-       * above — mutation-tested, it survived. At 170 the fullest row cannot
-       * fit; only `nowrap` keeps it one line, so this is the assertion that
-       * dies when the property is broken.
+       * **The squeeze, re-aimed (LAI-701, D-069).** This asserted that at
+       * 120px the row still did *not* wrap, guarding LAI-606's one-line
+       * footer — whose overflow the comment count and age absorbed by
+       * ellipsising. The owner removed both, and an overfull row then pushed
+       * the avatar off the card. So the property is now the opposite one: at
+       * a width nothing fits, the row breaks between markers, and nothing —
+       * the key least of all — is clipped or escapes the card.
        */
       await h.page.evaluate(() => {
         const grid = document.querySelector<HTMLElement>('.kanban');
@@ -354,30 +323,32 @@ void describe('the meta row at 218px', () => {
       await h.page.waitForTimeout(300);
 
       const squeezed = await h.page.evaluate(() => {
-        const feet = [...document.querySelectorAll('.card-foot')];
-        const wrapped = feet.filter((f) => {
-          const tallest = Math.max(
-            0,
-            ...[...f.children].map((c) => c.getBoundingClientRect().height),
+        const cards = [...document.querySelectorAll('.card')];
+        const escaped: string[] = [];
+        let wrapped = 0;
+        for (const card of cards) {
+          const box = card.getBoundingClientRect();
+          const foot = card.querySelector('.card-foot');
+          if (foot === null) continue;
+          const kids = [...foot.children].filter(
+            (c) => !c.classList.contains('visually-hidden') && c.getBoundingClientRect().width > 0,
           );
-          const style = getComputedStyle(f);
-          const inner =
-            f.getBoundingClientRect().height -
-            parseFloat(style.paddingTop) -
-            parseFloat(style.paddingBottom) -
-            parseFloat(style.borderTopWidth);
-          return inner > Math.max(tallest, 36) + 4;
-        }).length;
-        const overflowing = feet.filter((f) => f.scrollWidth > f.clientWidth + 1).length;
-        return { wrapped, overflowing };
+          const tops = new Set(kids.map((c) => Math.round(c.getBoundingClientRect().top)));
+          if (tops.size > 1) wrapped += 1;
+          for (const c of kids) {
+            if (c.getBoundingClientRect().right > box.right + 0.5) escaped.push(c.className);
+          }
+        }
+        const truncated = [...document.querySelectorAll('.card-key')].filter(
+          (k) => k.scrollWidth > k.clientWidth + 1,
+        ).length;
+        return { escaped, wrapped, truncated };
       });
-      assert.equal(squeezed.wrapped, 0, 'a meta row wrapped at 120px — nowrap is not holding');
-      // The guard on the guard: if nothing overflows at 120px, this test can
-      // never catch a wrap and must say so instead of passing quietly.
-      assert.ok(
-        squeezed.overflowing > 0,
-        'no meta row even overflows at 120px — the squeeze proves nothing',
-      );
+      assert.deepEqual(squeezed.escaped, [], 'a footer item escaped its card at 120px');
+      assert.equal(squeezed.truncated, 0, 'a key truncated at 120px');
+      // The guard on the guard: at 120px some row must actually break, or the
+      // two assertions above were measured on rows that fit anyway.
+      assert.ok(squeezed.wrapped > 0, 'no row wraps at 120px — the squeeze proves nothing');
     } finally {
       await h.close();
     }

@@ -1,10 +1,10 @@
 import { tagColor } from './tag-colors.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
-import { blockedState, blockers, staleFor, updatedAge } from '../../../api/board-derive.ts';
+import { blockedState, blockers } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import type { CardFields } from './card-fields.ts';
-import { dateLabelShort, isOverdue } from '../../../api/date-only.ts';
+import { dateLabel, dateLabelShort, dueState } from '../../../api/date-only.ts';
 import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-derive.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
@@ -14,7 +14,7 @@ export interface TaskCardProps {
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   /**
-   * Which optional parts to draw (LAI-266). One record rather than nine
+   * Which optional parts to draw (LAI-266). One record rather than a
    * booleans, so a tenth field never reaches this signature.
    */
   readonly fields: CardFields;
@@ -63,7 +63,8 @@ export function TaskCard({
   const tags = fields.tags ? task.tags : [];
   const progress = fields.subtasks ? subtaskProgress(childrenOf(task.id, byId)) : undefined;
   const parent = fields.subtasks ? parentOf(task, byId) : undefined;
-  const overdue = fields.due && isOverdue(task, Date.now());
+  // `overdue`, `today`, or nothing — a date still ahead draws no chip (LAI-701).
+  const due = fields.due ? dueState(task, Date.now()) : undefined;
   const held = blockers(task, byId);
   const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
 
@@ -185,21 +186,6 @@ export function TaskCard({
             ready
           </span>
         )}
-        {fields.stale && task.stale_flagged_at !== null && (
-          <span
-            className="marker marker-stale card-above"
-            title={`Flagged stale ${staleFor(task.stale_flagged_at, Date.now())} ago — the nightly job found no heartbeat and no commit for three days (§11.6)`}
-          >
-            {/* The design's clock, from the dashboard's stale panel — the
-                prototype has no card marker, so the vocabulary is borrowed
-                rather than invented: amber, a clock, and a duration. */}
-            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.2" aria-hidden="true">
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 8v4l3 2" />
-            </svg>
-            {`stale ${staleFor(task.stale_flagged_at, Date.now())}`}
-          </span>
-        )}
         {blocked === undefined && (
           <span
             className="marker marker-unknown card-above"
@@ -208,20 +194,6 @@ export function TaskCard({
             deps ?
           </span>
         )}
-        {/*
-          **`comment_count` is served on every task and the card never showed
-          it** — LAI-223, open since it was noticed. Absent at zero: a card
-          that says `0` beside a link count reads as a control you can press.
-        */}
-        {fields.comments && task.comment_count > 0 && (
-          <span className="card-comments card-above t-meta" title="Comments">
-            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
-              <path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-4.5A8 8 0 1 1 21 12Z" />
-            </svg>
-            {task.comment_count}
-          </span>
-        )}
-
         {fields.deps && task.blocked_by.length > 0 && (
           <span className="card-deps card-above t-meta" title="Dependencies">
             <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">
@@ -255,40 +227,26 @@ export function TaskCard({
           </span>
         )}
 
-        {/* The due date, red with a mark once it is past and the task is still
-            open — finished late is finished (D-066). */}
-        {fields.due && task.due_on !== null && (
+        {/*
+          **The due date only when it is news** (LAI-701, D-069): red with a
+          mark once it is past, amber "Due today" on the day, nothing while it
+          is still ahead or once the work is finished. The full date is on
+          hover either way.
+        */}
+        {due !== undefined && task.due_on !== null && (
           <span
             className={
-              overdue ? 'card-due card-due-overdue card-above t-meta' : 'card-due card-above t-meta'
+              due === 'overdue'
+                ? 'card-due card-due-overdue card-above t-meta'
+                : 'card-due card-due-today card-above t-meta'
             }
-            title={overdue ? 'Past due and still open' : 'Due'}
+            title={`${due === 'overdue' ? 'Overdue — was due' : 'Due today,'} ${dateLabel(task.due_on)}`}
             data-due={task.due_on}
           >
-            {overdue && <span aria-hidden="true">⚠</span>}
+            {due === 'overdue' && <span aria-hidden="true">⚠</span>}
             <time dateTime={new Date(task.due_on).toISOString()}>
-              {dateLabelShort(task.due_on)}
+              {due === 'overdue' ? dateLabelShort(task.due_on) : 'Due today'}
             </time>
-          </span>
-        )}
-
-        {/* Against `Date.now()`, never a stored epoch — a fixture pinned to a
-            fixed time read as 240 days old twice before (LAI-420).
-
-            Under five minutes it reads "just now" in the accent (LAI-606) —
-            the prototype's flash treatment, minus the flash. */}
-        {fields.age && (
-          <span
-            className={
-              Date.now() - task.updated_at < 300_000
-                ? 'card-age card-age-now card-above t-meta'
-                : 'card-age card-above t-meta'
-            }
-            title={`Updated ${updatedAge(task.updated_at, Date.now())}`}
-          >
-            {Date.now() - task.updated_at < 300_000
-              ? 'just now'
-              : updatedAge(task.updated_at, Date.now())}
           </span>
         )}
 

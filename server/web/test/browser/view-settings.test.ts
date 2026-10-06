@@ -131,14 +131,19 @@ void describe('toggling a card field', () => {
     try {
       await openPanel(h);
 
-      assert.equal(await h.page.locator('.card-age').count(), 1, 'the field was not there to hide');
+      // The priority dot, not the age: LAI-701 removed the age from the card.
+      assert.equal(
+        await h.page.locator('.card .card-dot').count(),
+        1,
+        'the field was not there to hide',
+      );
       const titlesBefore = await h.page.locator('.card-title').count();
 
-      await h.page.locator('.vs-remove[data-field="age"]').click();
+      await h.page.locator('.vs-remove[data-field="priority"]').click();
       await h.page.waitForTimeout(120);
 
       assert.equal(
-        await h.page.locator('.card-age').count(),
+        await h.page.locator('.card .card-dot').count(),
         0,
         'the field is hidden, not removed — a display:none node still counts 1',
       );
@@ -150,10 +155,10 @@ void describe('toggling a card field', () => {
 
       // And back, so the test covers both values rather than one direction.
       // Back on through the search, which is how the reference adds a field.
-      await h.page.locator('.vs-search').fill('Last updated');
+      await h.page.locator('.vs-search').fill('Priority');
       await h.page.locator('.vs-add').first().click();
       await h.page.waitForTimeout(120);
-      assert.equal(await h.page.locator('.card-age').count(), 1);
+      assert.equal(await h.page.locator('.card .card-dot').count(), 1);
     } finally {
       await h.close();
     }

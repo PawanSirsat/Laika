@@ -54,3 +54,23 @@ export function isOverdue(task: Pick<Task, 'due_on' | 'status'>, now: number): b
   if (task.status === 'done' || task.status === 'cancelled') return false;
   return task.due_on < startOfUtcDay(now);
 }
+
+/**
+ * What a **card** says about a due date (LAI-701, D-069): `overdue`, `today`,
+ * or nothing.
+ *
+ * The owner: show the due date only *"if that is gone or for today"*. A date
+ * still ahead is not news on a board scanned for what needs doing, and it
+ * cost the footer the room that pushed the avatar off the card. Finished work
+ * says nothing whatever its date — the same rule as {@link isOverdue}, which
+ * this agrees with by construction: `overdue` here is exactly `isOverdue`.
+ */
+export function dueState(
+  task: Pick<Task, 'due_on' | 'status'>,
+  now: number,
+): 'overdue' | 'today' | undefined {
+  if (task.due_on === null) return undefined;
+  if (task.status === 'done' || task.status === 'cancelled') return undefined;
+  if (isOverdue(task, now)) return 'overdue';
+  return task.due_on < startOfUtcDay(now) + DAY_MS ? 'today' : undefined;
+}
