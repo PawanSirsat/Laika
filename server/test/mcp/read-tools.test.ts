@@ -587,6 +587,34 @@ describe('the read tools read every row, not the first page (LAI-704)', () => {
     await client.close();
   });
 
+  it('pages on the services’ own sort key, so no row is counted twice or missed', async () => {
+    await project('core', 'COR');
+    const created: string[] = [];
+    for (let i = 0; i < MANY; i += 1) {
+      created.push((await task('core', { title: `Bulk ${String(i)}`, status: 'done' })).id ?? '');
+    }
+    // Edited in reverse, so the order by \`updated_at\` — the one the services
+    // page on — is the opposite of the order by \`created_at\`. A cursor taken
+    // from the wrong timestamp then re-reads or skips rows; only the right one
+    // counts each task once.
+    for (const id of [...created].reverse()) {
+      await must(
+        `/api/v1/tasks/${id}`,
+        { method: 'PATCH', body: JSON.stringify({ title: 'Edited' }) },
+        200,
+      );
+    }
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_project_context',
+      arguments: { project: 'core' },
+    });
+    expect(payload(result).open_task_count).toBe(MANY);
+
+    await client.close();
+  });
+
   it('list_ready_tasks finds the most urgent ready task even past the first page', async () => {
     await project('core', 'COR');
     // Two hundred and thirty **ready** p3 tasks first — more than a page of
