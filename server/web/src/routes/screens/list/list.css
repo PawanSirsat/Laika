@@ -658,6 +658,9 @@
   bottom: 2.75rem;
   transform: translateX(-50%);
   z-index: 5;
+  /* `left: 50%` leaves an absolute box half the pane to shrink into, and it
+     wrapped the bar onto two lines at 1380px. Its width is its content's. */
+  width: max-content;
   max-width: calc(100% - 2.25rem);
   background: var(--bg-card);
   border: 1px solid var(--border-default);
