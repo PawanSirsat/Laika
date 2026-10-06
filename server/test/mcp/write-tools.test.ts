@@ -533,3 +533,77 @@ describe('log_unlisted_work — the one tool with no REST twin (D-024)', () => {
     }
   });
 });
+
+describe('subtasks and dates through the tools (D-066)', () => {
+  const DAY = 86_400_000;
+
+  it('create_task takes a parent by key and both dates', async () => {
+    const client = await connect(await mint());
+    const parent = payload(
+      await client.callTool({
+        name: 'create_task',
+        arguments: { project: 'core', title: 'Parent' },
+      }),
+    ).task as { id: string };
+
+    const result = await client.callTool({
+      name: 'create_task',
+      arguments: {
+        project: 'core',
+        title: 'Child',
+        parent: 'COR-1',
+        due_on: 5 * DAY,
+        planned_start: DAY,
+      },
+    });
+    expect(result.isError, JSON.stringify(result.content)).toBeFalsy();
+    expect(payload(result).task).toMatchObject({
+      parent_task_id: parent.id,
+      due_on: 5 * DAY,
+      planned_start: DAY,
+    });
+
+    await client.close();
+  });
+
+  it('update_task sets the parent, and null detaches', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Parent' } });
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Child' } });
+
+    const attached = await client.callTool({
+      name: 'update_task',
+      arguments: { task: 'COR-2', parent: 'COR-1' },
+    });
+    expect(attached.isError, JSON.stringify(attached.content)).toBeFalsy();
+    expect(
+      (payload(attached).task as { parent_task_id: string | null }).parent_task_id,
+    ).not.toBeNull();
+
+    const detached = await client.callTool({
+      name: 'update_task',
+      arguments: { task: 'COR-2', parent: null, due_on: null },
+    });
+    expect((payload(detached).task as { parent_task_id: string | null }).parent_task_id).toBeNull();
+
+    await client.close();
+  });
+
+  it('refuses a second level with the service’s reason, not a bare error', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Parent' } });
+    await client.callTool({
+      name: 'create_task',
+      arguments: { project: 'core', title: 'Child', parent: 'COR-1' },
+    });
+
+    const result = await client.callTool({
+      name: 'create_task',
+      arguments: { project: 'core', title: 'Grandchild', parent: 'COR-2' },
+    });
+    expect(result.isError).toBe(true);
+    expect(JSON.stringify(result.content)).toContain('depth');
+
+    await client.close();
+  });
+});

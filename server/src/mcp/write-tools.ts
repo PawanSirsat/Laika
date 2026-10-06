@@ -60,6 +60,13 @@ import { ago, answer, isoDate, toolError } from './present.ts';
  * the type rather than a rule each handler remembers.
  */
 
+/** Unix-ms at a UTC midnight — date-only semantics, as §4.15 (D-066). */
+const DATE_ONLY = z
+  .number()
+  .int()
+  .finite()
+  .describe('A date as unix milliseconds at a UTC midnight.');
+
 const TASK_REF = z
   .string()
   .min(1)
@@ -148,7 +155,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Create a task',
       description:
-        'File a task on a project. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost.',
+        'File a task on a project. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight.',
       inputSchema: z.strictObject({
         project: PROJECT_REF,
         title: TASK_FIELDS.title,
@@ -164,6 +171,11 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           .optional()
           .describe('Tasks this one is blocked by. Keys or ids.'),
         discovered_from: TASK_REF.optional(),
+        parent: TASK_REF.optional().describe(
+          'Make this a subtask of that task. One level only — a subtask cannot have subtasks.',
+        ),
+        due_on: DATE_ONLY.optional(),
+        planned_start: DATE_ONLY.optional(),
       }),
     },
     ({
@@ -177,6 +189,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
       sprint,
       blocked_by,
       discovered_from,
+      parent,
+      due_on,
+      planned_start,
     }) => {
       try {
         const now = clock();
@@ -193,6 +208,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           ...(discovered_from === undefined
             ? {}
             : { discovered_from: resolveTaskRef(db, discovered_from) }),
+          ...(parent === undefined ? {} : { parent_task_id: resolveTaskRef(db, parent) }),
+          ...(due_on === undefined ? {} : { due_on }),
+          ...(planned_start === undefined ? {} : { planned_start }),
           // §7.1: an agent's task says so. Not a default the service guesses.
           created_via: 'mcp',
           now,
@@ -378,7 +396,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Edit a task',
       description:
-        'Change a task after it exists: its title, prose, priority, tags, who holds it, and which sprint it sits in. Every field is optional and an omitted one is left alone. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
+        'Change a task after it exists: its title, prose, priority, tags, who holds it, which sprint it sits in, its parent, and its due and planned-start dates. Every field is optional and an omitted one is left alone; `null` on `parent`, `due_on` or `planned_start` clears it. **Status is not here** — moving a task is `update_status`, because §5 validates transitions and a field edit would route around the table.',
       inputSchema: z.strictObject({
         task: TASK_REF,
         title: TASK_FIELDS.title.optional(),
@@ -390,9 +408,26 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         tags: TASK_FIELDS.tags.optional().describe('Replaces the whole set.'),
         assignee: ASSIGNEE_REF.nullable().optional(),
         sprint: SPRINT_REF.nullable().optional().describe('`null` takes it out of its sprint.'),
+        parent: TASK_REF.nullable()
+          .optional()
+          .describe('Make it a subtask of that task; `null` detaches it. One level only.'),
+        due_on: DATE_ONLY.nullable().optional(),
+        planned_start: DATE_ONLY.nullable().optional(),
       }),
     },
-    ({ task, title, description, acceptance, priority, tags, assignee, sprint }) => {
+    ({
+      task,
+      title,
+      description,
+      acceptance,
+      priority,
+      tags,
+      assignee,
+      sprint,
+      parent,
+      due_on,
+      planned_start,
+    }) => {
       try {
         const id = resolveTaskRef(db, task);
         const now = clock();
@@ -414,6 +449,11 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           ...(priority === undefined ? {} : { priority }),
           ...(tags === undefined ? {} : { tags }),
           ...(assigneeId === undefined ? {} : { assignee_id: assigneeId }),
+          ...(parent === undefined
+            ? {}
+            : { parent_task_id: parent === null ? null : resolveTaskRef(db, parent) }),
+          ...(due_on === undefined ? {} : { due_on }),
+          ...(planned_start === undefined ? {} : { planned_start }),
           now,
         });
 

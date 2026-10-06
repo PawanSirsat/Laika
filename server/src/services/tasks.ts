@@ -77,6 +77,22 @@ export interface TaskView {
    */
   created_by_client: string | null;
   discovered_from: string | null;
+  /**
+   * The task this is a subtask of, or null (§4.5, D-066). One level deep,
+   * same project; `ready` ignores it. Children are found with `?parent=`.
+   */
+  parent_task_id: string | null;
+  /**
+   * The plan — unix-ms at a UTC midnight, date-only like a sprint's
+   * `starts_on` (§4.15) — as distinct from `started_at` / `completed_at`,
+   * which are what happened (D-066). "Overdue" is the reader's to derive.
+   */
+  due_on: number | null;
+  planned_start: number | null;
+  /** Last branch seen working on it, written by the plugin (§4.5, LAI-286). */
+  branch: string | null;
+  /** e.g. a GitHub PR URL (§4.5, LAI-286). */
+  external_ref: string | null;
   ready: boolean;
   /**
    * Live comments on this task — **derived at read time, never stored**
@@ -216,6 +232,11 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     created_via: row.createdVia,
     created_by_client: context.clients.get(row.id) ?? null,
     discovered_from: row.discoveredFrom,
+    parent_task_id: row.parentTaskId,
+    due_on: row.dueOn,
+    planned_start: row.plannedStart,
+    branch: row.branch,
+    external_ref: row.externalRef,
     // §4.5's rule, unchanged by LAI-091: readiness is a function of what blocks
     // this task. `blocks` is deliberately not an input — a task holding up ten
     // others is no less ready to be picked up itself.
@@ -253,6 +274,75 @@ function requireTask(
   if (project === undefined) throw ApiError.notFound('That task belongs to no project');
 
   return { task, project };
+}
+
+/**
+ * The one-level rule for subtasks (§4.5, D-066), asked before a parent is
+ * written. `taskId` is absent on create — the task does not exist yet, so it
+ * cannot have children.
+ *
+ * Three refusals, all `422 unprocessable` with `details.reason` naming which:
+ * - `self` — a task cannot contain itself;
+ * - `project` — the parent is missing **or** in another project. One answer
+ *   for both, so a task id from a project the caller cannot read is not
+ *   confirmed to exist by the shape of the error;
+ * - `depth` — the parent has a parent, or this task has children. A CHECK
+ *   cannot see another row, so this lives here rather than in the schema.
+ */
+function assertParentAllowed(
+  db: Db,
+  input: { taskId: string | null; projectId: string; parentId: string },
+): void {
+  if (input.taskId !== null && input.parentId === input.taskId) {
+    throw parentRefused('self', 'A task cannot be a subtask of itself');
+  }
+
+  const parent = db
+    .select({ projectId: tasks.projectId, parentTaskId: tasks.parentTaskId })
+    .from(tasks)
+    .where(eq(tasks.id, input.parentId))
+    .get();
+  if (parent?.projectId !== input.projectId) {
+    throw parentRefused('project', 'The parent must be a task on the same project');
+  }
+  if (parent.parentTaskId !== null) {
+    throw parentRefused('depth', 'That task is itself a subtask — subtasks go one level deep');
+  }
+
+  if (input.taskId !== null) {
+    const child = db
+      .select({ id: tasks.id })
+      .from(tasks)
+      .where(eq(tasks.parentTaskId, input.taskId))
+      .limit(1)
+      .get();
+    if (child !== undefined) {
+      throw parentRefused(
+        'depth',
+        'This task has subtasks of its own — subtasks go one level deep',
+      );
+    }
+  }
+}
+
+function parentRefused(reason: 'self' | 'project' | 'depth', message: string): ApiError {
+  return new ApiError('unprocessable', message, { field: 'parent_task_id', reason });
+}
+
+/**
+ * `n/m done` for a parent (§4.6, D-066): `done` counts the children at `done`,
+ * `total` leaves out `cancelled` — dropped work is not undone work. One
+ * definition, used by `get_task_context` and mirrored by the client, so the
+ * two cannot disagree about what a cancelled subtask does to the bar.
+ */
+export function subtaskProgress(subtasks: readonly { status: TaskStatus }[]): {
+  done: number;
+  total: number;
+} {
+  return {
+    done: subtasks.filter((t) => t.status === 'done').length,
+    total: subtasks.filter((t) => t.status !== 'cancelled').length,
+  };
 }
 
 /**
@@ -313,6 +403,11 @@ export interface CreateTaskInput {
   status?: TaskStatus | undefined;
   assignee_id?: string | undefined;
   discovered_from?: string | undefined;
+  /** Makes this a subtask of that task — one level, same project (D-066). */
+  parent_task_id?: string | undefined;
+  /** Unix-ms at a UTC midnight (§4.5). */
+  due_on?: number | undefined;
+  planned_start?: number | undefined;
   created_via?: 'web' | 'mcp' | 'api' | 'webhook' | 'meeting' | undefined;
   now?: number;
 }
@@ -330,6 +425,13 @@ export function createTask(
   const now = input.now ?? Date.now();
 
   return immediateTransaction(sqlite, () => {
+    // Inside the write lock, so the parent cannot gain a parent of its own
+    // between the check and the insert.
+    const parentId = input.parent_task_id ?? null;
+    if (parentId !== null) {
+      assertParentAllowed(db, { taskId: null, projectId: project.id, parentId });
+    }
+
     // Inside the write lock: `nextTaskNumber` reads MAX(number), and a deferred
     // transaction would let two creates read the same value (LAI-003).
     const number = nextTaskNumber(db, project.id);
@@ -350,6 +452,9 @@ export function createTask(
         createdVia: input.created_via ?? 'api',
         // Provenance, not a dependency (§4.6) — see `discovered_from` below.
         discoveredFrom: input.discovered_from ?? null,
+        parentTaskId: parentId,
+        dueOn: input.due_on ?? null,
+        plannedStart: input.planned_start ?? null,
         createdAt: now,
         updatedAt: now,
       })
@@ -373,7 +478,13 @@ export function createTask(
       taskId: id,
       ...activityActor(actor),
       type: 'task.created',
-      payload: { key: `${project.prefix}-${String(number)}`, title: input.title },
+      // The parent is named only when there is one, so a top-level task's row
+      // is the row it always was (§4.8, D-066).
+      payload: {
+        key: `${project.prefix}-${String(number)}`,
+        title: input.title,
+        ...(parentId === null ? {} : { parent_task_id: parentId }),
+      },
       now,
     });
 
@@ -391,6 +502,8 @@ export interface ListTasksFilter {
   ready?: boolean | undefined;
   /** A sprint id, or `none` for tasks in no sprint (§4.15, §6.4). */
   sprint?: string | undefined;
+  /** A task id: only its subtasks (§6.4, D-066). */
+  parent?: string | undefined;
   updatedSince?: number | null;
   limit: number;
   cursor: { sortKey: string | number; id: string } | null;
@@ -423,6 +536,11 @@ export function listTasks(
     conditions.push(
       filter.sprint === 'none' ? isNull(tasks.sprintId) : eq(tasks.sprintId, filter.sprint),
     );
+  }
+  if (filter.parent !== undefined) {
+    // One more `AND` before the cursor predicate, so paging is unchanged;
+    // §4.13's `tasks(parent_task_id)` index serves it.
+    conditions.push(eq(tasks.parentTaskId, filter.parent));
   }
   if (filter.tag !== undefined) {
     // Resolved to ids first so the filter is an indexed `IN` over the tag side —
@@ -473,6 +591,11 @@ export interface UpdateTaskInput {
   tags?: readonly string[] | undefined;
   priority?: TaskPriority | undefined;
   assignee_id?: string | null | undefined;
+  /** `null` detaches it from its parent; a string re-parents it (D-066). */
+  parent_task_id?: string | null | undefined;
+  /** `null` clears; unix-ms at a UTC midnight sets (§4.5). */
+  due_on?: number | null | undefined;
+  planned_start?: number | null | undefined;
   now?: number;
 }
 
@@ -498,6 +621,24 @@ export function updateTask(
   if (input.description_md !== undefined) changes.descriptionMd = input.description_md;
   if (input.acceptance_md !== undefined) changes.acceptanceMd = input.acceptance_md;
   if (input.priority !== undefined) changes.priority = input.priority;
+  if (input.due_on !== undefined && input.due_on !== task.dueOn) changes.dueOn = input.due_on;
+  if (input.planned_start !== undefined && input.planned_start !== task.plannedStart) {
+    changes.plannedStart = input.planned_start;
+  }
+
+  if (input.parent_task_id !== undefined && input.parent_task_id !== task.parentTaskId) {
+    // Not inside `BEGIN IMMEDIATE` — `updateTask` takes `db` only. The window
+    // is two concurrent PATCHes forming a two-deep chain, recorded in LAI-493
+    // as accepted rather than threading `sqlite` through every caller.
+    if (input.parent_task_id !== null) {
+      assertParentAllowed(db, {
+        taskId,
+        projectId: project.id,
+        parentId: input.parent_task_id,
+      });
+    }
+    changes.parentTaskId = input.parent_task_id;
+  }
 
   const reassigning = input.assignee_id !== undefined && input.assignee_id !== task.assigneeId;
   if (reassigning) {
