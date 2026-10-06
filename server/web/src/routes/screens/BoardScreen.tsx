@@ -14,12 +14,15 @@ import {
   filterCount,
   filterSignature,
   readBlocked,
+  readOverdue,
   readStatus,
+  readTop,
   readUpdated,
   updatedSince,
   withoutFilters,
 } from './board/filter-keys.ts';
 import { pageParam, readPage, readSort, sortParams } from './list/list-derive.ts';
+import { isOverdue } from '../../api/date-only.ts';
 import { NO_SELECTION } from './list/list-select.ts';
 import type { BulkRun } from './list/list-bulk.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
@@ -182,6 +185,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const statusScope = readStatus(params);
   const updatedWindow = readUpdated(params);
   const blockedOnly = readBlocked(params);
+  const topOnly = readTop(params);
+  const overdueOnly = readOverdue(params);
   /*
    * The window becomes a timestamp **when the window changes**, not on every
    * render — `Date.now()` in the filter would change its identity each time
@@ -466,10 +471,17 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
        * judgement `blockedState` itself records for the card.
        */
       if (blockedOnly && blockedState(task, board.byId) === false) return false;
+      /*
+       * Both client-side, like `blocked` (D-066): `byId` keeps every child so
+       * a parent's `n/m` still counts them, and overdue is derived from the
+       * date and the status rather than asked of the server.
+       */
+      if (topOnly && task.parent_task_id !== null) return false;
+      if (overdueOnly && !isOverdue(task, Date.now())) return false;
       if (needle === '') return true;
       return task.title.toLowerCase().includes(needle) || task.key.toLowerCase().includes(needle);
     };
-  }, [needle, agentOnly, blockedOnly, board.byId]);
+  }, [needle, agentOnly, blockedOnly, topOnly, overdueOnly, board.byId]);
 
   /**
    * Cards into lanes, against the project's own columns (LAI-266).
@@ -506,10 +518,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    */
   const shownTasks = useMemo(
     () =>
-      needle === '' && !agentOnly && !blockedOnly
+      needle === '' && !agentOnly && !blockedOnly && !topOnly && !overdueOnly
         ? visibleTasks.kept
         : visibleTasks.kept.filter(matches),
-    [visibleTasks.kept, needle, agentOnly, blockedOnly, matches],
+    [visibleTasks.kept, needle, agentOnly, blockedOnly, topOnly, overdueOnly, matches],
   );
 
   const collapsedGroups = useMemo(
@@ -745,6 +757,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           blocked={blockedOnly}
           onBlocked={(value) => {
             setParam('blocked', value ? 'true' : undefined);
+          }}
+          top={topOnly}
+          onTop={(value) => {
+            setParam('top', value ? 'true' : undefined);
+          }}
+          overdue={overdueOnly}
+          onOverdue={(value) => {
+            setParam('overdue', value ? 'true' : undefined);
           }}
           priority={priority}
           assignee={assignee}

@@ -3,8 +3,8 @@
  *
  * ## Four fields are not here, and their absence is the design
  *
- * The panel lists nine toggles and says in one sentence why the rest always
- * show. It does **not** render them greyed out — a disabled checkbox invites a
+ * The panel lists every toggle below and says in one sentence why the rest
+ * always show. It does **not** render them greyed out — a disabled checkbox invites a
  * hunt for the reason, where a sentence answers it.
  *
  *  - **Title.** A card without one is not a card.
@@ -22,7 +22,7 @@
  *
  * ## One prop, not nine booleans
  *
- * `TaskCard` takes this whole record. A tenth field then changes this file and
+ * `TaskCard` takes this whole record. A new field then changes this file and
  * the panel, and no call site.
  *
  * ## Hiding means not rendering
@@ -44,6 +44,10 @@ export interface CardFields {
   readonly age: boolean;
   /** The avatar, and the agent badge that sits on its corner. */
   readonly assignee: boolean;
+  /** `n/m` on a parent and `↳ KEY` on a child (D-066). */
+  readonly subtasks: boolean;
+  /** The due date, red once it is past and the task is still open (D-066). */
+  readonly due: boolean;
 }
 
 /** Everything on, so a board with no stored preference looks exactly as before. */
@@ -57,6 +61,8 @@ export const ALL_FIELDS: CardFields = Object.freeze({
   deps: true,
   age: true,
   assignee: true,
+  subtasks: true,
+  due: true,
 });
 
 /** The panel's rows, in the order it lists them. */
@@ -70,6 +76,8 @@ export const FIELD_LABELS: Readonly<Record<keyof CardFields, string>> = {
   deps: 'Dependency count',
   age: 'Last updated',
   assignee: 'Assignee',
+  subtasks: 'Subtasks',
+  due: 'Due date',
 };
 
 export const FIELD_KEYS = Object.keys(FIELD_LABELS) as (keyof CardFields)[];
@@ -91,6 +99,8 @@ export const FIELD_ICONS: Readonly<Record<keyof CardFields, string>> = {
   deps: '\u26ad',
   age: '\u25f4',
   assignee: '\u25cb',
+  subtasks: '\u21b3',
+  due: '\u25a6',
 };
 
 /**

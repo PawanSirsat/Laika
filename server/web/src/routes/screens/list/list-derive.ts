@@ -1,5 +1,7 @@
 import { ageDays, blockedState, boardStatusLabel, STALE_DAYS } from '../../../api/board-derive.ts';
 import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
+import { dateLabel, isOverdue } from '../../../api/date-only.ts';
+import { parentOf } from '../../../api/subtask-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 
 /**
@@ -41,6 +43,12 @@ export interface ListRow {
   readonly blocked: boolean;
   /** `blocked by LC-1`, ready to render. Empty when nothing blocks it. */
   readonly blockedBy: string;
+  /** `↳ LC-1` for a subtask, by the parent's key; empty for a top-level task (D-066). */
+  readonly parentKey: string;
+  /** `12 Jul 2026`, or empty when no due date is set. */
+  readonly due: string;
+  /** `bad` once it is past and the task is still open. */
+  readonly dueTone: Tone;
   /** `just now` / `4 min ago` / `27 Sep, 14:05`, with the full moment (LAI-486). */
   readonly created: TimeLabel;
   readonly createdTone: Tone;
@@ -151,6 +159,11 @@ export function listRows({
       labels: task.tags.join(', '),
       blocked,
       blockedBy: blockerKeys.length === 0 ? '' : `blocked by ${blockerKeys.join(', ')}`,
+      // The parent's key, never its id, for the reason the blocker is a key.
+      // A parent off the loaded page is `↳ …`: the row is a subtask either way.
+      parentKey: task.parent_task_id === null ? '' : `↳ ${parentOf(task, byId)?.key ?? '…'}`,
+      due: task.due_on === null ? '' : dateLabel(task.due_on),
+      dueTone: isOverdue(task, now) ? 'bad' : 'flat',
       created: timeLabel(task.created_at, now),
       // Staleness is about going quiet, so only UPDATED can be amber; an old
       // CREATED is just old.
@@ -162,7 +175,7 @@ export function listRows({
 }
 
 export type SortKey =
-  'key' | 'title' | 'status' | 'priority' | 'assignee' | 'sprint' | 'created' | 'updated';
+  'key' | 'title' | 'status' | 'priority' | 'assignee' | 'sprint' | 'due' | 'created' | 'updated';
 
 /** The design's column order, and the order the header renders in. */
 export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: string }[] = [
@@ -178,6 +191,8 @@ export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: str
    * not be told apart: a task updated today is either new or a year old, and
    * the screen said the same thing about both.
    */
+  /* The plan beside the actuals (D-066): a date, or nothing. */
+  { key: 'due', label: 'Due' },
   { key: 'created', label: 'Created' },
   { key: 'updated', label: 'Updated' },
 ];
@@ -225,6 +240,9 @@ function compareBy(key: SortKey, a: Task, b: Task, ra: ListRow, rb: ListRow): nu
       const y = sprintNumber(rb.sprintTag);
       return x === y ? 0 : x < y ? -1 : 1;
     }
+    case 'due':
+      // Undated rows are kept last by `sortRows`, outside the direction flip.
+      return (a.due_on ?? 0) - (b.due_on ?? 0);
     case 'created':
       // The raw stamp, so the arrow means what it says.
       return a.created_at - b.created_at;
@@ -250,6 +268,17 @@ export function sortRows(
     return task === undefined ? [] : [{ row, task }];
   });
   decorated.sort((x, y) => {
+    /*
+     * **No date sorts after every date, whichever way the arrow points**
+     * (D-066). Decided before the direction flip, because an absence is not
+     * the largest or the smallest date — reversing it would float undated
+     * work to the top of a "soonest first" list.
+     */
+    if (key === 'due') {
+      const xNone = x.task.due_on === null;
+      const yNone = y.task.due_on === null;
+      if (xNone !== yNone) return xNone ? 1 : -1;
+    }
     const primary = compareBy(key, x.task, y.task, x.row, y.row);
     if (primary !== 0) return ascending ? primary : -primary;
     return x.task.number - y.task.number;

@@ -4,6 +4,8 @@ import { initials } from '../../../theme/initials.ts';
 import { blockedState, blockers, staleFor, updatedAge } from '../../../api/board-derive.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import type { CardFields } from './card-fields.ts';
+import { dateLabel, isOverdue } from '../../../api/date-only.ts';
+import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-derive.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
 export interface TaskCardProps {
@@ -59,6 +61,9 @@ export function TaskCard({
   // Real since LAI-079. This was `demoTags(task.id)` until the tags table
   // landed; a demo module beside a live endpoint is a defect under D-032.
   const tags = fields.tags ? task.tags : [];
+  const progress = fields.subtasks ? subtaskProgress(childrenOf(task.id, byId)) : undefined;
+  const parent = fields.subtasks ? parentOf(task, byId) : undefined;
+  const overdue = fields.due && isOverdue(task, Date.now());
   const held = blockers(task, byId);
   const sprint = task.sprint_id === null ? undefined : sprintLabels?.get(task.sprint_id);
 
@@ -223,6 +228,44 @@ export function TaskCard({
               <path d="M9 15 15 9M10 6l1-1a4 4 0 1 1 6 6l-1 1M14 18l-1 1a4 4 0 1 1-6-6l1-1" />
             </svg>
             {task.blocked_by.length}
+          </span>
+        )}
+
+        {/*
+          **Subtasks, from both ends** (D-066). A parent says how far along it
+          is; a child says whose it is, by key — the design's `↳`. Read off
+          `byId`, which is the page: a parent whose children are filtered off
+          it shows no bar, and a child whose parent is off it shows `↳ …`.
+        */}
+        {fields.subtasks && progress !== undefined && (
+          <span className="card-subtasks card-above t-meta" title="Subtasks done">
+            <span aria-hidden="true">↳</span> {progress.done}/{progress.total}
+          </span>
+        )}
+        {fields.subtasks && task.parent_task_id !== null && (
+          <span
+            className="card-parent card-above t-meta"
+            title={
+              parent === undefined
+                ? 'Subtask of a task outside this board'
+                : `Subtask of ${parent.title}`
+            }
+          >
+            <span aria-hidden="true">↳</span> {parent?.key ?? '…'}
+          </span>
+        )}
+
+        {/* The due date, red with a mark once it is past and the task is still
+            open — finished late is finished (D-066). */}
+        {fields.due && task.due_on !== null && (
+          <span
+            className={
+              overdue ? 'card-due card-due-overdue card-above t-meta' : 'card-due card-above t-meta'
+            }
+            title={overdue ? 'Past due and still open' : 'Due'}
+          >
+            {overdue && <span aria-hidden="true">⚠</span>}
+            <time dateTime={new Date(task.due_on).toISOString()}>{dateLabel(task.due_on)}</time>
           </span>
         )}
 

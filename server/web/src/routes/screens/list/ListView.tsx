@@ -264,6 +264,7 @@ export function ListView({
             <col className="list-col-pri" />
             <col className="list-col-assignee" />
             <col className="list-col-spr" />
+            <col className="list-col-due" />
             <col className="list-col-created" />
             <col className="list-col-updated" />
           </colgroup>
@@ -387,8 +388,13 @@ export function ListView({
                         {row.title}
                       </span>
                     </span>
-                    {(row.labels !== '' || row.blockedBy !== '') && (
+                    {(row.labels !== '' || row.blockedBy !== '' || row.parentKey !== '') && (
                       <span className="list-sub">
+                        {row.parentKey !== '' && (
+                          <span className="list-parent" title="Subtask of">
+                            {row.parentKey}
+                          </span>
+                        )}
                         {row.labels !== '' && <span className="list-labels">{row.labels}</span>}
                         {row.blockedBy !== '' && (
                           <span className="list-blocked">{row.blockedBy}</span>
@@ -456,6 +462,15 @@ export function ListView({
                   {/* A <time> with the whole moment on hover (LAI-486): the
                       cell says "27 Sep, 14:05", the tooltip says which year
                       and second. */}
+                  <td className={`list-due list-tone-${row.dueTone}`}>
+                    {row.due !== '' && (
+                      <span title={row.dueTone === 'bad' ? 'Past due and still open' : 'Due'}>
+                        {row.dueTone === 'bad' && <span aria-hidden="true">⚠ </span>}
+                        {row.due}
+                      </span>
+                    )}
+                  </td>
+
                   <td className={`list-created list-tone-${row.createdTone}`}>
                     <time dateTime={row.created.iso} title={row.created.full}>
                       {row.created.text}

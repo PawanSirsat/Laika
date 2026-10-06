@@ -154,10 +154,14 @@ const STUB: ApiStub = {
     next_cursor: null,
   },
   '/api/v1/projects/laika-core': CORE,
-  '/api/v1/projects/laika-core/tasks': {
+  // The board's page, and the Subtasks section's `?parent=` — told apart by
+  // query, because a path-only answer would list every task as a child.
+  '/api/v1/projects/laika-core/tasks?limit=200': {
     data: [BLOCKER, SOURCE, SUBJECT, CHILD, LATE],
     next_cursor: null,
   },
+  '/api/v1/projects/laika-core/tasks?parent=t3&limit=200': { data: [], next_cursor: null },
+  '/api/v1/projects/laika-core/tasks?parent=t5&limit=200': { data: [], next_cursor: null },
   '/api/v1/projects/laika-core/members': {
     members: [
       { user_id: 'u1', name: 'Ada Lovelace', email: 'a@example.com', role: 'lead' },
@@ -655,7 +659,7 @@ void describe('the Jira-shaped task view (D-066)', () => {
     // Finished late is finished: the same date on a done task is not overdue.
     const done = await open('/board?project=laika-core&task=t5', {
       ...STUB,
-      '/api/v1/projects/laika-core/tasks': {
+      '/api/v1/projects/laika-core/tasks?limit=200': {
         data: [BLOCKER, SOURCE, SUBJECT, CHILD, { ...LATE, status: 'done' }],
         next_cursor: null,
       },

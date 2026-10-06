@@ -92,6 +92,20 @@ void describe('reading', () => {
     assert.deepEqual(read.fields, DEFAULT_PREFERENCES.fields);
   });
 
+  void test('a record stored before a field existed shows that field, not hides it', () => {
+    // LAI-495 added `subtasks` and `due`. A reader who saved their card
+    // layout last month never said no to them, so the new markers are on.
+    const read = readPreferences(
+      'laika',
+      fake(JSON.stringify({ laika: { fields: { tags: false, deps: false } } })),
+    );
+
+    assert.equal(read.fields.tags, false);
+    assert.equal(read.fields.deps, false);
+    assert.equal(read.fields.subtasks, true);
+    assert.equal(read.fields.due, true);
+  });
+
   void test('two projects do not read each other', () => {
     const stored = fake(
       JSON.stringify({ laika: { density: 'compact' }, other: { density: 'standard' } }),

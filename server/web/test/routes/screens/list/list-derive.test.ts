@@ -68,7 +68,7 @@ function rowsFor(tasks: readonly Task[], now = NOW) {
 }
 
 void describe('the List row', () => {
-  void test('states the design’s columns, in its order, plus Created', () => {
+  void test('states the design’s columns, in its order, plus Created and Due', () => {
     /*
      * **Eight, not the design's seven** (LAI-621). `Created` is an owner-asked
      * addition, not drift: the design dated a task only by when it was last
@@ -81,7 +81,8 @@ void describe('the List row', () => {
      */
     assert.deepEqual(
       LIST_COLUMNS.map((c) => c.label),
-      ['Key', 'Summary', 'Status', 'Pri', 'Assignee', 'Spr', 'Created', 'Updated'],
+      // `Due` joined them with D-066: the plan beside the two actuals.
+      ['Key', 'Summary', 'Status', 'Pri', 'Assignee', 'Spr', 'Due', 'Created', 'Updated'],
     );
   });
 
@@ -429,5 +430,59 @@ void describe('the STATUS cell speaks the board’s column names (LAI-490)', () 
     // alphabetically by label it would come after "To do".
     const order = sortRows(rows, byId, 'status', true).map((r) => r.key);
     assert.deepEqual(order, ['LC-2', 'LC-3', 'LC-1']);
+  });
+});
+
+void describe('subtasks and the due date on a row (D-066)', () => {
+  const JUL_12 = Date.UTC(2026, 6, 12);
+
+  void test('names the parent by its key, never by its id, and says nothing for a top-level task', () => {
+    const parent = task({ id: '01J0PARENT', key: 'LC-1' });
+    const child = task({ id: '01J0CHILD', key: 'LC-2', parent_task_id: '01J0PARENT' });
+    const { rows } = rowsFor([parent, child]);
+
+    assert.equal(rows[1]?.parentKey, '↳ LC-1');
+    assert.doesNotMatch(rows[1]?.parentKey ?? '', /01J0/);
+    assert.equal(rows[0]?.parentKey, '');
+  });
+
+  void test('a parent outside the loaded page is still a subtask, marked `↳ …`', () => {
+    const child = task({ id: 'c', key: 'LC-2', parent_task_id: 'elsewhere' });
+    assert.equal(rowsFor([child]).rows[0]?.parentKey, '↳ …');
+  });
+
+  void test('the due date reads as a date, and is bad only while open and past', () => {
+    const open = task({ id: 'a', key: 'LC-1', due_on: JUL_12, status: 'in_progress' });
+    const done = task({ id: 'b', key: 'LC-2', due_on: JUL_12, status: 'done' });
+    const none = task({ id: 'c', key: 'LC-3' });
+    const { rows } = rowsFor([open, done, none], JUL_12 + 3 * DAY);
+
+    assert.equal(rows[0]?.due, '12 Jul 2026');
+    assert.equal(rows[0]?.dueTone, 'bad');
+    assert.equal(rows[1]?.dueTone, 'flat', 'finished late is finished');
+    assert.equal(rows[2]?.due, '');
+    // Not yet due: the date shows, plainly.
+    assert.equal(rowsFor([open], JUL_12 - DAY).rows[0]?.dueTone, 'flat');
+  });
+
+  void test('sorts by due with undated work last, whichever way the arrow points', () => {
+    const late = task({ id: 'a', key: 'LC-1', due_on: JUL_12 + 5 * DAY });
+    const soon = task({ id: 'b', key: 'LC-2', due_on: JUL_12 });
+    const none = task({ id: 'c', key: 'LC-3' });
+    const { rows, byId } = rowsFor([late, soon, none]);
+
+    const asc = sortRows(rows, byId, 'due', true).map((r) => r.key);
+    assert.deepEqual(asc, ['LC-2', 'LC-1', 'LC-3']);
+    const desc = sortRows(rows, byId, 'due', false).map((r) => r.key);
+    assert.deepEqual(desc, ['LC-1', 'LC-2', 'LC-3'], 'undated rows sort last both ways');
+  });
+
+  void test('Due is a column, between Spr and Created', () => {
+    const keys = LIST_COLUMNS.map((c) => c.key);
+    assert.deepEqual(keys.slice(keys.indexOf('sprint'), keys.indexOf('created') + 1), [
+      'sprint',
+      'due',
+      'created',
+    ]);
   });
 });
