@@ -72,7 +72,50 @@ export interface ReadToolContext {
   now?: () => number;
 }
 
-const PAGE = { limit: 200, cursor: null } as const;
+/**
+ * Every row of a list service, not the first page (LAI-704).
+ *
+ * The list services page by `(sort key, id)` and return `limit + 1` rows so a
+ * caller can tell there is more. These tools took one page of 200 and treated
+ * the 201 rows as the whole list — so on a 328-task project
+ * `get_project_context` counted 201 tasks, and `list_ready_tasks` sorted only
+ * the oldest-updated 201 ready ones, sending an agent past a newer p1. This
+ * walks the same cursor the REST route hands a browser, to the end.
+ *
+ * **Capped, and the cap is reported.** 50 pages is 10,000 rows — a runaway
+ * guard, not a working size — and reaching it sets `truncated` so a tool can
+ * say its counts are a floor rather than print a short number as if whole.
+ */
+const PAGE_SIZE = 200;
+const MAX_PAGES = 50;
+
+interface Cursor {
+  sortKey: string | number;
+  id: string;
+}
+
+function everyRow<T>(
+  fetchPage: (page: { limit: number; cursor: Cursor | null }) => T[],
+  keyOf: (row: T) => Cursor,
+): { rows: T[]; truncated: boolean } {
+  const rows: T[] = [];
+  let cursor: Cursor | null = null;
+  for (let page = 0; page < MAX_PAGES; page += 1) {
+    const batch = fetchPage({ limit: PAGE_SIZE, cursor });
+    rows.push(...batch.slice(0, PAGE_SIZE));
+    const last = batch[PAGE_SIZE - 1];
+    if (batch.length <= PAGE_SIZE || last === undefined) return { rows, truncated: false };
+    cursor = keyOf(last);
+  }
+  return { rows, truncated: true };
+}
+
+/** The `(sort key, id)` each service orders by — the same keys its REST route pages on. */
+const byTaskUpdated = (t: TaskView): Cursor => ({ sortKey: t.updated_at, id: t.id });
+const byRowUpdated = (r: { updatedAt: number; id: string }): Cursor => ({
+  sortKey: r.updatedAt,
+  id: r.id,
+});
 
 export function registerReadTools(server: McpServer, context: ReadToolContext): void {
   const { db, actor } = context;
@@ -99,8 +142,11 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         // whose job is to answer "which project?" — exactly the failure §7.3
         // warns about, a document that silently blows an agent's context window.
         // `get_project_context` is how you ask for one, deliberately.
-        const rows = listProjects(db, actor, { ...PAGE, updatedSince: null })
-          .map(projectView)
+        const rows = everyRow(
+          (page) => listProjects(db, actor, { ...page, updatedSince: null }),
+          byRowUpdated,
+        )
+          .rows.map(projectView)
           .map(({ context_md, ...rest }) => ({ ...rest, context_length: context_md.length }));
         const now = clock();
 
@@ -142,15 +188,24 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
       try {
         const slugs =
           project === undefined
-            ? listProjects(db, actor, { ...PAGE, updatedSince: null }).map((p) => p.slug)
+            ? everyRow(
+                (page) => listProjects(db, actor, { ...page, updatedSince: null }),
+                byRowUpdated,
+              ).rows.map((p) => p.slug)
             : [project];
 
         // `ready: true` is the **same filter the REST `?ready=` query uses**, which
         // is the same derived `isReady` the board's Ready column shows. A second
         // definition here would not fail a test — it would quietly send an agent
         // to a different task than the board says is next.
-        const found = slugs.flatMap((slug) =>
-          listTasks(db, actor, slug, { ...PAGE, ready: true, updatedSince: null }),
+        // Every ready task, then sorted: sorting one page would rank only the
+        // oldest-updated 201 and could miss the newest p1 (LAI-704).
+        const found = slugs.flatMap(
+          (slug) =>
+            everyRow(
+              (page) => listTasks(db, actor, slug, { ...page, ready: true, updatedSince: null }),
+              byTaskUpdated,
+            ).rows,
         );
 
         const ordered = found.sort(byPriorityThenAge).slice(0, limit ?? 25);
@@ -207,8 +262,11 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         // Soft-deleted comments are dropped, not tombstoned. A tombstone exists so
         // a client syncing with `updated_since` learns a row went away; an agent
         // reading a task for the first time should simply not see it.
-        const comments = listComments(db, actor, view.id, { ...PAGE, updatedSince: null })
-          .filter((row) => row.deletedAt === null)
+        const comments = everyRow(
+          (page) => listComments(db, actor, view.id, { ...page, updatedSince: null }),
+          (row) => ({ sortKey: row.createdAt, id: row.id }),
+        )
+          .rows.filter((row) => row.deletedAt === null)
           .map(commentView);
 
         const activity = listProjectActivity(db, actor, slug, {
@@ -230,11 +288,10 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
             parent = summarise(undefined, view.parent_task_id);
           }
         }
-        const subtasks = listTasks(db, actor, slug, {
-          ...PAGE,
-          updatedSince: null,
-          parent: view.id,
-        }).map((t) => ({
+        const subtasks = everyRow(
+          (page) => listTasks(db, actor, slug, { ...page, updatedSince: null, parent: view.id }),
+          byTaskUpdated,
+        ).rows.map((t) => ({
           id: t.id,
           key: t.key,
           title: t.title,
@@ -333,7 +390,11 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         const doc = getProjectContext(db, actor, project);
         const members = listMembers(db, actor, project);
         const nameOf = nameLookup(members);
-        const open = listTasks(db, actor, project, { ...PAGE, updatedSince: null });
+        const everyTask = everyRow(
+          (page) => listTasks(db, actor, project, { ...page, updatedSince: null }),
+          byTaskUpdated,
+        );
+        const open = everyTask.rows;
         const now = clock();
 
         // §7.1 says "last 10 decisions". Laika has **no decision entity**: §7.3
@@ -371,6 +432,9 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
             [...byStatus.entries()].map(([status, count]) => `${status}: ${String(count)}`),
             'No tasks.',
           ),
+          ...(everyTask.truncated
+            ? ['', `_Counted from the first ${String(open.length)} tasks; there are more._`]
+            : []),
           '',
           '### Team',
           bullets(
@@ -404,10 +468,10 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
     },
     ({ project }) => {
       try {
-        const rows = listSprints(db, actor, project, {
-          ...PAGE,
-          updatedSince: null,
-        });
+        const rows = everyRow(
+          (page) => listSprints(db, actor, project, { ...page, updatedSince: null }),
+          (sprint) => ({ sortKey: sprint.starts_on, id: sprint.id }),
+        ).rows;
 
         // Counted by the service in one grouped query. Bucketing a page of
         // tasks here would be short by however many the page cut off, and
