@@ -2,11 +2,12 @@
 id: LAI-703
 title: 'Every screen reads the whole list, not page one'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-702]
 discovered-from: LAI-702
-status: backlog
+status: in-progress
+started: 2026-10-06T12:30:15Z
 ---
 
 ## Goal
