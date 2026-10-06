@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-702
-status: review
+status: done
 started: 2026-10-06T12:39:10Z
 finished: 2026-10-06T12:42:46Z
 ---
@@ -59,3 +59,10 @@ tests because a fresh task's two timestamps are equal, **caught by the third**
 `plugin-mcp` unchanged. Lint, format, typecheck exit 0.
 
 A crossing into CORE's area on the owner's direct instruction, as LAI-493 was.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted with LAI-702…704 as one sweep. Each criterion read against the diff;
+each new test shown red against the code it replaces (the screens by swapping
+in their pre-fix versions, checked to have landed); the guard and the server
+helper each caught a mutation. Gate on `master`, push, deploy.

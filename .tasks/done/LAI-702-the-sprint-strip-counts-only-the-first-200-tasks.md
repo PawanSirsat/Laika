@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-701
-status: review
+status: done
 started: 2026-10-06T12:26:13Z
 finished: 2026-10-06T12:30:15Z
 ---
@@ -68,3 +68,10 @@ read 1/2 before — the red run is the pre-fix code); an endless list shows the
 partial marker. Mutation: the helper stopping after page one turns two unit
 tests red. The other screens with the same defect are LAI-703; the agents'
 tools are LAI-704.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted with LAI-702…704 as one sweep. Each criterion read against the diff;
+each new test shown red against the code it replaces (the screens by swapping
+in their pre-fix versions, checked to have landed); the guard and the server
+helper each caught a mutation. Gate on `master`, push, deploy.

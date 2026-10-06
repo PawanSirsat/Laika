@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: [LAI-702]
 discovered-from: LAI-702
-status: review
+status: done
 started: 2026-10-06T12:30:15Z
 finished: 2026-10-06T12:39:10Z
 ---
@@ -95,3 +95,10 @@ no `everyPage`). Web `1219/1219`, lint, format, `tsc` exit 0.
 **Not surfaced on screen:** `truncated` beyond the strip. The cap is 25 pages
 (5,000 rows) per list; reaching it elsewhere is reported by the helper and
 not yet drawn.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted with LAI-702…704 as one sweep. Each criterion read against the diff;
+each new test shown red against the code it replaces (the screens by swapping
+in their pre-fix versions, checked to have landed); the guard and the server
+helper each caught a mutation. Gate on `master`, push, deploy.
