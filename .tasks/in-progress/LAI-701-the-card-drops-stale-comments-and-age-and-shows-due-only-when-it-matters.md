@@ -2,10 +2,11 @@
 id: LAI-701
 title: 'The card drops stale, comment count and age, and shows the due date only when it is today or past'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-495]
-status: backlog
+status: in-progress
+started: 2026-10-06T10:27:43Z
 ---
 
 ## Goal

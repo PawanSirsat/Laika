@@ -20,7 +20,17 @@
  *    judge this one*. Hiding it silently converts **unknown** into **fine**,
  *    which is the more damaging of the two errors.
  *
- * ## One prop, not nine booleans
+ * ## Three fields were removed, not hidden (LAI-701, D-069)
+ *
+ * *Stale marker*, *Comment count* and *Last updated* were toggles here until
+ * the owner said of them *"I don't need that"*. They are gone from the card
+ * rather than defaulted off, because a default cannot reach a board whose
+ * reader saved their layout already. `readPreferences` reads stored fields by
+ * this list, so an old record carrying those keys is read cleanly and they are
+ * ignored. Staleness is still flagged by the server and listed on the Activity
+ * tab; the comment count is still in the task view.
+ *
+ * ## One prop, not a boolean per field
  *
  * `TaskCard` takes this whole record. A new field then changes this file and
  * the panel, and no call site.
@@ -38,15 +48,16 @@ export interface CardFields {
   readonly priority: boolean;
   readonly sprint: boolean;
   readonly ready: boolean;
-  readonly stale: boolean;
-  readonly comments: boolean;
   readonly deps: boolean;
-  readonly age: boolean;
   /** The avatar, and the agent badge that sits on its corner. */
   readonly assignee: boolean;
   /** `n/m` on a parent and `↳ KEY` on a child (D-066). */
   readonly subtasks: boolean;
-  /** The due date, red once it is past and the task is still open (D-066). */
+  /**
+   * The due date — **only when it is today or past** on an open task (LAI-701,
+   * D-069): amber *Due today*, red once it is gone. A date still ahead draws
+   * nothing.
+   */
   readonly due: boolean;
 }
 
@@ -56,10 +67,7 @@ export const ALL_FIELDS: CardFields = Object.freeze({
   priority: true,
   sprint: true,
   ready: true,
-  stale: true,
-  comments: true,
   deps: true,
-  age: true,
   assignee: true,
   subtasks: true,
   due: true,
@@ -71,10 +79,7 @@ export const FIELD_LABELS: Readonly<Record<keyof CardFields, string>> = {
   priority: 'Priority',
   sprint: 'Sprint',
   ready: 'Ready marker',
-  stale: 'Stale marker',
-  comments: 'Comment count',
   deps: 'Dependency count',
-  age: 'Last updated',
   assignee: 'Assignee',
   subtasks: 'Subtasks',
   due: 'Due date',
@@ -94,10 +99,7 @@ export const FIELD_ICONS: Readonly<Record<keyof CardFields, string>> = {
   priority: '\u2191',
   sprint: '\u25f7',
   ready: '\u25cf',
-  stale: '\u25f4',
-  comments: '\u25a1',
   deps: '\u26ad',
-  age: '\u25f4',
   assignee: '\u25cb',
   subtasks: '\u21b3',
   due: '\u25a6',
