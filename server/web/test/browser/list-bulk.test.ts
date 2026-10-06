@@ -52,6 +52,11 @@ const TASKS = Array.from({ length: 60 }, (_, i) => {
     blocked_by: [],
     blocks: [],
     discovered_from: null,
+    parent_task_id: null,
+    due_on: null,
+    planned_start: null,
+    branch: null,
+    external_ref: null,
     stale_flagged_at: null,
     created_at: 1,
     // Newest first is the default order; LC-1 is the newest, so it is row one.

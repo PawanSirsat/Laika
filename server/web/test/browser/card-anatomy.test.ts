@@ -52,6 +52,11 @@ const task = (over: Record<string, unknown>) => ({
   blocked_by: [],
   blocks: [],
   discovered_from: null,
+  parent_task_id: null,
+  due_on: null,
+  planned_start: null,
+  branch: null,
+  external_ref: null,
   stale_flagged_at: null,
   created_at: 1,
   // Relative to *now*, never a fixed epoch — a pinned fixture read as 240 days
