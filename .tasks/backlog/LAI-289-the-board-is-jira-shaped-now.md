@@ -102,3 +102,14 @@ quoted in that task and retired there, not here.
 which deleted a filter band because *"the design has no such row"*. The Jira
 reference has one. It is SHELL's file and LAI-290 retires it — but it is the
 same reversal as this task's, and the two should be reviewed together.
+
+## CHIEF note, 2026-10-06
+
+**Item 4 is narrower now, and items 2 and part of 1 are delivered.** D-066
+(LAI-492) added the §4.5 rows for `parent_task_id`, `due_on` and
+`planned_start`, removed per-task dates from §1.1 and recorded the D-014
+reversal with its cost, as the second and third criteria here ask. What this
+task still owns: §11.4.1's columns and swimlanes text, §11.4.3 as a
+task-dated timeline, the `work_type` and `flagged_at` rows if they are still
+wanted, and retiring the LAI-266 exemptions. The ids LAI-291/292/293 named
+above now belong to unrelated tasks; read them as "the column tasks".

@@ -61,6 +61,8 @@ The bundle Laika is betting on (`VISION.md` §4). Everything else supports these
 | Tasks CRUD, statuses, priorities, assignees | `[planned phase 2]` | LAI-011 · SPEC §4.5, §5 |
 | Task dependencies + `ready` computation | `[planned phase 2]` | SPEC §4.6 — `ready` is derived, never stored |
 | `discovered-from` provenance | `[planned phase 2]` | SPEC §4.6 — provenance, **not** a blocker |
+| **Subtasks (one level)** | `[planned phase 2]` | `tasks.parent_task_id` — SPEC §4.5, §4.6, D-066. Containment, not blocking; no epics. LAI-493/494/495 |
+| **Due date and planned start** | `[planned phase 2]` | `tasks.due_on`, `tasks.planned_start` — SPEC §4.5, D-066. Reverses D-014's non-goal; the timeline still draws sprints |
 | **Sprints** | `[planned phase 2]` | `sprints` table + `tasks.sprint_id` + CRUD — SPEC §4.15, D-013. Reverses the §1.1 non-goal; **story points still excluded** |
 | **Kanban board view** | `[planned phase 2]` | SPEC §11.4.1 — columns by status, drag to transition |
 | **List view** | `[planned phase 2]` | SPEC §11.4.1 — same data, sortable/filterable table |
@@ -163,11 +165,14 @@ From `SPEC.md` §1.1 and `VISION.md` §6, restated so nobody re-proposes them:
 
 Multi-org / multi-tenant hosting · Postgres · WebSockets · custom fields · file
 uploads · a plugin system of our own · mobile apps · SSO/SAML/SCIM · **story
-points and epics** · time tracking and billing · **per-task planned or due
-dates** · **telemetry of any kind** · anything that reads file contents, diffs,
-or prompts from a session.
+points and epics** · time tracking and billing · **telemetry of any kind** ·
+anything that reads file contents, diffs, or prompts from a session.
+
+**Moved off this list 2026-10-06:** *per-task planned or due dates* → shipped
+as `due_on` / `planned_start` (D-066), with subtasks one level deep. Epics and
+story points stayed.
 
 **Moved off this list 2026-08-24:** *sprints* → phase 2 (D-013) and *Gantt
 charts* → phase 2.5 as a sprint-based timeline (D-014). Note what stayed: story
-points and per-task dates. The timeline draws its axis from sprint boundaries and
+points. The timeline draws its axis from sprint boundaries and
 must keep doing so — see D-014.
