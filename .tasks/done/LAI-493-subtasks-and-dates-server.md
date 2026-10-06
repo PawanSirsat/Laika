@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: [LAI-492]
 discovered-from: LAI-290
-status: review
+status: done
 started: 2026-10-06T06:47:28Z
 finished: 2026-10-06T08:46:00Z
 ---
@@ -94,3 +94,14 @@ rebuilds is filed as **LAI-497** (the `0019` comments rebuild and
 `services/tasks.ts`, because `vocabularies.test.ts` refuses a tool that
 spells out `done` / `cancelled`, and one definition of the bar is what the
 client mirrors anyway.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted. The diff, not the ticks: the CHECK and the FK are in `schema.ts`
+and in `0024`'s `CREATE TABLE`; the hand-edit to the `INSERT … SELECT` is the
+one the comment names; `migrate.test.ts` migrates a populated pre-rebuild
+database and asks `PRAGMA foreign_key_check`; `assertParentAllowed` answers
+`self` / `project` / `depth` and the route test reads the `details` back off
+the wire; `parity` and `plugin-mcp` unchanged. The red is the five
+`view-type-drift` lines the task quotes. Held on local `master`, not pushed,
+until LAI-494 declares them. **LAI-494 may start against this.**
