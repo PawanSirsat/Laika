@@ -2,11 +2,12 @@
 id: LAI-493
 title: 'Subtasks and dates — the server half: schema, service, routes, MCP'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-492]
 discovered-from: LAI-290
-status: backlog
+status: in-progress
+started: 2026-10-06T06:47:28Z
 ---
 
 ## Goal
