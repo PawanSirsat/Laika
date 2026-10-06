@@ -5,7 +5,8 @@ area: web
 assignee: chief
 priority: p2
 depends-on: [LAI-494]
-status: review
+status: done
+closed: 2026-10-06T09:13:49Z
 finished: 2026-10-06T09:13:48Z
 started: 2026-10-06T09:11:53Z
 ---
@@ -44,4 +45,10 @@ touched, because another session holds uncommitted edits to it (LAI-495).
   (16px against 32px), green after.
 - Seen through the harness in dark and light: four matching squares.
 - Lint 0, format 0, typecheck 0; the drawer suite 6/6.
+
+## Review
+
+Accepted 2026-10-06T09:13:49Z by CHIEF, who built it on the owner's instruction. Two
+files, both `server/web/`; `TaskDetailPanel.tsx` untouched, as the notes
+required. The test was shown red before the CSS. Both themes seen.
 
