@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: [LAI-493]
 discovered-from: LAI-290
-status: review
+status: done
 started: 2026-10-06T08:46:57Z
 finished: 2026-10-06T09:07:27Z
 ---
@@ -99,3 +99,13 @@ markers and the `top` filter are LAI-495. The demo-only *Hand to my agent*
 button stays under its D-032 flag (it is already absent from a production
 build, which `task-panel.test` proves) rather than being deleted from a task
 about layout.
+
+## Review — CHIEF, 2026-10-06
+
+Accepted. Read against the diff: the Details rows are in the stated order
+and the test asserts them by name; the breadcrumb, eye, dates, parent picker,
+reporter, foot and Development card each have a request- or text-level
+assertion; `view-type-drift` is green with no `clientOmits`; `sprint-control`'s
+source scans still match; the date helpers have one home. The two things the
+real-instance pass found are fixed in the same task. Gate on `master` runs
+before the push, as always.
