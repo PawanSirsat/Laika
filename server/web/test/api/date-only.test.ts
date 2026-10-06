@@ -4,6 +4,7 @@ import {
   DAY_MS,
   dateInputToMs,
   dateLabel,
+  dateLabelShort,
   isOverdue,
   msToDateInput,
   startOfUtcDay,
@@ -22,6 +23,7 @@ void describe('date-only values (D-066)', () => {
   void test('labels the way the owner’s screenshot does', () => {
     assert.equal(dateLabel(JUL_12), '12 Jul 2026');
     assert.equal(dateLabel(Date.UTC(2026, 0, 1)), '1 Jan 2026');
+    assert.equal(dateLabelShort(JUL_12), '12 Jul');
   });
 
   void test('startOfUtcDay floors to the day', () => {
