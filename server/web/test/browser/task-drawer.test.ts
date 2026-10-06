@@ -361,4 +361,50 @@ void describe('the task drawer', () => {
       await h.close();
     }
   });
+
+  void test('the Details card’s Assignee control reads like the rail’s other fields', async () => {
+    /*
+     * LAI-499, from the owner's crop: the board card's boxed native select,
+     * dropped into a rail whose Priority and Sprint read as text. Three
+     * properties, each one the browser's own chrome fails: no native
+     * appearance, nothing painted at rest, and the control filling its row.
+     *
+     * **Filling is measured by right edges, not a share of the card.** This
+     * task is unassigned, so a Claim button shares the row; what must hold is
+     * that the control reaches the row's end and the select reaches the
+     * control's, whatever else sits beside it.
+     */
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await openDrawer(h);
+      await h.page.locator('.panel-head').waitFor({ timeout: 10_000 });
+
+      const select = h.page.locator('.meta-person .assign-pick select');
+      await select.waitFor({ timeout: 10_000 });
+      const seen = await select.evaluate((el) => {
+        const c = getComputedStyle(el);
+        const right = (n: Element | null) => (n === null ? -1 : n.getBoundingClientRect().right);
+        return {
+          appearance: c.appearance,
+          background: c.backgroundColor,
+          select: right(el),
+          pick: right(el.closest('.assign-pick')),
+          control: right(el.closest('.assign')),
+          row: right(el.closest('.meta-person')),
+        };
+      });
+      assert.equal(seen.appearance, 'none', 'the browser’s own select chrome is showing');
+      assert.equal(seen.background, 'rgba(0, 0, 0, 0)', 'the select is painted at rest');
+      assert.ok(
+        Math.abs(seen.control - seen.row) <= 1,
+        `the control stops short of its row: ${JSON.stringify(seen)}`,
+      );
+      assert.ok(
+        Math.abs(seen.select - seen.pick) <= 1,
+        `the select stops short of its box: ${JSON.stringify(seen)}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
 });
