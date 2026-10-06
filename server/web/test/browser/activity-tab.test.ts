@@ -364,3 +364,85 @@ void describe('the Activity tab', () => {
     }
   });
 });
+
+/**
+ * LAI-703: these screens read one page of their list and showed it as the
+ * whole. Each is served two pages here, and what is only on page two must
+ * reach the screen.
+ */
+void describe('screens read every page, not the first (LAI-703)', () => {
+  const PAGE_ONE = [
+    T('t1', 'LAI-9', 'Parity tests', 'in_progress', 'u1'),
+    T('t9', 'LAI-20', 'Something to do', 'todo', null),
+  ];
+  const PAGE_TWO = [T('t33', 'LAI-33', 'Only on the second page', 'todo', null)];
+  const PAGED: ApiStub = {
+    ...STUB,
+    '/api/v1/projects/laika-core/tasks?limit=200': { data: PAGE_ONE, next_cursor: 'P2' },
+    '/api/v1/projects/laika-core/tasks?limit=200&cursor=P2': { data: PAGE_TWO, next_cursor: null },
+  };
+
+  void test('Activity’s stale list includes a task from the second page', async () => {
+    const h = await open('/activity?project=laika-core', PAGED);
+    try {
+      const stale = h.page.locator('.rail-card-stale');
+      await stale.waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(
+        () => (document.querySelector('.rail-card-stale')?.textContent ?? '').includes('LAI-33'),
+        { timeout: 10_000 },
+      );
+      // Positive control: page one is there too, so this is not a different list.
+      assert.match(await stale.innerText(), /LAI-9/);
+      assert.deepEqual(h.unmatched, []);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Unlisted shows a note from the second page', async () => {
+    const note = (id: string, text: string) => ({
+      id,
+      user_id: 'u1',
+      token_id: 'tok1',
+      repo: 'PawanSirsat/Laika',
+      note: text,
+      promoted_task_id: null,
+      dismissed_at: null,
+      created_at: Date.now() - 3_600_000,
+    });
+    const h = await open('/unlisted', {
+      ...PAGED,
+      '/api/v1/unlisted?limit=200': { data: [note('n1', 'A note on page one')], next_cursor: 'U2' },
+      '/api/v1/unlisted?limit=200&cursor=U2': {
+        data: [note('n2', 'A note only on page two')],
+        next_cursor: null,
+      },
+    });
+    try {
+      await h.page.getByText('A note on page one').waitFor({ timeout: 20_000 });
+      await h.page.getByText('A note only on page two').waitFor({ timeout: 10_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the Calendar asks for the second page of tasks', async () => {
+    let second = false;
+    const h = await open('/calendar?project=laika-core', {
+      ...PAGED,
+      '/api/v1/projects/laika-core/tasks?limit=200&cursor=P2': () => {
+        second = true;
+        return { data: PAGE_TWO, next_cursor: null };
+      },
+    });
+    try {
+      await h.page.locator('main').waitFor({ timeout: 20_000 });
+      for (let i = 0; i < 50 && !second; i += 1) await h.page.waitForTimeout(100);
+      // Its dates are still placeholders (D-066 names the follow-up), so what
+      // it can be held to is reading the whole list it places them on.
+      assert.equal(second, true, 'the Calendar stopped at page one');
+    } finally {
+      await h.close();
+    }
+  });
+});

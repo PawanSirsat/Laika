@@ -1,3 +1,4 @@
+import { pageSuffix, type PageQuery } from './every-page.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
 
@@ -60,8 +61,11 @@ export interface CreateTokenInput {
   readonly expires_at?: number;
 }
 
-export function listTokens(signal?: AbortSignal): Promise<Page<TokenView>> {
-  return request<Page<TokenView>>('/tokens', signal === undefined ? {} : { signal });
+export function listTokens(signal?: AbortSignal, page: PageQuery = {}): Promise<Page<TokenView>> {
+  return request<Page<TokenView>>(
+    `/tokens${pageSuffix(page)}`,
+    signal === undefined ? {} : { signal },
+  );
 }
 
 export function createToken(input: CreateTokenInput): Promise<CreatedToken> {
@@ -79,9 +83,13 @@ export function revokeToken(id: string): Promise<void> {
  * both the server's to decide. The caller does not pre-check the role beyond
  * deciding whether to render the control at all.
  */
-export function listUserTokens(userId: string, signal?: AbortSignal): Promise<Page<TokenView>> {
+export function listUserTokens(
+  userId: string,
+  signal?: AbortSignal,
+  page: PageQuery = {},
+): Promise<Page<TokenView>> {
   return request<Page<TokenView>>(
-    `/users/${encodeURIComponent(userId)}/tokens`,
+    `/users/${encodeURIComponent(userId)}/tokens${pageSuffix(page)}`,
     signal === undefined ? {} : { signal },
   );
 }

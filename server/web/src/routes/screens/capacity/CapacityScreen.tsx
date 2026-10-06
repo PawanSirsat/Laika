@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -99,8 +100,10 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
         setError(cause);
       });
 
-    listUnlisted({}, signal)
-      .then((page) => {
+    everyPage((cursor) => listUnlisted({ cursor, limit: 200 }, signal))
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         setUnlisted(page.data);
       })
       .catch(() => {
@@ -116,8 +119,15 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
   // figure nobody watches.
   useEffect(() => {
     const controller = new AbortController();
-    listProjects({}, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listProjects(
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         if (!controller.signal.aborted) setSpaceCount(page.data.length);
       })
       .catch(() => {

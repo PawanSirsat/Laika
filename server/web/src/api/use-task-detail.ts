@@ -1,3 +1,4 @@
+import { everyPage } from './every-page.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { listTaskActivity, type ActivityEvent } from './activity.ts';
 import { addComment, isComment, listComments, type Comment } from './comments.ts';
@@ -45,10 +46,27 @@ export function useTaskDetail(slug: string | undefined, taskId: string | undefin
     setState((s) => ({ ...s, status: 'loading' }));
 
     Promise.all([
-      listComments(taskId, controller.signal),
-      listTaskActivity(slug, taskId, controller.signal),
+      // Every page of each (LAI-703): a task's 101st comment is its newest, and
+      // the first page of an oldest-first thread is exactly the part to keep.
+      everyPage((cursor) =>
+        listComments(
+          taskId,
+          controller.signal,
+          cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        ),
+      ),
+      everyPage((cursor) =>
+        listTaskActivity(
+          slug,
+          taskId,
+          controller.signal,
+          cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        ),
+      ),
     ])
-      .then(([comments, activity]) => {
+      .then(([commentPages, activityPages]) => {
+        const comments = { data: commentPages.items };
+        const activity = { data: activityPages.items };
         setState({
           status: 'ready',
           // Oldest-first from the server (LAI-047); left in that order.

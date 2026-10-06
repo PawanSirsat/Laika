@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
@@ -86,8 +87,16 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
   useEffect(() => {
     if (slug === undefined) return;
     const controller = new AbortController();
-    listMeetingReviews(slug, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listMeetingReviews(
+        slug,
+        controller.signal,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         setReviews(page.data);
         setOpenId((current) => current ?? page.data[0]?.id);
       })
@@ -95,8 +104,16 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setError(cause);
       });
-    listTasks(slug, {}, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listTasks(
+        slug,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         setTasksByKey(new Map(page.data.map((task) => [task.key, task])));
       })
       .catch(() => {

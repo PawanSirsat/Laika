@@ -29,6 +29,8 @@ export interface UnlistedFilter {
   /** Dismissed rows are hidden by default — dismissing is not deleting. */
   readonly includeDismissed?: boolean | undefined;
   readonly cursor?: string | undefined;
+  /** Page size, up to 200 (§6.3) — `everyPage` asks for the largest (LAI-703). */
+  readonly limit?: number | undefined;
 }
 
 export function listUnlisted(
@@ -40,6 +42,7 @@ export function listUnlisted(
   if (filter.since !== undefined) params.set('since', String(filter.since));
   if (filter.includeDismissed === true) params.set('include_dismissed', 'true');
   if (filter.cursor !== undefined) params.set('cursor', filter.cursor);
+  if (filter.limit !== undefined) params.set('limit', String(filter.limit));
 
   const query = params.toString();
   return request<Page<UnlistedWork>>(

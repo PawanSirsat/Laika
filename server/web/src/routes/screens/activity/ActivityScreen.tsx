@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -36,8 +37,16 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
     if (slug === undefined) return;
     const controller = new AbortController();
 
-    listTasks(slug, { limit: 200 }, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listTasks(
+        slug,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         if (!controller.signal.aborted)
           setTasks(page.data.filter((t): t is Task => !('deleted' in t)));
       })

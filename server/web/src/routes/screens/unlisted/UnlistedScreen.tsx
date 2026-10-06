@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -31,8 +32,10 @@ export function UnlistedScreen({ onOpenTask, members }: UnlistedScreenProps) {
   const [includeDismissed, setIncludeDismissed] = useState(false);
 
   const load = (signal?: AbortSignal): void => {
-    listUnlisted({ includeDismissed }, signal)
-      .then((page) => {
+    everyPage((cursor) => listUnlisted({ includeDismissed, cursor, limit: 200 }, signal))
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         setRows(page.data);
       })
       .catch((cause: unknown) => {

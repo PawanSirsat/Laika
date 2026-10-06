@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useState } from 'react';
 import { listTasks, type Task } from '../../../api/tasks.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
@@ -38,8 +39,16 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
     if (slug === undefined) return;
     const controller = new AbortController();
 
-    listTasks(slug, { limit: 200 }, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listTasks(
+        slug,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         if (!controller.signal.aborted)
           setTasks(page.data.filter((t): t is Task => !('deleted' in t)));
       })
@@ -47,8 +56,12 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
         if (!controller.signal.aborted) setTasks([]);
       });
 
-    listSprints(slug, undefined, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listSprints(slug, cursor === undefined ? {} : { cursor }, controller.signal),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         if (!controller.signal.aborted) setSprints(page.data);
       })
       .catch(() => {

@@ -1,3 +1,4 @@
+import { withPage, type PageQuery } from './every-page.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
 
@@ -54,9 +55,14 @@ export function isAgentComment(comment: Comment): boolean {
   return comment.created_via === 'mcp';
 }
 
-export function listComments(taskId: string, signal?: AbortSignal): Promise<Page<CommentRow>> {
+export function listComments(
+  taskId: string,
+  signal?: AbortSignal,
+  page: PageQuery = {},
+): Promise<Page<CommentRow>> {
+  const params = withPage(new URLSearchParams({ limit: '100' }), page);
   return request<Page<CommentRow>>(
-    `/tasks/${encodeURIComponent(taskId)}/comments?limit=100`,
+    `/tasks/${encodeURIComponent(taskId)}/comments?${params.toString()}`,
     signal === undefined ? {} : { signal },
   );
 }

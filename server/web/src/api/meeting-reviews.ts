@@ -1,3 +1,4 @@
+import { pageSuffix, type PageQuery } from './every-page.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
 
@@ -92,9 +93,10 @@ export interface ApplyResult {
 export function listMeetingReviews(
   slug: string,
   signal?: AbortSignal,
+  page: PageQuery = {},
 ): Promise<Page<MeetingReview>> {
   return request<Page<MeetingReview>>(
-    `/projects/${encodeURIComponent(slug)}/meeting-reviews`,
+    `/projects/${encodeURIComponent(slug)}/meeting-reviews${pageSuffix(page)}`,
     signal === undefined ? {} : { signal },
   );
 }

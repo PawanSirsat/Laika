@@ -1,3 +1,4 @@
+import { withPage, type PageQuery } from './every-page.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
 
@@ -31,8 +32,9 @@ export function listTaskActivity(
   slug: string,
   taskId: string,
   signal?: AbortSignal,
+  page: PageQuery = {},
 ): Promise<Page<ActivityEvent>> {
-  const params = new URLSearchParams({ task_id: taskId, limit: '50' });
+  const params = withPage(new URLSearchParams({ task_id: taskId, limit: '50' }), page);
   return request<Page<ActivityEvent>>(
     `/projects/${encodeURIComponent(slug)}/activity?${params.toString()}`,
     signal === undefined ? {} : { signal },

@@ -228,8 +228,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     if (slug !== undefined) return;
     const controller = new AbortController();
 
-    listProjects({}, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listProjects(
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         // The most recently active project, not the alphabetically first —
         // and written **into the URL**, so the address bar names what is on
         // screen. Holding it only in state is how someone ends up reading
@@ -369,8 +376,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     const controller = new AbortController();
 
     setSprintsLoading(true);
-    listSprints(slug, {}, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listSprints(slug, cursor === undefined ? {} : { cursor }, controller.signal),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         setSprints(page.data);
       })
       .catch(() => {

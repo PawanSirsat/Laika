@@ -17,6 +17,28 @@ import type { Page } from './tasks.ts';
  */
 export const EVERY_PAGE_CAP = 25;
 
+/**
+ * Which page to ask for. Optional and last on the list functions that took
+ * none (LAI-703), so every existing caller is unchanged.
+ */
+export interface PageQuery {
+  readonly cursor?: string | undefined;
+  readonly limit?: number | undefined;
+}
+
+/** `limit` and `cursor` onto a query string that may already carry others. */
+export function withPage(params: URLSearchParams, page: PageQuery): URLSearchParams {
+  if (page.limit !== undefined) params.set('limit', String(page.limit));
+  if (page.cursor !== undefined) params.set('cursor', page.cursor);
+  return params;
+}
+
+/** `?limit=…&cursor=…`, or nothing. */
+export function pageSuffix(page: PageQuery): string {
+  const query = withPage(new URLSearchParams(), page).toString();
+  return query === '' ? '' : `?${query}`;
+}
+
 export interface EveryPage<T> {
   readonly items: readonly T[];
   /** True when `cap` pages were read and the server still had more. */

@@ -1,3 +1,4 @@
+import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -67,8 +68,15 @@ export function TimelineScreen() {
   useEffect(() => {
     const controller = new AbortController();
 
-    listProjects({}, controller.signal)
-      .then((page) => {
+    everyPage((cursor) =>
+      listProjects(
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items }) => {
+        // Every page, not the first (LAI-703); `page.data` is the whole list.
+        const page = { data: items };
         // One rule on every screen (LAI-423): the most recently active
         // project, never the alphabetically first, and written into the URL so
         // the address bar names what is on screen.
