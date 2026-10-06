@@ -2,10 +2,12 @@
 id: LAI-496
 title: 'The List selects rows, acts on the selection, and changes status in place'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
-status: backlog
+status: review
+finished: 2026-10-06T07:14:42Z
+started: 2026-10-06T06:47:50Z
 ---
 
 ## Goal
@@ -19,41 +21,41 @@ every selected task.
 
 ## Acceptance criteria
 
-- [ ] A pure `list-select` module (mirrored test) gives `toggleOne`,
+- [x] A pure `list-select` module (mirrored test) gives `toggleOne`,
       `togglePage`, `pageState` (`none` / `some` / `all`), `selectAll` and
       `effectiveSelection`, where the effective selection is the stored set
       pruned to the rows currently on screen, so a filter change cannot act
       on a task the reader can no longer see.
-- [ ] A pure `list-bulk` module (mirrored test) gives `statusTargets(from)`,
+- [x] A pure `list-bulk` module (mirrored test) gives `statusTargets(from)`,
       asserted **equal to the server's own `transitionsFrom(from, 'human')`
       for every status** — never a hand-copied table — and `applyToEach`,
       which runs one request per task in order, keeps going past a refusal,
       and returns which ids succeeded and which failed with the server's
       message. The test has a refusal in the middle of the list.
-- [ ] Every row has a checkbox in a first column; the header checkbox selects
+- [x] Every row has a checkbox in a first column; the header checkbox selects
       or clears the page and shows indeterminate for a partial page. Clicking
       a checkbox never opens the drawer. A selected row is tinted.
-- [ ] The status cell is a button styled as the pill with a chevron. It opens
+- [x] The status cell is a button styled as the pill with a chevron. It opens
       a menu of the legal targets, labelled by the board's column names
       (LAI-490); choosing one calls the same `move` the drag uses, so a
       refusal surfaces in the board's existing error strip and nothing moves
       until the server answers. A row whose move is in flight says so.
-- [ ] With one or more rows selected, a floating bar at the foot of the List
+- [x] With one or more rows selected, a floating bar at the foot of the List
       shows `n selected`, *Select all N* when the selection is short of the
       whole filtered list (and is absent once it is), then **Status**,
       **Priority**, **Assignee**, **Sprint** (only with `maySetSprint`),
       **Cancel tasks** (with an inline confirm) and a clear button.
-- [ ] A bulk action runs through `applyToEach`, shows progress while it runs,
+- [x] A bulk action runs through `applyToEach`, shows progress while it runs,
       then reports `n updated` and lists every refusal by key with the
       server's message; the board reloads after it. The selection survives a
       reload because it lives in `BoardScreen`, not in the view that reload
       unmounts (the LAI-485 lesson).
-- [ ] A viewer gets no checkboxes, no bar and a plain pill.
-- [ ] Browser tests: a row checkbox and the header checkbox; *Select all*
+- [x] A viewer gets no checkboxes, no bar and a plain pill.
+- [x] Browser tests: a row checkbox and the header checkbox; *Select all*
       reaching rows on page two; a bulk status change POSTs
       `/tasks/:id/status` once per selected task and reports one refusal by
       key; the inline pill POSTs for one task; a viewer sees no checkbox.
-- [ ] Both themes; the repo-root gate exits 0 on all three.
+- [x] Both themes; the repo-root gate exits 0 on all three.
 
 ## Notes / context
 
@@ -68,3 +70,27 @@ own all-or-nothing POST is called with one id at a time so a refusal names
 the task. Files: `routes/screens/list/` (`ListView.tsx`, `list.css`, two
 new pure modules, a menu and a bar component), `BoardScreen.tsx` (selection
 state, four props).
+
+## Built
+
+- `server/web/src/routes/screens/list/list-select.ts`, `list-bulk.ts` (pure,
+  mirrored tests), `ListMenu.tsx`, `BulkBar.tsx`; `ListView.tsx` and
+  `list.css` extended; `BoardScreen.tsx` holds the selection and the run.
+- `test/browser/list-bulk.test.ts`: five tests against the built SPA.
+- Mutations, each restored by checksum: 6 unit (refusal stops the loop;
+  `cancelled` offered from `done`; fan-out instead of in order; no pruning;
+  a full page never clears; already-there tasks sent) and 2 browser (the
+  checkbox cell lets the click reach the row; no refetch after a run) — 8/8
+  red, each on the assertion written for it.
+- Seen in a real instance on port 3979, 60 tasks, both themes through the
+  real toggle: selection, page and Select-all, the pill menu, a bulk cancel
+  with LC-59 refused from `done`, the report surviving the reload. Found and
+  fixed there: the bar wrapped at 1380px (`width: max-content`); the web
+  suite found the caret in the pill's text and the label swap while moving,
+  both fixed (CSS caret, `Spinner`).
+- Gate on this branch: lint 0, format 0, cli 85/85, web green, server
+  2038/2040 — the two red are `schema-spec-drift` on `tasks.parent_task_id`,
+  which is red on `master` itself from LAI-492's docs half landing ahead of
+  LAI-493 (§4.4 step 3), not this task's.
+- The `assignee` is `chief`: built by CHIEF on the owner's instruction.
+

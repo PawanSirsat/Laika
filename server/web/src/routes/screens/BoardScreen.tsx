@@ -20,6 +20,8 @@ import {
   withoutFilters,
 } from './board/filter-keys.ts';
 import { pageParam, readPage, readSort, sortParams } from './list/list-derive.ts';
+import { NO_SELECTION } from './list/list-select.ts';
+import type { BulkRun } from './list/list-bulk.ts';
 import { SprintStrip } from './board/SprintStrip.tsx';
 import { useEvents } from '../../api/use-events.ts';
 import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
@@ -130,6 +132,19 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   const [creating, setCreating] = useState(false);
+  /**
+   * The List's selection and its bulk run (LAI-496), **held here** because
+   * every reload unmounts `ListView` (the LAI-485 lesson) and a bulk action
+   * ends with a reload. Keyed by project rather than reset by an effect: a
+   * selection made in one space is simply not this space's.
+   */
+  const [listSelection, setListSelection] = useState<{
+    readonly slug: string | undefined;
+    readonly ids: ReadonlySet<string>;
+    readonly run: BulkRun | undefined;
+  }>({ slug: undefined, ids: NO_SELECTION, run: undefined });
+  const selectedIds = listSelection.slug === slug ? listSelection.ids : NO_SELECTION;
+  const bulkRun = listSelection.slug === slug ? listSelection.run : undefined;
   /**
    * The search text, from the URL (LAI-251).
    *
@@ -1176,13 +1191,38 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               members={members}
               sprintLabels={sprintLabels}
               columns={columns.state.columns}
+              sprints={sprints}
               theme={theme}
               filtered={filtered}
               canAdd={mayCreate}
+              // Editing a task is member+ (§3.2), the gate the drawer uses.
+              mayEdit={mayCreate}
+              maySetSprint={
+                me !== undefined &&
+                boardProjectId !== undefined &&
+                canAssignToSprints(me.org_role, boardProjectId, me.memberships)
+              }
               onOpen={openTaskInUrl}
               onAdd={() => {
                 setCreating(true);
               }}
+              movingId={board.movingId}
+              onMove={(id, to) => {
+                void board.move(id, to);
+              }}
+              selected={selectedIds}
+              onSelect={(ids) => {
+                setListSelection((s) => ({ slug, ids, run: s.slug === slug ? s.run : undefined }));
+              }}
+              bulkRun={bulkRun}
+              onBulkRun={(run) => {
+                setListSelection((s) => ({
+                  slug,
+                  ids: s.slug === slug ? s.ids : NO_SELECTION,
+                  run,
+                }));
+              }}
+              onChanged={board.reload}
               sort={listSort}
               page={listPage}
               onSort={(next) => {
