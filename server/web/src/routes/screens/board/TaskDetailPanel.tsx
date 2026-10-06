@@ -729,6 +729,9 @@ export function TaskDetailPanel({
               byId={byId}
               members={members}
               theme={theme}
+              mayAssign={mayAssign === true}
+              meId={meId}
+              columns={columns}
               mayEdit={mayEdit === true}
               onOpen={onOpen}
               onChanged={onTaskEdited}

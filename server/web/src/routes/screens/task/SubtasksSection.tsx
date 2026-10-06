@@ -2,8 +2,18 @@ import { useEffect, useState } from 'react';
 import { Spinner } from '../../../components/Spinner.tsx';
 import { ApiError } from '../../../api/errors.ts';
 import { childrenOf, subtaskProgress } from '../../../api/subtask-derive.ts';
-import { createTask, listTasks, updateTask, type Member, type Task } from '../../../api/tasks.ts';
-import { statusLabel } from '../../../api/board-derive.ts';
+import {
+  assignTask,
+  changeStatus,
+  createTask,
+  listTasks,
+  updateTask,
+  type Member,
+  type Task,
+  type TaskStatus,
+} from '../../../api/tasks.ts';
+import { ALL_STATUSES, boardStatusLabel } from '../../../api/board-derive.ts';
+import type { BoardColumn } from '../../../api/columns.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -16,7 +26,14 @@ export interface SubtasksSectionProps {
   readonly byId: ReadonlyMap<string, Task>;
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
+  /** Member+ — adds, detaches, and changes a child's status (§3.2). */
   readonly mayEdit: boolean;
+  /** `task.assign_other` — changes a child's assignee (§3.2, LAI-700). */
+  readonly mayAssign: boolean;
+  /** For *(you)* in the assignee picker. */
+  readonly meId: string | undefined;
+  /** So a status reads as the board's column name, as on the rail (LAI-617). */
+  readonly columns: readonly BoardColumn[];
   /** Open a child in this drawer. */
   readonly onOpen: (taskId: string) => void;
   /** The board reloads so a new child gets its card. */
@@ -44,6 +61,9 @@ export function SubtasksSection({
   members,
   theme,
   mayEdit,
+  mayAssign,
+  meId,
+  columns,
   onOpen,
   onChanged,
 }: SubtasksSectionProps) {
@@ -161,19 +181,85 @@ export function SubtasksSection({
                     {child.title}
                   </span>
                 </button>
-                <span className={`dep-status dep-status-${child.status}`}>
-                  {statusLabel(child.status)}
-                </span>
-                <span
-                  className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
-                  title={who?.name ?? 'Unassigned'}
-                  aria-hidden="true"
-                  {...(ink === undefined
-                    ? {}
-                    : { style: { background: ink.background, color: ink.foreground } })}
-                >
-                  {who === undefined ? '—' : initials(who.name)}
-                </span>
+                {/*
+                  **Status and assignee change in place** (LAI-700), as Jira's
+                  rows do. Both are native selects — keyboard and screen reader
+                  for free — dressed as the pill and the avatar they replace.
+                  Neither sits inside `.sub-open`, so neither opens the child.
+                */}
+                {mayEdit ? (
+                  <label className={`dep-status dep-status-${child.status} sub-status`}>
+                    <span className="visually-hidden">Status of {child.key}</span>
+                    <select
+                      value={child.status}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const to = event.target.value as TaskStatus;
+                        if (to !== child.status) void act(() => changeStatus(child.id, to));
+                      }}
+                    >
+                      {ALL_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {boardStatusLabel(status, columns)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <span className={`dep-status dep-status-${child.status}`}>
+                    {boardStatusLabel(child.status, columns)}
+                  </span>
+                )}
+                {mayAssign ? (
+                  <label
+                    className={
+                      who === undefined
+                        ? 'dep-avatar dep-avatar-empty sub-assign'
+                        : 'dep-avatar sub-assign'
+                    }
+                    title={who?.name ?? 'Unassigned'}
+                    {...(ink === undefined
+                      ? {}
+                      : { style: { background: ink.background, color: ink.foreground } })}
+                  >
+                    <span aria-hidden="true">{who === undefined ? '—' : initials(who.name)}</span>
+                    <span className="visually-hidden">Assignee of {child.key}</span>
+                    {/*
+                      The project's members, not the org's — the list
+                      `AssignControl` offers, for its reason: an assignee
+                      outside the project cannot open their own work.
+                    */}
+                    <select
+                      value={child.assignee_id ?? ''}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const next = event.target.value === '' ? null : event.target.value;
+                        if (next !== child.assignee_id) {
+                          void act(() => assignTask(child.id, next));
+                        }
+                      }}
+                    >
+                      <option value="">Unassigned</option>
+                      {[...members.values()].map((member) => (
+                        <option key={member.user_id} value={member.user_id}>
+                          {member.name}
+                          {member.user_id === meId ? ' (you)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <span
+                    className={who === undefined ? 'dep-avatar dep-avatar-empty' : 'dep-avatar'}
+                    title={who?.name ?? 'Unassigned'}
+                    aria-hidden="true"
+                    {...(ink === undefined
+                      ? {}
+                      : { style: { background: ink.background, color: ink.foreground } })}
+                  >
+                    {who === undefined ? '—' : initials(who.name)}
+                  </span>
+                )}
                 {mayEdit && (
                   <button
                     type="button"
