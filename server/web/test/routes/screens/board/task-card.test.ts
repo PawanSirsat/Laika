@@ -108,37 +108,20 @@ void describe('the blocked banner names its blocker', () => {
   });
 });
 
-void describe('the stale marker is drawn, and never decided here (LAI-157)', () => {
-  void test('the card reads the served timestamp', () => {
-    assert.match(card, /task\.stale_flagged_at/, 'the card does not read the flag');
-    assert.match(card, /marker-stale/, 'no stale marker is drawn');
-  });
-
-  void test('it says how long, rather than only that it is stale', () => {
-    // §11.4.1's marker, and the reason LAI-208 sent a timestamp instead of a
-    // boolean: "stale" and "stale for 9 days" are different messages to
-    // somebody scanning a board.
-    assert.match(card, /staleFor\(/, 'the marker prints no duration');
-  });
-
-  void test('the card invents no second definition of stale', () => {
-    // §11.6's rule is three conditions evaluated by the nightly job. The client
-    // may render the flag; it may not decide it, and the tempting version of
-    // that is a status guard.
-    //
-    // **The lag is deliberate and must not be papered over here.** The job owns
-    // the field in both directions, so a task rescued at noon keeps its marker
-    // until tonight. Hiding it on non-`in_progress` tasks would be a third
-    // staleness rule that disagrees with the other two; if the lag is judged too
-    // visible the fix is the job's schedule.
-    assert.ok(!card.includes('in_progress'), 'the marker is gated on status');
-    assert.ok(!/stale[^;]*task\.status/.test(card), 'staleness is decided from status here');
-
-    // A third assertion here forbade the word `heartbeat` outright, and it was
-    // wrong: the tooltip names the signals so a reader learns what stale means,
-    // and the card has no heartbeat data to reason *from* in any case. **An
-    // assertion that cannot tell explaining from deciding is not a guard** — it
-    // fails on good text and would have been silenced by weakening the tooltip.
-    // The two above carry the property; the rule lives in §11.6.
+void describe('the card draws no stale marker, comment count or age (LAI-701)', () => {
+  /*
+   * This block used to prove the opposite — that the card drew a stale pill
+   * from the served timestamp (LAI-157). The owner removed it with the comment
+   * count and the age: *"I don't need that"*. Staleness is still flagged by the
+   * server (§11.6) and listed on the Activity tab; the comment count is still
+   * in the task view. The browser test proves the absence on the page; this
+   * proves the card no longer reads the fields it would need to draw them.
+   */
+  void test('the card reads none of the three fields', () => {
+    assert.ok(!card.includes('stale_flagged_at'), 'the card still reads the stale flag');
+    assert.ok(!card.includes('comment_count'), 'the card still reads the comment count');
+    assert.ok(!card.includes('updatedAge'), 'the card still prints an age');
+    // Positive control: the scan is reading the real card, not an empty string.
+    assert.match(card, /card-foot/, 'this is not the card source');
   });
 });

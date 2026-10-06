@@ -1515,9 +1515,13 @@ rendering choice, never a different query path.
   illegal drag snaps back and surfaces the error, it does not optimistically lie.
 - Cards show: display key (`LAI-42`), title, assignee, priority, a **blocked**
   marker when any dependency is unfinished, a **ready** marker when §4.5 holds,
-  a **stale** marker once `stale_flagged_at` is set, a **subtasks** `n/m` on a
-  parent and `↳ KEY` on a child, and the **due date** when set, red once it is
-  past and the task is still open (D-066). Each is a card-field toggle.
+  a **subtasks** `n/m` on a parent and `↳ KEY` on a child, and the **due
+  date only when it is today or past** on open work — amber *Due today*, or
+  red with a ⚠ once overdue; a date still ahead, and any date on finished
+  work, draws nothing (D-069). Each is a card-field toggle.
+- Cards **do not** show a stale marker, a comment count or an age (D-069).
+  Staleness is still flagged by the server (§11.6) and listed in Activity;
+  comments are counted in the drawer's tabs; the List keeps its Updated column.
 - Agent-authored recent activity is badged on the card (`actor_kind: 'agent'`).
 - Column order and the `ready` marker are both **derived** — never stored, never
   cached client-side beyond the current response.
@@ -1628,8 +1632,8 @@ anything missing sends the task back.
   last activity; Open board vs Join for public projects; empty state; first-run
   state.
 - **Board** — five columns (`backlog`, `todo`, `in_progress`, `review`, `done`)
-  with counts; cards showing key, title, assignee, priority, **blocked / ready /
-  stale markers**; drag between columns issuing a real status call with snap-back
+  with counts; cards showing key, title, assignee, priority, **blocked / ready
+  markers**, subtasks and a due date that is today or past; drag between columns issuing a real status call with snap-back
   on rejection; filters by assignee/priority/ready; live update over SSE;
   agent-authored badge; empty column states.
 - **Task detail** — laid out as a Jira issue view (D-066): a header with the

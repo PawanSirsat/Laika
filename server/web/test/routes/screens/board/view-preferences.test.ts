@@ -70,14 +70,18 @@ void describe('reading', () => {
     // reader did set.
     const stored = fake(
       JSON.stringify({
-        laika: { fields: { tags: 'yes', age: false }, density: 'compact', columnWidth: 'wobbly' },
+        laika: {
+          fields: { tags: 'yes', sprint: false },
+          density: 'compact',
+          columnWidth: 'wobbly',
+        },
       }),
     );
 
     const read = readPreferences('laika', stored);
 
     assert.equal(read.fields.tags, true, 'a non-boolean falls back to its default');
-    assert.equal(read.fields.age, false, 'a valid neighbour is kept');
+    assert.equal(read.fields.sprint, false, 'a valid neighbour is kept');
     assert.equal(read.density, 'compact', 'a valid field elsewhere is kept');
     assert.equal(read.columnWidth, 'standard', 'an unknown value falls back');
   });
@@ -90,6 +94,25 @@ void describe('reading', () => {
     );
 
     assert.deepEqual(read.fields, DEFAULT_PREFERENCES.fields);
+  });
+
+  void test('a record stored before LAI-701 still carries stale, comments and age — ignored', () => {
+    // The owner removed those three from the card. A reader who saved their
+    // layout before that has them in storage; reading must not throw, must not
+    // carry them, and must keep what they did choose.
+    const read = readPreferences(
+      'laika',
+      fake(
+        JSON.stringify({
+          laika: { fields: { stale: false, comments: true, age: false, tags: false } },
+        }),
+      ),
+    );
+
+    assert.equal(read.fields.tags, false, 'a field the reader chose is kept');
+    for (const gone of ['stale', 'comments', 'age']) {
+      assert.ok(!(gone in read.fields), `${gone} was carried into the read preferences`);
+    }
   });
 
   void test('a record stored before a field existed shows that field, not hides it', () => {
