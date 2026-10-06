@@ -3608,3 +3608,48 @@ A team asks for Jira's "cannot close with open subtasks" condition, for
 subtasks to follow the parent's sprint, or for a second level — the last of
 which is the one this decision says no to, and should be argued rather than
 drifted into.
+
+## D-067 — The List selects rows and acts on the selection; status changes in place.
+
+**2026-10-06, the owner, directly to CHIEF**, from two screenshots of a Jira
+list: checkboxes on every row, a status pill that is a menu, and a floating bar
+reading *n selected · Select all · Edit fields · Change status · Delete*.
+Carried by LAI-496. Built by CHIEF on the owner's direct instruction, on a
+`build-list` branch, as the 2026-09-28 and 2026-10-06 runs were — a crossing
+made on that instruction, not a precedent.
+
+### What was decided
+
+1. **Bulk edit is in.** §11.4.1 said *"explicitly not in v1: … bulk edit"*
+   since the SPEC was written. The owner asked for it with a picture, and the
+   sentence is retired. Nothing else on that list moves.
+2. **One request per task, in order.** There is no bulk endpoint and none is
+   added: §7.2's *"tools never bulk-mutate"* stays, and the UI's many-at-once
+   is a loop over the single-task endpoints the drawer already calls. A
+   refusal in the middle stops nothing else, and the report names every
+   refused task by key with the server's own sentence. The server's
+   transition and permission rules are untouched; the menu only offers what
+   §5 allows a person, and the server still has the last word.
+3. **Delete is Cancel.** There is no `DELETE /tasks/:id` (§6.4) and this
+   decision does not add one. The screenshot's *Delete* is *Cancel tasks*
+   here, with an inline confirm: `cancelled` is the status the board hides,
+   and the server refuses it from `done`, which the report shows rather than
+   hides. A real delete is a separate decision with a §3 row of its own.
+4. **The selection acts only on what is on screen.** The stored set may keep
+   ids a filter now hides, so widening the filter brings them back; what the
+   bar counts and sends is the set pruned to the filtered rows. *Select all*
+   means every filtered row across every page, not the page.
+5. **A viewer sees none of it** — no checkboxes, no bar, a plain pill —
+   absent rather than disabled (LAI-082), on the same member+ gate as the
+   drawer's controls.
+6. **The selection and the report outlive a reload**, by living in
+   `BoardScreen` rather than the view; the LAI-485 lesson applied before it
+   was relearned.
+
+### What this does not decide
+
+- **Edit fields** as Jira's generic field editor, **Add agent**, **Watch
+  options**. The bar carries the fields Laika has endpoints for.
+- Keyboard range selection (shift-click), and selection on the board.
+- A real delete.
+
