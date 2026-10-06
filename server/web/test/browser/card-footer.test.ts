@@ -202,19 +202,41 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
         'done work shows a due date',
       );
 
-      // Painted in both themes, and the two states never paint alike — nor
-      // like the muted meta text beside them, which is what `.t-meta` would
-      // paint if it won the cascade.
-      const muted = card(h, 'LAI-3').locator('.card-key');
+      /*
+       * **Each chip is its own token, in both themes.** The first version
+       * compared the chips with the key's colour as "plain meta text", and a
+       * mutation deleting `.card .card-due-today` stayed green: the key is not
+       * painted by `.t-meta`, so a chip that lost the cascade to `.t-meta`'s
+       * `--text-muted` still differed from it. Resolving the tokens through a
+       * probe inside the card asks the question that matters — *is this the
+       * colour the rule names* — whatever else is on the card.
+       */
+      const token = (name: string) =>
+        card(h, 'LAI-3').evaluate((el, v) => {
+          const probe = document.createElement('span');
+          probe.style.color = `var(${v})`;
+          el.appendChild(probe);
+          const colour = getComputedStyle(probe).color;
+          probe.remove();
+          return colour;
+        }, name);
       for (const theme of ['Dark', 'Light']) {
         await setTheme(h.page, theme);
         await h.page.waitForTimeout(250);
         const colour = (l: typeof past) => l.evaluate((el) => getComputedStyle(el).color);
-        const [a, b, m] = [await colour(past), await colour(today), await colour(muted)];
-        assert.notEqual(a, 'rgba(0, 0, 0, 0)', `${theme}: the overdue chip has no colour`);
-        assert.notEqual(a, b, `${theme}: overdue and today paint the same`);
-        assert.notEqual(a, m, `${theme}: the overdue chip is painted like plain meta text`);
-        assert.notEqual(b, m, `${theme}: the today chip is painted like plain meta text`);
+        const [overdue, amber, muted] = [
+          await token('--overdue'),
+          await token('--chip-orange'),
+          await token('--text-muted'),
+        ];
+        assert.notEqual(
+          overdue,
+          amber,
+          `${theme}: the two tokens resolve alike — this proves nothing`,
+        );
+        assert.equal(await colour(past), overdue, `${theme}: the overdue chip is not --overdue`);
+        assert.equal(await colour(today), amber, `${theme}: the today chip is not --chip-orange`);
+        assert.notEqual(await colour(today), muted, `${theme}: the today chip lost to .t-meta`);
       }
     } finally {
       await h.close();
