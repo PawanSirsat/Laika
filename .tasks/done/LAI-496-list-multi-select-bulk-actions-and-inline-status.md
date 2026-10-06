@@ -5,7 +5,8 @@ area: web
 assignee: chief
 priority: p1
 depends-on: []
-status: review
+status: done
+closed: 2026-10-06T07:15:17Z
 finished: 2026-10-06T07:14:42Z
 started: 2026-10-06T06:47:50Z
 ---
@@ -93,4 +94,17 @@ state, four props).
   which is red on `master` itself from LAI-492's docs half landing ahead of
   LAI-493 (§4.4 step 3), not this task's.
 - The `assignee` is `chief`: built by CHIEF on the owner's instruction.
+
+## Review
+
+Accepted 2026-10-06T07:15:17Z by CHIEF, who also built it on the owner's instruction.
+Reviewed as a diff of `master...build-list`: eleven files, all inside
+`server/web/` plus this file; nothing else rode along. Every criterion was
+checked against the location it names: the two mirrored tests exist and
+import the modules; `statusTargets` is compared to the server's
+`transitionsFrom` by executing it; the five browser tests are the ones AC8
+lists; the viewer case is a positive-control-first absence. Mutations 8/8 red.
+The last criterion is taken as green on the branch's own evidence (lint 0,
+format 0, web 1167/1167, cli 85/85, server red only on `schema-spec-drift`,
+which is `master`'s own LAI-492/493 gap and lands green with LAI-493).
 
