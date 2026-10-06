@@ -16,7 +16,9 @@ import {
   filterCount,
   filterSignature,
   readBlocked,
+  readOverdue,
   readStatus,
+  readTop,
   readUpdated,
   updatedSince,
   withoutFilters,
@@ -138,5 +140,30 @@ void describe('the badge, the chips and Clear all read one list (LAI-487)', () =
     for (const key of ['project', 'task', 'group', 'sort', 'dir', 'page']) {
       assert.equal(left.has(key), true, `Clear all removed ${key}`);
     }
+  });
+});
+
+void describe('top and overdue (D-066)', () => {
+  const names = { status: (s: string) => s };
+
+  void test('both read only the literal true', () => {
+    assert.equal(readTop(new URLSearchParams('top=true')), true);
+    assert.equal(readTop(new URLSearchParams('top=1')), false);
+    assert.equal(readTop(new URLSearchParams('')), false);
+    assert.equal(readOverdue(new URLSearchParams('overdue=true')), true);
+    assert.equal(readOverdue(new URLSearchParams('overdue=yes')), false);
+  });
+
+  void test('each is a chip, counted on the button, and cleared by Clear all', () => {
+    const params = new URLSearchParams('top=true&overdue=true&task=t1');
+    const labels = activeFilters(params, names).map((f) => f.label);
+    assert.ok(labels.includes('Top-level only'), labels.join(', '));
+    assert.ok(labels.includes('Overdue'), labels.join(', '));
+    assert.equal(filterCount(params, names), 2);
+
+    const cleared = withoutFilters(params);
+    assert.equal(cleared.get('top'), null);
+    assert.equal(cleared.get('overdue'), null);
+    assert.equal(cleared.get('task'), 't1');
   });
 });

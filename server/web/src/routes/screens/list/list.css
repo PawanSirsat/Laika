@@ -58,7 +58,8 @@
 }
 
 .list {
-  min-width: 64rem;
+  /* The design's 64rem plus the Due column (D-066), so Summary keeps its room. */
+  min-width: 70.75rem;
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
@@ -91,6 +92,10 @@
 .list-col-created,
 .list-col-updated {
   width: 8.5rem;
+}
+/* `12 Jul 2026`, or the warning mark and it. */
+.list-col-due {
+  width: 6.75rem;
 }
 
 /* ----------------------------------------------------------------- the header */
@@ -835,4 +840,19 @@
 .list-bulk-refusal b {
   font-family: var(--font-mono);
   font-weight: var(--weight-heavy);
+}
+
+/* The parent's key on a subtask's sub-line (D-066). */
+.list-parent {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  color: var(--text-secondary);
+}
+
+.list-due {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  white-space: nowrap;
 }

@@ -23,6 +23,8 @@ export const FILTER_KEYS = [
   'ready',
   'blocked',
   'agent',
+  'top',
+  'overdue',
 ] as const;
 
 export type FilterKey = (typeof FILTER_KEYS)[number];
@@ -87,6 +89,16 @@ export function readBlocked(params: URLSearchParams): boolean {
   return params.get('blocked') === 'true';
 }
 
+/** Hide subtasks, keep their parents (D-066). */
+export function readTop(params: URLSearchParams): boolean {
+  return params.get('top') === 'true';
+}
+
+/** Only tasks past their due date and still open (D-066). */
+export function readOverdue(params: URLSearchParams): boolean {
+  return params.get('overdue') === 'true';
+}
+
 /* ---------------------------------------------------- what is applied now */
 
 export interface ActiveFilter {
@@ -148,6 +160,8 @@ export function activeFilters(
 
   if (readBlocked(params)) found.push({ key: 'blocked', label: 'Blocked only' });
   if (params.get('agent') === 'true') found.push({ key: 'agent', label: 'Agent-created' });
+  if (readTop(params)) found.push({ key: 'top', label: 'Top-level only' });
+  if (readOverdue(params)) found.push({ key: 'overdue', label: 'Overdue' });
 
   return found;
 }

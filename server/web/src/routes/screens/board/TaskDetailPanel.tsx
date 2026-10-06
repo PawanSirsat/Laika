@@ -23,6 +23,7 @@ import {
 import { TaskMeta } from '../task/TaskMeta.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
 import { DependenciesSection } from '../task/DependenciesSection.tsx';
+import { SubtasksSection } from '../task/SubtasksSection.tsx';
 import { CommentBody } from '../task/CommentBody.tsx';
 import { CommentComposer } from '../task/CommentComposer.tsx';
 import {
@@ -718,10 +719,21 @@ export function TaskDetailPanel({
           )}
 
           {/*
-            Subtasks sit here, above the linked tasks, for a task that is not
-            itself a subtask (one level, D-066). The section is LAI-495's; this
-            is its place.
+            Subtasks sit above the linked tasks, for a task that is not itself
+            a subtask (one level, D-066).
           */}
+          {task.parent_task_id === null && (
+            <SubtasksSection
+              slug={slug}
+              task={task}
+              byId={byId}
+              members={members}
+              theme={theme}
+              mayEdit={mayEdit === true}
+              onOpen={onOpen}
+              onChanged={onTaskEdited}
+            />
+          )}
 
           <DependenciesSection
             task={task}

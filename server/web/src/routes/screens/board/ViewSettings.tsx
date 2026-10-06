@@ -239,7 +239,7 @@ export function ViewSettings({
 
               {/*
             **A search and a removable list**, which is the reference's shape —
-            it was a column of checkboxes. With nine fields the difference is
+            it was a column of checkboxes. With this many fields the difference is
             cosmetic; the point is that adding a tenth does not make the panel
             longer, because unselected fields live behind the search.
           */}

@@ -28,6 +28,12 @@ export interface BoardToolbarProps {
   readonly onUpdated: (value: UpdatedWindow | undefined) => void;
   readonly blocked: boolean;
   readonly onBlocked: (value: boolean) => void;
+  /** Hide subtasks (D-066). */
+  readonly top: boolean;
+  readonly onTop: (value: boolean) => void;
+  /** Only overdue open work (D-066). */
+  readonly overdue: boolean;
+  readonly onOverdue: (value: boolean) => void;
   /** Active filters, so the button can carry a count the way Jira's does. */
   readonly priority: TaskPriority | undefined;
   readonly assignee: string | undefined;
@@ -123,6 +129,10 @@ export function BoardToolbar({
   updated,
   onUpdated,
   blocked,
+  top,
+  onTop,
+  overdue,
+  onOverdue,
   onBlocked,
   priority,
   assignee,
@@ -422,6 +432,28 @@ export function BoardToolbar({
                 }}
               />
               Blocked only
+            </label>
+
+            <label className="bt-check">
+              <input
+                type="checkbox"
+                checked={top}
+                onChange={(event) => {
+                  onTop(event.target.checked);
+                }}
+              />
+              Top-level only
+            </label>
+
+            <label className="bt-check">
+              <input
+                type="checkbox"
+                checked={overdue}
+                onChange={(event) => {
+                  onOverdue(event.target.checked);
+                }}
+              />
+              Overdue
             </label>
 
             <label className="bt-check">

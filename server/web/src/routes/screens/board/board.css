@@ -2000,3 +2000,24 @@
   min-width: max-content;
   overflow: visible;
 }
+
+/* --------------------------------------------- subtasks and the due date (D-066) */
+
+.card-subtasks,
+.card-parent,
+.card-due {
+  display: flex;
+  align-items: center;
+  gap: 0.1875rem;
+  /* The footer wraps; a marker never shrinks or breaks — `1/2` clipped to
+     `1/` says something false, seen on a real instance. */
+  flex: none;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.card-due-overdue {
+  color: var(--overdue);
+  font-weight: var(--weight-bold);
+}
