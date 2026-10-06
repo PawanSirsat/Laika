@@ -6,8 +6,9 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-701
-status: in-progress
+status: review
 started: 2026-10-06T12:26:13Z
+finished: 2026-10-06T12:30:15Z
 ---
 
 ## Goal
@@ -37,15 +38,15 @@ come from the same truncated list.
 
 ## Acceptance criteria
 
-- [ ] The strip counts every task in the project: the chips' `done/total`,
+- [x] The strip counts every task in the project: the chips' `done/total`,
       the bar, and the `DONE` / `BLK` summary, for a project with more than
       one page of tasks.
-- [ ] A browser test serves two pages of tasks (the second carrying tasks of
+- [x] A browser test serves two pages of tasks (the second carrying tasks of
       the selected sprint) and asserts the chip and the summary count both
       pages — red against the current single request.
-- [ ] The strip and the board cannot disagree on a sprint's total when the
+- [x] The strip and the board cannot disagree on a sprint's total when the
       board is scoped to that sprint and no other filter is set.
-- [ ] Both themes; the gate exits 0 on all three.
+- [x] Both themes; the gate exits 0 on all three.
 
 ## Notes / context
 
@@ -56,3 +57,14 @@ counts in `sprintTaskCounts` (`services/sprints.ts`, used by MCP
 whole-project download with one query, but it is a CORE half plus a client
 half and `BLK` needs readiness, which is not a status count. Start with the
 client fix; file the server one if the download is slow.
+
+## Built — CHIEF, 2026-10-06
+
+`api/every-page.ts` (+ unit test) reads a paged list to the end and reports
+`truncated` at a cap of 25 pages; the strip's list goes through it, and a `+`
+with a title marks the DONE figure when the cap is hit. Browser tests: page
+two carries three S3 tasks in Review and the chip and DONE read **1/5** (they
+read 1/2 before — the red run is the pre-fix code); an endless list shows the
+partial marker. Mutation: the helper stopping after page one turns two unit
+tests red. The other screens with the same defect are LAI-703; the agents'
+tools are LAI-704.
