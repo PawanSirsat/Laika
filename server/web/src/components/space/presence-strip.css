@@ -14,7 +14,7 @@
 .presence-label {
   flex: none;
   margin: 0;
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.09em;
   color: var(--text-muted);
@@ -93,7 +93,7 @@
   display: flex;
   align-items: center;
   gap: 0.3125rem;
-  font-size: 0.65625rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-bold);
   color: var(--text-primary);
   white-space: nowrap;
@@ -116,7 +116,7 @@
 }
 
 .presence-where {
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   color: var(--text-muted);
   white-space: nowrap;
 }
@@ -124,7 +124,7 @@
 .presence-clear {
   flex: none;
   font: inherit;
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-semibold);
   color: var(--accent);
   background: none;
@@ -135,7 +135,7 @@
 .presence-note {
   flex: none;
   margin: 0;
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 
@@ -144,7 +144,7 @@
   margin: 0 0 0 auto;
   flex: none;
   padding-left: var(--space-3);
-  font-size: 0.65625rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
   white-space: nowrap;

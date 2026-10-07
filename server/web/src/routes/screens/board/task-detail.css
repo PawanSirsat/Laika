@@ -341,7 +341,7 @@
   align-items: center;
   gap: 0.375rem;
   font: inherit;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-secondary);
@@ -367,7 +367,7 @@
 
 .panel-tab-count {
   font-family: var(--font-mono);
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-bold);
   color: var(--text-muted);
 }
