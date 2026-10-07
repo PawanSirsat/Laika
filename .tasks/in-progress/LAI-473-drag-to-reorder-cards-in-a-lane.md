@@ -2,11 +2,13 @@
 id: LAI-473
 title: 'Drag a card to a new place in its lane, and it stays there'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-472]
+# LAI-472 is in review on build-list, held by CHIEF for the §4.4 merge; this is its second half (CHIEF, 2026-10-07).
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-07T07:15:16Z
 ---
 
 ## Goal
