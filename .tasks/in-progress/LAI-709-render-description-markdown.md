@@ -2,10 +2,11 @@
 id: LAI-709
 title: 'The task view renders its description and acceptance as markdown'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
-status: backlog
+started: 2026-10-07T07:27:28Z
+status: in-progress
 ---
 
 ## Goal
