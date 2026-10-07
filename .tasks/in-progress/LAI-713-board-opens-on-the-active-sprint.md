@@ -2,10 +2,11 @@
 id: LAI-713
 title: 'The board opens on the active sprint, not all sprints'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-10-07T09:39:15Z
 ---
 
 ## Goal
