@@ -230,7 +230,7 @@
   gap: 5px;
   padding: 4px 8px 4px 6px;
   border-radius: 20px;
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-bold);
   line-height: 1;
   letter-spacing: 0.06em;
@@ -315,7 +315,7 @@
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 0.78125rem;
+  font-size: 0.84375rem;
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
   outline: none;
@@ -332,7 +332,7 @@
   padding: 0 10px;
   border-radius: 9px;
   font-family: inherit;
-  font-size: 0.71875rem;
+  font-size: 0.8125rem;
   font-weight: var(--weight-bold);
   line-height: 1;
   white-space: nowrap;
@@ -363,7 +363,7 @@
   border: 1px solid var(--accent);
   background: var(--accent);
   color: var(--on-accent);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 
 .space-create:hover {
@@ -407,7 +407,7 @@
   box-sizing: border-box;
   height: 36px;
   padding: 0 11px;
-  font-size: var(--text-md); /* 12.5px, the file's tab size */
+  font-size: var(--text-md); /* 13.5px, the tab size (LAI-706) */
   font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-secondary);
@@ -437,7 +437,7 @@
 .view-tab-count {
   /* The file's tab count: plain mono figure, no pill. */
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-bold);
   line-height: 1;
   color: var(--text-muted);
@@ -461,7 +461,7 @@
 .space-context {
   margin: 0;
   min-width: 0;
-  font-size: 0.65625rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
   overflow: hidden;
@@ -499,7 +499,7 @@
   border-radius: 9px;
   background: transparent;
   color: var(--text-secondary);
-  font-size: 0.71875rem;
+  font-size: 0.8125rem;
   font-weight: var(--weight-bold);
   white-space: nowrap;
 }

@@ -34,14 +34,14 @@
 .rail-head code {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 
 .rail-count {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-bold);
   color: var(--text-muted);
 }
@@ -85,7 +85,7 @@
 .rail-note,
 .rail-gap {
   margin: 0;
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
@@ -120,7 +120,7 @@
 .rail-feed time {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   font-weight: var(--weight-semibold);
   /* 1.5 so the timestamp sits on the avatar's optical centre, not its top. */
   line-height: 1.5;
@@ -184,7 +184,7 @@
 .rail-feed-what {
   flex: 1;
   min-width: 0;
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   color: var(--text-secondary);
   line-height: 1.4;
 }
@@ -200,13 +200,13 @@
   align-items: center;
   gap: 0.375rem;
   margin: 0;
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
 
 .rail-pill {
-  font-size: 0.5rem;
+  font-size: 0.65625rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.05em;
   border-radius: var(--radius-chip);
@@ -223,7 +223,7 @@
 .rail-session-task,
 .rail-session-meta {
   margin: 0;
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -251,7 +251,7 @@
 }
 
 .rail-stale-title {
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
   overflow: hidden;
@@ -263,7 +263,7 @@
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   color: var(--text-muted);
 }
 

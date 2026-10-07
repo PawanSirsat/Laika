@@ -443,7 +443,7 @@
   flex: none;
   width: 30px;
   font-family: var(--font-mono);
-  font-size: 0.78125rem;
+  font-size: 0.84375rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
   color: var(--text-secondary);
@@ -455,10 +455,11 @@
 
 .sprint-status {
   flex: none;
-  width: 62px;
+  /* 62px held COMPLETED at the prototype's 8.5px; 78px holds it at 11px (LAI-706). */
+  width: 78px;
   box-sizing: border-box;
   text-align: center;
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
   letter-spacing: 0.06em;
@@ -509,7 +510,7 @@
 .sprint-range {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-muted);
@@ -518,7 +519,7 @@
 
 .sprint-goal {
   margin: 0;
-  font-size: 0.71875rem;
+  font-size: 0.8125rem;
   font-weight: var(--weight-medium);
   line-height: 1.4;
   color: var(--text-secondary);
@@ -526,7 +527,9 @@
 
 .sprint-figures {
   flex: none;
-  width: 150px;
+  /* Wide enough for `0 in flight · 0 unassigned` on one line at 11.5px, and
+     two-digit counts beside it (LAI-706). */
+  width: 200px;
   display: flex;
   flex-direction: column;
   gap: 0.375rem;
@@ -540,7 +543,7 @@
 
 .sprint-frac {
   font-family: var(--font-mono);
-  font-size: 0.8125rem;
+  font-size: 0.84375rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
   color: var(--text-secondary);
@@ -552,7 +555,7 @@
 
 .sprint-pct {
   font-family: var(--font-mono);
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-muted);
@@ -563,7 +566,7 @@
   display: flex;
   align-items: center;
   gap: 0.125rem;
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
   color: var(--overdue);
@@ -593,9 +596,10 @@
 
 .sprint-flow {
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
+  white-space: nowrap;
   color: var(--text-muted);
 }
 
@@ -628,7 +632,7 @@
 .sprint-footnote {
   margin: 0.6875rem 0 0;
   max-width: 48.75rem;
-  font-size: 0.65625rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-medium);
   line-height: 1.5;
   color: var(--text-muted);

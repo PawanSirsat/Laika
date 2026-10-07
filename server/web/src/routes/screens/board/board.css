@@ -242,7 +242,7 @@
 .lane-move-select {
   width: 100%;
   font: inherit;
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
   background: none;
@@ -519,7 +519,7 @@
   background: none;
   padding: 0;
   font: inherit;
-  font-size: 0.71875rem;
+  font-size: 0.8125rem;
   font-weight: var(--weight-medium);
   color: var(--text-primary);
 }
@@ -535,7 +535,7 @@
 .board-search kbd {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
   border: 1px solid var(--border-subtle);
@@ -546,7 +546,7 @@
 /* The count on a filter chip, e.g. `Agent work 3`. */
 .bar-count {
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-heavy);
 }
 
@@ -682,7 +682,7 @@
 .lane-wip {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
 }
@@ -734,7 +734,7 @@
  * colour to render even if we wanted one.
  */
 .card-tag {
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   font-weight: var(--weight-bold);
   line-height: 1;
   padding: 0.1875rem 0.3125rem;
@@ -767,7 +767,7 @@
   background: var(--blocked-bg);
   border-left: 2px solid var(--overdue);
   border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
-  font-size: 0.65625rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-semibold);
   line-height: 1.35;
   color: var(--overdue);
@@ -959,7 +959,7 @@
   margin-left: 0.4375rem;
   padding: 0.1875rem 0.5rem 0.1875rem 0.375rem;
   border-radius: var(--radius-pill);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   background: var(--chip-green-bg);
@@ -998,7 +998,7 @@
    is in the active sprint, neutral otherwise, as the design has it. */
 .card-sprint {
   font-family: var(--font-mono);
-  font-size: 0.5rem;
+  font-size: 0.65625rem;
   font-weight: var(--weight-heavy);
   padding: 0.0625rem 0.25rem;
   border-radius: var(--radius-chip);
@@ -1179,7 +1179,7 @@
 }
 
 .kanban-dense .card-title {
-  font-size: 0.78125rem;
+  font-size: 0.84375rem;
 }
 
 .kanban-dense .lane-item + .lane-item {
@@ -1223,7 +1223,7 @@
    whose name does not already answer it. */
 .lane-target {
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-semibold);
   color: var(--accent);
   background: var(--accent-bg);
@@ -1313,7 +1313,7 @@
 }
 
 .lane-order-select {
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-family: inherit;
   color: var(--text-primary);
   background: var(--bg-card);
@@ -1333,7 +1333,7 @@
   border-radius: var(--radius-card);
   background: var(--bg-card);
   color: var(--text-secondary);
-  font-size: 0.6875rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-medium);
   cursor: pointer;
 }
@@ -1435,7 +1435,7 @@
 
 .swim-name {
   margin: 0;
-  font-size: 0.8125rem;
+  font-size: 0.84375rem;
   font-weight: var(--weight-semibold);
   color: var(--text-primary);
   white-space: nowrap;
@@ -1443,7 +1443,7 @@
 
 .swim-count {
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-bold);
   color: var(--text-secondary);
   background: var(--bg-column);
@@ -1454,7 +1454,7 @@
 
 .swim-empty {
   margin: 0;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   color: var(--text-muted);
   padding: var(--space-4) 0;
 }
@@ -1559,7 +1559,7 @@
   background: var(--bg-card);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
 }
 
 .lane-rename-ok:hover,
