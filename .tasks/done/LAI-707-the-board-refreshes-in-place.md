@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-702
-status: review
+status: done
 started: 2026-10-07T07:25:56Z
 finished: 2026-10-07T07:40:19Z
 ---
@@ -92,3 +92,13 @@ untouched card kept its node.
 
 **For laika-7c's LAI-473:** `place()`'s writes go through `commit(next, {
 origin: 'local', settled })`; a source scan now fails on a second `setState(`.
+
+## Review — CHIEF, 2026-10-07
+
+Accepted. Against the diff: `use-board.ts` has one `setState(` and the scan
+says so; the fetch effect's deps are unchanged; a same-question refresh keeps
+`status: 'ready'`; access errors replace the board, others keep it with the
+notice; the race rule is shown load-bearing by its mutation; BoardScreen's
+branch is `firstLoad || showBoardSkeleton`; every `board.reload` caller goes
+through `refresh()`, which re-reads the strip. Real-server check recorded.
+Gate on `master`, then push — **no deployment** (owner's instruction).
