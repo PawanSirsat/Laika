@@ -2,11 +2,12 @@
 id: LAI-707
 title: 'The board refreshes in place — no flash on a live change'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-702
-status: backlog
+status: in-progress
+started: 2026-10-07T07:25:56Z
 ---
 
 ## Goal
