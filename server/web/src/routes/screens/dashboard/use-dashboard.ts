@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { ActivityEvent } from '../../../api/activity.ts';
+import { shownInFeed, type ActivityEvent } from '../../../api/activity.ts';
 import { request } from '../../../api/client.ts';
 import { listMembers, type Member } from '../../../api/members.ts';
 import { listTasks, type Page, type Task } from '../../../api/tasks.ts';
@@ -115,7 +115,8 @@ export function useDashboard(slug: string | undefined, since: number | undefined
         setState({
           status: 'ready',
           tasks,
-          events,
+          // Reorders are recorded, never read as activity (LAI-473).
+          events: shownInFeed(events),
           members: new Map(memberList.members.map((m) => [m.user_id, m])),
           truncated: tasksCut || eventsCut,
         });

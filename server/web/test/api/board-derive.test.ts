@@ -15,6 +15,7 @@ import {
   blockers,
   boardStatusLabel,
   byIdIndex,
+  dropNeighbours,
   groupByColumn,
   hideOldDone,
   staleFor,
@@ -44,6 +45,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     external_ref: null,
     ready: false,
     stale_flagged_at: null,
+    position: null,
     blocked_by: [],
     tags: [],
     acceptance_md: null,
@@ -181,19 +183,80 @@ void describe('groupByColumn (LAI-266)', () => {
     assert.equal(lanes[1]?.tasks.length, 0);
   });
 
-  void test('sorts p1 before p2 before p3, then by number', () => {
+  void test('draws each lane in the project’s manual order, not by priority (LAI-473, D-070)', () => {
+    // Position order and priority order disagree here, or this could not tell
+    // the two apart. The board sorted by priority until LAI-473, which would
+    // have ignored every stored order and snapped every drop back.
     const lanes = groupByColumn(
       [
-        task({ id: '3', status: 'todo', priority: 'p3' }),
-        task({ id: '1', status: 'todo', priority: 'p1' }),
-        task({ id: '2', status: 'todo', priority: 'p2' }),
-        task({ id: '4', status: 'todo', priority: 'p1' }),
+        task({ id: '1', status: 'todo', priority: 'p1', position: 'a2' }),
+        task({ id: '2', status: 'todo', priority: 'p3', position: 'a0' }),
+        task({ id: '3', status: 'todo', priority: 'p2', position: 'a1' }),
       ],
       DEFAULT,
     );
     assert.deepEqual(
       lanes[0]?.tasks.map((t) => t.id),
+      ['2', '3', '1'],
+    );
+  });
+
+  void test('compares positions byte-wise, as the server does — never by locale', () => {
+    // 'Z' (0x5A) sorts before 'a' (0x61) byte-wise; a locale compare would
+    // put them the other way round on most systems.
+    const lanes = groupByColumn(
+      [
+        task({ id: '1', status: 'todo', position: 'a0' }),
+        task({ id: '2', status: 'todo', position: 'Zz' }),
+      ],
+      DEFAULT,
+    );
+    assert.deepEqual(
+      lanes[0]?.tasks.map((t) => t.id),
+      ['2', '1'],
+    );
+  });
+
+  void test('a task without a place sorts after every placed one, then by number', () => {
+    const lanes = groupByColumn(
+      [
+        task({ id: '3', status: 'todo', position: null }),
+        task({ id: '1', status: 'todo', position: null }),
+        task({ id: '2', status: 'todo', position: 'a5' }),
+      ],
+      DEFAULT,
+    );
+    assert.deepEqual(
+      lanes[0]?.tasks.map((t) => t.id),
+      ['2', '1', '3'],
+    );
+  });
+
+  void test('a move in flight sorts the card directly below the card it was dropped under', () => {
+    const tasks = [
+      task({ id: '1', status: 'todo', position: 'a0' }),
+      task({ id: '2', status: 'todo', position: 'a1' }),
+      task({ id: '3', status: 'todo', position: 'a2' }),
+      task({ id: '4', status: 'todo', position: 'a3' }),
+    ];
+    const below = groupByColumn(tasks, DEFAULT, { taskId: '4', afterId: '1' });
+    assert.deepEqual(
+      below[0]?.tasks.map((t) => t.id),
       ['1', '4', '2', '3'],
+    );
+
+    // With only the card it sits above — the top of a lane.
+    const above = groupByColumn(tasks, DEFAULT, { taskId: '3', beforeId: '1' });
+    assert.deepEqual(
+      above[0]?.tasks.map((t) => t.id),
+      ['3', '1', '2', '4'],
+    );
+
+    // An anchor that is not on the board leaves the card where it stands.
+    const lost = groupByColumn(tasks, DEFAULT, { taskId: '3', afterId: 'gone' });
+    assert.deepEqual(
+      lost[0]?.tasks.map((t) => t.id),
+      ['1', '2', '3', '4'],
     );
   });
 
@@ -392,5 +455,32 @@ void describe('boardStatusLabel — the column names the status (LAI-617)', () =
     const columns = [col('Testing', ['review'])];
     assert.equal(boardStatusLabel('review', columns), 'Testing');
     assert.ok((ALL_STATUSES as readonly string[]).includes('review'), 'review left the enum');
+  });
+});
+
+void describe('dropNeighbours — what a drop at an index asks the server (LAI-473)', () => {
+  const lane = ['a', 'b', 'c', 'd'];
+
+  void test('names the card above and the card below the gap, the dragged card left out', () => {
+    // Dragging `d` to index 1 of [a, b, c] — between a and b.
+    assert.deepEqual(dropNeighbours(lane, 'd', 1), { afterId: 'a', beforeId: 'b' });
+    // The top of the lane has nothing above; the bottom nothing below.
+    assert.deepEqual(dropNeighbours(lane, 'd', 0), { beforeId: 'a' });
+    assert.deepEqual(dropNeighbours(lane, 'a', 3), { afterId: 'd' });
+  });
+
+  void test('a card from another lane counts every card here', () => {
+    assert.deepEqual(dropNeighbours(lane, 'x', 2), { afterId: 'b', beforeId: 'c' });
+    assert.deepEqual(dropNeighbours([], 'x', 0), {});
+  });
+
+  void test('dropping a card back where it was is no move at all', () => {
+    assert.equal(dropNeighbours(lane, 'b', 1), undefined);
+    assert.notEqual(dropNeighbours(lane, 'b', 2), undefined);
+  });
+
+  void test('an index past either end is clamped, never a hole', () => {
+    assert.deepEqual(dropNeighbours(lane, 'x', 99), { afterId: 'd' });
+    assert.deepEqual(dropNeighbours(lane, 'x', -3), { beforeId: 'a' });
   });
 });

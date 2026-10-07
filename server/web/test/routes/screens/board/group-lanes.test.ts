@@ -46,6 +46,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     started_at: null,
     completed_at: null,
     stale_flagged_at: null,
+    position: null,
     created_at: 1,
     updated_at: 1,
     ...over,

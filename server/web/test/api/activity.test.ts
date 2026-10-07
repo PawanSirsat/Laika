@@ -8,7 +8,13 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { describeEvent, statusTransition, type ActivityEvent } from '../../src/api/activity.ts';
+import {
+  describeEvent,
+  isReorder,
+  shownInFeed,
+  statusTransition,
+  type ActivityEvent,
+} from '../../src/api/activity.ts';
 
 function event(over: Partial<ActivityEvent> & { type: string }): ActivityEvent {
   return {
@@ -70,5 +76,34 @@ void describe('statusTransition', () => {
         `payload ${JSON.stringify(payload)} should not produce a transition`,
       );
     }
+  });
+});
+
+void describe('a reorder never reaches a feed (LAI-473, D-060.4)', () => {
+  const event = (type: string, payload: unknown) =>
+    ({ id: '1', type, payload }) as unknown as ActivityEvent;
+
+  void test('isReorder is exactly task.updated naming the position field', () => {
+    assert.equal(
+      isReorder(event('task.updated', { field: 'position', from: 'a0', to: 'a1' })),
+      true,
+    );
+    // Its neighbours in the same verb are edits a person should see.
+    assert.equal(isReorder(event('task.updated', { field: 'tags', from: [], to: ['x'] })), false);
+    assert.equal(isReorder(event('task.updated', { changed: ['title'] })), false);
+    assert.equal(isReorder(event('task.status_changed', { field: 'position' })), false);
+    assert.equal(isReorder(event('task.updated', null)), false);
+  });
+
+  void test('shownInFeed drops reorders and keeps everything else, in order', () => {
+    const rows = [
+      event('task.created', {}),
+      event('task.updated', { field: 'position', from: 'a0', to: 'a1' }),
+      event('task.updated', { changed: ['title'] }),
+    ];
+    assert.deepEqual(
+      shownInFeed(rows).map((e) => e.type),
+      ['task.created', 'task.updated'],
+    );
   });
 });
