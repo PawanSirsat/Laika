@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
@@ -33,7 +33,15 @@ import { everyPage } from '../../api/every-page.ts';
 import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
-import { useBoard } from '../../api/use-board.ts';
+import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
+import {
+  flashTasks,
+  motionAllowed,
+  readMotionContext,
+  recentlyTouched,
+  runBoardTransition,
+  useRemoteTouches,
+} from './board/board-motion.ts';
 import {
   blockedState,
   boardStatusLabel,
@@ -66,6 +74,7 @@ import { getProject, listProjects, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
 import '../../components/markers.css';
 import './board/board.css';
+import './board/board-motion.css';
 import { pickProject } from '../../api/pick-project.ts';
 import { withProjectParam } from '../nav-url.ts';
 
@@ -91,6 +100,8 @@ export interface BoardScreenProps {
  */
 /** Nothing to protect when merging the strip's list — it has no local writes. */
 const NO_TASKS: ReadonlySet<string> = new Set();
+/** How long after a drop a `settled` card counts as carried there by hand. */
+const CARRIED_MS = 1000;
 
 export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
   const { theme } = useTheme();
@@ -309,7 +320,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     };
   }, [slug]);
 
-  const board = useBoard(slug, filter);
+  /** Shows each change to the cards — gliding, and glowing when it was someone else's (LAI-708). */
+  const presenter = useRef<BoardPresenter | undefined>(undefined);
+  const board = useBoard(slug, filter, presenter);
 
   /**
    * **Nothing for the first 150ms** (LAI-293). Against a local instance the
@@ -363,6 +376,65 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       release?.();
     };
   }, [holdBoard]);
+
+  /*
+   * **Motion** (LAI-708, D-071). Who changed what comes from the stream the
+   * board already holds; whether a change may glide is read at the moment it
+   * lands. A drop is remembered for a moment so the card the reader carried
+   * is not flown back from where they picked it up — the same `place()` call
+   * from Alt+Arrow has nobody carrying it, and glides.
+   */
+  const touches = useRemoteTouches(slug, me?.id);
+  const dragging = useRef(false);
+  const droppedAt = useRef(Number.NEGATIVE_INFINITY);
+  const flashNext = useRef<string[]>([]);
+  useEffect(() => {
+    const start = (): void => {
+      dragging.current = true;
+    };
+    const end = (): void => {
+      dragging.current = false;
+    };
+    const drop = (): void => {
+      dragging.current = false;
+      droppedAt.current = performance.now();
+    };
+    window.addEventListener('dragstart', start, true);
+    window.addEventListener('dragend', end, true);
+    window.addEventListener('drop', drop, true);
+    window.addEventListener('pointermove', end, true);
+    return () => {
+      window.removeEventListener('dragstart', start, true);
+      window.removeEventListener('dragend', end, true);
+      window.removeEventListener('drop', drop, true);
+      window.removeEventListener('pointermove', end, true);
+    };
+  }, []);
+  const boardView = view === 'kanban';
+  const drawerOpen = openTaskId !== undefined;
+  useLayoutEffect(() => {
+    presenter.current = (change, apply) => {
+      if (change.origin === 'refresh' && change.changed !== undefined) {
+        flashNext.current.push(...recentlyTouched(touches.current, change.changed, Date.now()));
+      }
+      const carried =
+        change.settled !== undefined && performance.now() - droppedAt.current < CARRIED_MS
+          ? change.settled
+          : undefined;
+      if (motionAllowed(readMotionContext({ dragging: dragging.current, boardView, drawerOpen }))) {
+        runBoardTransition(apply, carried);
+      } else {
+        apply();
+      }
+    };
+  });
+  // After the change is on screen — inside the transition, or at once.
+  useLayoutEffect(() => {
+    if (flashNext.current.length === 0) return;
+    const ids = flashNext.current;
+    flashNext.current = [];
+    flashTasks(ids);
+  }, [board.state.tasks]);
   const columns = useColumns(slug);
   const [creatingColumn, setCreatingColumn] = useState(false);
   const prefs = useViewPreferences(slug);
