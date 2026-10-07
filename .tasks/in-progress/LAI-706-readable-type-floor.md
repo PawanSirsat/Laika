@@ -2,10 +2,11 @@
 id: LAI-706
 title: 'Small text is readable: lift every size under 13.5px, change nothing else'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
-status: backlog
+started: 2026-10-07T07:08:00Z
+status: in-progress
 ---
 
 ## Goal
