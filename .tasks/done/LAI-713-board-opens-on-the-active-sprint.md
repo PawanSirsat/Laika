@@ -5,7 +5,7 @@ area: web
 assignee: chief
 priority: p1
 depends-on: []
-status: review
+status: done
 started: 2026-10-07T09:39:15Z
 finished: 2026-10-07T09:50:44Z
 ---
@@ -49,3 +49,20 @@ that."*
   three behaviour tests fail and the three guards pass.
 - **Gate.** test, lint and format each exited 0. Server 2099, web 1304,
   cli 85.
+
+## CHIEF — accepted 2026-10-07T09:50:53Z
+
+Checked against the diff and the browser run:
+
+- An unscoped URL opens on the active sprint, and the choice is written into
+  the URL.
+- No card from another sprint is ever drawn; the MutationObserver records
+  every card shown.
+- With no active sprint, the board opens on all sprints.
+- A `sprint=all` choice survives a reload.
+- A link naming a sprint wins over the default.
+- Clear all leaves the board on all sprints, and returning from the List
+  defaults again.
+- The List opened directly is unscoped.
+- Red first is verified, and the gate is green.
+- Deployed on the owner's instruction: *"deploy that feature right now"*.
