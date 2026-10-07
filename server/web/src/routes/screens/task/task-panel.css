@@ -43,6 +43,36 @@
   line-height: 1.55;
 }
 
+/*
+ * A rendered description (LAI-709): a block, not a button, so its markdown can
+ * hold headings and tables. The Edit button appears on hover and on focus.
+ */
+.inline-edit-rendered {
+  position: relative;
+  white-space: normal;
+}
+
+.inline-edit-open-button {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.inline-edit-rendered:hover .inline-edit-open-button,
+.inline-edit-open-button:focus-visible {
+  opacity: 1;
+}
+
 .inline-edit-placeholder {
   color: var(--text-muted);
   font-weight: var(--weight-medium);
