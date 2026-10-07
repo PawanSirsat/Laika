@@ -2,11 +2,12 @@
 id: LAI-472
 title: 'Tasks get a stored `position`, and an endpoint that moves one card'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-07T07:03:57Z
 ---
 
 ## Goal
