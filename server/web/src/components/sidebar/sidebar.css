@@ -71,7 +71,7 @@
 /* `Kvelld Dynamics` in the prototype — a fixture; ours is the org's real name. */
 .sidebar-orgline {
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-muted);
@@ -94,7 +94,7 @@
 }
 
 .sidebar-group-title {
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.1em;
   /* --text-muted is below AA for body text but clears 3:1 for these all-caps labels. */
@@ -203,7 +203,7 @@
   width: 18px;
   text-align: center;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
 }
@@ -263,7 +263,7 @@
   border-radius: 7px;
   background: transparent;
   font-family: inherit;
-  font-size: 0.71875rem; /* 11.5px */
+  font-size: 0.8125rem; /* 13px (LAI-706) */
   font-weight: var(--weight-bold);
   line-height: 1;
   color: var(--text-secondary);
@@ -353,7 +353,7 @@
 .spaces-pop-title {
   flex: 1;
   min-width: 0;
-  font-size: 0.8125rem;
+  font-size: 0.84375rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
   letter-spacing: -0.014em;
@@ -407,7 +407,7 @@
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 0.71875rem;
+  font-size: 0.8125rem;
   font-weight: var(--weight-medium);
   color: var(--text-primary);
   outline: none;
@@ -421,7 +421,7 @@
 .spaces-pop-empty {
   margin: 0;
   padding: 16px 8px;
-  font-size: 0.6875rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-medium);
   line-height: 1.5;
   color: var(--text-muted);
@@ -470,7 +470,7 @@
   align-items: center;
   justify-content: center;
   font-family: var(--font-mono);
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
 }
@@ -495,7 +495,7 @@
 
 .spaces-pop-meta {
   font-family: var(--font-mono);
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-muted);
@@ -581,7 +581,7 @@
 }
 
 .sidebar-user-name {
-  font-size: 0.6875rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-bold);
   line-height: 1;
   color: var(--text-primary);
@@ -592,7 +592,7 @@
 
 /* The role in purple — the prototype's own emphasis colour for it. */
 .sidebar-user-role {
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   font-weight: var(--weight-bold);
   line-height: 1;
   letter-spacing: 0.05em;
@@ -606,7 +606,7 @@
   border: none;
   background: transparent;
   font-family: inherit;
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-semibold);
   color: var(--text-muted);
   cursor: pointer;

@@ -1515,7 +1515,9 @@ rendering choice, never a different query path.
 - Dragging a card between columns issues `POST /api/v1/tasks/:id/status` and is
   subject to the same transition validation as any other caller (§5) — an
   illegal drag snaps back and surfaces the error, it does not optimistically lie.
-- Cards show: display key (`LAI-42`), title, assignee, priority, a **blocked**
+- Cards show: display key (`LAI-42`), title, assignee, **priority as Jira draws
+  it** — a red up chevron for P1, an orange equals sign for P2, a blue down
+  chevron for P3, each with its name for a screen reader (D-070) — a **blocked**
   marker when any dependency is unfinished, a **ready** marker when §4.5 holds,
   a **subtasks** `n/m` on a parent and `↳ KEY` on a child, and the **due
   date only when it is today or past** on open work — amber *Due today*, or
@@ -1525,8 +1527,15 @@ rendering choice, never a different query path.
   Staleness is still flagged by the server (§11.6) and listed in Activity;
   comments are counted in the drawer's tabs; the List keeps its Updated column.
 - Agent-authored recent activity is badged on the card (`actor_kind: 'agent'`).
-- Column order and the `ready` marker are both **derived** — never stored, never
-  cached client-side beyond the current response.
+- The `ready` marker is **derived** — never stored, never cached client-side
+  beyond the current response.
+- **Card order within a lane is stored, and it is the reader's** (D-060,
+  D-070): each lane draws its cards in the project's `position` order (§4.5),
+  not by priority. Dragging a card between two others puts it there — in its
+  own lane, or in another lane at the place it was dropped, which also changes
+  its status — and Alt with an arrow key does the same from the keyboard. The
+  card moves on drop and returns if the server refuses. A new task lands at the
+  bottom of its lane. A reader who may not write tasks cannot drag one.
 
 **List.** The same tasks as a sortable, densely readable table: key, title,
 status, assignee, priority, dependency count, due, updated — the title's

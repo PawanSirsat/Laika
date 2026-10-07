@@ -32,7 +32,7 @@
   align-items: center;
   gap: var(--space-3);
   margin: var(--space-5) 0 var(--space-3);
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.09em;
   color: var(--text-muted);
@@ -101,7 +101,7 @@
 
 .project-chip {
   flex: none;
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.06em;
   padding: 0.1875rem 0.3125rem;
@@ -130,7 +130,7 @@
 
 .project-card-desc {
   margin: 0;
-  font-size: 0.71875rem;
+  font-size: 0.8125rem;
   font-weight: var(--weight-medium);
   line-height: 1.5;
   color: var(--text-secondary);
@@ -151,7 +151,7 @@
 .project-key,
 .project-slug {
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   color: var(--text-muted);
 }
 
@@ -162,7 +162,7 @@
 .project-members,
 .project-open {
   font: inherit;
-  font-size: 0.65625rem;
+  font-size: 0.78125rem;
   font-weight: var(--weight-bold);
   border-radius: var(--radius-card);
   padding: 0.3125rem 0.625rem;
@@ -242,7 +242,7 @@
   gap: var(--space-2);
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   color: var(--text-muted);
   flex-wrap: wrap;
 }
@@ -295,7 +295,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   font-weight: var(--weight-heavy);
   box-shadow: 0 0 0 2.5px var(--bg-card);
   margin-left: -8px;
