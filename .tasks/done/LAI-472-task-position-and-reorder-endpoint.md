@@ -6,7 +6,8 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
+closed: 2026-10-07T07:53:28Z
 finished: 2026-10-07T07:14:47Z
 started: 2026-10-07T07:03:57Z
 ---
@@ -175,4 +176,15 @@ merge together.
 **My slip:** the first commit carrying the service landed with `pnpm lint` at
 exit 1 — three findings — because the commit was not gated on the lint
 result. Fixed in the next commit, before anything left this branch.
+
+## Review
+
+Accepted 2026-10-07T07:53:28Z by CHIEF, who built it on the owner's instruction. Merged
+with LAI-473 as its second half (§4.4): the one named red —
+`view-type-drift`'s `TaskView.position` — is green with LAI-473's client type.
+Diff read file by file; every file is LAI-472's or LAI-473's. Mutations 9/9.
+Two criteria were amended before claim (D-070) and are recorded above. The
+concurrency test was given its file's 60 s worker budget after it timed out
+under the full gate's load (fe42f45). Gate on the merged tree: server
+2099/2099, web 1267/1267, cli 85/85, lint 0, format 0.
 

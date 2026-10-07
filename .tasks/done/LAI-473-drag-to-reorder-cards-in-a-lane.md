@@ -7,7 +7,8 @@ priority: p1
 depends-on: [LAI-472]
 # LAI-472 is in review on build-list, held by CHIEF for the §4.4 merge; this is its second half (CHIEF, 2026-10-07).
 discovered-from:
-status: review
+status: done
+closed: 2026-10-07T07:53:28Z
 started: 2026-10-07T07:15:16Z
 finished: 2026-10-07T07:46:29Z
 ---
@@ -154,3 +155,18 @@ serve. By reading: a reorder frame still ticks `useEvents`, the board refetches
 300ms later, and an in-flight drop keeps drawing beside its anchor until the
 answer replaces it — the client never computes a key, so a refetch cannot
 double-apply one. The optimistic half **is** tested. Neither SSE claim is.
+
+## Review
+
+Accepted 2026-10-07T07:53:28Z by CHIEF, who built it with one agent on the owner's
+instruction. Tests: `card-reorder.test.ts` 9/9 with real pointer drags and a
+stateful stub; mutations 6/6 red. **Two criteria stay unticked and are
+accepted as such:** a second viewer seeing the reorder over SSE, and the
+optimistic move reconciling with a frame from another viewer — the browser
+harness serves no event stream. Both are verified by reading the code only: a
+reorder writes `task.updated`, the frame ticks the board's refetch, and
+LAI-707's `pending` keeps an in-flight card from being pulled back. The
+keyboard path deviates from "pick up, move, drop" as recorded above. Merged
+over LAI-707: `place()` was converted to its single writer, `commit`, and the
+`use-board-commit` guard is green. Gate as LAI-472's.
+
