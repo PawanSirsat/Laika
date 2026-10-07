@@ -168,5 +168,8 @@ describe('two connections reordering into one gap at once (LAI-472)', () => {
       const seen = sequence.filter((id) => mine.includes(id));
       expect(seen).toEqual([...mine].reverse());
     }
-  });
+    // The same budget as the two worker tests above: two threads, thirty
+    // write transactions. Under the full root gate's load the default 5 s
+    // timed out while the file alone passes in about 2 s (LAI-473's agent).
+  }, 60_000);
 });
