@@ -131,9 +131,10 @@ void describe('toggling a card field', () => {
     try {
       await openPanel(h);
 
-      // The priority dot, not the age: LAI-701 removed the age from the card.
+      // The priority icon, not the age: LAI-701 removed the age from the card.
+      // It was the priority dot until LAI-705 drew Jira's icon in its place.
       assert.equal(
-        await h.page.locator('.card .card-dot').count(),
+        await h.page.locator('.card .priority-icon').count(),
         1,
         'the field was not there to hide',
       );
@@ -143,7 +144,7 @@ void describe('toggling a card field', () => {
       await h.page.waitForTimeout(120);
 
       assert.equal(
-        await h.page.locator('.card .card-dot').count(),
+        await h.page.locator('.card .priority-icon').count(),
         0,
         'the field is hidden, not removed — a display:none node still counts 1',
       );
@@ -158,7 +159,7 @@ void describe('toggling a card field', () => {
       await h.page.locator('.vs-search').fill('Priority');
       await h.page.locator('.vs-add').first().click();
       await h.page.waitForTimeout(120);
-      assert.equal(await h.page.locator('.card .card-dot').count(), 1);
+      assert.equal(await h.page.locator('.card .priority-icon').count(), 1);
     } finally {
       await h.close();
     }

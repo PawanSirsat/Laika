@@ -259,21 +259,23 @@ void describe('the due chip, only when it is today or past (LAI-701)', () => {
         const seen = await card(h, key).evaluate((el) => {
           const box = el.getBoundingClientRect();
           const foot = el.querySelector('.card-foot');
-          // `.visually-hidden` is clipped to 1px on purpose — it is the
-          // priority's name for a screen reader, not something on the card.
+          // `.visually-hidden` is clipped to 1px on purpose — a name for a
+          // screen reader, not something on the card. (The priority's name
+          // was one until LAI-705; it is now the icon's own `aria-label`.)
           const kids =
             foot === null
               ? []
               : [...foot.children].filter((c) => !c.classList.contains('visually-hidden'));
+          // By attribute: the priority icon is an <svg>, whose `className` is
+          // an SVGAnimatedString rather than a string (LAI-705).
+          const cls = (c: Element) => c.getAttribute('class') ?? '';
           return {
             width: Math.round(box.width),
-            classes: kids.map((c) => c.className),
+            classes: kids.map(cls),
             clipped: kids
               .filter((c) => (c as HTMLElement).scrollWidth > (c as HTMLElement).clientWidth + 1)
-              .map((c) => `${c.className}: ${c.textContent ?? ''}`),
-            outside: kids
-              .filter((c) => c.getBoundingClientRect().right > box.right + 0.5)
-              .map((c) => c.className),
+              .map((c) => `${cls(c)}: ${c.textContent ?? ''}`),
+            outside: kids.filter((c) => c.getBoundingClientRect().right > box.right + 0.5).map(cls),
           };
         });
         assert.ok(seen.width <= 220, `${key}: the card is ${String(seen.width)}px, not squeezed`);

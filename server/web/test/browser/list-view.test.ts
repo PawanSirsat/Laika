@@ -140,7 +140,8 @@ void describe('the List view', () => {
         Math.round((await h.page.locator(selector).first().boundingBox())?.width ?? -1);
 
       // The design's own figures: KEY 74 · STATUS 104 · PRI 42 · ASSIGNEE 150 ·
-      // SPR 46, with SUMMARY taking what is left.
+      // SPR 46, with SUMMARY taking what is left. PRI is 58 since LAI-705 put
+      // Jira's icon before `P1`; it is asserted in priority-icons.test.ts.
       assert.equal(await width('.list-key'), 74, 'KEY');
       assert.equal(await width('.list-spr'), 46, 'SPR');
       /*

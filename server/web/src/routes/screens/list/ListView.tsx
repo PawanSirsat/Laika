@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -434,7 +435,14 @@ export function ListView({
                     )}
                   </td>
 
-                  <td className={`list-pri list-tone-${row.priorityTone}`}>{row.priority}</td>
+                  {/* Jira's icon, then the design's `P1` (LAI-705). The icon
+                      brings its own colour; the text keeps the tone's. */}
+                  <td className={`list-pri list-tone-${row.priorityTone}`}>
+                    <span className="list-pri-cell">
+                      <PriorityIcon priority={row.priorityLevel} size={12} />
+                      {row.priority}
+                    </span>
+                  </td>
 
                   <td>
                     <span className="list-assignee">

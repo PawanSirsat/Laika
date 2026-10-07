@@ -872,25 +872,6 @@
   flex: 1;
 }
 
-/* One glyph, three states: P1 solid red, P2 solid amber, P3 hollow. */
-.card-dot {
-  width: 9px;
-  height: 9px;
-  flex: none;
-  border-radius: var(--radius-pill);
-}
-
-.card-dot-p1 {
-  background: var(--overdue);
-}
-.card-dot-p2 {
-  background: var(--chip-orange);
-}
-.card-dot-p3 {
-  background: transparent;
-  border: 1.5px solid var(--text-muted);
-}
-
 .card-deps {
   display: flex;
   align-items: center;
@@ -1896,17 +1877,11 @@
   align-items: flex-end;
 }
 
-/* Priority dot: the prototype's 9px; the ring stays the none-state. */
-.card .card-dot {
-  width: 9px;
-  height: 9px;
-}
-
-.card .card-dot-p1 {
-  background: var(--priority-high);
-}
-.card .card-dot-p2 {
-  background: var(--priority-medium);
+/* Priority: Jira's icon (LAI-705) where the prototype drew a 9px dot. The
+   footer aligns its children to the bottom for the avatar; the icon sits on
+   the key's line instead, so it lines up with the text beside it. */
+.card .card-foot > .priority-icon {
+  align-self: center;
 }
 
 /* The 26px avatar, and the accent bot badge as a 15px square. */
@@ -1978,12 +1953,12 @@
  *
  * The meta row's children all had `min-width: 0`, so the flexbox shrank
  * whatever it liked — measured: a 36px avatar squeezed the *key* to "L…",
- * which is the one thing on the row a person actually cites. The dot, key
+ * which is the one thing on the row a person actually cites. The priority icon, key
  * and sprint chip are fixed; the counts and age keep their `min-width: 0`
  * and ellipsis, so they are what compresses when space runs out.
  */
 .card .card-foot > .card-key,
-.card .card-foot > .card-dot,
+.card .card-foot > .priority-icon,
 .card .card-foot > .card-sprint,
 .card .card-foot > .card-sprint-on {
   flex-shrink: 0;

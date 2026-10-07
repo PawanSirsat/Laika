@@ -1,0 +1,26 @@
+/*
+ * Priority icons (LAI-705, D-070). The drawing is in `PriorityIcon.tsx`; this
+ * file only says what colour each level is, from existing tokens (D-020), and
+ * every one of them is redefined under `[data-theme='light']` in `theme.css`.
+ */
+
+.priority-icon {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+}
+
+/* High: the red the board already uses for overdue. */
+.priority-icon-p1 {
+  color: var(--overdue);
+}
+
+/* Medium: the amber the board already uses for "due today". */
+.priority-icon-p2 {
+  color: var(--chip-orange);
+}
+
+/* Low: blue, as Jira draws it. */
+.priority-icon-p3 {
+  color: var(--chip-blue);
+}
