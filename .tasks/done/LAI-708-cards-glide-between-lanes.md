@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: [LAI-707, LAI-473]
 discovered-from: LAI-707
-status: review
+status: done
 started: 2026-10-07T07:54:58Z
 finished: 2026-10-07T08:18:37Z
 ---
@@ -61,3 +61,25 @@ Absorbs LAI-254's *"a card that changes flashes"* criterion. Keys on LAI-473's
 - Red first: against `master`'s `use-board.ts`, `BoardScreen.tsx` and
   `ListView.tsx`, six of the ten browser tests fail; the drawer and own-echo
   guards pass, as guards should.
+
+## CHIEF — accepted 2026-10-07T08:19:05Z
+
+Every criterion checked against the diff and the browser run:
+
+- **Glide.** The keyboard move names the moving card before and after, for
+  200ms with the root `running`, and leaves nothing behind. A live agent change
+  glides. An optimistic drop leaves the carried card unnamed while its
+  neighbours make room. A refused move glides back. Reduced motion, an open
+  drawer and the List run no transition.
+- **Clicks.** A card standing still during a slowed 3s glide takes the click,
+  and its drawer opens.
+- **Glow.** An agent's change glows. The viewer's own echo does not. Under
+  reduced motion the glow is a still ring, with `steps(1, end)` timing. A List
+  row glows.
+- **Red first.** Six of the ten browser tests fail against master's three files,
+  and the swaps were verified. The one-glide mutation went red on the duration
+  assertion.
+- **Decision.** D-071 is recorded, the `theme.css` comment is scoped to its
+  token, and SPEC §11.4.1 is noted.
+- **Gate on build-motion.** `pnpm test`, `pnpm lint` and `pnpm format` each
+  exited 0. Server 2099, web 1295, cli 85.
