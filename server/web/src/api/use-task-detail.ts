@@ -1,6 +1,6 @@
 import { everyPage } from './every-page.ts';
 import { useCallback, useEffect, useState } from 'react';
-import { listTaskActivity, type ActivityEvent } from './activity.ts';
+import { listTaskActivity, shownInFeed, type ActivityEvent } from './activity.ts';
 import { addComment, isComment, listComments, type Comment } from './comments.ts';
 
 export interface TaskDetail {
@@ -71,8 +71,9 @@ export function useTaskDetail(slug: string | undefined, taskId: string | undefin
           status: 'ready',
           // Oldest-first from the server (LAI-047); left in that order.
           comments: comments.data.filter(isComment),
-          // Newest-first from the server (LAI-055); also left alone.
-          activity: activity.data,
+          // Newest-first from the server (LAI-055); also left alone. Reorders
+          // are dropped — a drag is not history a reader needs (LAI-473).
+          activity: shownInFeed(activity.data),
           error: null,
         });
       })

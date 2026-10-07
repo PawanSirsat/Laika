@@ -11,6 +11,7 @@ import {
   getTask,
   listTasks,
   removeTaskDependency,
+  reorderTask,
   TASK_PRIORITIES,
   TASK_STATUSES,
   updateTask,
@@ -86,6 +87,12 @@ const StatusBody = strictObject({ status: z.enum(TASK_STATUSES) });
 // has no sibling to be confused with — `blocked_by` beside `blocks` was ambiguous,
 // `/dependencies` beside nothing is not (D-044).
 const DependencyBody = strictObject({ blocked_by_task_id: z.string().min(1) });
+// LAI-472: neighbours, not an index. "At least one" is the service's rule, so
+// the MCP path and this one refuse an empty move with the same words.
+const ReorderBody = strictObject({
+  after_task_id: z.string().min(1).optional(),
+  before_task_id: z.string().min(1).optional(),
+});
 
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
@@ -185,6 +192,20 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     const body = parseBody(StatusBody, await c.req.json().catch(() => null));
 
     return c.json(changeStatus(db, actor, c.req.param('id'), body.status));
+  });
+
+  /**
+   * Move one card in its project's manual order (§6.4, LAI-472, D-070).
+   * `after_task_id` is the card it lands directly below, `before_task_id` the
+   * one directly above. A `POST`, not a `PATCH` of `position`: the client
+   * names neighbours and the server computes the key, so `position` is never
+   * written directly — the way `status` moves only through `/status`.
+   */
+  app.post('/:id/reorder', async (c) => {
+    const actor = requireActor(c);
+    const body = parseBody(ReorderBody, await c.req.json().catch(() => null));
+
+    return c.json(reorderTask(sqlite, db, actor, c.req.param('id'), body));
   });
 
   app.post('/:id/dependencies', async (c) => {

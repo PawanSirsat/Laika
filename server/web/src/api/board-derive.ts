@@ -282,7 +282,80 @@ export interface Lane {
  *    server forbids it with a primary key; this is what stops the board drawing
  *    the same card twice if it ever happened anyway.
  */
-export function groupByColumn(tasks: readonly Task[], columns: readonly BoardColumn[]): Lane[] {
+/**
+ * A card move the server has not answered yet (LAI-473): where the reader
+ * dropped it, by the card it went below (`afterId`) or above (`beforeId`).
+ */
+export interface PendingMove {
+  readonly taskId: string;
+  readonly afterId?: string | undefined;
+  readonly beforeId?: string | undefined;
+}
+
+/** Byte-wise, as SQLite's BINARY collation and the server compare keys. */
+function compareKeys(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * The lane order (LAI-473, D-070): the project's **manual order**, compared
+ * byte-wise; a task the server has not placed sorts after every placed one,
+ * by number. A move in flight sorts its card **directly beside its anchor** —
+ * the same position, nudged a half-step — so the drop shows at once without
+ * the client computing a key of its own, and the server's answer replaces it.
+ */
+function laneOrder(tasks: readonly Task[], pending: PendingMove | undefined) {
+  const byId = new Map(tasks.map((t) => [t.id, t]));
+  const anchor = (() => {
+    if (pending === undefined) return undefined;
+    const after = pending.afterId === undefined ? undefined : byId.get(pending.afterId);
+    if (after?.position != null) return { position: after.position, nudge: 1 };
+    const before = pending.beforeId === undefined ? undefined : byId.get(pending.beforeId);
+    if (before?.position != null) return { position: before.position, nudge: -1 };
+    return undefined;
+  })();
+  const key = (t: Task) =>
+    anchor !== undefined && t.id === pending?.taskId ? anchor : { position: t.position, nudge: 0 };
+
+  return (a: Task, b: Task): number => {
+    const ka = key(a);
+    const kb = key(b);
+    if (ka.position === null || kb.position === null) {
+      if (ka.position !== kb.position) return ka.position === null ? 1 : -1;
+      return a.number - b.number;
+    }
+    return compareKeys(ka.position, kb.position) || ka.nudge - kb.nudge || a.number - b.number;
+  };
+}
+
+/**
+ * What a drop at `index` asks the server (LAI-473): the card above the gap and
+ * the card below it, in a lane whose current order is `ids`, with the dragged
+ * card left out — it is not its own neighbour. `undefined` when the drop puts
+ * the card back exactly where it was, which is no move at all. An index past
+ * either end is clamped.
+ */
+export function dropNeighbours(
+  ids: readonly string[],
+  draggedId: string,
+  index: number,
+): { afterId?: string; beforeId?: string } | undefined {
+  const others = ids.filter((id) => id !== draggedId);
+  const at = Math.max(0, Math.min(index, others.length));
+  if (ids.indexOf(draggedId) === at) return undefined;
+  const afterId = others[at - 1];
+  const beforeId = others[at];
+  return {
+    ...(afterId === undefined ? {} : { afterId }),
+    ...(beforeId === undefined ? {} : { beforeId }),
+  };
+}
+
+export function groupByColumn(
+  tasks: readonly Task[],
+  columns: readonly BoardColumn[],
+  pending?: PendingMove,
+): Lane[] {
   const ordered = [...columns].sort((a, b) => a.position - b.position);
 
   // First column claiming a status wins, so a duplicate cannot draw twice.
@@ -303,10 +376,13 @@ export function groupByColumn(tasks: readonly Task[], columns: readonly BoardCol
     byId.get(columnId)?.tasks.push(task);
   }
 
-  // p1 before p2 before p3, then oldest first — the order someone picking up
-  // work would want, and stable so a re-render never reshuffles the board.
+  // **The reader's order, not priority's** (LAI-473, D-070). This sorted by
+  // priority then number, in the browser, after the fetch — so a stored order
+  // would have been ignored and every drop would have snapped back. Priority
+  // is shown by its icon now, not by its place.
+  const compare = laneOrder(tasks, pending);
   for (const lane of lanes) {
-    lane.tasks.sort((a, b) => a.priority.localeCompare(b.priority) || a.number - b.number);
+    lane.tasks.sort(compare);
   }
 
   return lanes;

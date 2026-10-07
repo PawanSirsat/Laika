@@ -14,6 +14,7 @@ import {
   getTask,
   listTasks,
   removeTaskDependency,
+  reorderTask,
   subtaskProgress,
   updateTask,
 } from '../../src/services/tasks.ts';
@@ -926,6 +927,8 @@ describe('started_at and completed_at', () => {
         'number',
         'parent_task_id',
         'planned_start',
+        // LAI-472: the manual board order, in §6.4's task shape with it.
+        'position',
         'priority',
         'project_id',
         'ready',
@@ -1229,5 +1232,194 @@ describe('due_on and planned_start (SPEC §4.5, D-066)', () => {
       external_ref: 'https://example.test/pr/1',
     });
     expect(newTask('Plain')).toMatchObject({ branch: null, external_ref: null });
+  });
+});
+
+describe('manual order: position and reorderTask (LAI-472, D-060, D-070)', () => {
+  const A = (title: string, now: number) => newTask(title, { now });
+  const order = () =>
+    t.db
+      .select({ title: tasks.title, position: tasks.position })
+      .from(tasks)
+      .all()
+      .sort((x, y) => ((x.position ?? '') < (y.position ?? '') ? -1 : 1))
+      .map((r) => r.title);
+  const reorder = (
+    id: string,
+    input: { before_task_id?: string; after_task_id?: string },
+    now = 9_000,
+  ) => reorderTask(t.sqlite, t.db, actor(adminId), id, { ...input, now });
+  const code = (fn: () => unknown) => {
+    try {
+      fn();
+    } catch (e) {
+      return e instanceof ApiError ? e.code : `not an ApiError: ${String(e)}`;
+    }
+    return 'did not throw';
+  };
+
+  it('a new task goes to the end of its project’s order, and every view serves its place', () => {
+    const a = A('a', 1000);
+    const b = A('b', 2000);
+    const c = A('c', 3000);
+    expect(order()).toEqual(['a', 'b', 'c']);
+    for (const v of [a, b, c]) expect(typeof v.position).toBe('string');
+    expect(getTask(t.db, actor(adminId), a.id).position).toBe(a.position);
+    expect(a.position! < b.position! && b.position! < c.position!).toBe(true);
+  });
+
+  it('moves a card directly after one neighbour, directly before the other, or between both', () => {
+    const a = A('a', 1000);
+    const b = A('b', 2000);
+    const c = A('c', 3000);
+    const d = A('d', 4000);
+
+    reorder(d.id, { after_task_id: a.id });
+    expect(order()).toEqual(['a', 'd', 'b', 'c']);
+    reorder(a.id, { before_task_id: c.id });
+    expect(order()).toEqual(['d', 'b', 'a', 'c']);
+    reorder(c.id, { after_task_id: d.id, before_task_id: b.id });
+    expect(order()).toEqual(['d', 'c', 'b', 'a']);
+  });
+
+  it('writes exactly one row — every other task keeps its place and its updated_at', () => {
+    const a = A('a', 1000);
+    A('b', 2000);
+    const c = A('c', 3000);
+    const others = () =>
+      t.db
+        .select()
+        .from(tasks)
+        .all()
+        .filter((r) => r.id !== c.id)
+        .map((r) => ({ id: r.id, position: r.position, updatedAt: r.updatedAt }));
+    const before = others();
+
+    const moved = reorder(c.id, { before_task_id: a.id }, 7_000);
+
+    expect(others()).toEqual(before);
+    expect(moved.position! < a.position!).toBe(true);
+    // The moved card did change, and says so — `updated_since` must see it.
+    expect(moved.updated_at).toBe(7_000);
+  });
+
+  it('sixty drops into the same gap keep the order exact and every place distinct', () => {
+    const low = A('low', 1000);
+    const high = A('high', 2000);
+    const dropped: string[] = [];
+    for (let i = 0; i < 60; i++) {
+      const card = A(`m${String(i)}`, 3000 + i);
+      reorder(card.id, { after_task_id: low.id, before_task_id: high.id }, 10_000 + i);
+      dropped.push(`m${String(i)}`);
+    }
+    // Each lands directly after `low`, so the latest drop is first.
+    expect(order()).toEqual(['low', ...[...dropped].reverse(), 'high']);
+    const places = t.db
+      .select({ p: tasks.position })
+      .from(tasks)
+      .all()
+      .map((r) => r.p);
+    expect(new Set(places).size).toBe(62);
+  });
+
+  it('a drop where the card already is writes nothing — no row, no activity', () => {
+    const a = A('a', 1000);
+    const b = A('b', 2000);
+    const rows = () => t.db.select().from(activity).all().length;
+    const before = rows();
+
+    const view = reorder(b.id, { after_task_id: a.id }, 5_000);
+
+    expect(view.position).toBe(b.position);
+    expect(view.updated_at).toBe(2000);
+    expect(rows()).toBe(before);
+  });
+
+  it('writes task.updated naming the field, from and to — no new verb', () => {
+    const a = A('a', 1000);
+    const b = A('b', 2000);
+    reorder(b.id, { before_task_id: a.id });
+
+    const row = t.db
+      .select()
+      .from(activity)
+      .all()
+      .filter((r) => r.taskId === b.id && r.type === 'task.updated')
+      .at(-1)!;
+    const moved = getTask(t.db, actor(adminId), b.id);
+    expect(JSON.parse(row.payloadJson)).toEqual({
+      field: 'position',
+      from: b.position,
+      to: moved.position,
+    });
+  });
+
+  it('refuses stale neighbours with 409, rather than guessing a place', () => {
+    const a = A('a', 1000);
+    const b = A('b', 2000);
+    const c = A('c', 3000);
+    // `after` must sort before `before`; a board that showed them the other
+    // way round was looking at an order that has since changed.
+    expect(code(() => reorder(c.id, { after_task_id: b.id, before_task_id: a.id }))).toBe(
+      'conflict',
+    );
+    expect(order()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('refuses a neighbour that is the card itself, missing, or in another project', () => {
+    const a = A('a', 1000);
+    A('b', 2000);
+    createProject(t.sqlite, t.db, actor(adminId), { name: 'Other', slug: 'other', prefix: 'OTH' });
+    const elsewhere = createTask(t.sqlite, t.db, actor(adminId), 'other', { title: 'x' });
+
+    expect(code(() => reorder(a.id, { after_task_id: a.id }))).toBe('unprocessable');
+    expect(code(() => reorder(a.id, { after_task_id: elsewhere.id }))).toBe('unprocessable');
+    expect(code(() => reorder(a.id, { before_task_id: 'no-such-task' }))).toBe('unprocessable');
+    expect(code(() => reorder(a.id, {}))).toBe('unprocessable');
+    expect(order().filter((x) => x !== 'x')).toEqual(['a', 'b']);
+  });
+
+  it('refuses a viewer, who may not write tasks', () => {
+    const a = A('a', 1000);
+    const b = A('b', 2000);
+    const viewerId = makeUser('viewer');
+    expect(
+      code(() =>
+        reorderTask(t.sqlite, t.db, actor(viewerId), b.id, { before_task_id: a.id, now: 9_000 }),
+      ),
+    ).toBe('forbidden');
+    expect(order()).toEqual(['a', 'b']);
+  });
+
+  it('places neighbours that predate LAI-472 before reading them', () => {
+    const a = A('a', 1000);
+    const b = A('b', 2000);
+    // As a database from before the backfill ran would hold them.
+    t.db.update(tasks).set({ position: null }).run();
+
+    reorder(a.id, { after_task_id: b.id });
+
+    expect(order()).toEqual(['b', 'a']);
+    expect(
+      t.db
+        .select()
+        .from(tasks)
+        .all()
+        .every((r) => r.position !== null),
+    ).toBe(true);
+  });
+
+  it('leaves the list in its paging order — updated_at, then id — whatever the manual order', () => {
+    // The list is the key agents page and catch up on (LAI-704). The board
+    // sorts lanes by `position` itself.
+    const a = A('a', 1000);
+    A('b', 2000);
+    const c = A('c', 3000);
+    reorder(c.id, { before_task_id: a.id }, 4_000);
+
+    // The two orders differ, or this could not tell them apart.
+    expect(order()).toEqual(['c', 'a', 'b']);
+    const listed = listTasks(t.db, actor(adminId), 'laika', LIST).map((v) => v.title);
+    expect(listed).toEqual(['a', 'b', 'c']);
   });
 });

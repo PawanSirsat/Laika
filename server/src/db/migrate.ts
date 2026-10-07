@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { backfillBoardColumns, backfillTaskTimestamps } from './backfill.ts';
+import { backfillBoardColumns, backfillTaskPositions, backfillTaskTimestamps } from './backfill.ts';
 import { type Db } from './client.ts';
 
 /**
@@ -319,6 +319,12 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
     // and idempotent in the same sense: it acts only on a project with no
     // columns at all.
     backfillBoardColumns(db);
+
+    // Gives every task a place in its project's manual order (LAI-472, D-070),
+    // in the order the board already shows. Here for the same reason as the
+    // two above — the keys are computed — and idempotent the same way: it only
+    // fills a null.
+    backfillTaskPositions(db);
   } catch (cause) {
     if (snapshotPath === null) throw cause;
 

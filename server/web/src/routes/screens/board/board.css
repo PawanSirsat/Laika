@@ -234,6 +234,29 @@
 }
 
 /*
+ * **Where a dragged card will land** (LAI-473). A line between cards, never a
+ * highlight on one — a drop goes *between* two cards, and an outline on a card
+ * reads as "onto this". The accent, from the existing tokens (D-020), with a
+ * soft halo so it reads on the dark lane as well as the light one. The
+ * negative margin takes the line's height back from the lane's gap, so the
+ * cards below do not jump by its height as it moves.
+ */
+.lane-drop {
+  flex: none;
+  height: 3px;
+  margin: -6px 2px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+  pointer-events: none;
+}
+
+/* The card being dragged stays in place, faded — the line shows where it goes. */
+.lane-item-dragging .card {
+  opacity: 0.4;
+}
+
+/*
  * The keyboard route for moving a card. The prototype has no such control — it
  * assumes a mouse — but drag-and-drop alone is not operable by keyboard, so it
  * stays. Made quiet rather than removed: it sits under the card at label size,

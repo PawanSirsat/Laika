@@ -49,6 +49,13 @@ export interface Task {
   readonly created_by_client: string | null;
   readonly discovered_from: string | null;
   /**
+   * The task's place in its project's **manual order** (§4.5, LAI-472, D-070):
+   * an opaque key compared **byte-wise** — never with `localeCompare`, which
+   * would fold case and disagree with the server. A lane draws its tasks in
+   * this order. `null` only for a row the server had not yet placed.
+   */
+  readonly position: string | null;
+  /**
    * **Derived by the server** (§4.5): backlog or todo, unassigned, and every
    * dependency done. Displayed, never recomputed — recomputing it here is the
    * bug LAI-049 warns about, because the two definitions would drift.
@@ -366,6 +373,27 @@ export function canAssignOthers(
  * That rejection is the whole reason the board does not move the card until this
  * resolves — see `use-board.ts`.
  */
+/**
+ * Move one card in its project's manual order (§6.4, LAI-472, D-070).
+ *
+ * Addressed by **neighbours**, never an index: `after_task_id` is the card it
+ * lands directly below, `before_task_id` the card directly above. The server
+ * computes the key and writes one row; `409` means the order changed under the
+ * drag, and the board reloads rather than guessing.
+ */
+export function reorderTask(
+  taskId: string,
+  to: { readonly after_task_id?: string | undefined; readonly before_task_id?: string | undefined },
+): Promise<Task> {
+  return request<Task>(`/tasks/${encodeURIComponent(taskId)}/reorder`, {
+    method: 'POST',
+    body: {
+      ...(to.after_task_id === undefined ? {} : { after_task_id: to.after_task_id }),
+      ...(to.before_task_id === undefined ? {} : { before_task_id: to.before_task_id }),
+    },
+  });
+}
+
 export function changeStatus(taskId: string, status: TaskStatus): Promise<Task> {
   return request<Task>(`/tasks/${encodeURIComponent(taskId)}/status`, {
     method: 'POST',

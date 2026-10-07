@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { listProjectActivity } from './activity.ts';
+import { isReorder, listProjectActivity, shownInFeed } from './activity.ts';
 import { STREAM_TYPES } from './stream-types.ts';
 import { subscribeToEvents } from './event-stream.ts';
 import type { ActivityEvent } from './activity.ts';
@@ -140,7 +140,7 @@ export function useEvents(slug: string | undefined): UseEvents {
         setRecent((live) => {
           // Anything the stream already delivered wins; history fills behind it.
           const ids = new Set(live.map((e) => e.id));
-          return [...live, ...page.data.filter((e) => !ids.has(e.id))].slice(0, KEEP);
+          return [...live, ...shownInFeed(page.data).filter((e) => !ids.has(e.id))].slice(0, KEEP);
         });
       })
       .catch(() => {
@@ -166,8 +166,13 @@ export function useEvents(slug: string | undefined): UseEvents {
       switch (frame.kind) {
         case 'activity': {
           try {
-            const parsed: unknown = JSON.parse(frame.data);
-            setRecent((current) => [parsed as ActivityEvent, ...current].slice(0, KEEP));
+            const parsed = JSON.parse(frame.data) as ActivityEvent;
+            // A reorder still ticks — the tick is what makes the board refetch
+            // and show another viewer's drag — but it never joins the list a
+            // person reads (LAI-473, D-060.4).
+            if (!isReorder(parsed)) {
+              setRecent((current) => [parsed, ...current].slice(0, KEEP));
+            }
             setTick((n) => n + 1);
           } catch {
             // A frame we cannot parse is not worth breaking the board over.

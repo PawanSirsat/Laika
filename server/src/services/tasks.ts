@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, gte, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNull, lt, ne, or } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import {
   activityActor,
@@ -19,6 +19,8 @@ import {
 import { type TaskPriority, type TaskStatus } from '../db/enums.ts';
 import { newId } from '../db/ids.ts';
 import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
+import { backfillTaskPositions, lastPosition } from '../db/backfill.ts';
+import { keyAfter, keyBetween } from '../db/order-key.ts';
 import { projects, taskDependencies, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
@@ -77,6 +79,13 @@ export interface TaskView {
    */
   created_by_client: string | null;
   discovered_from: string | null;
+  /**
+   * The task's place in its project's **manual order** (§4.5, LAI-472, D-070):
+   * an opaque key that sorts byte-wise. A lane draws its tasks in this order.
+   * Compare it, never parse it. `null` only for a row written outside the
+   * services before the boot backfill reached it — never on a running server.
+   */
+  position: string | null;
   /**
    * The task this is a subtask of, or null (§4.5, D-066). One level deep,
    * same project; `ready` ignores it. Children are found with `?parent=`.
@@ -252,6 +261,7 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     started_at: row.startedAt,
     completed_at: row.completedAt,
     stale_flagged_at: row.staleFlaggedAt,
+    position: row.position,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -442,6 +452,10 @@ export function createTask(
         id,
         projectId: project.id,
         number,
+        // The end of the project's order, so it lands at the bottom of its
+        // lane (LAI-472, D-070). Inside the write lock for the reason the
+        // number is: two creates must not read the same last key.
+        position: keyAfter(lastPosition(db, project.id)),
         title: input.title,
         descriptionMd: input.description_md ?? null,
         acceptanceMd: input.acceptance_md ?? null,
@@ -994,4 +1008,133 @@ export function removeTaskDependency(
   });
 
   return getTask(db, actor, taskId);
+}
+
+export interface ReorderTaskInput {
+  /** The card it lands **directly below**. */
+  after_task_id?: string | undefined;
+  /** The card it lands **directly above**. */
+  before_task_id?: string | undefined;
+  now?: number;
+}
+
+/**
+ * Move one card in its project's manual order (§6.4, LAI-472, D-060, D-070).
+ *
+ * **Addressed by neighbours, never an index** — an index is stale the moment
+ * anyone else drags. The card is placed **immediately after `after_task_id`**
+ * in the project's sequence, or immediately before `before_task_id` when only
+ * that is sent. A lane is a filtered view of that one sequence, so this lands
+ * the card between the two cards the reader dropped it between, in every lane
+ * that shows them. And two drops into one gap at once land side by side
+ * rather than computing the same key: the second reads the first's write,
+ * because both run under `BEGIN IMMEDIATE`.
+ *
+ * **Writes one row.** The new key is computed between two existing keys
+ * (`order-key.ts`), so no other card moves and no other `updated_at` changes.
+ * The moved card's `updated_at` does change — its place is part of what it
+ * is, and an `updated_since` catch-up must see it.
+ *
+ * Refusals: `422` when neither neighbour is sent, a neighbour is the card
+ * itself, missing, or in another project; `409` when `after` sorts after
+ * `before` — the board the reader dragged on has changed since, and guessing
+ * would put the card somewhere nobody chose. A drop where the card already is
+ * writes nothing.
+ */
+export function reorderTask(
+  sqlite: Database.Database,
+  db: Db,
+  actor: ResolvedActor,
+  taskId: string,
+  input: ReorderTaskInput,
+): TaskView {
+  const { project } = requireTask(db, taskId);
+  assertCan(withProject(actor, project.id), 'task.write', { projectId: project.id });
+
+  const afterId = input.after_task_id;
+  const beforeId = input.before_task_id;
+  if (afterId === undefined && beforeId === undefined) {
+    throw new ApiError('unprocessable', 'Send after_task_id, before_task_id, or both');
+  }
+  const now = input.now ?? Date.now();
+
+  return immediateTransaction(sqlite, () => {
+    // Neighbours from before LAI-472 get places first, so there is an order
+    // to read. A no-op on a running server, where the boot backfill has run.
+    backfillTaskPositions(db, project.id);
+
+    const task = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
+    const neighbour = (id: string | undefined, which: string) => {
+      if (id === undefined) return undefined;
+      if (id === taskId) {
+        throw new ApiError('unprocessable', `A card cannot be placed relative to itself`, {
+          [which]: id,
+        });
+      }
+      const row = db.select().from(tasks).where(eq(tasks.id, id)).get();
+      // Missing and another project's are one answer, so the shape of the
+      // error does not confirm that a task the caller cannot read exists.
+      if (row?.projectId !== project.id) {
+        throw new ApiError('unprocessable', `No task "${id}" in this project`, { [which]: id });
+      }
+      return row;
+    };
+    const after = neighbour(afterId, 'after_task_id');
+    const before = neighbour(beforeId, 'before_task_id');
+
+    if (after !== undefined && before !== undefined && after.position! >= before.position!) {
+      throw new ApiError(
+        'conflict',
+        'The board changed while you were dragging — reload to see the current order',
+        { after_task_id: after.id, before_task_id: before.id },
+      );
+    }
+
+    const others = and(eq(tasks.projectId, project.id), ne(tasks.id, taskId));
+    let lower: string | null;
+    let upper: string | null;
+    if (after !== undefined) {
+      lower = after.position!;
+      const next = db
+        .select({ position: tasks.position })
+        .from(tasks)
+        .where(and(others, gt(tasks.position, lower)))
+        .orderBy(asc(tasks.position))
+        .limit(1)
+        .get();
+      upper = next?.position ?? null;
+    } else {
+      upper = before!.position!;
+      const previous = db
+        .select({ position: tasks.position })
+        .from(tasks)
+        .where(and(others, lt(tasks.position, upper)))
+        .orderBy(desc(tasks.position))
+        .limit(1)
+        .get();
+      lower = previous?.position ?? null;
+    }
+
+    const current = task.position!;
+    const alreadyThere = (lower === null || lower < current) && (upper === null || current < upper);
+    if (alreadyThere) return viewOne(db, task, project.prefix);
+
+    const position = keyBetween(lower, upper);
+    db.update(tasks).set({ position, updatedAt: now }).where(eq(tasks.id, taskId)).run();
+
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId,
+      ...activityActor(actor),
+      // `task.updated` naming the field — D-060.4: a drag is not a §4.8 verb,
+      // and a new verb is always three owners. The feed hides it; the audit
+      // trail keeps it, and SSE needs the row to tell other viewers.
+      type: 'task.updated',
+      payload: { field: 'position', from: current, to: position },
+      now,
+    });
+
+    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+  });
 }

@@ -359,6 +359,18 @@ export const tasks = sqliteTable(
     branch: text('branch'),
     externalRef: text('external_ref'),
     staleFlaggedAt: integer('stale_flagged_at'),
+    /**
+     * **Manual board order** (LAI-472, D-060, D-070): a fractional-index key
+     * from `order-key.ts`, one sequence per project; a lane draws the subset
+     * whose status it holds, in this order. Compared byte-wise — never give it
+     * a `NOCASE` collation, which would fold `a` onto `A`.
+     *
+     * **Nullable only so it can be added to a populated table.** Every create
+     * sets one and `backfillTaskPositions` fills any null at boot, so a served
+     * task always has one. The unique index below treats nulls as distinct,
+     * which is what lets the column arrive before the backfill runs.
+     */
+    position: text('position'),
     startedAt: integer('started_at'),
     completedAt: integer('completed_at'),
     createdAt,
@@ -374,6 +386,9 @@ export const tasks = sqliteTable(
     index('tasks_created_by_idx').on(t.createdBy),
     index('tasks_discovered_from_idx').on(t.discoveredFrom),
     index('tasks_parent_task_id_idx').on(t.parentTaskId),
+    // No two tasks in a project share a place (LAI-472). Also the index a
+    // reorder's neighbour lookups read.
+    uniqueIndex('tasks_project_position_unique').on(t.projectId, t.position),
     check('tasks_status_check', oneOf('status', TASK_STATUSES)),
     check('tasks_priority_check', oneOf('priority', TASK_PRIORITIES)),
     check('tasks_created_via_check', oneOf('created_via', CREATED_VIA)),

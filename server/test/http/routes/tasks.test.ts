@@ -606,3 +606,63 @@ describe('subtasks and dates on the wire (D-066)', () => {
     expect(res.status).toBe(422);
   });
 });
+
+describe('POST /tasks/:id/reorder (LAI-472, D-070)', () => {
+  const ordered = async () => {
+    const res = await req('/api/v1/projects/laika/tasks');
+    const body = (await res.json()) as { data: { title: string; position: string }[] };
+    return [...body.data].sort((a, b) => (a.position < b.position ? -1 : 1)).map((t) => t.title);
+  };
+
+  it('moves a card between its neighbours and answers the task with its new place', async () => {
+    const a = await newTask('a');
+    const b = await newTask('b');
+    const c = await newTask('c');
+
+    const res = await post(`/api/v1/tasks/${c.id}/reorder`, {
+      after_task_id: a.id,
+      before_task_id: b.id,
+    });
+
+    expect(res.status).toBe(200);
+    const moved = (await res.json()) as { id: string; position: string };
+    expect(moved.id).toBe(c.id);
+    expect(typeof moved.position).toBe('string');
+    expect(await ordered()).toEqual(['a', 'c', 'b']);
+  });
+
+  it('serves position on every task the list returns', async () => {
+    await newTask('a');
+    const res = await req('/api/v1/projects/laika/tasks');
+    const body = (await res.json()) as { data: { position: unknown }[] };
+    expect(body.data.every((t) => typeof t.position === 'string')).toBe(true);
+  });
+
+  it('refuses a body with neither neighbour, or an unknown field, as 422', async () => {
+    const a = await newTask('a');
+    for (const body of [{}, { after_task_id: a.id, position: 'a0' }]) {
+      const res = await post(`/api/v1/tasks/${a.id}/reorder`, body);
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe('unprocessable');
+    }
+  });
+
+  it('answers 409 when the neighbours are the wrong way round — the board changed', async () => {
+    const a = await newTask('a');
+    const b = await newTask('b');
+    const c = await newTask('c');
+    const res = await post(`/api/v1/tasks/${c.id}/reorder`, {
+      after_task_id: b.id,
+      before_task_id: a.id,
+    });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('conflict');
+    expect(await ordered()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('answers 404 for a task that does not exist', async () => {
+    const a = await newTask('a');
+    const res = await post(`/api/v1/tasks/no-such-task/reorder`, { after_task_id: a.id });
+    expect(res.status).toBe(404);
+  });
+});

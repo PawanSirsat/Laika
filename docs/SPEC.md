@@ -387,6 +387,7 @@ which is the check working on the document it exists to pin.
 | `branch` | nullable, last branch seen working on it |
 | `external_ref` | nullable, e.g. a GitHub PR |
 | `stale_flagged_at` | nullable, set by cron (§11.6) |
+| `position` | nullable — **manual board order**, one sequence per project; a lane draws its tasks in this order (D-060, D-070). An opaque key compared byte-wise: set on create at the **end** of the project's order, moved only by `POST /tasks/:id/reorder`, which writes this one row. Nullable only so the column could be added to a populated table — the boot backfill fills every null in the order the board already showed (priority, then number), so a served task always has one |
 | `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in, and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
@@ -1016,6 +1017,7 @@ GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date r
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
+POST   /api/v1/tasks/:id/reorder             body { after_task_id?, before_task_id? } — manual order (D-070)
 PUT    /api/v1/tasks/:id/watch               DELETE /api/v1/tasks/:id/watch   (204)
 GET    /api/v1/tasks/:id/watchers            GET /api/v1/me/watching   (own only)
 GET    /api/v1/projects/:slug/mentionable    who an @mention resolves for (4.19) —

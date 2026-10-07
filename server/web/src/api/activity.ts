@@ -155,3 +155,24 @@ export function statusTransition(event: ActivityEvent): { from: string; to: stri
 
   return { from: payload.from, to: payload.to };
 }
+
+/**
+ * A card reorder (LAI-473, D-060.4): `task.updated` naming `position`.
+ *
+ * **Written and streamed, never shown.** The server records every drag — the
+ * audit trail keeps it, and the SSE frame is what tells a second viewer's
+ * board to redraw — but a feed reading *"edited this task"* forty times for
+ * one afternoon of tidying a backlog says nothing anyone needs.
+ */
+export function isReorder(event: Pick<ActivityEvent, 'type' | 'payload'>): boolean {
+  if (event.type !== 'task.updated') return false;
+  const payload = event.payload as { field?: unknown } | null;
+  return payload?.field === 'position';
+}
+
+/** The events a person reads — every feed filters through this one rule. */
+export function shownInFeed<T extends Pick<ActivityEvent, 'type' | 'payload'>>(
+  events: readonly T[],
+): T[] {
+  return events.filter((event) => !isReorder(event));
+}
