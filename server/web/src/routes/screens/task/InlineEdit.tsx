@@ -1,5 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import './task-panel.css';
 
@@ -15,6 +15,12 @@ export interface InlineEditProps {
   /** Names the field for a screen reader, since the label is the value itself. */
   readonly label: string;
   readonly onSave: (next: string) => Promise<void>;
+  /**
+   * How a non-empty value is shown when not editing (LAI-709): the description
+   * passes its markdown renderer. Without it the raw value is shown, as the
+   * title is.
+   */
+  readonly render?: (value: string) => ReactNode;
 }
 
 /**
@@ -39,7 +45,15 @@ export interface InlineEditProps {
  * throw away what somebody typed because the network blinked — the one outcome
  * an inline editor must never have.
  */
-export function InlineEdit({ value, placeholder, shape, mayEdit, label, onSave }: InlineEditProps) {
+export function InlineEdit({
+  value,
+  placeholder,
+  shape,
+  mayEdit,
+  label,
+  onSave,
+  render,
+}: InlineEditProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
   const [busy, setBusy] = useState(false);
@@ -96,7 +110,42 @@ export function InlineEdit({ value, placeholder, shape, mayEdit, label, onSave }
     if (!mayEdit) {
       return (
         <div className={classes}>
-          {empty ? <span className="inline-edit-placeholder">{placeholder}</span> : value}
+          {empty ? (
+            <span className="inline-edit-placeholder">{placeholder}</span>
+          ) : render !== undefined ? (
+            render(value)
+          ) : (
+            value
+          )}
+        </div>
+      );
+    }
+
+    /*
+     * **Rendered content cannot live inside a `<button>`** (LAI-709). HTML
+     * allows only phrasing content there, and a description has headings,
+     * tables and links. So the block itself takes the mouse click, and a real
+     * button carries the keyboard and the accessible name. The button is
+     * hidden until the block is hovered or the button has focus.
+     *
+     * Two clicks on the block do not open the editor: a click on a link,
+     * which should follow the link, and the click that ends a text
+     * selection, which was someone copying.
+     */
+    if (render !== undefined && !empty) {
+      return (
+        <div
+          className={`${classes} inline-edit-rendered`}
+          onClick={(event) => {
+            if ((event.target as HTMLElement).closest('a, input') !== null) return;
+            if ((window.getSelection()?.toString() ?? '') !== '') return;
+            open();
+          }}
+        >
+          {render(value)}
+          <button type="button" className="inline-edit-open-button" onClick={open}>
+            Edit {label.toLowerCase()}
+          </button>
         </div>
       );
     }
