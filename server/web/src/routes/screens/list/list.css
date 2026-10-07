@@ -58,8 +58,9 @@
 }
 
 .list {
-  /* The design's 64rem plus the Due column (D-066), so Summary keeps its room. */
-  min-width: 70.75rem;
+  /* The design's 64rem plus the Due column (D-066), so Summary keeps its room,
+     plus the 1rem the priority icon added to PRI (LAI-705). */
+  min-width: 71.75rem;
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
@@ -76,8 +77,10 @@
 .list-col-status {
   width: 6.5rem;
 }
+/* The design's 42px held `P1` alone. Jira's icon now sits before it (LAI-705):
+   12px of icon and a 4px gap on top of the text and the cell's padding. */
 .list-col-pri {
-  width: 2.625rem;
+  width: 3.625rem;
 }
 .list-col-assignee {
   width: 9.375rem;
@@ -303,6 +306,13 @@
   line-height: 1;
 }
 
+.list-pri-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
 /*
  * **One tone scale for three columns.** Status, priority and age all colour by
  * the same five states, and writing them per column is how two of them drift
@@ -340,16 +350,20 @@
 
 /* The pill is the only place the tone paints a box; the text columns take the
    colour alone, which is what the design does. */
+/* `.list-due` joined LAI-495's column without joining this rule, so the flat
+   tone painted the pill's box down the whole column (LAI-710). */
 .list-pri,
 .list-created,
-.list-updated {
+.list-updated,
+.list-due {
   background: none;
   border: none;
 }
 
 .list-tone-flat.list-pri,
 .list-tone-flat.list-created,
-.list-tone-flat.list-updated {
+.list-tone-flat.list-updated,
+.list-tone-flat.list-due {
   color: var(--text-muted);
 }
 

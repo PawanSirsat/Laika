@@ -16,6 +16,7 @@ import {
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
+import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import type { DemoAgentBuild, DemoClaimLock } from '../../../demo/agent-runtime.ts';
 import './task-panel.css';
 
@@ -294,7 +295,10 @@ export function TaskMeta({
 
             <div className="meta-row">
               <p className="meta-label">Priority</p>
-              <div className="meta-value">
+              <div className="meta-value meta-value-prio">
+                {/* Jira's icon before the control (LAI-705), outside the
+                    `<label>` so its name does not join the select's. */}
+                <PriorityIcon priority={task.priority} />
                 <label className={`meta-select meta-prio meta-prio-${task.priority}`}>
                   <span className="visually-hidden">Priority</span>
                   <select
