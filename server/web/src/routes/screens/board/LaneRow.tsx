@@ -181,9 +181,7 @@ export function LaneRow({
    * lane's cards **with the dragged card left out** — the same index
    * `dropNeighbours` reads, so the line drawn and the request sent agree.
    */
-  const [dropAt, setDropAt] = useState<{ columnId: string; index: number } | undefined>(
-    undefined,
-  );
+  const [dropAt, setDropAt] = useState<{ columnId: string; index: number } | undefined>(undefined);
   /** The card to give focus back to after a keyboard move re-renders it. */
   const [refocus, setRefocus] = useState<string | undefined>(undefined);
 
@@ -332,9 +330,8 @@ export function LaneRow({
               if (onPlace === undefined) return;
               // The index among this lane's cards, the dragged one left out:
               // the first card whose middle is below the pointer.
-              const items = event.currentTarget.querySelectorAll<HTMLElement>(
-                '.lane-body > .lane-item',
-              );
+              const items =
+                event.currentTarget.querySelectorAll<HTMLElement>('.lane-body > .lane-item');
               let slot = 0;
               for (const item of items) {
                 if (item.dataset.taskId === dragging) continue;
@@ -585,31 +582,33 @@ export function LaneRow({
                     ? dropAt.index
                     : undefined,
                   (task) => (
-                  <div
-                    key={task.id}
-                    className={task.id === dragging ? 'lane-item lane-item-dragging' : 'lane-item'}
-                    data-task-id={task.id}
-                  >
-                    <TaskCard
-                      task={task}
-                      byId={byId}
-                      members={members}
-                      theme={theme}
-                      fields={fields}
-                      draggable={cardsDraggable}
-                      moving={movingId === task.id}
-                      onDragStart={setDragging}
-                      onDragEnd={() => {
-                        setDragging(undefined);
-                        setOver(undefined);
-                        setDropAt(undefined);
-                      }}
-                      onOpen={onOpen}
-                      onKeyMove={onPlace === undefined || !cardsDraggable ? undefined : keyMove}
-                      sprintLabels={sprintLabels}
-                    />
+                    <div
+                      key={task.id}
+                      className={
+                        task.id === dragging ? 'lane-item lane-item-dragging' : 'lane-item'
+                      }
+                      data-task-id={task.id}
+                    >
+                      <TaskCard
+                        task={task}
+                        byId={byId}
+                        members={members}
+                        theme={theme}
+                        fields={fields}
+                        draggable={cardsDraggable}
+                        moving={movingId === task.id}
+                        onDragStart={setDragging}
+                        onDragEnd={() => {
+                          setDragging(undefined);
+                          setOver(undefined);
+                          setDropAt(undefined);
+                        }}
+                        onOpen={onOpen}
+                        onKeyMove={onPlace === undefined || !cardsDraggable ? undefined : keyMove}
+                        sprintLabels={sprintLabels}
+                      />
 
-                    {/*
+                      {/*
                       Keyboard equivalent of the card drag. A board operable only
                       by mouse locks people out of the product's main screen, and
                       HTML drag-and-drop has no keyboard story of its own.
@@ -619,36 +618,37 @@ export function LaneRow({
                       statuses can only be dropped into one of them, so this is
                       the only way to ask for the other.
                     */}
-                    <label className="lane-move">
-                      <span className="visually-hidden">Move {task.key} to</span>
-                      <select
-                        className="lane-move-select"
-                        value={task.status}
-                        disabled={movingId === task.id}
-                        onChange={(event) => {
-                          const to = event.target.value as MovableStatus;
-                          if (to !== task.status) onMove(task.id, to);
-                        }}
-                      >
-                        {/*
+                      <label className="lane-move">
+                        <span className="visually-hidden">Move {task.key} to</span>
+                        <select
+                          className="lane-move-select"
+                          value={task.status}
+                          disabled={movingId === task.id}
+                          onChange={(event) => {
+                            const to = event.target.value as MovableStatus;
+                            if (to !== task.status) onMove(task.id, to);
+                          }}
+                        >
+                          {/*
                           The card's status control reads in **this board's**
                           names too (LAI-617) — picking "Testing" still stores
                           `review`. `lanes` carries every drawn column, which
                           is every column a movable status can live in; a
                           status with no owner falls back to its own name.
                         */}
-                        {MOVABLE_STATUSES.map((c) => (
-                          <option key={c} value={c}>
-                            {boardStatusLabel(
-                              c,
-                              lanes.map((l) => l.column),
-                            )}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                ))
+                          {MOVABLE_STATUSES.map((c) => (
+                            <option key={c} value={c}>
+                              {boardStatusLabel(
+                                c,
+                                lanes.map((l) => l.column),
+                              )}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  ),
+                )
               )}
             </div>
 
@@ -712,8 +712,8 @@ export function LaneRow({
 
       {onPlace !== undefined && cardsDraggable && (
         <span id="card-move-help" className="visually-hidden">
-          Alt and an arrow key moves this card: up and down within its column, left and right
-          into the next column.
+          Alt and an arrow key moves this card: up and down within its column, left and right into
+          the next column.
         </span>
       )}
 

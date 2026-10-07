@@ -22,6 +22,7 @@ import {
 } from '../../../api/tasks.ts';
 import { TaskMeta } from '../task/TaskMeta.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
+import { TaskMarkdown } from '../task/TaskMarkdown.tsx';
 import { DependenciesSection } from '../task/DependenciesSection.tsx';
 import { SubtasksSection } from '../task/SubtasksSection.tsx';
 import { CommentBody } from '../task/CommentBody.tsx';
@@ -669,13 +670,13 @@ export function TaskDetailPanel({
             </button>
             {descriptionOpen && (
               /*
-                Click to edit. Still **plain text, not rendered markdown**: a
-                renderer is a dependency this task may not add and raw HTML would
-                be an injection — the fenced-code handling in a comment is
-                deliberately the one exception and is a parser of one construct,
-                not a renderer.
+                Click to edit, and **rendered as markdown** when not editing
+                (LAI-709). It was plain text until the owner asked. The renderer
+                builds elements, never HTML, and `TaskMarkdown` says why that
+                is safe for text anyone on the project writes.
               */
               <InlineEdit
+                render={(source) => <TaskMarkdown source={source} />}
                 value={task.description_md ?? ''}
                 placeholder="No description yet. Click to write one."
                 shape="block"
@@ -712,7 +713,9 @@ export function TaskDetailPanel({
               </button>
               {acceptanceOpen && (
                 <blockquote className="panel-acceptance">
-                  <p className="panel-acceptance-body">{task.acceptance_md}</p>
+                  <div className="panel-acceptance-body">
+                    <TaskMarkdown source={task.acceptance_md} />
+                  </div>
                 </blockquote>
               )}
             </section>

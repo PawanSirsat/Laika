@@ -6,7 +6,7 @@
 }
 
 .tagp-head {
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -32,7 +32,7 @@
   display: flex;
   align-items: center;
   gap: 0.1875rem;
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-bold);
   line-height: 1;
   padding: 0.1875rem 0.25rem 0.1875rem 0.375rem;
@@ -58,7 +58,7 @@
   border-radius: var(--radius-chip);
   background: transparent;
   color: var(--text-muted);
-  font-size: 0.75rem;
+  font-size: 0.8125rem;
   line-height: 1;
   cursor: pointer;
 }
@@ -109,7 +109,7 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-bold);
   padding: 0.1875rem 0.3125rem;
   border-radius: var(--radius-chip);
@@ -128,7 +128,7 @@
 /* The count is the point of the suggestion list, so it is legible, not faint. */
 .tagp-count {
   font-family: var(--font-mono);
-  font-size: 0.5rem;
+  font-size: 0.65625rem;
   color: var(--text-secondary);
 }
 

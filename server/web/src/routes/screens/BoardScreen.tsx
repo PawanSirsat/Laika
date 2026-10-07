@@ -3,6 +3,7 @@ import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { useDelayed } from '../../components/use-delayed.ts';
+import { mergeTasks } from '../../api/board-merge.ts';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
@@ -83,12 +84,14 @@ export interface BoardScreenProps {
 /**
  * The board (§11.4.1). Two views over one task list, one filter state.
  *
- * **Live updates are not wired**: SSE is LAI-048 and has not landed. There is
- * one seam — `reload()` behind the Refresh control — which a subscription will
- * call when it arrives. Deliberately not a timer: LAI-049 asks for no polling
- * that someone has to find and remove later, and a visible button is honest
- * about the board being a snapshot.
+ * **Live updates refresh in place** (LAI-707). The stream calls `refresh()` a
+ * moment after anything changes, as does the Refresh control; the board stays
+ * on screen while it re-reads, and only the cards that changed re-render. No
+ * polling: LAI-049 asks for none, and the stream is the signal.
  */
+/** Nothing to protect when merging the strip's list — it has no local writes. */
+const NO_TASKS: ReadonlySet<string> = new Set();
+
 export function BoardScreen({ params, onParamsChange, me, path = '/board' }: BoardScreenProps) {
   const { theme } = useTheme();
 
@@ -137,11 +140,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   /** The strip's list hit `everyPage`'s cap, so its counts are a floor. */
   const [stripPartial, setStripPartial] = useState(false);
+  /** Bumped by `refresh()`, so the strip's list re-reads with the board (LAI-707). */
+  const [stripAttempt, setStripAttempt] = useState(0);
+  /** Which project the strip's list belongs to, so a new one starts empty. */
+  const stripSlug = useRef<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   /**
-   * The List's selection and its bulk run (LAI-496), **held here** because
-   * every reload unmounts `ListView` (the LAI-485 lesson) and a bulk action
-   * ends with a reload. Keyed by project rather than reset by an effect: a
+   * The List's selection and its bulk run (LAI-496), **held here** because a
+   * new filter or project unmounts `ListView` (the LAI-485 lesson) — a refresh
+   * no longer does (LAI-707), but a selection must survive both. Keyed by project rather than reset by an effect: a
    * selection made in one space is simply not this space's.
    */
   const [listSelection, setListSelection] = useState<{
@@ -310,7 +317,52 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * loading starts made every navigation blink — which reads as broken rather
    * than fast. Held 300ms once shown, so a 160ms response does not flash it.
    */
-  const showBoardSkeleton = useDelayed(board.state.status === 'loading');
+  const firstLoad = board.state.status === 'loading';
+  const showBoardSkeleton = useDelayed(firstLoad);
+
+  /**
+   * **One refresh for everything the stream can stale** (LAI-707): the board,
+   * and the strip's own whole-project list, whose counts otherwise froze at
+   * the first read. Stable, so the effects below can depend on it.
+   */
+  const reloadBoard = board.reload;
+  const refresh = useCallback((): void => {
+    reloadBoard();
+    setStripAttempt((n) => n + 1);
+  }, [reloadBoard]);
+
+  /*
+   * **Hold refresh answers for the length of a pointer drag** (LAI-707). A
+   * lane reflowing under the cursor changes where the drop lands. Fetching
+   * carries on; the newest answer is applied on the drop. Window-level and in
+   * the capture phase, so any draggable — a card, a column header, LAI-473's
+   * handles — is covered without wiring. Pointer movement cannot happen during
+   * a native drag, so one arriving means the drag ended without telling us
+   * (its source was removed): the hold ends then too.
+   */
+  const holdBoard = board.hold;
+  useEffect(() => {
+    let release: (() => void) | undefined;
+    const start = (): void => {
+      release?.();
+      release = holdBoard();
+    };
+    const end = (): void => {
+      release?.();
+      release = undefined;
+    };
+    window.addEventListener('dragstart', start, true);
+    window.addEventListener('dragend', end, true);
+    window.addEventListener('drop', end, true);
+    window.addEventListener('pointermove', end, true);
+    return () => {
+      window.removeEventListener('dragstart', start, true);
+      window.removeEventListener('dragend', end, true);
+      window.removeEventListener('drop', end, true);
+      window.removeEventListener('pointermove', end, true);
+      release?.();
+    };
+  }, [holdBoard]);
   const columns = useColumns(slug);
   const [creatingColumn, setCreatingColumn] = useState(false);
   const prefs = useViewPreferences(slug);
@@ -347,7 +399,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   useEffect(() => {
     if (stream.tick === 0) return;
     const timer = setTimeout(() => {
-      board.reload();
+      refresh();
     }, 300);
     return () => {
       clearTimeout(timer);
@@ -366,7 +418,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    */
   useEffect(() => {
     if (stream.gap === undefined) return;
-    board.reload();
+    refresh();
   }, [stream.gap?.seq]);
 
   // Sprints for the strip, plus an unscoped task list so its per-sprint counts
@@ -403,27 +455,6 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     // The tag filter moved to the space bar with the rest of them (LAI-270),
     // and the bar fetches its own vocabulary.
 
-    /*
-     * **Every page, not the first** (LAI-702). This read one page of 200,
-     * oldest-updated first, and the strip counted that as the project: on
-     * Onroute (328 tasks) S3 read 7/42 while it held 157, because its 149
-     * Review tasks were the most recently moved and fell past the page.
-     */
-    everyPage((cursor) =>
-      listTasks(
-        slug,
-        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
-        controller.signal,
-      ),
-    )
-      .then(({ items, truncated }) => {
-        setAllTasks(items);
-        setStripPartial(truncated);
-      })
-      .catch(() => {
-        setAllTasks([]);
-      });
-
     return () => {
       controller.abort();
     };
@@ -440,6 +471,47 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
      * re-fetch returned identical rows and changed nothing on screen.
      */
   }, [slug]);
+
+  /*
+   * The strip's whole-project task list — **its own effect**, re-read on every
+   * `refresh()` and merged in place (LAI-707), where it used to be read once per
+   * project and never again, so its counts froze while the board moved.
+   */
+  useEffect(() => {
+    if (slug === undefined) return;
+    const controller = new AbortController();
+    if (stripSlug.current !== slug) {
+      // A different project: its counts start from nothing, not from the last one.
+      stripSlug.current = slug;
+      setAllTasks([]);
+    }
+
+    /*
+     * **Every page, not the first** (LAI-702). This read one page of 200,
+     * oldest-updated first, and the strip counted that as the project: on
+     * Onroute (328 tasks) S3 read 7/42 while it held 157, because its 149
+     * Review tasks were the most recently moved and fell past the page.
+     */
+    everyPage((cursor) =>
+      listTasks(
+        slug,
+        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
+        controller.signal,
+      ),
+    )
+      .then(({ items, truncated }) => {
+        setAllTasks((prev) => mergeTasks(prev, items, NO_TASKS).tasks);
+        setStripPartial(truncated);
+      })
+      .catch(() => {
+        // A failed re-read keeps the last counts; a new project already
+        // started empty above.
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [slug, stripAttempt]);
 
   const mayCreate =
     me !== undefined &&
@@ -845,7 +917,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             setSettingsAt((at) => (at === undefined ? anchor : undefined));
           }}
           onRefresh={() => {
-            board.reload();
+            refresh();
             columns.reload();
           }}
           onOverflow={(anchor) => {
@@ -1060,6 +1132,28 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         </p>
       )}
 
+      {/*
+        **A failed refresh keeps the board and says it is stale** (LAI-707). A
+        dropped connection is not a reason to wipe what someone is reading — but
+        the screen must not pretend it is current either. `status`, not
+        `alert`: it is a condition, not an event to interrupt for.
+      */}
+      {board.state.status === 'ready' && board.state.refreshError !== null && (
+        <p className="board-scope board-stale" role="status">
+          Could not refresh — this is the board as of{' '}
+          {board.state.asOf === null
+            ? 'its last read'
+            : new Date(board.state.asOf).toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+              })}
+          .{' '}
+          <button type="button" className="board-alert-close" onClick={refresh}>
+            Retry
+          </button>
+        </p>
+      )}
+
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">
           {shownCount} of {board.byId.size} loaded {board.byId.size === 1 ? 'task' : 'tasks'} match.{' '}
@@ -1077,7 +1171,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       {mayCreate && creating && view === 'list' && (
         <NewTaskForm
           slug={slug}
-          onCreated={board.reload}
+          onCreated={refresh}
           onCancel={() => {
             setCreating(false);
           }}
@@ -1108,7 +1202,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         </p>
       )}
 
-      {board.state.status === 'loading' ? (
+      {firstLoad || showBoardSkeleton ? (
         /* `null` until the delay elapses — deliberately not the empty board,
            which would render "Nothing in this lane" and then replace it. */
         !showBoardSkeleton ? null /*
@@ -1147,7 +1241,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           </div>
         )
       ) : board.state.status === 'error' ? (
-        <ApiErrorState error={board.state.error} resource="this board" onRetry={board.reload} />
+        <ApiErrorState error={board.state.error} resource="this board" onRetry={refresh} />
       ) : (
         <div
           /*
@@ -1157,6 +1251,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
            * that produced no rows does not leave the board scrollable.
            */
           className={swimlanes === undefined ? 'board-main' : 'board-main board-grouped'}
+          // Re-reading in place (LAI-707): busy for assistive tech, untouched on screen.
+          aria-busy={board.state.refreshing || undefined}
           onWheel={(event) => {
             /*
              * **Forward a sideways gesture to the board** (LAI-290).
@@ -1276,7 +1372,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                   run,
                 }));
               }}
-              onChanged={board.reload}
+              onChanged={refresh}
               sort={listSort}
               page={listPage}
               onSort={(next) => {
@@ -1329,7 +1425,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                 const column = columns.visible.find((c) => c.primary_status === status);
                 setComposingIn(column?.id);
               }}
-              onCreated={board.reload}
+              onCreated={refresh}
               onCloseComposer={() => {
                 setComposingIn(undefined);
               }}
@@ -1438,10 +1534,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             mayAssign={mayCreate}
             mayEdit={mayCreate}
             onTagsChanged={() => {
-              board.reload();
+              refresh();
             }}
-            onAssigned={board.reload}
-            onTaskEdited={board.reload}
+            onAssigned={refresh}
+            onTaskEdited={refresh}
             onOpen={openTaskInUrl}
             task={openTask}
             byId={board.byId}

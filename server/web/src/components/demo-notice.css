@@ -15,7 +15,7 @@
 .demo-notice-tag {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.53125rem;
+  font-size: 0.6875rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.08em;
   color: var(--chip-orange);

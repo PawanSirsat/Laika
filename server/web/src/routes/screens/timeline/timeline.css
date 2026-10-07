@@ -389,8 +389,11 @@
    * **250px, the design's figure** (prototype line 526). Ours was 24rem — 384px
    * — which took a third of a 1200px window for names and squeezed every bar
    * into the remainder.
+   *
+   * 300px since LAI-706: at the readable type size the row's key, status and
+   * dates no longer fit 250, and the dates were cut to `7 Oct – 7 O…`.
    */
-  --tl-label: 15.625rem;
+  --tl-label: 18.75rem;
   margin: 0 var(--space-4);
   border: 1px solid var(--border-subtle);
   /* The design's card: 12px, with the shadow every panelled screen carries. */
@@ -456,7 +459,7 @@
 /*
  * **Positioned**, so the header's today marker measures against the axis it
  * labels. Without it the marker resolved against an ancestor that includes the
- * 250px task column, and the chart drew *two* amber lines in different places —
+ * task column, and the chart drew *two* amber lines in different places —
  * one right, one meaningless.
  */
 .tl-head-axis {
@@ -586,6 +589,18 @@
   white-space: nowrap;
 }
 
+/*
+ * The dates give way first. At 11px (LAI-706) key, status and a planned range
+ * may not fit the task column, and without this the range ran out over
+ * the chart.
+ */
+.tl-dates {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* A sprint-derived range is said differently from a measured one. */
 .tl-dates-planned {
   font-style: italic;
@@ -629,7 +644,7 @@
 .tl-bar-key {
   flex: none;
   font-family: var(--font-mono);
-  font-size: 0.59375rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
   color: var(--text-primary);
@@ -641,7 +656,7 @@
   align-items: center;
   gap: 0.1875rem;
   font-family: var(--font-mono);
-  font-size: 0.5625rem;
+  font-size: 0.71875rem;
   font-weight: var(--weight-bold);
   line-height: 1;
   color: var(--overdue);
@@ -795,7 +810,7 @@
    default they do (AC6). */
 .tl-tab-live {
   color: var(--accent);
-  font-size: 0.6rem;
+  font-size: 0.75rem;
   line-height: 1;
 }
 
@@ -872,7 +887,7 @@
   position: absolute;
   top: 0;
   left: 4px;
-  font-size: 0.5rem;
+  font-size: 0.65625rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
   letter-spacing: 0.06em;
@@ -911,7 +926,7 @@
   display: flex;
   align-items: center;
   gap: 0.375rem;
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-semibold);
   line-height: 1;
   color: var(--text-secondary);
@@ -951,7 +966,7 @@
 
 .tl-legend-note {
   margin-left: auto;
-  font-size: 0.625rem;
+  font-size: 0.75rem;
   font-weight: var(--weight-medium);
   line-height: 1.4;
   color: var(--text-muted);

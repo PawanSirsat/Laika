@@ -129,7 +129,7 @@
 }
 
 .org-chip {
-  font-size: 0.5rem;
+  font-size: 0.65625rem;
   font-weight: var(--weight-heavy);
   letter-spacing: 0.05em;
   text-transform: uppercase;
