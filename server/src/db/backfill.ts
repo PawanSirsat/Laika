@@ -1,8 +1,9 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull, sql } from 'drizzle-orm';
 import { readPayload } from './activity.ts';
 import { type Db } from './client.ts';
 import { activity, boardColumns, projects, tasks } from './schema.ts';
 import { BACKFILL_COLUMNS, createDefaultBoardColumns } from './board-columns.ts';
+import { keysInOrder } from './order-key.ts';
 
 /**
  * Recover `started_at` and `completed_at` from the audit trail (LAI-435).
@@ -215,4 +216,72 @@ export function backfillBoardColumns(db: Db, now: number = Date.now()): number {
   }
 
   return withoutColumns.length;
+}
+
+/**
+ * The last key in a project's manual order, or `null` when it has none yet.
+ *
+ * `max()` over TEXT compares under the column's collation — BINARY, the same
+ * byte order `order-key.ts` generates in — so this is the key every new task
+ * goes after.
+ */
+export function lastPosition(db: Db, projectId: string): string | null {
+  const row = db
+    .select({ last: sql<string | null>`max(${tasks.position})` })
+    .from(tasks)
+    .where(and(eq(tasks.projectId, projectId), isNotNull(tasks.position)))
+    .get();
+  return row?.last ?? null;
+}
+
+/**
+ * Gives every task without a `position` one (LAI-472, D-070).
+ *
+ * **In the order the board already shows** — priority, then number, which is
+ * how `groupByColumns` has drawn every lane since LAI-606 — so the upgrade
+ * moves no card. Tasks are placed **after** whatever order the project already
+ * has: a late arrival was not in the arrangement anybody made, and putting it
+ * among it would move every card below.
+ *
+ * Here rather than in `0025_task_position.sql` because the keys are computed
+ * (`order-key.ts`). Idempotent by construction: it only fills a null.
+ * `updated_at` is not touched — placing a card is not an edit anybody made,
+ * and moving it would put every task at the top of an `updated_since`
+ * catch-up. Pass a `projectId` to confine it, which is how a reorder makes
+ * sure its neighbours have places before it reads them.
+ */
+export function backfillTaskPositions(db: Db, projectId?: string): number {
+  // A database migrated only part of the way — which `runMigrations` allows
+  // with an explicit folder, and `migrate.test.ts` does to rebuild a pre-0024
+  // database — has no column to fill yet. That is nothing to do, not an error.
+  const hasColumn =
+    db.all(sql`SELECT 1 FROM pragma_table_info('tasks') WHERE name = 'position'`).length > 0;
+  if (!hasColumn) return 0;
+
+  const missing = db
+    .select({ id: tasks.id, projectId: tasks.projectId })
+    .from(tasks)
+    .where(
+      projectId === undefined
+        ? isNull(tasks.position)
+        : and(isNull(tasks.position), eq(tasks.projectId, projectId)),
+    )
+    .orderBy(asc(tasks.projectId), asc(tasks.priority), asc(tasks.number))
+    .all();
+
+  const byProject = new Map<string, string[]>();
+  for (const row of missing) {
+    const ids = byProject.get(row.projectId) ?? [];
+    ids.push(row.id);
+    byProject.set(row.projectId, ids);
+  }
+
+  for (const [project, ids] of byProject) {
+    const keys = keysInOrder(lastPosition(db, project), ids.length);
+    ids.forEach((id, i) => {
+      db.update(tasks).set({ position: keys[i] }).where(eq(tasks.id, id)).run();
+    });
+  }
+
+  return missing.length;
 }

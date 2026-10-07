@@ -285,10 +285,14 @@ describe('the tasks rebuild keeps every row and every foreign key (LAI-493)', ()
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
       entries: { tag: string }[];
     };
-    const dropped = journal.entries.pop();
-    // The guard on this guard: the entry we cut must be the tasks rebuild, or
-    // this proves nothing about it.
-    expect(dropped?.tag).toMatch(/^0024_/);
+    // **Cut back to just before the rebuild, not "the last one".** This popped
+    // a single entry and asserted it was 0024; LAI-472 added 0025 after it, so
+    // "the last" stopped meaning "the rebuild". Every entry from 0024 on goes.
+    const at = journal.entries.findIndex((e) => /^0024_/.test(e.tag));
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: the first entry cut must be the tasks rebuild,
+    // or this proves nothing about it.
+    expect(dropped[0]?.tag).toMatch(/^0024_/);
     writeFileSync(journalPath, JSON.stringify(journal));
     return dir;
   }
@@ -356,6 +360,14 @@ describe('the tasks rebuild keeps every row and every foreign key (LAI-493)', ()
         dueOn: null,
         plannedStart: null,
       });
+      // And the boot gave both a place in the project's order (LAI-472):
+      // `position` arrives null with 0025 and `backfillTaskPositions` fills it,
+      // in number order for two tasks of the same priority.
+      const placed = db.select().from(tasks).all();
+      expect(placed.every((r) => r.position !== null)).toBe(true);
+      const pa = placed.find((r) => r.id === a)!.position!;
+      const pb = placed.find((r) => r.id === b)!.position!;
+      expect(pa < pb).toBe(true);
     } finally {
       sqlite.close();
       rmSync(dir, { recursive: true, force: true });

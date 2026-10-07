@@ -1,9 +1,9 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { appendActivity } from '../../src/db/activity.ts';
-import { backfillTaskTimestamps } from '../../src/db/backfill.ts';
+import { backfillTaskPositions, backfillTaskTimestamps } from '../../src/db/backfill.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, tasks } from '../../src/db/schema.ts';
+import { activity, projects, tasks } from '../../src/db/schema.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -244,5 +244,115 @@ describe('idempotence', () => {
 
   it('is safe on an empty database', () => {
     expect(backfillTaskTimestamps(t.db)).toEqual({ startedAt: 0, completedAt: 0 });
+  });
+});
+
+describe('backfillTaskPositions (LAI-472, D-070)', () => {
+  /** A raw row, as a database from before LAI-472 holds it: no position. */
+  function raw(number: number, priority: 'p1' | 'p2' | 'p3', projectId = s.projectId): string {
+    const id = newId();
+    t.db
+      .insert(tasks)
+      .values({
+        id,
+        projectId,
+        number,
+        title: `Task ${String(number)}`,
+        status: 'todo',
+        priority,
+        createdBy: s.userId,
+        createdVia: 'web',
+        createdAt: 1000,
+        updatedAt: 1000,
+      })
+      .run();
+    return id;
+  }
+
+  const byPosition = () =>
+    t.db
+      .select({ number: tasks.number, position: tasks.position })
+      .from(tasks)
+      .all()
+      .sort((a, b) => ((a.position ?? '') < (b.position ?? '') ? -1 : 1))
+      .map((r) => r.number);
+
+  it('fills every null in the order the board already shows — priority, then number', () => {
+    // The board has sorted each lane by priority then number since LAI-606.
+    // Positions in that order mean no lane reshuffles on the upgrade.
+    raw(1, 'p3');
+    raw(2, 'p1');
+    raw(3, 'p2');
+    raw(4, 'p1');
+    raw(5, 'p3');
+
+    expect(backfillTaskPositions(t.db)).toBe(5);
+    expect(byPosition()).toEqual([2, 4, 3, 1, 5]);
+    expect(
+      t.db
+        .select()
+        .from(tasks)
+        .all()
+        .every((r) => r.position !== null),
+    ).toBe(true);
+  });
+
+  it('is idempotent and touches nothing it has already placed', () => {
+    raw(1, 'p2');
+    raw(2, 'p2');
+    backfillTaskPositions(t.db);
+    const before = t.db.select().from(tasks).all();
+
+    expect(backfillTaskPositions(t.db)).toBe(0);
+    expect(t.db.select().from(tasks).all()).toEqual(before);
+  });
+
+  it('leaves updated_at alone — placing a card is not an edit anybody made', () => {
+    raw(1, 'p2');
+    backfillTaskPositions(t.db);
+    expect(t.db.select().from(tasks).get()!.updatedAt).toBe(1000);
+  });
+
+  it('places late arrivals after the project’s existing order, never among it', () => {
+    raw(1, 'p3');
+    raw(2, 'p3');
+    backfillTaskPositions(t.db);
+    const placed = new Map(
+      t.db
+        .select()
+        .from(tasks)
+        .all()
+        .map((r) => [r.number, r.position]),
+    );
+
+    // A p1 that arrives later still goes to the end: it was not in the order
+    // anybody arranged, and putting it at the top would move every card below.
+    raw(3, 'p1');
+    expect(backfillTaskPositions(t.db)).toBe(1);
+    expect(byPosition()).toEqual([1, 2, 3]);
+    for (const row of t.db.select().from(tasks).all()) {
+      if (row.number !== 3) expect(row.position).toBe(placed.get(row.number));
+    }
+  });
+
+  it('can be confined to one project', () => {
+    const otherProject = newId();
+    t.db
+      .insert(projects)
+      .values({
+        id: otherProject,
+        orgId: s.orgId,
+        name: 'Other',
+        slug: 'other',
+        prefix: 'OTH',
+        createdAt: 1,
+        updatedAt: 1,
+      })
+      .run();
+    raw(1, 'p2');
+    const elsewhere = raw(1, 'p2', otherProject);
+
+    expect(backfillTaskPositions(t.db, s.projectId)).toBe(1);
+    expect(t.db.select().from(tasks).where(eq(tasks.id, elsewhere)).get()!.position).toBeNull();
   });
 });
