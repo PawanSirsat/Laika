@@ -2,10 +2,11 @@
 id: LAI-705
 title: 'Priority is drawn as Jira draws it — an up chevron, an equals sign, a down chevron'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-10-07T07:40:28Z
 ---
 
 ## Goal
