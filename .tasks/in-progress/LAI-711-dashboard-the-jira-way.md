@@ -2,10 +2,11 @@
 id: LAI-711
 title: 'The Dashboard, the Jira way — simpler, aligned, and work divided by person in a circle'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-707]
-status: backlog
+status: in-progress
+started: 2026-10-07T09:11:31Z
 ---
 
 ## Goal
