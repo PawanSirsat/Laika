@@ -3722,3 +3722,67 @@ had run out of room — `stale 12` was being clipped by the avatar.
 
 The owner asks for upcoming dates on cards, or for staleness to be visible on
 the board again.
+
+## D-070 — Cards keep the order people give them; the API pages as before; priority is drawn as Jira draws it.
+
+**2026-10-07, the owner, directly to CHIEF**, after asking whether cards can be
+re-sequenced within a status *"like Jira"* and hearing they cannot: *"yes do it,
+I want that on drag as well"* — and, with two crops of Jira's priority icons,
+*"for priority use this kind of icon properly"*. Carried by LAI-472 (server),
+LAI-473 (the board) and LAI-705 (the icons). Built by CHIEF on the owner's
+direct instruction, on `build-list`, as the earlier runs were — a crossing made
+on that instruction, not a precedent.
+
+D-060 decided the shape of manual order on 2026-09-18 and nobody built it. This
+records what building it settled that D-060 left open or got wrong.
+
+### What was decided
+
+1. **`position` is a fractional-index key.** A string over `0-9A-Za-z` with a
+   length-coded integer head and a fraction, compared byte-wise — the order
+   SQLite's BINARY collation and JavaScript's `<` share. Between any two keys
+   there is always another, so a drop writes **one** row however often a gap is
+   reused, and appending stays a few characters long after thousands of tasks.
+   Sparse integers need a rebalance and a REAL midpoint runs out after about
+   fifty halvings; D-060 named both. Written in `db/order-key.ts`, not added as
+   a dependency.
+2. **Neighbours are "below this" and "above this", and need not be adjacent.**
+   D-060's task said both neighbours are refused *"unless they are genuinely
+   adjacent"*. That cannot hold: a lane is a filtered view of one project
+   sequence, so two cards side by side in a lane are rarely neighbours in it.
+   The card is placed **immediately after `after_task_id`** in the sequence (or
+   immediately before `before_task_id` when only that is sent), which is between
+   the two in every lane that shows them. With both sent, `after` must sort
+   before `before`; otherwise the board changed under the drag and the answer
+   is `409`, never a guess. Two drops into one gap at once land side by side,
+   because both run under `BEGIN IMMEDIATE` and the second reads the first.
+3. **The list endpoint keeps paging on `(updated_at, id)`.** D-060.5 asked for
+   lanes not ordered by `updated_at`, and LAI-472 read that as re-sorting
+   `GET /projects/:slug/tasks` by `position`. That would let a reorder between
+   two page reads skip a task in an agent's `updated_since` catch-up — the
+   failure LAI-704 had just closed. Every task now carries `position`, and the
+   board, which loads every task and builds its lanes in the browser anyway,
+   sorts each lane by it. D-060.5 is answered on the board, where it was asked.
+4. **The board's own priority sort goes.** `groupByColumns` re-sorted every lane
+   by priority then number after the fetch, so a stored order would have been
+   ignored and every drop would have snapped back. Order is now the reader's,
+   as in Jira; priority is shown by its icon, not by its place.
+5. **A new task goes to the end of its project's order** — the bottom of its
+   lane, Jira's default — and existing tasks were placed by a boot backfill in
+   the order the board already drew (priority, then number), so no lane moved
+   on upgrade.
+6. **A reorder bumps the moved card's `updated_at`** and writes `task.updated`
+   with `{ field: 'position', from, to }` (D-060.4). Its place is part of the
+   task; an `updated_since` reader must see it. No other row changes.
+7. **Priority is drawn as Jira draws its middle three levels**: P1 a red up
+   chevron (High), P2 an orange equals sign (Medium), P3 a blue down chevron
+   (Low), from existing tokens. **Three levels, not five.** `p1 | p2 | p3` is
+   the REST API's, the policy layer's and the agents' tool contract; Jira's
+   Highest and Lowest would be a schema and tool change for every owner, and
+   the owner asked for the icons, not the levels.
+
+### What this does not decide
+
+- Manual order in the List view, which keeps its column sort (D-060).
+- Priority levels beyond three.
+

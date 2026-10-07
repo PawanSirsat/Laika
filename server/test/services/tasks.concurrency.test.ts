@@ -3,7 +3,7 @@ import { Worker } from 'node:worker_threads';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor } from '../../src/auth/resolve-actor.ts';
 import { newId } from '../../src/db/ids.ts';
-import { orgs, users } from '../../src/db/schema.ts';
+import { orgs, tasks, users } from '../../src/db/schema.ts';
 import { createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
@@ -116,4 +116,57 @@ describe('claim is a compare-and-swap under real concurrency (AC3)', () => {
     expect(outcomes.filter((o) => o === 'conflict')).toHaveLength(5);
     expect(outcomes.filter((o) => o === 'unexpected')).toEqual([]);
   }, 60_000);
+});
+
+describe('two connections reordering into one gap at once (LAI-472)', () => {
+  it('lands every card, between the two neighbours, with no shared place and nothing lost', async () => {
+    const admin = loadActor(t.db, adminId)!;
+    const make = (title: string) => createTask(t.sqlite, t.db, admin, 'laika', { title }).id;
+    const low = make('low');
+    const high = make('high');
+    const PER_WORKER = 15;
+    const cards = [0, 1].map((w) =>
+      Array.from({ length: PER_WORKER }, (_, i) => make(`w${String(w)}-${String(i)}`)),
+    );
+
+    const results = await Promise.all(
+      cards.map((mine, w) =>
+        run({
+          mode: 'reorder',
+          userId: adminId,
+          slug: 'laika',
+          taskId: '',
+          count: 0,
+          label: `w${String(w)}`,
+          cards: mine,
+          afterId: low,
+          beforeId: high,
+        }),
+      ),
+    );
+
+    for (const r of results) {
+      expect(r.errors).toEqual([]);
+      // Both neighbours stay in order throughout, so no move is ever stale.
+      expect(r.outcomes).toEqual(Array.from({ length: PER_WORKER }, () => 'moved'));
+    }
+
+    const rows = t.db.select({ id: tasks.id, position: tasks.position }).from(tasks).all();
+    const places = rows.map((r) => r.position!);
+    expect(new Set(places).size).toBe(rows.length);
+
+    const sequence = [...rows]
+      .sort((a, b) => (a.position! < b.position! ? -1 : 1))
+      .map((r) => r.id);
+    expect(sequence[0]).toBe(low);
+    expect(sequence.at(-1)).toBe(high);
+    expect(sequence).toHaveLength(2 + 2 * PER_WORKER);
+    // Within one connection the order is exactly its own drops' — each lands
+    // directly after `low`, so its last move is its topmost card. The two
+    // connections interleave however the lock fell, which is the point.
+    for (const mine of cards) {
+      const seen = sequence.filter((id) => mine.includes(id));
+      expect(seen).toEqual([...mine].reverse());
+    }
+  });
 });

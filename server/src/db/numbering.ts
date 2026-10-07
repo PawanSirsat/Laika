@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm';
 import type Database from 'better-sqlite3';
 import { type Db } from './client.ts';
 import { tasks } from './schema.ts';
+import { lastPosition } from './backfill.ts';
+import { keyAfter } from './order-key.ts';
 
 /**
  * Per-project task numbering — the `LAI-42` in every display key (SPEC §4.5).
@@ -89,6 +91,8 @@ export function createTaskWithNumber(
         id: input.id,
         projectId: input.projectId,
         number,
+        // The end of the project's order, as `createTask` does (LAI-472).
+        position: keyAfter(lastPosition(db, input.projectId)),
         title: input.title,
         descriptionMd: input.descriptionMd ?? null,
         priority: input.priority ?? 'p2',

@@ -7,16 +7,21 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { loadActor } from '../../src/auth/resolve-actor.ts';
 import { openDb } from '../../src/db/client.ts';
-import { claimTask, createTask } from '../../src/services/tasks.ts';
+import { ApiError } from '../../src/errors.ts';
+import { claimTask, createTask, reorderTask } from '../../src/services/tasks.ts';
 
 interface WorkerInput {
   path: string;
-  mode: 'create' | 'claim';
+  mode: 'create' | 'claim' | 'reorder';
   userId: string;
   slug: string;
   taskId: string;
   count: number;
   label: string;
+  /** `reorder`: the cards this worker moves, in order, into one gap. */
+  cards?: string[];
+  afterId?: string;
+  beforeId?: string;
 }
 
 const input = workerData as WorkerInput;
@@ -37,6 +42,18 @@ if (actor === null) {
       );
     } catch (err) {
       errors.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+} else if (input.mode === 'reorder') {
+  for (const card of input.cards ?? []) {
+    try {
+      reorderTask(sqlite, db, actor, card, {
+        after_task_id: input.afterId,
+        before_task_id: input.beforeId,
+      });
+      outcomes.push('moved');
+    } catch (err) {
+      outcomes.push(err instanceof ApiError ? err.code : `unexpected: ${String(err)}`);
     }
   }
 } else {
