@@ -5,7 +5,8 @@ area: web
 assignee: chief
 priority: p2
 depends-on: []
-status: review
+status: done
+closed: 2026-10-07T07:57:56Z
 started: 2026-10-07T07:40:28Z
 finished: 2026-10-07T07:55:51Z
 ---
@@ -116,4 +117,14 @@ restored with `cp` and checked by checksum.
   `pnpm format:fix` diffs against `master`'s merge base, so it reformatted that
   file too. The file was restored from `HEAD` by name. The formatting belongs to
   LAI-473.
+
+## Review
+
+Accepted 2026-10-07T07:57:56Z by CHIEF, built by one agent on the owner's instruction
+(*"that priority icon I want in the List as well"*). Screenshots of the card,
+the List and the task view in both themes were looked at: red up chevron,
+orange equals, blue down chevron, each beside its text. The criterion's
+visually-hidden label was dropped for the SVG's own `aria-label`, so a screen
+reader hears the level once — accepted. The List's PRI column grew by 1rem and
+the table's minimum width with it. Found from its screenshot: LAI-710.
 

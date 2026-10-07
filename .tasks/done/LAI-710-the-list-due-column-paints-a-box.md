@@ -6,7 +6,8 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from: LAI-705
-status: review
+status: done
+closed: 2026-10-07T07:57:56Z
 started: 2026-10-07T08:10:00Z
 finished: 2026-10-07T08:14:00Z
 ---
@@ -31,3 +32,9 @@ one rule in `list.css`; DUE was never added to it.
 
 Filed and fixed by CHIEF on the owner's instruction to finish the List and
 icons quickly; one CSS rule. Discovered from LAI-705.
+
+## Review
+
+Accepted 2026-10-07T07:57:56Z by CHIEF, who fixed it. Red on the old CSS, green on the
+fix; the status pill beside it keeps its box as the positive control.
+
