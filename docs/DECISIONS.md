@@ -3786,3 +3786,49 @@ records what building it settled that D-060 left open or got wrong.
 - Manual order in the List view, which keeps its column sort (D-060).
 - Priority levels beyond three.
 
+
+## D-071 — The board changes in place: cards glide, someone else's change glows, nothing flashes.
+
+**2026-10-07, the owner, directly to CHIEF**, with a screenshot of the board
+mid-flash: *"when anything changes from the board or anywhere by using MCP it
+shows a flickering screen, like a flash, but I want that transition very
+smooth — and if it goes from to do to in progress, for example, it should go
+like an animation transition."* Carried by LAI-707 (refresh in place) and
+LAI-708 (motion). Built by CHIEF on the owner's direct instruction, on
+`build-motion`, as the earlier runs were — a crossing made on that
+instruction, not a precedent.
+
+### Decided
+
+1. **A refresh never takes the board off the screen.** Only a first load, or a
+   new project or filter, shows the skeleton. Every live frame, Refresh and
+   drawer edit merges the answer into what is drawn: an unchanged card keeps
+   its element, so lane scroll, open composers and focus survive. A refresh
+   that fails keeps the board and says *"Could not refresh — this is the board
+   as of HH:MM"*, except `unauthorized`, `forbidden` and `not_found`, which
+   replace it — a board the reader may no longer see must not stay up.
+2. **A card that changes place glides there — 200ms, `ease`** — through the
+   browser's View Transitions API, no dependency. A browser without it gets
+   the change at once, as before. Its own move, a teammate's, an agent's over
+   MCP: all glide the same way.
+3. **Someone else's change glows** — a 3px accent ring held then faded over
+   3.6s, the design prototype's `flash` — on the card, or the row in the List.
+   "Someone else" is anyone but the reader acting as themselves in a browser:
+   their own agent's change glows, because they did not make it here.
+4. **Motion only where it reads as motion.** Not under reduced motion, not in a
+   hidden tab, not during a drag, not on the List (rows jump by sort and page),
+   and not while the drawer, a dialog or a popover is open — a moving card is
+   drawn above the whole page. A card dropped by hand does not fly back from
+   where it was picked up; its neighbours make room. One glide at a time: the
+   server's answer to the move being shown is drawn into it, not as a second
+   glide that would cut the first short.
+5. **Reduced motion keeps the information and drops the movement**: changes
+   land at once, and the glow is a still ring for the same 3.6s.
+6. **Clicks never wait for an animation.** The animation layer takes no pointer
+   events, and a card standing still during a glide is the live element.
+
+### What this does not decide
+
+- Motion for anything but cards — columns, dialogs and the drawer keep the
+  colour-only transitions `theme.css` has always had.
+- Animating the List's rows.
