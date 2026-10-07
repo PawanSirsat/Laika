@@ -2,11 +2,12 @@
 id: LAI-708
 title: 'Cards glide between lanes, and another person’s change glows'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-707, LAI-473]
 discovered-from: LAI-707
-status: backlog
+status: in-progress
+started: 2026-10-07T07:54:58Z
 ---
 
 ## Goal
