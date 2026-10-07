@@ -53,7 +53,26 @@ export interface CommitMeta {
   readonly settled?: string | undefined;
   /** State outside the board that must land in the same render (`movingId`). */
   readonly alongside?: (() => void) | undefined;
+  /**
+   * Hand the commit to the presenter even though `tasks` did not change — an
+   * optimistic reorder, whose new place lives in `alongside` (LAI-708).
+   */
+  readonly moves?: boolean | undefined;
 }
+
+/** What the presenter is told about a change it is asked to show. */
+export interface BoardChange {
+  readonly origin: Exclude<CommitOrigin, 'load'>;
+  readonly changed: ReadonlySet<string> | undefined;
+  readonly settled: string | undefined;
+}
+
+/**
+ * Shows a change to the board (LAI-708). It **must** call `apply` — at once, or
+ * from inside a view transition — and `apply` always writes the newest state,
+ * so calling it late is safe.
+ */
+export type BoardPresenter = (change: BoardChange, apply: () => void) => void;
 
 export interface UseBoard {
   readonly state: BoardState;
@@ -175,7 +194,11 @@ function isFatal(cause: unknown): boolean {
   );
 }
 
-export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard {
+export function useBoard(
+  slug: string | undefined,
+  filter: TaskFilter,
+  presenter?: { readonly current: BoardPresenter | undefined },
+): UseBoard {
   const [state, setState] = useState<BoardState>(INITIAL);
   /** The truth, written only by `commit`; React state follows it. */
   const stateRef = useRef<BoardState>(INITIAL);
@@ -212,17 +235,38 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
 
   /**
    * The one place the board's state is written (LAI-707). `meta` says where the
-   * change came from, for LAI-708's motion; `alongside` lands other state —
-   * `movingId` — in the same render, so a card never shows "moving" in its new
-   * lane or "settled" in its old one.
+   * change came from; `alongside` lands other state — `movingId` — in the same
+   * render, so a card never shows "moving" in its new lane or "settled" in its
+   * old one.
+   *
+   * **A change to the cards goes through the presenter** (LAI-708), which may
+   * run `apply` inside a view transition a frame later. The ref moves now, so
+   * every reader of the truth sees it at once; React follows when `apply`
+   * runs, and `apply` reads the ref, so a late or out-of-order call still
+   * paints the newest state. A first load is never animated.
    */
-  const commit = useCallback((next: BoardState, meta: CommitMeta): void => {
-    if (next !== stateRef.current) {
+  const commit = useCallback(
+    (next: BoardState, meta: CommitMeta): void => {
+      const prev = stateRef.current;
+      if (next === prev && meta.alongside === undefined) return;
       stateRef.current = next;
-      setState(next);
-    }
-    meta.alongside?.();
-  }, []);
+      const apply = (): void => {
+        setState(stateRef.current);
+        meta.alongside?.();
+      };
+      const present = presenter?.current;
+      if (
+        present === undefined ||
+        meta.origin === 'load' ||
+        (next.tasks === prev.tasks && meta.moves !== true)
+      ) {
+        apply();
+        return;
+      }
+      present({ origin: meta.origin, changed: meta.changed, settled: meta.settled }, apply);
+    },
+    [presenter],
+  );
 
   useEffect(() => {
     if (slug === undefined) return;
@@ -389,9 +433,45 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
       setMoveError(undefined);
       setMovingId(taskId);
       pending.current.add(taskId);
-      if (target !== undefined) replace({ ...before, status: target }, true);
-      if (reorders) setPlacing({ taskId, afterId: to.afterId, beforeId: to.beforeId });
+      // The new lane and the new place in **one** commit (LAI-708): shown
+      // apart, the card would land at the lane's end for a frame and then jump
+      // to where it was put.
+      {
+        const cur = stateRef.current;
+        commit(
+          target === undefined
+            ? cur
+            : {
+                ...cur,
+                tasks: cur.tasks.map((t) => (t.id === taskId ? { ...before, status: target } : t)),
+              },
+          {
+            origin: 'local',
+            changed: new Set([taskId]),
+            settled: taskId,
+            moves: true,
+            ...(reorders
+              ? {
+                  alongside: () => {
+                    setPlacing({ taskId, afterId: to.afterId, beforeId: to.beforeId });
+                  },
+                }
+              : {}),
+          },
+        );
+      }
 
+      /*
+       * Ends the drop on screen. Handed to the commit that shows its outcome,
+       * so it lands **in that render** — the presenter may paint it a frame
+       * later (LAI-708), and clearing `placing` any sooner would drop the card
+       * back to its old place for that frame.
+       */
+      const endPlacing = (): void => {
+        setPlacing(undefined);
+        setMovingId(undefined);
+      };
+      let handed = false;
       let statusLanded = false;
       try {
         let answer: Task | undefined;
@@ -410,13 +490,12 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
         if (answer !== undefined) {
           // The answer and the end of `placing` in one render, so the card never
           // falls back to its old place for a frame between the two.
-          replace(answer, true, () => {
-            setPlacing(undefined);
-            setMovingId(undefined);
-          });
+          replace(answer, true, endPlacing);
+          handed = true;
         }
       } catch (cause) {
-        replace(before, false);
+        replace(before, false, endPlacing);
+        handed = true;
         if (statusLanded) {
           try {
             await changeStatus(taskId, before.status);
@@ -430,8 +509,7 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
         setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
       } finally {
         pending.current.delete(taskId);
-        setPlacing(undefined);
-        setMovingId(undefined);
+        if (!handed) endPlacing();
       }
     },
     [commit],

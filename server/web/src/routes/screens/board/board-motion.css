@@ -1,0 +1,80 @@
+/*
+ * Board motion (LAI-708, D-071).
+ *
+ * **The glide** is a view transition scoped to the cards. `board-motion` is on
+ * the root only while one runs, and takes the root out of it, so the page is
+ * never snapshotted — only the named cards move, in a layer above the page.
+ * That layer takes no pointer events: a click during the 200ms lands on the
+ * real board underneath, never on a picture of it.
+ *
+ * **The glow** marks a card or row someone else just changed — the design
+ * prototype's `flash`. An attribute, not a class: it is set after React paints.
+ */
+:root.board-motion {
+  view-transition-name: none;
+}
+
+:root.board-motion::view-transition {
+  pointer-events: none;
+}
+
+:root.board-motion::view-transition-group(*),
+:root.board-motion::view-transition-old(*),
+:root.board-motion::view-transition-new(*) {
+  animation-duration: 200ms;
+  animation-timing-function: ease;
+}
+
+/* Held, then let go: long enough to find, gone before it is noise. */
+@keyframes card-flash {
+  0%,
+  40% {
+    box-shadow:
+      0 0 0 3px var(--accent-border),
+      var(--shadow-card);
+  }
+  100% {
+    box-shadow:
+      0 0 0 3px transparent,
+      var(--shadow-card);
+  }
+}
+
+@keyframes row-flash {
+  0%,
+  40% {
+    background-color: var(--accent-bg);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.card[data-flash] {
+  animation: card-flash 3.6s ease-out;
+}
+
+.list-row[data-flash] > td {
+  animation: row-flash 3.6s ease-out;
+}
+
+/*
+ * **Less motion keeps the information.** Nothing moves and nothing fades: the
+ * change lands at once, and the mark is a plain ring that is there for the
+ * same 3.6s and then is not.
+ */
+@media (prefers-reduced-motion: reduce) {
+  :root.board-motion::view-transition-group(*),
+  :root.board-motion::view-transition-old(*),
+  :root.board-motion::view-transition-new(*) {
+    animation: none;
+  }
+
+  .card[data-flash] {
+    animation: card-flash 3.6s steps(1, end);
+  }
+
+  .list-row[data-flash] > td {
+    animation: row-flash 3.6s steps(1, end);
+  }
+}

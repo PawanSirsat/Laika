@@ -1536,6 +1536,12 @@ rendering choice, never a different query path.
   its status — and Alt with an arrow key does the same from the keyboard. The
   card moves on drop and returns if the server refuses. A new task lands at the
   bottom of its lane. A reader who may not write tasks cannot drag one.
+- **Live changes apply in place** (D-071): a stream frame, Refresh or drawer
+  edit merges into the board on screen and never swaps it for a skeleton. A
+  card that changes place glides there in 200ms; one someone else changed
+  glows for 3.6s, on the card or the List row. Under reduced motion it lands at
+  once and the glow is a still ring. A failed refresh keeps the board with an
+  "as of" notice, unless the reader has lost access.
 
 **List.** The same tasks as a sortable, densely readable table: key, title,
 status, assignee, priority, dependency count, due, updated — the title's
