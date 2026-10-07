@@ -1074,7 +1074,7 @@ export function reorderTask(
       const row = db.select().from(tasks).where(eq(tasks.id, id)).get();
       // Missing and another project's are one answer, so the shape of the
       // error does not confirm that a task the caller cannot read exists.
-      if (row === undefined || row.projectId !== project.id) {
+      if (row?.projectId !== project.id) {
         throw new ApiError('unprocessable', `No task "${id}" in this project`, { [which]: id });
       }
       return row;

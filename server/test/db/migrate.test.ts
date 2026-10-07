@@ -288,7 +288,7 @@ describe('the tasks rebuild keeps every row and every foreign key (LAI-493)', ()
     // **Cut back to just before the rebuild, not "the last one".** This popped
     // a single entry and asserted it was 0024; LAI-472 added 0025 after it, so
     // "the last" stopped meaning "the rebuild". Every entry from 0024 on goes.
-    const at = journal.entries.findIndex((e) => /^0024_/.test(e.tag));
+    const at = journal.entries.findIndex((e) => e.tag.startsWith('0024_'));
     const dropped = journal.entries.splice(at);
     // The guard on this guard: the first entry cut must be the tasks rebuild,
     // or this proves nothing about it.

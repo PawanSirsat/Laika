@@ -144,7 +144,7 @@ export function keyBetween(a: string | null, b: string | null): string {
   if (b === null) {
     const ia = integerPart(a);
     const higher = increment(ia);
-    return higher === null ? ia + midpoint(a.slice(ia.length), null) : higher;
+    return higher ?? ia + midpoint(a.slice(ia.length), null);
   }
 
   const ia = integerPart(a);
