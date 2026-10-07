@@ -447,7 +447,11 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
         await route.continue();
       });
       await h.page.setViewportSize({ width: 1600, height: 1000 });
-      await h.page.goto(`${h.origin}/board?project=laika-core`);
+      // **All sprints, chosen** (LAI-713): with no `?sprint=` the board now
+      // waits for the sprint list before it draws, so it cannot move when the
+      // list lands. An explicit choice draws at once, while the strip is still
+      // loading, which is the case this guard exists for.
+      await h.page.goto(`${h.origin}/board?project=laika-core&sprint=all`);
       await h.page.waitForTimeout(500);
 
       const during = await boardTop(h);

@@ -933,7 +933,10 @@ void describe('the Filter popover on the List (LAI-487)', () => {
   });
 
   void test('the same popover works on the Board', async () => {
-    const h = await open('/board?project=laika-core', FILTERABLE);
+    // All sprints, chosen: the board otherwise opens on the active sprint
+    // (LAI-713), which is a filter of its own and would be counted beside the
+    // one this test sets.
+    const h = await open('/board?project=laika-core&sprint=all', FILTERABLE);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       await openFilter(h);
