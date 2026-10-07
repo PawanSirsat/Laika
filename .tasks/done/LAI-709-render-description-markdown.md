@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 finished: 2026-10-07T07:33:13Z
 started: 2026-10-07T07:27:28Z
-status: review
+status: done
 ---
 
 ## Goal
