@@ -7,6 +7,7 @@ import type { CardFields } from './card-fields.ts';
 import { dateLabel, dateLabelShort, dueState } from '../../../api/date-only.ts';
 import { childrenOf, parentOf, subtaskProgress } from '../../../api/subtask-derive.ts';
 import type { Theme } from '../../../theme/theme.ts';
+import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 
 export interface TaskCardProps {
   readonly task: Task;
@@ -103,7 +104,7 @@ export function TaskCard({
         Title first, then the exception, then the footer — the order the
         prototype's card-anatomy plate calls out: "Title first, then the
         exception (blocked-by), then the footer: priority dot, key, counts,
-        assignee."
+        assignee." The dot is Jira's priority icon since LAI-705.
       */}
       <p className="card-title t-body">{task.title}</p>
 
@@ -164,18 +165,11 @@ export function TaskCard({
       )}
 
       <div className="card-foot">
-        {/* One glyph, three states, no text: P1 solid red, P2 solid amber,
-            P3 hollow. The word stays in the title attribute for screen readers. */}
-        {fields.priority && (
-          <>
-            <span
-              className={`card-dot card-dot-${task.priority}`}
-              title={`Priority ${task.priority}`}
-              aria-hidden="true"
-            />
-            <span className="visually-hidden">Priority {task.priority}</span>
-          </>
-        )}
+        {/* Jira's priority icons (LAI-705): an up chevron, an equals sign, a
+            down chevron. It replaced a coloured dot whose only difference
+            between P1 and P2 was the colour. The name is the icon's own
+            `aria-label` and `<title>`, so no separate hidden label. */}
+        {fields.priority && <PriorityIcon priority={task.priority} />}
 
         <button
           type="button"

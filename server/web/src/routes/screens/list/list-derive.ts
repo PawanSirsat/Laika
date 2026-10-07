@@ -25,6 +25,8 @@ export interface ListRow {
   readonly statusTone: Tone;
   /** `P1`, upper-case — the design's form, not the API's `p1`. */
   readonly priority: string;
+  /** The API's `p1`, for the icon beside that text (LAI-705). */
+  readonly priorityLevel: Task['priority'];
   readonly priorityTone: Tone;
   readonly who: string;
   readonly assigned: boolean;
@@ -150,6 +152,7 @@ export function listRows({
       status: boardStatusLabel(task.status, columns),
       statusTone: statusTone(task.status),
       priority: task.priority.toUpperCase(),
+      priorityLevel: task.priority,
       priorityTone: priorityTone(task.priority),
       who: member?.name ?? 'Unassigned',
       assigned: member !== undefined,

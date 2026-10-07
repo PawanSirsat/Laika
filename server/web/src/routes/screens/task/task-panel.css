@@ -1078,6 +1078,16 @@
   color: var(--text-secondary);
 }
 
+/* Jira's priority icon before the select (LAI-705). **Inline, not a flex
+   row**: as a flex item the <label> becomes the select's containing block, and
+   the select's `max-width: 100%` then measures its own box less its negative
+   margins, clipping `P2` to `P`. Inline, the select sizes exactly as it did.
+   The select pulls itself 0.25rem left; the margin pays that back. */
+.meta-value-prio > .priority-icon {
+  margin-right: 0.5rem;
+  vertical-align: -0.1875rem;
+}
+
 .meta-prio-p1 select {
   color: var(--overdue);
   font-weight: var(--weight-bold);

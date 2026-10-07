@@ -58,8 +58,9 @@
 }
 
 .list {
-  /* The design's 64rem plus the Due column (D-066), so Summary keeps its room. */
-  min-width: 70.75rem;
+  /* The design's 64rem plus the Due column (D-066), so Summary keeps its room,
+     plus the 1rem the priority icon added to PRI (LAI-705). */
+  min-width: 71.75rem;
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed;
@@ -76,8 +77,10 @@
 .list-col-status {
   width: 6.5rem;
 }
+/* The design's 42px held `P1` alone. Jira's icon now sits before it (LAI-705):
+   12px of icon and a 4px gap on top of the text and the cell's padding. */
 .list-col-pri {
-  width: 2.625rem;
+  width: 3.625rem;
 }
 .list-col-assignee {
   width: 9.375rem;
@@ -301,6 +304,13 @@
   font-size: 0.65625rem;
   font-weight: var(--weight-heavy);
   line-height: 1;
+}
+
+.list-pri-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
 }
 
 /*
