@@ -350,16 +350,20 @@
 
 /* The pill is the only place the tone paints a box; the text columns take the
    colour alone, which is what the design does. */
+/* `.list-due` joined LAI-495's column without joining this rule, so the flat
+   tone painted the pill's box down the whole column (LAI-710). */
 .list-pri,
 .list-created,
-.list-updated {
+.list-updated,
+.list-due {
   background: none;
   border: none;
 }
 
 .list-tone-flat.list-pri,
 .list-tone-flat.list-created,
-.list-tone-flat.list-updated {
+.list-tone-flat.list-updated,
+.list-tone-flat.list-due {
   color: var(--text-muted);
 }
 

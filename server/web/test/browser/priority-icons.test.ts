@@ -314,6 +314,34 @@ void describe('the List draws the icon before P1 (LAI-705)', () => {
   });
 });
 
+void describe('the List’s DUE column paints no box (LAI-710)', () => {
+  void test('the DUE cell is transparent in both themes; the status pill keeps its box', async () => {
+    const h = await open('/list?project=laika-core', STUB);
+    try {
+      await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
+      const first = h.page.locator('.list-row').first();
+      const bg = (l: Locator) => l.evaluate((el) => getComputedStyle(el).backgroundColor);
+      for (const theme of ['Dark', 'Light']) {
+        await setTheme(h.page, theme);
+        await h.page.waitForTimeout(200);
+        assert.equal(
+          await bg(first.locator('.list-due')),
+          'rgba(0, 0, 0, 0)',
+          `${theme}: the DUE cell paints the pill's box down the column`,
+        );
+        // Positive control: the tone class is still painting where it should.
+        assert.notEqual(
+          await bg(first.locator('.list-status')),
+          'rgba(0, 0, 0, 0)',
+          `${theme}: the status pill lost its box — this proves nothing`,
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the task view draws the icon beside the priority control (LAI-705)', () => {
   void test('each level its own glyph, name and colour, before the select, in both themes', async () => {
     const h = await open('/board?project=laika-core', STUB);
