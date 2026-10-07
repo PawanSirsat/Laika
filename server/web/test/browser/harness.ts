@@ -357,12 +357,26 @@ export async function setTheme(page: Page, theme: string) {
   );
 }
 
+export interface OpenOptions {
+  /**
+   * Runs on the page before the first navigation (LAI-707): routes that must
+   * catch the very first request, and init scripts such as {@link fakeStream},
+   * have to be in place before the app boots.
+   */
+  readonly before?: (page: Page) => Promise<void>;
+}
+
 /** Open `path` in a real browser, against the built SPA and a stubbed API. */
-export async function open(path: string, stub: ApiStub): Promise<Harness> {
+export async function open(
+  path: string,
+  stub: ApiStub,
+  options: OpenOptions = {},
+): Promise<Harness> {
   const calls: StubCall[] = [];
   const unmatched: string[] = [];
   const { server, origin } = await serve(ensureBuilt(), stub, calls, unmatched);
   const page = await (await browser()).newPage();
+  if (options.before !== undefined) await options.before(page);
   await page.goto(`${origin}${path}`);
 
   return {
@@ -375,4 +389,73 @@ export async function open(path: string, stub: ApiStub): Promise<Harness> {
       await new Promise((done) => server.close(done));
     },
   };
+}
+
+/**
+ * A stand-in for `EventSource` the test drives (LAI-707).
+ *
+ * The stub server answers every `/api/` request as JSON, so the real stream
+ * gets a 404 and reads as refused. Installed with `open(path, stub, { before:
+ * fakeStream })`, this replaces the browser's `EventSource` with one that
+ * opens at once, says `ready`, and fires whatever the test emits:
+ *
+ *     await h.page.evaluate(() => window.__laikaStream.emit('task.status_changed', {...}, '7'));
+ *
+ * Every source the app opened receives the frame, as the shared connection
+ * would.
+ */
+export async function fakeStream(page: Page): Promise<void> {
+  await page.addInitScript({
+    content: `
+      (() => {
+        const sources = [];
+        class FakeEventSource {
+          constructor(url) {
+            this.url = String(url);
+            this.readyState = 0;
+            this.listeners = new Map();
+            this.onopen = null;
+            this.onerror = null;
+            this.onmessage = null;
+            sources.push(this);
+            setTimeout(() => {
+              if (this.readyState === 2) return;
+              this.readyState = 1;
+              if (this.onopen) this.onopen(new Event('open'));
+              this.dispatch('ready', '{}', '');
+            }, 0);
+          }
+          addEventListener(type, listener) {
+            if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+            this.listeners.get(type).add(listener);
+          }
+          removeEventListener(type, listener) {
+            if (this.listeners.has(type)) this.listeners.get(type).delete(listener);
+          }
+          dispatch(type, data, id) {
+            const event = new MessageEvent(type, { data, lastEventId: id });
+            for (const listener of [...(this.listeners.get(type) || [])]) listener(event);
+          }
+          close() {
+            this.readyState = 2;
+          }
+        }
+        FakeEventSource.CONNECTING = 0;
+        FakeEventSource.OPEN = 1;
+        FakeEventSource.CLOSED = 2;
+        window.EventSource = FakeEventSource;
+        window.__laikaStream = {
+          emit(type, data, id) {
+            const body = typeof data === 'string' ? data : JSON.stringify(data);
+            for (const source of sources) {
+              if (source.readyState === 1) source.dispatch(type, body, String(id ?? ''));
+            }
+          },
+          count() {
+            return sources.filter((source) => source.readyState === 1).length;
+          },
+        };
+      })();
+    `,
+  });
 }
