@@ -11,6 +11,9 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { before, describe, test } from 'node:test';
 import {
+  activeSprintId,
+  ALL_SPRINTS,
+  readSprintScope,
   activeFilters,
   FILTER_KEYS,
   filterCount,
@@ -165,5 +168,37 @@ void describe('top and overdue (D-066)', () => {
     assert.equal(cleared.get('top'), null);
     assert.equal(cleared.get('overdue'), null);
     assert.equal(cleared.get('task'), 't1');
+  });
+});
+
+void describe('the sprint a board opens on (LAI-713)', () => {
+  const names = { status: (s: string) => s };
+
+  void test('missing, empty and all mean every sprint; anything else is sent', () => {
+    assert.equal(readSprintScope(new URLSearchParams('')), undefined);
+    assert.equal(readSprintScope(new URLSearchParams('sprint=')), undefined);
+    assert.equal(readSprintScope(new URLSearchParams(`sprint=${ALL_SPRINTS}`)), undefined);
+    assert.equal(readSprintScope(new URLSearchParams('sprint=s2')), 's2');
+    assert.equal(readSprintScope(new URLSearchParams('sprint=none')), 'none');
+  });
+
+  void test('all sprints, chosen, is not a filter — no chip, no count', () => {
+    const params = new URLSearchParams(`sprint=${ALL_SPRINTS}`);
+    assert.equal(filterCount(params, names), 0);
+    assert.deepEqual(activeFilters(params, names), []);
+    assert.equal(filterCount(new URLSearchParams('sprint=s2'), names), 1);
+  });
+
+  void test('the active sprint, or none when no sprint is active', () => {
+    assert.equal(
+      activeSprintId([
+        { id: 's1', status: 'completed' },
+        { id: 's2', status: 'active' },
+        { id: 's3', status: 'planned' },
+      ]),
+      's2',
+    );
+    assert.equal(activeSprintId([{ id: 's1', status: 'planned' }]), undefined);
+    assert.equal(activeSprintId([]), undefined);
   });
 });
