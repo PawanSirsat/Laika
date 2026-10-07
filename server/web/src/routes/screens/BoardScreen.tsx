@@ -568,8 +568,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
   /** The plain board: one row of columns. */
   const shownLanes = useMemo(
-    () => groupByColumn(shownTasks, columns.visible),
-    [shownTasks, columns.visible],
+    // `placing` keeps a dropped card where it was dropped while the server
+    // answers (LAI-473).
+    () => groupByColumn(shownTasks, columns.visible, board.placing),
+    [shownTasks, columns.visible, board.placing],
   );
 
   /**
@@ -579,9 +581,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const swimlanes = useMemo(
     () =>
       grouped
-        ? groupSwimlanes(shownTasks, group, columns.visible, { members, sprintLabels })
+        ? groupSwimlanes(shownTasks, group, columns.visible, {
+            members,
+            sprintLabels,
+            placing: board.placing,
+          })
         : undefined,
-    [grouped, group, shownTasks, columns.visible, members, sprintLabels],
+    [grouped, group, shownTasks, columns.visible, members, sprintLabels, board.placing],
   );
 
   /**
@@ -1292,7 +1298,20 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               members={members}
               theme={theme}
               fields={prefs.preferences.fields}
-              cardsDraggable
+              // A reader who may not write tasks cannot drag one — the
+              // affordance is absent, not refused (LAI-473, LAI-082).
+              cardsDraggable={mayCreate}
+              {...(mayCreate
+                ? {
+                    onPlace: (
+                      id: string,
+                      to: { readonly afterId?: string; readonly beforeId?: string },
+                      status?: TaskStatus,
+                    ) => {
+                      void board.place(id, to, status);
+                    },
+                  }
+                : {})}
               density={prefs.preferences.density}
               columnWidth={prefs.preferences.columnWidth}
               movingId={board.movingId}

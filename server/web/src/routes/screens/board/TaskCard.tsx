@@ -28,6 +28,12 @@ export interface TaskCardProps {
   readonly onDragStart: (taskId: string) => void;
   readonly onDragEnd: () => void;
   readonly onOpen: (taskId: string) => void;
+  /**
+   * The keyboard path for placing a card (LAI-473, D-060.6): Alt + an arrow
+   * on the card moves it one place up or down its lane, or into the lane
+   * beside it. Absent for a reader who may not move cards.
+   */
+  readonly onKeyMove?: ((taskId: string, direction: KeyMove) => void) | undefined;
   /** `S1`-style label per sprint id, and which one is active. Real data. */
   readonly sprintLabels?:
     ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
@@ -40,6 +46,15 @@ export interface TaskCardProps {
  * with a mouse excludes people from the product's central screen. The card is a
  * button so it is focusable; the column exposes the move targets.
  */
+export type KeyMove = 'up' | 'down' | 'left' | 'right';
+
+const KEY_MOVES: Readonly<Record<string, KeyMove>> = {
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
+};
+
 export function TaskCard({
   task,
   byId,
@@ -51,6 +66,7 @@ export function TaskCard({
   onDragStart,
   onDragEnd,
   onOpen,
+  onKeyMove,
   sprintLabels,
 }: TaskCardProps) {
   const blocked = blockedState(task, byId);
@@ -70,6 +86,9 @@ export function TaskCard({
 
   return (
     <article
+      // Addressable by id (LAI-473): the keyboard path refocuses the card after
+      // it moves, and a motion layer can follow it across lanes.
+      data-task-id={task.id}
       className={moving ? 'card card-moving' : 'card'}
       draggable={mayDrag && !moving}
       aria-busy={moving || undefined}
@@ -164,6 +183,18 @@ export function TaskCard({
           onClick={() => {
             onOpen(task.id);
           }}
+          {...(onKeyMove === undefined
+            ? {}
+            : {
+                'aria-keyshortcuts': 'Alt+ArrowUp Alt+ArrowDown Alt+ArrowLeft Alt+ArrowRight',
+                'aria-describedby': 'card-move-help',
+                onKeyDown: (event: React.KeyboardEvent<HTMLButtonElement>) => {
+                  const direction = event.altKey ? KEY_MOVES[event.key] : undefined;
+                  if (direction === undefined) return;
+                  event.preventDefault();
+                  onKeyMove(task.id, direction);
+                },
+              })}
         >
           {task.key}
           <span className="visually-hidden"> — open details</span>

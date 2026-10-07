@@ -1,7 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { byIdIndex } from './board-derive.ts';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { byIdIndex, type PendingMove } from './board-derive.ts';
 import { ApiError } from './errors.ts';
-import { changeStatus, listTasks, type Task, type TaskFilter, type TaskStatus } from './tasks.ts';
+import {
+  changeStatus,
+  listTasks,
+  reorderTask,
+  type Task,
+  type TaskFilter,
+  type TaskStatus,
+} from './tasks.ts';
 
 export interface BoardState {
   readonly status: 'loading' | 'ready' | 'error';
@@ -26,6 +33,18 @@ export interface UseBoard {
   /** The server's reason for refusing the last move. Cleared on the next one. */
   readonly moveError: string | undefined;
   readonly move: (taskId: string, to: TaskStatus) => Promise<void>;
+  /**
+   * Put a card **at a place** — below `afterId`, above `beforeId` — and, when
+   * it was dropped in another lane, into that lane's status (LAI-473).
+   * Optimistic: the card shows where it was dropped at once.
+   */
+  readonly place: (
+    taskId: string,
+    to: { readonly afterId?: string | undefined; readonly beforeId?: string | undefined },
+    status?: TaskStatus,
+  ) => Promise<void>;
+  /** The placement in flight, for the lane order to draw (`groupByColumn`). */
+  readonly placing: PendingMove | undefined;
   readonly reload: () => void;
   readonly dismissMoveError: () => void;
 }
@@ -169,6 +188,82 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
     }
   }, []);
 
+  /*
+   * **Placing a card is optimistic, and that is deliberate** (LAI-473). `move`
+   * above is not, for LAI-049's reason: a card that jumps and snaps back has
+   * told the reader something false. A drag *within* a lane cannot be refused
+   * by the transition table, and a drop that waits for two round trips before
+   * the card moves feels broken — LAI-473 asks for the card to move on drop,
+   * and for it to go back to where it started if either request fails.
+   *
+   * **Status first, then place.** The status is the call that can be refused
+   * (§5's review rule), so it goes first and a refusal leaves nothing written.
+   * If the status lands and the reorder does not, the status is sent back —
+   * returning the card on screen while the server holds it in the new lane
+   * would be the lie LAI-049 exists to prevent — and the board reloads to show
+   * whatever is true. A `409` from the reorder means the order changed under
+   * the drag; the board reloads rather than guessing.
+   */
+  const tasksRef = useRef<readonly Task[]>(state.tasks);
+  tasksRef.current = state.tasks;
+  const [placing, setPlacing] = useState<PendingMove | undefined>(undefined);
+
+  const place = useCallback(
+    async (
+      taskId: string,
+      to: { readonly afterId?: string | undefined; readonly beforeId?: string | undefined },
+      status?: TaskStatus,
+    ): Promise<void> => {
+      const before = tasksRef.current.find((t) => t.id === taskId);
+      if (before === undefined) return;
+      const target = status !== undefined && status !== before.status ? status : undefined;
+      const reorders = to.afterId !== undefined || to.beforeId !== undefined;
+      if (target === undefined && !reorders) return;
+
+      const replace = (next: Task): void => {
+        setState((s) => ({ ...s, tasks: s.tasks.map((t) => (t.id === next.id ? next : t)) }));
+      };
+
+      setMoveError(undefined);
+      setMovingId(taskId);
+      if (target !== undefined) replace({ ...before, status: target });
+      if (reorders) setPlacing({ taskId, afterId: to.afterId, beforeId: to.beforeId });
+
+      let statusLanded = false;
+      try {
+        let answer: Task | undefined;
+        if (target !== undefined) {
+          answer = await changeStatus(taskId, target);
+          statusLanded = true;
+        }
+        if (reorders) {
+          answer = await reorderTask(taskId, {
+            after_task_id: to.afterId,
+            before_task_id: to.beforeId,
+          });
+        }
+        if (answer !== undefined) replace(answer);
+      } catch (cause) {
+        replace(before);
+        if (statusLanded) {
+          try {
+            await changeStatus(taskId, before.status);
+          } catch {
+            // The reload below shows whatever the server now holds.
+          }
+        }
+        if (statusLanded || (cause instanceof ApiError && cause.code === 'conflict')) {
+          setAttempt((n) => n + 1);
+        }
+        setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
+      } finally {
+        setPlacing(undefined);
+        setMovingId(undefined);
+      }
+    },
+    [],
+  );
+
   const byId = useMemo(() => byIdIndex(state.tasks), [state.tasks]);
 
   const reload = useCallback((): void => {
@@ -179,5 +274,5 @@ export function useBoard(slug: string | undefined, filter: TaskFilter): UseBoard
     setMoveError(undefined);
   }, []);
 
-  return { state, byId, movingId, moveError, move, reload, dismissMoveError };
+  return { state, byId, movingId, moveError, move, place, placing, reload, dismissMoveError };
 }

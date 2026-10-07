@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
-import { TaskCard } from './TaskCard.tsx';
+import { TaskCard, type KeyMove } from './TaskCard.tsx';
 import {
+  dropNeighbours,
   MOVABLE_STATUSES,
   primaryStatus,
   boardStatusLabel,
@@ -22,6 +23,18 @@ export interface LaneRowProps {
   readonly theme: Theme;
   readonly movingId: string | undefined;
   readonly onMove: (taskId: string, to: MovableStatus) => void;
+  /**
+   * Put a card at a place in a lane (LAI-473): below `afterId`, above
+   * `beforeId`, and into `status` when it came from another lane. Absent for a
+   * reader who may not move cards — then a drop only changes status, as before.
+   */
+  readonly onPlace?:
+    | ((
+        taskId: string,
+        to: { readonly afterId?: string; readonly beforeId?: string },
+        status?: MovableStatus,
+      ) => void)
+    | undefined;
   readonly filtered: boolean;
   readonly onOpen: (taskId: string) => void;
   readonly fields: CardFields;
@@ -92,6 +105,35 @@ function isColumnDrag(transfer: DataTransfer): boolean {
   return transfer.types.includes(COLUMN_MIME);
 }
 
+/**
+ * The lane's cards with the drop line among them (LAI-473). `index` counts the
+ * cards **with the dragged one left out** — the index `dropNeighbours` reads —
+ * so the line sits exactly where the request will put the card.
+ */
+function withDropLine(
+  tasks: readonly Task[],
+  dragging: string | undefined,
+  index: number | undefined,
+  render: (task: Task) => ReactNode,
+): ReactNode[] {
+  if (index === undefined) return tasks.map(render);
+  const line = <div key="lane-drop" className="lane-drop" aria-hidden="true" />;
+  const out: ReactNode[] = [];
+  let slot = 0;
+  let drawn = false;
+  for (const task of tasks) {
+    const isDragged = task.id === dragging;
+    if (!isDragged && !drawn && slot === index) {
+      out.push(line);
+      drawn = true;
+    }
+    out.push(render(task));
+    if (!isDragged) slot += 1;
+  }
+  if (!drawn) out.push(line);
+  return out;
+}
+
 /** Empty-lane copy — per lane, not one generic sentence. */
 function emptyCopy(column: BoardColumn, filtered: boolean): string {
   if (filtered) return 'Nothing here for this filter';
@@ -106,6 +148,7 @@ export function LaneRow({
   theme,
   movingId,
   onMove,
+  onPlace,
   filtered,
   onOpen,
   fields,
@@ -133,6 +176,80 @@ export function LaneRow({
   const [draggingColumn, setDraggingColumn] = useState<string | undefined>(undefined);
   const [columnOver, setColumnOver] = useState<string | undefined>(undefined);
   const [announcement, setAnnouncement] = useState('');
+  /**
+   * Where a dragged card would land (LAI-473): a lane and an index among that
+   * lane's cards **with the dragged card left out** — the same index
+   * `dropNeighbours` reads, so the line drawn and the request sent agree.
+   */
+  const [dropAt, setDropAt] = useState<{ columnId: string; index: number } | undefined>(
+    undefined,
+  );
+  /** The card to give focus back to after a keyboard move re-renders it. */
+  const [refocus, setRefocus] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (refocus === undefined) return;
+    const target = document.querySelector<HTMLElement>(
+      `[data-task-id="${CSS.escape(refocus)}"] .card-open`,
+    );
+    if (target === null) return;
+    // Moving a focused node blurs it; put focus back on the card that moved,
+    // once, so the next arrow press moves it again.
+    if (document.activeElement !== target) target.focus();
+    setRefocus(undefined);
+  }, [refocus, lanes]);
+
+  /**
+   * The keyboard path (LAI-473, D-060.6). Alt + ↑/↓ moves the card one place
+   * in its lane; Alt + ←/→ moves it into the nearest lane that can take a
+   * card, at the same height. Each press is one complete, announced move —
+   * there is no held "picked up" state for a focus change to strand.
+   */
+  const keyMove = (taskId: string, direction: KeyMove): void => {
+    if (onPlace === undefined) return;
+    const from = lanes.findIndex((lane) => lane.tasks.some((t) => t.id === taskId));
+    const lane = lanes[from];
+    if (lane === undefined) return;
+    const ids = lane.tasks.map((t) => t.id);
+    const at = ids.indexOf(taskId);
+    const key = byId.get(taskId)?.key ?? 'The card';
+
+    if (direction === 'up' || direction === 'down') {
+      const to = direction === 'up' ? at - 1 : at + 1;
+      const neighbours = to < 0 || to >= ids.length ? undefined : dropNeighbours(ids, taskId, to);
+      if (neighbours === undefined) {
+        setAnnouncement(
+          `${key} is already at the ${direction === 'up' ? 'top' : 'bottom'} of ${lane.column.name}`,
+        );
+        return;
+      }
+      onPlace(taskId, neighbours);
+      setRefocus(taskId);
+      setAnnouncement(
+        `Moved ${key} to position ${String(to + 1)} of ${String(ids.length)} in ${lane.column.name}`,
+      );
+      return;
+    }
+
+    const step = direction === 'left' ? -1 : 1;
+    let next = from + step;
+    while (next >= 0 && next < lanes.length && primaryStatus(lanes[next]!.column) === undefined) {
+      next += step;
+    }
+    const target = lanes[next];
+    const status = target === undefined ? undefined : primaryStatus(target.column);
+    if (target === undefined || status === undefined) {
+      setAnnouncement(`${key} is already in the ${direction === 'left' ? 'first' : 'last'} column`);
+      return;
+    }
+    const others = target.tasks.map((t) => t.id);
+    const index = Math.min(at, others.length);
+    onPlace(taskId, dropNeighbours(others, taskId, index) ?? {}, status);
+    setRefocus(taskId);
+    setAnnouncement(
+      `Moved ${key} to ${target.column.name}, position ${String(index + 1)} of ${String(others.length + 1)}`,
+    );
+  };
 
   const order = lanes.map((lane) => lane.column.id);
 
@@ -211,10 +328,32 @@ export function LaneRow({
 
               event.dataTransfer.dropEffect = 'move';
               setOver(column.id);
+
+              if (onPlace === undefined) return;
+              // The index among this lane's cards, the dragged one left out:
+              // the first card whose middle is below the pointer.
+              const items = event.currentTarget.querySelectorAll<HTMLElement>(
+                '.lane-body > .lane-item',
+              );
+              let slot = 0;
+              for (const item of items) {
+                if (item.dataset.taskId === dragging) continue;
+                const box = item.getBoundingClientRect();
+                if (event.clientY < box.top + box.height / 2) break;
+                slot += 1;
+              }
+              setDropAt((current) =>
+                current?.columnId === column.id && current.index === slot
+                  ? current
+                  : { columnId: column.id, index: slot },
+              );
             }}
-            onDragLeave={() => {
+            onDragLeave={(event) => {
+              // Leaving a card inside the lane is not leaving the lane.
+              if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
               setOver((c) => (c === column.id ? undefined : c));
               setColumnOver((c) => (c === column.id ? undefined : c));
+              setDropAt((d) => (d?.columnId === column.id ? undefined : d));
             }}
             onDrop={(event) => {
               event.preventDefault();
@@ -229,8 +368,13 @@ export function LaneRow({
 
               if (!cardsDraggable) return;
 
-              const id = event.dataTransfer.getData('text/plain');
+              // What the drag carried, or the card this lane saw start — an
+              // empty string is "carried nothing", which `??` would keep.
+              const carried = event.dataTransfer.getData('text/plain');
+              const id = carried !== '' ? carried : (dragging ?? '');
               const task = id === '' ? undefined : byId.get(id);
+              const slot = dropAt?.columnId === column.id ? dropAt.index : tasks.length;
+              setDropAt(undefined);
               if (task === undefined || dot === undefined) return;
 
               /*
@@ -241,7 +385,21 @@ export function LaneRow({
                * a same-status drop would be answered `409 "That task is already
                * todo"` in the alert bar on an ordinary mis-drag.
                */
-              if (!column.statuses.includes(task.status)) onMove(task.id, dot);
+              const status = column.statuses.includes(task.status) ? undefined : dot;
+              if (onPlace === undefined) {
+                if (status !== undefined) onMove(task.id, status);
+                return;
+              }
+              // **Where it was dropped, not the end of the lane** (LAI-473):
+              // the cards above and below the gap, and the lane's status when
+              // it came from elsewhere. Dropped back where it was, nothing.
+              const neighbours = dropNeighbours(
+                tasks.map((t) => t.id),
+                task.id,
+                slot,
+              );
+              if (neighbours === undefined && status === undefined) return;
+              onPlace(task.id, neighbours ?? {}, status);
             }}
           >
             {/*
@@ -413,8 +571,25 @@ export function LaneRow({
               {tasks.length === 0 ? (
                 <EmptyState headline={emptyCopy(column, filtered)} />
               ) : (
-                tasks.map((task) => (
-                  <div key={task.id} className="lane-item">
+                withDropLine(
+                  tasks,
+                  dragging,
+                  // No line where the drop would change nothing.
+                  dropAt?.columnId === column.id &&
+                    (dragging === undefined ||
+                      dropNeighbours(
+                        tasks.map((t) => t.id),
+                        dragging,
+                        dropAt.index,
+                      ) !== undefined)
+                    ? dropAt.index
+                    : undefined,
+                  (task) => (
+                  <div
+                    key={task.id}
+                    className={task.id === dragging ? 'lane-item lane-item-dragging' : 'lane-item'}
+                    data-task-id={task.id}
+                  >
                     <TaskCard
                       task={task}
                       byId={byId}
@@ -427,8 +602,10 @@ export function LaneRow({
                       onDragEnd={() => {
                         setDragging(undefined);
                         setOver(undefined);
+                        setDropAt(undefined);
                       }}
                       onOpen={onOpen}
+                      onKeyMove={onPlace === undefined || !cardsDraggable ? undefined : keyMove}
                       sprintLabels={sprintLabels}
                     />
 
@@ -531,6 +708,13 @@ export function LaneRow({
           <span aria-hidden="true">+</span>
           <span className="visually-hidden">Add a column</span>
         </button>
+      )}
+
+      {onPlace !== undefined && cardsDraggable && (
+        <span id="card-move-help" className="visually-hidden">
+          Alt and an arrow key moves this card: up and down within its column, left and right
+          into the next column.
+        </span>
       )}
 
       <span className="visually-hidden" aria-live="polite">
