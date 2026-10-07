@@ -328,6 +328,8 @@ export function ListView({
               return (
                 <tr
                   key={row.id}
+                  // Lets another person's change glow on its row (LAI-708).
+                  data-task-id={row.id}
                   className={[
                     'list-row',
                     row.muted ? 'list-row-muted' : '',
