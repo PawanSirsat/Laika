@@ -32,6 +32,12 @@ not the only way to reorder** (D-060.6).
       is still there after a reload.** Asserted in a browser test by reading the
       rendered card order before and after, as LAI-260 did for the sidebar — not
       by asserting a function was called.
+- [ ] *(Added by CHIEF before claim, 2026-10-07, D-070.)* **The lane draws
+      `position` order.** `groupByColumns` in `api/board-derive.ts` sorts every
+      lane by priority then number, in the browser, after the fetch — so a
+      stored order would be ignored and a drop would snap back. That sort is
+      replaced by `position`, and a fixture whose position order differs from
+      its priority order renders in position order.
 - [ ] **There is a visible drop indicator** showing where the card will land,
       between cards rather than on them. A drag with no target feedback is a
       guess.

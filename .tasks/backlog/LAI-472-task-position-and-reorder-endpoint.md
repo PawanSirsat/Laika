@@ -36,9 +36,19 @@ yours to choose.
       (D-060.2).
 - [ ] **`POST /api/v1/tasks/:id/reorder`** moves one card, addressed by its
       **neighbours** rather than by an index: body
-      `{ before_task_id?, after_task_id? }`, at least one present, both refused
-      together unless they are genuinely adjacent. An index would be stale the
-      moment anyone else drags.
+      `{ before_task_id?, after_task_id? }`, at least one present.
+      `after_task_id` is the card it lands **directly below**; `before_task_id`
+      the card it lands **directly above**. *(Amended by CHIEF before claim,
+      2026-10-07, D-070:)* "genuinely adjacent" cannot hold — a lane is a
+      filtered view of one project sequence, so two cards side by side in a
+      lane are rarely neighbours in it. The rule is: with both present,
+      `after` must sort before `before`, or the board changed under the drag
+      and the answer is `409`; the card is placed **immediately after
+      `after_task_id`** in the project sequence (or immediately before
+      `before_task_id` when only that is sent). That lands it between the two
+      cards in every lane, and makes two concurrent drops into one gap land
+      side by side rather than computing the same key. A drop where the card
+      already is writes nothing.
 - [ ] **It calls `can(actor, 'task.write', task)`** before it reads or writes
       anything (CLAUDE.md §5). The action already exists — **do not add a §3.1
       row.** A viewer is refused.
@@ -56,12 +66,22 @@ yours to choose.
 - [ ] **Two concurrent reorders do not silently swap or collide.** Two writers
       targeting the same gap: both orders are valid afterwards, no two rows in
       the project share a `position`, and nothing is lost.
-- [ ] **`GET /projects/:slug/tasks` orders by `position`**, with a deterministic
-      tie-break that is **not `updated_at`** (D-060.5). Say in the task file what
-      you broke ties with and why.
-- [ ] **Existing tasks get a `position` in the migration**, in their current
-      visible order, so no board reshuffles on upgrade. Assert the before/after
-      order of a seeded project is identical.
+- [ ] *(Amended by CHIEF before claim, 2026-10-07, D-070.)* **Every
+      `TaskView` serves `position`, and `GET /projects/:slug/tasks` keeps its
+      `(updated_at, id)` order.** That order is the paging key agents catch up
+      on (`updated_since`, LAI-704); re-keying it on `position` would let a
+      reorder between two page reads skip a task. The board already loads every
+      task and builds its lanes in the browser, so it sorts by `position`
+      itself (LAI-473). D-060.5's concern — a lane ordered by `updated_at` —
+      is answered there, not here.
+- [ ] **A new task is placed at the end of its project's sequence**, so it
+      lands at the bottom of its lane — Jira's default for a new issue.
+- [ ] **Existing tasks get a `position`**, in their current visible order —
+      the board's, which is priority then number since LAI-606 — so no board
+      reshuffles on upgrade. Assert the before/after order of a seeded project
+      is identical. *(Amended, D-070:)* filled by a boot-time backfill beside
+      `backfillTaskTimestamps` rather than in SQL, because the keys are
+      computed; idempotent, it only fills a null.
 - [ ] **A reorder writes `task.updated` with `{ field: 'position', from, to }`**
       and emits the SSE frame. **No new `ACTIVITY_TYPES` value** — D-060.4 gives
       the reasoning, and adding one turns this into a three-owner change.
