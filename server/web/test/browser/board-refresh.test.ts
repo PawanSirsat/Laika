@@ -80,6 +80,8 @@ interface Server {
   version: number;
   extra: number;
   fail: 'none' | '500' | '403';
+  /** LC-1's status, once a move has changed it on the server. */
+  t1?: string;
 }
 
 function stub(server: Server): ApiStub {
@@ -111,7 +113,16 @@ function stub(server: Server): ApiStub {
         ? refuse(500, 'internal', 'The server had a problem.')
         : server.fail === '403'
           ? refuse(403, 'forbidden', 'You can no longer read this project.')
-          : { data: tasksAt(server.version, server.extra), next_cursor: null },
+          : {
+              data: tasksAt(server.version, server.extra).map((t) =>
+                t.id === 't1' && server.t1 !== undefined ? { ...t, status: server.t1 } : t,
+              ),
+              next_cursor: null,
+            },
+    '/api/v1/tasks/t1/status': () => {
+      server.t1 = 'todo';
+      return task('t1', 1, 'todo', { updated_at: Date.now() });
+    },
     '/api/v1/projects/laika-core/members': {
       members: [{ user_id: 'u1', name: 'Ada Lovelace', email: 'a@example.com', role: 'lead' }],
     },
@@ -504,6 +515,53 @@ void describe('a live change redraws in place (LAI-707)', () => {
         { timeout: 10_000 },
       );
     } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a refresh never undoes your own move (LAI-707)', () => {
+  void test('an answer read before the move, arriving after it, does not snap the card back', async () => {
+    const server: Server = { version: 1, extra: 0, fail: 'none' };
+    const h = await open('/board?project=laika-core', stub(server), { before: fakeStream });
+    try {
+      await ready(h.page);
+      // The next read is taken now and delivered late: an answer about the
+      // board as it was before the move.
+      await h.page.route('**/api/v1/projects/laika-core/tasks**', async (route) => {
+        const response = await route.fetch();
+        await new Promise((done) => setTimeout(done, 1500));
+        await route.fulfill({ response });
+      });
+      await frame(h.page, 't3', 12);
+      await h.page.waitForTimeout(500);
+
+      // Now the person moves LC-1 to To do; the server agrees at once.
+      const lc1 = h.page.locator('.lane-item', {
+        has: h.page.locator('.card-key', { hasText: /^LC-1\b/ }),
+      });
+      await lc1.locator('.lane-move-select').selectOption('todo');
+      await h.page.waitForFunction(
+        () =>
+          [...document.querySelectorAll('.card')]
+            .find((c) => /^LC-1\b/.test(c.querySelector('.card-key')?.textContent?.trim() ?? ''))
+            ?.closest('.lane')
+            ?.querySelector('.lane-title')
+            ?.textContent?.toLowerCase()
+            .includes('to do') === true,
+        undefined,
+        { timeout: 10_000 },
+      );
+
+      // The stale answer lands well after the move.
+      await h.page.waitForTimeout(2000);
+      assert.match(
+        await laneOf(h.page, 'LC-1'),
+        /to do/i,
+        'an answer older than the move put the card back where it was',
+      );
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });
