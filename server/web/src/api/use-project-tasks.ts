@@ -7,9 +7,10 @@ import type { TaskSetSnapshot } from './task-store.ts';
  *
  * One copy per project for the whole app (`task-store.ts`): the first screen to
  * ask walks it, every other screen — and a revisit — reads the same set, and
- * live frames keep it current in one place. So Calendar, Timeline (through
- * `use-sprints.ts`), Sprints, Dashboard, Capacity, Activity and Meeting review
- * have live data without a stream of their own.
+ * live frames keep it current in one place. So Calendar, Sprints, Dashboard,
+ * Capacity, Activity and Meeting review have live data without a stream of
+ * their own — and the Timeline, when the set is already held
+ * (`use-timeline.ts`; cold, it reads only the sprints it opens, D-074).
  *
  * `undefined` until there is a project. The board reads the store through
  * `use-board.ts` instead, which adds its filter, its local writes and LAI-708's

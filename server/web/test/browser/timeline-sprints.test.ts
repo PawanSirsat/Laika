@@ -1138,3 +1138,55 @@ void describe('live, and the day (LAI-721 review)', () => {
     }
   });
 });
+
+/**
+ * **The shared store, when another screen already holds the project**
+ * (LAI-724 on LAI-721). Arriving from the Board, which walked the project's
+ * whole set, an opened sprint is that set's tasks in the sprint — no
+ * `?sprint=` request. Cold, the tests above show it reads on demand instead.
+ */
+void describe('the Timeline reads the task set the Board already holds (LAI-724)', () => {
+  const HELD: ApiStub = {
+    ...STUB,
+    [`${TASKS}?limit=200`]: { data: [...IN_NOW, ...IN_NEXT, ...LOOSE], next_cursor: null },
+  };
+
+  void test('from the Board, a sprint and the tray open with no task request', async () => {
+    const seen: string[] = [];
+    const h = await open('/board?project=laika-core&sprint=all', HELD, {
+      before: (page) => {
+        page.on('request', (r) => {
+          const url = new URL(r.url());
+          if (url.pathname === TASKS) seen.push(url.search);
+        });
+        return Promise.resolve();
+      },
+    });
+    try {
+      await h.page.setViewportSize({ width: 1440, height: 900 });
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      assert.deepEqual(seen, ['?limit=200'], 'positive control: the Board walked the project');
+
+      await h.page.locator('.view-tab', { hasText: 'Timeline' }).click();
+      await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
+      seen.length = 0;
+
+      await group(h, 's2').locator('.tlx-chevron').click();
+      await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
+      const keys = await group(h, 's2').locator('.tlx-task .tlx-task-key').allInnerTexts();
+      assert.deepEqual(keys.sort(), ['LC-1', 'LC-2', 'LC-5', 'LC-6', 'LC-9']);
+
+      await h.page.getByRole('button', { name: /Unscheduled/ }).click();
+      await h.page.locator('.tlx-task', { hasText: 'LC-4' }).first().waitFor({ timeout: 10_000 });
+
+      await h.page.waitForTimeout(500);
+      assert.deepEqual(
+        seen.filter((q) => new URLSearchParams(q).has('sprint')),
+        [],
+        'a ?sprint= read for tasks the store already holds',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});

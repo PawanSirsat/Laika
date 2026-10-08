@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { everyPage } from '../../../api/every-page.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
+import { taskStore } from '../../../api/store.ts';
 import { listTasks, type Task } from '../../../api/tasks.ts';
+import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { useLive } from '../../../components/space/SpaceLive.tsx';
 
 export type SprintsLoad =
@@ -36,8 +38,8 @@ const LIVE_SETTLE_MS = 500;
 /**
  * And refetches are at least this far apart (LAI-721 review): an agent
  * working steadily sends a frame every few hundred milliseconds, and each
- * refetch re-reads every open sprint. Kept simple on purpose — the shared
- * store (build-perf-store) will apply frames instead of refetching.
+ * refetch re-reads every open sprint. Only when the Timeline reads on
+ * demand: reading from the shared store, the store applies frames itself.
  */
 export const LIVE_MIN_INTERVAL_MS = 2000;
 
@@ -55,12 +57,50 @@ export const LIVE_MIN_INTERVAL_MS = 2000;
  * into one refetch of the sprints and every open key, kept on screen while it
  * runs, so an edit in the drawer the Timeline opened lands on its row.
  *
- * **Not a cache, on purpose.** A shared per-project task store is being built
- * (build-perf-store); this hook should become a view over it —
- * `tasksWhere(task.sprint_id === key)` — and holds no more than the open keys
- * need until then.
+ * **The shared store, when it already has the project** (LAI-724, D-075).
+ * If another screen — the Board, the List — has read the project's whole task
+ * set, an open key's tasks are that set where `sprint_id` is the key: no
+ * `?sprint=` request at all, and the store's live frames keep them current.
+ * Decided once per project, on arrival, so a sprint never switches source
+ * while it is open. **A cold Timeline never starts the whole-project walk**:
+ * with nothing held, it reads on demand as above (D-074, 4).
  */
 export function useTimeline(slug: string | undefined, open: ReadonlySet<string>): UseTimeline {
+  /** The project, when the store already holds its whole set; else `undefined`. */
+  const storeSlug = useMemo(() => {
+    if (slug === undefined) return undefined;
+    const held = taskStore.peek(slug);
+    return held?.status === 'ready' && !held.truncated ? slug : undefined;
+  }, [slug]);
+  const held = useProjectTasks(storeSlug);
+  const fromStore = useMemo(() => {
+    if (held === undefined) return undefined;
+    if (held.status === 'error') {
+      const failed: TasksLoad = { status: 'error', error: held.error };
+      return (): TasksLoad => failed;
+    }
+    if (held.status === 'loading') {
+      const pending: TasksLoad = { status: 'loading' };
+      return (): TasksLoad => pending;
+    }
+    const byKey = new Map<string, Task[]>();
+    for (const task of held.tasks) {
+      const key = task.sprint_id ?? 'none';
+      const list = byKey.get(key);
+      if (list === undefined) byKey.set(key, [task]);
+      else list.push(task);
+    }
+    const loads = new Map<string, TasksLoad>();
+    return (key: string): TasksLoad => {
+      let load = loads.get(key);
+      if (load === undefined) {
+        load = { status: 'ready', tasks: byKey.get(key) ?? [], truncated: held.truncated };
+        loads.set(key, load);
+      }
+      return load;
+    };
+  }, [held]);
+
   const [sprints, setSprints] = useState<SprintsLoad>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [tasks, setTasksState] = useState<ReadonlyMap<string, TasksLoad>>(new Map());
@@ -186,6 +226,7 @@ export function useTimeline(slug: string | undefined, open: ReadonlySet<string>)
 
   // Open keys load; closed keys are dropped, with any request still running.
   useEffect(() => {
+    if (storeSlug !== undefined) return;
     const before = tasksRef.current;
     const fresh = [...open].filter((key) => !before.has(key));
     for (const key of before.keys()) {
@@ -204,7 +245,7 @@ export function useTimeline(slug: string | undefined, open: ReadonlySet<string>)
 
   // A live tick refetches every open key, in place.
   useEffect(() => {
-    if (tick === 0) return;
+    if (tick === 0 || storeSlug !== undefined) return;
     for (const key of open) fetchKey(key);
   }, [tick]);
 
@@ -222,7 +263,8 @@ export function useTimeline(slug: string | undefined, open: ReadonlySet<string>)
 
   return {
     sprints,
-    tasks: (key) => tasks.get(key),
+    tasks: (key) =>
+      fromStore === undefined ? tasks.get(key) : open.has(key) ? fromStore(key) : undefined,
     reload: () => {
       setAttempt((n) => n + 1);
     },
