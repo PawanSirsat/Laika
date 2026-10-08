@@ -5,7 +5,7 @@ area: ops
 assignee: chief
 priority: p1
 depends-on: []
-status: review
+status: done
 started: 2026-10-08T07:53:29Z
 finished: 2026-10-08T08:14:44Z
 ---
@@ -46,7 +46,7 @@ Actions deploying to the server Laika already runs on.
       for `master` of `PawanSirsat/Laika`, allowed only ECR push to `laika`,
       SSM on the one instance, and describing instances. The role is created
       from the CloudFormation template.
-- [ ] A real push to master deploys end to end, verified on the live site.
+- [x] A real push to master deploys end to end, verified on the live site.
 - [x] D-073 records the rule, and CLAUDE.md §4 tells every session that a
       push to `origin/master` is a release.
 
@@ -70,3 +70,24 @@ Actions deploying to the server Laika already runs on.
   CI run 37747800026 is green on GitHub: server 2099, web 1333, cli 85.
 - **The last criterion is open on purpose**: it is the first push to master.
   It is ticked in the accept note once that deploy is verified.
+
+## CHIEF — accepted 2026-10-08T08:27:56Z
+
+**The first automatic deploy.** Run 37748874297, from the push of master
+008d740:
+- **First attempt.** The gate was green and the build was refused at
+  `AssumeRoleWithWebIdentity`. This repository uses GitHub's **immutable
+  OIDC subject**, `repo:PawanSirsat@48860105/Laika@1344153084:…`, not
+  `repo:PawanSirsat/Laika:…`. The trust now names it: `SubjectPrefix` in
+  `infra/github-deploy-role.yml`, stack updated, committed in a383d5f.
+  Production was untouched, because the deploy job never ran.
+- **Rerun of the failed jobs.**
+  - The build pushed `sha-008d740…`, and `latest` moved from 4c6dfa73 to
+    333eacc2.
+  - The SSM restart ran exactly `laika@sha256:333eacc2…`.
+  - Inside, it was healthy with uptime_ms 2647; outside, uptime_ms 11703,
+    serving `assets/index-DfSpNg7Z.js`.
+  - Confirmed again from here: health is ok and the page loads.
+
+Every criterion is met. The push of this acceptance is the second automatic
+deploy.
