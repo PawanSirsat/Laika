@@ -775,18 +775,19 @@ void describe('scrolling the board (LAI-290)', () => {
 });
 
 /**
- * The board's own row sits below WORKING NOW, above the lanes (LAI-293).
+ * The board's own row sits below the space bar, above the lanes (LAI-293).
  *
  * It used to portal into the space bar. The owner's reference puts it directly
  * on top of the columns, and getting there needed no slot from anyone: a board
- * screen's own output already renders straight after `<PresenceStrip>`.
+ * screen's own output already rendered straight after `<PresenceStrip>`, and
+ * since LAI-727 removed that row, straight after the bar.
  *
  * **Asserted by geometry, not by class name.** A row that is in the right part
  * of the DOM but painted somewhere else is the failure worth catching, and only
  * a rectangle can tell the difference.
  */
 void describe('where the board row sits (LAI-293)', () => {
-  void test('below WORKING NOW and above the first lane', async () => {
+  void test('below the space bar and above the first lane', async () => {
     const h = await open('/board?project=laika-core', COLUMNS_STUB);
 
     try {
@@ -795,9 +796,9 @@ void describe('where the board row sits (LAI-293)', () => {
 
       const m = await h.page.evaluate(() => {
         const box = (s: string) => document.querySelector(s)?.getBoundingClientRect() ?? null;
-        const presence = document.querySelector('[class*="presence"]')?.getBoundingClientRect();
         return {
-          presenceBottom: presence?.bottom ?? null,
+          spaceBarBottom: box('.space-bar')?.bottom ?? null,
+          presence: document.querySelector('.presence') !== null,
           barTop: box('.board-bar')?.top ?? null,
           laneTop: box('.lane')?.top ?? null,
         };
@@ -806,12 +807,14 @@ void describe('where the board row sits (LAI-293)', () => {
       assert.ok(m.barTop !== null, 'the board row is not rendered at all');
       assert.ok(m.laneTop !== null, 'no lane to measure against');
       assert.ok(
-        m.presenceBottom !== null,
-        'WORKING NOW is absent — this test cannot tell where the row sits',
+        m.spaceBarBottom !== null,
+        'no space bar — this test cannot tell where the row sits',
       );
+      // WORKING NOW sat between the two until LAI-727; nothing does now.
+      assert.equal(m.presence, false, 'WORKING NOW is back between the bar and the row');
       assert.ok(
-        m.presenceBottom <= m.barTop,
-        `the row is above WORKING NOW (${String(m.barTop)} < ${String(m.presenceBottom)})`,
+        m.spaceBarBottom <= m.barTop,
+        `the row is above the space bar (${String(m.barTop)} < ${String(m.spaceBarBottom)})`,
       );
       assert.ok(
         m.barTop < m.laneTop,

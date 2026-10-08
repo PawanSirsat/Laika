@@ -246,10 +246,24 @@ void describe('the space bar', () => {
   void test('the agent count comes from presence, not from a fixture', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      // Wait for presence itself, not for the chip: the chip renders
-      // immediately with `Agents 0` and would be read before the fetch lands.
-      await h.page.locator('.presence-chip').first().waitFor({ timeout: 20_000 });
+      // Wait for presence itself, not for the chip: the chip renders at once
+      // with no number and would be read before the fetch lands. This waited
+      // for WORKING NOW's first chip until LAI-727 removed the row; the number
+      // arriving is the same signal, read where it is shown.
       const agents = h.page.locator('.space-chip', { hasText: 'Agents' });
+      await agents.waitFor({ timeout: 20_000 });
+      await h.page
+        .waitForFunction(
+          () =>
+            /Agents\s*\d/.test(
+              [...document.querySelectorAll('.space-chip')]
+                .map((e) => e.textContent ?? '')
+                .join(' '),
+            ),
+          undefined,
+          { timeout: 10_000 },
+        )
+        .catch(() => undefined);
       // One of the two present sessions is an agent.
       assert.match(await agents.innerText(), /Agents 1/);
     } finally {
@@ -294,19 +308,20 @@ void describe('the space bar', () => {
     }
   });
 
-  void test('WORKING NOW sits above the view and filters it', async () => {
+  /*
+   * **WORKING NOW is gone (LAI-727)**, on the owner's word. This test was
+   * "WORKING NOW sits above the view and filters it". The half about where it
+   * sat went with the row; the half that is a requirement — *one click on a
+   * person narrows the view to their work* — is the toolbar's member faces,
+   * which write the same `?assignee=` the row's chips did.
+   */
+  void test('no WORKING NOW; a person is still one click from filtering the view', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      const strip = h.page.locator('.presence');
-      await strip.waitFor({ timeout: 20_000 });
-      assert.match(await strip.innerText(), /WORKING NOW/);
-      // The heading renders before the fetch lands, so the strip reads
-      // "Loading…" for a frame — wait for a chip rather than for the band.
-      await h.page.locator('.presence-chip').first().waitFor({ timeout: 20_000 });
-      // `Grace H.` in a chip (LAI-271); the full name is on the Capacity row.
-      assert.match(await strip.innerText(), /Grace H\./);
+      await h.page.locator('.bt-member').first().waitFor({ timeout: 20_000 });
+      assert.equal(await h.page.locator('.presence').count(), 0, 'WORKING NOW is back');
 
-      await h.page.locator('.presence-chip').first().click();
+      await h.page.locator('.bt-member').first().click();
       await h.page.waitForFunction(() => window.location.search.includes('assignee='), undefined, {
         timeout: 5000,
       });
