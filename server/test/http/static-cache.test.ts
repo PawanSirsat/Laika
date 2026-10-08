@@ -92,12 +92,13 @@ describe('If-None-Match', () => {
 });
 
 describe('what is worth compressing', () => {
-  it('compresses text, never fonts or images', () => {
+  it('compresses text (SVG and ICO included), never raster images or fonts', () => {
     expect(isCompressible('text/javascript; charset=utf-8')).toBe(true);
     expect(isCompressible('text/css; charset=utf-8')).toBe(true);
     expect(isCompressible('text/html; charset=utf-8')).toBe(true);
     expect(isCompressible('application/json; charset=utf-8')).toBe(true);
     expect(isCompressible('image/svg+xml')).toBe(true);
+    expect(isCompressible('image/x-icon')).toBe(true);
 
     expect(isCompressible('font/woff2')).toBe(false);
     expect(isCompressible('font/woff')).toBe(false);

@@ -59,9 +59,10 @@ export function cacheControlFor(urlPath: string): string {
 }
 
 /**
- * Text compresses; fonts and images are already compressed and only grow.
- * Decided by type rather than extension so `static.ts` stays the one place that
- * maps a file name to a type.
+ * Text compresses; **raster images and fonts** are already compressed and only
+ * grow. SVG and ICO are compressed on purpose: SVG is XML text, and an ICO is
+ * mostly uncompressed bitmap data. Decided by type rather than extension so
+ * `static.ts` stays the one place that maps a file name to a type.
  */
 export function isCompressible(contentType: string): boolean {
   const type = contentType.split(';')[0]!.trim().toLowerCase();
