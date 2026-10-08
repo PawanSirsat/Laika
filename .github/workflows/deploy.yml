@@ -129,6 +129,38 @@ jobs:
       - name: Restart production and check it
         run: .github/deploy/deploy.sh "$ECR_REGISTRY/$ECR_REPOSITORY@$DIGEST"
 
+      # Only after a deploy that came up healthy (LAI-720). Everything but the
+      # live image goes: it is the last successful one, so it is also what the
+      # next failed deploy rolls back to. A failed deploy skips this step and
+      # keeps the image its rollback needs.
+      - name: Remove every image but the live one
+        run: |
+          set -euo pipefail
+          manifest="$(aws ecr batch-get-image --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageDigest="$DIGEST" --query 'images[0].imageManifest' --output text)"
+          # A multi-platform or attested image is an index; its parts stay with it.
+          keep="$(printf '%s\n%s\n' "$DIGEST" "$(jq -r '.manifests[]?.digest' <<<"$manifest")" | grep . | sort -u)"
+          doomed() {
+            aws ecr list-images --repository-name "$ECR_REPOSITORY" \
+              --query 'imageIds[].imageDigest' --output text | tr '\t' '\n' | grep . | sort -u |
+              grep -vxF -f <(printf '%s\n' "$keep") || true
+          }
+          # In passes: ECR refuses to delete a part while its index still exists.
+          for _ in 1 2 3; do
+            mapfile -t gone < <(doomed)
+            [ "${#gone[@]}" -eq 0 ] && break
+            for ((i = 0; i < ${#gone[@]}; i += 100)); do
+              ids=()
+              for d in "${gone[@]:i:100}"; do ids+=("imageDigest=$d"); done
+              aws ecr batch-delete-image --repository-name "$ECR_REPOSITORY" \
+                --image-ids "${ids[@]}" --query 'length(imageIds)' --output text |
+                sed 's/^/deleted: /'
+            done
+          done
+          left="$(aws ecr list-images --repository-name "$ECR_REPOSITORY" \
+            --query 'imageIds[].imageDigest' --output text | tr '\t' '\n' | grep . | sort -u | wc -l)"
+          echo "images left in ECR: $left (live $DIGEST)"
+
       - name: Roll back to the image this replaced
         if: failure() && steps.tag.outputs.previous != '' && steps.tag.outputs.previous != 'None' && steps.tag.outputs.previous != env.DIGEST
         env:

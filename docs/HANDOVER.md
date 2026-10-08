@@ -86,6 +86,12 @@ loses every encrypted setting.
 Deploys queue: one at a time, and the newest waiting commit wins. A deploy
 restarts the container, so expect a few seconds of downtime.
 
+**Old images are removed on every successful deploy** (LAI-720). Once the new
+container is healthy, the instance removes every image but the running one,
+and the workflow deletes every ECR image but the live one, keeping an index's
+parts. Nothing is removed on a failed deploy, so the image a rollback needs —
+the last successful one — is always still there.
+
 GitHub reaches AWS through **OIDC**, with no stored keys. The role trusts only
 `repo:PawanSirsat@48860105/Laika@1344153084:ref:refs/heads/master`. This
 repository uses GitHub's *immutable* subject form, owner and repo with numeric

@@ -35,12 +35,14 @@ done
 echo "running: $(docker inspect --format '{{.Config.Image}}' laika)"
 echo "health: $(cat /tmp/laika-health.json 2>/dev/null || echo none)"
 
-# Old images fill a 15 GB disk. A week's worth stays for a fast manual
-# rollback; anything older can be pulled again from ECR.
-docker image prune -af --filter "until=168h" >/dev/null 2>&1 || true
-
 if [ "$healthy" != yes ]; then
   echo "unhealthy: the new container did not answer /api/v1/health in 90s"
   docker logs --tail 40 laika 2>&1 || true
   exit 1
 fi
+
+# Healthy, so every other image goes (LAI-720): `prune -a` removes each image no
+# container uses, and the only container is the one just started. A failed
+# start exits above and removes nothing; a rollback pulls from ECR anyway.
+echo "images removed: $(docker image prune -af 2>/dev/null | grep -c '^deleted: ' || true)"
+echo "images kept: $(docker images -q | sort -u | wc -l | tr -d ' ')"
