@@ -24,6 +24,22 @@
   /* The pane's own air, matching the board's. */
   padding: 0.875rem 1.125rem 1.125rem;
   background: var(--bg-canvas);
+  /* The Create row's height, fixed so the bulk bar can sit just above it. */
+  --list-create-h: 2.125rem;
+}
+
+/*
+ * The card and what floats over it (LAI-717 review). A box of its own, so the
+ * bulk bar is positioned from the card's foot rather than the pane's, which is
+ * a pager's height lower and put the bar over the pinned Create row.
+ */
+.list-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
 }
 
 /*
@@ -64,7 +80,9 @@
 }
 
 .list {
-  /* Its own height, always: the free space is the Create row's to push. */
+  /* Its own height, always: the free space is the Create row's to push. And no
+     bottom margin — `board.css` once gave it 32px from when the List scrolled
+     the page; inside its own card that was blank space under the last row. */
   flex: none;
   /* The design's 64rem plus the Due column (D-066), so Summary keeps its room,
      plus the 1rem the priority icon added to PRI (LAI-705). */
@@ -473,6 +491,8 @@
   align-items: center;
   gap: 0.4375rem;
   width: 100%;
+  box-sizing: border-box;
+  height: var(--list-create-h);
   font: inherit;
   font-size: 0.78125rem;
   font-weight: var(--weight-semibold);
@@ -481,7 +501,7 @@
   background: var(--bg-canvas);
   border: none;
   border-top: 1px solid var(--border-subtle);
-  padding: 0.625rem 0.875rem;
+  padding: 0 0.875rem;
   cursor: pointer;
 }
 
@@ -707,7 +727,8 @@
 .list-bulk {
   position: absolute;
   left: 50%;
-  bottom: 2.75rem;
+  /* Above the pinned Create row, with air between: never over it. */
+  bottom: calc(var(--list-create-h) + 0.625rem);
   transform: translateX(-50%);
   z-index: 5;
   /* `left: 50%` leaves an absolute box half the pane to shrink into, and it

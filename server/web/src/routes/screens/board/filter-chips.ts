@@ -20,7 +20,17 @@ export interface ChipNames {
   readonly member: (userId: string) => string | undefined;
   /** A sprint as the popover lists it (`S1 · Name`), or `undefined`. */
   readonly sprint: (sprintId: string) => string | undefined;
+  /**
+   * Whether the members and the sprints have arrived. **Until they have, an
+   * id is not unknown, it is not yet looked up** — a deep link would otherwise
+   * flash `Assignee: Unknown member` for the second the lists take to load.
+   */
+  readonly membersKnown: boolean;
+  readonly sprintsKnown: boolean;
 }
+
+/** What a chip says for a name that is still loading: neutral, not a verdict. */
+export const PENDING_NAME = '…';
 
 /**
  * The chips under the toolbar, **one per filter the Filter badge counts**
@@ -53,11 +63,13 @@ function chipLabel(key: FilterKey, params: URLSearchParams, names: ChipNames): s
     case 'priority':
       return `Priority: ${raw.toUpperCase()}`;
     case 'assignee':
-      return `Assignee: ${raw === 'none' ? 'Unassigned' : (names.member(raw) ?? 'Unknown member')}`;
+      if (raw === 'none') return 'Assignee: Unassigned';
+      return `Assignee: ${names.member(raw) ?? (names.membersKnown ? 'Unknown member' : PENDING_NAME)}`;
     case 'tag':
       return `Label: ${raw}`;
     case 'sprint':
-      return `Sprint: ${raw === 'none' ? 'No sprint' : (names.sprint(raw) ?? 'Unknown sprint')}`;
+      if (raw === 'none') return 'Sprint: No sprint';
+      return `Sprint: ${names.sprint(raw) ?? (names.sprintsKnown ? 'Unknown sprint' : PENDING_NAME)}`;
     case 'updated': {
       const window = readUpdated(params);
       return `Updated: ${window === undefined ? raw : UPDATED_LABELS[window]}`;

@@ -9,12 +9,18 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { activeFilters } from '../../../../src/routes/screens/board/filter-keys.ts';
-import { filterChips, type ChipNames } from '../../../../src/routes/screens/board/filter-chips.ts';
+import {
+  filterChips,
+  PENDING_NAME,
+  type ChipNames,
+} from '../../../../src/routes/screens/board/filter-chips.ts';
 
 const NAMES: ChipNames = {
   status: (s) => (s === 'in_progress' ? 'In progress' : s),
   member: (id) => (id === 'u1' ? 'Ada Lovelace' : undefined),
   sprint: (id) => (id === 's1' ? 'S1 · Foundations' : undefined),
+  membersKnown: true,
+  sprintsKnown: true,
 };
 
 const chips = (query: string) => filterChips(new URLSearchParams(query), NAMES);
@@ -52,6 +58,33 @@ void describe('filterChips', () => {
   void test('an id nobody knows still reads as a sentence, never as the raw id', () => {
     const labels = chips('assignee=01ZZZ&sprint=01YYY').map((c) => c.label);
     assert.deepEqual(labels, ['Assignee: Unknown member', 'Sprint: Unknown sprint']);
+  });
+
+  void test('says neither "unknown" nor an id while the members and sprints load', () => {
+    const loading = (query: string) =>
+      filterChips(new URLSearchParams(query), {
+        ...NAMES,
+        member: () => undefined,
+        sprint: () => undefined,
+        membersKnown: false,
+        sprintsKnown: false,
+      }).map((c) => c.label);
+
+    // A deep link, before either list has arrived.
+    assert.deepEqual(loading('assignee=u1&sprint=s1'), [
+      `Assignee: ${PENDING_NAME}`,
+      `Sprint: ${PENDING_NAME}`,
+    ]);
+    // `none` needs no lookup, so it never waits.
+    assert.deepEqual(loading('assignee=none&sprint=none'), [
+      'Assignee: Unassigned',
+      'Sprint: No sprint',
+    ]);
+    // Loaded, a known id is named and an unknown one says so.
+    assert.deepEqual(
+      chips('assignee=u1&sprint=01YYY').map((c) => c.label),
+      ['Assignee: Ada Lovelace', 'Sprint: Unknown sprint'],
+    );
   });
 
   void test('is exactly what the badge counts: search, junk and `sprint=all` make no chip', () => {

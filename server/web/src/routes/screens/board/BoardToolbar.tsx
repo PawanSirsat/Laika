@@ -1,4 +1,12 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import type { Member, TaskPriority, TaskStatus } from '../../../api/tasks.ts';
 import { ALL_STATUSES } from '../../../api/board-derive.ts';
 import {
@@ -46,6 +54,12 @@ export interface BoardToolbarProps {
   readonly assignee: string | undefined;
   readonly tag: string | undefined;
   readonly ready: boolean;
+  /**
+   * `?ready=false` — reachable only from a URL, and still a filter the badge
+   * counts and a chip names, so the Ready pill shows it as on, saying
+   * "Not ready", and clearing it is one click (LAI-717 review).
+   */
+  readonly notReady: boolean;
   readonly agentOnly: boolean;
   readonly tags: readonly string[];
   readonly members: readonly Member[];
@@ -73,6 +87,12 @@ export interface BoardToolbarProps {
    */
   readonly chips: readonly FilterChip[];
   readonly onRemoveFilter: (key: FilterKey) => void;
+  /**
+   * The Filter button, **owned by the screen** so that whatever removes the
+   * last filter — a chip, the chips' Clear all, the empty List's Clear
+   * filters — can put focus somewhere real instead of on `<body>`.
+   */
+  readonly filterButtonRef: RefObject<HTMLButtonElement | null>;
   /** The four right-hand actions. Each does something real or is not drawn. */
   readonly onInsights: () => void;
   readonly onViewSettings: (anchor: { top: number; right: number }) => void;
@@ -154,14 +174,25 @@ function FilterField({
   readonly onReset: () => void;
   readonly children: ReactNode;
 }) {
+  const cell = useRef<HTMLDivElement>(null);
   return (
-    <div className={set ? 'bt-cell bt-cell-set' : 'bt-cell'}>
+    <div ref={cell} className={set ? 'bt-cell bt-cell-set' : 'bt-cell'}>
       <label className="bt-field">
         <span className="bt-label">{label}</span>
         {children}
       </label>
       {set && (
-        <button type="button" className="bt-reset" title={`Reset ${label}`} onClick={onReset}>
+        <button
+          type="button"
+          className="bt-reset"
+          title={`Reset ${label}`}
+          onClick={() => {
+            onReset();
+            // The reset is about to disappear with the value it reset; the
+            // field it belonged to is where the reader's attention is.
+            cell.current?.querySelector('select')?.focus();
+          }}
+        >
           <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
             <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
           </svg>
@@ -192,6 +223,7 @@ export function BoardToolbar({
   assignee,
   tag,
   ready,
+  notReady,
   agentOnly,
   tags,
   members,
@@ -209,13 +241,14 @@ export function BoardToolbar({
   onClearFilters,
   chips,
   onRemoveFilter,
+  filterButtonRef,
   onInsights,
   onViewSettings,
   onRefresh,
   onOverflow,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | undefined>(undefined);
-  const filterButton = useRef<HTMLButtonElement>(null);
+  const filterButton = filterButtonRef;
   const groupButton = useRef<HTMLButtonElement>(null);
   const filterPop = useRef<HTMLDivElement>(null);
   const filterPopId = useId();
@@ -253,9 +286,20 @@ export function BoardToolbar({
   useLayoutEffect(() => {
     const pop = filterPop.current;
     if (open !== 'filter' || pop === null) return;
-    const { left, right } = pop.getBoundingClientRect();
-    const overhang = right - (window.innerWidth - 8);
-    if (overhang > 0) pop.style.translate = `-${String(Math.min(overhang, left - 8))}px 0`;
+    const place = (): void => {
+      // Measured from where it hangs, not from where it was last slid to.
+      pop.style.translate = '';
+      const { left, right } = pop.getBoundingClientRect();
+      const overhang = right - (window.innerWidth - 8);
+      // Never further than the window's own left edge allows.
+      const shift = Math.min(overhang, Math.max(0, left - 8));
+      if (shift > 0) pop.style.translate = `-${String(shift)}px 0`;
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => {
+      window.removeEventListener('resize', place);
+    };
   }, [open]);
 
   const active = activeCount;
@@ -592,7 +636,11 @@ export function BoardToolbar({
                 <legend className="bt-section">Quick filters</legend>
                 <div className="bt-toggles">
                   {[
-                    { label: 'Ready only', on: ready, set: onReady },
+                    {
+                      label: notReady ? 'Not ready' : 'Ready only',
+                      on: ready || notReady,
+                      set: onReady,
+                    },
                     { label: 'Blocked only', on: blocked, set: onBlocked },
                     { label: 'Top-level only', on: top, set: onTop },
                     { label: 'Overdue', on: overdue, set: onOverdue },
@@ -748,6 +796,7 @@ export function BoardToolbar({
         covered={open === 'filter'}
         onRemove={onRemoveFilter}
         onClearAll={onClearFilters}
+        filterButtonRef={filterButton}
       />
     </>
   );

@@ -195,6 +195,12 @@ void describe('the List’s Create row (LAI-717)', () => {
     }
   });
 
+  /*
+   * **Half of this is not a regression catch.** The Create row's background
+   * was already an opaque token before LAI-717, so the colour assertion passes
+   * on the old code too; it guards the property now that rows pass beneath the
+   * row. The `sticky` assertion is the one the old code fails.
+   */
   void test('the Create row’s background is an opaque token in both themes', async () => {
     const h = await open('/list?project=laika-core', stub(1));
     try {
@@ -211,4 +217,39 @@ void describe('the List’s Create row (LAI-717)', () => {
       await h.close();
     }
   });
+
+  /*
+   * **The bulk bar never covers the Create row** (review, should-fix 4). It
+   * floated from the pane's foot, a pager's height below the card, which is
+   * exactly where the pinned Create row now sits.
+   */
+  for (const [label, count, width, height] of [
+    ['a short list, 1440×900', 1, 1440, 900],
+    ['a long list scrolled to its end, 1440×900', 60, 1440, 900],
+    ['a short list, 900 wide', 1, 900, 800],
+    ['a long list scrolled to its end, 900 wide', 60, 900, 800],
+  ] as const) {
+    void test(`with a row selected, the bulk bar sits above the Create row — ${label}`, async () => {
+      const h = await open('/list?project=laika-core', stub(count));
+      try {
+        await h.page.setViewportSize({ width, height });
+        await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
+        await h.page.locator('.list-scroll').evaluate((el) => {
+          el.scrollTop = el.scrollHeight;
+        });
+        await h.page.locator('.list-row .list-checkbox').last().check();
+        await h.page.locator('.list-bulk').waitFor({ timeout: 5_000 });
+        const g = await h.page.evaluate(() => ({
+          bulkBottom: document.querySelector('.list-bulk')!.getBoundingClientRect().bottom,
+          createTop: document.querySelector('.list-create')!.getBoundingClientRect().top,
+        }));
+        assert.ok(
+          g.bulkBottom <= g.createTop,
+          `the bulk bar ends at ${String(g.bulkBottom)}, over the Create row from ${String(g.createTop)}`,
+        );
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });

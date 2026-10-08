@@ -160,28 +160,44 @@ void describe('the List’s empty state (LAI-717)', () => {
   void test('sits in the middle of the list area, both ways', async () => {
     const h = await open('/list?project=laika-core&status=done', STUB);
     try {
+      // Wide enough for `board-rail.css`'s row layout, where the bug lived.
+      await h.page.setViewportSize({ width: 1440, height: 900 });
       const headline = h.page.locator('.state-headline', {
         hasText: 'Nothing here for this filter',
       });
       await headline.waitFor({ timeout: 20_000 });
 
-      // The space the state has: its parent, down to the Create row when there
-      // is one. Measured against the block of the state's own content — icon
-      // to last line — rather than its box, which can stretch.
+      /*
+       * **Against the list area, not the card** (review, B1). The card is the
+       * state's own parent, so a card that shrank to its content and pinned
+       * left — the original bug, one level up — would centre the state in
+       * itself and pass. So: the card must fill the pane, and the state is
+       * centred on `.board-main` across and on the card's space above the
+       * Create row down.
+       */
       const geometry = await h.page.evaluate(() => {
+        const main = document.querySelector('.board-main')!.getBoundingClientRect();
+        const paneEl = document.querySelector('.list-pane')!;
+        const pane = paneEl.getBoundingClientRect();
+        const pad = getComputedStyle(paneEl);
+        const paneContent = pane.width - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight);
+        const card = document.querySelector('.list-scroll')!.getBoundingClientRect();
         const state = document.querySelector('.state-empty')!;
-        const area = state.parentElement!.getBoundingClientRect();
-        const create = state.parentElement!.querySelector('.list-create');
-        const floor = create === null ? area.bottom : create.getBoundingClientRect().top;
+        const create = document.querySelector('.list-create');
+        const floor = create === null ? card.bottom : create.getBoundingClientRect().top;
         const parts = [...state.children].map((el) => el.getBoundingClientRect());
         const top = Math.min(...parts.map((r) => r.top));
         const bottom = Math.max(...parts.map((r) => r.bottom));
         const left = Math.min(...parts.map((r) => r.left));
         const right = Math.max(...parts.map((r) => r.right));
         return {
-          areaX: area.left + area.width / 2,
-          areaY: (area.top + floor) / 2,
-          areaHeight: floor - area.top,
+          mainX: main.left + main.width / 2,
+          paneWidth: pane.width,
+          mainWidth: main.width,
+          paneContent,
+          cardWidth: card.width,
+          areaY: (card.top + floor) / 2,
+          areaHeight: floor - card.top,
           x: (left + right) / 2,
           y: (top + bottom) / 2,
           bottom,
@@ -195,8 +211,16 @@ void describe('the List’s empty state (LAI-717)', () => {
         `positive control: a tall area (${String(geometry.areaHeight)}px)`,
       );
       assert.ok(
-        Math.abs(geometry.x - geometry.areaX) <= 4,
-        `off centre horizontally: content at ${String(Math.round(geometry.x))}, centre ${String(Math.round(geometry.areaX))}`,
+        Math.abs(geometry.paneWidth - geometry.mainWidth) <= 1,
+        `the pane does not fill the list area: ${String(geometry.paneWidth)} of ${String(geometry.mainWidth)}px`,
+      );
+      assert.ok(
+        Math.abs(geometry.cardWidth - geometry.paneContent) <= 1,
+        `the card does not fill the pane: ${String(geometry.cardWidth)} of ${String(geometry.paneContent)}px`,
+      );
+      assert.ok(
+        Math.abs(geometry.x - geometry.mainX) <= 4,
+        `off centre horizontally: content at ${String(Math.round(geometry.x))}, list area centre ${String(Math.round(geometry.mainX))}`,
       );
       assert.ok(
         Math.abs(geometry.y - geometry.areaY) <= 6,
@@ -264,22 +288,53 @@ void describe('the Filter popover (LAI-717)', () => {
           has: h.page.locator('.bt-label', { hasText: label }),
         });
 
-      // Set: the accent token on the select. Unset: not.
-      const accentBorder = await h.page.evaluate(() => {
-        const probe = document.createElement('div');
-        probe.style.borderColor = 'var(--accent-border)';
-        probe.style.borderStyle = 'solid';
-        document.body.append(probe);
-        const value = getComputedStyle(probe).borderTopColor;
-        probe.remove();
-        return value;
-      });
-      const borderOf = (label: string) =>
+      // A token's computed colour, through a probe element.
+      const token = (name: string, property: 'borderTopColor' | 'backgroundColor') =>
+        h.page.evaluate(
+          ([n, prop]) => {
+            const probe = document.createElement('div');
+            probe.style.border = `1px solid var(${n})`;
+            probe.style.background = `var(${n})`;
+            document.body.append(probe);
+            const value = getComputedStyle(probe)[prop];
+            probe.remove();
+            return value;
+          },
+          [name, property] as const,
+        );
+      const style = (label: string) =>
         cell(label)
           .locator('select')
-          .evaluate((el) => getComputedStyle(el).borderTopColor);
-      assert.equal(await borderOf('Status'), accentBorder, 'a set Status is not marked');
-      assert.notEqual(await borderOf('Label'), accentBorder, 'an unset Label is marked');
+          .evaluate((el) => {
+            const cs = getComputedStyle(el);
+            return { border: cs.borderTopColor, background: cs.backgroundColor };
+          });
+
+      // Set: the accent on the border. Unset: not.
+      const accent = await token('--accent', 'borderTopColor');
+      assert.equal((await style('Status')).border, accent, 'a set Status is not marked');
+      assert.notEqual((await style('Label')).border, accent, 'an unset Label is marked');
+
+      // **Opaque, set or not** (review): Chrome on Windows and Linux paints
+      // the native option list from it, and a translucent tint made that list
+      // unreadable in dark mode. The column step, as the owner chose.
+      const column = await token('--bg-column', 'backgroundColor');
+      assert.equal((await style('Status')).background, column, 'a set select is not opaque');
+      assert.equal(
+        (await style('Label')).background,
+        column,
+        'an unset select left the column step',
+      );
+
+      // Hovering an unset field must not look like setting it.
+      await cell('Label').locator('select').hover();
+      const hovered = (await style('Label')).border;
+      assert.notEqual(hovered, accent, 'hover on an unset field reads as set');
+      assert.notEqual(
+        hovered,
+        await token('--accent-border', 'borderTopColor'),
+        'hover on an unset field reads as set',
+      );
 
       // One reset per set field, and it clears only its own.
       const resets = h.page.locator('.bt-pop .bt-reset');
@@ -339,75 +394,248 @@ void describe('the Filter popover (LAI-717)', () => {
     }
   });
 
-  void test('fits a 1366×768 laptop screen without scrolling', async () => {
+  void test('the Quick filters heading sits under the divider, not on it', async () => {
+    const h = await open('/list?project=laika-core', STUB);
+    try {
+      await rows(h).first().waitFor({ timeout: 20_000 });
+      await openFilter(h);
+      const g = await h.page.locator('.bt-quick').evaluate((set) => {
+        const legend = set.querySelector('legend')!.getBoundingClientRect();
+        const box = set.getBoundingClientRect();
+        return {
+          legendTop: legend.top,
+          borderBottom: box.top + parseFloat(getComputedStyle(set).borderTopWidth),
+        };
+      });
+      assert.ok(
+        g.legendTop >= g.borderBottom,
+        `the legend is drawn over the divider: legend top ${String(g.legendTop)}, divider ${String(g.borderBottom)}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('`ready=false` from a link shows as an on "Not ready" pill, and one click clears it', async () => {
+    const h = await open('/list?project=laika-core&ready=false', STUB);
+    try {
+      await rows(h).first().waitFor({ timeout: 20_000 });
+      await openFilter(h);
+      const pill = h.page.locator('.bt-pop .bt-toggle').first();
+      assert.equal((await pill.innerText()).trim(), 'Not ready');
+      assert.match(
+        (await pill.getAttribute('class')) ?? '',
+        /bt-toggle-on/,
+        'Not ready is not drawn on',
+      );
+      await pill.locator('input').click();
+      await h.page.waitForFunction(() => !location.search.includes('ready='), undefined, {
+        timeout: 10_000,
+      });
+      assert.equal((await pill.innerText()).trim(), 'Ready only');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('slides back inside a window that narrows while it is open', async () => {
     const h = await open('/list?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 1366, height: 768 });
       await rows(h).first().waitFor({ timeout: 20_000 });
       await openFilter(h);
-      const fit = await h.page.locator('.bt-pop').evaluate((pop) => {
-        const r = pop.getBoundingClientRect();
-        return {
-          bottom: r.bottom,
-          right: r.right,
-          left: r.left,
-          scrolls: pop.scrollHeight > pop.clientHeight,
-          grid: document.querySelector('.bt-pop .bt-grid') !== null,
-        };
+      await h.page.setViewportSize({ width: 420, height: 800 });
+      await h.page.waitForTimeout(200);
+      const r = await h.page.locator('.bt-pop').evaluate((pop) => {
+        const b = pop.getBoundingClientRect();
+        return { left: b.left, right: b.right, slide: pop.style.translate };
       });
-      assert.equal(fit.grid, true, 'positive control: the two-column grid is drawn');
-      assert.ok(fit.bottom <= 768, `runs off the bottom at ${String(fit.bottom)}px`);
-      assert.ok(
-        fit.left >= 0 && fit.right <= 1366,
-        `runs off the side: ${String(fit.left)}–${String(fit.right)}`,
-      );
-      assert.equal(fit.scrolls, false, 'the popover scrolls inside itself');
+      assert.ok(r.left >= 0, `slid off the left edge: ${String(r.left)} (${r.slide})`);
+      assert.ok(r.right <= 420, `still overhangs the narrowed window: ${String(r.right)}`);
     } finally {
       await h.close();
     }
   });
+});
 
-  void test('Escape closes it; focus goes in on open and back to Filter on close', async () => {
-    const h = await open('/list?project=laika-core', STUB);
+/*
+ * **On both screens that carry the toolbar** (review, should-fix 2). On the
+ * Board it sits lower — under the sprint strip and WORKING NOW — so a fit
+ * measured on the List says nothing about it.
+ */
+const SCREENS = [
+  { name: 'List', path: '/list?project=laika-core', ready: '.list tbody tr' },
+  { name: 'Board', path: '/board?project=laika-core', ready: '.card' },
+] as const;
+
+for (const screen of SCREENS) {
+  void describe(`the Filter popover on the ${screen.name} (LAI-717)`, () => {
+    void test('fits a 1366×768 laptop screen without scrolling', async () => {
+      const h = await open(screen.path, STUB);
+      try {
+        await h.page.setViewportSize({ width: 1366, height: 768 });
+        await h.page.locator(screen.ready).first().waitFor({ timeout: 20_000 });
+        await openFilter(h);
+        const fit = await h.page.locator('.bt-pop').evaluate((pop) => {
+          const r = pop.getBoundingClientRect();
+          return {
+            bottom: r.bottom,
+            right: r.right,
+            left: r.left,
+            scrolls: pop.scrollHeight > pop.clientHeight,
+            grid: document.querySelector('.bt-pop .bt-grid') !== null,
+          };
+        });
+        assert.equal(fit.grid, true, 'positive control: the two-column grid is drawn');
+        assert.ok(fit.bottom <= 768, `runs off the bottom at ${String(fit.bottom)}px`);
+        assert.ok(
+          fit.left >= 0 && fit.right <= 1366,
+          `runs off the side: ${String(fit.left)}–${String(fit.right)}`,
+        );
+        assert.equal(fit.scrolls, false, 'the popover scrolls inside itself');
+      } finally {
+        await h.close();
+      }
+    });
+
+    void test('Escape closes it; focus goes in on open and back to Filter on close', async () => {
+      const h = await open(screen.path, STUB);
+      try {
+        await h.page.locator(screen.ready).first().waitFor({ timeout: 20_000 });
+
+        // Opened from the keyboard, as a keyboard reader would.
+        await filterButton(h).focus();
+        await h.page.keyboard.press('Enter');
+        await h.page.locator('.bt-pop').waitFor({ timeout: 5_000 });
+        assert.equal(
+          await h.page.evaluate(() =>
+            document.querySelector('.bt-pop')?.contains(document.activeElement),
+          ),
+          true,
+          `focus stayed outside the popover: ${await focused(h)}`,
+        );
+
+        // Move within it, so "back to Filter" cannot be focus that never left.
+        await h.page.keyboard.press('Tab');
+        await h.page.keyboard.press('Escape');
+        await h.page.locator('.bt-pop').waitFor({ state: 'detached', timeout: 5_000 });
+        assert.equal(
+          await filterButton(h).evaluate((b) => b === document.activeElement),
+          true,
+          `focus did not return to Filter: ${await focused(h)}`,
+        );
+
+        // A click outside closes it too, and focus comes back the same way.
+        await openFilter(h);
+        await h.page.mouse.click(1000, 700);
+        await h.page.locator('.bt-pop').waitFor({ state: 'detached', timeout: 5_000 });
+        assert.equal(
+          await filterButton(h).evaluate((b) => b === document.activeElement),
+          true,
+          `a click outside left focus on ${await focused(h)}`,
+        );
+      } finally {
+        await h.close();
+      }
+    });
+
+    /*
+     * **Focus never falls to `<body>`** when the control that had it removes
+     * itself (review, should-fix 1). Each step names where it must land.
+     */
+    void test('a reset or a removed chip hands focus on, never to <body>', async () => {
+      const h = await open(`${screen.path}&status=in_progress&priority=p1&assignee=u1`, STUB);
+      try {
+        await h.page.locator(screen.ready).first().waitFor({ timeout: 20_000 });
+        // A field's reset → that field's select.
+        await openFilter(h);
+        await h.page.getByRole('button', { name: 'Reset Priority', exact: true }).click();
+        await h.page.waitForFunction(() => !location.search.includes('priority='), undefined, {
+          timeout: 10_000,
+        });
+        assert.equal(
+          await h.page
+            .locator('.bt-pop .bt-cell', {
+              has: h.page.locator('.bt-label', { hasText: 'Priority' }),
+            })
+            .locator('select')
+            .evaluate((el) => el === document.activeElement),
+          true,
+          `Reset Priority left focus on ${await focused(h)}`,
+        );
+        await h.page.keyboard.press('Escape');
+
+        // Chips now: Status, Assignee. Put Priority back for three.
+        await h.page.goto(`${h.origin}${screen.path}&status=in_progress&priority=p1&assignee=u1`);
+        const chips = h.page.locator('.bt-chips .bt-chip');
+        await chips.nth(2).waitFor({ timeout: 10_000 });
+
+        // The middle one → the next.
+        await chips.filter({ hasText: 'Priority' }).click();
+        await h.page.waitForFunction(() => document.querySelectorAll('.bt-chip').length === 2);
+        assert.equal(
+          await chips
+            .filter({ hasText: 'Assignee' })
+            .evaluate((el) => el === document.activeElement),
+          true,
+          `the middle chip's × left focus on ${await focused(h)}`,
+        );
+
+        // The last one → the one before.
+        await chips.filter({ hasText: 'Assignee' }).click();
+        await h.page.waitForFunction(() => document.querySelectorAll('.bt-chip').length === 1);
+        assert.equal(
+          await chips.filter({ hasText: 'Status' }).evaluate((el) => el === document.activeElement),
+          true,
+          `the last chip's × left focus on ${await focused(h)}`,
+        );
+
+        // The only one → the Filter button.
+        await chips.filter({ hasText: 'Status' }).click();
+        await h.page.waitForFunction(() => document.querySelectorAll('.bt-chip').length === 0);
+        assert.equal(
+          await filterButton(h).evaluate((b) => b === document.activeElement),
+          true,
+          `the only chip's × left focus on ${await focused(h)}`,
+        );
+
+        // The row's Clear all → the Filter button.
+        await h.page.goto(`${h.origin}${screen.path}&status=in_progress&priority=p1`);
+        await chips.first().waitFor({ timeout: 10_000 });
+        await h.page.locator('.bt-chips-clear').click();
+        await h.page.waitForFunction(() => document.querySelectorAll('.bt-chip').length === 0);
+        assert.equal(
+          await filterButton(h).evaluate((b) => b === document.activeElement),
+          true,
+          `the chips' Clear all left focus on ${await focused(h)}`,
+        );
+      } finally {
+        await h.close();
+      }
+    });
+  });
+}
+
+void describe('the empty List’s Clear filters (LAI-717)', () => {
+  void test('hands focus to the Filter button, not <body>', async () => {
+    const h = await open('/list?project=laika-core&status=done', STUB);
     try {
-      await rows(h).first().waitFor({ timeout: 20_000 });
-
-      // Opened from the keyboard, as a keyboard reader would.
-      await filterButton(h).focus();
-      await h.page.keyboard.press('Enter');
-      await h.page.locator('.bt-pop').waitFor({ timeout: 5_000 });
-      assert.equal(
-        await h.page.evaluate(() =>
-          document.querySelector('.bt-pop')?.contains(document.activeElement),
-        ),
-        true,
-        `focus stayed outside the popover: ${await focused(h)}`,
-      );
-
-      // Move within it, so "back to Filter" cannot be focus that never left.
-      await h.page.keyboard.press('Tab');
-      await h.page.keyboard.press('Escape');
-      await h.page.locator('.bt-pop').waitFor({ state: 'detached', timeout: 5_000 });
+      const clear = h.page.getByRole('button', { name: 'Clear filters', exact: true });
+      await clear.waitFor({ timeout: 20_000 });
+      await clear.click();
+      await waitForRows(h, 3);
       assert.equal(
         await filterButton(h).evaluate((b) => b === document.activeElement),
         true,
-        `focus did not return to Filter: ${await focused(h)}`,
-      );
-
-      // A click outside closes it too, and focus comes back the same way.
-      await openFilter(h);
-      await h.page.mouse.click(1000, 700);
-      await h.page.locator('.bt-pop').waitFor({ state: 'detached', timeout: 5_000 });
-      assert.equal(
-        await filterButton(h).evaluate((b) => b === document.activeElement),
-        true,
-        `a click outside left focus on ${await focused(h)}`,
+        `Clear filters left focus on ${await focused(h)}`,
       );
     } finally {
       await h.close();
     }
   });
+});
 
+void describe('Tab order in the Filter popover (LAI-717)', () => {
   void test('every control is reached by Tab and has a name', async () => {
     const h = await open('/list?project=laika-core&status=in_progress', STUB);
     try {
@@ -444,10 +672,23 @@ void describe('the Filter popover (LAI-717)', () => {
         if (!reached.includes(step)) reached.push(step);
         await h.page.keyboard.press('Tab');
       }
-      // Backwards from the first field reaches the header.
+      // Backwards from the first field reaches the header's Clear all.
       await h.page.locator('.bt-pop select').first().focus();
       await h.page.keyboard.press('Shift+Tab');
       const before = await focused(h);
+      assert.equal(
+        await h.page.evaluate(() => {
+          const el = document.activeElement;
+          return (
+            el !== null &&
+            document.querySelector('.bt-pop')?.contains(el) === true &&
+            el.tagName === 'BUTTON' &&
+            el.textContent.trim() === 'Clear all'
+          );
+        }),
+        true,
+        `Shift+Tab from the first field landed on ${before}, not the popover's Clear all`,
+      );
 
       assert.equal(
         reached.length + 1,
@@ -547,6 +788,59 @@ void describe('the active-filter chips (LAI-717)', () => {
         timeout: 10_000,
       });
       assert.equal(await h.page.locator('.bt-chips').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **The Board with an active sprint** (review, should-fix 3). LAI-713 opens
+   * it on `?sprint=<active>`, so the chip row always has a Sprint chip there,
+   * and its × is the one removal that does not delete its key: no `?sprint=`
+   * means "open on the active sprint" on re-entry, so "every sprint" is
+   * `sprint=all` — what the popover's "Any" writes.
+   */
+  void test('on the Board an active sprint is a named chip, and its × writes sprint=all', async () => {
+    const DAY = 86_400_000;
+    const ACTIVE: ApiStub = {
+      ...STUB,
+      '/api/v1/projects/laika-core/sprints': {
+        data: [
+          {
+            id: 's1',
+            project_id: 'laika-core',
+            name: 'Foundations',
+            goal: null,
+            status: 'active',
+            starts_on: Date.now() - 3 * DAY,
+            ends_on: Date.now() + 10 * DAY,
+            created_at: 1,
+            updated_at: 1,
+          },
+        ],
+        next_cursor: null,
+      },
+    };
+    const h = await open('/board?project=laika-core', ACTIVE);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(() => location.search.includes('sprint=s1'), undefined, {
+        timeout: 10_000,
+      });
+      const chip = h.page.locator('.bt-chip', { hasText: 'Sprint: S1 · Foundations' });
+      await chip.waitFor({ timeout: 10_000 });
+      assert.equal(
+        (await h.page.locator('.bt-badge').innerText()).trim(),
+        '1',
+        'the chip and the badge disagree',
+      );
+
+      await chip.click();
+      await h.page.waitForFunction(() => location.search.includes('sprint=all'), undefined, {
+        timeout: 10_000,
+      });
+      assert.equal(params(h).get('sprint'), 'all');
+      assert.equal(await h.page.locator('.bt-chips').count(), 0, 'every sprint is still a chip');
     } finally {
       await h.close();
     }

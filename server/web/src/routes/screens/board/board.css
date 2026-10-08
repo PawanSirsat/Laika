@@ -15,14 +15,6 @@
   margin-right: 1.125rem;
 }
 
-/*
- * **No margin under the List's table** (LAI-717). This gave `.list` a
- * `--space-6` bottom margin when the List scrolled the page. Since LAI-621 the
- * table scrolls inside its own card, so the margin was 32px of blank card under
- * the last row — the "extra padding" on a one-row List in the owner's
- * screenshot. The board never wanted it either.
- */
-
 .board-views {
   display: flex;
   border: 1px solid var(--border-subtle);

@@ -1,3 +1,4 @@
+import type { RefObject } from 'react';
 import type { FilterKey } from './filter-keys.ts';
 import type { FilterChip } from './filter-chips.ts';
 
@@ -10,6 +11,8 @@ export interface FilterChipsProps {
   readonly covered: boolean;
   readonly onRemove: (key: FilterKey) => void;
   readonly onClearAll: () => void;
+  /** Where focus goes when the control that had it is gone with its filter. */
+  readonly filterButtonRef: RefObject<HTMLButtonElement | null>;
 }
 
 /**
@@ -22,7 +25,13 @@ export interface FilterChipsProps {
  *
  * Absent, not empty, when nothing is filtered — the row takes no height then.
  */
-export function FilterChips({ chips, covered, onRemove, onClearAll }: FilterChipsProps) {
+export function FilterChips({
+  chips,
+  covered,
+  onRemove,
+  onClearAll,
+  filterButtonRef,
+}: FilterChipsProps) {
   if (chips.length === 0) return null;
 
   return (
@@ -40,8 +49,24 @@ export function FilterChips({ chips, covered, onRemove, onClearAll }: FilterChip
           type="button"
           className="bt-chip"
           title={`Remove ${chip.label}`}
-          onClick={() => {
+          onClick={(event) => {
+            /*
+             * **Focus does not fall to `<body>`** (LAI-717 review). The chip
+             * is about to go with its filter: the next chip takes focus, else
+             * the one before, else — the last one gone — the Filter button.
+             * The other chips are keyed, so the ones found here are the same
+             * elements after the re-render.
+             */
+            const here = event.currentTarget;
+            const next = (
+              here.nextElementSibling?.classList.contains('bt-chip') === true
+                ? here.nextElementSibling
+                : here.previousElementSibling?.classList.contains('bt-chip') === true
+                  ? here.previousElementSibling
+                  : null
+            ) as HTMLElement | null;
             onRemove(chip.key);
+            (next ?? filterButtonRef.current)?.focus();
           }}
         >
           <span className="bt-chip-text">{chip.label}</span>
@@ -51,7 +76,15 @@ export function FilterChips({ chips, covered, onRemove, onClearAll }: FilterChip
           <span className="visually-hidden"> — remove this filter</span>
         </button>
       ))}
-      <button type="button" className="bt-chips-clear" onClick={onClearAll}>
+      <button
+        type="button"
+        className="bt-chips-clear"
+        onClick={() => {
+          onClearAll();
+          // The whole row is about to go.
+          filterButtonRef.current?.focus();
+        }}
+      >
         Clear all
       </button>
     </div>

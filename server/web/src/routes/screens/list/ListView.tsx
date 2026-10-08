@@ -293,251 +293,291 @@ export function ListView({
 
   return (
     <div className="list-pane">
-      <div className="list-scroll">
-        <table className="list">
-          {/* The design's widths, declared once. `SUMMARY` takes what is left. */}
-          <colgroup>
-            {mayEdit && <col className="list-col-check" />}
-            <col className="list-col-key" />
-            <col className="list-col-summary" />
-            <col className="list-col-status" />
-            <col className="list-col-pri" />
-            <col className="list-col-assignee" />
-            <col className="list-col-spr" />
-            <col className="list-col-due" />
-            <col className="list-col-created" />
-            <col className="list-col-updated" />
-          </colgroup>
+      <div className="list-card">
+        <div className="list-scroll">
+          <table className="list">
+            {/* The design's widths, declared once. `SUMMARY` takes what is left. */}
+            <colgroup>
+              {mayEdit && <col className="list-col-check" />}
+              <col className="list-col-key" />
+              <col className="list-col-summary" />
+              <col className="list-col-status" />
+              <col className="list-col-pri" />
+              <col className="list-col-assignee" />
+              <col className="list-col-spr" />
+              <col className="list-col-due" />
+              <col className="list-col-created" />
+              <col className="list-col-updated" />
+            </colgroup>
 
-          <thead>
-            <tr>
-              {mayEdit && (
-                <th scope="col" className="list-check list-check-all">
-                  <input
-                    type="checkbox"
-                    className="list-checkbox"
-                    aria-label="Select every task on this page"
-                    checked={headState === 'all'}
-                    // `indeterminate` is a property, not an attribute, so React
-                    // has no prop for it; the ref sets it on every render.
-                    ref={(box) => {
-                      if (box !== null) box.indeterminate = headState === 'some';
-                    }}
-                    onChange={() => {
-                      onSelect(togglePage(effective, pageIds));
-                    }}
-                  />
-                </th>
-              )}
-              {LIST_COLUMNS.map((column) => (
-                <th
-                  key={column.key}
-                  scope="col"
-                  aria-sort={
-                    sort.key === column.key ? (sort.ascending ? 'ascending' : 'descending') : 'none'
-                  }
-                >
-                  <button
-                    type="button"
-                    className="list-sort"
-                    title={`Sort by ${column.label}`}
-                    onClick={() => {
-                      onSort(nextSort(sort, column.key));
-                    }}
-                  >
-                    {column.label}
-                    {/* The active arrow is text; the resting glyph on every
-                        other sortable header is CSS (`list.css`), so it never
-                        enters a header's name for a screen reader or a test. */}
-                    {sort.key === column.key && (
-                      <span className="list-sort-arrow" aria-hidden="true">
-                        {sort.ascending ? '▲' : '▼'}
-                      </span>
-                    )}
-                  </button>
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {shown.map((row) => {
-              const ink = row.assigned ? avatarColor(row.assigneeId, theme) : undefined;
-              const isSelected = effective.has(row.id);
-              const moving = movingId === row.id;
-              return (
-                <tr
-                  key={row.id}
-                  // Lets another person's change glow on its row (LAI-708).
-                  data-task-id={row.id}
-                  className={[
-                    'list-row',
-                    row.muted ? 'list-row-muted' : '',
-                    isSelected ? 'list-row-selected' : '',
-                  ]
-                    .filter((c) => c !== '')
-                    .join(' ')}
-                  aria-selected={mayEdit ? isSelected : undefined}
-                  onClick={() => {
-                    onOpen(row.id);
-                  }}
-                >
-                  {mayEdit && (
-                    <td
-                      className="list-check"
-                      onClick={(event) => {
-                        // The cell, not just the box: a near miss on a 14px
-                        // checkbox must not open the drawer instead.
-                        event.stopPropagation();
+            <thead>
+              <tr>
+                {mayEdit && (
+                  <th scope="col" className="list-check list-check-all">
+                    <input
+                      type="checkbox"
+                      className="list-checkbox"
+                      aria-label="Select every task on this page"
+                      checked={headState === 'all'}
+                      // `indeterminate` is a property, not an attribute, so React
+                      // has no prop for it; the ref sets it on every render.
+                      ref={(box) => {
+                        if (box !== null) box.indeterminate = headState === 'some';
                       }}
-                    >
-                      <input
-                        type="checkbox"
-                        className="list-checkbox"
-                        aria-label={`Select ${row.key}`}
-                        checked={isSelected}
-                        onChange={() => {
-                          onSelect(toggleOne(effective, row.id));
-                        }}
-                      />
-                    </td>
-                  )}
-
-                  <td className="list-key">
+                      onChange={() => {
+                        onSelect(togglePage(effective, pageIds));
+                      }}
+                    />
+                  </th>
+                )}
+                {LIST_COLUMNS.map((column) => (
+                  <th
+                    key={column.key}
+                    scope="col"
+                    aria-sort={
+                      sort.key === column.key
+                        ? sort.ascending
+                          ? 'ascending'
+                          : 'descending'
+                        : 'none'
+                    }
+                  >
                     <button
                       type="button"
-                      className="list-open"
-                      onClick={(event) => {
-                        // The row already opens it; without this the click runs
-                        // twice and the second push lands on the same URL.
-                        event.stopPropagation();
-                        onOpen(row.id);
+                      className="list-sort"
+                      title={`Sort by ${column.label}`}
+                      onClick={() => {
+                        onSort(nextSort(sort, column.key));
                       }}
                     >
-                      {row.key}
-                      <span className="visually-hidden"> — open details</span>
-                    </button>
-                  </td>
-
-                  <td className="list-summary">
-                    <span className="list-summary-line">
-                      {row.blocked && (
-                        <span className="list-lock" aria-hidden="true">
-                          🔒
+                      {column.label}
+                      {/* The active arrow is text; the resting glyph on every
+                        other sortable header is CSS (`list.css`), so it never
+                        enters a header's name for a screen reader or a test. */}
+                      {sort.key === column.key && (
+                        <span className="list-sort-arrow" aria-hidden="true">
+                          {sort.ascending ? '▲' : '▼'}
                         </span>
                       )}
-                      <span className="list-title" title={row.title}>
-                        {row.title}
-                      </span>
-                    </span>
-                    {(row.labels !== '' || row.blockedBy !== '' || row.parentKey !== '') && (
-                      <span className="list-sub">
-                        {row.parentKey !== '' && (
-                          <span className="list-parent" title="Subtask of">
-                            {row.parentKey}
-                          </span>
-                        )}
-                        {row.labels !== '' && <span className="list-labels">{row.labels}</span>}
-                        {row.blockedBy !== '' && (
-                          <span className="list-blocked">{row.blockedBy}</span>
-                        )}
-                      </span>
-                    )}
-                  </td>
+                    </button>
+                  </th>
+                ))}
+              </tr>
+            </thead>
 
-                  <td>
-                    {mayEdit ? (
-                      <button
-                        type="button"
-                        className={`list-status list-status-button list-tone-${row.statusTone}`}
-                        aria-haspopup="menu"
-                        aria-expanded={statusMenu?.id === row.id}
-                        aria-busy={moving || undefined}
-                        disabled={moving}
-                        title="Change status"
+            <tbody>
+              {shown.map((row) => {
+                const ink = row.assigned ? avatarColor(row.assigneeId, theme) : undefined;
+                const isSelected = effective.has(row.id);
+                const moving = movingId === row.id;
+                return (
+                  <tr
+                    key={row.id}
+                    // Lets another person's change glow on its row (LAI-708).
+                    data-task-id={row.id}
+                    className={[
+                      'list-row',
+                      row.muted ? 'list-row-muted' : '',
+                      isSelected ? 'list-row-selected' : '',
+                    ]
+                      .filter((c) => c !== '')
+                      .join(' ')}
+                    aria-selected={mayEdit ? isSelected : undefined}
+                    onClick={() => {
+                      onOpen(row.id);
+                    }}
+                  >
+                    {mayEdit && (
+                      <td
+                        className="list-check"
                         onClick={(event) => {
+                          // The cell, not just the box: a near miss on a 14px
+                          // checkbox must not open the drawer instead.
                           event.stopPropagation();
-                          setStatusMenu({ id: row.id, at: anchorOf(event.currentTarget) });
                         }}
                       >
-                        {/* The label stays while the move is in flight and a
+                        <input
+                          type="checkbox"
+                          className="list-checkbox"
+                          aria-label={`Select ${row.key}`}
+                          checked={isSelected}
+                          onChange={() => {
+                            onSelect(toggleOne(effective, row.id));
+                          }}
+                        />
+                      </td>
+                    )}
+
+                    <td className="list-key">
+                      <button
+                        type="button"
+                        className="list-open"
+                        onClick={(event) => {
+                          // The row already opens it; without this the click runs
+                          // twice and the second push lands on the same URL.
+                          event.stopPropagation();
+                          onOpen(row.id);
+                        }}
+                      >
+                        {row.key}
+                        <span className="visually-hidden"> — open details</span>
+                      </button>
+                    </td>
+
+                    <td className="list-summary">
+                      <span className="list-summary-line">
+                        {row.blocked && (
+                          <span className="list-lock" aria-hidden="true">
+                            🔒
+                          </span>
+                        )}
+                        <span className="list-title" title={row.title}>
+                          {row.title}
+                        </span>
+                      </span>
+                      {(row.labels !== '' || row.blockedBy !== '' || row.parentKey !== '') && (
+                        <span className="list-sub">
+                          {row.parentKey !== '' && (
+                            <span className="list-parent" title="Subtask of">
+                              {row.parentKey}
+                            </span>
+                          )}
+                          {row.labels !== '' && <span className="list-labels">{row.labels}</span>}
+                          {row.blockedBy !== '' && (
+                            <span className="list-blocked">{row.blockedBy}</span>
+                          )}
+                        </span>
+                      )}
+                    </td>
+
+                    <td>
+                      {mayEdit ? (
+                        <button
+                          type="button"
+                          className={`list-status list-status-button list-tone-${row.statusTone}`}
+                          aria-haspopup="menu"
+                          aria-expanded={statusMenu?.id === row.id}
+                          aria-busy={moving || undefined}
+                          disabled={moving}
+                          title="Change status"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setStatusMenu({ id: row.id, at: anchorOf(event.currentTarget) });
+                          }}
+                        >
+                          {/* The label stays while the move is in flight and a
                             spinner joins it (LAI-293): a pill that swaps its
                             word resizes under the pointer. The caret is CSS,
                             so it never enters the pill's text. */}
-                        {moving && <Spinner />}
-                        {row.status}
-                      </button>
-                    ) : (
-                      <span className={`list-status list-tone-${row.statusTone}`}>
-                        {row.status}
-                      </span>
-                    )}
-                  </td>
+                          {moving && <Spinner />}
+                          {row.status}
+                        </button>
+                      ) : (
+                        <span className={`list-status list-tone-${row.statusTone}`}>
+                          {row.status}
+                        </span>
+                      )}
+                    </td>
 
-                  {/* Jira's icon, then the design's `P1` (LAI-705). The icon
+                    {/* Jira's icon, then the design's `P1` (LAI-705). The icon
                       brings its own colour; the text keeps the tone's. */}
-                  <td className={`list-pri list-tone-${row.priorityTone}`}>
-                    <span className="list-pri-cell">
-                      <PriorityIcon priority={row.priorityLevel} size={12} />
-                      {row.priority}
-                    </span>
-                  </td>
-
-                  <td>
-                    <span className="list-assignee">
-                      <span
-                        className={row.assigned ? 'list-avatar' : 'list-avatar list-avatar-empty'}
-                        aria-hidden="true"
-                        {...(ink === undefined
-                          ? {}
-                          : {
-                              style: {
-                                background: ink.background,
-                                color: ink.foreground,
-                                borderColor: ink.border,
-                              },
-                            })}
-                      >
-                        {row.initials}
+                    <td className={`list-pri list-tone-${row.priorityTone}`}>
+                      <span className="list-pri-cell">
+                        <PriorityIcon priority={row.priorityLevel} size={12} />
+                        {row.priority}
                       </span>
-                      <span className="list-who" title={row.who}>
-                        {row.who}
+                    </td>
+
+                    <td>
+                      <span className="list-assignee">
+                        <span
+                          className={row.assigned ? 'list-avatar' : 'list-avatar list-avatar-empty'}
+                          aria-hidden="true"
+                          {...(ink === undefined
+                            ? {}
+                            : {
+                                style: {
+                                  background: ink.background,
+                                  color: ink.foreground,
+                                  borderColor: ink.border,
+                                },
+                              })}
+                        >
+                          {row.initials}
+                        </span>
+                        <span className="list-who" title={row.who}>
+                          {row.who}
+                        </span>
                       </span>
-                    </span>
-                  </td>
+                    </td>
 
-                  <td className="list-spr">{row.sprintTag}</td>
+                    <td className="list-spr">{row.sprintTag}</td>
 
-                  {/* A <time> with the whole moment on hover (LAI-486): the
+                    {/* A <time> with the whole moment on hover (LAI-486): the
                       cell says "27 Sep, 14:05", the tooltip says which year
                       and second. */}
-                  <td className={`list-due list-tone-${row.dueTone}`}>
-                    {row.due !== '' && (
-                      <span title={row.dueTone === 'bad' ? 'Past due and still open' : 'Due'}>
-                        {row.dueTone === 'bad' && <span aria-hidden="true">⚠ </span>}
-                        {row.due}
-                      </span>
-                    )}
-                  </td>
+                    <td className={`list-due list-tone-${row.dueTone}`}>
+                      {row.due !== '' && (
+                        <span title={row.dueTone === 'bad' ? 'Past due and still open' : 'Due'}>
+                          {row.dueTone === 'bad' && <span aria-hidden="true">⚠ </span>}
+                          {row.due}
+                        </span>
+                      )}
+                    </td>
 
-                  <td className={`list-created list-tone-${row.createdTone}`}>
-                    <time dateTime={row.created.iso} title={row.created.full}>
-                      {row.created.text}
-                    </time>
-                  </td>
+                    <td className={`list-created list-tone-${row.createdTone}`}>
+                      <time dateTime={row.created.iso} title={row.created.full}>
+                        {row.created.text}
+                      </time>
+                    </td>
 
-                  <td className={`list-updated list-tone-${row.updatedTone}`}>
-                    <time dateTime={row.updated.iso} title={row.updated.full}>
-                      {row.updated.text}
-                    </time>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                    <td className={`list-updated list-tone-${row.updatedTone}`}>
+                      <time dateTime={row.updated.iso} title={row.updated.full}>
+                        {row.updated.text}
+                      </time>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
 
-        {createRow}
+          {createRow}
+        </div>
+
+        {/*
+          The bar floats over the foot of the card once anything is selected,
+          and the report stays up after the reload the action ends with,
+          because both live in `BoardScreen` (see the props).
+
+          **Inside the card, above the Create row** (LAI-717 review): it was
+          placed from the pane's foot, a pager's height below the card, which
+          put it straight over the pinned Create row. Anchored to the card it
+          sits a fixed `--list-create-h` up, so the two never meet.
+        */}
+        {mayEdit && effective.size > 0 && (
+          <BulkBar
+            count={effective.size}
+            total={rows.length}
+            onSelectAll={() => {
+              onSelect(selectAll(rows));
+            }}
+            onClear={() => {
+              onSelect(new Set());
+              onBulkRun(undefined);
+            }}
+            columns={columns}
+            members={members}
+            sprints={sprints}
+            sprintLabels={sprintLabels}
+            maySetSprint={maySetSprint}
+            run={bulkRun}
+            onAction={runBulk}
+            onDismissReport={() => {
+              onBulkRun(undefined);
+            }}
+          />
+        )}
       </div>
 
       {/*
@@ -579,35 +619,6 @@ export function ListView({
           </button>
         </span>
       </nav>
-
-      {/*
-        The bar floats over the foot of the pane once anything is selected,
-        and the report stays up after the reload the action ends with,
-        because both live in `BoardScreen` (see the props).
-      */}
-      {mayEdit && effective.size > 0 && (
-        <BulkBar
-          count={effective.size}
-          total={rows.length}
-          onSelectAll={() => {
-            onSelect(selectAll(rows));
-          }}
-          onClear={() => {
-            onSelect(new Set());
-            onBulkRun(undefined);
-          }}
-          columns={columns}
-          members={members}
-          sprints={sprints}
-          sprintLabels={sprintLabels}
-          maySetSprint={maySetSprint}
-          run={bulkRun}
-          onAction={runBulk}
-          onDismissReport={() => {
-            onBulkRun(undefined);
-          }}
-        />
-      )}
 
       {statusMenu !== undefined && menuTask !== undefined && (
         <ListMenu

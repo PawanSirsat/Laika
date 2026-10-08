@@ -136,6 +136,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   }, [urlSlug, slug]);
   const [projectError, setProjectError] = useState<unknown>(null);
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
+  /** Whose members those are, so a chip can tell "loading" from "unknown" (LAI-717). */
+  const [membersFor, setMembersFor] = useState<string | undefined>(undefined);
   /**
    * Which task's panel is open — **from the URL, not from state** (LAI-424).
    *
@@ -325,9 +327,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     listMembers(slug, controller.signal)
       .then((page) => {
         setMembers(new Map(page.members.map((m) => [m.user_id, m])));
+        setMembersFor(slug);
       })
       .catch(() => {
         setMembers(new Map());
+        if (!controller.signal.aborted) setMembersFor(slug);
       });
 
     return () => {
@@ -817,6 +821,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     () =>
       filterChips(params, {
         status: filterNames.status,
+        membersKnown: slug !== undefined && membersFor === slug,
+        sprintsKnown,
         member: (id) => members.get(id)?.name,
         sprint: (id) => {
           const found = sprints.find((s) => s.id === id);
@@ -825,7 +831,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             : `${sprintLabels.get(found.id)?.label ?? ''} · ${found.name}`;
         },
       }),
-    [params, filterNames, members, sprints, sprintLabels],
+    [params, filterNames, members, membersFor, slug, sprintsKnown, sprints, sprintLabels],
   );
 
   const editingColumn =
@@ -910,6 +916,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const clearFilters = (): void => {
     onParamsChange(withoutFilters(params));
   };
+
+  /**
+   * The toolbar's Filter button, held here so the empty List's *Clear filters*
+   * can hand focus to it: the button that was pressed goes with the empty
+   * state it sat in, and focus must not fall to `<body>` (LAI-717 review).
+   */
+  const filterButtonRef = useRef<HTMLButtonElement>(null);
 
   if (projectError !== null) {
     return (
@@ -1036,6 +1049,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           assignee={assignee}
           tag={tagScope}
           ready={readyParam === 'true'}
+          notReady={readyParam === 'false'}
           agentOnly={agentOnly}
           tags={knownTags}
           members={[...members.values()]}
@@ -1069,6 +1083,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           // are not filters and stay.
           onClearFilters={clearFilters}
           chips={chips}
+          filterButtonRef={filterButtonRef}
           onRemoveFilter={removeFilter}
           onInsights={() => {
             setInsightsOpen(true);
@@ -1504,7 +1519,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               sprints={sprints}
               theme={theme}
               filtered={filtered}
-              onClearFilters={clearFilters}
+              onClearFilters={() => {
+                clearFilters();
+                filterButtonRef.current?.focus();
+              }}
               canAdd={mayCreate}
               // Editing a task is member+ (§3.2), the gate the drawer uses.
               mayEdit={mayCreate}
