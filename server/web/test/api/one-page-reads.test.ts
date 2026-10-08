@@ -54,14 +54,16 @@ const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly
      * LAI-724: the board, `use-sprints` and the dashboard no longer walk tasks
      * themselves — every screen reads the project's one set, and `store.ts`
      * hands `task-store.ts` the page fetcher it walks with `everyPage`. The
-     * dashboard's activity walk moved to `activity-store.ts`, which pages by
-     * its own capped loop over `request` (`activity-store.test.ts`).
+     * dashboard's activity walk moved to `activity-store.ts`, which pages
+     * `listProjectActivityPage` by its own capped loop, reporting `truncated`
+     * (`activity-store.test.ts`) — named here since review round 1, when it
+     * stopped being a raw `request` the census could not see.
      */
     [
       'api/store.ts',
       {
-        names: ['listTasks'],
-        why: 'the task store’s page fetcher — `task-store.ts` walks it with `everyPage`',
+        names: ['listTasks', 'listProjectActivityPage'],
+        why: 'page fetchers the task store (`everyPage`) and the activity window (its capped loop) walk',
       },
     ],
     [

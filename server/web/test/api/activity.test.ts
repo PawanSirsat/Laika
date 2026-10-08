@@ -11,6 +11,7 @@ import { describe, test } from 'node:test';
 import {
   describeEvent,
   isReorder,
+  listProjectActivityPage,
   shownInFeed,
   statusTransition,
   type ActivityEvent,
@@ -105,5 +106,32 @@ void describe('a reorder never reaches a feed (LAI-473, D-060.4)', () => {
       shownInFeed(rows).map((e) => e.type),
       ['task.created', 'task.updated'],
     );
+  });
+});
+
+/*
+ * **The Dashboard's window reads through a page function** (LAI-724 review,
+ * nit): `store.ts` built the request with raw `request`, so the LAI-703
+ * census in `one-page-reads.test.ts` could not see it. As a `Page` function
+ * the census counts it, and `store.ts` must be allowed it by name.
+ */
+void describe('listProjectActivityPage', () => {
+  void test('asks for one page of 200, with since and cursor when given', async () => {
+    const asked: string[] = [];
+    globalThis.fetch = ((input: string | URL) => {
+      asked.push(String(input));
+      return Promise.resolve(
+        new Response(JSON.stringify({ data: [], next_cursor: null }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+    }) as unknown as typeof fetch;
+    await listProjectActivityPage('laika core', {});
+    await listProjectActivityPage('laika-core', { since: 5, cursor: 'C1' });
+    assert.deepEqual(asked, [
+      '/api/v1/projects/laika%20core/activity?limit=200',
+      '/api/v1/projects/laika-core/activity?limit=200&since=5&cursor=C1',
+    ]);
   });
 });
