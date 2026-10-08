@@ -6,9 +6,8 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: in-progress
 started: 2026-10-08T11:18:42Z
-finished: 2026-10-08T13:35:49Z
 ---
 
 ## Goal
@@ -45,7 +44,7 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
 
 ## Acceptance criteria
 
-- [x] One row per sprint, in date order. No row per task on the axis.
+- [ ] One row per sprint, in date order. No row per task on the axis.
 - [x] Each sprint row's left column names it (`S4` and its name), its dates
       and its state (active, ended, planned); its bar spans `starts_on` to
       `ends_on` on the axis. Once a sprint is opened and its tasks are loaded,
@@ -68,7 +67,7 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
       stays below the chart.
 - [x] Design tokens only; both themes verified by screenshot; fits 1366 wide
       with no page-level horizontal scroll.
-- [x] Browser tests for: one row per sprint and none per task, bar geometry
+- [ ] Browser tests for: one row per sprint and none per task, bar geometry
       against the dates, horizontal scrolling with the sprint column fixed,
       zoom changing the scale, expand/collapse, and Today — each shown to fail
       against the old screen.
@@ -238,4 +237,39 @@ checksums matched.
 
 Note: `a98f7a3` landed with one lint error (a commit chained after lint's
 output, not its exit code); fixed in `c6a5cc3`, not amended.
+
+## Review notes (round 2)
+
+Reviewed 2026-10-08: CHANGES REQUIRED, one blocker. The reviewer ran the full
+gate on `e2eae8d`: TEST 0 / LINT 0 / FMT 0. Round 0 is fixed; the server
+endpoint is sound. Unticked: 1 (valid distant sprints were hidden), 11 (two
+header tests pass with no labels drawn).
+
+Blocking
+1. The month-label test passes with `{fits && (` → `{false && (`; the
+   today-pill test passes with every tick and lower label blanked. Assert a
+   visible label at each stop naming the month under the view's left edge,
+   and a non-empty tick label on each side of the pill; prove both fail under
+   those mutations.
+
+Should-fix
+2. SPEC §11.4.2.1 dropped "drag an edge to reschedule" — out of scope. Revert;
+   mark it not built in §11.4.3's as-built note; file a backlog task for it.
+3. Valid distant sprints hidden with the wrong advice. Exclude only non-dates
+   and absurd values (beyond ±50 years); separate wording for "not a valid
+   date" and "beyond the timeline's reach"; a sprint 6 years either side is
+   drawn, with the window and tick count bounded by density, not by range.
+   Tested, with a render bound.
+4. "Blocked?" noise: skip done and cancelled tasks in the tally and the row;
+   the bar says "N blocked?" to match the row. Tested.
+5. The stale "§11.4.3 as written" comment at the top of `timeline-derive.ts`.
+
+Nits: §11.4.3 says the today line runs across the header (only the pill
+does); "one vertical scroller" is false with the tray open — fix the layout;
+`taskRequests` attaches after `open()` — use `h.calls`, with a positive
+control; time bounds may flake — measure work, keep any time bound ≥3× and
+backed by a work count; the counts query covers the whole project on every
+page — filter by the page's sprint ids, tested; "Blocked?" squeezes long
+titles — an icon with a tooltip at narrow widths; live refresh — a minimum
+interval between refetches.
 
