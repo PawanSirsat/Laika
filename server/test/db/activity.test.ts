@@ -353,7 +353,9 @@ describe('listActivity', () => {
     expect(listActivity(t.db, { orgId: s.orgId, since: base + 3 })).toHaveLength(3);
   });
 
-  it('caps limit at 200 however large a caller asks for', () => {
+  it('caps limit at 200 plus the probe row however large a caller asks for', () => {
+    // 201, not 200: a page of 200 needs its `limit + 1` probe row to know
+    // whether another page exists (LAI-722).
     for (let i = 0; i < 205; i++) {
       appendActivity(t.db, {
         orgId: s.orgId,
@@ -364,7 +366,7 @@ describe('listActivity', () => {
       });
     }
 
-    expect(listActivity(t.db, { orgId: s.orgId, limit: 10_000 })).toHaveLength(200);
+    expect(listActivity(t.db, { orgId: s.orgId, limit: 10_000 })).toHaveLength(201);
   });
 });
 

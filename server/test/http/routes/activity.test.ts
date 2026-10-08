@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { appendActivity } from '../../../src/db/activity.ts';
+import { orgs, projects, users } from '../../../src/db/schema.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
 
 let h: AuthHarness;
@@ -190,6 +192,74 @@ describe('filters and paging (AC3)', () => {
   it('rejects a malformed cursor rather than starting over', async () => {
     const res = await req('/api/v1/activity?cursor=not-a-cursor');
     expect(res.status).toBe(400);
+  });
+});
+
+describe('paging at the maximum limit (LAI-722)', () => {
+  /**
+   * The service asks for `limit + 1` rows so `buildPage` can tell whether
+   * another page exists. `db/activity.ts` clamped that request to 200, so at
+   * `limit=200` the probe row never came back and `next_cursor` was `null` on a
+   * feed with 801 rows — while `limit=199` paged correctly. The Dashboard reads
+   * at 200, so it saw one page and stopped.
+   */
+  function appendRows(count: number): void {
+    const org = h.db.select({ id: orgs.id }).from(orgs).get()!;
+    const project = h.db.select({ id: projects.id }).from(projects).get()!;
+    const owner = h.db.select({ id: users.id }).from(users).get()!;
+
+    for (let i = 0; i < count; i++) {
+      appendActivity(h.db, {
+        orgId: org.id,
+        projectId: project.id,
+        actorId: owner.id,
+        actorKind: 'user',
+        type: 'task.created',
+        now: 1_000_000 + i,
+      });
+    }
+  }
+
+  async function walk(base: string): Promise<{ pages: number; ids: string[] }> {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    let pages = 0;
+
+    do {
+      const got: FeedPage = await feed(cursor === null ? base : `${base}&cursor=${cursor}`);
+      ids.push(...got.data.map((row) => row.id));
+      cursor = got.next_cursor;
+      pages += 1;
+    } while (cursor !== null && pages < 100);
+
+    return { pages, ids };
+  }
+
+  for (const path of ['/api/v1/projects/laika/activity', '/api/v1/activity']) {
+    it(`${path}?limit=200 returns a cursor when there are more than 200 rows`, async () => {
+      appendRows(250);
+
+      const first = await feed(`${path}?limit=200`);
+      expect(first.data).toHaveLength(200);
+      expect(first.next_cursor).not.toBeNull();
+
+      const { pages, ids } = await walk(`${path}?limit=200`);
+      const everyRow = (await walk(`${path}?limit=7`)).ids;
+
+      expect(pages).toBe(2);
+      expect(ids).toEqual(everyRow);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids.length).toBeGreaterThan(250);
+    });
+  }
+
+  it('still ends with a null cursor when the last page is exactly full', async () => {
+    // Setup writes one project row, so 199 more make the project feed exactly 200.
+    appendRows(199);
+
+    const page = await feed('/api/v1/projects/laika/activity?limit=200');
+    expect(page.data).toHaveLength(200);
+    expect(page.next_cursor).toBeNull();
   });
 });
 

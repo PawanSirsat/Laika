@@ -177,7 +177,13 @@ export interface ListActivityFilter {
 }
 
 const DEFAULT_LIMIT = 50;
-const MAX_LIMIT = 200;
+/**
+ * §6.3's 200, **plus the one probe row** (LAI-722). The service asks for
+ * `limit + 1` so `buildPage` can tell whether another page exists; clamping
+ * that to 200 swallowed the probe at `limit=200`, and the feed answered
+ * `next_cursor: null` with hundreds of rows still unread.
+ */
+const MAX_LIMIT = 200 + 1;
 
 /**
  * Read the feed, **newest first**.
