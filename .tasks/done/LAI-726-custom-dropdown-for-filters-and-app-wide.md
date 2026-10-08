@@ -6,7 +6,7 @@ assignee: ui-dropdown
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-08T12:35:36Z
 finished: 2026-10-08T13:23:13Z
 ---
@@ -306,3 +306,13 @@ the earlier "l" survives as "la"); panel +300px → "left is 765, its
 trigger's 465" (2); guard without `(,` → "does not see: .a:is(select"; no
 pointerup release → "the panel stayed open"; drawer transform kept →
 "kept a transform after its rise".
+
+## Accepted
+
+2026-10-08, by polly (orchestrator), on the owner's instruction to ship
+release 2 now. Round 1: APPROVED. Round 2: CHANGES REQUIRED, one blocker
+(NewColumnDialog not centred). The builder's round-2 fixes are in 1ceec9b,
+ff067ef and a699c3a ("Round 2, as built" above). **This file records no
+re-review verdict after those fixes.** It is accepted on the owner's release
+instruction, not on a recorded round-3 approval. Released at
+build-ui-dropdown `97c133f`. The release gate ran on the integrated branch.
