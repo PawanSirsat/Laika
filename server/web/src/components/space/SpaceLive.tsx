@@ -40,14 +40,17 @@ export interface SpaceLiveProps {
 /**
  * One `EventSource` for the whole space (LAI-251).
  *
- * **One**, not one per consumer. The pill, the presence strip, the board's
- * cards and its live-stream rail all want the same frames; opening a stream
- * each would mean four connections per project and four replay windows.
+ * **One**, not one per consumer. The space bar's LIVE pill and the dashboard
+ * read it here; the board subscribes through `useEvents`, which shares the
+ * same connection (`api/event-stream.ts`). A stream each would cost a
+ * long-lived connection per consumer, and a replay window each.
  *
  * Presence is fetched rather than streamed: §4.8 has no presence verb, so a
- * strip driven by the event types alone would never update. It refetches when
- * the stream says something happened, which is cheaper than a timer and more
- * current than a mount-time read.
+ * count driven by the event types alone would never update. Its one reader
+ * here is the space bar's `Agents N` — the WORKING NOW strip that also read it
+ * was removed in LAI-727. It refetches when the stream says something
+ * happened, which is cheaper than a timer and more current than a mount-time
+ * read.
  */
 export function SpaceLive({ slug, enabled, children }: SpaceLiveProps) {
   const [stream, setStream] = useState<StreamState>('connecting');
