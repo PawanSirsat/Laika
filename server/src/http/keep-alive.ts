@@ -6,8 +6,10 @@
  * a person reading a card for more than five seconds closes every one of them.
  * 65 s outlasts the pauses of somebody using the board.
  *
- * `headersTimeout` must stay above it: at or below `keepAliveTimeout`, Node can
- * time out a request that arrived on a connection the client was reusing.
+ * `headersTimeout` is set above it **defensively**. Older Node releases could
+ * cut a request arriving on a reused connection when the two were ordered the
+ * other way; the Node 22 this runs on is not known to, but keeping headers the
+ * longer of the two costs nothing and rules that class of interaction out.
  */
 
 export const KEEP_ALIVE_TIMEOUT_MS = 65_000;

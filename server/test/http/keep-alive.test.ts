@@ -24,8 +24,7 @@ describe('applyKeepAlive', () => {
   });
 
   it('waits longer for headers than for an idle connection', () => {
-    // Node's own guidance: `headersTimeout` at or below `keepAliveTimeout`
-    // lets the server cut a connection a client is already reusing.
+    // Defensive ordering, not a fix for a current Node bug — see keep-alive.ts.
     const server = createServer();
     applyKeepAlive(server);
 

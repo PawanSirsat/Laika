@@ -80,9 +80,16 @@ function main(): void {
 
   // 65 s rather than Node's 5 s (LAI-722). `serve` is typed as possibly HTTP/2,
   // which has no keep-alive timer; this process serves HTTP/1.1. Asserted
-  // against the built server in `test/tooling/build.test.ts`, which reads the
-  // value back off the `Keep-Alive` response header.
-  if ('keepAliveTimeout' in server) applyKeepAlive(server);
+  // against the built server in `test/tooling/build.test.ts`: keep-alive off
+  // the `Keep-Alive` response header, and both values off this record, which
+  // reads them back from the live server object rather than restating them.
+  if ('keepAliveTimeout' in server) {
+    applyKeepAlive(server);
+    log.info('server.timeouts', {
+      keep_alive_timeout_ms: server.keepAliveTimeout,
+      headers_timeout_ms: server.headersTimeout,
+    });
+  }
 
   // The wiring lives in `shutdown.ts` so it is reachable from a test (LAI-057).
   // It used to be four lines here, in a function nothing can call — and during
