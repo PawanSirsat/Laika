@@ -5,10 +5,14 @@ Description: >-
   OIDC. No long-lived keys exist anywhere.
 
 Parameters:
-  GitHubRepository:
+  SubjectPrefix:
     Type: String
-    Default: PawanSirsat/Laika
-    Description: owner/name of the repository whose workflows may deploy.
+    Default: repo:PawanSirsat@48860105/Laika@1344153084
+    Description: >-
+      The repository's OIDC subject prefix. This repository uses GitHub's
+      immutable subject - owner and repository with their numeric ids - so a
+      renamed or re-created repository cannot match. Read it with
+      gh api repos/PawanSirsat/Laika/actions/oidc/customization/sub.
   Branch:
     Type: String
     Default: master
@@ -52,7 +56,7 @@ Resources:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
                 # One repository, one branch. A run on any other branch, a
                 # fork or a pull request cannot assume this role.
-                token.actions.githubusercontent.com:sub: !Sub repo:${GitHubRepository}:ref:refs/heads/${Branch}
+                token.actions.githubusercontent.com:sub: !Sub ${SubjectPrefix}:ref:refs/heads/${Branch}
       Policies:
         - PolicyName: push-image
           PolicyDocument:
