@@ -39,8 +39,11 @@ only**: the same fields, the same URL parameters, the same semantics.
 - `server/web/src/routes/screens/board/FilterChips.tsx` (new)
 - `server/web/src/routes/screens/board/filter-chips.ts` (new)
 - `server/web/src/routes/screens/BoardScreen.tsx`
+- `server/web/src/routes/screens/board/board.css` — only its `.list` margin rule
+  (added with the owner's mid-task addition)
 - `server/web/test/browser/filter-popover.test.ts` (new)
 - `server/web/test/routes/screens/board/filter-chips.test.ts` (new)
+- `server/web/test/browser/list-create-row.test.ts` (new)
 - existing web tests only where a selector names markup this task changes
 
 ## Acceptance criteria
@@ -66,6 +69,14 @@ only**: the same fields, the same URL parameters, the same semantics.
 - [ ] Filter logic is unchanged: same fields, same URL parameters, same
       semantics. The popover is shared by the Board and the List and both are
       verified.
+- [ ] **Added mid-task by the owner, same day:** the List's "+ Create task"
+      row is pinned to the bottom of the table card. Few rows: its bottom edge
+      is the card's, and any blank space sits above it. Many rows: it stays
+      visible as a sticky footer of the scrolling area, on an opaque token
+      background, without covering the last row, which stays reachable.
+      Empty result: the centred empty state sits above it, not overlapping.
+      Clicking it still creates a task; the pager stays outside and below
+      the card. Excess bottom padding on a lone row, if a layout bug, fixed.
 - [ ] Both themes, light and dark, verified by screenshot.
 - [ ] Each new browser assertion fails against the unchanged code (checked by
       running it against a stash, restored in a trap).
