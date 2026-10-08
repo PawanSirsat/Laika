@@ -155,12 +155,11 @@ export function useTimeline(slug: string | undefined, open: ReadonlySet<string>)
     // A new project starts from nothing; a live tick keeps what is on screen.
     if (sprintsFor.current !== slug) setSprints({ status: 'loading' });
 
+    // The same request every other screen makes (`{}`, then the cursor), so
+    // a sprint list another tab read in the last 30 s is the shared cache's
+    // answer, not a second read (LAI-724).
     everyPage((cursor) =>
-      listSprints(
-        slug,
-        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
-        controller.signal,
-      ),
+      listSprints(slug, cursor === undefined ? {} : { cursor }, controller.signal),
     )
       .then(({ items, truncated }) => {
         if (controller.signal.aborted) return;
