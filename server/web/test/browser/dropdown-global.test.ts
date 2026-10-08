@@ -347,7 +347,7 @@ void describe('the dropdown in the task drawer (LAI-726 round 1)', () => {
        */
       await h.page.waitForFunction(() => {
         const d = document.querySelector('.drawer');
-        return d !== null && d.getAnimations().every((a) => a.playState === 'finished');
+        return d?.getAnimations().every((a) => a.playState === 'finished') === true;
       });
       assert.equal(
         await h.page.locator('.drawer').evaluate((d) => getComputedStyle(d).transform),
@@ -539,7 +539,7 @@ void describe('a press dragged off the trigger (LAI-726 round 2)', () => {
         document.body.dispatchEvent(new MouseEvent('mouseup', off));
         await tick();
         // Later, focus leaves the search box for nowhere in particular.
-        (document.querySelector('[data-dropdown-panel] .dd-search-input') as HTMLElement).blur();
+        document.querySelector<HTMLElement>('[data-dropdown-panel] .dd-search-input')!.blur();
         await tick();
       });
       assert.equal(
