@@ -69,7 +69,7 @@ branch — and nothing means the post is skipped, which is what §9.1 wants, sin
 
 ## Configuring it
 
-`npx laika init` writes `LAIKA_URL` and `LAIKA_TOKEN` into the `env` block of
+`laika init` writes `LAIKA_URL` and `LAIKA_TOKEN` into the `env` block of
 `~/.claude/settings.json` (D-046), which Claude Code exports into the
 environment the hooks run in. `/laika:setup` is a front door to the same thing.
 Nothing is written into the repository, and nothing here is committed.

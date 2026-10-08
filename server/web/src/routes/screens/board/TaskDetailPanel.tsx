@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
+import { copyText } from '../../../components/CopyButton.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
@@ -583,7 +584,7 @@ export function TaskDetailPanel({
                 <button
                   type="button"
                   onClick={() => {
-                    void navigator.clipboard?.writeText(task.key);
+                    void copyText(task.key);
                     setOverflowOpen(false);
                   }}
                 >
@@ -594,7 +595,7 @@ export function TaskDetailPanel({
                 <button
                   type="button"
                   onClick={() => {
-                    void navigator.clipboard?.writeText(window.location.href);
+                    void copyText(window.location.href);
                     setOverflowOpen(false);
                   }}
                 >

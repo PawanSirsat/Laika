@@ -11,7 +11,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
  * one careless `.gitignore` edit, or one `git stash -u` away from being
  * committed anyway.
  *
- * **One location, and the CLI owns it** (D-046). `npx laika init` has to work
+ * **One location, and the CLI owns it** (D-046). `laika init` has to work
  * for somebody with no plugin installed, so it cannot be the side that
  * delegates — and two doors writing two locations is what would make the
  * idempotence criterion unprovable, because "already configured" could not be

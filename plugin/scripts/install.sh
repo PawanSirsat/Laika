@@ -113,9 +113,51 @@ if [ -z "$BIN" ] && mkdir -p "$HOME/.local/bin" 2>/dev/null; then
   NEEDS_PATH=yes
 fi
 
+# The CLI lives beside the plugin in the same checkout. SCRIPT_DIR is already
+# resolved through symlinks above, so this inherits that fix rather than
+# repeating the bug it fixed (LAI-482).
+CLI="$(cd "$SCRIPT_DIR/../.." && pwd)/cli/bin/laika"
+
 if [ -n "$BIN" ]; then
-  ln -sf "$LAUNCHER" "$BIN/laika-claude"
-  printf '  ✓ installed the laika-claude command in %s\n' "$BIN"
+  # Same guard as `laika` below. `laika-claude` is a Laika-specific name so a
+  # collision is unlikely — but "unlikely" was the reasoning that left the hole
+  # below, and a sweep of both `ln -sf` sites costs four lines.
+  if EXISTING_LC="$(command -v laika-claude 2>/dev/null)" &&
+    [ -n "$EXISTING_LC" ] &&
+    [ ! -L "$EXISTING_LC" ]; then
+    printf '  ! something else called laika-claude is on your PATH (%s) — skipping\n' "$EXISTING_LC"
+  else
+    ln -sf "$LAUNCHER" "$BIN/laika-claude"
+    printf '  ✓ installed the laika-claude command in %s\n' "$BIN"
+  fi
+  # `laika init` and `laika whoami` are printed by the Tokens screen, by the
+  # Connect screen and by three of the plugin's own failure messages. They were
+  # printed as `npx laika init`, which cannot work from a clean machine (the
+  # package is private and unpublished) — linking the command is what makes
+  # them real.
+  #
+  # Guarded twice: a link pointing at nothing is LAI-482's defect, and
+  # clobbering an unrelated `laika` already on PATH would be worse than not
+  # installing at all.
+  #
+  # The test for "ours" is **is it a symlink**, and nothing else. An earlier
+  # version also required `"$EXISTING" != "$BIN/laika"`, meaning to say "do not
+  # refuse our own link on a re-run" — but our own link is caught by `-L`
+  # anyway, so that clause only ever excused the one case that matters: a real
+  # file somebody else put at the exact path we install to. Measured in
+  # cli/test/laika-command.test.ts, which overwrote a foreign `laika` and
+  # reported success.
+  if [ ! -f "$CLI" ]; then
+    printf '  ! no CLI at %s — skipping the laika command\n' "$CLI"
+  elif EXISTING="$(command -v laika 2>/dev/null)" &&
+    [ -n "$EXISTING" ] &&
+    [ ! -L "$EXISTING" ]; then
+    printf '  ! something else called laika is already on your PATH (%s) — skipping\n' "$EXISTING"
+  else
+    ln -sf "$CLI" "$BIN/laika"
+    printf '  ✓ installed the laika command in %s\n' "$BIN"
+  fi
+
   if [ "${NEEDS_PATH:-no}" = yes ]; then
     printf '\n# Laika\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$RC"
     printf '  ✓ added %s to your PATH in %s — open a new terminal\n' "$BIN" "$RC"
@@ -141,4 +183,5 @@ fi
 printf '\nDone. Start a new terminal, then from ANY project folder:\n\n'
 printf '    laika-claude                              # like `claude`\n'
 printf '    laika-claude --dangerously-skip-permissions\n\n'
-printf 'Inside the session, /laika:status confirms the connection.\n\n'
+printf 'Inside the session, /laika:status confirms the connection.\n'
+printf 'From a plain terminal, laika whoami says who this machine is.\n\n'

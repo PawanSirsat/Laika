@@ -22,18 +22,18 @@ LAIKA_BASE="${LAIKA_URL_VALUE%/}"
 laika_require_config() {
   if [ -z "$LAIKA_URL_VALUE" ] && [ -z "$LAIKA_TOKEN_VALUE" ]; then
     printf 'Laika is not configured — LAIKA_URL and LAIKA_TOKEN are both unset.\n\n'
-    printf 'Run `npx laika init` to set them, or see /laika:status.\n'
+    printf 'Run `laika init` to set them, or see /laika:status.\n'
     return 1
   fi
   if [ -z "$LAIKA_URL_VALUE" ]; then
     printf 'LAIKA_URL is not set, so there is no board to reach.\n\n'
-    printf 'Run `npx laika init`, or export it yourself:\n'
+    printf 'Run `laika init`, or export it yourself:\n'
     printf '  export LAIKA_URL="https://laika.example.com"\n'
     return 1
   fi
   if [ -z "$LAIKA_TOKEN_VALUE" ]; then
     printf 'LAIKA_TOKEN is not set, so %s will refuse every request.\n\n' "$LAIKA_BASE"
-    printf 'Run `npx laika init`, or create a token under Settings -> Tokens.\n'
+    printf 'Run `laika init`, or create a token under Settings -> Tokens.\n'
     return 1
   fi
   return 0
@@ -75,7 +75,7 @@ laika_get() {
       ;;
     401)
       printf 'Your token was refused by %s.\n\n' "$LAIKA_BASE" >&2
-      printf 'It may have been revoked or rotated. Run `npx laika init` to mint a new one.\n' >&2
+      printf 'It may have been revoked or rotated. Run `laika init` to mint a new one.\n' >&2
       return 1
       ;;
     403)

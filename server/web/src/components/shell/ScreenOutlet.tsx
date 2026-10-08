@@ -16,6 +16,7 @@ import { OrganisationScreen } from '../../routes/screens/organisation/Organisati
 import { ProjectsScreen } from '../../routes/screens/ProjectsScreen.tsx';
 import { SprintsScreen } from '../../routes/screens/sprints/SprintsScreen.tsx';
 import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx';
+import { ConnectScreen } from '../../routes/screens/connect/ConnectScreen.tsx';
 import { TokensScreen } from '../../routes/screens/tokens/TokensScreen.tsx';
 import { UnlistedScreen } from '../../routes/screens/unlisted/UnlistedScreen.tsx';
 import { StateGallery } from '../StateGallery.tsx';
@@ -132,6 +133,11 @@ function UnlistedRoute() {
   return <UnlistedScreen members={new Map()} onOpenTask={openTaskByKey(navigate)} />;
 }
 
+function ConnectRoute() {
+  const { me } = useShell();
+  return <ConnectScreen me={me} origin={window.location.origin} />;
+}
+
 function TokensRoute() {
   const { me } = useShell();
   return <TokensScreen me={me} />;
@@ -171,6 +177,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
   '/capacity': { Component: CapacityRoute, layout: 'space' },
   '/unlisted': { Component: UnlistedRoute, layout: 'plain' },
+  '/connect': { Component: ConnectRoute, layout: 'plain' },
   '/tokens': { Component: TokensRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
   '/members': { Component: MembersRoute, layout: 'plain' },

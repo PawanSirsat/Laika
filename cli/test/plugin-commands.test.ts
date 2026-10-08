@@ -172,7 +172,7 @@ void describe('the command files themselves', () => {
   void test('/laika:setup implements nothing (D-046)', () => {
     const setup = readFileSync(`${COMMANDS}setup.md`, 'utf8');
     const script = readFileSync(`${SCRIPTS}laika-setup.sh`, 'utf8');
-    assert.match(setup, /npx laika init/, 'it does not point at the one mechanism');
+    assert.match(setup, /laika init/, 'it does not point at the one mechanism');
     // A second minting path is what would make LAI-422's idempotence criterion
     // unprovable — "already configured" would mean "configured somewhere I
     // happen to look".
@@ -180,7 +180,7 @@ void describe('the command files themselves', () => {
 
     // **It must not read input**, which is the property. My first version here
     // forbade the *word* `password` — and the script says the word four times,
-    // explaining that `npx laika init` will ask for one and that a password
+    // explaining that `laika init` will ask for one and that a password
     // typed into a chat is a password in a transcript. **An assertion that
     // cannot tell explaining from doing is not a guard**; it fails on the text
     // that makes the command safe to read.

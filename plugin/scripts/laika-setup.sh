@@ -4,7 +4,7 @@
 #
 # ## Why this command implements nothing
 #
-# **One mechanism owns configuration and it is `npx laika init`** (D-046,
+# **One mechanism owns configuration and it is `laika init`** (D-046,
 # LAI-422). This detects what is already set and prints the exact command; it
 # mints no token and writes no file.
 #
@@ -33,7 +33,7 @@ if [ -n "$LAIKA_URL_VALUE" ] && [ -n "$LAIKA_TOKEN_VALUE" ]; then
   printf '  Token   present\n\n'
   printf 'Already configured. `/laika:status` checks it against the board.\n\n'
   printf 'To point at a different board, or after revoking a token:\n\n'
-  printf '  npx laika init\n\n'
+  printf '  laika init\n\n'
   printf 'It writes both variables to %s and is safe to re-run — it stops rather\n' "$SETTINGS"
   printf 'than minting a second token when one is already there.\n'
   exit 0
@@ -55,7 +55,7 @@ cat <<'MSG'
 Run this in a terminal — not here, because it asks for your password and a
 password typed into a chat is a password in a transcript:
 
-  npx laika init
+  laika init
 
 It asks for your board URL, your email and your password, mints a personal
 access token, and writes LAIKA_URL and LAIKA_TOKEN to ~/.claude/settings.json.

@@ -100,7 +100,7 @@ and how to set them, and it never prints your token.
 | --- | --- |
 | MCP tools — **eighteen**, §7.1 | ✅ served at `${LAIKA_URL}/mcp` |
 | Heartbeat hooks | ✅ LAI-418 — `SessionStart`, `Stop`, throttled `PostToolUse` |
-| `npx laika init` | ✅ LAI-422 — writes both variables to `~/.claude/settings.json` |
+| `laika init` | ✅ LAI-422 — writes both variables to `~/.claude/settings.json` |
 | `/laika:status` | ✅ |
 | `/laika:setup`, `/laika:tasks`, `/laika:standup` | LAI-420 |
 | Agent protocol skill | LAI-421 |
