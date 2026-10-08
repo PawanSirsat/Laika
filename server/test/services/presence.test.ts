@@ -16,7 +16,7 @@ import { ApiError } from '../../src/errors.ts';
 import { capacityNow, presenceNow, PRESENCE_WINDOW_MS } from '../../src/services/presence.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
-import { freshDb, type TestDb } from '../helpers/db.ts';
+import { freshDb, queryPlansOf, type TestDb } from '../helpers/db.ts';
 
 /**
  * §9.3's derived views (LAI-432).
@@ -449,4 +449,24 @@ describe('one heartbeat, two readers', () => {
     expect(entry?.is_agent).toBe(false);
     expect(entry?.user_id).toBe(worker);
   });
+});
+
+describe('the window is an index range, not a scan (LAI-722)', () => {
+  /**
+   * Both views ask "every heartbeat in the last five minutes" — `created_at`
+   * alone. The only index was `(user_id, created_at)`, which cannot serve that,
+   * so each Presence or Capacity load walked the whole table and sorted it.
+   */
+  for (const [name, read] of [
+    ['presence', () => presenceNow(t.db, actor(adminId), NOW)],
+    ['capacity', () => capacityNow(t.db, actor(adminId), NOW)],
+  ] as const) {
+    it(`${name} reads heartbeats through heartbeats_created_at_idx`, () => {
+      const plan = queryPlansOf(t.sqlite, 'heartbeats', read).join('\n');
+
+      expect(plan).toContain('heartbeats_created_at_idx');
+      expect(plan).not.toMatch(/SCAN heartbeats\b/);
+      expect(plan).not.toContain('TEMP B-TREE FOR ORDER BY');
+    });
+  }
 });

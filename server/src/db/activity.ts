@@ -213,9 +213,28 @@ const MAX_LIMIT = 200 + 1;
  * the one it already watched arrive live (§11.5).
  */
 export function listActivity(db: Db, filter: ListActivityFilter): ActivityEvent[] {
-  const conditions: SQL[] = [eq(activity.orgId, filter.orgId)];
+  // **Unary `+` keeps a scope check out of index selection** (LAI-722). With
+  // no `sqlite_stat1`, SQLite rates `org_id = ?` as selective as `project_id = ?`
+  // and picked `activity_org_created_at_idx` for a project's feed — one org is
+  // the whole table, so every project page walked the entire log. `+col = ?`
+  // is SQLite's documented way to say "filter on this, but do not index on
+  // it": the narrowest named scope gets its index, the wider ones still bound
+  // the rows. Asserted against the real plan in `test/db/activity.test.ts`.
+  const narrowest =
+    filter.taskId !== undefined ? 'task' : filter.projectId !== undefined ? 'project' : 'org';
+  const conditions: SQL[] = [
+    narrowest === 'org'
+      ? eq(activity.orgId, filter.orgId)
+      : sql`+${activity.orgId} = ${filter.orgId}`,
+  ];
 
-  if (filter.projectId !== undefined) conditions.push(eq(activity.projectId, filter.projectId));
+  if (filter.projectId !== undefined) {
+    conditions.push(
+      narrowest === 'task'
+        ? sql`+${activity.projectId} = ${filter.projectId}`
+        : eq(activity.projectId, filter.projectId),
+    );
+  }
   if (filter.taskId !== undefined) conditions.push(eq(activity.taskId, filter.taskId));
   if (filter.since !== undefined) conditions.push(gte(activity.createdAt, filter.since));
   if (filter.before !== undefined) conditions.push(lt(activity.createdAt, filter.before));

@@ -12,7 +12,14 @@ import {
 import { MIGRATIONS_FOLDER } from '../../src/db/migrate.ts';
 import { activity, projects, tasks, users } from '../../src/db/schema.ts';
 import { newId } from '../../src/db/ids.ts';
-import { expectSqliteError, freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import {
+  expectSqliteError,
+  freshDb,
+  queryPlansOf,
+  seed,
+  type Seed,
+  type TestDb,
+} from '../helpers/db.ts';
 
 let t: TestDb;
 let s: Seed;
@@ -367,6 +374,57 @@ describe('listActivity', () => {
     }
 
     expect(listActivity(t.db, { orgId: s.orgId, limit: 10_000 })).toHaveLength(201);
+  });
+});
+
+describe('each feed reads through its own index (LAI-722)', () => {
+  /**
+   * Every feed also says `org_id = ?`, and with no `sqlite_stat1` SQLite cannot
+   * tell that one org is the whole table: it picked `activity_org_created_at_idx`
+   * for a project's feed and filtered `project_id` row by row. On one instance
+   * with one org that is a walk of the entire log for every project page.
+   */
+  function planFor(filter: Parameters<typeof listActivity>[1]): string {
+    return queryPlansOf(t.sqlite, 'activity', () => listActivity(t.db, filter)).join('\n');
+  }
+
+  it('a project feed uses activity_project_created_at_idx', () => {
+    const plan = planFor({ orgId: s.orgId, projectId: s.projectId, limit: 201 });
+
+    expect(plan).toContain('activity_project_created_at_idx');
+    expect(plan).not.toContain('activity_org_created_at_idx');
+    expect(plan).not.toContain('TEMP B-TREE');
+  });
+
+  it('a project feed with a cursor still does', () => {
+    const plan = planFor({
+      orgId: s.orgId,
+      projectId: s.projectId,
+      cursor: { createdAt: 5, seq: 5 },
+      limit: 201,
+    });
+
+    expect(plan).toContain('activity_project_created_at_idx');
+    expect(plan).not.toContain('TEMP B-TREE');
+  });
+
+  it('a task feed uses activity_task_created_at_idx', () => {
+    const plan = planFor({ orgId: s.orgId, projectId: s.projectId, taskId: 'x', limit: 11 });
+
+    expect(plan).toContain('activity_task_created_at_idx');
+    expect(plan).not.toContain('TEMP B-TREE');
+  });
+
+  it('the org feed keeps activity_org_created_at_idx', () => {
+    const plan = planFor({
+      orgId: s.orgId,
+      projectIds: [s.projectId],
+      includeOrgScoped: true,
+      limit: 201,
+    });
+
+    expect(plan).toContain('activity_org_created_at_idx');
+    expect(plan).not.toContain('TEMP B-TREE');
   });
 });
 
