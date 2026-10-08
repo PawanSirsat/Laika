@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
-started: 2026-10-08T12:00:00Z
+status: review
+started: 2026-10-08T10:28:16Z
+finished: 2026-10-08T10:50:12Z
 ---
 
 ## Goal
@@ -48,28 +49,28 @@ only**: the same fields, the same URL parameters, the same semantics.
 
 ## Acceptance criteria
 
-- [ ] The List's filtered empty state is centred horizontally and vertically in
+- [x] The List's filtered empty state is centred horizontally and vertically in
       the list area, measured in a real browser against the pane's box.
-- [ ] When filters are active and the List is empty, the empty state offers
+- [x] When filters are active and the List is empty, the empty state offers
       **Clear filters**, which removes every filter key and keeps the project.
-- [ ] The Filter popover has a header with a "Filters" title and a **Clear all**
+- [x] The Filter popover has a header with a "Filters" title and a **Clear all**
       button that is disabled when nothing is active.
-- [ ] A field holding a non-default value is visibly marked as set, using design
+- [x] A field holding a non-default value is visibly marked as set, using design
       tokens only, and has its own reset control.
-- [ ] Ready only, Blocked only, Top-level only, Overdue and Agent-created only
+- [x] Ready only, Blocked only, Top-level only, Overdue and Agent-created only
       read as one "Quick filters" group of pill toggles.
-- [ ] The selects sit in a compact two-column grid; the open popover fits a
+- [x] The selects sit in a compact two-column grid; the open popover fits a
       1366×768 laptop viewport without scrolling.
-- [ ] With filters active and the popover closed, a row of removable chips sits
+- [x] With filters active and the popover closed, a row of removable chips sits
       under the toolbar, one per active filter (e.g. "Status: In progress ×"),
       with a Clear all link; removing one chip removes only that filter.
-- [ ] Escape and a click outside close the popover; focus moves into it on open
+- [x] Escape and a click outside close the popover; focus moves into it on open
       and returns to the Filter button on close; every control is reachable by
       Tab and has an accessible name.
-- [ ] Filter logic is unchanged: same fields, same URL parameters, same
+- [x] Filter logic is unchanged: same fields, same URL parameters, same
       semantics. The popover is shared by the Board and the List and both are
       verified.
-- [ ] **Added mid-task by the owner, same day:** the List's "+ Create task"
+- [x] **Added mid-task by the owner, same day:** the List's "+ Create task"
       row is pinned to the bottom of the table card. Few rows: its bottom edge
       is the card's, and any blank space sits above it. Many rows: it stays
       visible as a sticky footer of the scrolling area, on an opaque token
@@ -77,10 +78,10 @@ only**: the same fields, the same URL parameters, the same semantics.
       Empty result: the centred empty state sits above it, not overlapping.
       Clicking it still creates a task; the pager stays outside and below
       the card. Excess bottom padding on a lone row, if a layout bug, fixed.
-- [ ] Both themes, light and dark, verified by screenshot.
-- [ ] Each new browser assertion fails against the unchanged code (checked by
+- [x] Both themes, light and dark, verified by screenshot.
+- [x] Each new browser assertion fails against the unchanged code (checked by
       running it against a stash, restored in a trap).
-- [ ] The repo-root gate is green: `pnpm test`, `pnpm lint`, `pnpm format` each
+- [x] The repo-root gate is green: `pnpm test`, `pnpm lint`, `pnpm format` each
       exit 0, run after the last edit.
 
 ## Notes / context
@@ -93,3 +94,27 @@ only**: the same fields, the same URL parameters, the same semantics.
 - The chips read `activeFilters` (`filter-keys.ts`), the one filter list
   (LAI-487); a removal goes through the same handler the popover's "Any" uses.
 - No new dependencies.
+
+## Builder's notes (2026-10-08T10:50:12Z)
+
+- **Empty state:** the shared `EmptyState` was never wrong; `ListView` returned
+  it bare into `.board-main`, a flex *row*, so it was sized to its content and
+  pinned left. Fixed in the List's container; no shared component or style
+  changed, so no other screen can have moved.
+- **Escape and click-outside already closed the old popover.** What the old
+  code failed in that test is the focus handling (in on open, back to Filter on
+  close). Likewise the old popover already fit a 768px-tall window; the laptop
+  test fails on the old code at its two-column-grid check, not on the height.
+- **Chips cover what the badge counts**, search excluded, as the badge does.
+  Removing the sprint chip sets `sprint=all`, the popover's "Any".
+- **The lone row's "extra padding"** was `board.css` giving `.list` a 32px
+  bottom margin from when the List scrolled the page (pre-LAI-621); `.list` is
+  now the table inside its own card. Removed.
+- **The empty List now renders its card** with the Create row pinned under the
+  centred state, as the owner's addition asks. The pager is still not drawn
+  for an empty List, as before.
+- Discovered, not done: LAI-718 (View settings' sprint chip removes to the
+  active-sprint default, not "Any"; its labels name no member or sprint),
+  LAI-719 (the bulk bar floats over the pinned Create row while rows are
+  selected).
+
