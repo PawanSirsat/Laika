@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-08T12:48:30Z
+finished: 2026-10-08T13:41:25Z
 ---
 
 ## Goal
@@ -61,34 +62,34 @@ same strip (`timeline/TimelineScreen.tsx`), and `timeline/` is not touched.
 
 ## Acceptance criteria
 
-- [ ] The Board and the List render no sprint strip (`.strip`) and no WORKING
+- [x] The Board and the List render no sprint strip (`.strip`) and no WORKING
       NOW row (`.presence`, the heading text), with presence on and people
       present.
-- [ ] The toolbar row carries a stat group, right-aligned before the icon
+- [x] The toolbar row carries a stat group, right-aligned before the icon
       buttons, reading `<scope> DONE d/t | BLK b | LEFT n`, BLK in the danger
       token, with the same numbers the strip's summary showed for the same
       selection: an active sprint, All sprints, and a sprint with blocked
       tasks.
-- [ ] No whole-project task walk is made for the figures: on a sprint-scoped
+- [x] No whole-project task walk is made for the figures: on a sprint-scoped
       board every task request carries `sprint=`.
-- [ ] Sprint selection works without the strip: the board still opens on the
+- [x] Sprint selection works without the strip: the board still opens on the
       active sprint (LAI-713); the Filter popover's Sprint field switches it and
       the figures follow; Sprint = Any and the chip's × both give
       `sprint=all`.
-- [ ] The group has an accessible name and each figure reads as a sentence
+- [x] The group has an accessible name and each figure reads as a sentence
       ("Done 7 of 30").
-- [ ] At 1366×768 and at 900px wide the group does not overlap the search, the
+- [x] At 1366×768 and at 900px wide the group does not overlap the search, the
       Filter button or popover, the chips row or the icon buttons, and the page
       does not scroll sideways; both themes.
-- [ ] The header's `Agents N` still counts from presence. (No presence read
+- [x] The header's `Agents N` still counts from presence. (No presence read
       existed for the row alone: `SpaceLive`'s read also feeds `Agents N`, so
       it stays; Activity and Capacity read their own.)
-- [ ] Existing tests that asserted the strip or the row are moved onto the
+- [x] Existing tests that asserted the strip or the row are moved onto the
       stat group or retired with a stated reason; every new test fails on the
       old code (swap, trap, checksum).
-- [ ] Screenshots, light and dark: Board before and after, List after, 900px
+- [x] Screenshots, light and dark: Board before and after, List after, 900px
       after.
-- [ ] Repo gate `pnpm test`, `pnpm lint`, `pnpm format` exits 0/0/0 after the
+- [x] Repo gate `pnpm test`, `pnpm lint`, `pnpm format` exits 0/0/0 after the
       last edit.
 
 ## Notes / context
@@ -103,3 +104,40 @@ same strip (`timeline/TimelineScreen.tsx`), and `timeline/` is not touched.
   into a store — BoardScreen edits stay confined to the strip, the presence
   wiring and the stat group. `build-ui-dropdown` is editing `BoardToolbar.tsx`
   and `board-toolbar.css` — one line in the former.
+
+## How the figures are computed — the (a)/(b) choice
+
+The strip's definitions, unchanged: DONE = `status === 'done'` over every task
+in scope, subtasks included, out of all of them; BLK = `!ready && status !==
+'done'`; LEFT = days left in the selected sprint, inclusive, `—` for All
+sprints. Counted in `board/sprint-stats.ts` from a set chosen by
+`board/use-sprint-stats.ts`:
+
+- **No server-side filter** (the default — LAI-713 opens on the active
+  sprint): the board's own task set. The server returns exactly what the
+  strip filtered its walk down to, so the figures are the strip's with **no
+  request at all**.
+- **A sprint plus a server-side filter** (assignee, status, priority, tag,
+  ready, updated): **(a)**, one `?sprint=<id>` read — one page of ≤200 for any
+  sprint so far, re-read after each board read — so the figures stay the
+  whole sprint's, as the strip's were, instead of silently becoming the
+  filtered subset's.
+- **All sprints plus a server-side filter**: **(b)**. The unfiltered answer
+  there *is* the whole-project walk this task removes, so the figures are the
+  board's filtered set and the group says so: `All sprints · filtered`, in
+  its accessible name and tooltip too.
+
+Search, Blocked, Top-level, Overdue and the agent toggle are applied in the
+browser after the read; they never narrowed the strip and do not narrow these.
+
+One deliberate difference: `?sprint=none` showed `0/0` in the strip, which
+filtered on `sprint_id === 'none'` and so matched nothing. The board's read
+counts the tasks in no sprint.
+
+## Where the rows rendered
+
+Both were already Board-only: the strip behind `view !== 'list'`, WORKING NOW
+behind `path === '/board'` in `SpaceLayout`. No other tab showed either. The
+presence read in `SpaceLive` stays because `Agents N` reads it; Activity and
+Capacity fetch their own. This retires audit finding L20 ("Working now labels
+other projects' tasks").
