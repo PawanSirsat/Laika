@@ -361,6 +361,15 @@ void describe('a board larger than one page', () => {
     const h = await open('/list?project=laika-core', PAGED);
     try {
       await h.page.locator('.list-pager-count').waitFor({ timeout: 20_000 });
+      // The pager can draw a beat before the rows on a slow machine — counted
+      // the instant it appeared, CI saw 0 (LAI-714). Wait for the rows, then
+      // assert the exact number: a page that drew 65 still fails.
+      await h.page
+        .waitForFunction(() => document.querySelectorAll('.list tbody tr').length > 0, undefined, {
+          timeout: 10_000,
+        })
+        .catch(() => undefined);
+      await h.page.waitForTimeout(200);
 
       assert.equal(await h.page.locator('.list tbody tr').count(), 50, 'a page is not 50 rows');
 

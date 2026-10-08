@@ -23,6 +23,9 @@ Actions deploying to the server Laika already runs on.
 - `.github/deploy/host-restart.sh` — runs on the instance, over SSM
 - `infra/github-deploy-role.yml` — CloudFormation for the OIDC provider and role
 - `docs/DECISIONS.md` (D-073), `CLAUDE.md` §4 — the rule that a push deploys
+- `server/web/test/browser/list-view.test.ts` — added mid-task: the first CI
+  run exposed a race in *"pages the table rather than drawing every row at
+  once"* (rows counted the instant the pager drew; CI saw 0). Test-only.
 
 ## Acceptance criteria
 
