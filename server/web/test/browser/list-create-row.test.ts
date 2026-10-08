@@ -222,6 +222,10 @@ void describe('the List’s Create row (LAI-717)', () => {
    * **The bulk bar never covers the Create row** (review, should-fix 4). It
    * floated from the pane's foot, a pager's height below the card, which is
    * exactly where the pinned Create row now sits.
+   *
+   * **Nor the last row** (review, round 2). Round 1 lifted the bar off the
+   * Create row and onto the last row at the end of a long scroll — the row the
+   * reader had just ticked. A long list must also leave that row clear.
    */
   for (const [label, count, width, height] of [
     ['a short list, 1440×900', 1, 1440, 900],
@@ -234,18 +238,39 @@ void describe('the List’s Create row (LAI-717)', () => {
       try {
         await h.page.setViewportSize({ width, height });
         await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
-        await h.page.locator('.list-scroll').evaluate((el) => {
+        const scroller = h.page.locator('.list-scroll');
+        if (count > 1) {
+          // Positive control: the card bounds its height and the rows scroll.
+          // A card that grew to its content would have nothing to scroll and
+          // nothing to cover, and would pass everything below.
+          const overflow = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight);
+          assert.ok(overflow > 500, `positive control: the table scrolls (${String(overflow)}px)`);
+        }
+        await scroller.evaluate((el) => {
           el.scrollTop = el.scrollHeight;
         });
         await h.page.locator('.list-row .list-checkbox').last().check();
         await h.page.locator('.list-bulk').waitFor({ timeout: 5_000 });
-        const g = await h.page.evaluate(() => ({
-          bulkBottom: document.querySelector('.list-bulk')!.getBoundingClientRect().bottom,
-          createTop: document.querySelector('.list-create')!.getBoundingClientRect().top,
-        }));
+        // The selection may add room at the end; read the end as it now is.
+        await scroller.evaluate((el) => {
+          el.scrollTop = el.scrollHeight;
+        });
+        const g = await h.page.evaluate(() => {
+          const rows = document.querySelectorAll('.list tbody tr');
+          return {
+            bulkTop: document.querySelector('.list-bulk')!.getBoundingClientRect().top,
+            bulkBottom: document.querySelector('.list-bulk')!.getBoundingClientRect().bottom,
+            createTop: document.querySelector('.list-create')!.getBoundingClientRect().top,
+            lastBottom: rows[rows.length - 1]!.getBoundingClientRect().bottom,
+          };
+        });
         assert.ok(
           g.bulkBottom <= g.createTop,
           `the bulk bar ends at ${String(g.bulkBottom)}, over the Create row from ${String(g.createTop)}`,
+        );
+        assert.ok(
+          g.lastBottom <= g.bulkTop,
+          `the bulk bar covers the last row: row ends ${String(g.lastBottom)}, bar starts ${String(g.bulkTop)}`,
         );
       } finally {
         await h.close();

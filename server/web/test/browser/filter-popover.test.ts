@@ -428,11 +428,19 @@ void describe('the Filter popover (LAI-717)', () => {
         /bt-toggle-on/,
         'Not ready is not drawn on',
       );
-      await pill.locator('input').click();
+      // From the keyboard: the label changes under the focused input, and the
+      // input must survive it (review, round 2) — a remount drops focus.
+      await pill.locator('input').focus();
+      await h.page.keyboard.press('Space');
       await h.page.waitForFunction(() => !location.search.includes('ready='), undefined, {
         timeout: 10_000,
       });
       assert.equal((await pill.innerText()).trim(), 'Ready only');
+      assert.equal(
+        await pill.locator('input').evaluate((el) => el === document.activeElement),
+        true,
+        `toggling Not ready from the keyboard left focus on ${await focused(h)}`,
+      );
     } finally {
       await h.close();
     }
@@ -445,7 +453,15 @@ void describe('the Filter popover (LAI-717)', () => {
       await rows(h).first().waitFor({ timeout: 20_000 });
       await openFilter(h);
       await h.page.setViewportSize({ width: 420, height: 800 });
-      await h.page.waitForTimeout(200);
+      // Settled when it fits, or the timeout says it never did.
+      await h.page
+        .waitForFunction(
+          () =>
+            (document.querySelector('.bt-pop')?.getBoundingClientRect().right ?? 1e9) <= innerWidth,
+          undefined,
+          { timeout: 5_000 },
+        )
+        .catch(() => undefined);
       const r = await h.page.locator('.bt-pop').evaluate((pop) => {
         const b = pop.getBoundingClientRect();
         return { left: b.left, right: b.right, slide: pop.style.translate };
@@ -463,15 +479,43 @@ void describe('the Filter popover (LAI-717)', () => {
  * Board it sits lower — under the sprint strip and WORKING NOW — so a fit
  * measured on the List says nothing about it.
  */
+const DAY = 86_400_000;
+/** The Board as LAI-713 opens it: an active sprint, so the strip is populated. */
+const ACTIVE: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/sprints': {
+    data: [
+      {
+        id: 's1',
+        project_id: 'laika-core',
+        name: 'Foundations',
+        goal: null,
+        status: 'active',
+        starts_on: Date.now() - 3 * DAY,
+        ends_on: Date.now() + 10 * DAY,
+        created_at: 1,
+        updated_at: 1,
+      },
+    ],
+    next_cursor: null,
+  },
+};
 const SCREENS = [
-  { name: 'List', path: '/list?project=laika-core', ready: '.list tbody tr' },
-  { name: 'Board', path: '/board?project=laika-core', ready: '.card' },
+  { name: 'List', path: '/list?project=laika-core', ready: '.list tbody tr', stub: STUB },
+  { name: 'Board', path: '/board?project=laika-core', ready: '.card', stub: STUB },
+  {
+    // The populated sprint strip sits above the toolbar (review, round 2).
+    name: 'Board with an active sprint',
+    path: '/board?project=laika-core',
+    ready: '.strip',
+    stub: ACTIVE,
+  },
 ] as const;
 
 for (const screen of SCREENS) {
   void describe(`the Filter popover on the ${screen.name} (LAI-717)`, () => {
     void test('fits a 1366×768 laptop screen without scrolling', async () => {
-      const h = await open(screen.path, STUB);
+      const h = await open(screen.path, screen.stub);
       try {
         await h.page.setViewportSize({ width: 1366, height: 768 });
         await h.page.locator(screen.ready).first().waitFor({ timeout: 20_000 });
@@ -499,7 +543,7 @@ for (const screen of SCREENS) {
     });
 
     void test('Escape closes it; focus goes in on open and back to Filter on close', async () => {
-      const h = await open(screen.path, STUB);
+      const h = await open(screen.path, screen.stub);
       try {
         await h.page.locator(screen.ready).first().waitFor({ timeout: 20_000 });
 
@@ -543,8 +587,15 @@ for (const screen of SCREENS) {
      * **Focus never falls to `<body>`** when the control that had it removes
      * itself (review, should-fix 1). Each step names where it must land.
      */
+    // The chip-by-chip walk counts three chips; the active sprint adds a
+    // fourth, so it runs on the two screens without one.
+    if (screen.stub === ACTIVE) return;
+
     void test('a reset or a removed chip hands focus on, never to <body>', async () => {
-      const h = await open(`${screen.path}&status=in_progress&priority=p1&assignee=u1`, STUB);
+      const h = await open(
+        `${screen.path}&status=in_progress&priority=p1&assignee=u1`,
+        screen.stub,
+      );
       try {
         await h.page.locator(screen.ready).first().waitFor({ timeout: 20_000 });
         // A field's reset → that field's select.
@@ -801,26 +852,6 @@ void describe('the active-filter chips (LAI-717)', () => {
    * `sprint=all` — what the popover's "Any" writes.
    */
   void test('on the Board an active sprint is a named chip, and its × writes sprint=all', async () => {
-    const DAY = 86_400_000;
-    const ACTIVE: ApiStub = {
-      ...STUB,
-      '/api/v1/projects/laika-core/sprints': {
-        data: [
-          {
-            id: 's1',
-            project_id: 'laika-core',
-            name: 'Foundations',
-            goal: null,
-            status: 'active',
-            starts_on: Date.now() - 3 * DAY,
-            ends_on: Date.now() + 10 * DAY,
-            created_at: 1,
-            updated_at: 1,
-          },
-        ],
-        next_cursor: null,
-      },
-    };
     const h = await open('/board?project=laika-core', ACTIVE);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });

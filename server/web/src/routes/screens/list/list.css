@@ -26,6 +26,8 @@
   background: var(--bg-canvas);
   /* The Create row's height, fixed so the bulk bar can sit just above it. */
   --list-create-h: 2.125rem;
+  /* What the bar takes above it: its own height, its gap below, and air above. */
+  --list-bulk-room: 4.25rem;
 }
 
 /*
@@ -720,10 +722,17 @@
 /* ------------------------------------------------------------- the bulk bar */
 
 /*
- * Floats over the foot of the pane, centred, as the screenshot draws it. It
- * is a sibling of the scroller rather than inside it, so the rows scroll
- * under it and it never scrolls away.
+ * Floats over the foot of the **card** (`.list-card`), centred, as the
+ * screenshot draws it, just above the pinned Create row. It is a sibling of
+ * the scroller rather than inside it, so the rows scroll under it and it never
+ * scrolls away; `.list-bulk-room` keeps the last row clear of it at the end of
+ * the scroll. Its `max-width` is relative to the card.
  */
+.list-bulk-room {
+  flex: none;
+  height: var(--list-bulk-room);
+}
+
 .list-bulk {
   position: absolute;
   left: 50%;
@@ -731,7 +740,7 @@
   bottom: calc(var(--list-create-h) + 0.625rem);
   transform: translateX(-50%);
   z-index: 5;
-  /* `left: 50%` leaves an absolute box half the pane to shrink into, and it
+  /* `left: 50%` leaves an absolute box half the card to shrink into, and it
      wrapped the bar onto two lines at 1380px. Its width is its content's. */
   width: max-content;
   max-width: calc(100% - 2.25rem);

@@ -637,17 +637,20 @@ export function BoardToolbar({
                 <div className="bt-toggles">
                   {[
                     {
+                      id: 'ready',
                       label: notReady ? 'Not ready' : 'Ready only',
                       on: ready || notReady,
                       set: onReady,
                     },
-                    { label: 'Blocked only', on: blocked, set: onBlocked },
-                    { label: 'Top-level only', on: top, set: onTop },
-                    { label: 'Overdue', on: overdue, set: onOverdue },
-                    { label: 'Agent-created only', on: agentOnly, set: onAgentOnly },
+                    { id: 'blocked', label: 'Blocked only', on: blocked, set: onBlocked },
+                    { id: 'top', label: 'Top-level only', on: top, set: onTop },
+                    { id: 'overdue', label: 'Overdue', on: overdue, set: onOverdue },
+                    { id: 'agent', label: 'Agent-created only', on: agentOnly, set: onAgentOnly },
                   ].map((toggle) => (
                     <label
-                      key={toggle.label}
+                      // By the filter, not its words: "Not ready" → "Ready only"
+                      // must keep the same input, or focus is lost mid-toggle.
+                      key={toggle.id}
                       className={
                         toggle.on ? 'bt-check bt-toggle bt-toggle-on' : 'bt-check bt-toggle'
                       }

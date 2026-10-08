@@ -542,6 +542,13 @@ export function ListView({
             </tbody>
           </table>
 
+          {/*
+            **Room for the bulk bar at the end of the scroll** (LAI-717 review,
+            round 2). The bar floats over the card's foot, so without this the last
+            row — the one just ticked — scrolls to rest underneath it. Only while
+            there is a selection, which is the only time the bar is drawn.
+          */}
+          {mayEdit && effective.size > 0 && <div className="list-bulk-room" aria-hidden="true" />}
           {createRow}
         </div>
 
