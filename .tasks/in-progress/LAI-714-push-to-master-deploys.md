@@ -26,6 +26,9 @@ Actions deploying to the server Laika already runs on.
 - `server/web/test/browser/list-view.test.ts` — added mid-task: the first CI
   run exposed a race in *"pages the table rather than drawing every row at
   once"* (rows counted the instant the pager drew; CI saw 0). Test-only.
+- `cli/test/plugin-hooks.test.ts` — added mid-task: the second CI run failed
+  *"a URL without a token sends nothing"* with an unhandled `write EPIPE` —
+  the hook exits before the test's stdin write lands. Test-only.
 
 ## Acceptance criteria
 
