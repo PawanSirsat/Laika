@@ -125,9 +125,10 @@ export interface StaticOptions {
 /**
  * Answer with one representation of `file`, or `304` (LAI-722).
  *
- * The `ETag` names the representation sent, and a match against **any** of the
- * file's tags is a `304` — the bytes behind every one of them are unchanged,
- * whichever encoding the client happened to cache.
+ * The `ETag` names the representation sent, and only a match against **that**
+ * tag is a `304`. A `304` tells a cache to reuse what it stored under the
+ * validator; answering one for the brotli tag to a client now negotiating
+ * gzip would point it at bytes it never stored (LAI-722 review).
  *
  * `Range` is ignored: every answer is a whole `200`. That is a legal response
  * to a range request, and it is the safe one here — a `206` would have to count
@@ -148,8 +149,7 @@ function serveFile(c: Context<AppEnv>, file: CachedFile, cacheControl: string): 
   // nor the reverse.
   if (available.length > 0) headers.Vary = 'Accept-Encoding';
 
-  const etags = [file.etag, ...Object.values(file.encoded).map((r) => r.etag)];
-  if (ifNoneMatchHits(c.req.header('If-None-Match'), etags)) {
+  if (ifNoneMatchHits(c.req.header('If-None-Match'), [sent.etag])) {
     return c.body(null, 304, headers);
   }
 

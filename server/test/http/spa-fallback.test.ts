@@ -241,16 +241,29 @@ describe('caching and compression of the build output (LAI-722)', () => {
     });
   });
 
-  it('answers 304 to an ETag taken from any representation', async () => {
+  it('answers 304 only to the ETag of the representation it would send', async () => {
+    // A 304 tells a cache to reuse the response stored under that validator.
+    // Answering one for a br tag to a gzip-only client would point it at bytes
+    // it never stored, so a different representation gets a full 200.
     await withBuild(async (app) => {
       const br = await app.request(HASHED_JS, { headers: { 'Accept-Encoding': 'br' } });
-      const res = await app.request(HASHED_JS, {
-        headers: { 'Accept-Encoding': 'gzip', 'If-None-Match': br.headers.get('etag')! },
-      });
+      const brTag = br.headers.get('etag')!;
 
-      expect(res.status).toBe(304);
-      expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
-      expect(res.headers.get('vary')).toMatch(/\bAccept-Encoding\b/);
+      const same = await app.request(HASHED_JS, {
+        headers: { 'Accept-Encoding': 'br', 'If-None-Match': brTag },
+      });
+      expect(same.status).toBe(304);
+      expect(same.headers.get('etag')).toBe(brTag);
+      expect(same.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+      expect(same.headers.get('vary')).toMatch(/\bAccept-Encoding\b/);
+
+      const other = await app.request(HASHED_JS, {
+        headers: { 'Accept-Encoding': 'gzip', 'If-None-Match': brTag },
+      });
+      expect(other.status).toBe(200);
+      expect(other.headers.get('content-encoding')).toBe('gzip');
+      expect(other.headers.get('etag')).not.toBe(brTag);
+      expect(gunzipSync(Buffer.from(await other.arrayBuffer())).toString()).toBe(JS);
     });
   });
 
