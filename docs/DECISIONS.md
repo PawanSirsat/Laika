@@ -3970,3 +3970,11 @@ Two points above are also superseded by the same review:
   never as unblocked.
 - **Dates the axis cannot hold** — far-future or not dates at all — are left
   off it and listed beside it, and the window is bounded around today.
+
+**And again (round 2, same day).** "Bounded around today" was five years, which
+hid real sprints — one six years back, a "Someday" six years ahead — behind
+advice to fix dates that were not wrong. Now only a date that is no date, or is
+more than fifty years from today, is left off, each with its own sentence; a
+window of decades is cheap because the header is drawn only for the stretch in
+view. Dragging a sprint's edge stays a §11.4.2.1 requirement, not built
+(LAI-731).

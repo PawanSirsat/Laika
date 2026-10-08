@@ -1683,10 +1683,9 @@ anything missing sends the task back.
 - **Sprints** — sprint list with dates, goal and status; active-sprint emphasis;
   task assignment in and out; counts by status; the one-active and no-overlap
   rules surfaced as errors, not silent failures.
-- **Timeline** — one row per sprint on a scrolling, zoomable axis, today
-  marked, past dimmed; done over total on every bar; a sprint opens to list
-  its tasks; unscheduled tray below. **No per-task bars** (D-014, D-074).
-  Dragging an edge to reschedule is specified and not built (§11.4.3).
+- **Timeline** — one bar per sprint across a time axis, today marked, past
+  dimmed; task counts per bar; unscheduled tray; drag an edge to reschedule with
+  overlap rejection. **No per-task bars** (D-014).
 - **Tokens** — create with name and scope; **value shown exactly once** with a
   copy affordance and an explicit "you will not see this again"; list with
   prefix, scope, last used, expiry; revoke with confirmation; admin view of
@@ -1725,11 +1724,12 @@ boundaries** (§4.15) and shaped like Jira's timeline (D-074).
   list's `task_counts` (§6.4); `cancelled` counts in neither.
 - **The axis scrolls sideways at a zoom** — Weeks, Months or Quarters, kept in
   `?zoom=` — with a fixed width per day. The sprint column and the header stay
-  put; the chart is the screen's one vertical scroller and one tab stop, and
-  the arrow keys pan it. The window is whole months (quarters, at Quarters)
-  around every sprint and today.
-- **Today** is one line across the header and rows, with a pill naming the UTC
-  day it is drawn on, and a *Today* button scrolls back to it.
+  put; the chart, unscheduled tasks included, is the screen's one vertical
+  scroller and one tab stop, and the arrow keys pan it. The window is whole
+  months (quarters, at Quarters) around every sprint and today, and the header
+  is drawn only for the stretch in view.
+- **Today** is one line down the rows, with a pill in the header naming the UTC
+  day the line is drawn on, and a *Today* button scrolls back to it.
 - **A sprint opens to list its tasks** — key, title, status, assignee, and
   *Blocked* or *Blocked?* (a blocker in another sprint, not loaded) — loaded
   with `?sprint=<id>` when it is opened, at most three sprints at a time.
@@ -1738,17 +1738,17 @@ boundaries** (§4.15) and shaped like Jira's timeline (D-074).
   drawer.
 - `?sprint=<id>` opens that sprint and starts the chart at it; the Board's
   `all` and `none` are not sprints and open nothing.
-- Sprints entirely in the past are dimmed, not hidden. A sprint whose dates the
-  axis cannot hold (more than five years from today, or not dates) is listed
-  in a notice, not drawn.
-- Tasks with `sprint_id IS NULL` appear in an **unscheduled tray below the
-  chart**, loaded with `?sprint=none` when it is opened. Read-only here:
-  moving a task into a sprint is the Sprints screen's `POST
-  /api/v1/sprints/:id/tasks`.
+- Sprints entirely in the past are dimmed, not hidden. A sprint whose dates are
+  not dates, or are more than fifty years from today, is listed in a notice
+  (each in its own words) and not drawn; anything nearer is drawn, however far.
+- Tasks with `sprint_id IS NULL` are the chart's **last group, Unscheduled**,
+  loaded with `?sprint=none` when it is opened. Read-only here: moving a task
+  into a sprint is the Sprints screen's `POST /api/v1/sprints/:id/tasks`.
 - Live: a frame on the space's stream refetches the sprints and every open
   sprint, so an edit lands without a reload.
-- Not built: dragging a sprint edge (`PATCH /api/v1/sprints/:id`, rejected on
-  overlap) and dragging from the tray into a sprint.
+- **Not built yet** (still required by §11.4.2.1): dragging a sprint edge to
+  reschedule (`PATCH /api/v1/sprints/:id`, rejected on overlap) — LAI-731 —
+  and dragging an unscheduled task into a sprint.
 
 **The constraint that keeps this cheap:** the timeline is a *sprint* chart, not a
 *task* chart. Tasks now carry `planned_start` and `due_on` (§4.5, D-066), and
