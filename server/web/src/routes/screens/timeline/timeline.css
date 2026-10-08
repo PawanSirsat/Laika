@@ -490,25 +490,34 @@
  * the title keeps its room, the icon and the tooltip keep the meaning.
  */
 .tlx-task-blocked {
-  flex: 0 1 auto;
+  /* Shrinks long before the title does: down to its icon, then the title. */
+  flex: 0 1000 auto;
   display: inline-flex;
+  /*
+   * Whole word or no word: when it does not fit beside the icon it wraps onto
+   * a second line that the fixed height hides, so a shrunk label is the lock
+   * alone — never "Bl" or "Block".
+   */
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.25rem;
+  align-content: flex-start;
+  column-gap: 0.25rem;
+  height: 1.125rem;
   min-width: 1.5rem;
   overflow: hidden;
 }
 
 .tlx-task-blocked svg {
   flex: none;
+  margin-block: 0.21875rem;
   width: 0.6875rem;
   height: 0.6875rem;
   stroke: currentColor;
 }
 
 .tlx-task-blocked-text {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: clip;
+  flex: none;
+  line-height: 1.125rem;
 }
 
 /* The unscheduled group: a sprint-shaped row that is not a sprint. */
