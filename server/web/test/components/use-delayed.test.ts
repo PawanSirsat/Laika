@@ -65,4 +65,30 @@ void describe('the two rules are both real', () => {
     const clears = source.match(/clearTimeout\(timer\)/g) ?? [];
     assert.ok(clears.length >= 2, `only ${String(clears.length)} cleanup path(s)`);
   });
+
+  /**
+   * **Never over work already drawn** (LAI-727 CI). The show timer is cleared
+   * by a `useEffect` cleanup, which runs after paint; a timer falling due in
+   * that gap put the skeleton over a List that had just rendered. The timer
+   * asks what the last commit said, and a layout effect — run in the commit,
+   * before paint — is what keeps that current.
+   */
+  void test('the timer shows nothing once the work has been committed as done', () => {
+    assert.match(
+      source,
+      /setTimeout\(\(\) => \{\s*if \(!activeNow\.current\) return;\s*setShown\(true\);/,
+    );
+    assert.match(
+      source,
+      /useLayoutEffect\(\(\) => \{\s*activeNow\.current = active;\s*\}, \[active\]\)/,
+    );
+  });
+
+  /** The hold runs from the commit that put it on screen, not from the timer (LAI-715). */
+  void test('the hold is stamped when it is committed', () => {
+    assert.match(
+      source,
+      /useLayoutEffect\(\(\) => \{\s*if \(shown && shownAt\.current === null\) shownAt\.current = Date\.now\(\);\s*\}, \[shown\]\)/,
+    );
+  });
 });

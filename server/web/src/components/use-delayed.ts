@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /** Nothing shows before this. Under it, the work was never worth announcing. */
 export const SHOW_AFTER_MS = 150;
@@ -32,12 +32,36 @@ export function useDelayed(
   const [shown, setShown] = useState(false);
   /** When it went on screen, so the hold is measured from that, not from now. */
   const shownAt = useRef<number | null>(null);
+  /**
+   * `active` as of the last **commit**, which is what is on screen.
+   *
+   * **The timer must not show it over work that has already been drawn**
+   * (LAI-727 CI). The timer is cleared by the effect below, and a `useEffect`
+   * cleanup runs *after paint* — so a timer falling due between the commit
+   * that drew the answer and that cleanup set `shown` anyway, and the skeleton
+   * replaced the drawn List for its whole hold. Caught on GitHub's runner as a
+   * List that rendered and then had no table. A layout effect runs in the
+   * commit itself, before paint, so no timer can fall between the two.
+   */
+  const activeNow = useRef(active);
+  useLayoutEffect(() => {
+    activeNow.current = active;
+  }, [active]);
+  /*
+   * **Stamped when it is committed, not when the timer fires** (LAI-715). On a
+   * busy main thread the render after `setShown(true)` came tens of
+   * milliseconds after the timer, and the hold, counted from the timer, ended
+   * that much early on screen: measured on CI at 263ms of a 300ms hold.
+   */
+  useLayoutEffect(() => {
+    if (shown && shownAt.current === null) shownAt.current = Date.now();
+  }, [shown]);
 
   useEffect(() => {
     if (active) {
       if (shown) return;
       const timer = setTimeout(() => {
-        shownAt.current = Date.now();
+        if (!activeNow.current) return;
         setShown(true);
       }, delay);
       return () => {
