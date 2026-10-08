@@ -10,13 +10,20 @@ import type { Page } from './tasks.ts';
  * walk before it. Under frames more often than the walk took, "All time" never
  * finished and the numbers stayed stale.
  *
- * **Why incremental is exact.** Activity is append-only. A window read in full
+ * **Why incremental works.** Activity is append-only. A window read in full
  * is complete from its `since` on; adding the events at or after the newest one
  * held keeps it complete. So a live frame costs one small request
- * (`?since=<newest>`), duplicates at the newest millisecond are dropped by id,
- * and the counts are what a full re-walk would read — `activity-store.test.ts`
- * compares them against one. Nothing ever cancels a walk: a frame during one
- * queues a catch-up after it.
+ * (`?since=<newest>`), and duplicates at the newest millisecond are dropped by
+ * id. Nothing ever cancels a walk: a frame during one — the first walk of a
+ * window included — queues one catch-up after it.
+ *
+ * **What is proved, and no more:** `activity-store.test.ts` compares the window
+ * with a full walk after a frame on a held window (450 events, more than two
+ * pages), after a burst, after frames during a long "All time" walk, and after
+ * a frame that arrives between the first walk's pages (LAI-724 review, B2: the
+ * first version dropped that one and ended at 450 of 451). It assumes what the
+ * catch-up assumes: an event is never recorded with a `created_at` older than
+ * one already read — see the note at the catch-up.
  *
  * Kept across tab switches for the current project only. A narrower window is
  * served from the one held; a wider one is walked. Walks are capped
@@ -206,6 +213,15 @@ export function createActivityStore(deps: ActivityStoreDeps): ActivityStore {
     emit(slug, entry);
     const current = (): boolean => mine === generation && entries.get(slug) === entry;
 
+    /*
+     * **The catch-up keys on `created_at`**, the only lower bound the endpoint
+     * takes (§6.3's `since`). It is right while the server records events in
+     * `created_at` order. An event written late with an older timestamp — a
+     * clock step, a slow transaction — would fall below `newest` and be missed
+     * until the next full walk. Catching up by `seq` (the stream's own cursor,
+     * strictly increasing) would be sturdier; it needs an `after_seq` the
+     * activity endpoint does not take today.
+     */
     const since = actual.kind === 'walk' ? actual.since : newest;
     read(slug, since, controller.signal)
       .then(({ events, capped }) => {
@@ -338,7 +354,16 @@ export function createActivityStore(deps: ActivityStoreDeps): ActivityStore {
       const entry = entries.get(slug);
       if (entry === undefined) return;
       entry.stale = true;
-      if (signal === 'closed' || entry.listeners.size === 0 || entry.held === undefined) return;
+      if (signal === 'closed' || entry.listeners.size === 0) return;
+      if (entry.flight !== undefined) {
+        // **A walk is running — the first one included** (LAI-724 review,
+        // B2). Its pages read backwards from what it saw first, so an event
+        // after that is in none of them: queue one catch-up behind it.
+        entry.next ??= { kind: 'catchup' };
+        return;
+      }
+      // Nothing held and nothing running: the next subscribe walks in full.
+      if (entry.held === undefined) return;
       if (entry.debounce !== undefined) clearTimer(entry.debounce);
       entry.debounce = setTimer(() => {
         entry.debounce = undefined;

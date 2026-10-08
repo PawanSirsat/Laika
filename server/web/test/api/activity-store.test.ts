@@ -46,6 +46,8 @@ function feed() {
   const asked: { since: number | undefined; cursor: string | undefined }[] = [];
   let gate: Promise<void> | undefined;
   let open: (() => void) | undefined;
+  /** Requests from this index on wait for `release`; the earlier ones answer. */
+  let gateFrom = 0;
 
   const ordered = (): ActivityEvent[] =>
     [...events].sort((a, b) => b.created_at - a.created_at || b.seq - a.seq);
@@ -56,7 +58,7 @@ function feed() {
     signal: AbortSignal,
   ): Promise<Page<ActivityEvent>> => {
     asked.push({ since: query.since, cursor: query.cursor });
-    if (gate !== undefined) await gate;
+    if (gate !== undefined && asked.length > gateFrom) await gate;
     if (signal.aborted) throw new DOMException('aborted', 'AbortError');
     let rows = ordered().filter((e) => query.since === undefined || e.created_at >= query.since);
     if (query.cursor !== undefined) {
@@ -82,7 +84,8 @@ function feed() {
       for (let i = 0; i < n; i += 1) events.push(event(events.length + 1, from + i));
     },
     /** Hold every answer until `release`. */
-    pause(): void {
+    pause(from = 0): void {
+      gateFrom = from;
       gate = new Promise((done) => {
         open = done;
       });
@@ -234,6 +237,39 @@ void describe('a live frame costs one small request (LAI-723)', () => {
     assert.deepEqual(
       w.last()?.events.map((e) => e.id),
       truth(server, undefined),
+    );
+    w.stop();
+  });
+});
+
+/*
+ * **A frame during the first walk** (LAI-724 review, B2). The store returned
+ * early from `frame()` while nothing was held, so an event that arrived after
+ * page one was read — and so is in no page of the walk, which reads backwards
+ * from it — was never caught up: 450 of 451, and no further request.
+ */
+void describe('a frame during the first walk of the window', () => {
+  void test('is caught up after the walk, so the window equals a full walk', async () => {
+    const { store, server, time } = setup();
+    server.add(450, 1_000);
+    server.pause(1); // page 1 answers; page 2 waits
+    const w = watch(store, 'core', undefined);
+    await flush();
+    assert.equal(server.asked.length, 2, 'positive control: page 2 is the one waiting');
+
+    server.add(1, 5_000); // newer than anything page 1 read
+    store.frame('core', 'activity');
+    time.advance(600);
+    server.release();
+    await flush();
+    time.advance(600);
+    await flush();
+
+    assert.equal(w.last()?.status, 'ready');
+    assert.deepEqual(
+      w.last()?.events.map((e) => e.id),
+      truth(server, undefined),
+      `the window is ${String(w.last()?.events.length)} events, not the ${String(server.events.length)} a full walk reads`,
     );
     w.stop();
   });
