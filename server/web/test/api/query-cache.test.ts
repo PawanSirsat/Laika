@@ -114,7 +114,7 @@ void describe('freshness and invalidation', () => {
     assert.equal(await late, 'v2');
   });
 
-  void test('an invalidated answer is refetched at once, and peek still shows the old one', async () => {
+  void test('an invalidated answer is refetched at once', async () => {
     const { cache } = signedIn();
     const { calls, fetcher } = controlled<string>();
     const first = cache.read('/projects/x/sprints', fetcher, { maxAge: 30_000 });
@@ -122,7 +122,6 @@ void describe('freshness and invalidation', () => {
     await first;
 
     cache.invalidate((key) => key.startsWith('/projects/x/'));
-    assert.equal(cache.peek('/projects/x/sprints'), 'v1', 'stale data is kept for display');
     void cache.read('/projects/x/sprints', fetcher, { maxAge: 30_000 });
     assert.equal(calls.length, 2, 'an invalidated answer was served as fresh');
   });
@@ -221,7 +220,7 @@ void describe('a change of user clears everything (no cross-user data)', () => {
     await first;
 
     cache.setUser(undefined);
-    assert.equal(cache.peek('/projects/x/members'), undefined, 'an answer survived sign-out');
+    assert.equal(cache.size, 0, 'an answer survived sign-out');
     void cache.read('/projects/x/members', fetcher, { maxAge: 30_000 });
     void cache.read('/projects/x/members', fetcher, { maxAge: 30_000 });
     assert.equal(calls.length, 3, 'signed out, every read must go to the network');
@@ -235,11 +234,7 @@ void describe('a change of user clears everything (no cross-user data)', () => {
     await alice;
 
     cache.setUser('u2');
-    assert.equal(
-      cache.peek('/projects/x/members'),
-      undefined,
-      'the last user’s answer is still held',
-    );
+    assert.equal(cache.size, 0, 'the last user’s answer is still held');
     const bob = cache.read('/projects/x/members', fetcher, { maxAge: 30_000 });
     assert.equal(calls.length, 2, 'the new user was served the old user’s answer');
     calls[1]!.resolve('bob-members');
@@ -262,7 +257,9 @@ void describe('a change of user clears everything (no cross-user data)', () => {
     assert.equal(calls.length, 2, 'the new user was served from the old user’s request');
     calls[1]!.resolve('bob-members');
     assert.equal(await bob, 'bob-members');
-    assert.equal(cache.peek('/projects/x/members'), 'bob-members');
+    await flush();
+    assert.equal(await cache.read('/projects/x/members', fetcher, { maxAge: 30_000 }), 'bob-members');
+    assert.equal(calls.length, 2, 'bob’s answer was not the one kept');
   });
 
   void test('setting the same user again keeps the cache', async () => {
@@ -274,5 +271,79 @@ void describe('a change of user clears everything (no cross-user data)', () => {
     cache.setUser('u1');
     assert.equal(await cache.read('/org', fetcher, { maxAge: 30_000 }), 'org');
     assert.equal(calls.length, 1);
+  });
+});
+
+/*
+ * **Bounded memory** (LAI-724 review, B1). The first version kept every answer
+ * for the session whatever its `maxAge` — a `?since=` key per live frame, every
+ * task page, every `/tasks/:id`, other projects' lists — until sign-out.
+ */
+void describe('bounded memory', () => {
+  void test('a maxAge 0 answer is not kept once its request settles', async () => {
+    const { cache } = signedIn();
+    const { calls, fetcher } = controlled<string>();
+    const pages = [
+      cache.read('/projects/x/tasks?limit=200', fetcher, { maxAge: 0 }),
+      cache.read('/projects/x/activity?limit=200&since=5', fetcher, { maxAge: 0 }),
+      cache.read('/tasks/t1', fetcher, { maxAge: 0 }),
+    ];
+    assert.equal(cache.size, 3, 'positive control: in flight, they are held');
+    for (const call of calls) call.resolve('page');
+    await Promise.all(pages);
+    await flush();
+    assert.equal(cache.size, 0, `${String(cache.size)} answers nobody may reuse are still held`);
+  });
+
+  void test('a maxAge 0 request that fails or is abandoned leaves nothing behind', async () => {
+    const { cache, time } = signedIn();
+    const { calls, fetcher } = controlled<string>();
+    const gone = new AbortController();
+    const left = cache.read('/me', fetcher, { maxAge: 0, signal: gone.signal });
+    const failed = cache.read('/tasks/t2', fetcher, { maxAge: 0 });
+    gone.abort();
+    await left.catch(() => undefined);
+    time.advance(1_000);
+    calls[1]!.reject(new Error('offline'));
+    await failed.catch(() => undefined);
+    await flush();
+    assert.equal(cache.size, 0);
+  });
+
+  void test('evict drops matching answers: another project’s lists go on a switch', async () => {
+    const { cache } = signedIn();
+    const { calls, fetcher } = controlled<string>();
+    const reads = [
+      cache.read('/projects/a/members', fetcher, { maxAge: 30_000 }),
+      cache.read('/projects/b/members', fetcher, { maxAge: 30_000 }),
+      cache.read('/org', fetcher, { maxAge: 30_000 }),
+    ];
+    for (const call of calls) call.resolve('v');
+    await Promise.all(reads);
+    cache.evict((key) => key.startsWith('/projects/a'));
+    assert.equal(cache.size, 2);
+    void cache.read('/projects/a/members', fetcher, { maxAge: 30_000 });
+    assert.equal(calls.length, 4, 'an evicted answer was served');
+  });
+
+  void test('a hard cap holds under 1000 distinct keys, dropping the least recently used', async () => {
+    const time = fakeTime();
+    const cache = createQueryCache({ ...time, abortGraceMs: 1_000, maxEntries: 50 });
+    cache.setUser('u1');
+    const { calls, fetcher } = controlled<string>();
+    const hot = cache.read('/projects/hot', fetcher, { maxAge: 30_000 });
+    calls[0]!.resolve('hot');
+    await hot;
+    for (let i = 0; i < 1000; i += 1) {
+      const read = cache.read(`/projects/p${String(i)}`, fetcher, { maxAge: 30_000 });
+      calls[calls.length - 1]!.resolve(`v${String(i)}`);
+      await read;
+      // Used again and again, so it is never the least recently used.
+      if (i % 10 === 0) await cache.read('/projects/hot', fetcher, { maxAge: 30_000 });
+      assert.ok(cache.size <= 50, `the cache grew to ${String(cache.size)}`);
+    }
+    const before = calls.length;
+    assert.equal(await cache.read('/projects/hot', fetcher, { maxAge: 30_000 }), 'hot');
+    assert.equal(calls.length, before, 'the cap evicted a key in constant use');
   });
 });

@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, test } from 'node:test';
 import { freshFor } from '../../src/api/client.ts';
+import { getOrg } from '../../src/api/org.ts';
 import { getProject, setHideDoneAfter } from '../../src/api/projects.ts';
 import { setStoreUser, taskStore } from '../../src/api/store.ts';
 import { listMembers, listTasks } from '../../src/api/tasks.ts';
@@ -109,5 +110,37 @@ void describe('request reads through the cache once a user is known', () => {
     setStoreUser(undefined);
     assert.equal(taskStore.peek('laika-core'), undefined, 'the task set survived sign-out');
     stop();
+  });
+});
+
+/*
+ * **Another project's answers go on a switch** (LAI-724 review, B1). The cache
+ * kept every project's lists for the session; the task store already held only
+ * the current project, and now the cache follows it.
+ */
+void describe('switching project', () => {
+  void test('drops the last project’s cached lists, and keeps the org-wide ones', async () => {
+    stub((url) =>
+      url.includes('/tasks') ? { data: [], next_cursor: null } : url.endsWith('/org') ? {} : { members: [] },
+    );
+    setStoreUser('u1');
+    await listMembers('alpha');
+    await getOrg();
+    const stopAlpha = taskStore.subscribe('alpha', () => undefined);
+    stopAlpha();
+    await new Promise((done) => setTimeout(done, 10));
+    const before = calls.length;
+
+    const stopBeta = taskStore.subscribe('beta', () => undefined);
+    await new Promise((done) => setTimeout(done, 10));
+    await listMembers('alpha');
+    await getOrg();
+    const after = calls.slice(before).filter((url) => !url.includes('/tasks'));
+    assert.deepEqual(
+      after,
+      ['/api/v1/projects/alpha/members'],
+      'the switch should drop alpha’s members and keep the org',
+    );
+    stopBeta();
   });
 });

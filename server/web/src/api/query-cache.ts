@@ -11,7 +11,13 @@
  *
  * - The same key in flight is **one request**; every caller gets its answer.
  * - A settled answer is reused while it is younger than the caller's `maxAge`
- *   and nothing has invalidated it. `maxAge: 0` dedupes the flight only.
+ *   and nothing has invalidated it. `maxAge: 0` dedupes the flight only, and
+ *   **its answer is not kept**: the entry goes when the request settles.
+ * - **Bounded** (LAI-724 review, B1): the first version kept every answer for
+ *   the session — a `?since=` key per live frame, every task page and
+ *   `/tasks/:id`, other projects' lists. Now only reusable answers are kept,
+ *   `evict` drops another project's on a switch (`store.ts`), and a hard cap
+ *   drops the least recently used beyond `maxEntries`.
  * - An invalidated key is never joined: a read after a change does not ride a
  *   request that began before it.
  * - A request is aborted only when **no caller** still wants it, and only after
@@ -32,6 +38,8 @@ export interface QueryCacheDeps {
   readonly clearTimer?: (handle: unknown) => void;
   /** How long a request nobody wants lingers before it is aborted. */
   readonly abortGraceMs?: number;
+  /** The most entries held; beyond it the least recently used go. */
+  readonly maxEntries?: number;
 }
 
 export interface CacheRead {
@@ -45,10 +53,12 @@ export type Fetcher<T> = (signal: AbortSignal | undefined) => Promise<T>;
 
 export interface QueryCache {
   read<T>(key: string, fetcher: Fetcher<T>, options: CacheRead): Promise<T>;
-  /** The last answer for `key`, fresh or not — for display while revalidating. */
-  peek<T>(key: string): T | undefined;
   /** Mark matching answers stale. Lazy: nothing is refetched until it is read. */
   invalidate(match: (key: string) => boolean): void;
+  /** Drop matching answers outright — another project's, on a switch. */
+  evict(match: (key: string) => boolean): void;
+  /** How many keys are held, answers and requests in flight together. */
+  readonly size: number;
   /** Whose answers these are. A different user — or none — drops everything. */
   setUser(userId: string | undefined): void;
   readonly user: string | undefined;
@@ -72,6 +82,8 @@ interface Entry {
 }
 
 const ABORT_GRACE_MS = 1_000;
+/** A backstop, not a working size: a session uses a few dozen keys. */
+const MAX_ENTRIES = 200;
 
 function abortError(): DOMException {
   return new DOMException('The request was aborted.', 'AbortError');
@@ -83,6 +95,7 @@ export function createQueryCache(deps: QueryCacheDeps = {}): QueryCache {
   const clearTimer =
     deps.clearTimer ?? ((handle: unknown) => clearTimeout(handle as ReturnType<typeof setTimeout>));
   const grace = deps.abortGraceMs ?? ABORT_GRACE_MS;
+  const maxEntries = deps.maxEntries ?? MAX_ENTRIES;
 
   let user: string | undefined;
   /** Bumped on every change of user; an answer from an older generation is dropped. */
@@ -91,7 +104,14 @@ export function createQueryCache(deps: QueryCacheDeps = {}): QueryCache {
   /** Every flight still running, so a change of user can abort them all. */
   const flights = new Set<Flight>();
 
-  function start<T>(key: string, entry: Entry, fetcher: Fetcher<T>): Flight {
+  /** An entry with no answer and no request is nothing: drop it. */
+  function prune(key: string, entry: Entry): void {
+    if (!entry.hasData && entry.flight === undefined && entries.get(key) === entry) {
+      entries.delete(key);
+    }
+  }
+
+  function start<T>(key: string, entry: Entry, fetcher: Fetcher<T>, maxAge: number): Flight {
     const controller = new AbortController();
     const mine = generation;
     const epoch = entry.epoch;
@@ -100,9 +120,14 @@ export function createQueryCache(deps: QueryCacheDeps = {}): QueryCache {
       subscribers: 0,
       abortTimer: undefined,
       promise: fetcher(controller.signal).then((data) => {
-        // Stored only for the user and the entry it was asked for, and never
-        // over an answer to a later question.
-        if (mine === generation && entries.get(key) === entry && epoch >= entry.freshEpoch) {
+        // Stored only when it may be reused, for the user and the entry it was
+        // asked for, and never over an answer to a later question.
+        if (
+          maxAge > 0 &&
+          mine === generation &&
+          entries.get(key) === entry &&
+          epoch >= entry.freshEpoch
+        ) {
           entry.data = data;
           entry.hasData = true;
           entry.at = now();
@@ -119,6 +144,7 @@ export function createQueryCache(deps: QueryCacheDeps = {}): QueryCache {
         flights.delete(flight);
         if (entry.flight === flight) entry.flight = undefined;
         if (flight.abortTimer !== undefined) clearTimer(flight.abortTimer);
+        prune(key, entry);
       });
     return flight;
   }
@@ -183,29 +209,24 @@ export function createQueryCache(deps: QueryCacheDeps = {}): QueryCache {
 
       let entry = entries.get(key);
       if (entry === undefined) {
-        entry = {
-          data: undefined,
-          hasData: false,
-          at: 0,
-          epoch: 0,
-          freshEpoch: -1,
-          flight: undefined,
-        };
-        entries.set(key, entry);
+        entry = { data: undefined, hasData: false, at: 0, epoch: 0, freshEpoch: -1, flight: undefined };
+      } else {
+        // Most recently used goes last: Map order is the eviction order.
+        entries.delete(key);
+      }
+      entries.set(key, entry);
+      for (const oldest of entries.keys()) {
+        if (entries.size <= maxEntries) break;
+        // A request in flight keeps its callers; only its answer is not kept.
+        entries.delete(oldest);
       }
 
       const fresh =
         entry.hasData && entry.freshEpoch === entry.epoch && now() - entry.at < options.maxAge;
       if (fresh) return Promise.resolve(entry.data as T);
 
-      entry.flight ??= start(key, entry, fetcher);
+      entry.flight ??= start(key, entry, fetcher, options.maxAge);
       return join<T>(entry.flight, options.signal);
-    },
-
-    peek<T>(key: string): T | undefined {
-      if (user === undefined) return undefined;
-      const entry = entries.get(key);
-      return entry?.hasData === true ? (entry.data as T) : undefined;
     },
 
     invalidate(match: (key: string) => boolean): void {
@@ -215,6 +236,14 @@ export function createQueryCache(deps: QueryCacheDeps = {}): QueryCache {
         // Existing callers keep the request they joined; new ones do not join it.
         entry.flight = undefined;
       }
+    },
+
+    evict(match: (key: string) => boolean): void {
+      for (const key of [...entries.keys()]) if (match(key)) entries.delete(key);
+    },
+
+    get size() {
+      return entries.size;
     },
 
     setUser(userId: string | undefined): void {

@@ -27,9 +27,23 @@ import { listTasks, type Page } from './tasks.ts';
 
 const PAGE = 200;
 
+/** Keys about one project — never the projects list, which is the org's. */
+function projectOf(key: string): string | undefined {
+  return /^\/projects\/([^/?]+)/.exec(key)?.[1];
+}
+
 export const taskStore = createTaskStore({
   fetchPage: (slug, cursor, signal) =>
     listTasks(slug, cursor === undefined ? { limit: PAGE } : { limit: PAGE, cursor }, signal),
+  // Only the current project is held (LAI-724 review, B1): its task set here,
+  // and its cached lists in the shared cache.
+  onProject: (slug) => {
+    const current = encodeURIComponent(slug);
+    sharedCache.evict((key) => {
+      const project = projectOf(key);
+      return project !== undefined && project !== current;
+    });
+  },
 });
 
 export const activityStore = createActivityStore({

@@ -121,6 +121,11 @@ export interface TaskStoreDeps {
   /** How old a set may be before a revisit revalidates it. */
   readonly maxAgeMs?: number;
   readonly abortGraceMs?: number;
+  /**
+   * A project's set is created: the store has switched to it. `store.ts`
+   * drops every other project's cached answers here (LAI-724 review, B1).
+   */
+  readonly onProject?: (slug: string) => void;
 }
 
 interface Walk {
@@ -295,6 +300,7 @@ export function createTaskStore(deps: TaskStoreDeps): TaskStore {
       abortTimer: undefined,
     };
     entries.set(slug, entry);
+    deps.onProject?.(slug);
     return entry;
   }
 
