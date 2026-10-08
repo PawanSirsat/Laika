@@ -191,3 +191,36 @@ loaded tasks, and the popover offers only labels in use on them, so after
 predates LAI-726 (`BoardScreen` derives `knownTags` from loaded tasks); the
 stubbed tests do not see it because the stub ignores `tag`.
 
+
+## Review notes (round 1)
+
+**APPROVED, no blocking issues.** All 29 call sites keep the same values and
+write the same things.
+
+**The reviewer's gate on ec1281a:** LINT 0, FMT 0. TEST failed only on
+`server/test/tooling/build.test.ts` boot timeouts under load average ~60;
+that file passed 15/15 run on its own.
+
+**Should-fix before release** (follow-up commits on `build-ui-dropdown`):
+1. The panel follows its trigger off-screen on scroll (top −234px measured in
+   the drawer). Close it on a scroll outside the panel, as a native select
+   does; test in the task drawer.
+2. The panel is portalled to `<body>`, outside `aria-modal="true"` dialogs, so
+   a screen reader hides it. Portal into the nearest `[aria-modal="true"]`;
+   test its parent and its position.
+3. The search box is `role="searchbox"` with `aria-activedescendant`; make it
+   `role="combobox"` with `aria-autocomplete="list"`, `aria-expanded="true"`,
+   `aria-controls`.
+4. Sprint options' accessible label and type-ahead drop the key (it sits in an
+   `aria-hidden` icon); label them "S1 · Foundations".
+5. Safari: closing a searchable dropdown by clicking its trigger likely
+   reopens it (blur has no `relatedTarget`, then click calls `show()`). Mark
+   the trigger's pointerdown and ignore that blur; test in Safari's event
+   order.
+
+**Nits:** closed-trigger type-ahead starts from the previous session's active
+option, and the buffer is not reset on close; `options.indexOf()` inside maps;
+extend the no-native-select guard to `createElement('select'|'option')`; skip
+search autofocus on `(pointer: coarse)` and place with `visualViewport`; CSS
+clean-up (escaped backticks in a `task-panel.css` comment, dead
+`.panel-control`, `.bar-control select`, `.board-filter select` rules).
