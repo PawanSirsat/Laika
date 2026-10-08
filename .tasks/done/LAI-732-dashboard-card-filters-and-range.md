@@ -5,7 +5,7 @@ area: web
 assignee: owner-direct
 priority: p1
 depends-on: [LAI-724]
-status: review
+status: done
 started: 2026-10-08T17:22:23Z
 finished: 2026-10-08T17:48:21Z
 ---
@@ -115,3 +115,10 @@ orchestrator). Follow-ups made as new commits on build-perf-store, after
    blocked from `peopleTasks` instead of the whole project.
 4. **Test gap:** the range bound is exact, `updated_at == since` kept and
    `since - 1` excluded; red if `<` becomes `<=`.
+
+## Accepted
+
+2026-10-08, by polly (orchestrator), for release 3. Review: APPROVED, with the
+follow-ups above done at 4ee0f26. Integrated on `build-release-3` in a clean
+merge with no conflicts. The dashboard has no native select, and
+`no-native-select.test.ts` scans it with no exclusion.

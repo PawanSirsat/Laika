@@ -6,7 +6,7 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-08T12:48:30Z
 finished: 2026-10-08T13:41:25Z
 ---
@@ -231,3 +231,22 @@ under the pill; remove the `order: -1` above-placement CSS
 (`sprint-stats.css:156`) with the fallback; the All-sprints scope test at
 360, 600 and 760px also asserts no sideways scroll and no clipping; LAI-730
 `depends-on: [LAI-726]`.
+
+## Accepted
+
+2026-10-08, by polly (orchestrator), for release 3. Review: APPROVED (round 2
+fixes at 519b723). Integrated on `build-release-3` at merge a201330, where
+LAI-724's store (release 2) meets this task's figures:
+
+- **The figures count from the project task store in the browser** (634d37a):
+  `board.all` scoped to the sprint, with no read of their own. Under a
+  narrowing filter, the `?sprint=` read is gone. On *All sprints* with a
+  filter, the figures are now the whole project's, so the "· filtered" label
+  and `narrowsBeyondSprint` are gone too. The board filters in memory, so the
+  unfiltered answer costs nothing.
+- The Filter popover's Sprint and Priority are driven with `pick()` from
+  `test/browser/dropdown.ts` (LAI-726) in `board-sprint-stats.test.ts` and
+  `board-sprint-default.test.ts` (634d37a, dbe28f6).
+- `SprintStrip.tsx` and `sprint-strip.css` are deleted (87da4c6): nothing
+  draws them since LAI-721's Timeline. The strip's Timeline tests went with
+  them. The LAI-702 paging tests now page the store's walk.

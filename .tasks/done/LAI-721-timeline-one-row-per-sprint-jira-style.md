@@ -6,7 +6,7 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-08T11:18:42Z
 finished: 2026-10-08T17:36:11Z
 ---
@@ -296,3 +296,14 @@ time bounds backstopped by work counts; counts filtered to the page's sprints
 Blocked label whole-or-icon, gives way first (`timeline.css:494`);
 refetches throttled ≥2 s (`use-timeline.ts:42`, tests `:1035`, `:1054`).
 
+## Accepted
+
+2026-10-08, by polly (orchestrator), for release 3. Review: APPROVED (round 3,
+re-review of the round-2 fixes at d6b206c). Integrated on `build-release-3`
+at merge 50e809a. Conflicts were append-only (`docs/DECISIONS.md` D-074 beside
+D-075, the ui-polish log), and both sides were kept. On top of the merge:
+`no-native-select.test.ts` scans the Timeline now (5ec03f9, f6d77f2). The new
+Timeline has no native select. `use-timeline.ts` reads the shared project task
+store when another screen already holds the set: no `?sprint=` request, with a
+browser test that goes red when the store path is disabled. A cold Timeline
+still reads on demand (D-074, 4).

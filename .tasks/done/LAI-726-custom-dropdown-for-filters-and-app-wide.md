@@ -316,3 +316,4 @@ ff067ef and a699c3a ("Round 2, as built" above). **This file records no
 re-review verdict after those fixes.** It is accepted on the owner's release
 instruction, not on a recorded round-3 approval. Released at
 build-ui-dropdown `97c133f`. The release gate ran on the integrated branch.
+Correction: review round 3 (re-review of round-2 fixes at 97c133f) returned APPROVE with no blocking issues before the release 2 push.
