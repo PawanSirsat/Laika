@@ -214,8 +214,9 @@ Should-fix
    (`server/src/services/sprints.ts:304`) over `sprintTaskCounts`, one grouped
    query behind the list's `project.read`; route `:111`; server test (`:287`)
    fails when the route serves the bare page. Client `Sprint.task_counts`
-   (optional — only the list sends it), drift pair `SprintListItem`↔`Sprint`
-   plus `SprintTaskCounts`. Every bar shows done/total unopened; fails on
+   (optional — only the list sends it), drift pair `SprintListView`↔`Sprint`
+   (named `*View` so the server's response-type census counts it; the nested
+   counts are unpaired, as `ProjectSummary`'s are). Every bar shows done/total unopened; fails on
    be39c52. SPEC §6.4 documents the field.
 9. D-074 correction appended; SPEC §11.4.3 rewritten as built.
 

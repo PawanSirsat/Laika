@@ -291,7 +291,7 @@ export function sprintTaskCounts(
  * the list. Only the list carries them: a sprint fetched by id or returned
  * from a write is a `SprintView`.
  */
-export interface SprintListItem extends SprintView {
+export interface SprintListView extends SprintView {
   task_counts: SprintTaskCounts;
 }
 
@@ -306,7 +306,7 @@ export function withTaskCounts(
   actor: ResolvedActor,
   slug: string,
   rows: readonly SprintView[],
-): SprintListItem[] {
+): SprintListView[] {
   const counts = sprintTaskCounts(db, actor, slug);
   const empty = (): SprintTaskCounts => ({
     total: 0,
