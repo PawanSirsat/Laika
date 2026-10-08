@@ -1007,42 +1007,65 @@ void describe('live, and the day (LAI-721 review)', () => {
     }
   });
 
-  void test('a steady stream refetches every two seconds at most — and never starves', async () => {
+  /** A live frame, as the server's stream sends one. */
+  const frame = (h: Harness, seq: number) =>
+    h.page.evaluate((n) => {
+      (
+        window as unknown as {
+          __laikaStream: { emit: (type: string, data: unknown, id: string) => void };
+        }
+      ).__laikaStream.emit(
+        'task.updated',
+        {
+          id: `e${String(n)}`,
+          seq: n,
+          type: 'task.updated',
+          project_id: 'laika-core',
+          task_id: 't1',
+          actor_id: 'u2',
+          actor_kind: 'agent',
+          actor_token_id: null,
+          payload: {},
+          created_at: Date.now(),
+        },
+        String(n),
+      );
+    }, seq);
+
+  void test('a fast, steady stream still refetches while it lasts', async () => {
     const h = await open('/timeline?project=laika-core', STUB, { before: fakeStream });
     try {
       await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(300);
       const before = sprintCalls(h);
-      // A frame every 700 ms for about 4 s: past the 500 ms settle each time,
-      // so a refetch per frame was the old behaviour.
+      // A frame every 300 ms for ~4.5 s — closer than the 500 ms settle, so a
+      // debounce reset by every frame would not fire until the stream stopped.
+      for (let n = 1; n <= 15; n += 1) {
+        await frame(h, n);
+        await h.page.waitForTimeout(300);
+      }
+      const during = sprintCalls(h) - before;
+      assert.ok(during >= 2, `the stream starved the refetch (${String(during)} while it ran)`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('refetches are at least two seconds apart', async () => {
+    const h = await open('/timeline?project=laika-core', STUB, { before: fakeStream });
+    try {
+      await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const before = sprintCalls(h);
+      // A frame every 700 ms for ~4.2 s: past the 500 ms settle each time, so a
+      // refetch per frame was the old behaviour.
       for (let n = 1; n <= 6; n += 1) {
-        await h.page.evaluate((seq) => {
-          (
-            window as unknown as {
-              __laikaStream: { emit: (type: string, data: unknown, id: string) => void };
-            }
-          ).__laikaStream.emit(
-            'task.updated',
-            {
-              id: `e${String(seq)}`,
-              seq,
-              type: 'task.updated',
-              project_id: 'laika-core',
-              task_id: 't1',
-              actor_id: 'u2',
-              actor_kind: 'agent',
-              actor_token_id: null,
-              payload: {},
-              created_at: Date.now(),
-            },
-            String(seq),
-          );
-        }, n);
+        await frame(h, n);
         await h.page.waitForTimeout(700);
       }
       await h.page.waitForTimeout(600);
       const refetches = sprintCalls(h) - before;
-      assert.ok(refetches >= 2, `the stream starved the refetch (${String(refetches)})`);
+      assert.ok(refetches >= 1, 'positive control: the stream refetched at all');
       assert.ok(refetches <= 3, `${String(refetches)} refetches in ~4.8 s`);
     } finally {
       await h.close();
