@@ -5,8 +5,9 @@ area: ops
 assignee: chief
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-10-08T07:53:29Z
+finished: 2026-10-08T08:14:44Z
 ---
 
 ## Goal
@@ -32,19 +33,40 @@ Actions deploying to the server Laika already runs on.
 
 ## Acceptance criteria
 
-- [ ] Every push runs the gate (`pnpm test`, `pnpm lint`, `pnpm format`) in
+- [x] Every push runs the gate (`pnpm test`, `pnpm lint`, `pnpm format`) in
       GitHub Actions; a red gate deploys nothing.
-- [ ] A green push to `master` builds the arm64 image on a GitHub arm64 runner,
+- [x] A green push to `master` builds the arm64 image on a GitHub arm64 runner,
       pushes it to ECR tagged with the commit, points `latest` at it, restarts
       the instance on that exact digest over SSM, and checks health from
       inside and outside.
-- [ ] A failed post-deploy check rolls production back to the previous image
+- [x] A failed post-deploy check rolls production back to the previous image
       and fails the run.
-- [ ] Deploys queue: one at a time, and only the newest waiting commit runs.
-- [ ] No long-lived AWS keys: GitHub assumes a role through OIDC, trusted only
+- [x] Deploys queue: one at a time, and only the newest waiting commit runs.
+- [x] No long-lived AWS keys: GitHub assumes a role through OIDC, trusted only
       for `master` of `PawanSirsat/Laika`, allowed only ECR push to `laika`,
       SSM on the one instance, and describing instances. The role is created
       from the CloudFormation template.
 - [ ] A real push to master deploys end to end, verified on the live site.
-- [ ] D-073 records the rule, and CLAUDE.md §4 tells every session that a
+- [x] D-073 records the rule, and CLAUDE.md §4 tells every session that a
       push to `origin/master` is a release.
+
+## Delivery notes
+
+- **AWS.** Stack `laika-github-deploy` (CREATE_COMPLETE) from
+  `infra/github-deploy-role.yml`: the GitHub OIDC provider, which the account
+  had none of, and role `arn:aws:iam::926583575159:role/laika-github-deploy`,
+  trusted only for `repo:PawanSirsat/Laika:ref:refs/heads/master`.
+- **Workflow.** `.github/workflows/deploy.yml`: the gate on every push; on master,
+  build on `ubuntu-24.04-arm` to ECR as `sha-<commit>`, retag `latest`, then
+  `.github/deploy/deploy.sh`, which sends `host-restart.sh` over SSM. The
+  restart pulls first, runs the exact digest, and waits up to 90s for health.
+  The runner checks it runs that image, is freshly healthy from outside and
+  serves the app. A failure points `latest` back at the image it replaced and
+  restarts on it.
+- **CI exposed two timing races, both test-only, both in the scope list.**
+  - list-view's paging test counted rows the instant the pager drew.
+  - plugin-hooks raised an unhandled `EPIPE` when the hook exited before its
+    stdin write landed.
+  CI run 37747800026 is green on GitHub: server 2099, web 1333, cli 85.
+- **The last criterion is open on purpose**: it is the first push to master.
+  It is ticked in the accept note once that deploy is verified.
