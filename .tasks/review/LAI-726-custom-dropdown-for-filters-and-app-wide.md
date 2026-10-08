@@ -258,3 +258,51 @@ no search autofocus on `(pointer: coarse)`; `placeWithin` places against
 Also unrendered, not named in review, left alone: `.panel-controls`
 (task-detail.css), `.board-filters`, `.board-filter`, `.board-filter-check`
 (board.css).
+
+## Review notes (round 2)
+
+**CHANGES REQUIRED, one blocker.** Every round-1 item resolved; the drawer
+change measured identical in position and size.
+
+**Blocking.** "Create status" (`NewColumnDialog`) no longer centred — x=18
+at 1366×768 where ec1281a had 492. `.board > *` gets an 18px side margin
+(`board.css:13-16`) that outranks `.column-dialog { margin: auto }`, and the
+dialog renders as a child of `.board`. Portal it to `<body>` as
+`ColumnDialog` is; the scrim must cover the whole window. Test both dialogs
+centred at 1366×768 and 900px, scrim full-window; prove red on f9ff774.
+
+**Should-fix.** The "buffer outlived the close" test cannot fail (removing the
+reset keeps it green) — use two different letters across the close. The
+modal-placement helper checks nothing across (`|| g.left >= 8`) — assert
+left = the trigger's, clamped to 8px, within 1px; prove red with the panel
+300px right.
+
+**Nits.** Drawer rise as `transform: translateY(12px)` → `none`; clear
+`pressing` on `pointerup`/`pointercancel` anywhere; the select guard should see
+`:is(select` and `:has(select`; column dialogs overflow ~20px at 390px wide.
+
+### Round 2, as built (builder)
+
+Tests first in 1ceec9b (lint fix ff067ef), fixes in a699c3a.
+- `NewColumnDialog` portalled to `<body>`; `.column-dialog` is `border-box`
+  so a phone's gutters hold. Test at 1366×768, 900×700 and 390×800: both
+  dialogs centred across and down within 1px, scrim exactly the window. On
+  f9ff774: "18px left, 930px right" at 1366; off the side at 390, scrim
+  18–372.
+- Buffer test: "a", close, "l" at once → "Last 30 days".
+- Placement helper: left = clamp(trigger.left, 8, vw − 8 − max(trigger
+  width, 160)) within 1px.
+- Drawer rises with a transform that ends at `none`; an open panel re-places
+  on `animationend` (a panel opened during the rise was placed inside the
+  transformed drawer). The drawer test now also asserts no transform after the
+  rise and the panel still on its trigger.
+- `pressing` cleared by a capture `pointerup`/`pointercancel` on the document
+  while open; test drags a press off the trigger, then blurs the search box.
+- Guard pattern `(^|[\s>+~(,])select(?![\w-])` with its own sample test.
+
+Mutations on HEAD, restored in a trap: f9ff774's dialog files → "not centred
+across — 18px left" (3 tests); no buffer reset → fails (at the "a" control:
+the earlier "l" survives as "la"); panel +300px → "left is 765, its
+trigger's 465" (2); guard without `(,` → "does not see: .a:is(select"; no
+pointerup release → "the panel stayed open"; drawer transform kept →
+"kept a transform after its rise".
