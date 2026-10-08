@@ -3912,6 +3912,73 @@ owner's word: the owner's word is now the push.
 - HTTPS and a domain, a dashboard, and scheduled database backups — the things
   Dokploy would have brought. Each can be added to this pipeline later.
 
+## D-074 — The Timeline is one row per sprint again, on a scrolling axis; D-049's task rows are withdrawn.
+
+**2026-10-08, the owner, directly**, over five screenshots of production's
+Timeline — one row per task, a few hundred of them, on an axis squeezed into
+the card: *"I want left-right scrollable, but not with all the tasks — by the
+sprints, like Jira, with all the UI/UX like that. I don't want the tasks in
+time."* Carried by LAI-721. This **supersedes D-049** and returns the screen to
+SPEC §11.4.3 as written, which D-049 had overridden without amending.
+
+### Decided
+
+1. **One row per sprint**, a bar from `starts_on` to `ends_on`. A sprint opens
+   to list its tasks, and **a task has no bar** — §11.4.3's *"Tasks have no bars
+   of their own."* D-049's measured bars (`started_at → completed_at`) were
+   honest; the owner does not want tasks on the axis at all, which is a
+   different objection, and the stronger one for this screen.
+2. **The axis scrolls, at a zoom** — Weeks, Months, Quarters, in `?zoom=` — as
+   Jira's timeline does. A day has a fixed width per zoom; the sprint column
+   and the header stay put. The window is whole calendar months around every
+   sprint **and today**, so the Today button always has somewhere to go —
+   the old squeezed axis kept today out to spare the bars, a cost a scrolling
+   axis does not pay.
+3. **A sprint's state is its dates** (ended, active, planned); past sprints
+   are dimmed, not hidden.
+4. **Data on demand.** Only the sprint list loads up front. A sprint's tasks
+   are fetched with `?sprint=<id>` when it is opened, and the unscheduled
+   tray's with `?sprint=none` when it is. The old screen walked every task in
+   the project before drawing anything. The price: a sprint's progress and
+   blocked count show once it has been opened, because sprints carry no counts
+   and the tasks endpoint has no count or field projection.
+
+### What this does not decide
+
+- Dragging a sprint's edge, or a task from the tray into a sprint — §11.4.3
+  lists both; neither is built, as before.
+- Per-sprint counts without opening a sprint. That needs the server to serve
+  them (a count on the sprint view, or a slim task list), which belongs to the
+  data-layer work already planned.
+
+### Correction (LAI-721 review, same day)
+
+**"Returns the screen to SPEC §11.4.3 as written" was not true**, and is
+withdrawn. §11.4.3 described a single track of sprint bars with the tray
+beside the axis, no zoom, and a bar carrying name, goal and counts. What was
+built — at the owner's direction — is one *row* per sprint on a scrolling,
+zoomable axis, with the tray below it. §11.4.3 has been rewritten to describe
+the screen as built; this decision is what changed it.
+
+Two points above are also superseded by the same review:
+
+- **Counts without opening** are now served: `GET /projects/:slug/sprints`
+  carries `task_counts` per sprint, from the grouped query MCP's
+  `list_sprints` already used (§6.4). Every bar shows done over total before
+  it is opened. Blocked counts still need a sprint's tasks, so they appear
+  once it is opened — with blockers in other sprints counted as *unknown*,
+  never as unblocked.
+- **Dates the axis cannot hold** — far-future or not dates at all — are left
+  off it and listed beside it, and the window is bounded around today.
+
+**And again (round 2, same day).** "Bounded around today" was five years, which
+hid real sprints — one six years back, a "Someday" six years ahead — behind
+advice to fix dates that were not wrong. Now only a date that is no date, or is
+more than fifty years from today, is left off, each with its own sentence; a
+window of decades is cheap because the header is drawn only for the stretch in
+view. Dragging a sprint's edge stays a §11.4.2.1 requirement, not built
+(LAI-731).
+
 ## D-075 — The web app keeps one shared, in-memory client cache.
 
 **2026-10-08, the owner, through the orchestrator** (performance phase 2,

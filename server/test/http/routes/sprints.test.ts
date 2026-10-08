@@ -283,3 +283,40 @@ describe('the ?sprint= filter (AC7)', () => {
     expect(outside.data.map((t) => t.id)).toEqual([loose.id]);
   });
 });
+
+describe('task_counts on the sprint list (LAI-721)', () => {
+  it('counts each sprint’s tasks by status, zeroes an empty sprint, and stays off a single read', async () => {
+    const busy = await newSprint('Busy', jan(1), jan(14));
+    const quiet = await newSprint('Quiet', jan(15), jan(28));
+    const a = await newTask('One');
+    const b = await newTask('Two');
+    await newTask('Unscheduled');
+    expect(
+      (await post(`/api/v1/sprints/${busy.id}/tasks`, { task_ids: [a.id, b.id] })).status,
+    ).toBe(200);
+    for (const status of ['todo', 'in_progress', 'review', 'done']) {
+      expect((await post(`/api/v1/tasks/${a.id}/status`, { status })).status).toBe(200);
+    }
+
+    const res = await req('/api/v1/projects/laika/sprints');
+    expect(res.status).toBe(200);
+    const page = (await res.json()) as {
+      data: { id: string; task_counts: { total: number; by_status: Record<string, number> } }[];
+    };
+    const byId = new Map(page.data.map((s) => [s.id, s.task_counts]));
+
+    expect(byId.get(busy.id)).toEqual({
+      total: 2,
+      by_status: { backlog: 1, todo: 0, in_progress: 0, review: 0, done: 1, cancelled: 0 },
+    });
+    // Present and zero, not missing: the client never has to guess.
+    expect(byId.get(quiet.id)).toEqual({
+      total: 0,
+      by_status: { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0, cancelled: 0 },
+    });
+
+    // Only the list carries counts; a sprint read by id is the plain view.
+    const one = (await (await req(`/api/v1/sprints/${busy.id}`)).json()) as Record<string, unknown>;
+    expect(one).not.toHaveProperty('task_counts');
+  });
+});

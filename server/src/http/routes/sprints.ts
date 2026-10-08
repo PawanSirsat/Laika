@@ -11,7 +11,9 @@ import {
   removeTaskFromSprint,
   SPRINT_STATUSES,
   updateSprint,
+  type SprintListView,
   type SprintView,
+  withTaskCounts,
 } from '../../services/sprints.ts';
 import { type TaskView } from '../../services/tasks.ts';
 import { type AppEnv } from '../context.ts';
@@ -104,7 +106,14 @@ export function projectSprintRoutes(options: SprintRouteOptions): Hono<AppEnv> {
       id: row.id,
     }));
 
-    return c.json(page);
+    // Each sprint carries its task counts (LAI-721): one grouped query for
+    // the project, so the Timeline can show progress without loading tasks.
+    const listed: Page<SprintListView> = {
+      ...page,
+      data: withTaskCounts(db, actor, c.req.param('slug'), page.data),
+    };
+
+    return c.json(listed);
   });
 
   app.post('/:slug/sprints', async (c) => {

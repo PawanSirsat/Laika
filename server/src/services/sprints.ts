@@ -249,6 +249,12 @@ export function sprintTaskCounts(
   db: Db,
   actor: ResolvedActor,
   slug: string,
+  /**
+   * Only these sprints (LAI-721 review): a page of the REST list counts its
+   * own sprints, not the whole project's on every page. Omitted, the whole
+   * project — what MCP's `list_sprints` asks for.
+   */
+  only?: readonly string[],
 ): Map<string, SprintTaskCounts> {
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
@@ -259,7 +265,11 @@ export function sprintTaskCounts(
     .select({ sprintId: sprints.id, status: tasks.status, total: sql<number>`COUNT(*)` })
     .from(tasks)
     .innerJoin(sprints, eq(sprints.id, tasks.sprintId))
-    .where(eq(tasks.projectId, project.id))
+    .where(
+      only === undefined
+        ? eq(tasks.projectId, project.id)
+        : and(eq(tasks.projectId, project.id), inArray(sprints.id, [...only])),
+    )
     .groupBy(sprints.id, tasks.status)
     .all();
 
@@ -280,6 +290,45 @@ export function sprintTaskCounts(
   }
 
   return counts;
+}
+
+/**
+ * A sprint as the project's sprint list serves it: the view, plus how much
+ * work sits in it (LAI-721).
+ *
+ * SPEC §11.4.3 wants a sprint's progress legible without expanding it, and the
+ * Timeline loads no tasks until a sprint is opened — so the counts come with
+ * the list. Only the list carries them: a sprint fetched by id or returned
+ * from a write is a `SprintView`.
+ */
+export interface SprintListView extends SprintView {
+  task_counts: SprintTaskCounts;
+}
+
+/**
+ * Attach `task_counts` to a page of sprints — **one grouped query** for the
+ * whole project (`sprintTaskCounts`), not one per sprint, and behind the same
+ * `project.read` check the list itself makes. A sprint with no tasks gets
+ * zeroes rather than a missing field.
+ */
+export function withTaskCounts(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  rows: readonly SprintView[],
+): SprintListView[] {
+  if (rows.length === 0) return [];
+  const counts = sprintTaskCounts(
+    db,
+    actor,
+    slug,
+    rows.map((row) => row.id),
+  );
+  const empty = (): SprintTaskCounts => ({
+    total: 0,
+    by_status: Object.fromEntries(TASK_STATUSES.map((s) => [s, 0])) as Record<TaskStatus, number>,
+  });
+  return rows.map((row) => ({ ...row, task_counts: counts.get(row.id) ?? empty() }));
 }
 
 export function getSprint(db: Db, actor: ResolvedActor, sprintId: string): SprintView {

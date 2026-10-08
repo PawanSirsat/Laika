@@ -231,11 +231,19 @@ const PAIRS: readonly Pair[] = [
     clientFile: 'projects.ts',
   },
   {
-    server: 'SprintView',
+    // The list item, not the bare view (LAI-721): the client's `Sprint`
+    // declares `task_counts`, which only the list sends — so pairing it with
+    // `SprintView` would call the field undeclared on the server side.
+    // `SprintListView extends SprintView`, so every view field is still here.
+    // Its `task_counts` object is not paired on its own, as `ProjectSummary`'s
+    // is not: the server census counts served `*View` types, and the nested
+    // shape is not one.
+    server: 'SprintListView',
     serverFile: 'services/sprints.ts',
     client: 'Sprint',
     clientFile: 'sprints.ts',
   },
+
   {
     server: 'MemberView',
     serverFile: 'services/projects.ts',

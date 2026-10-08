@@ -1007,6 +1007,7 @@ GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
 GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=
 GET    /api/v1/projects/:slug/sprints        POST /api/v1/projects/:slug/sprints   (lead+)
+       └ each entry adds `task_counts`, derived at read time — see below
 GET    /api/v1/sprints/:id                   PATCH /api/v1/sprints/:id   DELETE /api/v1/sprints/:id  (lead+)
 POST   /api/v1/sprints/:id/tasks             body { task_ids[] }  — assign into the sprint
 DELETE /api/v1/sprints/:id/tasks/:taskId     remove from the sprint (task itself is untouched)
@@ -1067,6 +1068,15 @@ reader should not go looking:
 | `member_count` | `project_memberships` |
 | `members` | the **first five by name**, `user_id` and `name` only — enough for a row of avatars, and deliberately not a member list |
 | `last_activity_at` | the newest `activity` row for the project; **nullable, and null means no activity rather than none visible to you** |
+
+**A sprint in `GET /projects/:slug/sprints` is §4.15's columns plus
+`task_counts`** (LAI-721), derived at read time in **one grouped query for the
+project**, behind the same `project.read` check as the list: `{ total,
+by_status }`, `by_status` keyed by every §4.5 status with **zero included** —
+the projects list's rule, for the same reason. It is how the Timeline shows a
+sprint's progress without loading its tasks (§11.4.3). **Only the list
+carries it**: a sprint from `GET /sprints/:id` or returned from a write is the
+plain §4.15 shape.
 
 **A task's read shape is §4.5's columns** — `branch` and `external_ref`
 included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
@@ -1704,25 +1714,45 @@ anything missing sends the task back.
 #### 11.4.3 Timeline view
 
 A Gantt-style view of the project's schedule, drawn **entirely from sprint
-boundaries** (§4.15). Phase 2.5, immediately after sprints land.
+boundaries** (§4.15) and shaped like Jira's timeline (D-074).
 
-- The horizontal axis is time; each **sprint** is one bar, spanning `starts_on`
-  to `ends_on`. Because sprints of a project may not overlap (§4.15), the axis is
-  a single clean track — no lane-packing, no layout solver.
-- Each bar shows the sprint's name, goal, and task counts by status, so progress
-  is legible without expanding it.
-- Expanding a sprint lists its tasks. **Tasks have no bars of their own** — they
-  have no dates. A task inherits its sprint's span visually and nothing more.
-- Tasks with `sprint_id IS NULL` appear in an unscheduled tray beside the axis
-  and can be dragged into a sprint, which is
-  `POST /api/v1/sprints/:id/tasks` — the same endpoint the Sprints screen uses.
-- Dragging a sprint edge is `PATCH /api/v1/sprints/:id` on `starts_on` / `ends_on`,
-  and is rejected if it would overlap a neighbour.
-- Today's date is marked. Sprints entirely in the past are dimmed, not hidden.
+- **One row per sprint**, in date order. The row's left column names it (`S3`
+  and its name, the goal on hover), its dates, a countdown and its state —
+  *Ended*, *Active*, *Planned* — taken from the **dates**, not the stored
+  status. Its bar spans `starts_on` to `ends_on`.
+- **Each bar shows done over total** without being opened, from the sprint
+  list's `task_counts` (§6.4); `cancelled` counts in neither.
+- **The axis scrolls sideways at a zoom** — Weeks, Months or Quarters, kept in
+  `?zoom=` — with a fixed width per day. The sprint column and the header stay
+  put; the chart, unscheduled tasks included, is the screen's one vertical
+  scroller and one tab stop, and the arrow keys pan it. The window is whole
+  months (quarters, at Quarters) around every sprint and today, and the header
+  is drawn only for the stretch in view.
+- **Today** is one line down the rows, with a pill in the header naming the UTC
+  day the line is drawn on, and a *Today* button scrolls back to it.
+- **A sprint opens to list its tasks** — key, title, status, assignee, and
+  *Blocked* or *Blocked?* (a blocker in another sprint, not loaded) — loaded
+  with `?sprint=<id>` when it is opened, at most three sprints at a time.
+  **Tasks have no bars of their own.** An opened sprint's bar adds its blocked
+  count, with blockers outside it counted as *unknown*. A task opens in the
+  drawer.
+- `?sprint=<id>` opens that sprint and starts the chart at it; the Board's
+  `all` and `none` are not sprints and open nothing.
+- Sprints entirely in the past are dimmed, not hidden. A sprint whose dates are
+  not dates, or are more than fifty years from today, is listed in a notice
+  (each in its own words) and not drawn; anything nearer is drawn, however far.
+- Tasks with `sprint_id IS NULL` are the chart's **last group, Unscheduled**,
+  loaded with `?sprint=none` when it is opened. Read-only here: moving a task
+  into a sprint is the Sprints screen's `POST /api/v1/sprints/:id/tasks`.
+- Live: a frame on the space's stream refetches the sprints and every open
+  sprint, so an edit lands without a reload.
+- **Not built yet** (still required by §11.4.2.1): dragging a sprint edge to
+  reschedule (`PATCH /api/v1/sprints/:id`, rejected on overlap) — LAI-731 —
+  and dragging an unscheduled task into a sprint.
 
 **The constraint that keeps this cheap:** the timeline is a *sprint* chart, not a
 *task* chart. Tasks now carry `planned_start` and `due_on` (§4.5, D-066), and
-**this screen does not read them yet**: a task-dated timeline is a
+**this screen does not read them**: a task-dated timeline is a
 dependency-aware Gantt with a layout engine, a critical path and a scheduling
 model, which D-014 priced and D-066 accepted — as its own task (LAI-289), not
 as a side effect of the columns existing.

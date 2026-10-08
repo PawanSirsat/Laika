@@ -1,5 +1,5 @@
 import { request } from './client.ts';
-import type { Page } from './tasks.ts';
+import type { Page, TaskStatus } from './tasks.ts';
 
 /**
  * Sprints (SPEC §4.15, §6.4 — LAI-050).
@@ -35,6 +35,18 @@ export interface Sprint {
   readonly status: SprintStatus;
   readonly created_at: number;
   readonly updated_at: number;
+  /**
+   * How many tasks sit in the sprint, by status (LAI-721). **Only the
+   * project's sprint list sends it** (`GET /projects/:slug/sprints`); a sprint
+   * read by id or returned from a write has none, hence optional.
+   */
+  readonly task_counts?: SprintTaskCounts;
+}
+
+/** A sprint's tasks counted by status, as the sprint list serves them. */
+export interface SprintTaskCounts {
+  readonly total: number;
+  readonly by_status: Readonly<Record<TaskStatus, number>>;
 }
 
 export interface ListSprintsQuery {
