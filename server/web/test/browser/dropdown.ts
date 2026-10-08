@@ -10,7 +10,12 @@ import type { Locator } from 'playwright';
  */
 export async function pick(combobox: Locator, value: string): Promise<void> {
   const page = combobox.page();
-  if ((await combobox.getAttribute('aria-expanded')) !== 'true') await combobox.click();
+  if ((await combobox.getAttribute('aria-expanded')) !== 'true') {
+    // Focused first: some controls are clipped until focused (the card's
+    // keyboard-only move, a column's position) and a click needs them drawn.
+    await combobox.focus();
+    await combobox.click();
+  }
   const listId = await combobox.getAttribute('aria-controls');
   if (listId === null)
     throw new Error('the dropdown did not open: its trigger has no aria-controls');
@@ -34,13 +39,29 @@ export async function valueOf(combobox: Locator): Promise<string | null> {
   return combobox.getAttribute('data-value');
 }
 
-/** The labels a `Dropdown` offers, in order, opening and closing it. */
-export async function offered(combobox: Locator): Promise<string[]> {
+/**
+ * What a `Dropdown` offers, read from its open panel and closed again: the
+ * labels in order, and how many are greyed (`aria-disabled`) — the custom
+ * control's `option` and `option[disabled]`.
+ */
+export async function optionsOf(
+  combobox: Locator,
+): Promise<{ readonly labels: string[]; readonly disabled: number }> {
   const page = combobox.page();
+  await combobox.focus();
   await combobox.click();
   const listId = await combobox.getAttribute('aria-controls');
   if (listId === null) throw new Error('the dropdown did not open');
-  const labels = await page.locator(`[id="${listId}"] [role="option"] .dd-label`).allInnerTexts();
+  const options = page.locator(`[id="${listId}"] [role="option"]`);
+  const labels = (await options.locator('.dd-label').allInnerTexts()).map((l) => l.trim());
+  const disabled = await page
+    .locator(`[id="${listId}"] [role="option"][aria-disabled="true"]`)
+    .count();
   await page.keyboard.press('Escape');
-  return labels.map((l) => l.trim());
+  return { labels, disabled };
+}
+
+/** The labels a `Dropdown` offers, in order, opening and closing it. */
+export async function offered(combobox: Locator): Promise<string[]> {
+  return (await optionsOf(combobox)).labels;
 }

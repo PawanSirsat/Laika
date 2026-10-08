@@ -1,4 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { addDependency, removeDependency, type Member, type Task } from '../../../api/tasks.ts';
@@ -125,21 +126,19 @@ export function DependenciesSection({
             <label className="visually-hidden" htmlFor="dep-pick">
               Task this one is blocked by
             </label>
-            <select
+            {/* The app's dropdown (LAI-726): a long list of tasks gets a search box. */}
+            <Dropdown
               id="dep-pick"
+              variant="bare"
+              noun="tasks"
               value={picked}
               disabled={busy}
-              onChange={(event) => {
-                setPicked(event.target.value);
-              }}
-            >
-              <option value="">Choose a task…</option>
-              {candidates.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.key} — {t.title}
-                </option>
-              ))}
-            </select>
+              options={[
+                { value: '', label: 'Choose a task…', pinned: true },
+                ...candidates.map((t) => ({ value: t.id, label: `${t.key} — ${t.title}` })),
+              ]}
+              onChange={setPicked}
+            />
             <button
               type="button"
               className="dep-confirm"

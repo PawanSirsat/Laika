@@ -16,6 +16,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { offered, pick } from './dropdown.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -248,7 +249,12 @@ void describe('the task panel', () => {
         'watchers',
         'discovered from',
       ]);
-      assert.equal(await h.page.locator('.meta-status select').count(), 1, 'no status control');
+      // The status control is the app's dropdown since LAI-726.
+      assert.equal(
+        await h.page.locator('.meta-status [role="combobox"]').count(),
+        1,
+        'no status control',
+      );
       assert.equal(await h.page.locator('.panel-permission').count(), 1, 'no permission note');
 
       // Jira's four tabs, with counts; History is what Activity was.
@@ -413,7 +419,7 @@ void describe('the task panel', () => {
       await openSubject(h);
 
       await h.page.locator('.dep-link').click();
-      await h.page.locator('#dep-pick').selectOption('t2');
+      await pick(h.page.locator('#dep-pick'), 't2');
       await h.page.locator('.dep-confirm').click();
       await h.page.waitForTimeout(400);
 
@@ -561,15 +567,15 @@ void describe('the Jira-shaped task view (D-066)', () => {
       assert.equal((await h.page.locator('.panel-crumbs').innerText()).trim(), 'LC-3');
 
       await h.page.locator('.meta-row-parent .meta-add-link').click();
-      const pick = h.page.locator('#parent-pick');
+      const parentPick = h.page.locator('#parent-pick');
       // One level: a task that is itself a subtask is never offered.
-      const offered = await pick.locator('option').allInnerTexts();
+      const choices = await offered(parentPick);
       assert.ok(
-        offered.some((o) => o.startsWith('LC-1')),
+        choices.some((o) => o.startsWith('LC-1')),
         'the blocker is not offered',
       );
-      assert.ok(!offered.some((o) => o.startsWith('LC-4')), 'a subtask is offered as a parent');
-      await pick.selectOption('t1');
+      assert.ok(!choices.some((o) => o.startsWith('LC-4')), 'a subtask is offered as a parent');
+      await pick(parentPick, 't1');
       await h.page.locator('.meta-row-parent .dep-confirm').click();
       await h.page.waitForTimeout(400);
 

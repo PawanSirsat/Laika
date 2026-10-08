@@ -449,6 +449,8 @@ export function BoardToolbar({
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target?.isContentEditable) {
         return;
       }
+      // A `Dropdown` is a select too (LAI-726): a key typed there is its own.
+      if (target?.getAttribute('role') === 'combobox') return;
       event.preventDefault();
       searchRef.current?.focus();
       searchRef.current?.select();

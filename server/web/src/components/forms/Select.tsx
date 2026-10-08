@@ -1,3 +1,4 @@
+import { Dropdown } from '../Dropdown.tsx';
 import { Field } from './Field.tsx';
 import './forms.css';
 
@@ -17,7 +18,14 @@ export interface SelectProps {
   readonly disabled?: boolean;
 }
 
-/** Native `<select>`. It is keyboard- and touch-correct on every platform for free. */
+/**
+ * The app's own dropdown, as a form field (LAI-726).
+ *
+ * This was a native `<select>`, chosen because it is keyboard- and
+ * touch-correct for free. `Dropdown` keeps both — the WAI-ARIA combobox
+ * pattern, 36px rows — and draws the list in the app's tokens instead of the
+ * OS's, so every select in the app looks and behaves one way.
+ */
 export function Select({
   label,
   value,
@@ -31,23 +39,18 @@ export function Select({
   return (
     <Field label={label} help={help} error={error} required={required}>
       {({ inputId, describedBy, invalid }) => (
-        <select
+        <Dropdown
           id={inputId}
+          variant="bare"
           className="input select"
+          noun={label.toLowerCase()}
           value={value}
           disabled={disabled}
           aria-describedby={describedBy}
           aria-invalid={invalid || undefined}
-          onChange={(e) => {
-            onChange(e.target.value);
-          }}
-        >
-          {options.map((o) => (
-            <option key={o.value} value={o.value}>
-              {o.label}
-            </option>
-          ))}
-        </select>
+          options={options}
+          onChange={onChange}
+        />
       )}
     </Field>
   );

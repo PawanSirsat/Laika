@@ -379,7 +379,9 @@ void describe('the task drawer', () => {
       await openDrawer(h);
       await h.page.locator('.panel-head').waitFor({ timeout: 10_000 });
 
-      const select = h.page.locator('.meta-person .assign-pick select');
+      // The control is the app's dropdown since LAI-726: `appearance` is still
+      // asserted, because a <button> has native chrome of its own to drop.
+      const select = h.page.locator('.meta-person .assign-pick [role="combobox"]');
       await select.waitFor({ timeout: 10_000 });
       const seen = await select.evaluate((el) => {
         const c = getComputedStyle(el);

@@ -1,4 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { STATUSES, type TaskStatus } from '../../../api/tasks.ts';
 import { statusLabel } from '../../../api/board-derive.ts';
@@ -115,23 +116,27 @@ export function NewColumnDialog({ all, busy, error, onCreate, onClose }: NewColu
 
           <label className="cd-field">
             <span className="cd-label">Status category</span>
-            <select
+            {/* "Nothing yet" is always offered, and the only option when
+                nothing is free. A column with no status draws a lane you cannot
+                drop into, which is a real thing to want while you set the
+                board up. */}
+            <Dropdown
+              variant="bare"
               className="cd-select"
+              noun="statuses"
               value={status}
-              onChange={(event) => {
-                setStatus(event.target.value as TaskStatus | '');
+              onChange={(value) => {
+                setStatus(value);
               }}
-            >
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {statusLabel(s)}
-                </option>
-              ))}
-              {/* Always offered, and the only option when nothing is free. A
-                  column with no status draws a lane you cannot drop into, which
-                  is a real thing to want while you set the board up. */}
-              <option value="">Nothing yet</option>
-            </select>
+              options={[
+                ...STATUSES.map((s) => ({
+                  value: s,
+                  label: statusLabel(s),
+                  icon: <span className={`dd-dot dd-dot-${s}`} />,
+                })),
+                { value: '', label: 'Nothing yet' },
+              ]}
+            />
             <span className="cd-hint">
               {status === ''
                 ? 'The column is created empty — give it a status from Column settings later.'

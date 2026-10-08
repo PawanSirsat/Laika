@@ -64,6 +64,17 @@ export interface DropdownProps<V extends string = string> {
   readonly disabled?: boolean | undefined;
   /** Extra classes for the trigger, for a screen whose control is styled its own way. */
   readonly className?: string | undefined;
+  /**
+   * `field` (the default) draws the trigger as a form field. `bare` draws
+   * nothing but the value and the chevron, for a screen whose own class gives
+   * the control its look — a pill, a value in a rail, a picker laid over an
+   * avatar — the way it styled the `<select>` this replaced.
+   */
+  readonly variant?: 'field' | 'bare' | undefined;
+  /** False for a control that shows no chevron — one laid invisibly over something else. */
+  readonly chevron?: boolean | undefined;
+  /** What the trigger shows, when it is not the selected option's icon and label. */
+  readonly display?: ReactNode;
   /** Shown when the value matches no option. */
   readonly placeholder?: string | undefined;
   readonly title?: string | undefined;
@@ -140,6 +151,9 @@ export function Dropdown<V extends string = string>({
   searchable,
   disabled = false,
   className,
+  variant = 'field',
+  chevron = true,
+  display,
   placeholder = 'Select…',
   title,
   name,
@@ -530,7 +544,9 @@ export function Dropdown<V extends string = string>({
         id={id}
         type="button"
         role="combobox"
-        className={className ? `dd-trigger ${className}` : 'dd-trigger'}
+        className={['dd-trigger', variant === 'field' ? 'dd-field' : '', className ?? '']
+          .filter((c) => c !== '')
+          .join(' ')}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
@@ -558,23 +574,29 @@ export function Dropdown<V extends string = string>({
           setOpen(false);
         }}
       >
-        {selected?.icon !== undefined && (
-          <span className="dd-icon" aria-hidden="true">
-            {selected.icon}
-          </span>
+        {display ?? (
+          <>
+            {selected?.icon !== undefined && (
+              <span className="dd-icon" aria-hidden="true">
+                {selected.icon}
+              </span>
+            )}
+            <span className={selected === undefined ? 'dd-value dd-placeholder' : 'dd-value'}>
+              {selected?.label ?? placeholder}
+            </span>
+          </>
         )}
-        <span className={selected === undefined ? 'dd-value dd-placeholder' : 'dd-value'}>
-          {selected?.label ?? placeholder}
-        </span>
-        <svg
-          className="dd-chevron"
-          viewBox="0 0 24 24"
-          fill="none"
-          strokeWidth="2.2"
-          aria-hidden="true"
-        >
-          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
+        {chevron && (
+          <svg
+            className="dd-chevron"
+            viewBox="0 0 24 24"
+            fill="none"
+            strokeWidth="2.2"
+            aria-hidden="true"
+          >
+            <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </button>
       {name !== undefined && <input type="hidden" name={name} value={value} />}
       {panelNode !== false && createPortal(panelNode, document.body)}

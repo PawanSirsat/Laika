@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
 import { closeBrowser, fakeStream, open, refuse, type ApiStub } from './harness.ts';
+import { pick } from './dropdown.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -406,7 +407,7 @@ void describe('the skeleton is for a new question only (LAI-707)', () => {
         await route.continue();
       });
       await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
-      await h.page.locator('.bt-pop').getByLabel('Priority').selectOption('p1');
+      await pick(h.page.locator('.bt-pop').getByLabel('Priority'), 'p1');
       await h.page.waitForTimeout(400);
       assert.equal(
         await h.page.evaluate(() => (window as Probe).__skeleton === true),
@@ -540,7 +541,7 @@ void describe('a refresh never undoes your own move (LAI-707)', () => {
       const lc1 = h.page.locator('.lane-item', {
         has: h.page.locator('.card-key', { hasText: /^LC-1\b/ }),
       });
-      await lc1.locator('.lane-move-select').selectOption('todo');
+      await pick(lc1.locator('.lane-move-select'), 'todo');
       await h.page.waitForFunction(
         () =>
           [...document.querySelectorAll('.card')]

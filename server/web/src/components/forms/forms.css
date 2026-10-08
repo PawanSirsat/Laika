@@ -78,8 +78,15 @@
   border-color: var(--overdue-border);
 }
 
+/* `Select` is a `Dropdown` drawn as an input (LAI-726): one line, value then chevron. */
 .select {
-  appearance: auto;
+  display: flex;
+  align-items: center;
+  text-align: left;
+}
+
+.select[aria-expanded='true'] {
+  border-color: var(--accent);
 }
 
 .input-affix {

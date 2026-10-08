@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { createTask, PRIORITIES, type TaskPriority } from '../../../api/tasks.ts';
 
 export interface NewTaskFormProps {
@@ -89,19 +90,15 @@ export function NewTaskForm({ slug, onCreated, onCancel }: NewTaskFormProps) {
 
       <label className="new-task-priority">
         <span className="visually-hidden">Priority</span>
-        <select
+        <Dropdown
+          noun="priorities"
           value={priority}
           disabled={busy}
-          onChange={(event) => {
-            setPriority(event.target.value as TaskPriority);
+          onChange={(value) => {
+            setPriority(value);
           }}
-        >
-          {PRIORITIES.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
+          options={PRIORITIES.map((p) => ({ value: p, label: p }))}
+        />
       </label>
 
       {/* Disabled on an empty title rather than submitting and letting the

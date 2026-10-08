@@ -5,6 +5,7 @@ import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { Button } from '../../components/forms/Button.tsx';
+import { Dropdown } from '../../components/Dropdown.tsx';
 import { avatarColor } from '../../theme/avatar-color.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useMembers } from '../../api/use-members.ts';
@@ -173,19 +174,20 @@ export function MembersScreen({ slug, me }: MembersScreenProps) {
                   <>
                     <label className="member-role">
                       <span className="visually-hidden">Role for {member.name}</span>
-                      <select
+                      <Dropdown
+                        variant="bare"
+                        noun="roles"
                         value={member.role}
                         disabled={busy}
-                        onChange={(event) => {
-                          void members.setRole(member.user_id, event.target.value as ProjectRole);
+                        onChange={(value) => {
+                          void members.setRole(member.user_id, value as ProjectRole);
                         }}
-                      >
-                        {PROJECT_ROLES.map((role) => (
-                          <option key={role} value={role} title={ROLE_SUMMARY[role]}>
-                            {role}
-                          </option>
-                        ))}
-                      </select>
+                        options={PROJECT_ROLES.map((role) => ({
+                          value: role,
+                          label: role,
+                          title: ROLE_SUMMARY[role],
+                        }))}
+                      />
                     </label>
 
                     {confirming === member.user_id ? (

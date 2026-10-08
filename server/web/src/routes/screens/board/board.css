@@ -492,6 +492,12 @@
   width: 100%;
 }
 
+/* The priority field is a `Dropdown` (LAI-726): its field look, at its own width. */
+.new-task-priority .dd-field {
+  width: auto;
+  min-width: 4.5rem;
+}
+
 .new-task .state {
   flex: 1 1 100%;
 }

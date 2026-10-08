@@ -211,7 +211,7 @@
  * border, a neutral hover. The column step, as before: the owner tried the
  * darker input step on the search box and reverted it (see `.bt-search`).
  */
-.bt-field .dd-trigger {
+.bt-field .dd-field {
   height: 2rem;
   background: var(--bg-column);
 }
@@ -236,9 +236,9 @@
  * and the owner kept the look. Set is carried by the border, the dot and the
  * weight.
  */
-.bt-cell-set .dd-trigger,
-.bt-cell-set .dd-trigger:hover:not(:disabled),
-.bt-cell-set .dd-trigger[aria-expanded='true'] {
+.bt-cell-set .dd-field,
+.bt-cell-set .dd-field:hover:not(:disabled),
+.bt-cell-set .dd-field[aria-expanded='true'] {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent-border);
   font-weight: var(--weight-semibold);

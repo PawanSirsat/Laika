@@ -435,7 +435,8 @@
   flex-wrap: wrap;
 }
 
-.dep-add select {
+/* The task picker: `Dropdown`'s trigger (LAI-726), drawn as its select was. */
+.dep-add .dd-trigger {
   flex: 1;
   min-width: 0;
   font: inherit;
@@ -1081,9 +1082,10 @@
   border: 2px solid var(--bg-canvas);
 }
 
-/* The rail's selects read as values with a chevron, not as form controls —
-   the design's fields are text you can change, not a settings page. */
-.meta-select select {
+/* The rail's controls read as values with a chevron, not as form controls —
+   the design's fields are text you can change, not a settings page. Each is
+   `Dropdown`'s bare trigger since LAI-726, styled as its select was. */
+.meta-select .dd-trigger {
   font: inherit;
   font-size: 0.84375rem;
   font-weight: var(--weight-semibold);
@@ -1097,18 +1099,20 @@
   max-width: 100%;
 }
 
-.meta-select select:hover,
-.meta-select select:focus-visible {
+.meta-select .dd-trigger:hover,
+.meta-select .dd-trigger:focus-visible,
+.meta-select .dd-trigger[aria-expanded='true'] {
   border-color: var(--border-subtle);
   background: var(--bg-card);
 }
 
-.meta-select select:disabled {
+.meta-select .dd-trigger:disabled {
   cursor: default;
+  opacity: 1;
   color: var(--text-secondary);
 }
 
-/* Jira's priority icon before the select (LAI-705). **Inline, not a flex
+/* Jira's priority icon before the control (LAI-705). **Inline, not a flex
    row**: as a flex item the <label> becomes the select's containing block, and
    the select's `max-width: 100%` then measures its own box less its negative
    margins, clipping `P2` to `P`. Inline, the select sizes exactly as it did.
@@ -1118,32 +1122,31 @@
   vertical-align: -0.1875rem;
 }
 
-.meta-prio-p1 select {
+.meta-prio-p1 .dd-trigger {
   color: var(--overdue);
   font-weight: var(--weight-bold);
 }
 
-.meta-prio-p2 select {
+.meta-prio-p2 .dd-trigger {
   color: var(--chip-orange);
 }
 
-.meta-person .assign-control select,
-.meta-person select {
+.meta-person .dd-trigger {
   font-size: 0.84375rem;
 }
 
 /*
  * **The Assignee reads like Priority and Sprint below it** (LAI-499).
  *
- * `AssignControl` brings the board card's own select (`assign.css`): a filled
- * box with the browser's arrow, sized to its text. In the rail that was the one
- * bright control among fields that read as plain text, so here it takes the
- * rail's form — no native chrome, nothing painted at rest, a border and the
- * card colour on hover or focus, a drawn chevron — and the row's width, with a
- * long name ellipsised instead of pushing past the card.
+ * `AssignControl` brings the board card's own control (`assign.css`): a filled
+ * box with an arrow, sized to its text. In the rail that was the one bright
+ * control among fields that read as plain text, so here it takes the rail's
+ * form — no native chrome, nothing painted at rest, a border and the card
+ * colour on hover or focus, the chevron at its end — and the row's width, with
+ * a long name ellipsised instead of pushing past the card.
  *
- * `color-scheme` is what makes the **opened** option list follow the theme;
- * without it a dark rail drops a white menu.
+ * The opened list is `Dropdown`'s own panel (LAI-726), on the theme's tokens;
+ * the `color-scheme` this once needed for the native menu is gone with it.
  */
 .meta-person .assign {
   flex: 1;
@@ -1157,13 +1160,15 @@
   display: flex;
 }
 
-.meta-person .assign-pick select {
+.meta-person .assign-pick .dd-trigger {
   appearance: none;
   -webkit-appearance: none;
-  color-scheme: dark;
   flex: 1;
   min-width: 0;
   width: 100%;
+  /* Uncapped, as the select was: the negative margin below pulls it left, and
+     the dropdown's own \`max-width: 100%\` would then stop it short of its box. */
+  max-width: none;
   font: inherit;
   font-size: 0.84375rem;
   font-weight: var(--weight-semibold);
@@ -1172,51 +1177,39 @@
   background: transparent;
   border: 1px solid transparent;
   border-radius: 6px;
-  padding: 0.3125rem 1.5rem 0.3125rem 0.4375rem;
+  padding: 0.3125rem 0.375rem 0.3125rem 0.4375rem;
   margin-left: -0.4375rem;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
 }
 
-:root[data-theme='light'] .meta-person .assign-pick select {
-  color-scheme: light;
-}
-
-.meta-person .assign-pick select:hover,
-.meta-person .assign-pick select:focus-visible {
+.meta-person .assign-pick .dd-trigger:hover,
+.meta-person .assign-pick .dd-trigger:focus-visible,
+.meta-person .assign-pick .dd-trigger[aria-expanded='true'] {
   border-color: var(--border-subtle);
   background: var(--bg-card);
 }
 
-.meta-person .assign-pick select:focus-visible {
+.meta-person .assign-pick .dd-trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
 
-.meta-person .assign-pick select:disabled {
+.meta-person .assign-pick .dd-trigger:disabled {
   cursor: progress;
+  opacity: 1;
   color: var(--text-secondary);
 }
 
-/* The chevron, drawn: the native arrow went with `appearance`. */
-.meta-person .assign-pick::after {
-  content: '';
-  position: absolute;
-  right: 0.5rem;
-  top: 50%;
-  width: 0.375rem;
-  height: 0.375rem;
-  margin-top: -0.25rem;
-  border-right: 1.5px solid var(--text-muted);
-  border-bottom: 1.5px solid var(--text-muted);
-  transform: rotate(45deg);
-  pointer-events: none;
+/* The chevron, at the control's end — `Dropdown` draws it (LAI-726). */
+.meta-person .assign-pick .dd-chevron {
+  width: 0.75rem;
+  height: 0.75rem;
 }
 
-.meta-person .assign-pick:hover::after {
-  border-color: var(--text-secondary);
+.meta-person .assign-pick:hover .dd-chevron {
+  stroke: var(--text-secondary);
 }
 
 .meta-sub {
@@ -1876,7 +1869,8 @@
   color: var(--text-secondary);
 }
 
-.meta-status select {
+/* `Dropdown`'s bare trigger (LAI-726); the caret is the label's own. */
+.meta-status .dd-trigger {
   appearance: none;
   font: inherit;
   font-size: 0.84375rem;
@@ -1888,8 +1882,9 @@
   cursor: pointer;
 }
 
-.meta-status select:disabled {
+.meta-status .dd-trigger:disabled {
   cursor: default;
+  opacity: 1;
 }
 
 .meta-status-caret {
@@ -2205,8 +2200,9 @@
 
 /* --------------------------------------- a subtask row's controls (LAI-700) */
 
-/* The status pill, as a menu: the select carries the pill's own type and
-   colour, with a caret drawn by the label so it follows the tone. */
+/* The status pill, as a menu: the control (`Dropdown`'s bare trigger since
+   LAI-726) carries the pill's own type and colour, with a caret drawn by the
+   label so it follows the tone. */
 .sub-status {
   position: relative;
   display: inline-flex;
@@ -2215,7 +2211,7 @@
   cursor: pointer;
 }
 
-.sub-status select {
+.sub-status .dd-trigger {
   appearance: none;
   font: inherit;
   letter-spacing: inherit;
@@ -2242,14 +2238,14 @@
   pointer-events: none;
 }
 
-/* The avatar, as a picker: the select covers it, invisible, so the avatar is
-   what is seen and the native menu is what opens. */
+/* The avatar, as a picker: the control covers it, invisible, so the avatar is
+   what is seen and the dropdown's list is what opens (LAI-726). */
 .sub-assign {
   position: relative;
   cursor: pointer;
 }
 
-.sub-assign select {
+.sub-assign .dd-trigger {
   position: absolute;
   inset: 0;
   width: 100%;
@@ -2270,7 +2266,17 @@
   filter: brightness(1.08);
 }
 
-.sub-status select:disabled,
-.sub-assign select:disabled {
+/* The label draws the focus ring, so the control inside it draws none. */
+.sub-status .dd-trigger:focus-visible,
+.sub-assign .dd-trigger:focus-visible {
+  outline: none;
+}
+
+.sub-status .dd-trigger:disabled,
+.sub-assign .dd-trigger:disabled {
   cursor: progress;
+}
+
+.sub-status .dd-trigger:disabled {
+  opacity: 1;
 }
