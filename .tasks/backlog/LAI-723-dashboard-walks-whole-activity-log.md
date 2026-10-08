@@ -3,7 +3,7 @@ id: LAI-723
 title: 'Dashboard walks the whole activity log on every live refresh, now that the feed pages past 200'
 area: web
 assignee: unclaimed
-priority: p2
+priority: p1
 depends-on: [LAI-722]
 discovered-from: LAI-722
 status: backlog
@@ -37,3 +37,16 @@ Make the Dashboard's activity read proportionate to what it draws.
   did not depend on it, it was wrong because of it.
 - Belongs with the later client-side performance phase (client cache/store),
   which LAI-722 left out of scope on purpose.
+
+## Reviewer's numbers (LAI-722 review, round 1) — why this is p1
+
+- **Default 7-day range:** 2–5 pages, up to 1,000 events, per refresh.
+- **"All time":** up to 20 sequential pages — about **4.3 s** across the
+  ~215 ms round trip — per refresh.
+- **Cancel-on-every-frame:** `useDashboard` aborts the in-flight walk when the
+  next live refresh starts. With "All time" on a busy project, if live frames
+  arrive more often than about every **4.8 s** (the walk plus the 500 ms
+  settle), every refresh is cancelled before it finishes and the numbers on
+  screen **stay stale** indefinitely.
+
+Not fixed in LAI-722: it is client work, for the client performance phase.
