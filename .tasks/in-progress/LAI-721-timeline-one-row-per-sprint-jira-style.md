@@ -6,9 +6,8 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: in-progress
 started: 2026-10-08T11:18:42Z
-finished: 2026-10-08T12:32:37Z
 ---
 
 ## Goal
@@ -46,7 +45,7 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
 ## Acceptance criteria
 
 - [x] One row per sprint, in date order. No row per task on the axis.
-- [x] Each sprint row's left column names it (`S4` and its name), its dates
+- [ ] Each sprint row's left column names it (`S4` and its name), its dates
       and its state (active, ended, planned); its bar spans `starts_on` to
       `ends_on` on the axis. Once a sprint is opened and its tasks are loaded,
       its row and bar show progress (`done/total`) and a blocked count.
@@ -54,12 +53,12 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
       sprint list loads up front; an opened sprint's tasks are fetched with
       `?sprint=<id>`, and the Unscheduled tray's with `?sprint=none` when it is
       opened. Asserted on the requests the page makes.
-- [x] The axis scrolls left and right inside the card; the sprint column stays
+- [ ] The axis scrolls left and right inside the card; the sprint column stays
       put while it does; the header (months, then weeks or months) stays put
       while rows scroll.
 - [x] Zoom: Weeks, Months, Quarters. A **Today** button brings today into view;
       on open the chart is scrolled so today is in view.
-- [x] Today is one vertical line with a label, across the header and rows.
+- [ ] Today is one vertical line with a label, across the header and rows.
 - [x] A sprint opens and closes by its chevron (keyboard reachable,
       `aria-expanded`); opened, it lists its tasks — key, title, status,
       assignee — with no bar per task. A task opens in the task drawer.
@@ -68,7 +67,7 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
       stays below the chart.
 - [x] Design tokens only; both themes verified by screenshot; fits 1366 wide
       with no page-level horizontal scroll.
-- [x] Browser tests for: one row per sprint and none per task, bar geometry
+- [ ] Browser tests for: one row per sprint and none per task, bar geometry
       against the dates, horizontal scrolling with the sprint column fixed,
       zoom changing the scale, expand/collapse, and Today — each shown to fail
       against the old screen.
@@ -120,4 +119,62 @@ two tasks in progress for that reason is recorded in both files.
   or quarter's name.
 - Discovered, not done: LAI-725 (the space bar's filters show on the Timeline
   and filter nothing — true before this task too).
+
+## Review notes (round 1)
+
+Reviewed 2026-10-08: CHANGES REQUIRED. The full gate on `be39c52` was run by
+the reviewer and confirmed: TEST 0 / LINT 0 / FMT 0. Unticked: 2 (counts only
+after opening), 4 (the header test cannot fail), 6 (pill and line can show
+different days), 11 (tests that cannot fail).
+
+Blocking
+1. The header test cannot fail: `.tlx` does not scroll vertically, so
+   `scrollTop += 40` stays 0. Make it scroll, assert `scrollTop > 0`, prove
+   it fails with the sticky rule removed.
+2. A stale comment in `timeline-derive.test.ts` describes D-049's task bars;
+   delete it.
+
+Should-fix
+3. Bad or far-future dates break the axis (2062: 1.1 s per click; 9999: ~75 s
+   a render, 416k ticks; 1e17: no header, "Invalid Date"). Exclude invalid
+   sprints with a notice, clamp the window, format a band label only when a
+   band starts, memoise bands and ticks. Tests for 2062, 9999, 1e17 with a
+   render-time bound.
+4. Blocked undercounts: `undefined` (a blocker elsewhere) is dropped. Show
+   unknowns ("1 blocked · 2 unknown"), on the bar and the task row; test.
+5. Today pill (local date) and line (UTC) can disagree. Format the pill from
+   `startOfDay(now)` in UTC; test with a fixed clock near midnight.
+6. Opened sprints never refresh. Watch `useLive().generation`, debounce,
+   reload sprints and every opened key; a drawer edit updates its row. Keep
+   `use-timeline.ts`'s API narrow (open keys, tasks for key) — it becomes a
+   view over the per-project store build-perf-store is introducing.
+7. `?sprint=`: open only ids in `rows` (ignore `all`, `none`); scroll to that
+   sprint's start on first open; test both.
+8. Counts without opening (§11.4.3): serve `task_counts` on the REST sprint
+   list from `sprintTaskCounts` (one grouped query, `can()`-checked as the
+   list is), update SPEC §6.4's sprint shape, keep the drift check green, show
+   done/total (and blocked) on every bar. Server and client tests.
+   **Owner-directed widening into `server/src`** — files named below.
+9. D-074 said "§11.4.3 as written"; it is not (single track, tray beside, no
+   zoom, name+goal+counts on the bar). Append a correction; update §11.4.3 to
+   describe the screen as built.
+
+Nits: drop the dashed span band on task rows; neutral unassigned avatar;
+today pill must not cover tick labels; sticky month label clipping at Weeks;
+Quarters axis ends at the quarter's end; one vertical scroller; keyboard
+panning on the chart and one tab stop per sprint; Expand all at most 3
+requests at once; respect `truncated` with a notice; remove dead
+`sprintSummary.wip` and the dead strip describe; `use-timeline.ts` races
+(`signal.aborted` in `.then`, `.finally` deletes only its own controller);
+missing tests — empty state, "No tasks in this sprint", error and retry,
+per-task Blocked.
+
+### Scope widened for round 1 (named files, owner-directed)
+
+- `server/src/services/sprints.ts` — `task_counts` on the sprint list view
+- `server/src/http/routes/sprints.ts` — serve it on `GET /projects/:slug/sprints`
+- `server/test/…` — a test for the field's shape and counts
+- `server/web/src/api/sprints.ts` — the client `Sprint` type gains the field
+- `docs/SPEC.md` — §6.4's sprint shape and §11.4.3's text
+- `docs/DECISIONS.md` — a correction appended to D-074
 
