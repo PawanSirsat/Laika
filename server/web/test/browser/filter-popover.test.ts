@@ -476,11 +476,13 @@ void describe('the Filter popover (LAI-717)', () => {
 
 /*
  * **On both screens that carry the toolbar** (review, should-fix 2). On the
- * Board it sits lower — under the sprint strip and WORKING NOW — so a fit
- * measured on the List says nothing about it.
+ * Board it sat lower — under the sprint strip and WORKING NOW — so a fit
+ * measured on the List said nothing about it. LAI-727 removed both rows; the
+ * Board's toolbar now carries the sprint figures and, opened on the active
+ * sprint, a chip row, so it is still measured on its own.
  */
 const DAY = 86_400_000;
-/** The Board as LAI-713 opens it: an active sprint, so the strip is populated. */
+/** The Board as LAI-713 opens it: an active sprint, so the Sprint chip is drawn. */
 const ACTIVE: ApiStub = {
   ...STUB,
   '/api/v1/projects/laika-core/sprints': {
@@ -504,10 +506,11 @@ const SCREENS = [
   { name: 'List', path: '/list?project=laika-core', ready: '.list tbody tr', stub: STUB },
   { name: 'Board', path: '/board?project=laika-core', ready: '.card', stub: STUB },
   {
-    // The populated sprint strip sits above the toolbar (review, round 2).
+    // The active sprint's chip row sits under the toolbar (review, round 2);
+    // until LAI-727 its populated sprint strip also sat above it.
     name: 'Board with an active sprint',
     path: '/board?project=laika-core',
-    ready: '.strip',
+    ready: '.bt-chip',
     stub: ACTIVE,
   },
 ] as const;

@@ -3,11 +3,10 @@ import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { useDelayed } from '../../components/use-delayed.ts';
-import { mergeTasks } from '../../api/board-merge.ts';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
-import { SpaceBand, SpaceSlot } from '../../components/space/SpaceSlot.tsx';
+import { SpaceSlot } from '../../components/space/SpaceSlot.tsx';
 import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import {
@@ -31,11 +30,12 @@ import { pageParam, readPage, readSort, sortParams } from './list/list-derive.ts
 import { isOverdue } from '../../api/date-only.ts';
 import { NO_SELECTION } from './list/list-select.ts';
 import type { BulkRun } from './list/list-bulk.ts';
-import { SprintStrip } from './board/SprintStrip.tsx';
+import { SprintStats } from './board/SprintStats.tsx';
+import { statsScope } from './board/sprint-stats.ts';
+import { useSprintStats } from './board/use-sprint-stats.ts';
 import { useEvents } from '../../api/use-events.ts';
 import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
-import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
@@ -103,8 +103,6 @@ export interface BoardScreenProps {
  * on screen while it re-reads, and only the cards that changed re-render. No
  * polling: LAI-049 asks for none, and the stream is the signal.
  */
-/** Nothing to protect when merging the strip's list — it has no local writes. */
-const NO_TASKS: ReadonlySet<string> = new Set();
 /** How long after a drop a `settled` card counts as carried there by hand. */
 const CARRIED_MS = 1000;
 
@@ -113,10 +111,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
   /*
    * **The board no longer polls presence.** It did so for two readers: the
-   * WORKING NOW strip and the right rail. The strip moved to `SpaceLayout`,
-   * which has its own read through `SpaceLive`, and the rail is now the
-   * Activity tab — so this was a poll every twenty seconds, on every board, for
-   * nobody. `/activity` does its own.
+   * WORKING NOW strip and the right rail. The strip moved to `SpaceLayout`
+   * (and was removed in LAI-727), the header's `Agents` count reads
+   * `SpaceLive`, and the rail is now the Activity tab — so this was a poll
+   * every twenty seconds, on every board, for nobody. `/activity` does its own.
    */
   /**
    * The project this board is about.
@@ -149,9 +147,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const [project, setProject] = useState<Project | undefined>(undefined);
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
   /*
-   * Whether the sprint list is still in flight — the strip cannot reserve its
-   * height without knowing, and an empty list means two different things
-   * (LAI-297).
+   * Whether the sprint list is still in flight — an empty list means two
+   * different things (LAI-297), and the default sprint (LAI-713) waits on it.
    */
   const [sprintsLoading, setSprintsLoading] = useState(true);
   /** Whose sprints those are — a list left over from the last project is not this one's. */
@@ -162,14 +159,6 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * leaving the board, so coming back opens on the active sprint again.
    */
   const [sprintDecidedFor, setSprintDecidedFor] = useState<string | undefined>(undefined);
-  /** Every task in the project, unscoped — the strip counts across sprints. */
-  const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
-  /** The strip's list hit `everyPage`'s cap, so its counts are a floor. */
-  const [stripPartial, setStripPartial] = useState(false);
-  /** Bumped by `refresh()`, so the strip's list re-reads with the board (LAI-707). */
-  const [stripAttempt, setStripAttempt] = useState(0);
-  /** Which project the strip's list belongs to, so a new one starts empty. */
-  const stripSlug = useRef<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   /**
    * The List's selection and its bulk run (LAI-496), **held here** because a
@@ -346,7 +335,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * board should show *"by default the current active sprint, not all
    * selected — but the user can change that."*
    *
-   * Written into the URL rather than assumed, so the strip, the Filter badge
+   * Written into the URL rather than assumed, so the stats, the Filter badge
    * and a reload all agree on what is shown. Only when the URL names no sprint
    * and only once per visit to the board: picking *All sprints* writes
    * `?sprint=all`, and *Clear all* leaves the board on every sprint rather than
@@ -387,15 +376,18 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const showBoardSkeleton = useDelayed(firstLoad);
 
   /**
-   * **One refresh for everything the stream can stale** (LAI-707): the board,
-   * and the strip's own whole-project list, whose counts otherwise froze at
-   * the first read. Stable, so the effects below can depend on it.
+   * **One refresh for everything the stream can stale** (LAI-707). The strip's
+   * own whole-project list used to be the second thing; its figures are now
+   * counted from the board's read (LAI-727), so the board is all there is.
+   * Stable, so the effects below can depend on it.
    */
   const reloadBoard = board.reload;
   const refresh = useCallback((): void => {
     reloadBoard();
-    setStripAttempt((n) => n + 1);
   }, [reloadBoard]);
+
+  /** DONE / BLK / LEFT, from the task set the board already holds (LAI-727). */
+  const stats = useSprintStats(slug, filter, board.state);
 
   /*
    * **Hold refresh answers for the length of a pointer drag** (LAI-707). A
@@ -546,8 +538,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     refresh();
   }, [stream.gap?.seq]);
 
-  // Sprints for the strip, plus an unscoped task list so its per-sprint counts
-  // are of the whole project rather than of whatever the board is filtered to.
+  // The project's sprints: the default sprint, the Filter's options, the
+  // `S<n>` labels and the stat group's days left.
   useEffect(() => {
     if (slug === undefined) return;
     const controller = new AbortController();
@@ -570,9 +562,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       .finally(() => {
         /*
          * **`finally`, and not inside the `then`.** A failed sprint list must
-         * also stop reserving the strip's height, or a project whose sprints
-         * endpoint is down keeps a 57px empty band for ever — which is the
-         * LAI-297 jump frozen rather than fixed.
+         * also end the loading state, or a board waiting to open on the active
+         * sprint (LAI-713) waits for ever. It once also held the sprint strip's
+         * height (LAI-297); the strip is gone (LAI-727).
          *
          * Guarded on the signal so an aborted request does not write state
          * into an unmounted screen.
@@ -595,51 +587,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
      * The effect never reads `tasks`. It was presumably there so the strip's
      * progress would follow the board, but progress is **not** in the sprint
      * payload — `GET /sprints` returns name, dates, status and goal, and
-     * `SprintStrip` counts `2/2` itself from the tasks it is handed. So the
+     * the strip counted `2/2` itself from the tasks it was handed. So the
      * re-fetch returned identical rows and changed nothing on screen.
      */
   }, [slug]);
-
-  /*
-   * The strip's whole-project task list — **its own effect**, re-read on every
-   * `refresh()` and merged in place (LAI-707), where it used to be read once per
-   * project and never again, so its counts froze while the board moved.
-   */
-  useEffect(() => {
-    if (slug === undefined) return;
-    const controller = new AbortController();
-    if (stripSlug.current !== slug) {
-      // A different project: its counts start from nothing, not from the last one.
-      stripSlug.current = slug;
-      setAllTasks([]);
-    }
-
-    /*
-     * **Every page, not the first** (LAI-702). This read one page of 200,
-     * oldest-updated first, and the strip counted that as the project: on
-     * Onroute (328 tasks) S3 read 7/42 while it held 157, because its 149
-     * Review tasks were the most recently moved and fell past the page.
-     */
-    everyPage((cursor) =>
-      listTasks(
-        slug,
-        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
-        controller.signal,
-      ),
-    )
-      .then(({ items, truncated }) => {
-        setAllTasks((prev) => mergeTasks(prev, items, NO_TASKS).tasks);
-        setStripPartial(truncated);
-      })
-      .catch(() => {
-        // A failed re-read keeps the last counts; a new project already
-        // started empty above.
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [slug, stripAttempt]);
 
   const mayCreate =
     me !== undefined &&
@@ -799,7 +750,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    */
   const tasks = shownTasks;
 
-  /** `S1`, `S2`… in the sprint order the strip shows. Real data. */
+  /** `S1`, `S2`… in the project's sprint order, as the Filter lists them. Real data. */
   /** What the panel shows as removable chips — the same params the bar writes. */
   /*
    * The chips, the badge and *Clear all* all read the one list (LAI-487), and
@@ -886,7 +837,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
   /*
    * **A filter change sends the List back to page one**, whoever made it: the
-   * toolbar, the space bar and WORKING NOW all write filter keys, and a page
+   * toolbar, the space bar and the chips all write filter keys, and a page
    * number from a different set of rows points at arbitrary work. One effect
    * watching the filters rather than a reset in every writer, so a writer
    * added later cannot forget it.
@@ -946,31 +897,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   return (
     <div className="board">
       {/*
-        The sprint strip comes **first**, before the header (LAI-425).
-
-        The prototype opens with it and we opened with search and filters. That
-        one inversion changes what the screen appears to be about: *which sprint
-        am I in* versus *what am I filtering*. Measured against
-        `docs/design/Laika Prototype.dc.html` at 1600×1100, not from memory.
+        **No sprint strip** (LAI-727). The owner removed the row and kept its
+        DONE / BLK / LEFT, which are now `SprintStats` in the toolbar below;
+        sprints are switched in the Filter popover and its chip. It had come
+        first since LAI-425 — the prototype's order — and above WORKING NOW
+        since LAI-272; both rows are gone, so the toolbar sits under the tabs.
       */}
-      {/* Above WORKING NOW, as the design has it (LAI-272) — and on the
-          board, which is the only screen the design gives the chips to
-          (`isBoard`, prototype line 146). Timeline draws its own set. */}
-      {view !== 'list' && (
-        <SpaceBand>
-          <SprintStrip
-            sprints={sprints}
-            loading={sprintsLoading}
-            tasks={allTasks}
-            partial={stripPartial}
-            selected={sprintScope}
-            onSelect={(id) => {
-              // Every sprint is a choice now, not the absence of one (LAI-713).
-              setParam('sprint', id ?? ALL_SPRINTS);
-            }}
-          />
-        </SpaceBand>
-      )}
 
       {/*
         The board's own filters, in the space bar's slot (LAI-251).
@@ -1001,13 +933,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       />
 
       {/*
-        **The board's own row, directly under WORKING NOW** (LAI-293).
+        **The board's own row, directly under the tabs** (LAI-293, LAI-727).
         
         It lived in the space bar until the owner asked for the reference's
         shape: one compact row sitting on top of the columns. No portal and no
-        slot is needed to get there — `SpaceLayout` renders `<PresenceStrip>`
-        (WORKING NOW) and then `{children}`, so the board's own output is
-        *already* the next thing below it. Measured before relying on it.
+        slot is needed to get there — `SpaceLayout` renders the bar and then
+        `{children}`, so the board's own output is *already* the next thing
+        below it. WORKING NOW sat between them until LAI-727 removed it.
         
         That also removes a seam: the row would otherwise have been a container
         owned by one task and contents owned by another, with the height agreed
@@ -1098,6 +1030,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           onOverflow={(anchor) => {
             setOverflowAt((at) => (at === undefined ? anchor : undefined));
           }}
+        />
+        <SprintStats
+          scope={statsScope(sprintScope, sprintsKnown ? sprints : undefined, Date.now())}
+          counts={stats.counts}
+          partial={stats.partial}
+          filtered={stats.filtered}
         />
       </div>
 
@@ -1267,9 +1205,6 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             : { retryInSeconds: stream.retryInSeconds })}
         />
       )}
-
-      {/* WORKING NOW moved up to the space bar in LAI-251: it is about the
-          space, not about the board, and every view of a space shows it. */}
 
       {/* The List draws no swimlanes, so a `?group=` it carries is kept for
           the Board and not announced here (LAI-488). */}

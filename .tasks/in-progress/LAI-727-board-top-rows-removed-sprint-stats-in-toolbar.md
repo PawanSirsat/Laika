@@ -42,15 +42,19 @@ field and its chip.
 - `server/web/src/components/space/SpaceLayout.tsx` — WORKING NOW removed
 - `server/web/src/components/space/PresenceStrip.tsx`,
   `presence-strip.css` — deleted (nothing else renders them)
-- `server/web/src/components/space/SpaceSlot.tsx`, `space.css`,
-  `board-toolbar.css` / `board.css` — comments and spacing only, if the
-  measured layout needs it
+- `server/web/src/components/space/SpaceSlot.tsx` — comments only
 - Tests: `server/web/test/browser/board-sprint-stats.test.ts` (new),
   `sprint-strip.test.ts`, `board-sprint-default.test.ts`,
   `board-refresh.test.ts`, `board-presence.test.ts`, `list-view.test.ts`,
   `space-bar.test.ts`, `filter-popover.test.ts`, `board-lane-scroll.test.ts`,
+  `space-chrome-compaction.test.ts` (a comment),
   `server/web/test/routes/screens/board-bands.test.ts`,
   `server/web/test/routes/screens/board/sprint-stats.test.ts` (new)
+- `server/test/tooling/structure.test.ts` — one `WEB_NO_MIRROR_REQUIRED`
+  entry, for the hook `use-sprint-stats.ts` (the `WEB_*` maps, D-026)
+
+No spacing CSS changed: with both rows gone the Board's toolbar row sits
+exactly where the List's already did (measured, y=98 at 1366×768 on both).
 
 `SprintStrip.tsx` and `sprint-strip.css` **stay**: the Timeline renders the
 same strip (`timeline/TimelineScreen.tsx`), and `timeline/` is not touched.
@@ -76,8 +80,9 @@ same strip (`timeline/TimelineScreen.tsx`), and `timeline/` is not touched.
 - [ ] At 1366×768 and at 900px wide the group does not overlap the search, the
       Filter button or popover, the chips row or the icon buttons, and the page
       does not scroll sideways; both themes.
-- [ ] The header's `Agents N` still counts from presence; the presence read
-      that fed only the row is gone with it.
+- [ ] The header's `Agents N` still counts from presence. (No presence read
+      existed for the row alone: `SpaceLive`'s read also feeds `Agents N`, so
+      it stays; Activity and Capacity read their own.)
 - [ ] Existing tests that asserted the strip or the row are moved onto the
       stat group or retired with a stated reason; every new test fails on the
       old code (swap, trap, checksum).
