@@ -1,10 +1,9 @@
 import { createActivityStore } from './activity-store.ts';
-import type { ActivityEvent } from './activity.ts';
-import { request } from './client.ts';
+import { listProjectActivityPage } from './activity.ts';
 import { observeStreams } from './event-stream.ts';
 import { sharedCache } from './query-cache.ts';
 import { createTaskStore } from './task-store.ts';
-import { listTasks, type Page } from './tasks.ts';
+import { listTasks } from './tasks.ts';
 
 /**
  * The client store, wired (LAI-724, D-075).
@@ -47,23 +46,20 @@ export const taskStore = createTaskStore({
 });
 
 export const activityStore = createActivityStore({
-  fetchPage: (slug, query, signal) => {
-    const params = new URLSearchParams({ limit: String(PAGE) });
-    if (query.since !== undefined) params.set('since', String(query.since));
-    if (query.cursor !== undefined) params.set('cursor', query.cursor);
-    return request<Page<ActivityEvent>>(
-      `/projects/${encodeURIComponent(slug)}/activity?${params.toString()}`,
-      { signal },
-    );
-  },
+  fetchPage: (slug, query, signal) => listProjectActivityPage(slug, query, signal),
 });
 
 /**
  * The cached answers a frame about `slug` can have changed: everything under
- * the project, and the projects list (its task and member counts). Presence is
- * not here — it is refetched, debounced, by `SpaceLive`, and reused only for a
- * moment anyway.
+ * the project, and the projects list (its task and member counts).
  */
+/**
+ * **And presence** (LAI-724 review, S5). `SpaceLive` re-reads it 1.5 s after a
+ * burst, and it is reused for 2 s: without this, a burst just after a read was
+ * answered from the cache and the strip stayed as it was.
+ */
+const PRESENCE = (key: string): boolean => key === '/presence';
+
 function aboutProject(slug: string): (key: string) => boolean {
   const base = `/projects/${encodeURIComponent(slug)}`;
   return (key) =>
@@ -78,11 +74,13 @@ observeStreams({
   frame(slug, frame) {
     if (frame.kind === 'activity') {
       sharedCache.invalidate(aboutProject(slug));
+      sharedCache.invalidate(PRESENCE);
       if (frame.type.startsWith('org.')) sharedCache.invalidate((key) => key === '/org');
       taskStore.frame(slug, 'activity');
       activityStore.frame(slug, 'activity');
     } else if (frame.kind === 'gap') {
       sharedCache.invalidate(aboutProject(slug));
+      sharedCache.invalidate(PRESENCE);
       taskStore.frame(slug, 'gap');
       activityStore.frame(slug, 'gap');
     }

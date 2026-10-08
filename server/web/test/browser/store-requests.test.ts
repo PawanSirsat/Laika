@@ -379,6 +379,38 @@ void describe('a live change (LAI-724, keeping LAI-707 and LAI-708)', () => {
   });
 });
 
+/*
+ * **Presence after a second burst** (LAI-724 review, S5). The settle read ran
+ * 1.5 s after a burst, but `/presence` was reused for 2 s and frames did not
+ * make it stale — so a burst landing just after a read was answered from the
+ * cache, and the strip stayed as it was.
+ */
+void describe('presence follows every burst', () => {
+  void test('a burst just after a presence read still reads presence again', async () => {
+    const server: Server = { t3: 'todo', events: [] };
+    const h = await open('/board?project=laika-core', stub(server), { before: fakeStream });
+    const seen = record(h);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await settle(seen, h.page);
+      const presence = (): number => seen.filter((u) => u === '/api/v1/presence').length;
+      const start = presence();
+
+      await emit(h.page, event(20, Date.now()), 20);
+      const deadline = Date.now() + 5_000;
+      while (presence() === start && Date.now() < deadline) await h.page.waitForTimeout(50);
+      assert.equal(presence(), start + 1, 'positive control: the first burst read presence');
+
+      // At once: the answer just read is under 2 s old.
+      await emit(h.page, event(21, Date.now()), 21);
+      await h.page.waitForTimeout(2_500);
+      assert.equal(presence(), start + 2, 'the second burst was answered from the cache');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('Capacity resolves tasks from the store (LAI-724)', () => {
   void test('no GET /tasks/:id for the open project’s tasks, one for a task elsewhere, and 16 requests or fewer', async () => {
     const server: Server = { t3: 'in_progress', events: [] };
