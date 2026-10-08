@@ -96,3 +96,22 @@ On the owner's direct instruction. Details in `logs/perf-2026-10-08.md`
   17:22:23Z.
 - **The gate criterion is ticked on the gate run after this commit** (the
   report), on the HEAD that carries this file.
+
+## Review notes (round 1)
+
+**Review: APPROVE, nothing blocking** (2026-10-08, relayed by the
+orchestrator). Follow-ups made as new commits on build-perf-store, after
+`git merge master` (da87fd7, release 2, with LAI-726's Dropdown; clean merge):
+
+1. **The Dropdown is in.** `CardSelect` renders `components/Dropdown.tsx`; no
+   native `<select>` is left, and `no-native-select.test.ts` passes without
+   excluding any dashboard file. This supersedes the "no shared Dropdown on
+   this branch" notes above. The popover ignores clicks in the portalled panel
+   and an Escape the panel used, as BoardToolbar does.
+2. **Focus bug fixed.** With a filter set, opening the popover focused Clear,
+   so Enter wiped the filters. Focus now goes to the first field, on open and
+   after Clear. Test red on 0234534 (focus was on `BUTTON.dcf-clear`).
+3. **Test gap:** a screen test that goes red if `DashboardScreen` judges
+   blocked from `peopleTasks` instead of the whole project.
+4. **Test gap:** the range bound is exact, `updated_at == since` kept and
+   `since - 1` excluded; red if `<` becomes `<=`.
