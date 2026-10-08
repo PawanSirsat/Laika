@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-08T11:18:42Z
+finished: 2026-10-08T17:36:11Z
 ---
 
 ## Goal
@@ -44,7 +45,7 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
 
 ## Acceptance criteria
 
-- [ ] One row per sprint, in date order. No row per task on the axis.
+- [x] One row per sprint, in date order. No row per task on the axis.
 - [x] Each sprint row's left column names it (`S4` and its name), its dates
       and its state (active, ended, planned); its bar spans `starts_on` to
       `ends_on` on the axis. Once a sprint is opened and its tasks are loaded,
@@ -67,7 +68,7 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
       stays below the chart.
 - [x] Design tokens only; both themes verified by screenshot; fits 1366 wide
       with no page-level horizontal scroll.
-- [ ] Browser tests for: one row per sprint and none per task, bar geometry
+- [x] Browser tests for: one row per sprint and none per task, bar geometry
       against the dates, horizontal scrolling with the sprint column fixed,
       zoom changing the scale, expand/collapse, and Today — each shown to fail
       against the old screen.
@@ -272,4 +273,26 @@ backed by a work count; the counts query covers the whole project on every
 page — filter by the page's sprint ids, tested; "Blocked?" squeezes long
 titles — an icon with a tooltip at narrow widths; live refresh — a minimum
 interval between refetches.
+
+## Round 2 — what changed (2026-10-08T17:36:11Z)
+
+1. Label tests: the month test asserts a label in view at every stop naming
+   the month under the left edge (`timeline-sprints.test.ts:485`); the pill
+   test asserts labels either side (`:447`). Under `{false && (` → "no month
+   named at scrollLeft 0"; with ticks blanked → "no label left of the pill".
+2. SPEC §11.4.2.1 restored; §11.4.3 lists drag-to-reschedule as not built;
+   LAI-731 filed.
+3. `axisProblem` (`timeline-derive.ts:98`): `invalid` vs `beyond` (50 years),
+   two notices (`TimelineScreen.tsx:334`, `:341`); bands/ticks step by month
+   and week (`:207`, `:241`); header drawn only in view (`TimelineScreen.tsx:377`).
+   Tests `:824`, `:848`; reach 5 years → fails; no virtualisation → 2169 ticks.
+4. Blocked? skips done/cancelled (`timeline-derive.ts:302`,
+   `TimelineScreen.tsx:773`); bar says "N blocked?". Fails on e2eae8d.
+5. Stale comment corrected (`timeline-derive.ts:12`).
+Nits: SPEC today line and tray text; tray is the chart's last group
+(`TimelineScreen.tsx:586`, test `:901`); `h.calls` with positive controls;
+time bounds backstopped by work counts; counts filtered to the page's sprints
+(`server/src/services/sprints.ts:257`, test `server/test/services/sprints.test.ts:649`);
+Blocked label whole-or-icon, gives way first (`timeline.css:494`);
+refetches throttled ≥2 s (`use-timeline.ts:42`, tests `:1035`, `:1054`).
 
