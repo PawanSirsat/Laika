@@ -168,6 +168,41 @@ void describe('the SPACES section', () => {
   });
 });
 
+void describe('SETTINGS sits at the bottom of the sidebar', () => {
+  void test('the group ends at the foot of the nav, below every space', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await h.page.locator('.space-row').first().waitFor({ timeout: 20_000 });
+      await h.page.setViewportSize({ width: 1280, height: 900 });
+      const m = await h.page.evaluate(() => {
+        const nav = document.querySelector('.sidebar-nav');
+        const settings = document.querySelector('.sidebar-group-end');
+        const rows = [...document.querySelectorAll('.space-row')];
+        if (nav === null || settings === null) return null;
+        const navBox = nav.getBoundingClientRect();
+        const box = settings.getBoundingClientRect();
+        return {
+          title: settings.querySelector('.sidebar-group-title')?.textContent?.trim() ?? '',
+          gapBelow: navBox.bottom - box.bottom,
+          lastSpaceBottom: Math.max(...rows.map((r) => r.getBoundingClientRect().bottom)),
+          top: box.top,
+          padding: parseFloat(getComputedStyle(nav).paddingBottom),
+        };
+      });
+      assert.ok(m !== null, 'no SETTINGS group to measure');
+      assert.equal(m.title, 'SETTINGS');
+      // Flush with the nav's own bottom padding: pushed down, not floating mid-rail.
+      assert.ok(
+        Math.abs(m.gapBelow - m.padding) <= 1,
+        `SETTINGS ends ${String(m.gapBelow)}px above the nav's foot, padding is ${String(m.padding)}`,
+      );
+      assert.ok(m.top > m.lastSpaceBottom, 'SETTINGS overlaps the spaces');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
 void describe('the view tabs', () => {
   void test('are the project-scoped views, and every one carries the project', async () => {
     const h = await open('/board?project=laika-core', STUB);

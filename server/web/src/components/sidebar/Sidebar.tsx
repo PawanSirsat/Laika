@@ -171,7 +171,12 @@ export function Sidebar({
         )}
 
         {NAV_GROUPS.filter((group) => routesInGroup(group, holds).length > 0).map((group) => (
-          <div key={group} className="sidebar-group">
+          <div
+            key={group}
+            // SETTINGS sits at the foot of the rail, above the user, the way
+            // most apps keep account settings out of the working list.
+            className={group === 'SETTINGS' ? 'sidebar-group sidebar-group-end' : 'sidebar-group'}
+          >
             {collapsed ? (
               <div className="sidebar-minirule" aria-hidden="true" />
             ) : (
