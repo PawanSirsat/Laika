@@ -200,6 +200,14 @@ function spawnOnce(mode: string, options: HookOptions): Promise<Run & { spawnErr
     });
     // What Claude Code actually writes to a hook. Nothing in the script may
     // consume it, and a script that exits without reading it must not care.
+    // **Neither may this side** (LAI-714): a hook that exits before the write
+    // lands closes the pipe, and the write then fails `EPIPE` — on a fast
+    // machine never, on a CI runner now and then, and unhandled it failed
+    // whichever test was running. The hook's exit code and output are still
+    // what every test asserts on.
+    child.stdin?.on('error', (cause: NodeJS.ErrnoException) => {
+      if (cause.code !== 'EPIPE') throw cause;
+    });
     child.stdin?.end(JSON.stringify({ session_id: 'abc', hook_event_name: 'PostToolUse' }));
   });
 }

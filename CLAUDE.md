@@ -468,6 +468,13 @@ LAI-015 had to clean up.
   their own task file). Never `git add -A` from the repo root — stage explicit
   paths.
 - Never amend, rebase-edit, revert, or force-push another session's commits.
+- **A push to `origin/master` is a release** (D-073). GitHub Actions runs the
+  gate, builds the arm64 image, and deploys it to production within about
+  fifteen minutes. A deploy that comes up unhealthy rolls back by itself, and
+  the run goes red. So the local gate before `git push` (§5) is not optional,
+  and a red **CI / Deploy** run on master is the next thing to fix — nothing
+  after it deploys until it is green. Branches other than `master` run the
+  gate and deploy nothing.
 
 ### 4.1 GitHub account — personal only
 
