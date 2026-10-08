@@ -68,10 +68,12 @@ void describe('the dialog', () => {
    * and a useless control. Every status is offered; picking a held one moves it.
    */
   void test('every status is offered, not only unclaimed ones', () => {
-    assert.match(dialog, /\{STATUSES\.map\(/, 'the picker iterates something narrower');
+    // The picker is a `Dropdown` since LAI-726, so the statuses are mapped
+    // into its `options`, not into `<option>` children — `...STATUSES.map(`.
+    assert.match(dialog, /\.\.\.STATUSES\.map\(/, 'the picker iterates something narrower');
     assert.doesNotMatch(
       dialog,
-      /\{free\.map\(/,
+      /\.\.\.free\.map\(|\{free\.map\(/,
       'the picker is back to offering only unclaimed statuses',
     );
   });

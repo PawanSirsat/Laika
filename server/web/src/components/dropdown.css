@@ -128,6 +128,18 @@
   color: var(--text-muted);
 }
 
+/*
+ * Focus is drawn on the row, not as a ring inside the panel: the search box
+ * is where focus always is while the panel is open, and the accent rule under
+ * it says so. The input's own outline is transparent, not removed, so a
+ * forced-colours theme still paints it.
+ */
+.dd-search:focus-within {
+  border-bottom-color: var(--accent);
+  box-shadow: 0 1px 0 var(--accent);
+  color: var(--accent);
+}
+
 .dd-search svg {
   flex: none;
   width: 0.8125rem;
@@ -144,7 +156,7 @@
   font: inherit;
   font-size: 0.8125rem;
   color: var(--text-primary);
-  outline: none;
+  outline: 2px solid transparent;
 }
 
 .dd-search-input::placeholder {
