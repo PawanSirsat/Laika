@@ -192,3 +192,28 @@ Nits
 - Note: `2c69a45` carries LAI-719's move to `done/` as a pure rename (the
   `git mv` was staged before that commit); its edits are the next commit.
 
+
+## Review notes (round 2)
+
+Re-review 2026-10-08: APPROVED, with three should-fixes and three nits before
+the batch ships. Made as a follow-up commit, `434456d`; this file stays in
+review.
+
+1. **The bulk bar covered the last row at the end of a long scroll** (round 1
+   moved the overlap rather than removing it). While a selection exists,
+   `.list-bulk-room` (`list.css`, `--list-bulk-room`) reserves the bar's height
+   and gap before `.list-create`. The long-list cases now assert
+   `lastRow.bottom <= bulk.top` at 1440 and 900 wide; on `4e55d01` both fail
+   ("row ends 789.5, bar starts 736.25"; "row ends 752.5, bar starts 699.25").
+2. **Keyboard focus lost when the Ready pill toggles** — the label changed and
+   `key={toggle.label}` remounted the input. Keyed by filter id now
+   (`'ready'` …). The `ready=false` test presses Space and asserts focus stays
+   on the input; the old key fails it ("left focus on body").
+3. **No positive control in the 900-wide long case.** Every long case asserts
+   `scrollHeight - clientHeight > 500`; making `.list-scroll` grow to its
+   content fails it ("the table scrolls (0px)").
+
+Nits: the `.list-bulk` comment now says it floats over the card and its
+`max-width` is the card's; the resize test waits for `right <= innerWidth`
+instead of 200 ms; the Board fit and Escape tests also run with the
+active-sprint stub, where the populated sprint strip sits above the toolbar.
