@@ -165,3 +165,39 @@
   font-style: italic;
   color: var(--text-muted);
 }
+
+/*
+ * A comment's markdown (LAI-734): the thread's body size, tighter spacing.
+ *
+ * `pre-line` keeps a single newline a line break, as a comment always showed
+ * it — agents and people write one line per thought and do not leave a blank
+ * line between. It is the one place a comment reads differently from the
+ * description, and it is CSS, not a different parse. Paragraphs only: a list
+ * item can hold the renderer's newline text between its blocks, and `pre-line`
+ * there would print each one as an empty line.
+ */
+.md-comment p {
+  white-space: pre-line;
+}
+
+.md-comment p,
+.md-comment ul,
+.md-comment ol,
+.md-comment blockquote,
+.md-comment pre,
+.md-comment .md-table-wrap,
+.md-comment hr {
+  margin: 0 0 0.5rem;
+}
+
+.md-comment > :last-child {
+  margin-bottom: 0;
+}
+
+.md-comment li + li {
+  margin-top: 0.125rem;
+}
+
+.md-comment code {
+  font-size: 0.8125rem;
+}

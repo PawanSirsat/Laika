@@ -22,8 +22,9 @@ import './task-markdown.css';
  *   requests (SPEC §13.4), and an image URL in a description is exactly that.
  *   The alt text stands in for it.
  *
- * Comments do not use this. They keep LAI-284's fences-only rule, which is a
- * separate decision about a separate surface.
+ * Comments use it too (LAI-734), through `CommentBody`, which adds a class
+ * and a `pre` of its own. A caller can add elements but never replace the
+ * three above: they are merged last, so the safety rules hold on every surface.
  */
 
 const COMPONENTS: Components = {
@@ -40,10 +41,21 @@ const COMPONENTS: Components = {
   ),
 };
 
-export function TaskMarkdown({ source }: { readonly source: string }) {
+export interface TaskMarkdownProps {
+  readonly source: string;
+  /** Added beside `md`, for a surface that sizes it differently. */
+  readonly className?: string;
+  /** Extra element renderers. `a`, `img` and `table` above always win. */
+  readonly components?: Components;
+}
+
+export function TaskMarkdown({ source, className, components }: TaskMarkdownProps) {
   return (
-    <div className="md">
-      <Markdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
+    <div className={className === undefined ? 'md' : `md ${className}`}>
+      <Markdown
+        remarkPlugins={[remarkGfm]}
+        components={components === undefined ? COMPONENTS : { ...components, ...COMPONENTS }}
+      >
         {source}
       </Markdown>
     </div>
