@@ -2,14 +2,19 @@
 id: LAI-723
 title: 'Dashboard walks the whole activity log on every live refresh, now that the feed pages past 200'
 area: web
-assignee: unclaimed
+assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
 discovered-from: LAI-722
-status: backlog
+status: in-progress
+started: 2026-10-08T14:05:00Z
 ---
 
 ## Goal
+
+Claimed on the owner's direct instruction, built and closed inside LAI-724
+(performance phase 2).
+
 
 `useDashboard` (`server/web/src/routes/screens/dashboard/use-dashboard.ts`)
 walks `GET /projects/:slug/activity?limit=200` until `next_cursor` is null,
