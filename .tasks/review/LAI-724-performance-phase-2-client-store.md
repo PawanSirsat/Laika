@@ -5,9 +5,9 @@ area: web
 assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
-status: in-progress
+status: review
 started: 2026-10-08T12:28:38Z
-finished: 2026-10-08T13:00:32Z
+finished: 2026-10-08T14:00:55Z
 ---
 
 ## Goal
@@ -35,6 +35,9 @@ Query.
   freshness window, subscriber-counted abort, invalidation, per-user reset
 - new `server/web/src/api/task-store.ts`, `server/web/src/api/use-project-tasks.ts`
   — the per-project task set, one walk, live updates, LAI-707 merge
+- new `server/web/src/api/store.ts` — the wiring: one place for live frames,
+  the store's user, other projects evicted on a switch (named in review round 1)
+- `server/web/src/api/activity.ts` — `listProjectActivityPage` (review round 1)
 - new `server/web/src/api/task-filter.ts` — the board's filter applied in memory
 - new `server/web/src/api/activity-store.ts` — the Dashboard's activity window,
   incremental (LAI-723)
@@ -59,7 +62,7 @@ Not touched: `routes/screens/timeline/TimelineScreen.tsx`, `timeline.css`,
 
 ## Acceptance criteria
 
-- [ ] One in-memory store under `server/web/src/api/`, kept across tab switches:
+- [x] One in-memory store under `server/web/src/api/`, kept across tab switches:
       the same GET in flight twice is one request; cached data shows at once on
       revisiting a tab and revalidates in the background at most once per 30 s
       or on an invalidation; a request is aborted only when no subscriber
@@ -75,7 +78,7 @@ Not touched: `routes/screens/timeline/TimelineScreen.tsx`, `timeline.css`,
       before, the store keeps every child in `byId`.
 - [x] Capacity reads the open project's tasks from the store and makes no
       `GET /tasks/:id` for them; its cold load is 16 requests or fewer.
-- [ ] LAI-723: a live frame costs the Dashboard one small activity request, the
+- [x] LAI-723: a live frame costs the Dashboard one small activity request, the
       counts are unchanged against a project with more than 200 events in the
       window, and "All time" cannot be held stale by frequent frames.
 - [x] No endpoint is requested twice on the cold load of any tab.
@@ -141,3 +144,12 @@ Unticked: AC1 (bounded memory) and the LAI-723 sub-criterion (exact counts).
   a comment that catching up by `seq` would be sturdier.
 - **Question** — do the Label (and other) filter options derive from the full
   project or the filtered set?
+
+## Round 1 fixes
+
+All in `logs/perf-2026-10-08.md` (entry 14:00Z), each with a test proved to fail
+without its fix. B1: bounded cache (maxAge-0 answers not kept, other projects
+evicted on a switch, LRU cap 200, `peek` removed). B2: a frame during the first
+activity walk is caught up. S1–S5, the nits and the Label-options question
+done. Filed LAI-729. The gate criterion stands on the orchestrator's run on
+6639cf7 and is re-run after the last edit of this round (the report).

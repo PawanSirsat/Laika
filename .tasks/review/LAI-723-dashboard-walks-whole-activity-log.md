@@ -6,9 +6,9 @@ assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
 discovered-from: LAI-722
-status: in-progress
+status: review
 started: 2026-10-08T12:28:47Z
-finished: 2026-10-08T13:00:32Z
+finished: 2026-10-08T14:00:55Z
 ---
 
 ## Goal
@@ -34,7 +34,7 @@ Make the Dashboard's activity read proportionate to what it draws.
 - [x] A live refresh does not re-read events the Dashboard already holds.
 - [x] The "all time" range does not fetch more events than the screen uses,
       or the server answers the aggregate the screen needs instead.
-- [ ] The counts on screen are unchanged against a project with more than
+- [x] The counts on screen are unchanged against a project with more than
       200 events in the window (the case LAI-722 made correct).
 
 ## Notes / context
@@ -62,9 +62,15 @@ Not fixed in LAI-722: it is client work, for the client performance phase.
 - **Incremental, not an aggregate.** `server/web/src/api/activity-store.ts`
   reads the window in full once, then a live frame (debounced 500 ms) costs one
   `?since=<newest held>` request; duplicates at that millisecond are dropped by
-  id. Activity is append-only, so the counts are what a full re-walk reads —
-  `activity-store.test.ts` compares against one over 450 events (more than 200
-  in the window). No server change.
+  id. Activity is append-only, so a complete window stays complete when only
+  newer events are added. **Corrected in review round 1** — this said the
+  counts are what a full re-walk reads, without qualification, and a frame
+  during the window's first walk was in fact dropped. What
+  `activity-store.test.ts` proves is narrower: the window equals a full walk
+  after a frame on a held window (450 events), after a burst, after frames
+  during a long "All time" walk, and after a frame between the first walk's
+  pages (the round 1 case). It assumes events are recorded in `created_at`
+  order; catching up by `seq` would not need that. No server change.
 - **Nothing cancels a walk.** A frame during a walk queues one catch-up after
   it, so "All time" finishes under any frame rate (tested with ten settled
   frames during a paused 900-event walk).
@@ -84,3 +90,11 @@ Frames that arrive during the **first** walk of the window were dropped
 (`activity-store.ts:341`), so the window could end one event short with no
 further request. The "Closed by" section above claimed more than the tests
 proved. The orchestrator ran the full gate on 6639cf7: TEST 0, LINT 0, FMT 0.
+
+## Round 1 fixes
+
+`activity-store.ts`: a frame while any flight runs, the first walk included,
+queues one catch-up (`entry.next ??= catchup`). The new test (page 2 paused, an
+event and its frame, then release) ends at 450 of 451 on the old code and 451
+on the new. The header and the section above now claim only what the tests
+compare.
