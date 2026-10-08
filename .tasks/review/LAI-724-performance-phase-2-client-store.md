@@ -153,3 +153,11 @@ evicted on a switch, LRU cap 200, `peek` removed). B2: a frame during the first
 activity walk is caught up. S1–S5, the nits and the Label-options question
 done. Filed LAI-729. The gate criterion stands on the orchestrator's run on
 6639cf7 and is re-run after the last edit of this round (the report).
+
+## Review notes (round 2)
+
+**Re-review: APPROVED** (2026-10-08, relayed by the orchestrator). Three small
+follow-ups were asked for and are made as new commits tagged `[LAI-724]`: the
+filter chip and badge counting a refused value, two stale `byId` comments, and
+the subtasks fixture serving a child only under `?parent=`. The task stays in
+review/.
