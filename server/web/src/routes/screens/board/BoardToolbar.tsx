@@ -107,16 +107,14 @@ export interface BoardToolbarProps {
 }
 
 /**
- * A sprint as the Filter popover's list draws it (LAI-726): its key and name
- * apart, the active one marked, its dates muted. Everything here is from the
- * sprints the screen already loaded — the list fetches nothing.
+ * A sprint as the Filter popover's list draws it (LAI-726): its label, the
+ * active one marked, its dates muted. Everything here is from the sprints the
+ * screen already loaded — the list fetches nothing.
  */
 export interface FilterSprint {
   readonly id: string;
-  /** "S1 · Foundations" — the words a chip and a tooltip use. */
+  /** "S1 · Foundations" — the words a chip, the strip and the list all use. */
   readonly label: string;
-  readonly key?: string | undefined;
-  readonly name?: string | undefined;
   readonly active?: boolean | undefined;
   readonly startsOn?: number | undefined;
   readonly endsOn?: number | undefined;
@@ -405,17 +403,20 @@ export function BoardToolbar({
     () => [
       { value: '', label: 'Any', pinned: true },
       { value: 'none', label: 'No sprint', pinned: true },
+      /*
+       * **"S1 · Foundations", key and name in the label** (LAI-726 round 1):
+       * the words the chips and the strip use, and what a screen reader
+       * announces and type-ahead matches. The key used to sit in an
+       * `aria-hidden` icon, so the option was announced as "Foundations".
+       */
       ...sprints.map((s) => ({
         value: s.id,
-        label: s.name ?? s.label,
-        title: s.label,
-        keywords: s.key,
+        label: s.label,
         badge: s.active === true ? 'Active' : undefined,
         detail:
           s.startsOn !== undefined && s.endsOn !== undefined
             ? formatRange(s.startsOn, s.endsOn)
             : undefined,
-        icon: s.key === undefined ? undefined : <span className="dd-key">{s.key}</span>,
       })),
     ],
     [sprints],
