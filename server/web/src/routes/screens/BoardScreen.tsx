@@ -1025,6 +1025,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           sprints={sprints.map((s) => ({
             id: s.id,
             label: `${sprintLabels.get(s.id)?.label ?? ''} · ${s.name}`,
+            // Drawn apart in the popover's list (LAI-726): already loaded here.
+            key: sprintLabels.get(s.id)?.label,
+            name: s.name,
+            active: s.status === 'active',
+            startsOn: s.starts_on,
+            endsOn: s.ends_on,
           }))}
           onSprint={(value) => {
             setParam('sprint', value ?? ALL_SPRINTS);

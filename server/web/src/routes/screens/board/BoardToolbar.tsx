@@ -2,6 +2,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -22,6 +23,11 @@ import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { cluster } from '../../../components/space/top-bar-derive.ts';
 import { useClaimSpaceFilters } from '../../../components/space/SpaceSlot.tsx';
+import { Dropdown, type DropdownOption } from '../../../components/Dropdown.tsx';
+import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
+import { PRIORITY_NAMES, PriorityIcon } from '../../../components/PriorityIcon.tsx';
+import { formatRange } from '../sprints/sprint-derive.ts';
+import { tagColor } from './tag-colors.ts';
 import './board-toolbar.css';
 
 export interface BoardToolbarProps {
@@ -37,7 +43,7 @@ export interface BoardToolbarProps {
   readonly onStatus: (value: TaskStatus | undefined) => void;
   /** A sprint id, `none`, or undefined. The same `?sprint=` the strip writes. */
   readonly sprint: string | undefined;
-  readonly sprints: readonly { readonly id: string; readonly label: string }[];
+  readonly sprints: readonly FilterSprint[];
   readonly onSprint: (value: string | undefined) => void;
   readonly updated: UpdatedWindow | undefined;
   readonly onUpdated: (value: UpdatedWindow | undefined) => void;
@@ -100,6 +106,22 @@ export interface BoardToolbarProps {
   readonly onOverflow: (anchor: { top: number; right: number }) => void;
 }
 
+/**
+ * A sprint as the Filter popover's list draws it (LAI-726): its key and name
+ * apart, the active one marked, its dates muted. Everything here is from the
+ * sprints the screen already loaded — the list fetches nothing.
+ */
+export interface FilterSprint {
+  readonly id: string;
+  /** "S1 · Foundations" — the words a chip and a tooltip use. */
+  readonly label: string;
+  readonly key?: string | undefined;
+  readonly name?: string | undefined;
+  readonly active?: boolean | undefined;
+  readonly startsOn?: number | undefined;
+  readonly endsOn?: number | undefined;
+}
+
 const GROUPS: readonly { value: string; label: string }[] = [
   { value: 'column', label: 'None' },
   { value: 'assignee', label: 'Assignee' },
@@ -134,10 +156,17 @@ function useDismiss(open: boolean, close: (reason: 'escape' | 'outside') => void
     if (!open) return;
 
     const onDown = (event: MouseEvent): void => {
+      /*
+       * **A dropdown's panel is not outside** (LAI-726). It is portalled to
+       * `<body>`, so it is never inside `box` — without this, choosing an
+       * option in the Filter popover would close the popover.
+       */
+      if (isInDropdownPanel(event.target)) return;
       if (box.current !== null && !box.current.contains(event.target as Node)) close('outside');
     };
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') close('escape');
+      // An Escape a dropdown already used to close itself is not this one's.
+      if (event.key === 'Escape' && !event.defaultPrevented) close('escape');
     };
 
     document.addEventListener('mousedown', onDown);
@@ -152,7 +181,7 @@ function useDismiss(open: boolean, close: (reason: 'escape' | 'outside') => void
 }
 
 /**
- * One select in the Filter popover's grid (LAI-717).
+ * One field in the Filter popover's grid (LAI-717, LAI-726).
  *
  * **Set is visible, and undoable on its own.** A field holding anything but
  * its default is drawn in the accent and carries a reset, so the popover
@@ -172,14 +201,18 @@ function FilterField({
   readonly label: string;
   readonly set: boolean;
   readonly onReset: () => void;
-  readonly children: ReactNode;
+  /** The control, given the id of the words that name it. */
+  readonly children: (labelId: string) => ReactNode;
 }) {
   const cell = useRef<HTMLDivElement>(null);
+  const labelId = useId();
   return (
     <div ref={cell} className={set ? 'bt-cell bt-cell-set' : 'bt-cell'}>
       <label className="bt-field">
-        <span className="bt-label">{label}</span>
-        {children}
+        <span className="bt-label" id={labelId}>
+          {label}
+        </span>
+        {children(labelId)}
       </label>
       {set && (
         <button
@@ -190,7 +223,7 @@ function FilterField({
             onReset();
             // The reset is about to disappear with the value it reset; the
             // field it belonged to is where the reader's attention is.
-            cell.current?.querySelector('select')?.focus();
+            cell.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
           }}
         >
           <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
@@ -274,7 +307,7 @@ export function BoardToolbar({
    */
   useEffect(() => {
     if (open !== 'filter') return;
-    filterPop.current?.querySelector<HTMLElement>('select')?.focus();
+    filterPop.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
   }, [open]);
 
   /*
@@ -303,6 +336,97 @@ export function BoardToolbar({
   }, [open]);
 
   const active = activeCount;
+
+  /*
+   * **The six fields' options, drawn rather than listed** (LAI-726). Same
+   * values as the `<select>`s they replace, in the same order, with "Any" (and
+   * Assignee's "Unassigned", Sprint's "No sprint") pinned at the top. Only
+   * what each option *looks like* is new.
+   */
+  const statusOptions = useMemo<DropdownOption[]>(
+    () => [
+      { value: '', label: 'Any', pinned: true },
+      ...ALL_STATUSES.map((s) => ({
+        value: s,
+        label: statusName(s),
+        icon: <span className={`dd-dot dd-dot-${s}`} />,
+      })),
+    ],
+    [statusName],
+  );
+  const priorityOptions = useMemo<DropdownOption[]>(
+    () => [
+      { value: '', label: 'Any', pinned: true },
+      ...PRIORITIES.map((p) => ({
+        value: p,
+        label: p.toUpperCase(),
+        detail: PRIORITY_NAMES[p],
+        icon: <PriorityIcon priority={p} />,
+      })),
+    ],
+    [],
+  );
+  const assigneeOptions = useMemo<DropdownOption[]>(
+    () => [
+      { value: '', label: 'Anyone', pinned: true },
+      {
+        value: 'none',
+        label: 'Unassigned',
+        pinned: true,
+        icon: <span className="dd-avatar dd-avatar-none" />,
+      },
+      ...members.map((m) => {
+        const colour = avatarColor(m.user_id, theme);
+        return {
+          value: m.user_id,
+          label: m.name,
+          keywords: m.email,
+          icon: (
+            <span
+              className="dd-avatar t-avatar"
+              style={{ background: colour.background, color: colour.foreground }}
+            >
+              {initials(m.name)}
+            </span>
+          ),
+        };
+      }),
+    ],
+    [members, theme],
+  );
+  const tagOptions = useMemo<DropdownOption[]>(
+    () => [
+      { value: '', label: 'Any', pinned: true },
+      ...tags.map((t) => ({ value: t, label: t, labelClass: `dd-tag dd-tag-${tagColor(t)}` })),
+    ],
+    [tags],
+  );
+  const sprintOptions = useMemo<DropdownOption[]>(
+    () => [
+      { value: '', label: 'Any', pinned: true },
+      { value: 'none', label: 'No sprint', pinned: true },
+      ...sprints.map((s) => ({
+        value: s.id,
+        label: s.name ?? s.label,
+        title: s.label,
+        keywords: s.key,
+        badge: s.active === true ? 'Active' : undefined,
+        detail:
+          s.startsOn !== undefined && s.endsOn !== undefined
+            ? formatRange(s.startsOn, s.endsOn)
+            : undefined,
+        icon: s.key === undefined ? undefined : <span className="dd-key">{s.key}</span>,
+      })),
+    ],
+    [sprints],
+  );
+  const updatedOptions = useMemo<DropdownOption[]>(
+    () => [
+      { value: '', label: 'Any time', pinned: true },
+      ...UPDATED_WINDOWS.map((w) => ({ value: w, label: UPDATED_LABELS[w] })),
+    ],
+    [],
+  );
 
   // The bar must not draw these four a second time — see `SpaceFilterClaim`.
   useClaimSpaceFilters();
@@ -464,7 +588,7 @@ export function BoardToolbar({
                   onClick={() => {
                     onClearFilters();
                     // The button just disabled itself; keep focus in the popover.
-                    filterPop.current?.querySelector<HTMLElement>('select')?.focus();
+                    filterPop.current?.querySelector<HTMLElement>('[role="combobox"]')?.focus();
                   }}
                 >
                   Clear all
@@ -485,21 +609,17 @@ export function BoardToolbar({
                     onStatus(undefined);
                   }}
                 >
-                  <select
-                    value={status ?? ''}
-                    onChange={(event) => {
-                      onStatus(
-                        event.target.value === '' ? undefined : (event.target.value as TaskStatus),
-                      );
-                    }}
-                  >
-                    <option value="">Any</option>
-                    {ALL_STATUSES.map((s) => (
-                      <option key={s} value={s}>
-                        {statusName(s)}
-                      </option>
-                    ))}
-                  </select>
+                  {(labelId) => (
+                    <Dropdown
+                      aria-labelledby={labelId}
+                      noun="statuses"
+                      value={status ?? ''}
+                      options={statusOptions}
+                      onChange={(value) => {
+                        onStatus(value === '' ? undefined : (value as TaskStatus));
+                      }}
+                    />
+                  )}
                 </FilterField>
 
                 <FilterField
@@ -509,23 +629,17 @@ export function BoardToolbar({
                     onPriority(undefined);
                   }}
                 >
-                  <select
-                    value={priority ?? ''}
-                    onChange={(event) => {
-                      onPriority(
-                        event.target.value === ''
-                          ? undefined
-                          : (event.target.value as TaskPriority),
-                      );
-                    }}
-                  >
-                    <option value="">Any</option>
-                    {PRIORITIES.map((p) => (
-                      <option key={p} value={p}>
-                        {p.toUpperCase()}
-                      </option>
-                    ))}
-                  </select>
+                  {(labelId) => (
+                    <Dropdown
+                      aria-labelledby={labelId}
+                      noun="priorities"
+                      value={priority ?? ''}
+                      options={priorityOptions}
+                      onChange={(value) => {
+                        onPriority(value === '' ? undefined : (value as TaskPriority));
+                      }}
+                    />
+                  )}
                 </FilterField>
 
                 <FilterField
@@ -535,20 +649,17 @@ export function BoardToolbar({
                     onAssignee(undefined);
                   }}
                 >
-                  <select
-                    value={assignee ?? ''}
-                    onChange={(event) => {
-                      onAssignee(event.target.value === '' ? undefined : event.target.value);
-                    }}
-                  >
-                    <option value="">Anyone</option>
-                    <option value="none">Unassigned</option>
-                    {members.map((m) => (
-                      <option key={m.user_id} value={m.user_id}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
+                  {(labelId) => (
+                    <Dropdown
+                      aria-labelledby={labelId}
+                      noun="people"
+                      value={assignee ?? ''}
+                      options={assigneeOptions}
+                      onChange={(value) => {
+                        onAssignee(value === '' ? undefined : value);
+                      }}
+                    />
+                  )}
                 </FilterField>
 
                 <FilterField
@@ -558,19 +669,17 @@ export function BoardToolbar({
                     onTag(undefined);
                   }}
                 >
-                  <select
-                    value={tag ?? ''}
-                    onChange={(event) => {
-                      onTag(event.target.value === '' ? undefined : event.target.value);
-                    }}
-                  >
-                    <option value="">Any</option>
-                    {tags.map((t) => (
-                      <option key={t} value={t}>
-                        {t}
-                      </option>
-                    ))}
-                  </select>
+                  {(labelId) => (
+                    <Dropdown
+                      aria-labelledby={labelId}
+                      noun="labels"
+                      value={tag ?? ''}
+                      options={tagOptions}
+                      onChange={(value) => {
+                        onTag(value === '' ? undefined : value);
+                      }}
+                    />
+                  )}
                 </FilterField>
 
                 {/* The same `?sprint=` as the Board's sprint strip, so the two can
@@ -583,20 +692,17 @@ export function BoardToolbar({
                     onSprint(undefined);
                   }}
                 >
-                  <select
-                    value={sprint ?? ''}
-                    onChange={(event) => {
-                      onSprint(event.target.value === '' ? undefined : event.target.value);
-                    }}
-                  >
-                    <option value="">Any</option>
-                    <option value="none">No sprint</option>
-                    {sprints.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
+                  {(labelId) => (
+                    <Dropdown
+                      aria-labelledby={labelId}
+                      noun="sprints"
+                      value={sprint ?? ''}
+                      options={sprintOptions}
+                      onChange={(value) => {
+                        onSprint(value === '' ? undefined : value);
+                      }}
+                    />
+                  )}
                 </FilterField>
 
                 <FilterField
@@ -606,23 +712,17 @@ export function BoardToolbar({
                     onUpdated(undefined);
                   }}
                 >
-                  <select
-                    value={updated ?? ''}
-                    onChange={(event) => {
-                      onUpdated(
-                        event.target.value === ''
-                          ? undefined
-                          : (event.target.value as UpdatedWindow),
-                      );
-                    }}
-                  >
-                    <option value="">Any time</option>
-                    {UPDATED_WINDOWS.map((w) => (
-                      <option key={w} value={w}>
-                        {UPDATED_LABELS[w]}
-                      </option>
-                    ))}
-                  </select>
+                  {(labelId) => (
+                    <Dropdown
+                      aria-labelledby={labelId}
+                      noun="windows"
+                      value={updated ?? ''}
+                      options={updatedOptions}
+                      onChange={(value) => {
+                        onUpdated(value === '' ? undefined : (value as UpdatedWindow));
+                      }}
+                    />
+                  )}
                 </FilterField>
               </div>
 

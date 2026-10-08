@@ -1,0 +1,379 @@
+/*
+ * The app's own select (LAI-726). Tokens only, so both themes come from the
+ * theme blocks and nothing here names a colour.
+ *
+ * The trigger's look is the field it replaced — `--bg-column`, the default
+ * border, the chip radius — so a screen that styled its `<select>` styles
+ * this the same way through `className`.
+ */
+
+.dd-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  width: 100%;
+  min-width: 0;
+  height: 2rem;
+  padding: 0 0.375rem 0 0.5rem;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  text-align: left;
+  background: var(--bg-column);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.dd-trigger:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+.dd-trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dd-trigger[aria-expanded='true'] {
+  border-color: var(--accent-border);
+}
+
+.dd-trigger:disabled {
+  cursor: default;
+  color: var(--text-muted);
+}
+
+.dd-trigger[aria-invalid='true'] {
+  border-color: var(--priority-high);
+}
+
+.dd-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-placeholder {
+  color: var(--text-muted);
+}
+
+.dd-chevron {
+  flex: none;
+  width: 0.875rem;
+  height: 0.875rem;
+  stroke: var(--text-muted);
+  transition: transform 120ms ease;
+}
+
+.dd-trigger[aria-expanded='true'] .dd-chevron {
+  transform: rotate(180deg);
+}
+
+/* --- the panel ------------------------------------------------------------- */
+
+/*
+ * Portalled to `<body>` and placed by `Dropdown` from the trigger's box: top
+ * or bottom, left, min/max width and max-height are set inline. Above the
+ * popovers (31), the click-away catchers (30) and the dialogs (41).
+ */
+.dd-panel {
+  position: fixed;
+  z-index: 60;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  padding: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+}
+
+.dd-search {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0 0 0.25rem;
+  padding: 0 0.5rem;
+  height: 2.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.dd-search svg {
+  flex: none;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  stroke: currentColor;
+}
+
+.dd-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.dd-search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/*
+ * The list scrolls itself, inside the panel's `max-height`. Positioned, so an
+ * option's `offsetTop` is measured from the list — that is what scrolling the
+ * selected option into view reads.
+ */
+.dd-list {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Slim and themed, visible at rest — the board's lane scroller's recipe. */
+.dd-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.dd-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.dd-list::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.dd-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+@supports not selector(::-webkit-scrollbar) {
+  .dd-list {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-default) transparent;
+  }
+}
+
+/* At least 36px tall: a finger, not only a pointer, has to hit it. */
+.dd-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0 0.5rem 0 0.375rem;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+  user-select: none;
+}
+
+.dd-option-active {
+  background: var(--bg-column);
+}
+
+.dd-option-selected {
+  font-weight: var(--weight-semibold);
+}
+
+.dd-option[aria-disabled='true'] {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+/* "Any", "Anyone": set apart from the values under them. */
+.dd-option-pinned {
+  color: var(--text-secondary);
+}
+
+.dd-option-pinned-last {
+  position: relative;
+  margin-bottom: 0.4375rem;
+}
+
+.dd-option-pinned-last::after {
+  content: '';
+  position: absolute;
+  left: 0.375rem;
+  right: 0.375rem;
+  bottom: -0.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dd-check {
+  flex: none;
+  display: inline-flex;
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--accent);
+}
+
+.dd-check svg {
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+}
+
+.dd-icon {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dd-label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dd-match {
+  color: inherit;
+  background: var(--accent-bg);
+  box-shadow: 0 0 0 1px var(--accent-border);
+  border-radius: 2px;
+  font-weight: var(--weight-bold);
+}
+
+.dd-badge {
+  flex: none;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  padding: 0 0.375rem;
+}
+
+.dd-detail {
+  flex: none;
+  margin-left: auto;
+  padding-left: 0.5rem;
+  font-size: 0.75rem;
+  font-weight: var(--weight-normal);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.dd-empty {
+  margin: 0;
+  padding: 0.625rem 0.5rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* --- rich option content, shared by every list that wants it ---------------- */
+
+/* A status's colour, the lane dot's mapping (`board.css`, `.lane-dot-*`). */
+.dd-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--text-muted);
+}
+
+.dd-dot-todo {
+  background: var(--chip-purple);
+}
+
+.dd-dot-in_progress {
+  background: var(--chip-blue);
+}
+
+.dd-dot-review {
+  background: var(--chip-orange);
+}
+
+.dd-dot-done {
+  background: var(--chip-green);
+}
+
+.dd-dot-cancelled {
+  background: var(--border-default);
+}
+
+/* A person: initials on their derived colour (set inline, per theme). */
+.dd-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 50%;
+  font-size: 0.625rem;
+  font-weight: var(--weight-bold);
+}
+
+/* Nobody: an empty, dashed circle. */
+.dd-avatar-none {
+  box-sizing: border-box;
+  border: 1.5px dashed var(--text-muted);
+}
+
+/* A sprint's key, set as keys are everywhere else. */
+.dd-key {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  font-weight: var(--weight-bold);
+  color: var(--text-secondary);
+}
+
+/* A label drawn as the card draws its tags (`board.css`, `.card-tag-*`). */
+.dd-tag {
+  flex: 0 1 auto;
+  font-size: 0.71875rem;
+  font-weight: var(--weight-bold);
+  line-height: 1.5;
+  padding: 0 0.375rem;
+  border: 1px solid var(--chip-border);
+  border-radius: var(--radius-chip);
+  background: var(--chip-bg);
+  color: var(--chip-neutral);
+}
+
+.dd-tag-orange {
+  color: var(--chip-orange);
+  border-color: var(--chip-orange-border);
+}
+
+.dd-tag-green {
+  color: var(--chip-green);
+  border-color: var(--chip-green-border);
+}
+
+.dd-tag-blue {
+  color: var(--chip-blue);
+  border-color: var(--chip-blue-border);
+}
+
+.dd-tag-pink {
+  color: var(--chip-pink);
+  border-color: var(--chip-pink-border);
+}
+
+.dd-tag-purple {
+  color: var(--chip-purple);
+  border-color: var(--chip-purple-border);
+}
+
+.dd-tag-neutral {
+  border-color: var(--border-default);
+}
