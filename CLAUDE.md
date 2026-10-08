@@ -557,8 +557,10 @@ git merge --no-ff core
 If you think you need one, say so — that is a CHIEF decision.
 
 **A temporary worktree ends with its work** (the owner, 2026-10-08, after
-finding eight of them on disk). The standing worktrees — `Laika/`,
-`Laika-core/`, `Laika-shell/` — stay. A task that needs its own checkout gets
+finding eight of them on disk). The standing worktrees — `Laika/` and
+`Laika-shell/` — stay. `Laika-core/` was removed the same day, clean and fully
+merged; a CORE session that starts again recreates it first with
+`git worktree add ../Laika-core core`. A task that needs its own checkout gets
 a temporary one, and the moment its branch is merged into `master` and pushed,
 it is removed **in the same sitting**, not left for a cleanup:
 
