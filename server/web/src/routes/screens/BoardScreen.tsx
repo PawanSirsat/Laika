@@ -12,10 +12,13 @@ import { ConnectionBanner } from '../../components/ConnectionBanner.tsx';
 import { showsUnreachableBanner } from './board/stream-presentation.ts';
 import {
   activeFilters,
+  activeSprintId,
+  ALL_SPRINTS,
   filterCount,
   filterSignature,
   readBlocked,
   readOverdue,
+  readSprintScope,
   readStatus,
   readTop,
   readUpdated,
@@ -147,6 +150,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * (LAI-297).
    */
   const [sprintsLoading, setSprintsLoading] = useState(true);
+  /** Whose sprints those are — a list left over from the last project is not this one's. */
+  const [sprintsFor, setSprintsFor] = useState<string | undefined>(undefined);
+  /**
+   * The project whose board has had its sprint decided (LAI-713): defaulted
+   * to the active sprint, or entered with one already chosen. Cleared on
+   * leaving the board, so coming back opens on the active sprint again.
+   */
+  const [sprintDecidedFor, setSprintDecidedFor] = useState<string | undefined>(undefined);
   /** Every task in the project, unscoped — the strip counts across sprints. */
   const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
   /** The strip's list hit `everyPage`'s cap, so its counts are a floor. */
@@ -191,7 +202,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const readyParam = params.get('ready');
   const ready = readyParam === null ? undefined : readyParam === 'true';
   const agentOnly = params.get('agent') === 'true';
-  const sprintScope = params.get('sprint') ?? undefined;
+  /** `?sprint=` as written; `all` and nothing are both every sprint to the query. */
+  const sprintParam = params.get('sprint');
+  const sprintScope = readSprintScope(params);
   /**
    * `?tag=` — in the URL so it survives a reload and can be linked (LAI-081),
    * the same mechanism `?project=` and `?sprint=` already use.
@@ -322,7 +335,41 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
   /** Shows each change to the cards — gliding, and glowing when it was someone else's (LAI-708). */
   const presenter = useRef<BoardPresenter | undefined>(undefined);
-  const board = useBoard(slug, filter, presenter);
+  /*
+   * **The board opens on the active sprint** (LAI-713). The owner: a project's
+   * board should show *"by default the current active sprint, not all
+   * selected — but the user can change that."*
+   *
+   * Written into the URL rather than assumed, so the strip, the Filter badge
+   * and a reload all agree on what is shown. Only when the URL names no sprint
+   * and only once per visit to the board: picking *All sprints* writes
+   * `?sprint=all`, and *Clear all* leaves the board on every sprint rather than
+   * snapping back. The List and Timeline open as they always have.
+   *
+   * **The first fetch waits for the decision** — `useBoard` gets no project
+   * until it is made — so the board never draws every sprint and then narrows,
+   * which would be the very flash LAI-707 removed.
+   */
+  const awaitingSprintDefault =
+    view === 'kanban' && slug !== undefined && sprintParam === null && sprintDecidedFor !== slug;
+  const sprintsKnown = slug !== undefined && sprintsFor === slug && !sprintsLoading;
+  useEffect(() => {
+    if (view !== 'kanban') {
+      setSprintDecidedFor(undefined);
+      return;
+    }
+    if (slug === undefined || sprintDecidedFor === slug) return;
+    if (sprintParam !== null) {
+      setSprintDecidedFor(slug);
+      return;
+    }
+    if (!sprintsKnown) return;
+    setSprintDecidedFor(slug);
+    const active = activeSprintId(sprints);
+    if (active !== undefined) setParam('sprint', active);
+  }, [view, slug, sprintDecidedFor, sprintParam, sprintsKnown, sprints]);
+
+  const board = useBoard(awaitingSprintDefault ? undefined : slug, filter, presenter);
 
   /**
    * **Nothing for the first 150ms** (LAI-293). Against a local instance the
@@ -507,9 +554,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         // Every page, not the first (LAI-703); `page.data` is the whole list.
         const page = { data: items };
         setSprints(page.data);
+        setSprintsFor(slug);
       })
       .catch(() => {
         setSprints([]);
+        // Known to be unknown: no active sprint to open on, so every sprint.
+        setSprintsFor(slug);
       })
       .finally(() => {
         /*
@@ -865,7 +915,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             partial={stripPartial}
             selected={sprintScope}
             onSelect={(id) => {
-              setParam('sprint', id);
+              // Every sprint is a choice now, not the absence of one (LAI-713).
+              setParam('sprint', id ?? ALL_SPRINTS);
             }}
           />
         </SpaceBand>
@@ -926,7 +977,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             label: `${sprintLabels.get(s.id)?.label ?? ''} · ${s.name}`,
           }))}
           onSprint={(value) => {
-            setParam('sprint', value);
+            setParam('sprint', value ?? ALL_SPRINTS);
           }}
           updated={updatedWindow}
           onUpdated={(value) => {

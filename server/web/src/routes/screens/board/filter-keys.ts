@@ -48,6 +48,34 @@ export function readStatus(params: URLSearchParams): TaskStatus | undefined {
   return (ALL_STATUSES as readonly string[]).includes(raw ?? '') ? (raw as TaskStatus) : undefined;
 }
 
+/**
+ * `?sprint=all` — every sprint, **chosen** (LAI-713).
+ *
+ * The board opens on the active sprint when the URL names none, so "no
+ * `?sprint=`" can no longer mean "all sprints": the default would take it
+ * straight back. A reader who picks *All sprints* gets this value instead,
+ * which a reload keeps and the default leaves alone.
+ */
+export const ALL_SPRINTS = 'all';
+
+/**
+ * The sprint the tasks are scoped to, or `undefined` for every sprint.
+ *
+ * Missing, empty and {@link ALL_SPRINTS} all mean every sprint; anything else
+ * — a sprint id, or `none` for work in no sprint — is sent to the server as is.
+ */
+export function readSprintScope(params: URLSearchParams): string | undefined {
+  const raw = params.get('sprint');
+  return raw === null || raw === '' || raw === ALL_SPRINTS ? undefined : raw;
+}
+
+/** The sprint a board opens on: the project's active one, if it has one. */
+export function activeSprintId(
+  sprints: readonly { readonly id: string; readonly status: string }[],
+): string | undefined {
+  return sprints.find((sprint) => sprint.status === 'active')?.id;
+}
+
 export const UPDATED_WINDOWS = ['today', '7d', '30d'] as const;
 export type UpdatedWindow = (typeof UPDATED_WINDOWS)[number];
 
@@ -141,8 +169,9 @@ export function activeFilters(
   const tag = params.get('tag');
   if (tag !== null && tag !== '') found.push({ key: 'tag', label: `Tag ${tag}` });
 
-  const sprint = params.get('sprint');
-  if (sprint !== null && sprint !== '') {
+  // `all` is every sprint, chosen — not a filter (LAI-713).
+  const sprint = readSprintScope(params);
+  if (sprint !== undefined) {
     found.push({ key: 'sprint', label: sprint === 'none' ? 'No sprint' : 'Sprint' });
   }
 
