@@ -34,6 +34,14 @@ export const MAX_IN_FLIGHT = 3;
 const LIVE_SETTLE_MS = 500;
 
 /**
+ * And refetches are at least this far apart (LAI-721 review): an agent
+ * working steadily sends a frame every few hundred milliseconds, and each
+ * refetch re-reads every open sprint. Kept simple on purpose — the shared
+ * store (build-perf-store) will apply frames instead of refetching.
+ */
+export const LIVE_MIN_INTERVAL_MS = 2000;
+
+/**
  * The Timeline's data, **on demand** (LAI-721).
  *
  * The API is deliberately narrow: **which keys are open** goes in (a sprint id,
@@ -76,16 +84,28 @@ export function useTimeline(slug: string | undefined, open: ReadonlySet<string>)
   const { generation } = useLive();
   const seenGeneration = useRef(generation);
   const [tick, setTick] = useState(0);
+  /** A refetch already scheduled — later frames ride on it, not reset it. */
+  const pendingRefresh = useRef<number | undefined>(undefined);
+  const lastRefresh = useRef(0);
   useEffect(() => {
     if (generation === seenGeneration.current) return;
     seenGeneration.current = generation;
-    const timer = window.setTimeout(() => {
+    // A throttle, not a debounce: a debounce reset by every frame would never
+    // fire while frames keep coming.
+    if (pendingRefresh.current !== undefined) return;
+    const wait = Math.max(LIVE_SETTLE_MS, lastRefresh.current + LIVE_MIN_INTERVAL_MS - Date.now());
+    pendingRefresh.current = window.setTimeout(() => {
+      pendingRefresh.current = undefined;
+      lastRefresh.current = Date.now();
       setTick((n) => n + 1);
-    }, LIVE_SETTLE_MS);
-    return () => {
-      window.clearTimeout(timer);
-    };
+    }, wait);
   }, [generation]);
+  useEffect(
+    () => () => {
+      if (pendingRefresh.current !== undefined) window.clearTimeout(pendingRefresh.current);
+    },
+    [],
+  );
 
   // ----------------------------------------------------------- sprints
   const sprintsFor = useRef<string | undefined>(undefined);

@@ -65,7 +65,7 @@ const NOW_SPRINT = sprint(
   at(-5),
   at(8),
   'active',
-  counts({ done: 1, in_progress: 1, todo: 2 }),
+  counts({ done: 2, in_progress: 1, todo: 2 }),
 );
 const NEXT = sprint('s3', 'Reliability', at(15), at(28), 'planned', counts({ todo: 1 }));
 
@@ -107,7 +107,7 @@ const IN_NOW = [
   task({
     id: 't2',
     key: 'LC-2',
-    title: 'Route planner',
+    title: 'Route planner for every depot and carrier',
     status: 'in_progress',
     sprint_id: 's2',
     assignee_id: 'u1',
@@ -116,6 +116,15 @@ const IN_NOW = [
   task({ id: 't1x', key: 'LC-9', title: 'Carrier config', status: 'todo', sprint_id: 's2' }),
   // Blocked by a task in another sprint: not loaded here, so not knowable.
   task({ id: 't5', key: 'LC-5', title: 'Uptime alerts', sprint_id: 's2', blocked_by: ['t3'] }),
+  // Finished: whatever it waited on, it is not "blocked?" now.
+  task({
+    id: 't6',
+    key: 'LC-6',
+    title: 'Shipped report',
+    status: 'done',
+    sprint_id: 's2',
+    blocked_by: ['t3'],
+  }),
 ];
 const IN_NEXT = [task({ id: 't3', key: 'LC-3', title: 'Uptime checks', sprint_id: 's3' })];
 const LOOSE = [task({ id: 't4', key: 'LC-4', title: 'Unplanned idea', status: 'backlog' })];
@@ -184,6 +193,13 @@ void after(async () => {
   await closeBrowser();
 });
 
+/**
+ * How many task requests the stub has seen. `h.calls` records from the first
+ * request, so nothing made before a listener is attached can be missed.
+ */
+const taskCalls = (h: Harness): number => h.calls.filter((c) => c.path === TASKS).length;
+const sprintCalls = (h: Harness): number => h.calls.filter((c) => c.path === SPRINTS).length;
+
 /** Every task request the page made, as its query string. */
 function taskRequests(h: Harness): string[] {
   const seen: string[] = [];
@@ -251,14 +267,14 @@ void describe('the Timeline is one row per sprint (LAI-721)', () => {
 
   void test('every bar says done over total without being opened', async () => {
     const h = await open('/timeline?project=laika-core', STUB);
-    const asked = taskRequests(h);
     try {
       await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
       const count = (id: string) => group(h, id).locator('.tlx-bar-count').innerText();
       assert.equal(await count('s1'), 'no tasks');
-      assert.equal(await count('s2'), '1/4');
+      assert.equal(await count('s2'), '2/5');
       assert.equal(await count('s3'), '0/1');
-      assert.deepEqual(asked, [], 'the counts cost a task request');
+      assert.ok(sprintCalls(h) >= 1, 'positive control: the sprints were asked for');
+      assert.equal(taskCalls(h), 0, 'the counts cost a task request');
     } finally {
       await h.close();
     }
@@ -270,7 +286,8 @@ void describe('the Timeline is one row per sprint (LAI-721)', () => {
     try {
       await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(500);
-      assert.deepEqual(asked, [], `tasks were fetched up front: ${asked.join(', ')}`);
+      assert.ok(sprintCalls(h) >= 1, 'positive control: the sprints were asked for');
+      assert.equal(taskCalls(h), 0, 'tasks were fetched up front');
       assert.deepEqual(h.unmatched, [], 'a task request named no sprint');
 
       await group(h, 's2').locator('.tlx-chevron').click();
@@ -444,49 +461,88 @@ void describe('the axis scrolls sideways (LAI-721)', () => {
             .map(({ text }) => text);
         });
         assert.deepEqual(clash, [], `${zoom}: labels under the pill`);
-        assert.ok(
-          (await h.page.locator('.tlx-scale-tick').count()) > 0,
-          'positive control: ticks drawn',
-        );
+        // And the labels are there to give way: one either side of the pill.
+        const sides = await h.page.evaluate(() => {
+          const pill = document.querySelector('.tlx-today-pill')!.getBoundingClientRect();
+          const corner = document.querySelector('.tlx-corner')!.getBoundingClientRect();
+          const labelled = [...document.querySelectorAll('.tlx-scale-tick')]
+            .filter((t) => (t.textContent ?? '').trim() !== '')
+            .map((t) => t.getBoundingClientRect())
+            .filter((r) => r.left >= corner.right);
+          return {
+            before: labelled.filter((r) => r.right <= pill.left).length,
+            after: labelled.filter((r) => r.left >= pill.right).length,
+          };
+        });
+        assert.ok(sides.before > 0, `${zoom}: no label left of the pill`);
+        assert.ok(sides.after > 0, `${zoom}: no label right of the pill`);
       } finally {
         await h.close();
       }
     }
   });
 
-  void test('a month label is whole or absent — never a clipped tail', async () => {
+  void test('a month label is whole or absent — and the month under the view is named', async () => {
     const h = await openTimeline('/timeline?project=laika-core&zoom=weeks', 1366);
     try {
-      // Walk across the window; at every stop each drawn label sits wholly in
-      // its band and wholly right of the sprint column.
+      // Walk across the window. At every stop: each drawn label sits wholly in
+      // its band and right of the sprint column; at least one is in view; and
+      // when the month under the view's left edge has room for its name, the
+      // leftmost label is that month's.
       const scroller = h.page.locator('.tlx');
-      const width = await scroller.evaluate((el) => el.scrollWidth);
+      const width = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
       let checked = 0;
-      for (let x = 0; x < width; x += 97) {
+      let named = 0;
+      for (let x = 0; x <= width; x += 97) {
         await scroller.evaluate((el, to) => {
           el.scrollLeft = to;
         }, x);
         await h.page.waitForTimeout(40);
-        const bad = await h.page.evaluate(() => {
+        const stop = await h.page.evaluate(() => {
+          const chart = document.querySelector<HTMLElement>('.tlx')!;
           const corner = document.querySelector('.tlx-corner')!.getBoundingClientRect();
-          return [...document.querySelectorAll('.tlx-scale-label')]
-            .map((label) => {
-              const l = label.getBoundingClientRect();
-              const band = label.parentElement!.getBoundingClientRect();
-              const inBand = l.left >= band.left - 0.5 && l.right <= band.right + 0.5;
-              const visible = l.right > corner.right;
-              return {
-                text: label.textContent ?? '',
-                ok: !visible || (inBand && l.left >= corner.right - 1),
-              };
-            })
-            .filter((r) => !r.ok)
-            .map((r) => r.text);
+          const from = Number(chart.dataset.windowFrom);
+          const dayWidth = Number(chart.dataset.dayWidth);
+          const leftDay = from + Math.floor(chart.scrollLeft / dayWidth) * 86_400_000;
+          const expected = new Date(leftDay).toLocaleDateString('en-GB', {
+            timeZone: 'UTC',
+            month: 'short',
+            year: 'numeric',
+          });
+          const labels = [...document.querySelectorAll('.tlx-scale-label')].map((label) => {
+            const l = label.getBoundingClientRect();
+            const band = label.parentElement!.getBoundingClientRect();
+            return {
+              text: label.textContent ?? '',
+              left: l.left,
+              visible: l.right > corner.right && l.left < chart.getBoundingClientRect().right,
+              whole: l.left >= band.left - 0.5 && l.right <= band.right + 0.5,
+              clear: l.left >= corner.right - 1,
+            };
+          });
+          const visible = labels.filter((l) => l.visible).sort((a, b) => a.left - b.left);
+          // The band under the left edge, and how much of it is in view.
+          const under = [...document.querySelectorAll('.tlx-scale-band')]
+            .map((b) => b.getBoundingClientRect())
+            .find((b) => b.left <= corner.right + 1 && b.right > corner.right + 1);
+          return {
+            bad: labels.filter((l) => l.visible && !(l.whole && l.clear)).map((l) => l.text),
+            count: visible.length,
+            first: visible[0]?.text,
+            expected,
+            room: under === undefined ? 0 : under.right - corner.right,
+          };
         });
-        assert.deepEqual(bad, [], `at scrollLeft ${String(x)}`);
+        assert.deepEqual(stop.bad, [], `at scrollLeft ${String(x)}`);
+        assert.ok(stop.count > 0, `no month named at scrollLeft ${String(x)}`);
+        if (stop.room >= 140) {
+          assert.equal(stop.first, stop.expected, `at scrollLeft ${String(x)}`);
+          named += 1;
+        }
         checked += 1;
       }
       assert.ok(checked > 10, 'positive control: walked the axis');
+      assert.ok(named > 5, 'positive control: the left-edge month was checked');
     } finally {
       await h.close();
     }
@@ -505,7 +561,7 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
       assert.equal(await chevron.getAttribute('aria-expanded'), 'true');
 
       const keys = await group(h, 's2').locator('.tlx-task .tlx-task-key').allInnerTexts();
-      assert.deepEqual(keys.sort(), ['LC-1', 'LC-2', 'LC-5', 'LC-9']);
+      assert.deepEqual(keys.sort(), ['LC-1', 'LC-2', 'LC-5', 'LC-6', 'LC-9']);
       assert.equal(
         await group(h, 's2').locator('.tlx-task .tlx-bar').count(),
         0,
@@ -516,7 +572,7 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
         0,
         'something is drawn on a task row’s track',
       );
-      assert.equal((await group(h, 's2').locator('.tlx-bar-count').innerText()).trim(), '1/4');
+      assert.equal((await group(h, 's2').locator('.tlx-bar-count').innerText()).trim(), '2/5');
 
       await chevron.click();
       assert.equal(await group(h, 's2').locator('.tlx-task').count(), 0);
@@ -533,7 +589,7 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
       await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
       assert.equal(
         (await group(h, 's2').locator('.tlx-bar-blocked').innerText()).trim(),
-        '1 blocked · 1 unknown',
+        '1 blocked · 1 blocked?',
       );
       const label = (key: string) =>
         group(h, 's2')
@@ -542,6 +598,21 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
       assert.equal((await label('LC-2').innerText()).trim(), 'Blocked');
       assert.equal((await label('LC-5').innerText()).trim(), 'Blocked?');
       assert.equal(await label('LC-9').count(), 0, 'an unblocked task is marked');
+      assert.equal(await label('LC-6').count(), 0, 'a finished task is marked "blocked?"');
+
+      // **The title wins** (LAI-721 review): LC-2's long title keeps its room
+      // and the label gives way to its icon, its words kept in the tooltip.
+      const row = group(h, 's2').locator('.tlx-task', {
+        has: h.page.locator('.tlx-task-key', { hasText: 'LC-2' }),
+      });
+      const titleWidth = (await row.locator('.tlx-task-title').boundingBox())?.width ?? 0;
+      const labelWidth = (await row.locator('.tlx-task-blocked').boundingBox())?.width ?? 999;
+      assert.ok(titleWidth >= 100, `the title was squeezed to ${String(titleWidth)}px`);
+      assert.ok(labelWidth <= 40, `the label kept ${String(labelWidth)}px`);
+      assert.ok(
+        ((await row.locator('.tlx-task-blocked').getAttribute('title')) ?? '').length > 10,
+        'the shrunk label lost its tooltip',
+      );
     } finally {
       await h.close();
     }
@@ -710,11 +781,11 @@ void describe('`?sprint=` from a link (LAI-721 review)', () => {
   void test('the Board’s `all` and `none` open nothing and ask for nothing', async () => {
     for (const value of ['all', 'none', 'not-a-sprint']) {
       const h = await open(`/timeline?project=laika-core&sprint=${value}`, STUB);
-      const asked = taskRequests(h);
       try {
         await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
         await h.page.waitForTimeout(400);
-        assert.deepEqual(asked, [], `sprint=${value} asked for ${asked.join(', ')}`);
+        assert.ok(sprintCalls(h) >= 1, 'positive control: the sprints were asked for');
+        assert.equal(taskCalls(h), 0, `sprint=${value} asked for tasks`);
         assert.equal(
           await h.page.locator('.tlx-task').count(),
           0,
@@ -732,44 +803,74 @@ void describe('`?sprint=` from a link (LAI-721 review)', () => {
   });
 });
 
-void describe('dates the axis cannot hold (LAI-721 review)', () => {
-  void test('2062, 9999 and 1e17 are listed, not drawn — and the chart stays quick', async () => {
-    const bad: ApiStub = {
-      ...STUB,
-      [SPRINTS]: {
-        data: [
-          NEXT,
-          PAST,
-          NOW_SPRINT,
-          sprint('far', 'Far future', at(30), Date.UTC(2062, 2, 1), 'planned'),
-          sprint('y9999', 'Year 9999', at(40), Date.UTC(9999, 0, 1), 'planned'),
-          sprint('huge', 'Not a date', at(50), 1e17, 'planned'),
-        ],
-        next_cursor: null,
-      },
-    };
-    const started = Date.now();
-    const h = await openTimeline('/timeline?project=laika-core&zoom=weeks', 1366, bad);
+void describe('distant and impossible dates (LAI-721 review)', () => {
+  const wide: ApiStub = {
+    ...STUB,
+    [SPRINTS]: {
+      data: [
+        NEXT,
+        PAST,
+        NOW_SPRINT,
+        sprint('old', 'Six years back', at(-6 * 366), at(-6 * 366 + 13), 'completed'),
+        sprint('someday', 'Someday', at(6 * 366), at(6 * 366 + 13), 'planned'),
+        sprint('far', 'Far future', at(30), Date.UTC(2062, 2, 1), 'planned'),
+        sprint('y9999', 'Year 9999', at(40), Date.UTC(9999, 0, 1), 'planned'),
+        sprint('huge', 'Not a date', at(50), 1e17, 'planned'),
+      ],
+      next_cursor: null,
+    },
+  };
+
+  void test('distant sprints are drawn; impossible ones are listed, each in its own words', async () => {
+    const h = await openTimeline('/timeline?project=laika-core&zoom=weeks', 1366, wide);
     try {
-      const firstPaint = Date.now() - started;
-      assert.equal(await h.page.locator('.tlx-sprint').count(), 3, 'a bad sprint was drawn');
-      const notice = await h.page.locator('.tlx-notice').innerText();
-      for (const name of ['Far future', 'Year 9999', 'Not a date']) {
-        assert.ok(notice.includes(name), `${name} is not in the notice: ${notice}`);
+      const names = await h.page.locator('.tlx-sprint .tlx-sprint-name').allInnerTexts();
+      for (const name of ['Six years back', 'Someday', 'Far future']) {
+        assert.ok(names.includes(name), `${name} is not drawn: ${names.join(', ')}`);
       }
+      assert.ok(!names.includes('Year 9999') && !names.includes('Not a date'), names.join(', '));
+
+      const notices = await h.page.locator('.tlx-notice').allInnerTexts();
+      const invalid = notices.find((n) => n.includes('Not a date')) ?? '';
+      const beyond = notices.find((n) => n.includes('Year 9999')) ?? '';
+      assert.match(invalid, /not a valid date/);
+      assert.doesNotMatch(invalid, /Year 9999/);
+      assert.match(beyond, /beyond the timeline's reach/);
       assert.ok(
         !(await h.page.locator('.tlx').innerText()).includes('Invalid Date'),
         '"Invalid Date" on the axis',
       );
-      assert.ok((await h.page.locator('.tlx-scale-band').count()) > 0, 'the header vanished');
-      assert.ok((await h.page.locator('.tlx-scale-tick').count()) < 600, 'ticks for decades');
+    } finally {
+      await h.close();
+    }
+  });
 
+  void test('a window of decades draws only the header in view, and stays quick', async () => {
+    const h = await openTimeline('/timeline?project=laika-core&zoom=weeks', 1366, wide);
+    try {
+      // The work, counted: a 2062 window at Weeks is ~1,850 weeks; only the
+      // stretch around the view is drawn.
+      const span = await h.page.locator('.tlx').evaluate((el) => el.scrollWidth);
+      assert.ok(span > 400_000, `positive control: decades wide (${String(span)}px)`);
+      const ticks = await h.page.locator('.tlx-scale-tick').count();
+      const bands = await h.page.locator('.tlx-scale-band').count();
+      assert.ok(ticks > 0 && ticks < 40, `${String(ticks)} week ticks drawn`);
+      assert.ok(bands > 0 && bands < 15, `${String(bands)} month bands drawn`);
+
+      // Scrolled to the far end, the header there is drawn too.
+      await h.page.locator('.tlx').evaluate((el) => {
+        el.scrollLeft = el.scrollWidth;
+      });
+      await h.page.waitForTimeout(100);
+      assert.ok((await h.page.locator('.tlx-scale-label').count()) > 0, 'no month at the far end');
+
+      // A time bound only as a backstop behind the counts — generous.
       const clicked = Date.now();
+      await h.page.getByRole('button', { name: 'Today', exact: true }).click();
       await group(h, 's2').locator('.tlx-chevron').click();
       await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
       const click = Date.now() - clicked;
-      assert.ok(click < 1000, `opening a sprint took ${String(click)} ms`);
-      assert.ok(firstPaint < 15_000, `first paint took ${String(firstPaint)} ms`);
+      assert.ok(click < 3000, `opening a sprint took ${String(click)} ms`);
     } finally {
       await h.close();
     }
@@ -784,14 +885,37 @@ void describe('the unscheduled tray and the empty project (LAI-721)', () => {
       await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
       const tray = h.page.getByRole('button', { name: /Unscheduled/ });
       assert.equal(await tray.getAttribute('aria-expanded'), 'false');
-      assert.deepEqual(asked, []);
+      assert.ok(sprintCalls(h) >= 1, 'positive control: the sprints were asked for');
+      assert.equal(taskCalls(h), 0, 'the tray’s tasks were fetched before it opened');
       await tray.click();
-      await h.page
-        .locator('.timeline-task', { hasText: 'Unplanned idea' })
-        .waitFor({ timeout: 10_000 });
+      await h.page.locator('.tlx-task', { hasText: 'Unplanned idea' }).waitFor({ timeout: 10_000 });
       assert.deepEqual(
         asked.map((q) => new URLSearchParams(q).get('sprint')),
         ['none'],
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('opening the tray does not squeeze the chart — it is the chart’s last group', async () => {
+    const h = await openTimeline('/timeline?project=laika-core', 1440, STUB, 800);
+    try {
+      const height = () => h.page.locator('.tlx').evaluate((el) => el.clientHeight);
+      const before = await height();
+      await h.page.getByRole('button', { name: /Unscheduled/ }).click();
+      await h.page.locator('.tlx-task', { hasText: 'Unplanned idea' }).waitFor({ timeout: 10_000 });
+      assert.equal(
+        await h.page.locator('.tlx .tlx-task', { hasText: 'Unplanned idea' }).count(),
+        1,
+        'the tray’s tasks are outside the chart',
+      );
+      assert.ok((await height()) >= before - 1, `the chart shrank from ${String(before)}px`);
+      assert.ok(
+        await h.page.evaluate(
+          () => (document.scrollingElement?.scrollHeight ?? 0) <= innerHeight + 1,
+        ),
+        'the page scrolls around the chart',
       );
     } finally {
       await h.close();
@@ -878,6 +1002,48 @@ void describe('live, and the day (LAI-721 review)', () => {
       await group(h, 's2')
         .locator('.tlx-task-title', { hasText: 'Carrier config, renamed' })
         .waitFor({ timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a steady stream refetches every two seconds at most — and never starves', async () => {
+    const h = await open('/timeline?project=laika-core', STUB, { before: fakeStream });
+    try {
+      await h.page.locator('.tlx-sprint').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const before = sprintCalls(h);
+      // A frame every 700 ms for about 4 s: past the 500 ms settle each time,
+      // so a refetch per frame was the old behaviour.
+      for (let n = 1; n <= 6; n += 1) {
+        await h.page.evaluate((seq) => {
+          (
+            window as unknown as {
+              __laikaStream: { emit: (type: string, data: unknown, id: string) => void };
+            }
+          ).__laikaStream.emit(
+            'task.updated',
+            {
+              id: `e${String(seq)}`,
+              seq,
+              type: 'task.updated',
+              project_id: 'laika-core',
+              task_id: 't1',
+              actor_id: 'u2',
+              actor_kind: 'agent',
+              actor_token_id: null,
+              payload: {},
+              created_at: Date.now(),
+            },
+            String(seq),
+          );
+        }, n);
+        await h.page.waitForTimeout(700);
+      }
+      await h.page.waitForTimeout(600);
+      const refetches = sprintCalls(h) - before;
+      assert.ok(refetches >= 2, `the stream starved the refetch (${String(refetches)})`);
+      assert.ok(refetches <= 3, `${String(refetches)} refetches in ~4.8 s`);
     } finally {
       await h.close();
     }

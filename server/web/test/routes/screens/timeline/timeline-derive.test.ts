@@ -12,6 +12,7 @@ import { describe, test } from 'node:test';
 import type { Sprint } from '../../../../src/api/sprints.ts';
 import {
   AXIS_YEARS,
+  axisProblem,
   blockedTally,
   chartWindow,
   countdownFor,
@@ -222,30 +223,36 @@ void describe('countdownFor — the three sentences and their edges (LAI-436)', 
   });
 });
 
-void describe('onAxis — a date the axis cannot hold is not drawn (LAI-721 review)', () => {
+void describe('axisProblem — what is drawn, and why not (LAI-721 review)', () => {
   const NOW = day('2026-10-08');
   const at = (starts: number, ends: number) =>
     sprint({ id: 'x', starts_on: starts, ends_on: ends });
+  const year = 366 * DAY;
 
-  void test('a real sprint near today is drawn', () => {
-    assert.equal(onAxis(at(day('2026-10-01'), day('2026-10-14')), NOW), true);
+  void test('a sprint six years back, or six years ahead, is drawn — and so is 2062', () => {
+    assert.equal(onAxis(at(NOW - 6 * year, NOW - 6 * year + 13 * DAY), NOW), true, '6 years back');
+    assert.equal(onAxis(at(NOW + 6 * year, NOW + 6 * year + 13 * DAY), NOW), true, '6 years on');
+    assert.equal(onAxis(at(day('2026-10-01'), day('2062-03-01')), NOW), true, '2062');
   });
 
-  void test('2062, 9999 and 1e17 are not — nor NaN, nor a sprint that ends before it starts', () => {
-    assert.equal(onAxis(at(day('2026-10-01'), day('2062-03-01')), NOW), false, '2062');
-    assert.equal(onAxis(at(day('2026-10-01'), Date.UTC(9999, 0, 1)), NOW), false, '9999');
-    assert.equal(onAxis(at(day('2026-10-01'), 1e17), NOW), false, '1e17');
-    assert.equal(onAxis(at(Number.NaN, day('2026-10-14')), NOW), false, 'NaN');
-    assert.equal(onAxis(at(day('2026-10-14'), day('2026-10-01')), NOW), false, 'backwards');
+  void test('not a date is `invalid`; a real date past the reach is `beyond`', () => {
+    assert.equal(axisProblem(at(day('2026-10-01'), 1e17), NOW), 'invalid', '1e17');
+    assert.equal(axisProblem(at(Number.NaN, day('2026-10-14')), NOW), 'invalid', 'NaN');
+    assert.equal(
+      axisProblem(at(day('2026-10-14'), day('2026-10-01')), NOW),
+      'invalid',
+      'backwards',
+    );
+    assert.equal(axisProblem(at(day('2026-10-01'), Date.UTC(9999, 0, 1)), NOW), 'beyond', '9999');
+    assert.equal(axisProblem(at(day('2026-10-01'), day('2026-10-14')), NOW), undefined);
   });
 
   void test(`the reach is ${String(AXIS_YEARS)} years either side of today`, () => {
-    const year = 366 * DAY;
     assert.equal(onAxis(at(NOW, NOW + (AXIS_YEARS - 0.1) * year), NOW), true);
     assert.equal(onAxis(at(NOW, NOW + (AXIS_YEARS + 0.1) * year), NOW), false);
   });
 
-  void test('the widest drawable window builds its header in milliseconds', () => {
+  void test('the widest drawable window steps by month and week, not by day', () => {
     const reach = AXIS_YEARS * 365 * DAY;
     const wide = chartWindow(
       [at(NOW - reach, NOW - reach + 13 * DAY), at(NOW + reach - 13 * DAY, NOW + reach)],
@@ -271,12 +278,27 @@ void describe('onAxis — a date the axis cannot hold is not drawn (LAI-721 revi
       const months = monthBands(wide);
       const ticks = weekTicks(wide);
       const elapsed = performance.now() - started;
-      // One label per band, not one per day: ~120 months, not ~3,700 days.
+      // The work, counted: one label per month band, ~1,200 of them over a
+      // century, not one per day (~36,500).
       assert.equal(calls.n, months.length, 'formatted a label for every day');
-      assert.ok(ticks.length < 600, `${String(ticks.length)} ticks`);
-      assert.ok(elapsed < 200, `the header took ${elapsed.toFixed(1)} ms`);
+      assert.ok(months.length > 1000 && months.length < 1300, `${String(months.length)} months`);
+      assert.equal(ticks.length, Math.floor((wide.days - ticks[0]!.index - 1) / 7) + 1);
+      // A time bound only as a backstop, generous enough not to flake.
+      assert.ok(elapsed < 600, `the header took ${elapsed.toFixed(1)} ms`);
     } finally {
       Object.defineProperty(Date.prototype, 'toLocaleDateString', descriptor);
+    }
+  });
+
+  void test('bands tile the window exactly, at both zooms', () => {
+    const w = chartWindow([A, B], day('2026-08-10'), 'quarters')!;
+    for (const bandsOf of [monthBands(w), quarterBands(w)]) {
+      assert.equal(bandsOf[0]!.start, 0);
+      for (let i = 1; i < bandsOf.length; i += 1) {
+        assert.equal(bandsOf[i]!.start, bandsOf[i - 1]!.start + bandsOf[i - 1]!.days);
+      }
+      const last = bandsOf[bandsOf.length - 1]!;
+      assert.equal(last.start + last.days, w.days);
     }
   });
 });
@@ -340,6 +362,9 @@ void describe('counts from the sprint list (LAI-721 review)', () => {
         t('d', 'todo', ['gone', 'a']), // blocked here, whatever the other is
         t('e', 'done', ['f']),
         t('f', 'done'),
+        // Finished work is never "blocked?", whatever it waited on.
+        t('g', 'done', ['elsewhere']),
+        t('h', 'cancelled', ['a']),
       ]),
       { blocked: 2, unknown: 1 },
     );

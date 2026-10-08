@@ -9,9 +9,9 @@ import { daysLeft } from '../sprints/sprint-derive.ts';
  * ## One row per sprint, Jira's way
  *
  * The owner, 2026-10-08: *"by the sprints, like Jira … I don't want the tasks
- * in time."* So the chart is §11.4.3 as written — **each sprint is one bar**,
- * and a sprint opens to list its tasks, which have no bars of their own. D-074
- * withdraws D-049's row per task.
+ * in time."* So **each sprint is one row with one bar**, and a sprint opens to
+ * list its tasks, which have no bars of their own — the screen SPEC §11.4.3
+ * now describes, set by D-074, which withdraws D-049's row per task.
  *
  * ## A pixel scale, because the axis scrolls
  *
@@ -72,23 +72,41 @@ export function readZoom(raw: string | null): Zoom {
 /* ------------------------------------------------------------------ window */
 
 /**
- * How far from today a sprint's dates may be and still be drawn.
+ * How far from today a sprint may be and still be drawn (LAI-721 review).
  *
- * **A guard, not a policy.** A sprint saved with `ends_on` in 2062 made every
- * chevron click take a second; 9999 made one render take a minute and draw
- * 416,000 week ticks; `1e17` is not a date at all and blanked the header with
- * "Invalid Date" (LAI-721 review). Five years either side covers any real
- * plan; anything beyond it is listed beside the chart, not drawn on it.
+ * **Generous on purpose.** A sprint six years back, or a "Someday" sprint six
+ * years ahead, is a real plan and is drawn; the header is drawn only where the
+ * view is (`TimelineScreen`), so a wide window costs scroll width, not DOM.
+ * Fifty years is the line past which a date is a typo, not a plan.
  */
-export const AXIS_YEARS = 5;
+export const AXIS_YEARS = 50;
 
-/** True when both of a sprint's dates are real days within reach of the axis. */
-export function onAxis(sprint: Sprint, now: number): boolean {
+/** The largest magnitude a JavaScript `Date` can hold, in milliseconds. */
+const MAX_DATE = 8.64e15;
+
+/**
+ * Why a sprint is not drawn, or `undefined` when it is.
+ *
+ * - `invalid` — a date that is no date: not finite, beyond what a `Date` can
+ *   hold (`1e17` blanked the header with "Invalid Date"), or ending before it
+ *   starts.
+ * - `beyond` — a real date more than {@link AXIS_YEARS} years from today.
+ *
+ * Two answers because they need two sentences: one is fixed by correcting a
+ * typo, the other by knowing the plan really is that far off.
+ */
+export function axisProblem(sprint: Sprint, now: number): 'invalid' | 'beyond' | undefined {
   const { starts_on: from, ends_on: to } = sprint;
-  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return false;
+  const real = (ms: number): boolean => Number.isFinite(ms) && Math.abs(ms) <= MAX_DATE;
+  if (!real(from) || !real(to) || to < from) return 'invalid';
   const reach = AXIS_YEARS * 366 * DAY;
   const today = startOfDay(now);
-  return from >= today - reach && to <= today + reach;
+  return from >= today - reach && to <= today + reach ? undefined : 'beyond';
+}
+
+/** True when the sprint is drawn. */
+export function onAxis(sprint: Sprint, now: number): boolean {
+  return axisProblem(sprint, now) === undefined;
 }
 
 /**
@@ -100,9 +118,9 @@ export function onAxis(sprint: Sprint, now: number): boolean {
  * months would not shrink the bars; a scrolling axis has no such cost, and a
  * Today button that cannot reach today is no button at all.
  *
- * The caller passes only sprints that are {@link onAxis}, so the window is at
- * most about ten years: a few hundred week ticks at worst, never hundreds of
- * thousands.
+ * The caller passes only sprints that are {@link onAxis}. The window can then
+ * span decades; nothing below walks it day by day — bands and ticks step by
+ * month and week — and the screen draws only the part of the header in view.
  */
 export function chartWindow(
   sprints: readonly Sprint[],
@@ -163,48 +181,53 @@ export interface Band {
  * header row at Quarters; otherwise `Oct 2026`.
  */
 export function monthBands(range: TimelineRange, short = false): Band[] {
-  return bands(
-    range,
-    (date) => `${String(date.getUTCFullYear())}-${String(date.getUTCMonth())}`,
-    (date) =>
-      date.toLocaleDateString('en-GB', {
-        timeZone: 'UTC',
-        month: 'short',
-        ...(short ? {} : { year: 'numeric' }),
-      }),
+  return bands(range, 1, (date) =>
+    date.toLocaleDateString('en-GB', {
+      timeZone: 'UTC',
+      month: 'short',
+      ...(short ? {} : { year: 'numeric' }),
+    }),
   );
 }
 
 /** One band per calendar quarter in the window: `Q4 2026`. */
 export function quarterBands(range: TimelineRange): Band[] {
-  const quarterOf = (date: Date): string =>
-    `Q${String(Math.floor(date.getUTCMonth() / 3) + 1)} ${String(date.getUTCFullYear())}`;
-  return bands(range, quarterOf, quarterOf);
+  return bands(
+    range,
+    3,
+    (date) => `Q${String(Math.floor(date.getUTCMonth() / 3) + 1)} ${String(date.getUTCFullYear())}`,
+  );
 }
 
 /**
- * Runs of days that share a key. **The label is formatted once per band**, at
- * its first day: `toLocaleDateString` for every day of a ten-year window was a
- * measurable share of a render (LAI-721 review).
+ * Calendar runs of `months` months, clipped to the window. **Stepped month by
+ * month, not day by day**, and each label formatted once — a fifty-year window
+ * is six hundred bands, not eighteen thousand days (LAI-721 review).
  */
-function bands(
-  range: TimelineRange,
-  keyOf: (date: Date) => string,
-  labelOf: (date: Date) => string,
-): Band[] {
+function bands(range: TimelineRange, months: number, labelOf: (date: Date) => string): Band[] {
   const out: Band[] = [];
-  let current: { key: string; label: string; start: number; days: number } | undefined;
-  for (let i = 0; i < range.days; i += 1) {
-    const date = new Date(range.from + i * DAY);
-    const key = keyOf(date);
-    if (current?.key === key) {
-      current.days += 1;
-      continue;
+  const first = new Date(range.from);
+  let year = first.getUTCFullYear();
+  let month = first.getUTCMonth() - (first.getUTCMonth() % months);
+  for (;;) {
+    const start = Date.UTC(year, month, 1);
+    if (start > range.to) break;
+    const next = Date.UTC(year, month + months, 1);
+    const from = Math.max(start, range.from);
+    const to = Math.min(next - DAY, range.to);
+    const date = new Date(start);
+    out.push({
+      key: `${String(date.getUTCFullYear())}-${String(date.getUTCMonth())}`,
+      label: labelOf(date),
+      start: Math.round((from - range.from) / DAY),
+      days: Math.round((to - from) / DAY) + 1,
+    });
+    month += months;
+    if (month >= 12) {
+      year += Math.floor(month / 12);
+      month %= 12;
     }
-    if (current !== undefined) out.push(current);
-    current = { key, label: labelOf(date), start: i, days: 1 };
   }
-  if (current !== undefined) out.push(current);
   return out;
 }
 
@@ -217,9 +240,10 @@ export interface Tick {
 /** Every Monday in the window: the week lines, and the lower header row. */
 export function weekTicks(range: TimelineRange): Tick[] {
   const out: Tick[] = [];
-  for (let i = 0; i < range.days; i += 1) {
-    const date = new Date(range.from + i * DAY);
-    if (date.getUTCDay() === 1) out.push({ index: i, label: String(date.getUTCDate()) });
+  // `getUTCDay()` is 0 on Sunday and 1 on Monday: the first Monday is that far in.
+  const firstDay = new Date(range.from).getUTCDay();
+  for (let i = (8 - firstDay) % 7; i < range.days; i += 7) {
+    out.push({ index: i, label: String(new Date(range.from + i * DAY).getUTCDate()) });
   }
   return out;
 }
@@ -274,6 +298,8 @@ export function blockedTally(tasks: readonly Task[]): {
   let blocked = 0;
   let unknown = 0;
   for (const task of tasks) {
+    // Finished work is not held up by anything, whatever it once waited on.
+    if (task.status === 'done' || task.status === 'cancelled') continue;
     const state = blockedState(task, byId);
     if (state === true) blocked += 1;
     else if (state === undefined) unknown += 1;

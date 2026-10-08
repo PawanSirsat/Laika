@@ -21,6 +21,7 @@ import { listMembers, type Member, type Task } from '../../../api/tasks.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
+import { LockIcon } from '../../../components/LockIcon.tsx';
 import { useTimeline, type TasksLoad } from './use-timeline.ts';
 import {
   blockedTally,
@@ -30,6 +31,8 @@ import {
   DAY_WIDTH,
   dayIndex,
   monthBands,
+  AXIS_YEARS,
+  axisProblem,
   onAxis,
   quarterBands,
   readZoom,
@@ -63,11 +66,12 @@ function countdownText(countdown: SprintCountdown): string {
   }
 }
 
-/** `1 blocked · 2 unknown`, or nothing when both are zero. */
+/** `1 blocked · 2 blocked?`, or nothing when both are zero. */
 function blockedText(tally: { readonly blocked: number; readonly unknown: number }): string {
   const parts: string[] = [];
   if (tally.blocked > 0) parts.push(`${String(tally.blocked)} blocked`);
-  if (tally.unknown > 0) parts.push(`${String(tally.unknown)} unknown`);
+  // The row's own word for it, so the bar and the row say the same thing.
+  if (tally.unknown > 0) parts.push(`${String(tally.unknown)} blocked?`);
   return parts.join(' · ');
 }
 
@@ -198,7 +202,9 @@ export function TimelineScreen() {
   );
   /** Drawn, and not: a date the axis cannot hold is listed, never plotted. */
   const rows = useMemo(() => all.filter((s) => onAxis(s, now)), [all, now]);
-  const offAxis = useMemo(() => all.filter((s) => !onAxis(s, now)), [all, now]);
+  /** Not drawn, in two kinds, because the fix differs (LAI-721 review). */
+  const invalid = useMemo(() => all.filter((s) => axisProblem(s, now) === 'invalid'), [all, now]);
+  const distant = useMemo(() => all.filter((s) => axisProblem(s, now) === 'beyond'), [all, now]);
 
   const rowsKey = rows.map((s) => `${s.id}:${String(s.starts_on)}:${String(s.ends_on)}`).join('|');
   const range = useMemo(() => chartWindow(rows, now, zoom), [rowsKey, now, zoom]);
@@ -237,6 +243,13 @@ export function TimelineScreen() {
   const centreDay = useRef<number | undefined>(undefined);
   /** The scroll position, for placing the month labels; updated once a frame. */
   const [scrollX, setScrollX] = useState(0);
+  /**
+   * The scrollport's width beside the sprint column. **The header is drawn
+   * only for the stretch in view**, a viewport either side: a window may span
+   * decades, and a week tick for every one of them is the DOM the review
+   * measured at 416,000 nodes.
+   */
+  const [viewW, setViewW] = useState(1600);
   const frame = useRef<number | undefined>(undefined);
 
   /** The scrollport's width beside the sticky sprint column. */
@@ -248,6 +261,7 @@ export function TimelineScreen() {
     if (el === null) return;
     el.scrollLeft = Math.max(0, day * dayWidth - viewWidth(el) * at);
     setScrollX(el.scrollLeft);
+    setViewW(viewWidth(el));
   };
 
   const todayIndex = range === null ? undefined : dayIndex(range, now);
@@ -305,15 +319,9 @@ export function TimelineScreen() {
     );
   }
 
-  const tray = (
-    <UnscheduledTray
-      open={trayOpen}
-      onToggle={() => {
-        setTrayOpen((o) => !o);
-      }}
-      load={timeline.tasks('none')}
-    />
-  );
+  const toggleTray = (): void => {
+    setTrayOpen((o) => !o);
+  };
 
   const notices = (
     <>
@@ -323,11 +331,18 @@ export function TimelineScreen() {
           are here.
         </p>
       )}
-      {offAxis.length > 0 && (
+      {invalid.length > 0 && (
         <p className="tlx-notice" role="status">
-          {offAxis.length === 1 ? 'One sprint has' : `${String(offAxis.length)} sprints have`} dates
-          out of range and {offAxis.length === 1 ? 'is' : 'are'} not drawn:{' '}
-          {offAxis.map((s) => s.name).join(', ')}. Fix the dates on the Sprints screen.
+          {invalid.length === 1 ? 'One sprint has' : `${String(invalid.length)} sprints have`} a
+          date that is not a valid date, so {invalid.length === 1 ? 'it is' : 'they are'} not drawn:{' '}
+          {invalid.map((s) => s.name).join(', ')}. Correct the dates on the Sprints screen.
+        </p>
+      )}
+      {distant.length > 0 && (
+        <p className="tlx-notice" role="status">
+          {distant.length === 1 ? 'One sprint is' : `${String(distant.length)} sprints are`} more
+          than {AXIS_YEARS} years from today, beyond the timeline's reach, and not drawn:{' '}
+          {distant.map((s) => s.name).join(', ')}.
         </p>
       )}
     </>
@@ -341,7 +356,7 @@ export function TimelineScreen() {
           headline="Nothing scheduled yet"
           body="The timeline is drawn from sprints. Plan one and it will appear here."
         />
-        {tray}
+        <UnscheduledTray open={trayOpen} onToggle={toggleTray} load={timeline.tasks('none')} />
       </div>
     );
   }
@@ -356,6 +371,10 @@ export function TimelineScreen() {
   const pillClear = charWidth(pillText, 7) / 2 + 14;
   const clearOfPill = (x: number, label: string): boolean =>
     x + charWidth(label, 7) + 6 < todayX - pillClear || x > todayX + pillClear;
+  /** The stretch of track the header is drawn for. */
+  const drawFrom = scrollX - viewW;
+  const drawTo = scrollX + 2 * viewW;
+  const inDraw = (from: number, to: number): boolean => to >= drawFrom && from <= drawTo;
 
   const openTask = (taskId: string): void => {
     // The space's own drawer reads `?task=` on every tab (`SpaceLayout`); a
@@ -450,6 +469,8 @@ export function TimelineScreen() {
         ref={scroller}
         className="tlx"
         style={chartStyle}
+        data-window-from={range.from}
+        data-day-width={dayWidth}
         tabIndex={0}
         role="region"
         aria-label="Sprint timeline — the arrow keys scroll it"
@@ -461,6 +482,7 @@ export function TimelineScreen() {
           frame.current = requestAnimationFrame(() => {
             frame.current = undefined;
             setScrollX(el.scrollLeft);
+            setViewW(viewWidth(el));
           });
         }}
       >
@@ -471,6 +493,9 @@ export function TimelineScreen() {
             <div className="tlx-track tlx-scale" aria-hidden="true">
               <div className="tlx-scale-row">
                 {top.map((band) => {
+                  if (!inDraw(band.start * dayWidth, (band.start + band.days) * dayWidth)) {
+                    return null;
+                  }
                   /*
                    * **The month you are in stays named, and never half-named.**
                    * The label rides at the left of the view while its band is
@@ -503,6 +528,7 @@ export function TimelineScreen() {
                 {lower === undefined
                   ? ticks.map((tick) => {
                       const x = tick.index * dayWidth;
+                      if (!inDraw(x, x)) return null;
                       const show =
                         (zoom === 'weeks' || dayWidth * 7 >= 28) && clearOfPill(x, tick.label);
                       return (
@@ -513,6 +539,7 @@ export function TimelineScreen() {
                     })
                   : lower.map((band) => {
                       const x = band.start * dayWidth;
+                      if (!inDraw(x, (band.start + band.days) * dayWidth)) return null;
                       return (
                         <span key={band.key} className="tlx-scale-tick" style={{ left: x }}>
                           {clearOfPill(x, band.label) ? band.label : ''}
@@ -550,6 +577,20 @@ export function TimelineScreen() {
               onOpenTask={openTask}
             />
           ))}
+
+          {/*
+            **The tray is the chart's last group, not a box below it** (LAI-721
+            review): a second scroller under the chart squeezed it to ~225px
+            when opened. Its tasks are rows like a sprint's, with no bars.
+          */}
+          <UnscheduledGroup
+            open={trayOpen}
+            onToggle={toggleTray}
+            load={timeline.tasks('none')}
+            members={members}
+            theme={theme}
+            onOpenTask={openTask}
+          />
         </div>
       </div>
 
@@ -570,8 +611,6 @@ export function TimelineScreen() {
           A bar is a sprint; its fill is the share done. Open a sprint to see its tasks.
         </span>
       </div>
-
-      {tray}
     </div>
   );
 }
@@ -730,7 +769,11 @@ function SprintGroup({
               task={task}
               who={task.assignee_id === null ? undefined : members.get(task.assignee_id)}
               ink={task.assignee_id === null ? undefined : avatarColor(task.assignee_id, theme)}
-              blocked={blockedState(task, byTaskId)}
+              blocked={
+                task.status === 'done' || task.status === 'cancelled'
+                  ? false
+                  : blockedState(task, byTaskId)
+              }
               onOpen={onOpenTask}
             />
           ))}
@@ -782,13 +825,23 @@ function TaskRow({
             {task.title}
           </span>
         </button>
-        {blocked === true && <span className="tlx-task-blocked">Blocked</span>}
+        {/*
+          The label gives way before the title does: at a narrow width it
+          shrinks to its icon, and the tooltip keeps the sentence.
+        */}
+        {blocked === true && (
+          <span className="tlx-task-blocked" title="Blocked by an open task in this sprint">
+            <LockIcon />
+            <span className="tlx-task-blocked-text">Blocked</span>
+          </span>
+        )}
         {blocked === undefined && (
           <span
             className="tlx-task-blocked tlx-task-unknown"
             title="Blocked by a task in another sprint or in no sprint, whose status is not loaded here"
           >
-            Blocked?
+            <LockIcon />
+            <span className="tlx-task-blocked-text">Blocked?</span>
           </span>
         )}
         {/* `In progress`, not `in_progress`: the lane's word, not the enum's. */}
@@ -810,6 +863,97 @@ function TaskRow({
         )}
       </div>
       <div className="tlx-track" />
+    </div>
+  );
+}
+
+/**
+ * The unscheduled tasks as the chart's last group (§11.4.3): a row like a
+ * sprint's, with no bar, that opens to list them — fetched with
+ * `?sprint=none` only when it is opened.
+ */
+function UnscheduledGroup({
+  open,
+  onToggle,
+  load,
+  members,
+  theme,
+  onOpenTask,
+}: {
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly load: TasksLoad | undefined;
+  readonly members: ReadonlyMap<string, Member>;
+  readonly theme: ReturnType<typeof useTheme>['theme'];
+  readonly onOpenTask: (taskId: string) => void;
+}) {
+  const tasks = load?.status === 'ready' ? load.tasks : undefined;
+  return (
+    <div className="tlx-group tlx-unscheduled" aria-label="Unscheduled tasks" role="group">
+      {/* Not `tlx-sprint`: it is not one, and nothing counting sprints may count it. */}
+      <div className="tlx-row tlx-tray-row">
+        <div className="tlx-side">
+          <button
+            type="button"
+            className="tlx-chevron"
+            aria-expanded={open}
+            aria-controls="tlx-tasks-unscheduled"
+            onClick={onToggle}
+          >
+            <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+              <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="visually-hidden">
+              {open ? 'Hide' : 'Show'} the tasks in Unscheduled
+            </span>
+          </button>
+          <span className="tlx-sprint-text">
+            <span className="tlx-sprint-name">Unscheduled</span>
+            <span className="tlx-sprint-meta">tasks in no sprint</span>
+          </span>
+          {tasks !== undefined && <span className="timeline-tray-count">{tasks.length}</span>}
+        </div>
+        <div className="tlx-track" />
+      </div>
+      {open && (
+        <div id="tlx-tasks-unscheduled">
+          {tasks === undefined && (
+            <div className="tlx-row tlx-task">
+              <div className="tlx-side tlx-task-side tlx-task-none" role="status">
+                {load?.status === 'error'
+                  ? 'Could not load the unscheduled tasks. Close this and open it again to retry.'
+                  : 'Loading tasks…'}
+              </div>
+              <div className="tlx-track" />
+            </div>
+          )}
+          {tasks?.length === 0 && (
+            <div className="tlx-row tlx-task">
+              <div className="tlx-side tlx-task-side tlx-task-none">Every task is in a sprint.</div>
+              <div className="tlx-track" />
+            </div>
+          )}
+          {tasks?.map((task) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              who={task.assignee_id === null ? undefined : members.get(task.assignee_id)}
+              ink={task.assignee_id === null ? undefined : avatarColor(task.assignee_id, theme)}
+              // Its blockers are not loaded with it; the sprints are the place to judge.
+              blocked={false}
+              onOpen={onOpenTask}
+            />
+          ))}
+          {load?.status === 'ready' && load.truncated && (
+            <div className="tlx-row tlx-task">
+              <div className="tlx-side tlx-task-side tlx-task-none" role="status">
+                Only the first {load.tasks.length} unscheduled tasks are listed.
+              </div>
+              <div className="tlx-track" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

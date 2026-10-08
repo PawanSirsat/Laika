@@ -485,6 +485,41 @@
   white-space: nowrap;
 }
 
+/*
+ * A task's blocked label: icon and word, and **the word gives way first** —
+ * the title keeps its room, the icon and the tooltip keep the meaning.
+ */
+.tlx-task-blocked {
+  flex: 0 1 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 1.5rem;
+  overflow: hidden;
+}
+
+.tlx-task-blocked svg {
+  flex: none;
+  width: 0.6875rem;
+  height: 0.6875rem;
+  stroke: currentColor;
+}
+
+.tlx-task-blocked-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
+}
+
+/* The unscheduled group: a sprint-shaped row that is not a sprint. */
+.tlx-unscheduled .tlx-sprint-name {
+  color: var(--text-secondary);
+}
+
+.tlx-unscheduled .tlx-side {
+  padding-left: 0.5rem;
+}
+
 /* ------------------------------------------------------------- task rows */
 
 .tlx-task {
@@ -507,7 +542,8 @@
   align-items: baseline;
   gap: 0.5rem;
   flex: 1 1 auto;
-  min-width: 0;
+  /* The title wins: the blocked label shrinks to its icon before this does. */
+  min-width: 9rem;
   padding: 0.25rem;
   font: inherit;
   text-align: left;
