@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { ALL_STATUSES, boardStatusLabel } from '../../../api/board-derive.ts';
 import type { BoardColumn } from '../../../api/columns.ts';
 import type { Sprint } from '../../../api/sprints.ts';
@@ -65,6 +65,34 @@ export function BulkBar({
   );
   const [confirming, setConfirming] = useState(false);
   const busy = run?.phase === 'running';
+  const bar = useRef<HTMLDivElement>(null);
+
+  /*
+   * **The room at the end of the list is this bar's measured height**
+   * (LAI-717 round 2, carried by LAI-726). It was a fixed `4.25rem` guess in
+   * `list.css`, and the bar is not a fixed height: it wraps on a narrow card,
+   * and grows with the confirm step, the progress line and a report of
+   * refusals — each of which then covered the last row at the end of the
+   * scroll. Its height, plus the gap it floats above the Create row and a
+   * little air, is set on the card, where the room and the bar both read it.
+   */
+  useLayoutEffect(() => {
+    const el = bar.current;
+    const card = el?.closest<HTMLElement>('.list-card');
+    if (el === null || card === null || card === undefined) return;
+    const measure = (): void => {
+      const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const room = el.getBoundingClientRect().height + 1.125 * rem;
+      card.style.setProperty('--list-bulk-room', `${String(Math.ceil(room))}px`);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      card.style.removeProperty('--list-bulk-room');
+    };
+  }, []);
 
   const menuOf = (which: Open): { label: string; items: readonly MenuItem[] } => {
     switch (which) {
@@ -139,7 +167,7 @@ export function BulkBar({
   );
 
   return (
-    <div className="list-bulk" role="region" aria-label="Selected tasks">
+    <div ref={bar} className="list-bulk" role="region" aria-label="Selected tasks">
       <div className="list-bulk-row">
         <span className="list-bulk-count">
           <b>{String(count)}</b> selected

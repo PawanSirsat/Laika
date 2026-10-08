@@ -26,7 +26,11 @@
   background: var(--bg-canvas);
   /* The Create row's height, fixed so the bulk bar can sit just above it. */
   --list-create-h: 2.125rem;
-  /* What the bar takes above it: its own height, its gap below, and air above. */
+  /*
+   * What the bar takes above it: its own height, its gap below, and air above.
+   * `BulkBar` measures it and sets it on `.list-card` (LAI-726); this is only
+   * the first frame's value, before the observer has run.
+   */
   --list-bulk-room: 4.25rem;
 }
 
