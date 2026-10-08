@@ -502,8 +502,25 @@ function measureToolbar(h: Harness) {
       others[`icon${String(i)}`] = r(el);
     });
     const rail = document.querySelector('#sidebar, .sidebar')?.getBoundingClientRect();
+    const group = document.querySelector('.bstats');
+    const row = document.querySelector('.bt')?.getBoundingClientRect();
+    const box = group?.getBoundingClientRect();
+    const tier = ['full', 'compact', 'pill'].find((t) => group?.classList.contains(`bstats-${t}`));
     return {
-      stats: r(document.querySelector('.bstats')),
+      stats: r(group),
+      tier: tier ?? 'none',
+      // Inside the toolbar row's own box, top to bottom — not merely in its DOM.
+      contained:
+        box !== undefined &&
+        row !== undefined &&
+        box.top >= row.top - 0.5 &&
+        box.bottom <= row.bottom + 0.5,
+      // Anything of the group's drawn above the controls: the round-1 fallback.
+      above:
+        document.querySelector('.bstats-above') !== null ||
+        (box !== undefined && row !== undefined && box.bottom <= row.top + 0.5),
+      clipped: group !== null && group.scrollWidth > group.clientWidth + 1,
+      offscreen: box !== undefined && (box.left < -0.5 || box.right > window.innerWidth + 0.5),
       others,
       search: Math.round(document.querySelector('.bt-search')?.getBoundingClientRect().width ?? 0),
       spacer: document.querySelector('.bt-spacer')?.getBoundingClientRect().width ?? 0,
@@ -519,6 +536,12 @@ type Measured = Awaited<ReturnType<typeof measureToolbar>>;
 function assertFits(m: Measured, when: string): void {
   assert.ok(m.stats !== null, `${when}: no stat group`);
   assert.ok(m.stats.w > 40, `${when}: the group collapsed to nothing`);
+  // The figures never get a row of their own (LAI-727 review, round 2).
+  assert.equal(m.inRow, true, `${when}: the group is not in the toolbar row`);
+  assert.equal(m.contained, true, `${when}: the group is drawn outside the toolbar row`);
+  assert.equal(m.above, false, `${when}: the group is drawn above the toolbar`);
+  assert.equal(m.clipped, false, `${when}: the group's content is clipped`);
+  assert.equal(m.offscreen, false, `${when}: the group runs off the screen`);
   assert.equal(m.sideways, false, `${when}: the page scrolls sideways`);
   for (const [name, box] of Object.entries(m.others)) {
     if (box === null) continue;
@@ -583,7 +606,9 @@ void describe('the group fits the toolbar (LAI-727)', () => {
  * the row at all — the Filter badge is the difference from All sprints, which
  * clears 120. That floor is the toolbar's (filed as LAI-730), and nothing the
  * group sheds can lift it. So the assertion is: search is at least 120px, or
- * the group is out of the row and the row has no slack left to give.
+ * the group is down to its pill — **in the row** — and the row has no slack
+ * left to give. Round 1 let the group leave the row instead; round 2 forbids
+ * that (the owner asked for these rows to go), so the pill is the floor.
  */
 const SIX_MEMBERS: ApiStub = {
   ...STUB,
@@ -634,11 +659,12 @@ void describe('the sidebar open, the row crowded (LAI-727 review)', () => {
               'the Group button is not carrying an active label',
             );
 
+            assert.equal(m.inRow, true, 'the group left the toolbar row');
             assert.ok(
-              m.search >= 120 || (!m.inRow && m.spacer < 1),
-              `the search field is ${String(m.search)}px wide with the group ${
-                m.inRow ? 'still in the row' : 'out of the row'
-              } and ${String(Math.round(m.spacer))}px of slack`,
+              m.search >= 120 || (m.tier === 'pill' && m.spacer < 1),
+              `the search field is ${String(m.search)}px wide with the group ${m.tier} and ${String(
+                Math.round(m.spacer),
+              )}px of slack`,
             );
             await assertFitsOpenAndClosed(h, `${String(width)}px ${scope} ${theme}`);
           } finally {
@@ -672,6 +698,12 @@ void describe('All sprints is always named (LAI-727 review)', () => {
         const box = await scope.boundingBox();
         assert.ok(box !== null && box.width > 20, 'the scope has no width');
         assert.equal(((await scope.innerText()) ?? '').trim(), 'All sprints');
+        // Named, and also whole: nothing pushed off the side or cut short.
+        const m = await measureToolbar(h);
+        assert.equal(m.sideways, false, 'the page scrolls sideways');
+        assert.equal(m.clipped, false, 'the group is clipped');
+        assert.equal(m.offscreen, false, 'the group runs off the screen');
+        assert.equal(m.inRow, true, 'the group is not in the toolbar row');
       } finally {
         await h.close();
       }
@@ -689,6 +721,238 @@ void describe('All sprints is always named (LAI-727 review)', () => {
       await h.close();
     }
   });
+});
+
+/**
+ * **In the row, at every width, in every tier** (LAI-727 review, round 2).
+ *
+ * Round 1 had no test that the group was ever in the row, and it could leave.
+ * One page, resized from wide to narrow and back, so the tier changes are the
+ * ones a reader makes by resizing — and the hysteresis is exercised both ways.
+ */
+void describe('the group is in the toolbar row in every tier (LAI-727 review)', () => {
+  const WIDTHS = [1366, 1240, 1180, 1100, 1024, 960, 920, 901, 900, 820, 760, 600, 360];
+
+  void test('full, compact and pill are all reached, and every one is in the row', async () => {
+    const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS);
+    try {
+      await reads(h, `S2 ${stripSummary('s2')}`);
+      await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
+      const seen = new Set<string>();
+      for (const width of [...WIDTHS, ...[...WIDTHS].reverse()]) {
+        await h.page.setViewportSize({ width, height: 768 });
+        await h.page.waitForTimeout(250);
+        const m = await measureToolbar(h);
+        assertFits(m, `${String(width)}px`);
+        seen.add(m.tier);
+        if (width === 1366) assert.equal(m.tier, 'full', '1366px is not the full group');
+      }
+      assert.deepEqual([...seen].sort(), ['compact', 'full', 'pill'], 'a tier was never reached');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/**
+ * **The pill** (LAI-727 review, round 2): the group at its tightest, one
+ * figure — `S2 · 3/10`, done of total — with BLK and LEFT a hover, a focus or
+ * a click away, and all three in its accessible name.
+ */
+void describe('the pill (LAI-727 review)', () => {
+  for (const theme of ['Light', 'Dark']) {
+    void test(`${theme}: one figure in the row; BLK and LEFT on hover, focus and click`, async () => {
+      const h = await open('/board?project=laika-core&sprint=s2&group=assignee', SIX_MEMBERS);
+      try {
+        await reads(h, `S2 ${stripSummary('s2')}`);
+        await setTheme(h.page, theme);
+        await h.page.setViewportSize({ width: 920, height: 768 });
+        await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
+        await h.page.waitForTimeout(400);
+
+        const pill = h.page.locator('.bstats');
+        assert.match(
+          (await pill.getAttribute('class')) ?? '',
+          /bstats-pill/,
+          'not the pill at 920px',
+        );
+        assert.equal(await pill.getAttribute('role'), 'button');
+        assert.equal(await pill.getAttribute('tabindex'), '0');
+        const name = (await pill.getAttribute('aria-label')) ?? '';
+        for (const said of ['S2', 'Done 3 of 10', 'Blocked 4', '10 days left']) {
+          assert.ok(name.includes(said), `the pill's name lacks "${said}": ${name}`);
+        }
+        // One figure drawn: the scope and done-of-total; BLK and LEFT are not.
+        assert.equal(await h.page.locator('.bstats-scope').isVisible(), true);
+        assert.match(
+          (await h.page.locator('.bstats-done').innerText()).replace(/\s+/g, ''),
+          /3\/10/,
+        );
+        assert.equal(await h.page.locator('.bstats-blocked').isVisible(), false);
+        assert.equal(await h.page.locator('.bstats-left').isVisible(), false);
+
+        const tip = h.page.locator('[role="tooltip"].bstats-pop');
+        const tipShows = async (): Promise<boolean> =>
+          (await tip.count()) === 1 && (await tip.isVisible());
+        assert.equal(await tipShows(), false, 'the tooltip is open before anything asked');
+
+        await pill.hover();
+        await tip.waitFor({ state: 'visible', timeout: 3000 });
+        const text = (await tip.innerText()).replace(/\s+/g, ' ');
+        assert.match(text, /BLK 4/);
+        assert.match(text, /LEFT 10/);
+        assert.equal(await pill.getAttribute('aria-describedby'), await tip.getAttribute('id'));
+        const opened = await measureToolbar(h);
+        assert.equal(opened.sideways, false, 'the tooltip pushes the page sideways');
+        const tipBox = await tip.boundingBox();
+        assert.ok(
+          tipBox !== null && tipBox.x >= 0 && tipBox.x + tipBox.width <= 920,
+          'the tooltip runs off the screen',
+        );
+
+        await h.page.mouse.move(5, 760);
+        await tip.waitFor({ state: 'hidden', timeout: 3000 });
+
+        await pill.focus();
+        await tip.waitFor({ state: 'visible', timeout: 3000 });
+        await h.page.keyboard.press('Escape');
+        await tip.waitFor({ state: 'hidden', timeout: 3000 });
+        await h.page.locator('.bt-search input').focus();
+
+        await pill.click();
+        await tip.waitFor({ state: 'visible', timeout: 3000 });
+        assert.equal(await pill.getAttribute('aria-expanded'), 'true');
+        await h.page.mouse.move(5, 760);
+        await h.page.waitForTimeout(200);
+        assert.equal(await tipShows(), true, 'a clicked pill closed when the pointer left');
+        await pill.click();
+        await h.page.mouse.move(5, 760);
+        await tip.waitFor({ state: 'hidden', timeout: 3000 });
+      } finally {
+        await h.close();
+      }
+    });
+  }
+});
+
+/** `.kanban`'s top and the toolbar row's box, for "did anything move". */
+const rowGeometry = (h: Harness) =>
+  h.page.evaluate(() => {
+    const bt = document.querySelector('.bt')?.getBoundingClientRect();
+    const chips = document.querySelector('.bt-chips')?.getBoundingClientRect();
+    return {
+      kanban: document.querySelector('.kanban')?.getBoundingClientRect().top ?? NaN,
+      rowTop: bt?.top ?? NaN,
+      rowHeight: bt?.height ?? NaN,
+      chips: chips?.height ?? 0,
+    };
+  });
+
+/**
+ * **Nothing moves after the first paint** (LAI-727 review, round 2).
+ *
+ * The LAI-297 class of defect: something arriving late pushes every lane
+ * down. In round 1 the members landing crowded the row, the group left it for
+ * a line above, and the board dropped ~46px under the reader. Members,
+ * sprints and presence are held back here so the first card is drawn before
+ * any of them, which is the order a slow server produces.
+ */
+void describe('the board does not move after it is drawn (LAI-727 review)', () => {
+  const late = async (page: Page): Promise<void> => {
+    for (const glob of ['**/members*', '**/sprints*', '**/presence*']) {
+      await page.route(glob, async (route) => {
+        await new Promise((r) => setTimeout(r, 1200));
+        await route.continue();
+      });
+    }
+  };
+
+  for (const width of [1024, 920]) {
+    void test(`${String(width)}px, sidebar open: members, sprints and counts land without a shift`, async () => {
+      const h = await open('/board?project=laika-core&sprint=s2', SIX_MEMBERS, {
+        before: async (page) => {
+          await page.setViewportSize({ width, height: 768 });
+          await late(page);
+        },
+      });
+      try {
+        await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+        const first = await rowGeometry(h);
+        assert.equal(
+          await h.page.locator('.bt-member').count(),
+          0,
+          'positive control: the members had already landed — nothing late to measure',
+        );
+        await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
+        await reads(h, `S2 ${stripSummary('s2')}`);
+        await h.page.waitForTimeout(600);
+        const settled = await rowGeometry(h);
+        assert.ok(
+          Math.abs(settled.kanban - first.kanban) <= 1,
+          `the lanes moved ${String(settled.kanban - first.kanban)}px after the first card`,
+        );
+        assert.ok(Math.abs(settled.rowTop - first.rowTop) <= 1, 'the toolbar row moved');
+        assert.ok(Math.abs(settled.rowHeight - first.rowHeight) <= 1, 'the toolbar row grew');
+      } finally {
+        await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+        await h.close();
+      }
+    });
+  }
+
+  /*
+   * Adding a filter may add the chip row under the toolbar (LAI-717) — that is
+   * designed, and it moves the lanes by exactly its own height. Nothing else
+   * may: not the toolbar row, and not a line for the group. 1120px on All
+   * sprints is where round 1's group sat in the row until the Filter badge
+   * appeared and then jumped above it.
+   */
+  const CASES = [
+    { width: 1024, scope: 's2' },
+    { width: 920, scope: 's2' },
+    { width: 1120, scope: 'all' },
+  ];
+  for (const { width, scope } of CASES) {
+    void test(`${String(width)}px, ${scope}: a new filter moves nothing but the chip row`, async () => {
+      const h = await open(`/board?project=laika-core&sprint=${scope}`, SIX_MEMBERS);
+      try {
+        await h.page.setViewportSize({ width, height: 768 });
+        await h.page.locator('.bt-member').first().waitFor({ timeout: 20_000 });
+        await h.page.locator('.card').first().waitFor({ timeout: 10_000 });
+        await h.page.waitForTimeout(600);
+        const before = await rowGeometry(h);
+
+        await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
+        await h.page
+          .locator('.bt-field')
+          .filter({ has: h.page.locator('.bt-label', { hasText: /^Priority$/ }) })
+          .locator('select')
+          .selectOption('p2');
+        await h.page.keyboard.press('Escape');
+        await h.page.waitForFunction(() => location.search.includes('priority=p2'), undefined, {
+          timeout: 5000,
+        });
+        await h.page.locator('.bt-badge').waitFor({ timeout: 5000 });
+        await h.page.waitForTimeout(600);
+        const after = await rowGeometry(h);
+
+        assert.ok(
+          Math.abs(after.rowTop - before.rowTop) <= 1,
+          `the toolbar row moved ${String(after.rowTop - before.rowTop)}px`,
+        );
+        assert.ok(Math.abs(after.rowHeight - before.rowHeight) <= 1, 'the toolbar row grew');
+        const lanes = after.kanban - before.kanban;
+        const chips = after.chips - before.chips;
+        assert.ok(
+          Math.abs(lanes - chips) <= 1,
+          `the lanes moved ${String(lanes)}px; the chip row accounts for ${String(chips)}px`,
+        );
+        assertFits(await measureToolbar(h), `${String(width)}px after the filter`);
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 void describe('a board too long to read says its figures are partial (LAI-727)', () => {

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
 import { createPortal } from 'react-dom';
 import type { StatCounts, StatsScope } from './sprint-stats.ts';
 import './sprint-stats.css';
@@ -11,16 +11,16 @@ import './sprint-stats.css';
 export const BOARD_STATS_SLOT_ID = 'board-stats-slot';
 
 /**
- * The narrowest the search field may get before the group gives up its place
- * in the row (LAI-727 review). Below this it is a magnifier and a few letters.
+ * The narrowest the search field may get before the group steps down a tier.
+ * Below this it is a magnifier and a few letters.
  */
 const SEARCH_FLOOR_PX = 120;
-/** Room to spare before the group comes back, so a boundary width cannot flap. */
+/** Room to spare before the group steps back **up**, so a boundary width cannot flap. */
 const RETURN_MARGIN_PX = 8;
-/** `.bt`'s `gap`: the group is one more item in that row. */
-const ROW_GAP_PX = 4;
 
-type Placement = 'row' | 'above';
+/** Widest first. Every tier is one line, 36px tall, in the toolbar row. */
+const TIERS = ['full', 'compact', 'pill'] as const;
+type Tier = (typeof TIERS)[number];
 
 export interface SprintStatsProps {
   readonly scope: StatsScope;
@@ -37,28 +37,41 @@ export interface SprintStatsProps {
  * need to say what they are of, so the scope leads: `S4`, or `All sprints`.
  *
  * Each figure is drawn for the eye and spoken as a sentence — *"Done 7 of
- * 30"* — because `DONE 7/30` read aloud is a string of tokens. When the
- * toolbar row is narrow the words give way to a glyph each (`sprint-stats.css`)
- * rather than squeezing the search field, and the sentences stay.
+ * 30"* — because `DONE 7/30` read aloud is a string of tokens.
  *
- * **When even that leaves search under 120px, the group leaves the row** for
- * a line of its own above it, right-aligned — where the strip's summary sat
- * (LAI-727 review). Measured, not a breakpoint: how full the row is depends
- * on the sidebar, the member count and the Group label, not on the window. At
- * 920px with the sidebar open, six members and an active Group, the row
- * without the group at all left search ~111px; nothing the group could shed
- * would have fixed that. Above the toolbar it cannot meet the Filter popover
- * (which drops down) or the chip row (which is below).
+ * ## Three tiers, all in the row
  *
- * It must be rendered inside `.board-bar`: the line above is that row's first
- * flex line (`order: -1`).
+ * **full** (`S4 | DONE 7/30 | BLK 23 | LEFT 24`), **compact** (a glyph for each
+ * word) and **pill** (`S4 · 7/30`, with BLK and LEFT on hover, focus or click).
+ * The widest tier that leaves search 120px is drawn, chosen by measuring the
+ * row, because how full the row is depends on the sidebar, the members and
+ * the Group label rather than on the window.
+ *
+ * **The figures never get a row of their own** (LAI-727 review, round 2).
+ * Round 1 let the group move to a line above the toolbar when the row was
+ * tight; that line arrived after the first paint whenever the members did,
+ * and dropped every lane 46px under the reader. Each tier is one 36px line,
+ * shorter than the row's 40px controls, so changing tier changes the group's
+ * width and nothing's height: in the single-line toolbar the search field
+ * absorbs the difference.
+ *
+ * Where the toolbar wraps on its own (`board-toolbar.css`, below 47.5rem) the
+ * group is always the pill, so a data-driven width change cannot reflow those
+ * lines through a tier change.
  */
 export function SprintStats({ scope, counts, partial, filtered }: SprintStatsProps) {
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [placement, setPlacement] = useState<Placement>('row');
+  const [tier, setTier] = useState<Tier>('full');
   /** Bumped by the resize observer, so the layout effect below measures again. */
   const [, setResized] = useState(0);
   const group = useRef<HTMLDivElement>(null);
+
+  // The pill's popover: open while hovered or focused, or pinned by a click.
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const popId = useId();
 
   // Layout, not passive: the group is in place before the first paint rather
   // than one frame after it. Re-checked each render in case the toolbar
@@ -69,38 +82,57 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
   });
 
   /*
-   * In the row while search keeps its floor; above it when it would not.
-   * Reads the toolbar's own boxes, `.bt-search` and `.bt-spacer`: while the
-   * group is above, the room it would take back is search plus the spacer's
-   * slack, less its own width and one gap.
+   * **The tier, measured before paint.** Each tier's width is read by setting
+   * its class on the live element and reading the box — three synchronous
+   * reflows, restored before the browser paints, so no tier is ever seen that
+   * is not chosen.
+   *
+   * The room the group and search share is search + the group as drawn + the
+   * spacer's slack. The group's `margin-inline-end` and its gap in `.bt` are
+   * the same in every tier, so they are spent either way and cancel out of the
+   * comparison. Stepping down needs search to fall under the floor; stepping
+   * up needs the floor plus a margin, so a width on the line cannot flap.
    */
   useLayoutEffect(() => {
-    const row = host?.closest('.board-bar');
-    const search = row?.querySelector('.bt-search');
-    const spacer = row?.querySelector('.bt-spacer');
     const own = group.current;
-    if (search == null || spacer == null || own === null) return;
-    const searchWidth = search.getBoundingClientRect().width;
-    if (placement === 'row') {
-      if (searchWidth < SEARCH_FLOOR_PX) setPlacement('above');
+    const bar = own?.closest('.bt');
+    const search = bar?.querySelector('.bt-search');
+    const spacer = bar?.querySelector('.bt-spacer');
+    if (own === null || bar === undefined || bar === null) return;
+    if (search === null || search === undefined || spacer === null || spacer === undefined) return;
+
+    if (getComputedStyle(bar).flexWrap === 'wrap') {
+      if (tier !== 'pill') setTier('pill');
       return;
     }
+
+    const drawn = own.className;
+    const widthOf: Record<Tier, number> = { full: 0, compact: 0, pill: 0 };
+    for (const t of TIERS) {
+      own.className = drawn.replace(/\bbstats-(full|compact|pill)\b/, `bstats-${t}`);
+      widthOf[t] = own.getBoundingClientRect().width;
+    }
+    own.className = drawn;
+
     const room =
-      searchWidth +
-      spacer.getBoundingClientRect().width -
-      own.getBoundingClientRect().width -
-      ROW_GAP_PX;
-    if (room >= SEARCH_FLOOR_PX + RETURN_MARGIN_PX) setPlacement('row');
+      search.getBoundingClientRect().width + spacer.getBoundingClientRect().width + widthOf[tier];
+    const current = TIERS.indexOf(tier);
+    const fits = (t: Tier): boolean => {
+      const stepUp = TIERS.indexOf(t) < current;
+      return room - widthOf[t] >= SEARCH_FLOOR_PX + (stepUp ? RETURN_MARGIN_PX : 0);
+    };
+    const chosen = TIERS.find(fits) ?? 'pill';
+    if (chosen !== tier) setTier(chosen);
   });
 
   useEffect(() => {
-    const row = host?.closest('.board-bar');
-    if (row == null) return;
+    const bar = host?.closest('.bt');
+    if (bar === null || bar === undefined) return;
     const observer = new ResizeObserver(() => {
       setResized((n) => n + 1);
     });
-    observer.observe(row);
-    const search = row.querySelector('.bt-search');
+    observer.observe(bar);
+    const search = bar.querySelector('.bt-search');
     if (search !== null) observer.observe(search);
     return () => {
       observer.disconnect();
@@ -122,16 +154,67 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
       ? 'No sprint end date'
       : `${String(scope.daysLeft)} ${scope.daysLeft === 1 ? 'day' : 'days'} left`;
 
+  const pill = tier === 'pill';
+  const open = pill && !dismissed && (hovered || focused || pinned);
+  const close = (): void => {
+    setPinned(false);
+    setDismissed(true);
+  };
+  /** A click pins the popover open; a second click (or Escape) puts it away. */
+  const toggle = (): void => {
+    if (pinned) {
+      close();
+    } else {
+      setDismissed(false);
+      setPinned(true);
+    }
+  };
+
   const figures = (
     <div
       ref={group}
-      className="bstats"
-      role="group"
-      aria-label={label}
+      className={`bstats bstats-${tier}`}
+      // The pill is a control: it opens the rest. The wider tiers are a group
+      // of figures with nothing to do.
+      {...(pill
+        ? {
+            role: 'button',
+            tabIndex: 0,
+            'aria-label': `${label}: ${doneSaid}, ${blockedSaid}, ${leftSaid}`,
+            'aria-expanded': open,
+            ...(open ? { 'aria-describedby': popId } : {}),
+            onClick: toggle,
+            onKeyDown: (event: KeyboardEvent) => {
+              if (event.key === 'Escape') {
+                close();
+              } else if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                toggle();
+              }
+            },
+            onMouseEnter: () => {
+              setDismissed(false);
+              setHovered(true);
+            },
+            onMouseLeave: () => {
+              setHovered(false);
+            },
+            onFocus: () => {
+              setDismissed(false);
+              setFocused(true);
+            },
+            onBlur: () => {
+              setFocused(false);
+              setPinned(false);
+            },
+          }
+        : { role: 'group', 'aria-label': label })}
       title={
-        filtered
-          ? `${named} — counted from the filtered tasks. Clear the filters to count every sprint.`
-          : named
+        pill
+          ? undefined
+          : filtered
+            ? `${named} — counted from the filtered tasks. Clear the filters to count every sprint.`
+            : named
       }
     >
       <span className="bstats-scope" aria-hidden="true">
@@ -139,7 +222,7 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
         {filtered && <span className="bstats-filtered"> · filtered</span>}
       </span>
 
-      <span className="bstats-stat bstats-done" title={doneSaid}>
+      <span className="bstats-stat bstats-done" title={pill ? undefined : doneSaid}>
         <span aria-hidden="true">
           <svg className="bstats-glyph" viewBox="0 0 24 24" fill="none" strokeWidth="2.4">
             <path d="M5 12.5l4.5 4.5L19 7.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -182,9 +265,35 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
     </div>
   );
 
-  return placement === 'row' ? (
-    createPortal(figures, host)
-  ) : (
-    <div className="bstats-above">{figures}</div>
+  /*
+   * The anchor positions the pill's popover against the pill; it takes no
+   * room of its own, so it is the group's box in the row. The popover is
+   * absolutely placed under the pill and over the board, and never in flow.
+   */
+  return createPortal(
+    <span className="bstats-anchor">
+      {figures}
+      {open && (
+        <span id={popId} role="tooltip" className="bstats-pop">
+          <span className="bstats-pop-row">
+            <span className="bstats-pop-key">DONE</span>
+            <b>{known ? counts.done : dash}</b>
+            {known && <span className="bstats-pop-of">/{counts.total}</span>}
+          </span>
+          <span className="bstats-pop-row bstats-pop-blocked">
+            <span className="bstats-pop-key">BLK</span>
+            <b>{known ? counts.blocked : dash}</b>
+          </span>
+          <span className="bstats-pop-row">
+            <span className="bstats-pop-key">LEFT</span>
+            <b>{scope.daysLeft ?? dash}</b>
+            {scope.daysLeft === undefined && (
+              <span className="bstats-pop-of"> no sprint end date</span>
+            )}
+          </span>
+        </span>
+      )}
+    </span>,
+    host,
   );
 }

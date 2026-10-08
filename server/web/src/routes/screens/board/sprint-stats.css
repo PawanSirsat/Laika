@@ -6,18 +6,17 @@
  * it describes now that the chips that used to say so are gone.
  */
 
-/* The toolbar's slot takes no box of its own, so the group is a flex item of
-   `.bt` like the buttons around it. */
+/* The toolbar's slot takes no box of its own, so the anchor is a flex item
+   of `.bt` like the buttons around it. */
 .bt-stats-slot {
   display: contents;
 }
 
-/* Sized by the row, not the viewport: the sidebar takes 212px at some widths
-   and none at others, so the same window can leave very different room.
-   Coupling: `.board-bar` is board-toolbar.css's selector; this only names it a
-   container, and that file must not set `container` on it too. */
-.board-bar {
-  container: board-bar / inline-size;
+/* The pill's popover is placed against this; it adds no box of its own. */
+.bstats-anchor {
+  position: relative;
+  flex: none;
+  display: inline-flex;
 }
 
 .bstats {
@@ -99,7 +98,7 @@
   color: var(--overdue);
 }
 
-/* Drawn only in the compact form below. */
+/* Drawn only in the compact tier. */
 .bstats-glyph {
   display: none;
   width: 0.75rem;
@@ -115,65 +114,117 @@
 }
 
 /*
- * **Compact: the words give way to a glyph each** (LAI-727).
- *
- * Measured: the full group is 249px, and in a row under ~56rem it took that
- * from the search field — 26px wide with the sidebar open at 901px, where it
- * had been 279px. Wrapping the group to a line of its own was the other way
- * out, and it would have put it under the Filter popover. The scope, the
- * numbers, the "filtered" marker and the spoken sentences all stay, and each
- * figure has its sentence as a tooltip.
+ * **The tiers** (LAI-727 review, round 2). `SprintStats` measures the row and
+ * sets one of `.bstats-full`, `.bstats-compact`, `.bstats-pill` on the group:
+ * the widest that leaves search 120px. Every tier is the same 36px line in the
+ * toolbar row — none wraps, none takes a row of its own — so a tier change
+ * moves nothing below the toolbar. Measured on 2d6036a: the full group is
+ * 249px; with the sidebar open at 920–1024px it left search 26–35px.
  */
-@container board-bar (max-width: 56rem) {
-  .bstats-key {
-    display: none;
-  }
 
-  .bstats-glyph {
-    display: block;
-  }
-
-  .bstats-scope,
-  .bstats-stat {
-    padding: 0 0.4375rem;
-  }
-
-  .bstats-stat > [aria-hidden='true'] {
-    gap: 0.25rem;
-  }
-}
-
-/*
- * **A line of its own, above the toolbar** (LAI-727 review), when even the
- * compact form would leave search under 120px — `SprintStats` measures and
- * decides. The first flex line of `.board-bar`, right-aligned under the space
- * bar where the strip's summary used to end. With a line to itself it has the
- * room for the words again, so the compact form is undone here.
- *
- * The scope is never hidden: a sprint is also named by its Filter chip, but
- * *All sprints* has no chip, and an unscoped "3/12" says nothing.
- */
-.bstats-above {
-  order: -1;
-  flex: 1 0 100%;
-  display: flex;
-  justify-content: flex-end;
-  padding-bottom: 0.5rem;
-}
-
-.bstats-above .bstats {
-  margin-inline-end: 0;
-}
-
-.bstats-above .bstats-key {
-  display: inline;
-}
-
-.bstats-above .bstats-glyph {
+/* Compact: the words give way to a glyph each. */
+.bstats-compact .bstats-key {
   display: none;
 }
 
-.bstats-above .bstats-scope,
-.bstats-above .bstats-stat {
-  padding: 0 0.625rem;
+.bstats-compact .bstats-glyph {
+  display: block;
+}
+
+.bstats-compact .bstats-scope,
+.bstats-compact .bstats-stat {
+  padding: 0 0.4375rem;
+}
+
+.bstats-compact .bstats-stat > [aria-hidden='true'] {
+  gap: 0.25rem;
+}
+
+/*
+ * Pill: one figure, `S4 · 7/30` — the scope and done of total. BLK and LEFT
+ * are in its popover and in its accessible name, so they are hidden here, not
+ * lost. A control, so it shows it can be pressed.
+ */
+.bstats-pill {
+  cursor: pointer;
+}
+
+.bstats-pill:hover {
+  border-color: var(--accent-border);
+}
+
+.bstats-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.bstats-pill .bstats-blocked,
+.bstats-pill .bstats-left,
+.bstats-pill .bstats-key,
+.bstats-pill .bstats-filtered {
+  display: none;
+}
+
+.bstats-pill .bstats-scope,
+.bstats-pill .bstats-stat {
+  padding: 0 0.5rem;
+}
+
+.bstats-pill .bstats-scope {
+  border-right: 0;
+  padding-right: 0;
+}
+
+.bstats-pill .bstats-done > [aria-hidden='true']::before {
+  content: '·';
+  color: var(--text-muted);
+  margin-inline-end: 0.0625rem;
+}
+
+/* Over the board, under the pill, right edges aligned; never in flow. */
+.bstats-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 32;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+  white-space: nowrap;
+}
+
+.bstats-pop-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+}
+
+.bstats-pop-key {
+  min-width: 2.75rem;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.bstats-pop b {
+  font-size: 0.84375rem;
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.bstats-pop-of {
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.bstats-pop-blocked .bstats-pop-key,
+.bstats-pop-blocked b {
+  color: var(--overdue);
 }
