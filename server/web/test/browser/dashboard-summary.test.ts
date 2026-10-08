@@ -312,7 +312,10 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
 
   void test('the status donut accounts for every live task, and says how much is done', async () => {
     const w = world();
-    const h = await open('/dashboard?project=laika-core', w.stub);
+    // **All time** (LAI-732): the range now reaches this card, counting tasks
+    // updated within it, and All time is the whole project — what this pins.
+    // The range itself is `dashboard-card-filters.test.ts`'s.
+    const h = await open('/dashboard?project=laika-core&range=all', w.stub);
     try {
       await ready(h.page);
       const live = w.tasks.filter((t) => t.status !== 'cancelled');
@@ -339,7 +342,10 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
 
   void test('work by person: open work for every assignee, the owner named, Unassigned its own share', async () => {
     const w = world();
-    const h = await open('/dashboard?project=laika-core', w.stub);
+    // **All time** (LAI-732): the range now reaches this card, counting tasks
+    // updated within it, and All time is the whole project — what this pins.
+    // The range itself is `dashboard-card-filters.test.ts`'s.
+    const h = await open('/dashboard?project=laika-core&range=all', w.stub);
     try {
       await ready(h.page);
       const openWork = w.tasks.filter(open7);

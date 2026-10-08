@@ -746,3 +746,217 @@ a.dash-event-key:focus-visible {
   font-weight: var(--weight-bold);
   color: var(--text-primary);
 }
+
+/* --- a card's own filter (LAI-732) ------------------------------------------ */
+
+/*
+ * **The Board Filter popover's language** (`board-toolbar.css`, LAI-717): the
+ * same tokens for the surface, the header, the labels and a set field, so the
+ * two read as one control. Copied by value rather than by class: the board's
+ * stylesheet is not loaded on this screen, and borrowing its class names would
+ * tie this card to a file it does not own. Every colour is a theme token, so
+ * light and dark come from `theme.css`.
+ */
+.dash-card-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.dcf-anchor {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.dcf-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  height: 1.75rem;
+  min-width: 1.75rem;
+  padding: 0 0.375rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-chip);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.dcf-button:hover {
+  color: var(--text-primary);
+  border-color: var(--accent-border);
+}
+
+.dcf-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dcf-button-on {
+  color: var(--accent);
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+}
+
+.dcf-button svg {
+  width: 0.8125rem;
+  height: 0.8125rem;
+  stroke: currentColor;
+}
+
+.dcf-badge {
+  font-family: var(--font-mono);
+  font-size: 0.71875rem;
+  font-weight: var(--weight-bold);
+  background: var(--accent);
+  color: var(--on-accent);
+  border-radius: var(--radius-pill);
+  padding: 0 0.25rem;
+  min-width: 0.875rem;
+  text-align: center;
+}
+
+/* Hangs from the icon's right edge: the icon sits at the card's right. */
+.dcf-pop {
+  position: absolute;
+  top: calc(100% + 0.375rem);
+  right: 0;
+  z-index: 31;
+  box-sizing: border-box;
+  width: min(17rem, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 0.75rem 0.875rem 0.875rem;
+  text-align: left;
+}
+
+.dcf-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.dcf-title {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.dcf-count {
+  font-size: 0.71875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-pill);
+  padding: 0 0.4375rem;
+  white-space: nowrap;
+}
+
+.dcf-clear {
+  margin-left: auto;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0.125rem 0.25rem;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+
+.dcf-clear:hover:not(:disabled) {
+  background: var(--accent-bg);
+}
+
+.dcf-clear:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.dcf-clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.dcf-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem 0.75rem;
+}
+
+.dcf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.dcf-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: 0.71875rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+/*
+ * The field is `Dropdown`'s trigger (LAI-726), whose own stylesheet draws it
+ * as these selects were drawn; the Board's popover sets the same two things.
+ */
+.dcf-field .dd-field {
+  height: 2rem;
+  background: var(--bg-column);
+}
+
+.dcf-field-wide {
+  grid-column: 1 / -1;
+}
+
+.dcf-field-set .dcf-label {
+  color: var(--accent);
+}
+
+.dcf-field-set .dcf-label::before {
+  content: '';
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.dcf-field-set .dd-field,
+.dcf-field-set .dd-field:hover:not(:disabled),
+.dcf-field-set .dd-field[aria-expanded='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-border);
+  font-weight: var(--weight-semibold);
+}
+
+/*
+ * **The open card rises above its neighbours.** `container: card / inline-size`
+ * gives every card layout containment, so each is its own stacking context and
+ * the popover's z-index cannot reach past it: without this, the card after it
+ * in the grid paints over the popover.
+ */
+.dash-card:has(.dcf-pop) {
+  position: relative;
+  z-index: 5;
+}
