@@ -3832,3 +3832,46 @@ instruction, not a precedent.
 - Motion for anything but cards — columns, dialogs and the drawer keep the
   colour-only transitions `theme.css` has always had.
 - Animating the List's rows.
+
+## D-072 — The Dashboard is Jira's Summary page: four figures, two donuts, nothing said twice.
+
+**2026-10-07, the owner, directly to CHIEF**, with two screenshots of the
+Dashboard tab: *"improve this page properly, I want what Jira uses, simplify
+everything, and also show the person-wise task divide in a circle … remove
+what is not necessary … alignment is also not properly aligned."* Carried by
+LAI-711. Built by CHIEF on the owner's direct instruction, on `build-dash`, as
+the earlier runs were — a crossing made on that instruction, not a precedent.
+
+### Decided
+
+1. **Four figures for the range** — done (the `/metrics` throughput sum, so the
+   card and the chart cannot disagree), updated, created, and due soon in the
+   next seven days with the overdue count beside it.
+2. **Status overview is a donut** with the share done at its centre. It
+   replaces Release progress and "Work by status", which said the same thing
+   twice. Statuses wear the board's lane colours — never the accent.
+3. **Work by person is a donut of open work** — finished work is not load — per
+   assignee, Unassigned as its own share and always last, five people by name
+   and the rest as "Others". Slices are coloured by rank, not by avatar hue: an
+   eight-hue hash puts two of four people on one colour more often than not.
+   It replaces "Who is carrying what", which counted in-progress work only.
+4. **Needs attention** holds blocked and stale work as two tabs with their true
+   counts. The old stale panel counted after cutting the list to five.
+5. **The Agent log card goes.** The feed's Agents filter and count carry it.
+6. **Every row goes somewhere**: a person to the board filtered to them, a
+   status or priority to the List, a task to its drawer.
+7. **Laid out by the width it has.** Container queries on the content, not the
+   window; cards size by the grid; the gutters are the space bar's. The bar's
+   task filters are claimed away on this screen, because nothing here read
+   them.
+8. **It never blanks.** After the first load, a range change, a Retry and a
+   live frame update the page in place.
+9. **Charts are hand-written SVG**, tokens only, labelled for screen readers.
+   No chart library.
+
+### What this does not decide
+
+- Sprint progress, created-versus-resolved and an overdue list. They are
+  offered to the owner, not built.
+- `/metrics`' "stuck" and "WIP by user", which SPEC §6.4 promises and the server
+  does not serve (LAI-712).

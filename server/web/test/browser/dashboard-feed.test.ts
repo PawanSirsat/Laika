@@ -106,6 +106,7 @@ const STUB: ApiStub = {
     ],
   },
   '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
+  '/api/v1/projects/laika-core/mentionable': { users: [{ id: 'u1', name: 'Ada Lovelace' }] },
   '/api/v1/projects/laika-core/activity': { data: EVENTS, next_cursor: null },
   '/api/v1/projects/laika-core/metrics': { since: 1, throughput: [], cycle_time: null },
   '/api/v1/projects/laika-core/tags': { tags: [] },
