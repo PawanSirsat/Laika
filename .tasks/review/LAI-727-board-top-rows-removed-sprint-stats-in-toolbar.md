@@ -165,3 +165,30 @@ Follow-ups taken on this branch (frozen criteria unchanged):
 5. `SpaceLive.tsx` still names the presence strip as a consumer.
 6. `board-presence` "presence off: still no row" and `sprint-strip` "a
    project with no sprints reserves nothing" pass on old and new code alike.
+
+### Builder's response to round 1
+
+1. **Tightest layout.** Measured on 2d6036a with the sidebar open, six
+   members (the pile shows four faces and `+2`; `CLUSTER_LIMIT` is 4) and
+   "Group: Assignee": search **35px** at 1024, **26px** at 920. No compact
+   rule could fix it: at 920 the toolbar's own controls leave search ~113px
+   with the group out of the row entirely. So `SprintStats` now measures the
+   row: below 120px of search the group moves to a line of its own above the
+   toolbar, right-aligned; it returns with 8px to spare
+   (`SprintStats.tsx:85`, `:93`; `sprint-stats.css:156`). After: 1024 →
+   217px; 920 on All sprints → ≥120px; 920 on a sprint → **113px**, the
+   toolbar's own floor (the Filter badge is the difference), filed as
+   **LAI-730**. The test asserts search ≥ 120, or the group out of the row
+   with no slack left (`board-sprint-stats.test.ts:602`).
+2. **All sprints scope.** The narrowest step that hid the scope is removed;
+   the scope is never hidden, and the comment that claimed a chip names it is
+   gone with it. Tested at 920, 901, 760, 600 and 360px
+   (`board-sprint-stats.test.ts:661`).
+3. LEFT with no sprint reads "No sprint end date" (`SprintStats.tsx:122`,
+   test `:681`).
+4. Coupling comment on `.board-bar` (`sprint-stats.css:17`);
+   `board-toolbar.css` untouched.
+5. `SpaceLive.tsx:43-53` names its real readers.
+6. Presence-off removed with its reason (`board-presence.test.ts:259`); the
+   no-sprints test re-aimed to also assert the figures a sprintless project
+   gets (`sprint-strip.test.ts:500`), which fails on 5adbfae.
