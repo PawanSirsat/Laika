@@ -2,10 +2,11 @@
 id: LAI-714
 title: 'A push to master deploys itself — GitHub Actions to the current server'
 area: ops
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
-status: backlog
+status: in-progress
+started: 2026-10-08T07:53:29Z
 ---
 
 ## Goal
