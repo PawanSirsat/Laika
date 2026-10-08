@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-08T10:28:16Z
+finished: 2026-10-08T11:12:02Z
 ---
 
 ## Goal
@@ -48,7 +49,7 @@ only**: the same fields, the same URL parameters, the same semantics.
 
 ## Acceptance criteria
 
-- [ ] The List's filtered empty state is centred horizontally and vertically in
+- [x] The List's filtered empty state is centred horizontally and vertically in
       the list area, measured in a real browser against the pane's box.
 - [x] When filters are active and the List is empty, the empty state offers
       **Clear filters**, which removes every filter key and keeps the project.
@@ -58,7 +59,7 @@ only**: the same fields, the same URL parameters, the same semantics.
       tokens only, and has its own reset control.
 - [x] Ready only, Blocked only, Top-level only, Overdue and Agent-created only
       read as one "Quick filters" group of pill toggles.
-- [ ] The selects sit in a compact two-column grid; the open popover fits a
+- [x] The selects sit in a compact two-column grid; the open popover fits a
       1366×768 laptop viewport without scrolling.
 - [x] With filters active and the popover closed, a row of removable chips sits
       under the toolbar, one per active filter (e.g. "Status: In progress ×"),
@@ -66,7 +67,7 @@ only**: the same fields, the same URL parameters, the same semantics.
 - [x] Escape and a click outside close the popover; focus moves into it on open
       and returns to the Filter button on close; every control is reachable by
       Tab and has an accessible name.
-- [ ] Filter logic is unchanged: same fields, same URL parameters, same
+- [x] Filter logic is unchanged: same fields, same URL parameters, same
       semantics. The popover is shared by the Board and the List and both are
       verified.
 - [x] **Added mid-task by the owner, same day:** the List's "+ Create task"
@@ -158,4 +159,36 @@ Nits
   the key; no `?sprint=` means the active sprint only on re-entry or reload).
 - `list-create-row.test.ts`: the opaque-background assertion already passed on
   the old code; say so, do not claim it as a regression catch.
+
+## Round 1 — what changed (2026-10-08T11:12:02Z)
+
+- **B1** `filter-popover.test.ts` "sits in the middle…": at 1440×900, asserts
+  `.list-pane` fills `.board-main` and `.list-scroll` fills the pane's content
+  box (±1px), and centres the state on `.board-main` across. Removing
+  `.board-main > .list-pane { flex: 1 1 0 }` fails it: "the pane does not fill
+  the list area: 259 of 1192px".
+- **B2** the Tab test asserts Shift+Tab from the first field lands on a
+  `Clear all` button inside `.bt-pop`; taking Clear all out of the tab order
+  fails it.
+- **1** Focus: reset → its select (`BoardToolbar.tsx` `FilterField`); chip × →
+  next, else previous, else Filter (`FilterChips.tsx`); chips' Clear all and
+  the empty List's Clear filters → Filter (`BoardScreen.tsx`
+  `filterButtonRef`). Tested on /list and /board; all fail on 051b067.
+- **2** Fit at 1366×768 and the Escape/focus test run on /list and /board.
+- **3** Board with an active sprint: the "Sprint: S1 · …" chip shows, the
+  badge reads 1, and × writes `sprint=all`. Making `removeFilter` delete the
+  key fails it.
+- **4** Bulk bar: in `.list-card`, `--list-create-h` + gap above its foot.
+  Tested short and scrolled, at 1440×900 and 900 wide; all four fail on
+  051b067. LAI-719 closed as fixed here.
+- **5** Chip names say `…` until members/sprints load (`filter-chips.ts`);
+  unit test; forcing "Unknown member" fails it.
+- Nits: `--bg-column` selects; set = accent border + ring + dot (opaque
+  background, asserted); neutral hover (asserted); legend floated off the
+  divider (asserted); slide clamped and recomputed on resize (asserted);
+  orphaned `board.css` comment removed; `ready=false` → on "Not ready" pill
+  (asserted); LAI-718 notes added; the opaque-background Create-row assertion
+  is labelled as not a regression catch.
+- Note: `2c69a45` carries LAI-719's move to `done/` as a pure rename (the
+  `git mv` was staged before that commit); its edits are the next commit.
 
