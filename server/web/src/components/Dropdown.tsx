@@ -17,8 +17,10 @@ import {
   highlight,
   move,
   noMatches,
-  place,
+  outOfView,
+  placeWithin,
   typeahead,
+  type Area,
   type Move,
 } from './dropdown-model.ts';
 import './dropdown.css';
@@ -91,6 +93,21 @@ const FLOOR = 160;
 const TYPEAHEAD_MS = 600;
 
 const remPx = (): number => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+
+/** What is on screen: the visual viewport where there is one (LAI-726 round 1). */
+const visibleArea = (): Area => {
+  const vv = window.visualViewport;
+  return vv === null
+    ? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    : { left: vv.offsetLeft, top: vv.offsetTop, width: vv.width, height: vv.height };
+};
+
+/**
+ * A touch screen: focusing a text box raises the on-screen keyboard over the
+ * list the reader opened to look at, so the search box waits to be tapped.
+ */
+const coarsePointer = (): boolean =>
+  typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 
 const setRef = <T,>(ref: Ref<T> | undefined, value: T | null): void => {
   if (typeof ref === 'function') ref(value);
@@ -169,6 +186,14 @@ export function Dropdown<V extends string = string>({
   const typed = useRef({ buffer: '', at: 0 });
   /** Set once the panel opens, so the selected option is scrolled to only then. */
   const reveal = useRef(false);
+  /**
+   * A press on the trigger is under way (LAI-726 round 1). Safari does not
+   * focus a button on mousedown, so pressing the trigger of an open,
+   * searchable dropdown blurs the search box with no `relatedTarget` before
+   * the click — and a blur that closed the panel let that click reopen it.
+   * The search box's blur ignores itself while this is set; the click closes.
+   */
+  const pressing = useRef(false);
   const listId = useId();
   const optionId = (index: number): string => `${listId}-o${String(index)}`;
 
@@ -186,11 +211,15 @@ export function Dropdown<V extends string = string>({
     () => (withSearch ? filterOptions(ordered, query) : ordered),
     [ordered, query, withSearch],
   );
+  // Each option's place in `options`, for its id — once, not a search per row.
+  const indexOf = useMemo(() => new Map(options.map((o, i) => [o.value, i])), [options]);
   const empty = withSearch && noMatches(shown, query);
   const selected = options.find((o) => o.value === value);
   const activeIndex = shown.findIndex((o) => o.value === active);
   const activeId =
-    open && activeIndex !== -1 ? optionId(options.indexOf(shown[activeIndex]!)) : undefined;
+    open && activeIndex !== -1
+      ? optionId(indexOf.get(shown[activeIndex]!.value) ?? activeIndex)
+      : undefined;
 
   const show = useCallback(
     (start: 'selected' | 'first' | 'last' = 'selected') => {
@@ -214,6 +243,8 @@ export function Dropdown<V extends string = string>({
   const hide = useCallback((refocus: boolean) => {
     setOpen(false);
     setQuery('');
+    // A new session types from scratch (LAI-726 round 1).
+    typed.current = { buffer: '', at: 0 };
     if (refocus) trigger.current?.focus();
   }, []);
 
@@ -223,30 +254,40 @@ export function Dropdown<V extends string = string>({
     if (option.value !== value) onChange(option.value);
   };
 
-  // Focus into the search box on open, where there is one.
+  // Focus into the search box on open, where there is one — not on a touch
+  // screen, where it would raise the keyboard over the list (round 1).
   useEffect(() => {
-    if (open && withSearch) search.current?.focus();
+    if (open && withSearch && !coarsePointer()) search.current?.focus({ preventScroll: true });
   }, [open, withSearch]);
 
   /*
-   * **Placed before it is painted**, and again whenever the page around it
-   * moves: a scroll anywhere (capture, so a scrolling popover counts), a
-   * resize, or the list changing height as a search narrows it.
+   * **Placed before it is painted**, against what is on screen, and again
+   * when the window resizes or the list changes height as a search narrows
+   * it. A trigger that has left the screen takes the panel with it.
    */
   useLayoutEffect(() => {
     if (!open) return;
+    /** Where the trigger was when the panel was last placed against it. */
+    let anchor: { top: number; left: number } | undefined;
     const placePanel = (): void => {
       const t = trigger.current;
       const p = panel.current;
       const l = list.current;
       if (t === null || p === null || l === null) return;
+      const area = visibleArea();
+      const box = t.getBoundingClientRect();
+      if (outOfView(box, area)) {
+        hide(false);
+        return;
+      }
+      anchor = { top: box.top, left: box.left };
       const natural = p.offsetHeight - l.clientHeight + l.scrollHeight;
-      const at = place(
-        t.getBoundingClientRect(),
-        natural,
-        { width: window.innerWidth, height: window.innerHeight },
-        { gap: GAP, margin: MARGIN, cap: CAP_REM * remPx(), floor: FLOOR },
-      );
+      const at = placeWithin(box, natural, area, window.innerHeight, {
+        gap: GAP,
+        margin: MARGIN,
+        cap: CAP_REM * remPx(),
+        floor: FLOOR,
+      });
       p.dataset.side = at.side;
       p.style.top = at.top === undefined ? '' : `${String(at.top)}px`;
       p.style.bottom = at.bottom === undefined ? '' : `${String(at.bottom)}px`;
@@ -254,20 +295,66 @@ export function Dropdown<V extends string = string>({
       p.style.minWidth = `${String(at.minWidth)}px`;
       p.style.maxWidth = `${String(at.maxWidth)}px`;
       p.style.maxHeight = `${String(at.maxHeight)}px`;
+      /*
+       * **Measured, then corrected.** Inside a modal the panel's fixed box is
+       * placed by whatever contains it; if an ancestor ever becomes its
+       * containing block (a transform, a filter) the values above land
+       * offset by that ancestor's position. Reading back where it actually
+       * went and moving it by the difference keeps it on its trigger anyway.
+       */
+      const drawn = p.getBoundingClientRect();
+      const dx = drawn.left - at.left;
+      if (Math.abs(dx) > 0.5) p.style.left = `${String(at.left - dx)}px`;
+      if (at.top !== undefined) {
+        const dy = drawn.top - at.top;
+        if (Math.abs(dy) > 0.5) p.style.top = `${String(at.top - dy)}px`;
+      } else if (at.bottom !== undefined) {
+        const dy = drawn.bottom - (window.innerHeight - at.bottom);
+        if (Math.abs(dy) > 0.5) p.style.bottom = `${String(at.bottom + dy)}px`;
+      }
     };
     placePanel();
+    /*
+     * **A scroll under the panel closes it**, as it closes a native select
+     * (LAI-726 round 1). Re-placing on every scroll followed the trigger off
+     * the screen — the review measured top: −234px in the task drawer.
+     *
+     * Two scrolls are not "under it": the list's own, and one that did not
+     * move the trigger. The second matters because a scroll *event* arrives a
+     * frame after its scroll — focusing or clicking a control scrolls it into
+     * view first, and that event would otherwise close the panel the same
+     * click just opened.
+     */
     const onScroll = (event: Event): void => {
-      // The list's own scrolling moves nothing.
       if (event.target instanceof Node && panel.current?.contains(event.target)) return;
-      placePanel();
+      const box = trigger.current?.getBoundingClientRect();
+      if (
+        box !== undefined &&
+        anchor !== undefined &&
+        Math.abs(box.top - anchor.top) < 1 &&
+        Math.abs(box.left - anchor.left) < 1
+      ) {
+        return;
+      }
+      const inPanel =
+        document.activeElement !== null && panel.current?.contains(document.activeElement);
+      hide(false);
+      // Focus was in the search box, which is going: back to the trigger,
+      // without scrolling the page that is already moving.
+      if (inPanel === true) trigger.current?.focus({ preventScroll: true });
     };
+    const vv = window.visualViewport;
     window.addEventListener('resize', placePanel);
+    vv?.addEventListener('resize', placePanel);
+    vv?.addEventListener('scroll', placePanel);
     window.addEventListener('scroll', onScroll, true);
     return () => {
       window.removeEventListener('resize', placePanel);
+      vv?.removeEventListener('resize', placePanel);
+      vv?.removeEventListener('scroll', placePanel);
       window.removeEventListener('scroll', onScroll, true);
     };
-  }, [open, shown.length]);
+  }, [open, shown.length, hide]);
 
   /*
    * **The active option is kept in view**, and on open the selected one is
@@ -310,12 +397,13 @@ export function Dropdown<V extends string = string>({
     if (next !== -1) setActive(shown[next]!.value);
   };
 
-  const ahead = (key: string): void => {
+  /** `from` is where the search starts: the active option, or on a closed trigger the selected one. */
+  const ahead = (key: string, from = activeIndex): void => {
     const now = Date.now();
     const t = typed.current;
     t.buffer = now - t.at > TYPEAHEAD_MS ? key : t.buffer + key;
     t.at = now;
-    const hit = typeahead(shown, activeIndex, t.buffer);
+    const hit = typeahead(shown, from, t.buffer);
     if (hit !== -1) setActive(shown[hit]!.value);
   };
 
@@ -340,7 +428,12 @@ export function Dropdown<V extends string = string>({
       } else if (printable && !withSearch) {
         handled(event);
         show();
-        ahead(event.key);
+        // From the value, not from wherever a past session left the active
+        // option — `activeIndex` here is still that session's (round 1).
+        ahead(
+          event.key,
+          shown.findIndex((o) => o.value === value),
+        );
       }
       return;
     }
@@ -393,6 +486,7 @@ export function Dropdown<V extends string = string>({
          */
         setOpen(false);
         setQuery('');
+        typed.current = { buffer: '', at: 0 };
         if (inSearch) trigger.current?.focus();
         return;
       case ' ':
@@ -430,10 +524,18 @@ export function Dropdown<V extends string = string>({
             <circle cx="11" cy="11" r="7" />
             <path d="m20 20-3.5-3.5" strokeLinecap="round" />
           </svg>
+          {/*
+            **A combobox of its own** (LAI-726 round 1): while it has focus it
+            is the control driving the listbox — the APG's editable combobox
+            with list autocomplete — so it says it is expanded and which list
+            it controls, and names the active option.
+          */}
           <input
             ref={search}
             type="text"
-            role="searchbox"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="true"
             className="dd-search-input"
             placeholder={`Search ${noun}`}
             aria-label={`Search ${noun}`}
@@ -456,9 +558,15 @@ export function Dropdown<V extends string = string>({
             onKeyDown={onKey}
             onBlur={(event) => {
               const to = event.relatedTarget as Node | null;
+              // The trigger is being pressed: its click decides (see `pressing`).
+              if (pressing.current) {
+                pressing.current = false;
+                return;
+              }
               if (to !== null && (panel.current?.contains(to) || trigger.current === to)) return;
               setOpen(false);
               setQuery('');
+              typed.current = { buffer: '', at: 0 };
             }}
           />
         </div>
@@ -474,7 +582,7 @@ export function Dropdown<V extends string = string>({
           return (
             <div
               key={option.value}
-              id={optionId(options.indexOf(option))}
+              id={optionId(indexOf.get(option.value) ?? index)}
               data-index={index}
               data-value={option.value}
               role="option"
@@ -558,7 +666,14 @@ export function Dropdown<V extends string = string>({
         title={title ?? selected?.label}
         disabled={disabled}
         data-value={value}
+        onPointerDown={() => {
+          pressing.current = open;
+        }}
+        onMouseDown={() => {
+          pressing.current = open;
+        }}
         onClick={() => {
+          pressing.current = false;
           if (open) hide(true);
           else show();
         }}
@@ -599,7 +714,17 @@ export function Dropdown<V extends string = string>({
         )}
       </button>
       {name !== undefined && <input type="hidden" name={name} value={value} />}
-      {panelNode !== false && createPortal(panelNode, document.body)}
+      {/*
+        **Into the modal it belongs to** (LAI-726 round 1). `aria-modal="true"`
+        tells a screen reader to ignore everything outside the dialog, so a
+        panel portalled to `<body>` from inside one is there for the eye and
+        gone for the ear. Outside any modal, `<body>`.
+      */}
+      {panelNode !== false &&
+        createPortal(
+          panelNode,
+          trigger.current?.closest<HTMLElement>('[aria-modal="true"]') ?? document.body,
+        )}
     </>
   );
 }

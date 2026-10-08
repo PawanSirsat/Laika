@@ -15,9 +15,15 @@
 .column-dialog {
   position: fixed;
   z-index: 41;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
+  /*
+   * **Centred by its margins, not a transform** (LAI-726 round 1): a
+   * transform would make this scrolling box the containing block of the
+   * dropdown list drawn inside it (it is `aria-modal`, so the list must be),
+   * and clip it. `fit-content` keeps the height its content's, as before.
+   */
+  inset: 0;
+  margin: auto;
+  height: fit-content;
   width: min(24rem, calc(100vw - 2rem));
   max-height: calc(100vh - 4rem);
   overflow-y: auto;

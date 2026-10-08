@@ -187,6 +187,65 @@ export function place(
   };
 }
 
+/** The part of the layout viewport actually on screen, in its coordinates. */
+export interface Area {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * `place`, against the **visible** area rather than the whole layout viewport
+ * (LAI-726 review, round 1).
+ *
+ * On a phone the visual viewport is smaller than the layout viewport and can
+ * sit anywhere inside it — the on-screen keyboard takes the bottom, a pinch
+ * zoom shows a corner. A panel placed against `innerHeight` then lands under
+ * the keyboard. This places in the visible area's own coordinates and hands
+ * back values for a `position: fixed` box, which are layout-viewport values:
+ * `top` and `left` shifted by the area's offset, `bottom` measured from the
+ * layout viewport's bottom edge (`layoutHeight`). With the area equal to the
+ * layout viewport it is exactly `place`.
+ */
+export function placeWithin(
+  trigger: Rect,
+  natural: number,
+  area: Area,
+  layoutHeight: number,
+  options: PlaceOptions,
+): Placement {
+  const local = place(
+    {
+      top: trigger.top - area.top,
+      bottom: trigger.bottom - area.top,
+      left: trigger.left - area.left,
+      right: trigger.right - area.left,
+      width: trigger.width,
+    },
+    natural,
+    { width: area.width, height: area.height },
+    options,
+  );
+  const below = layoutHeight - (area.top + area.height);
+  return {
+    ...local,
+    top: local.top === undefined ? undefined : local.top + area.top,
+    bottom: local.bottom === undefined ? undefined : local.bottom + below,
+    left: local.left + area.left,
+  };
+}
+
+/** True when no part of the trigger is inside the visible area. */
+export function outOfView(trigger: Rect, area: Area): boolean {
+  return (
+    trigger.bottom <= area.top ||
+    trigger.top >= area.top + area.height ||
+    trigger.right <= area.left ||
+    trigger.left >= area.left + area.width
+  );
+}
+
 /**
  * True for an event target inside an open dropdown's panel.
  *
