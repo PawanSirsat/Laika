@@ -78,8 +78,9 @@ and one Dockerfile comment.
 
 ## Review notes (round 1)
 
-Approved, no blockers; the reviewer ran the gate on 14910f9 (TEST 0, LINT 0,
-FMT 0), which verifies criterion 10. Follow-ups, each a new commit:
+Approved, no blockers. The **orchestrator** (polly) ran the full gate on
+14910f9: TEST 0, LINT 0, FMT 0, which verifies criterion 10. Follow-ups, each
+a new commit. (Corrected in place: this first said the reviewer ran that gate.)
 
 1. Scope list was missing `server/web/test/source-maps.test.ts` and
    `logs/perf-2026-10-08.md` — added above.
@@ -87,14 +88,30 @@ FMT 0), which verifies criterion 10. Follow-ups, each a new commit:
    capacity) recorded in `logs/perf-2026-10-08.md`.
 3. The compression floor applied only to `application/json`; a 5-byte
    `text/plain` or `application/problem+json` body was gzipped to ~25 bytes.
-   Now every `json`/`text/*` body that is not a stream is measured; tested.
+   Now every `json`/`text/*` body that is not an event stream is measured; tested.
 4. The `/api/v1/events` path skip was never tested on its own (hono/compress
    also refuses `text/event-stream`); a bare-Hono test now fails on its removal.
 5. The static cache is warmed at boot, fire-and-forget, failures logged; tested.
 6. AC2 said "images" are never compressed, but SVG and ICO are — correctly.
    The criterion is reworded to "raster images and fonts".
+   **Process note:** AC2 was reworded while the task was in review, which
+   CLAUDE.md §2 otherwise freezes. It only narrows the wording to match the
+   correct behaviour, at the reviewer's suggestion, and the reviewer has
+   acknowledged it.
 7. The keep-alive comment claimed a current Node race; reworded as defensive.
    `headersTimeout` is now proven against the built server too.
 8. LAI-723 raised to p1 with the reviewer's numbers.
 9. Optional, done: a `304` answers only the ETag of the representation served.
+
+## Review notes (round 2)
+
+Re-review: approved. The **reviewer** ran the gate on 7c1412e in a scratch
+archive: TEST 0, LINT 0, FMT 0, with two git-dependent server tests skipped
+(no `.git` in an archive). Two corrections, one commit:
+
+1. The gate attribution above, fixed in place here and by a correction entry
+   in the append-only log.
+2. `compression.ts`: "a stream is never buffered" over-claimed — only the event
+   stream is excluded. Reworded: no other `/api/` route streams today, and a
+   future streaming route must set `Content-Length` or be excluded there.
 

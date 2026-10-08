@@ -25,10 +25,13 @@ import { COMPRESS_MIN_BYTES } from '../static-cache.ts';
  *
  * `hono/compress` reads its threshold off `Content-Length`, and neither
  * `c.json` nor `c.text` sets one, so on its own it would gzip a 60-byte health
- * check into an 80-byte one — or a 5-byte `text/plain` into 25. Any JSON
- * (`application/json`, `application/problem+json`, …) or `text/*` body except
- * an event stream is a string already in memory, so measuring it costs a copy,
- * not a wait. A stream is never buffered.
+ * check into an 80-byte one — or a 5-byte `text/plain` into 25. So every JSON
+ * (`application/json`, `application/problem+json`, …) or `text/*` body is
+ * read whole and measured first. The event stream is never buffered: it is
+ * skipped by path and by type. No other `/api/` route streams today (LAI-722),
+ * which is what makes reading the body whole safe — **a future streaming route
+ * must set `Content-Length`, or be excluded here**, or this will wait for it to
+ * end.
  */
 
 /** The bodies measured before the threshold is applied: JSON of any flavour, and text. */
