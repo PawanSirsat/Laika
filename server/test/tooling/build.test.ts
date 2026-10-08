@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { Agent, get as httpGet } from 'node:http';
 import { createServer } from 'node:net';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -234,7 +235,7 @@ async function withBuiltServer<T>(
   port: number,
   publicDir: string,
   fn: (baseUrl: string) => Promise<T>,
-): Promise<{ result: T; exitCode: number | null }> {
+): Promise<{ result: T; exitCode: number | null; serverLog: string }> {
   const dbDir = mkdtempSync(join(tmpdir(), 'laika-built-run-'));
 
   // For the identity check in `waitForHealth`: our child's age.
@@ -251,6 +252,13 @@ async function withBuiltServer<T>(
       LAIKA_PUBLIC_DIR: publicDir,
     },
     stdio: 'pipe',
+  });
+
+  // The child's own log, for the cases that assert what the process did at
+  // boot rather than what it answers (LAI-722).
+  let serverLog = '';
+  child.stdout.on('data', (chunk: Buffer) => {
+    serverLog += chunk.toString();
   });
 
   const exited = new Promise<number | null>((resolve) => {
@@ -270,7 +278,7 @@ async function withBuiltServer<T>(
   const exitCode = await exited;
   rmSync(dbDir, { recursive: true, force: true });
 
-  return { result, exitCode };
+  return { result, exitCode, serverLog };
 }
 
 describe('the built server, run the way the container runs it', () => {
@@ -331,6 +339,55 @@ describe('the built server, run the way the container runs it', () => {
       elapsed,
       `shutdown took ${String(elapsed)}ms with a stream open. The grace period is ${String(DEFAULT_GRACE_MS)}ms, and waiting it out is what "the activity feed was never closed" looks like.\n\nserver log:\n${serverLog}`,
     ).toBeLessThan(1_500);
+
+    rmSync(emptyPublic, { recursive: true, force: true });
+  }, 60_000);
+
+  it('keeps an idle connection open for 65 s, and says so (LAI-722)', async (ctx) => {
+    skipIfBuildFailed(ctx);
+    // Node advertises its `keepAliveTimeout` in the `Keep-Alive` response
+    // header, so this reads the value the running process actually applied —
+    // the only check that would notice `index.ts` no longer calling
+    // `applyKeepAlive`. Node's default answers `timeout=5`.
+    const emptyPublic = mkdtempSync(join(tmpdir(), 'laika-public-keepalive-'));
+
+    const { result, serverLog } = await withBuiltServer(
+      await freePort(),
+      emptyPublic,
+      async (baseUrl) => {
+        const agent = new Agent({ keepAlive: true });
+        try {
+          return await new Promise<string | undefined>((resolve, reject) => {
+            httpGet(`${baseUrl}/api/v1/health`, { agent }, (res) => {
+              res.resume();
+              res.on('end', () => {
+                const header = res.headers['keep-alive'];
+                resolve(Array.isArray(header) ? header.join(', ') : header);
+              });
+            }).on('error', reject);
+          });
+        } finally {
+          agent.destroy();
+        }
+      },
+    );
+
+    expect(result).toBe('timeout=65');
+
+    // `headersTimeout` has no response header to read, so it is read off the
+    // record `index.ts` writes from the live server object.
+    const timeouts = serverLog
+      .split('\n')
+      .filter((line) => line.startsWith('{'))
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+      .find((record) => record.event === 'server.timeouts');
+    expect(timeouts, serverLog).toMatchObject({
+      keep_alive_timeout_ms: 65_000,
+      headers_timeout_ms: 66_000,
+    });
+    // And `index.ts` turns the boot-time cache warm-up on (an empty build
+    // warms nothing, but the record says it ran).
+    expect(serverLog).toContain('"event":"static.warmed"');
 
     rmSync(emptyPublic, { recursive: true, force: true });
   }, 60_000);

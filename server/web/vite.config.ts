@@ -27,7 +27,10 @@ export default defineConfig({
     // outDir sits outside the Vite root, so Vite refuses to clear it unless
     // told to. Safe here precisely because nothing is committed into it.
     emptyOutDir: true,
-    sourcemap: true,
+    // Written for local debugging, linked from nothing (LAI-722). `true` put a
+    // `sourceMappingURL` in every bundle and published the 3.5 MB map — all of
+    // `src/`, comments included. The server also refuses `*.map` outright.
+    sourcemap: 'hidden',
     // Fonts are the only assets so far and they must stay separate files:
     // inlining a variable woff2 as base64 would bloat the CSS and defeat
     // caching. 0 disables inlining outright.
