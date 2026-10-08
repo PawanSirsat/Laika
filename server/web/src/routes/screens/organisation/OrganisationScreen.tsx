@@ -3,6 +3,7 @@ import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { canManageOrg, createInvite, revokeInvite, ORG_ROLES } from '../../../api/invites.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { getOrg, type Org } from '../../../api/org.ts';
@@ -307,28 +308,25 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
                     <label className="visually-hidden" htmlFor={`role-${person.id}`}>
                       Org role for {person.name}
                     </label>
-                    <select
+                    {/* Their current role is always an option even when this
+                        actor could not grant it — an Admin looking at an Owner
+                        must see what that person *is*, and a control whose
+                        value is not among its options shows nothing. */}
+                    <Dropdown
                       id={`role-${person.id}`}
+                      variant="bare"
                       className="org-role-select"
+                      noun="roles"
                       value={person.org_role}
                       disabled={changing === person.id}
-                      onChange={(event) => {
-                        change(person.id, { org_role: event.target.value });
+                      onChange={(value) => {
+                        change(person.id, { org_role: value });
                       }}
-                    >
-                      {/* Their current role is always an option even when
-                          this actor could not grant it — an Admin looking at an
-                          Owner must see what that person *is*, and a `<select>`
-                          whose value is not among its options renders blank. */}
-                      {(grantable.includes(person.org_role as OrgRole)
+                      options={(grantable.includes(person.org_role as OrgRole)
                         ? grantable
                         : [person.org_role as OrgRole, ...grantable]
-                      ).map((r) => (
-                        <option key={r} value={r}>
-                          {orgRoleLabel(r)}
-                        </option>
-                      ))}
-                    </select>
+                      ).map((r) => ({ value: r, label: orgRoleLabel(r) }))}
+                    />
 
                     {/* **`token.list_any` is the same grade as the controls
                         beside it** — Owner and Admin (§3.1) — so it lives here
@@ -515,19 +513,20 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
 
             <label className="org-invite-role">
               <span className="visually-hidden">Role</span>
-              <select
+              <Dropdown
+                variant="bare"
+                className="org-role-select"
+                noun="roles"
                 value={role}
                 disabled={busy}
-                onChange={(event) => {
-                  setRole(event.target.value as OrgRole);
+                onChange={(value) => {
+                  setRole(value);
                 }}
-              >
-                {ORG_ROLES.filter((r) => r !== 'owner').map((r) => (
-                  <option key={r} value={r}>
-                    {orgRoleLabel(r)}
-                  </option>
-                ))}
-              </select>
+                options={ORG_ROLES.filter((r) => r !== 'owner').map((r) => ({
+                  value: r,
+                  label: orgRoleLabel(r),
+                }))}
+              />
             </label>
 
             <Button type="submit" busy={busy}>

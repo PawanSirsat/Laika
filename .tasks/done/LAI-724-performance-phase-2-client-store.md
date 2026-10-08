@@ -5,7 +5,7 @@ area: web
 assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
-status: review
+status: done
 started: 2026-10-08T12:28:38Z
 finished: 2026-10-08T14:00:55Z
 ---
@@ -161,3 +161,14 @@ follow-ups were asked for and are made as new commits tagged `[LAI-724]`: the
 filter chip and badge counting a refused value, two stale `byId` comments, and
 the subtasks fixture serving a child only under `?parent=`. The task stays in
 review/.
+
+## Accepted
+
+2026-10-08, by polly (orchestrator), on the owner's instruction to ship
+release 2 now. Independent review: APPROVED on round-2 re-review (same-vendor
+Claude reviewer), with the three asked-for follow-ups made in 610c80c,
+95e6dcf and 3ca8ec8. Released at build-perf-store `3ca8ec8`. LAI-732
+(Dashboard card filters), which was started on the same branch after it, is
+not part of this release. At integration, two LAI-724 browser tests that still
+drove a native `<select>` were converted to LAI-726's Dropdown helpers
+(a8c9507). LAI-728 and LAI-729 stay in backlog.

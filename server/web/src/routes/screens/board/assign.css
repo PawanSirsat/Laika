@@ -7,7 +7,8 @@
   flex-wrap: wrap;
 }
 
-.assign-pick select {
+/* The app's dropdown trigger (LAI-726), drawn as the boxed select was. */
+.assign-pick .dd-trigger {
   font: inherit;
   font-size: var(--text-sm);
   color: var(--text-primary);
@@ -18,7 +19,11 @@
   cursor: pointer;
 }
 
-.assign-pick select:focus-visible,
+.assign-pick .dd-trigger:disabled {
+  cursor: progress;
+}
+
+.assign-pick .dd-trigger:focus-visible,
 .assign-claim:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

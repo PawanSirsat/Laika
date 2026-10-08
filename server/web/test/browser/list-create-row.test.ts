@@ -277,4 +277,70 @@ void describe('the List’s Create row (LAI-717)', () => {
       }
     });
   }
+
+  /*
+   * **A bar that wraps still leaves the last row clear** (LAI-717 round 2,
+   * carried by LAI-726). The room at the end of the scroll was a fixed
+   * `4.25rem`, sized for a one-line bar; on a narrow card the bar wraps to two
+   * lines and covered the row just ticked. The room is now the bar's measured
+   * height, so it holds whatever the bar grows to.
+   */
+  void test('with a row selected on a narrow card, a wrapped bulk bar leaves the last row clear', async () => {
+    const h = await open('/list?project=laika-core', stub(60));
+    try {
+      await h.page.setViewportSize({ width: 560, height: 800 });
+      await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
+      const scroller = h.page.locator('.list-scroll');
+      await scroller.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      await h.page.locator('.list-row .list-checkbox').last().check();
+      await h.page.locator('.list-bulk').waitFor({ timeout: 5_000 });
+      const rem = await h.page.evaluate(() =>
+        parseFloat(getComputedStyle(document.documentElement).fontSize),
+      );
+      const barHeight = await h.page
+        .locator('.list-bulk')
+        .evaluate((el) => el.getBoundingClientRect().height);
+      // Positive control: taller than the fixed room could hold (4.25rem less
+      // the 1.125rem of gap and air it also had to cover).
+      assert.ok(
+        barHeight > (4.25 - 1.125) * rem,
+        `positive control: the bar did not wrap (${String(barHeight)}px)`,
+      );
+      // The room follows the bar; settled when it is as tall, or the
+      // assertion below says it never was. Then read the end as it now is.
+      await h.page
+        .waitForFunction(
+          () => {
+            const room = document.querySelector('.list-bulk-room');
+            const bar = document.querySelector('.list-bulk');
+            return (
+              room !== null &&
+              bar !== null &&
+              room.getBoundingClientRect().height >= bar.getBoundingClientRect().height
+            );
+          },
+          undefined,
+          { timeout: 3_000 },
+        )
+        .catch(() => undefined);
+      await scroller.evaluate((el) => {
+        el.scrollTop = el.scrollHeight;
+      });
+      const g = await h.page.evaluate(() => {
+        const rows = document.querySelectorAll('.list tbody tr');
+        return {
+          bulkTop: document.querySelector('.list-bulk')!.getBoundingClientRect().top,
+          lastBottom: rows[rows.length - 1]!.getBoundingClientRect().bottom,
+        };
+      });
+      assert.ok(
+        g.lastBottom <= g.bulkTop,
+        `the wrapped bulk bar covers the last row: row ends ${String(g.lastBottom)}, bar starts ${String(g.bulkTop)}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
 });

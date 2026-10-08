@@ -27,6 +27,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, refuse, type ApiStub, type StubCall, setTheme } from './harness.ts';
+import { offered, optionsOf, pick, valueOf } from './dropdown.ts';
 
 const user = (id: string, name: string, org_role: string, is_active = true) => ({
   id,
@@ -202,10 +203,11 @@ void describe('role management', () => {
       await h.page.locator('.org-person').first().waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.org-person').count(), 4);
 
+      // The role control is the app's dropdown since LAI-726 (a combobox).
       // Absent is the claim, so `disabled` is asserted separately: a disabled
       // control still says "this exists and is yours", which is the untrue part.
       assert.equal(
-        await h.page.locator('.org-person select').count(),
+        await h.page.locator('.org-person [role="combobox"]').count(),
         0,
         'a member is offered a role dropdown',
       );
@@ -236,11 +238,13 @@ void describe('role management', () => {
     ] as const) {
       const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u3', role) });
       try {
-        await h.page.locator('.org-person select').first().waitFor({ timeout: 20_000 });
+        await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
 
         // Tomas is a member, so no option is pinned by his own current role.
-        const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).locator('select');
-        const options = await select.locator('option').allInnerTexts();
+        const select = h.page
+          .locator('.org-person', { hasText: 'Tomas Nel' })
+          .getByRole('combobox');
+        const { labels: options, disabled } = await optionsOf(select);
 
         assert.ok(options.includes('Member'), `${role}: Member is not offered`);
         assert.equal(
@@ -248,11 +252,7 @@ void describe('role management', () => {
           expected,
           `${role}: Owner should ${expected ? '' : 'not '}be offered, saw ${options.join(', ')}`,
         );
-        assert.equal(
-          await select.locator('option[disabled]').count(),
-          0,
-          `${role}: an option is greyed rather than absent`,
-        );
+        assert.equal(disabled, 0, `${role}: an option is greyed rather than absent`);
       } finally {
         await h.close();
       }
@@ -260,18 +260,26 @@ void describe('role management', () => {
   });
 
   /**
-   * An Admin cannot *grant* Owner and can still be looking at one. A `<select>`
-   * whose `value` matches none of its `<option>`s renders blank, so the row
-   * would show an Owner as having no role at all.
+   * An Admin cannot *grant* Owner and can still be looking at one. A control
+   * whose value matches none of its options shows nothing (a `<select>`
+   * rendered blank; the dropdown shows its placeholder), so the row would show
+   * an Owner as having no role at all.
    */
   void test("an admin sees an owner's actual role even though they cannot grant it", async () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u3', 'admin') });
     try {
-      await h.page.locator('.org-person select').first().waitFor({ timeout: 20_000 });
-      const select = h.page.locator('.org-person', { hasText: 'Ada Lovelace' }).locator('select');
-      assert.equal(await select.inputValue(), 'owner', "an owner's row shows no role");
+      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
+      const select = h.page
+        .locator('.org-person', { hasText: 'Ada Lovelace' })
+        .getByRole('combobox');
+      assert.equal(await valueOf(select), 'owner', "an owner's row shows no role");
+      assert.equal(
+        (await select.innerText()).trim(),
+        'Owner',
+        "the owner's row does not say Owner",
+      );
       assert.ok(
-        (await select.locator('option').allInnerTexts()).includes('Owner'),
+        (await offered(select)).includes('Owner'),
         'the current role is not among the options, so the control renders blank',
       );
     } finally {
@@ -282,13 +290,17 @@ void describe('role management', () => {
   void test('your own row has no controls', async () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      await h.page.locator('.org-person select').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
       const mine = h.page.locator('.org-person', { hasText: 'Ada Lovelace' });
-      assert.equal(await mine.locator('select').count(), 0, 'offered to change my own role');
+      assert.equal(
+        await mine.locator('[role="combobox"]').count(),
+        0,
+        'offered to change my own role',
+      );
       // Broad for the same reason: nothing on my own row, whatever it is.
       assert.equal(await mine.locator('button').count(), 0, 'offered a control on my own row');
       // …and the others still have theirs, or the assertion above is vacuous.
-      assert.equal(await h.page.locator('.org-person select').count(), 3);
+      assert.equal(await h.page.locator('.org-person [role="combobox"]').count(), 3);
     } finally {
       await h.close();
     }
@@ -297,9 +309,9 @@ void describe('role management', () => {
   void test('changing a role PATCHes that person with that role', async () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      await h.page.locator('.org-person select').first().waitFor({ timeout: 20_000 });
-      const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).locator('select');
-      await select.selectOption('admin');
+      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
+      const select = h.page.locator('.org-person', { hasText: 'Tomas Nel' }).getByRole('combobox');
+      await pick(select, 'admin');
 
       await h.page.waitForFunction(
         () => document.querySelectorAll('.org-person').length === 4,
@@ -511,7 +523,7 @@ void describe('both themes', () => {
   void test('the org card and the controls render in light and dark', async () => {
     const h = await open('/organisation', { ...BASE, '/api/v1/me': me('u1', 'owner') });
     try {
-      await h.page.locator('.org-person select').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
 
       for (const theme of ['Light', 'Dark']) {
         await setTheme(h.page, theme);
@@ -559,11 +571,13 @@ void describe('a refusal', () => {
       '/api/v1/users/u1': refuse(409, 'conflict', MESSAGE),
     });
     try {
-      await h.page.locator('.org-person select').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.org-person [role="combobox"]').first().waitFor({ timeout: 20_000 });
 
       // The client did not pre-empt it: demoting the last owner is offered.
-      const select = h.page.locator('.org-person', { hasText: 'Ada Lovelace' }).locator('select');
-      await select.selectOption('member');
+      const select = h.page
+        .locator('.org-person', { hasText: 'Ada Lovelace' })
+        .getByRole('combobox');
+      await pick(select, 'member');
 
       const error = h.page.locator('.org-error');
       await error.waitFor({ timeout: 20_000 });

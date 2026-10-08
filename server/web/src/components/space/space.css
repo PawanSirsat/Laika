@@ -514,14 +514,16 @@
   outline-offset: 2px;
 }
 
-.space-select select {
-  border: none;
-  background: transparent;
-  font: inherit;
-  color: inherit;
-  cursor: pointer;
-  outline: none;
+/* The control is a `Dropdown` trigger (LAI-726); the chip around it is the look. */
+.space-select .dd-trigger {
   max-width: 10rem;
+  height: 100%;
+  outline: none;
+}
+
+.space-select .dd-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .space-select.space-chip-on {

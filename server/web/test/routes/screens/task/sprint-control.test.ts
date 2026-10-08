@@ -35,7 +35,8 @@ void describe('the task panel can change a sprint', () => {
      * genuinely belongs to no sprint, and without this option the only way out
      * of one is the Sprints screen — which is where this task started.
      */
-    assert.match(meta, /<option value="">No sprint<\/option>/, 'clearing is unreachable');
+    // An option of the `Dropdown` since LAI-726, where it was an `<option>`.
+    assert.match(meta, /\{ value: '', label: 'No sprint'/, 'clearing is unreachable');
     assert.match(meta, /sprints\.map\(/, 'the real sprints are not listed');
   });
 

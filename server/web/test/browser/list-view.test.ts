@@ -11,6 +11,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
+import { pick } from './dropdown.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -833,7 +834,7 @@ const keysOnScreen = async (h: Harness): Promise<string[]> =>
     .sort();
 
 const field = (h: Harness, label: string) =>
-  h.page.locator('.bt-pop label.bt-field', { hasText: label }).locator('select');
+  h.page.locator('.bt-pop label.bt-field', { hasText: label }).getByRole('combobox');
 
 const badge = async (h: Harness): Promise<string> =>
   (await h.page.locator('.bt-badge').count()) === 0
@@ -867,7 +868,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
 
       // Status — the rows change, and nothing is asked.
       await openFilter(h);
-      await field(h, 'Status').selectOption('done');
+      await pick(field(h, 'Status'), 'done');
       await h.page.waitForURL(/status=done/, { timeout: 10_000 });
       await h.page.waitForFunction(() => document.querySelectorAll('.list tbody tr').length === 1);
       assert.deepEqual(await keysOnScreen(h), ['LC-9']);
@@ -895,7 +896,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
       // sprint, so the filter hides it, but the board still holds the whole
       // project (LAI-724): LC-6's blocker is judged open and LC-6 stays.
       await openFilter(h);
-      await field(h, 'Sprint').selectOption('s1');
+      await pick(field(h, 'Sprint'), 's1');
       await h.page.waitForURL(/sprint=s1/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
       assert.deepEqual(await keysOnScreen(h), ['LC-6'], 'a maybe-blocked task was hidden');
@@ -903,7 +904,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
       // Updated within — a window in the URL, a timestamp on the wire.
       await openFilter(h);
       const before = Date.now();
-      await field(h, 'Updated within').selectOption('7d');
+      await pick(field(h, 'Updated within'), '7d');
       await h.page.waitForURL(/updated=7d/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
       // Every task here was touched an hour ago, so all inside seven days stay.
@@ -960,7 +961,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         'positive control: the old task is listed before the window applies',
       );
       await openFilter(h);
-      await field(h, 'Updated within').selectOption('7d');
+      await pick(field(h, 'Updated within'), '7d');
       await h.page.waitForURL(/updated=7d/, { timeout: 10_000 });
       await h.page.waitForFunction(
         () => document.querySelectorAll('.list tbody tr').length === 3,
@@ -1086,7 +1087,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         'sprint',
         'updated within',
       ]);
-      await field(h, 'Status').selectOption('done');
+      await pick(field(h, 'Status'), 'done');
       await h.page.waitForURL(/status=done/, { timeout: 10_000 });
       assert.equal(await badge(h), '1');
     } finally {

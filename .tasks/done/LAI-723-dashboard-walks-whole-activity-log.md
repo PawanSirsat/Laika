@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
 discovered-from: LAI-722
-status: review
+status: done
 started: 2026-10-08T12:28:47Z
 finished: 2026-10-08T14:00:55Z
 ---
@@ -98,3 +98,11 @@ queues one catch-up (`entry.next ??= catchup`). The new test (page 2 paused, an
 event and its frame, then release) ends at 450 of 451 on the old code and 451
 on the new. The header and the section above now claim only what the tests
 compare.
+
+## Accepted
+
+2026-10-08, by polly (orchestrator), on the owner's instruction to ship
+release 2 now. Reviewed together with LAI-724: CHANGES REQUIRED in round 1
+(a frame during the first activity walk was dropped), fixed in 8e97f59, and
+covered by LAI-724's round-2 re-review, APPROVED (same-vendor Claude
+reviewer). Released at build-perf-store `3ca8ec8` on `build-release-2`.

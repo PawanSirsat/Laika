@@ -1,5 +1,6 @@
 import { Spinner } from '../../../components/Spinner.tsx';
-import { useState } from 'react';
+import { Dropdown } from '../../../components/Dropdown.tsx';
+import { useId, useState } from 'react';
 import { assignTask, claimTask, claimWinner } from '../../../api/tasks.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import './assign.css';
@@ -37,6 +38,7 @@ function nameOf(id: string, members: ReadonlyMap<string, Member>): string {
 export function AssignControl({ task, members, meId, mayAssign, onChanged }: AssignControlProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
+  const nameId = useId();
 
   const assigned = task.assignee_id;
   const mine = assigned !== null && assigned === meId;
@@ -76,24 +78,33 @@ export function AssignControl({ task, members, meId, mayAssign, onChanged }: Ass
 
   return (
     <span className="assign">
+      {/*
+        The app's own dropdown (LAI-726), named by the label's words through
+        `aria-labelledby`, so the name never rests on how a browser reads a
+        label that also holds the control's value.
+      */}
       <label className="assign-pick">
-        <span className="visually-hidden">Assignee</span>
-        <select
+        <span className="visually-hidden" id={nameId}>
+          Assignee
+        </span>
+        <Dropdown
+          variant="bare"
+          aria-labelledby={nameId}
+          noun="people"
           value={assigned ?? ''}
           disabled={busy}
-          onChange={(event) => {
-            const next = event.target.value;
+          options={[
+            { value: '', label: 'unassigned', pinned: true },
+            ...[...members.values()].map((member) => ({
+              value: member.user_id,
+              label: `${member.name}${member.user_id === meId ? ' (you)' : ''}`,
+              keywords: member.email,
+            })),
+          ]}
+          onChange={(next) => {
             run(assignTask(task.id, next === '' ? null : next));
           }}
-        >
-          <option value="">unassigned</option>
-          {[...members.values()].map((member) => (
-            <option key={member.user_id} value={member.user_id}>
-              {member.name}
-              {member.user_id === meId ? ' (you)' : ''}
-            </option>
-          ))}
-        </select>
+        />
       </label>
 
       {canClaim && (
