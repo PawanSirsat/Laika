@@ -84,14 +84,37 @@ export interface PersonLoad {
   readonly people: readonly string[];
   readonly count: number;
   readonly byStatus: Readonly<Record<OpenStatus, number>>;
+  /** Finished work in `count` — only ever non-zero with `includeDone` (LAI-732). */
+  readonly done: number;
   /** Of `count`, how many wait on unfinished work ({@link blockedTasks}). */
   readonly blocked: number;
 }
 
 export interface Workload {
   readonly rows: readonly PersonLoad[];
-  /** All open work — the donut's centre, and the sum of every row. */
+  /**
+   * All counted work — the donut's centre, and the sum of every row. Open work,
+   * and done work too when the card includes it (LAI-732).
+   */
   readonly open: number;
+}
+
+export interface WorkloadOptions {
+  /** Count `done` beside open work — Work by person's "Include done" (LAI-732). */
+  readonly includeDone?: boolean | undefined;
+  /**
+   * The blocked tasks, judged from the **whole project** (LAI-732). A card's
+   * filter can hide a blocker; judged from the filtered few it would read as
+   * unknown, which counts as blocked. Without it, judged from `tasks`.
+   */
+  readonly blockedIds?: ReadonlySet<string> | undefined;
+}
+
+/** One person's (or nobody's) running counts while dividing the work. */
+interface Slot {
+  byStatus: Record<OpenStatus, number>;
+  done: number;
+  blocked: number;
 }
 
 /** People shown by name before the rest fold into "Others". */
@@ -118,35 +141,39 @@ export function workloadByPerson(
   tasks: readonly Task[],
   nameOf: (id: string) => string = (id) => id,
   max: number = MAX_PEOPLE,
+  options: WorkloadOptions = {},
 ): Workload {
-  const blocked = new Set(blockedTasks(tasks).map((row) => row.task.id));
-  const byPerson = new Map<string, { byStatus: Record<OpenStatus, number>; blocked: number }>();
-  const unassigned = { byStatus: emptyStatus(), blocked: 0 };
+  const blocked = options.blockedIds ?? new Set(blockedTasks(tasks).map((row) => row.task.id));
+  const includeDone = options.includeDone === true;
+  const byPerson = new Map<string, Slot>();
+  const unassigned: Slot = { byStatus: emptyStatus(), done: 0, blocked: 0 };
   let open = 0;
 
   for (const task of tasks) {
-    if (!isOpen(task)) continue;
-    const status = task.status as OpenStatus;
+    const finished = includeDone && task.status === 'done';
+    if (!isOpen(task) && !finished) continue;
     open += 1;
     let slot = unassigned;
     if (task.assignee_id !== null) {
-      slot = byPerson.get(task.assignee_id) ?? { byStatus: emptyStatus(), blocked: 0 };
+      slot = byPerson.get(task.assignee_id) ?? { byStatus: emptyStatus(), done: 0, blocked: 0 };
       byPerson.set(task.assignee_id, slot);
     }
-    slot.byStatus[status] += 1;
+    if (finished) slot.done += 1;
+    else slot.byStatus[task.status as OpenStatus] += 1;
     if (blocked.has(task.id)) slot.blocked += 1;
   }
 
-  const total = (s: Record<OpenStatus, number>): number =>
-    OPEN_STATUSES.reduce((sum, key) => sum + s[key], 0);
+  const total = (slot: { byStatus: Record<OpenStatus, number>; done: number }): number =>
+    OPEN_STATUSES.reduce((sum, key) => sum + slot.byStatus[key], 0) + slot.done;
 
   const people: PersonLoad[] = [...byPerson]
     .map(([id, slot]) => ({
       kind: 'person' as const,
       id,
       people: [id],
-      count: total(slot.byStatus),
+      count: total(slot),
       byStatus: slot.byStatus,
+      done: slot.done,
       blocked: slot.blocked,
     }))
     .sort((a, b) => b.count - a.count || nameOf(a.id).localeCompare(nameOf(b.id)));
@@ -156,16 +183,18 @@ export function workloadByPerson(
   if (rest.length > 0) {
     const byStatus = emptyStatus();
     for (const row of rest) for (const key of OPEN_STATUSES) byStatus[key] += row.byStatus[key];
+    const done = rest.reduce((sum, row) => sum + row.done, 0);
     rows.push({
       kind: 'others',
       id: 'others',
       people: rest.map((row) => row.id),
-      count: total(byStatus),
+      count: total({ byStatus, done }),
       byStatus,
+      done,
       blocked: rest.reduce((sum, row) => sum + row.blocked, 0),
     });
   }
-  const nobody = total(unassigned.byStatus);
+  const nobody = total(unassigned);
   if (nobody > 0) {
     rows.push({
       kind: 'unassigned',
@@ -173,6 +202,7 @@ export function workloadByPerson(
       people: [],
       count: nobody,
       byStatus: unassigned.byStatus,
+      done: unassigned.done,
       blocked: unassigned.blocked,
     });
   }
