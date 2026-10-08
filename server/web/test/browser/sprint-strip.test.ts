@@ -380,10 +380,24 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
 
   void test('the board does not move when the sprints land', async () => {
     const h = await open('/board?project=laika-core', STUB);
+    /*
+     * **The sprint list is held until the board has been measured** (LAI-727
+     * CI). This slept 1500ms on the route and 500ms before measuring, which is
+     * wall time: on GitHub's runner the board was not drawn 500ms after the
+     * `goto` — it does not wait on sprints, it was simply slower — and the test
+     * failed with nothing to measure. Under 20× CPU throttling it draws at
+     * ~1.5s, so no sleep is both safe there and short enough to land before
+     * the sprints. Holding the answer on a gate counts the work instead: the
+     * board is measured while the sprints are certainly still in flight.
+     */
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
 
     try {
       await h.page.route('**/projects/*/sprints*', async (route) => {
-        await h.page.waitForTimeout(1500);
+        await held;
         await route.continue();
       });
       await h.page.setViewportSize({ width: 1600, height: 1000 });
@@ -392,14 +406,17 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
       // list lands. An explicit choice draws at once, while the strip is still
       // loading, which is the case this guard exists for.
       await h.page.goto(`${h.origin}/board?project=laika-core&sprint=all`);
-      await h.page.waitForTimeout(500);
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
 
+      // The cards' sprint chips are drawn from the sprint list, so none yet —
+      // the proof that what is measured here is the board *before* it lands.
+      assert.equal(await h.page.locator('.card-sprint').count(), 0, 'the sprints already landed');
       const during = await boardTop(h);
       assert.ok(during !== null, 'the board never rendered — nothing to measure');
 
-      // The sprint list lands: the stats' LEFT is filled in from it.
-      await h.page.waitForResponse((r) => r.url().includes('/sprints'), { timeout: 20_000 });
-      await h.page.waitForTimeout(400);
+      // The sprint list lands: the cards gain their sprint chips from it.
+      release();
+      await h.page.locator('.card-sprint').first().waitFor({ timeout: 20_000 });
 
       const after = await boardTop(h);
       assert.equal(
@@ -409,12 +426,14 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
       );
     } finally {
       /*
-       * **Before `close()`, or the run fails with every assertion green.** The
-       * delaying route is still sleeping when the test ends; its callback then
-       * touches a closed page and node's test runner reports an
-       * `unhandledRejection` — a non-zero exit with `# fail 0` above it, which
-       * is the exact shape `CLAUDE.md` warns a pass-count grep cannot see.
+       * **Before `close()`, or the run fails with every assertion green.** A
+       * held route still pending when the test ends touches a closed page, and
+       * node's test runner reports an `unhandledRejection` — a non-zero exit
+       * with `# fail 0` above it, which is the exact shape `CLAUDE.md` warns a
+       * pass-count grep cannot see. Released first, so a failure above cannot
+       * leave it waiting for ever.
        */
+      release();
       await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
