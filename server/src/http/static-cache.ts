@@ -146,6 +146,11 @@ interface Entry {
 export class StaticFileCache {
   readonly #entries = new Map<string, Entry>();
 
+  /** How many files are held — what `warmStaticCache` is asserted against. */
+  get size(): number {
+    return this.#entries.size;
+  }
+
   /**
    * The file at `filePath`, read and compressed once per version, or `null`
    * when there is no regular file there.

@@ -11,9 +11,10 @@
  * committed there. Nothing is ever committed into `public/`.
  */
 
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, normalize, resolve, sep } from 'node:path';
 import { type Context } from 'hono';
+import { type Logger } from '../log.ts';
 import { type AppEnv } from './context.ts';
 import { SETUP_PATH } from './middleware/setup-gate.ts';
 import {
@@ -227,4 +228,42 @@ export function createStaticHandler(options: StaticOptions) {
 
     return serveFile(c, file, cacheControlFor(c.req.path));
   };
+}
+
+/**
+ * Read and compress the build output before anybody asks for it (LAI-722).
+ *
+ * The cache otherwise fills on first request, and on a t4g.micro the first
+ * visitor after a deploy would wait for brotli on a 711 KB bundle. Called
+ * fire-and-forget from `createApp` when `warmStaticCache` is set — `index.ts`
+ * sets it, nothing waits on it to listen, and a request that arrives first
+ * shares the same load rather than starting a second one.
+ *
+ * `index.html` and every file in `assets/`, except source maps, which are
+ * never served. A missing build is the normal clean-clone case and warms
+ * nothing; anything else is the caller's to log. Resolves to the number of
+ * files now held.
+ */
+export async function warmStaticCache(options: {
+  publicDir: string;
+  cache: StaticFileCache;
+  log: Logger;
+}): Promise<number> {
+  const { publicDir, cache } = options;
+
+  let assets: string[];
+  try {
+    assets = (await readdir(join(publicDir, 'assets'))).map((name) => join('assets', name));
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== 'ENOENT') throw error;
+    assets = [];
+  }
+
+  const loaded = await Promise.all(
+    ['index.html', ...assets]
+      .filter((path) => !path.toLowerCase().endsWith('.map'))
+      .map((path) => cache.load(join(publicDir, path), contentTypeFor(path))),
+  );
+
+  return loaded.filter((file) => file !== null).length;
 }

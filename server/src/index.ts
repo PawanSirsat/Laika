@@ -65,6 +65,7 @@ function main(): void {
     serverSecret: env.serverSecret,
     publicUrl: env.publicUrl,
     ...(env.publicDir === undefined ? {} : { publicDir: env.publicDir }),
+    warmStaticCache: true,
   });
 
   const server = serve({ fetch: app.fetch, port: env.port, hostname: env.host }, (info) => {

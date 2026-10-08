@@ -46,7 +46,12 @@ import { SignInThrottle } from './auth/sign-in-throttle.ts';
 import { type Db } from './db/client.ts';
 import { users } from './db/schema.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
-import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
+import {
+  createSpaHandler,
+  createStaticHandler,
+  isReservedPath,
+  warmStaticCache,
+} from './http/static.ts';
 import { StaticFileCache } from './http/static-cache.ts';
 import { apiCompression } from './http/middleware/compression.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
@@ -122,6 +127,12 @@ export interface CreateAppOptions {
   /** Overridable so tests can point at a directory whose contents they control. */
   publicDir?: string;
   fallbackDocument?: string;
+  /**
+   * Read and compress the build output at startup rather than on the first
+   * request (LAI-722). Fire-and-forget: `createApp` does not wait for it.
+   * `index.ts` sets it; tests and tools that build an app do not pay for it.
+   */
+  warmStaticCache?: boolean;
 }
 
 /**
@@ -190,6 +201,20 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // compressed once between them (LAI-722).
     cache: new StaticFileCache(),
   };
+
+  if (options.warmStaticCache === true) {
+    // Not awaited: listening must never wait on this, and a failure costs only
+    // the first visitor's latency, so it is logged rather than thrown.
+    warmStaticCache({ publicDir: staticOptions.publicDir, cache: staticOptions.cache, log })
+      .then((files) => {
+        log.info('static.warmed', { files });
+      })
+      .catch((error: unknown) => {
+        log.warn('static.warm_failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
 
   const app = new Hono<AppEnv>();
 

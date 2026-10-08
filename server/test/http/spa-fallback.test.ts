@@ -5,9 +5,10 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
-import { isReservedPath, resolveWithinRoot } from '../../src/http/static.ts';
+import { StaticFileCache } from '../../src/http/static-cache.ts';
+import { isReservedPath, resolveWithinRoot, warmStaticCache } from '../../src/http/static.ts';
 import { FALLBACK_DOCUMENT, PUBLIC_DIR } from '../../src/paths.ts';
-import { testApp, withTempDir } from '../helpers/app.ts';
+import { type CapturedLog, captureLog, testApp, withTempDir } from '../helpers/app.ts';
 
 const run = promisify(execFile);
 
@@ -345,5 +346,83 @@ describe('static path traversal', () => {
 
     // Either refused outright or answered with the SPA document — never the file.
     expect(await res.text()).not.toContain('"@laika/server"');
+  });
+});
+
+describe('the static cache is warmed at boot (LAI-722 review)', () => {
+  const JS = `export const rows = [${Array.from({ length: 400 }, (_, i) => `"row-${String(i)}"`).join(',')}];\n`;
+
+  async function writeBuild(dir: string): Promise<void> {
+    await mkdir(join(dir, 'assets'));
+    await writeFile(join(dir, 'index.html'), '<!doctype html><title>built spa</title>', 'utf8');
+    await writeFile(join(dir, 'assets', 'index-DfSpNg7Z.js'), JS, 'utf8');
+    await writeFile(join(dir, 'assets', 'index-DfSpNg7Z.js.map'), '{"version":3}', 'utf8');
+    await writeFile(join(dir, 'assets', 'mono-normal-DBQx-q_a.woff2'), JS, 'utf8');
+  }
+
+  /** Wait for a log record the app writes after `createApp` has returned. */
+  async function eventually(log: CapturedLog, event: string): Promise<Record<string, unknown>> {
+    for (let i = 0; i < 200; i++) {
+      const record = log.find(event);
+      if (record !== undefined) return record;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error(`no ${event} record within 2 s`);
+  }
+
+  it('loads index.html and every asset except source maps', async () => {
+    await withTempDir(async (dir) => {
+      await writeBuild(dir);
+      const cache = new StaticFileCache();
+
+      const loaded = await warmStaticCache({ publicDir: dir, cache, log: captureLog().logger });
+
+      expect(loaded).toBe(3);
+      expect(cache.size).toBe(3);
+    });
+  });
+
+  it('is fire-and-forget from createApp, and says when it is done', async () => {
+    await withTempDir(async (dir) => {
+      await writeBuild(dir);
+      const { app, log } = testApp({ publicDir: dir, warmStaticCache: true });
+
+      // `createApp` returned without waiting: the warm-up reads files, so it
+      // cannot have finished synchronously. Nothing waits on it to listen.
+      expect(log.find('static.warmed')).toBeUndefined();
+
+      expect((await eventually(log, 'static.warmed')).files).toBe(3);
+      expect((await app.request('/assets/index-DfSpNg7Z.js')).status).toBe(200);
+    });
+  });
+
+  it('treats a missing build as nothing to warm, not an error', async () => {
+    const { log } = testApp({ warmStaticCache: true });
+
+    expect((await eventually(log, 'static.warmed')).files).toBe(0);
+    expect(log.find('static.warm_failed')).toBeUndefined();
+  });
+
+  it('logs a failure instead of throwing it', async () => {
+    await withTempDir(async (dir) => {
+      // A regular file where the build directory should be: `readdir` fails
+      // with ENOTDIR, which is not "no build yet".
+      const notADirectory = join(dir, 'public');
+      await writeFile(notADirectory, 'not a directory', 'utf8');
+
+      const { log } = testApp({ publicDir: notADirectory, warmStaticCache: true });
+
+      expect((await eventually(log, 'static.warm_failed')).error).toMatch(/ENOTDIR/);
+    });
+  });
+
+  it('does not warm unless asked — tests and tools build apps too', async () => {
+    await withTempDir(async (dir) => {
+      await writeBuild(dir);
+      const { log } = testApp({ publicDir: dir });
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(log.find('static.warmed')).toBeUndefined();
+    });
   });
 });
