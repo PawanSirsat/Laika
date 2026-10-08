@@ -6,7 +6,7 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-622
-status: review
+status: done
 started: 2026-09-28T17:21:59Z
 finished: 2026-09-28T23:41:00Z
 ---
@@ -212,3 +212,20 @@ point that did not fit the pattern was the one worth separating**, and writing
 it down as an open question rather than folding it into the theory is what made
 it findable. It would have been easy to call five failures one cause and be
 four-fifths right.
+
+## CHIEF — accepted 2026-10-08T18:57:59Z
+
+Merged from `shell` into master in 2d43bcb, at the owner's direct instruction,
+on 2026-10-09: *"merge in the master and commit that"*. This work was live
+from SHELL's own deploy on 2026-09-29 until CHIEF's first deploy from master
+on 2026-10-06 dropped it, because it had never been merged. It was found when
+the owner asked where Settings → Connect had gone.
+
+- The merge was clean. Three guards added to master since then caught the old
+  code, all fixed in 6c6170a:
+  - Connect's project picker is now the `Dropdown` component, not a native
+    `<select>` (LAI-726).
+  - `connect.css` uses `var(--text-base)` instead of `0.9em` (type floor).
+  - The task drawer's "Copy link" goes through `copyText()`, so `CopyButton`
+    remains the one clipboard implementation, the guard this task added.
+- The full gate is green on master: server 2176, web 1629, cli 98.

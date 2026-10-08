@@ -6,7 +6,7 @@ assignee: shell
 priority: p1
 depends-on: []
 discovered-from: LAI-621
-status: review
+status: done
 finished: 2026-09-28T16:41:03Z
 started: 2026-09-28T16:26:57Z
 ---
@@ -65,3 +65,20 @@ that before it is worth building.
   revoke path. Mitigation kept: a 90-day expiry.
 - Plan: `~/.claude/plans/we-alredy-have-front-delegated-dahl.md`.
 - Siblings: LAI-623 (make `laika init`/`whoami` real), LAI-624 (SPEC §8, CHIEF).
+
+## CHIEF — accepted 2026-10-08T18:57:59Z
+
+Merged from `shell` into master in 2d43bcb, at the owner's direct instruction,
+on 2026-10-09: *"merge in the master and commit that"*. This work was live
+from SHELL's own deploy on 2026-09-29 until CHIEF's first deploy from master
+on 2026-10-06 dropped it, because it had never been merged. It was found when
+the owner asked where Settings → Connect had gone.
+
+- The merge was clean. Three guards added to master since then caught the old
+  code, all fixed in 6c6170a:
+  - Connect's project picker is now the `Dropdown` component, not a native
+    `<select>` (LAI-726).
+  - `connect.css` uses `var(--text-base)` instead of `0.9em` (type floor).
+  - The task drawer's "Copy link" goes through `copyText()`, so `CopyButton`
+    remains the one clipboard implementation, the guard this task added.
+- The full gate is green on master: server 2176, web 1629, cli 98.
