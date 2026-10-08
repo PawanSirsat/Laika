@@ -6,9 +6,9 @@
  * OS's own menu — unthemed, unsearchable, running off the screen — and nothing
  * else would notice, so this reads the source for one.
  *
- * **The Timeline is excluded** while another builder rewrites it
- * (`build-ui-polish`); a select it adds is that task's to convert, and this
- * exclusion is the line to delete when it lands.
+ * The Timeline was excluded while LAI-721 rewrote it; the rewrite has no
+ * select, and the exclusion went when it landed. It is in the positive control
+ * below, so a scan that stopped reaching it would say so.
  */
 
 import assert from 'node:assert/strict';
@@ -19,7 +19,6 @@ import { describe, test } from 'node:test';
 import { code } from '../helpers/code.ts';
 
 const SRC = fileURLToPath(new URL('../../src/', import.meta.url));
-const EXCLUDED = `routes${sep}screens${sep}timeline${sep}`;
 
 async function sources(dir: string): Promise<string[]> {
   const out: string[] = [];
@@ -61,7 +60,7 @@ void describe('no native select (LAI-726)', () => {
   });
 
   void test('no component renders a <select> or an <option>', async () => {
-    const files = (await sources(SRC)).filter((f) => !relative(SRC, f).startsWith(EXCLUDED));
+    const files = await sources(SRC);
     // Positive control: the walk reached the files this is about, so an empty
     // or mis-rooted scan cannot pass by finding nothing.
     const names = files.map((f) => relative(SRC, f));
@@ -69,6 +68,7 @@ void describe('no native select (LAI-726)', () => {
       join('components', 'Dropdown.tsx'),
       join('routes', 'screens', 'board', 'BoardToolbar.tsx'),
       join('routes', 'screens', 'task', 'TaskMeta.tsx'),
+      join('routes', 'screens', 'timeline', 'TimelineScreen.tsx'),
     ]) {
       assert.ok(names.includes(known), `the scan did not reach ${known}`);
     }
