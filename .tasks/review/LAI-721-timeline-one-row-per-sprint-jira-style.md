@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-08T11:18:42Z
+finished: 2026-10-08T13:35:49Z
 ---
 
 ## Goal
@@ -45,7 +46,7 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
 ## Acceptance criteria
 
 - [x] One row per sprint, in date order. No row per task on the axis.
-- [ ] Each sprint row's left column names it (`S4` and its name), its dates
+- [x] Each sprint row's left column names it (`S4` and its name), its dates
       and its state (active, ended, planned); its bar spans `starts_on` to
       `ends_on` on the axis. Once a sprint is opened and its tasks are loaded,
       its row and bar show progress (`done/total`) and a blocked count.
@@ -53,12 +54,12 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
       sprint list loads up front; an opened sprint's tasks are fetched with
       `?sprint=<id>`, and the Unscheduled tray's with `?sprint=none` when it is
       opened. Asserted on the requests the page makes.
-- [ ] The axis scrolls left and right inside the card; the sprint column stays
+- [x] The axis scrolls left and right inside the card; the sprint column stays
       put while it does; the header (months, then weeks or months) stays put
       while rows scroll.
 - [x] Zoom: Weeks, Months, Quarters. A **Today** button brings today into view;
       on open the chart is scrolled so today is in view.
-- [ ] Today is one vertical line with a label, across the header and rows.
+- [x] Today is one vertical line with a label, across the header and rows.
 - [x] A sprint opens and closes by its chevron (keyboard reachable,
       `aria-expanded`); opened, it lists its tasks — key, title, status,
       assignee — with no bar per task. A task opens in the task drawer.
@@ -67,7 +68,7 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
       stays below the chart.
 - [x] Design tokens only; both themes verified by screenshot; fits 1366 wide
       with no page-level horizontal scroll.
-- [ ] Browser tests for: one row per sprint and none per task, bar geometry
+- [x] Browser tests for: one row per sprint and none per task, bar geometry
       against the dates, horizontal scrolling with the sprint column fixed,
       zoom changing the scale, expand/collapse, and Today — each shown to fail
       against the old screen.
@@ -177,4 +178,63 @@ per-task Blocked.
 - `server/web/src/api/sprints.ts` — the client `Sprint` type gains the field
 - `docs/SPEC.md` — §6.4's sprint shape and §11.4.3's text
 - `docs/DECISIONS.md` — a correction appended to D-074
+
+## Round 1 — what changed (2026-10-08T13:35:49Z)
+
+Blocking
+1. Header test really scrolls: 520px tall with S2 open, asserts `scrollTop > 0`
+   first (`timeline-sprints.test.ts:333`). Fails with `.tlx-head` not sticky,
+   and with the chart grown to its content (positive control, 0px).
+2. The stale D-049 comment and the dead strip describe are gone from
+   `timeline-derive.test.ts`.
+
+Should-fix
+3. `onAxis` (`timeline-derive.ts:86`, ±5 years, finite, not backwards) keeps
+   2062 / 9999 / 1e17 off the axis and lists them in a notice
+   (`TimelineScreen.tsx:326`); `chartWindow` bounded by it; `bands()` formats
+   a label once per band (`:190`); header memoised (`TimelineScreen.tsx:208`).
+   Browser test with all three plus time bounds (`:736`); unit test counts the
+   formatter calls and times the widest window. On be39c52 "a bad sprint was
+   drawn"; `onAxis` always true fails three unit tests; formatting per day
+   fails the per-band count.
+4. Blocked unknowns: `blockedTally` (`:269`), "1 blocked · 1 unknown" on the
+   bar, "Blocked?" on the row (`TimelineScreen.tsx:791`). Fails on be39c52;
+   counting `undefined` as unblocked fails the unit test.
+5. `todayLabel` formats `startOfDay(now)` in UTC (`:234`). Browser test at
+   23:30 UTC in Pacific/Auckland fails on be39c52; the unit test checks Los
+   Angeles, Auckland and UTC, and fails with `timeZone` removed.
+6. Live: `useLive().generation`, 500 ms settle, refetches sprints and every
+   open key (`use-timeline.ts:76`); API narrowed to open keys in, tasks for a
+   key out; comment that it becomes a view over build-perf-store's store.
+   Test renames a task through the stream; fails on be39c52.
+7. `?sprint=` opens only an id in `rows` (`TimelineScreen.tsx:229`) and scrolls
+   to its start; `all`, `none` and junk open nothing and ask nothing. Both fail
+   on be39c52 ("sprint=all asked for ?sprint=all&limit=200").
+8. `task_counts` on `GET /projects/:slug/sprints`: `withTaskCounts`
+   (`server/src/services/sprints.ts:304`) over `sprintTaskCounts`, one grouped
+   query behind the list's `project.read`; route `:111`; server test (`:287`)
+   fails when the route serves the bare page. Client `Sprint.task_counts`
+   (optional — only the list sends it), drift pair `SprintListItem`↔`Sprint`
+   plus `SprintTaskCounts`. Every bar shows done/total unopened; fails on
+   be39c52. SPEC §6.4 documents the field.
+9. D-074 correction appended; SPEC §11.4.3 rewritten as built.
+
+Nits — all done: no band on task rows; neutral unassigned mark; tick labels
+give way to the pill; month labels whole or absent; Quarters end at a
+quarter's end; one vertical scroller; the chart is a tab stop the arrow keys
+pan, one tab stop per sprint; Expand all ≤ 3 requests (test peaks ≤ 3, ≥ 2);
+`truncated` shown; dead `sprintSummary`/`wip` removed; `.then` checks
+`aborted`, `.finally` deletes only its own controller; tests for the empty
+project, an empty sprint, errors and retries (sprint list and one sprint),
+per-task Blocked. Narrow bars keep their key; count and blocked note move
+past the bar's end when they do not fit.
+
+Proof: the 28 browser tests against be39c52 — 14 fail for their own reason;
+the 14 that pass there were each made to fail by a targeted mutation of the
+new code (header not sticky, chart unbounded, empty-sprint text, no empty
+state, no retry, closed keys kept) or were proven in round 0. All restored,
+checksums matched.
+
+Note: `a98f7a3` landed with one lint error (a commit chained after lint's
+output, not its exit code); fixed in `c6a5cc3`, not amended.
 
