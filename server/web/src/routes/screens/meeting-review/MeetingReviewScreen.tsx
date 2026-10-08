@@ -1,6 +1,6 @@
 import { everyPage } from '../../../api/every-page.ts';
 import { Spinner } from '../../../components/Spinner.tsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -15,7 +15,8 @@ import {
   type MeetingReviewDetail,
   type ProposalView,
 } from '../../../api/meeting-reviews.ts';
-import { listTasks, type Task } from '../../../api/tasks.ts';
+import type { Task } from '../../../api/tasks.ts';
+import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import {
   changedFields,
   describeChange,
@@ -74,8 +75,15 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
    *
    * A failure here is not an error on this screen. Losing the before makes the
    * proposals harder to judge; losing the screen makes them impossible to.
+   *
+   * From the project's one task set (LAI-724), where it used to be a walk of
+   * its own on every visit.
    */
-  const [tasksByKey, setTasksByKey] = useState<ReadonlyMap<string, Task>>(new Map());
+  const set = useProjectTasks(slug);
+  const tasksByKey = useMemo(
+    (): ReadonlyMap<string, Task> => new Map((set?.tasks ?? []).map((task) => [task.key, task])),
+    [set?.tasks],
+  );
 
   /** Accepted ids. **Starts empty and is never pre-filled.** */
   const [accepted, setAccepted] = useState<ReadonlySet<string>>(new Set());
@@ -103,21 +111,6 @@ export function MeetingReviewScreen({ slug, onOpenTask }: MeetingReviewScreenPro
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
         setError(cause);
-      });
-    everyPage((cursor) =>
-      listTasks(
-        slug,
-        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
-        controller.signal,
-      ),
-    )
-      .then(({ items }) => {
-        // Every page, not the first (LAI-703); `page.data` is the whole list.
-        const page = { data: items };
-        setTasksByKey(new Map(page.data.map((task) => [task.key, task])));
-      })
-      .catch(() => {
-        // See `tasksByKey`: the arrow is dropped, the screen is not.
       });
 
     return () => {

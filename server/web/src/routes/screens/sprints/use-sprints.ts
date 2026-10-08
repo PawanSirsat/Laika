@@ -10,7 +10,8 @@ import {
   type Sprint,
   type SprintInput,
 } from '../../../api/sprints.ts';
-import { listTasks, type Task } from '../../../api/tasks.ts';
+import type { Task } from '../../../api/tasks.ts';
+import { reloadProjectTasks, useProjectTasks } from '../../../api/use-project-tasks.ts';
 import {
   groupBySprint,
   inCalendarOrder,
@@ -19,13 +20,16 @@ import {
 } from './sprint-derive.ts';
 
 /**
- * The sprints screen's data (LAI-083).
+ * The sprints screen's data (LAI-083) — and the Timeline's, which reads it.
  *
- * ## One task request for the whole screen
+ * ## One task set for the whole screen — and now for the whole app
  *
  * Progress needs every sprint's task counts and the assignment panel needs the
- * unassigned ones, so the screen fetches the project's tasks **once** and groups
- * them locally. The alternative — `?sprint=<id>` per sprint — is a request per
+ * unassigned ones, so the screen reads the project's tasks **once** and groups
+ * them locally. Since LAI-724 that once is the project's one set
+ * (`task-store.ts`), shared with every other screen and kept live by the
+ * stream, rather than a walk of its own on every mount. The exported shape is
+ * unchanged. The alternative — `?sprint=<id>` per sprint — is a request per
  * row on the screen whose whole job is showing several rows at once, and it
  * would still need a separate call for the unassigned ones.
  *
@@ -104,26 +108,14 @@ async function allSprints(slug: string, signal: AbortSignal): Promise<[Sprint[],
   return [all, true];
 }
 
-async function allTasks(slug: string, signal: AbortSignal): Promise<[Task[], boolean]> {
-  const all: Task[] = [];
-  let cursor: string | undefined;
-
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const result = await listTasks(
-      slug,
-      cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
-      signal,
-    );
-    all.push(...result.data);
-    if (result.next_cursor === null || result.next_cursor === undefined) return [all, false];
-    cursor = result.next_cursor;
-  }
-
-  return [all, true];
-}
-
 export function useSprints(slug: string | undefined): UseSprints {
-  const [state, setState] = useState<SprintsState>({ status: 'loading' });
+  const tasks = useProjectTasks(slug);
+  /** The sprint list, and whose it is — a list from the last project is not this one's. */
+  const [sprints, setSprints] = useState<
+    | { readonly slug: string; readonly list: readonly Sprint[]; readonly cut: boolean }
+    | { readonly slug: string; readonly error: unknown }
+    | undefined
+  >(undefined);
   const [attempt, setAttempt] = useState(0);
   const [pending, setPending] = useState<string | undefined>(undefined);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
@@ -132,27 +124,13 @@ export function useSprints(slug: string | undefined): UseSprints {
     if (slug === undefined) return;
 
     const controller = new AbortController();
-    setState({ status: 'loading' });
-
-    Promise.all([allSprints(slug, controller.signal), allTasks(slug, controller.signal)])
-      .then(([[sprints, sprintsCut], [tasks, tasksCut]]) => {
-        // `sprint_id` is on the client `Task` since LAI-121, so there is no
-        // longer a boundary where tasks gain the field.
-        const bySprint = groupBySprint(tasks);
-
-        setState({
-          status: 'ready',
-          rows: inCalendarOrder(sprints).map((sprint) => {
-            const own = bySprint.get(sprint.id) ?? [];
-            return { sprint, tasks: own, progress: progressFor(own) };
-          }),
-          unassigned: bySprint.get(null) ?? [],
-          truncated: sprintsCut || tasksCut,
-        });
+    allSprints(slug, controller.signal)
+      .then(([list, cut]) => {
+        setSprints({ slug, list, cut });
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        setState({ status: 'error', error: cause });
+        setSprints({ slug, error: cause });
       });
 
     return () => {
@@ -160,9 +138,30 @@ export function useSprints(slug: string | undefined): UseSprints {
     };
   }, [slug, attempt]);
 
+  const state = useMemo((): SprintsState => {
+    if (slug === undefined || sprints?.slug !== slug) return { status: 'loading' };
+    if ('error' in sprints) return { status: 'error', error: sprints.error };
+    if (tasks?.status === 'error') return { status: 'error', error: tasks.error };
+    if (tasks?.status !== 'ready') return { status: 'loading' };
+
+    // `sprint_id` is on the client `Task` since LAI-121, so there is no
+    // longer a boundary where tasks gain the field.
+    const bySprint = groupBySprint(tasks.tasks);
+    return {
+      status: 'ready',
+      rows: inCalendarOrder(sprints.list).map((sprint) => {
+        const own = bySprint.get(sprint.id) ?? [];
+        return { sprint, tasks: own, progress: progressFor(own) };
+      }),
+      unassigned: bySprint.get(null) ?? [],
+      truncated: sprints.cut || tasks.truncated,
+    };
+  }, [slug, sprints, tasks]);
+
   const reload = useCallback((): void => {
     setAttempt((n) => n + 1);
-  }, []);
+    reloadProjectTasks(slug);
+  }, [slug]);
 
   const dismissError = useCallback((): void => {
     setActionError(undefined);
@@ -178,24 +177,32 @@ export function useSprints(slug: string | undefined): UseSprints {
    *
    * Returns whether it succeeded, so a form knows whether to close.
    */
-  const run = useCallback(async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
-    setActionError(undefined);
-    setPending(key);
+  const run = useCallback(
+    async (key: string, action: () => Promise<unknown>): Promise<boolean> => {
+      setActionError(undefined);
+      setPending(key);
 
-    try {
-      await action();
-      setAttempt((n) => n + 1);
-      return true;
-    } catch (cause) {
-      // Verbatim. The server's 409 already names the sprint holding `active`
-      // or the range that collides, and anything written here would be vaguer
-      // than what it replaced.
-      setActionError(cause instanceof ApiError ? cause.message : 'That change could not be saved.');
-      return false;
-    } finally {
-      setPending(undefined);
-    }
-  }, []);
+      try {
+        await action();
+        // The write made the cached sprint list stale (`client.ts`); the set is
+        // walked again because assigning moves tasks between rows.
+        setAttempt((n) => n + 1);
+        reloadProjectTasks(slug);
+        return true;
+      } catch (cause) {
+        // Verbatim. The server's 409 already names the sprint holding `active`
+        // or the range that collides, and anything written here would be vaguer
+        // than what it replaced.
+        setActionError(
+          cause instanceof ApiError ? cause.message : 'That change could not be saved.',
+        );
+        return false;
+      } finally {
+        setPending(undefined);
+      }
+    },
+    [slug],
+  );
 
   const create = useCallback(
     (input: SprintInput) => run('create', () => createSprint(slug ?? '', input)),

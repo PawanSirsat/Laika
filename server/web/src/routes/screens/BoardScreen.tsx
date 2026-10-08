@@ -3,7 +3,6 @@ import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../components/EmptyState.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { useDelayed } from '../../components/use-delayed.ts';
-import { mergeTasks } from '../../api/board-merge.ts';
 import { KanbanView } from './board/KanbanView.tsx';
 import { ListView } from './list/ListView.tsx';
 import { NewTaskForm } from './board/NewTaskForm.tsx';
@@ -35,10 +34,10 @@ import { SprintStrip } from './board/SprintStrip.tsx';
 import { useEvents } from '../../api/use-events.ts';
 import { canAssignToSprints, listSprints, type Sprint } from '../../api/sprints.ts';
 import { everyPage } from '../../api/every-page.ts';
-import { listTasks } from '../../api/tasks.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
+import { isPriority, isTagName } from '../../api/task-filter.ts';
 import {
   flashTasks,
   motionAllowed,
@@ -103,8 +102,6 @@ export interface BoardScreenProps {
  * on screen while it re-reads, and only the cards that changed re-render. No
  * polling: LAI-049 asks for none, and the stream is the signal.
  */
-/** Nothing to protect when merging the strip's list — it has no local writes. */
-const NO_TASKS: ReadonlySet<string> = new Set();
 /** How long after a drop a `settled` card counts as carried there by hand. */
 const CARRIED_MS = 1000;
 
@@ -162,14 +159,6 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * leaving the board, so coming back opens on the active sprint again.
    */
   const [sprintDecidedFor, setSprintDecidedFor] = useState<string | undefined>(undefined);
-  /** Every task in the project, unscoped — the strip counts across sprints. */
-  const [allTasks, setAllTasks] = useState<readonly Task[]>([]);
-  /** The strip's list hit `everyPage`'s cap, so its counts are a floor. */
-  const [stripPartial, setStripPartial] = useState(false);
-  /** Bumped by `refresh()`, so the strip's list re-reads with the board (LAI-707). */
-  const [stripAttempt, setStripAttempt] = useState(0);
-  /** Which project the strip's list belongs to, so a new one starts empty. */
-  const stripSlug = useRef<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
   /**
    * The List's selection and its bulk run (LAI-496), **held here** because a
@@ -201,7 +190,16 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * predate the tab.
    */
   const view: BoardViewMode = path === '/list' || params.get('view') === 'list' ? 'list' : 'kanban';
-  const priority = (params.get('priority') ?? undefined) as TaskPriority | undefined;
+  /*
+   * **Checked against the server's own rules** (LAI-724 review, S4a). The
+   * server refused an unknown priority (`400`) or a malformed tag (`422`) and
+   * the board showed the error; filtered in memory, the same URL would match
+   * nothing and look like a board with no work. A bad value is ignored and
+   * named instead — see `badFilters` below.
+   */
+  const priorityParam = params.get('priority') ?? undefined;
+  const priority: TaskPriority | undefined =
+    priorityParam !== undefined && isPriority(priorityParam) ? priorityParam : undefined;
   const assignee = params.get('assignee') ?? undefined;
   const readyParam = params.get('ready');
   const ready = readyParam === null ? undefined : readyParam === 'true';
@@ -213,7 +211,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * `?tag=` — in the URL so it survives a reload and can be linked (LAI-081),
    * the same mechanism `?project=` and `?sprint=` already use.
    */
-  const tagScope = params.get('tag') ?? undefined;
+  const tagParam = params.get('tag') ?? undefined;
+  const tagScope = tagParam !== undefined && isTagName(tagParam) ? tagParam : undefined;
+  /** URL filter values the server would have refused, as `[key, value]`. */
+  const badFilters = [
+    ...(priorityParam !== undefined && priority === undefined
+      ? [['priority', priorityParam] as const]
+      : []),
+    ...(tagParam !== undefined && tagScope === undefined ? [['tag', tagParam] as const] : []),
+  ];
 
   /*
    * **The four the owner asked for** (LAI-487). Each is read through a
@@ -228,7 +234,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   /*
    * The window becomes a timestamp **when the window changes**, not on every
    * render — `Date.now()` in the filter would change its identity each time
-   * and refetch in a loop.
+   * and re-filter the board on every render.
    */
   const since = useMemo(
     () => (updatedWindow === undefined ? undefined : updatedSince(updatedWindow, Date.now())),
@@ -242,10 +248,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       ...(priority === undefined ? {} : { priority }),
       ...(assignee === undefined ? {} : { assignee }),
       ...(ready === undefined ? {} : { ready }),
-      // Scoping to a sprint is server-side — the endpoint has always taken it.
+      // Every field is applied **in memory**, to the project's one task set
+      // (LAI-724, `task-filter.ts`), meaning exactly what the server's `?sprint=`
+      // and `?tag=` mean. Nothing here is sent to the server.
       ...(sprintScope === undefined ? {} : { sprint: sprintScope }),
-      // Same for the tag: `?tag=` has been accepted since LAI-079, so the board
-      // asks for the subset rather than loading everything and filtering here.
       ...(tagScope === undefined ? {} : { tag: tagScope }),
     }),
     [statusScope, since, priority, assignee, ready, sprintScope, tagScope],
@@ -375,7 +381,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     if (active !== undefined) setParam('sprint', active);
   }, [view, slug, sprintDecidedFor, sprintParam, sprintsKnown, sprints]);
 
-  const board = useBoard(awaitingSprintDefault ? undefined : slug, filter, presenter);
+  /*
+   * The set loads while the sprint decision is made (LAI-724) — only drawing
+   * waits for it, so the board's one walk is not queued behind the sprint list.
+   */
+  const board = useBoard(slug, filter, presenter, awaitingSprintDefault);
 
   /**
    * **Nothing for the first 150ms** (LAI-293). Against a local instance the
@@ -387,15 +397,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const showBoardSkeleton = useDelayed(firstLoad);
 
   /**
-   * **One refresh for everything the stream can stale** (LAI-707): the board,
-   * and the strip's own whole-project list, whose counts otherwise froze at
-   * the first read. Stable, so the effects below can depend on it.
+   * **One refresh for everything the stream can stale** (LAI-707): the
+   * project's one task set (LAI-724), which the board and the strip both read.
+   * Stable, so the effects below can depend on it.
    */
-  const reloadBoard = board.reload;
-  const refresh = useCallback((): void => {
-    reloadBoard();
-    setStripAttempt((n) => n + 1);
-  }, [reloadBoard]);
+  const refresh = board.reload;
 
   /*
    * **Hold refresh answers for the length of a pointer drag** (LAI-707). A
@@ -499,14 +505,16 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const [composingIn, setComposingIn] = useState<string | undefined>(undefined);
   const [insightsOpen, setInsightsOpen] = useState(false);
   /**
-   * Labels to offer in the filter, from the tasks already loaded.
+   * Labels to offer in the filter: every label in use **in the project**.
    *
-   * Not a second request: `?tag=` filters server-side over the whole project,
-   * but the *list* of labels worth offering is the one actually in use here.
+   * From the whole set (`board.state.all`), never the filtered one (LAI-724
+   * review): built from the matching tasks, the options shrank to the labels
+   * on whatever any filter — a label, a status, a sprint — had left, so a set
+   * label could not be swapped for another without clearing it first.
    */
   const knownTags = useMemo(
-    () => [...new Set(board.state.tasks.flatMap((t) => t.tags))].sort(),
-    [board.state.tasks],
+    () => [...new Set(board.state.all.flatMap((t) => t.tags))].sort(),
+    [board.state.all],
   );
   const [overflowAt, setOverflowAt] = useState<{ top: number; right: number } | undefined>(
     undefined,
@@ -514,37 +522,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   // The first consumer the SSE endpoint has ever had (LAI-070).
   const stream = useEvents(slug);
 
-  /**
-   * The cards follow the stream, not just the panel.
-   *
-   * Debounced: a burst of frames — someone moving several tasks — should cost
-   * one refetch, not one each. `Refresh` stays because a person who suspects
-   * they are stale should not have to trust an indicator.
+  /*
+   * **The cards follow the stream through the store** (LAI-724). A burst of
+   * frames costs one re-walk of the project's set, debounced, and a `gap`
+   * reloads it whole — both in `task-store.ts`, for every screen at once, where
+   * this screen used to schedule its own (and the strip its own beside it).
+   * `Refresh` stays because a person who suspects they are stale should not
+   * have to trust an indicator.
    */
-  useEffect(() => {
-    if (stream.tick === 0) return;
-    const timer = setTimeout(() => {
-      refresh();
-    }, 300);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [stream.tick]);
-
-  /**
-   * A `gap` means the server could not replay everything we missed.
-   *
-   * We reload the board wholesale rather than fetching `?updated_since=` deltas:
-   * the board holds the complete list for one project, so a full read is a
-   * **superset** of the catch-up and cannot miss a deletion that a delta feed
-   * would omit. That is also why `gap.since` is not consulted here — it would
-   * narrow a request that is already correct, and keying on it would skip the
-   * reload entirely for a gap that arrived without one.
-   */
-  useEffect(() => {
-    if (stream.gap === undefined) return;
-    refresh();
-  }, [stream.gap?.seq]);
 
   // Sprints for the strip, plus an unscoped task list so its per-sprint counts
   // are of the whole project rather than of whatever the board is filtered to.
@@ -600,47 +585,6 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
      */
   }, [slug]);
 
-  /*
-   * The strip's whole-project task list — **its own effect**, re-read on every
-   * `refresh()` and merged in place (LAI-707), where it used to be read once per
-   * project and never again, so its counts froze while the board moved.
-   */
-  useEffect(() => {
-    if (slug === undefined) return;
-    const controller = new AbortController();
-    if (stripSlug.current !== slug) {
-      // A different project: its counts start from nothing, not from the last one.
-      stripSlug.current = slug;
-      setAllTasks([]);
-    }
-
-    /*
-     * **Every page, not the first** (LAI-702). This read one page of 200,
-     * oldest-updated first, and the strip counted that as the project: on
-     * Onroute (328 tasks) S3 read 7/42 while it held 157, because its 149
-     * Review tasks were the most recently moved and fell past the page.
-     */
-    everyPage((cursor) =>
-      listTasks(
-        slug,
-        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
-        controller.signal,
-      ),
-    )
-      .then(({ items, truncated }) => {
-        setAllTasks((prev) => mergeTasks(prev, items, NO_TASKS).tasks);
-        setStripPartial(truncated);
-      })
-      .catch(() => {
-        // A failed re-read keeps the last counts; a new project already
-        // started empty above.
-      });
-
-    return () => {
-      controller.abort();
-    };
-  }, [slug, stripAttempt]);
-
   const mayCreate =
     me !== undefined &&
     project !== undefined &&
@@ -691,9 +635,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       /*
        * Blocked is decided here, not by the server: it needs the dependency
        * graph (LAI-487). **"Cannot tell" stays in**, i.e. `!== false`, not
-       * `=== true`. Under a server-side filter a blocker can sit outside the
-       * loaded set (another sprint, another status), and `blockedState` then
-       * answers `undefined` rather than guessing. Hiding a task that may be
+       * `=== true`. `board.byId` is the whole project's (LAI-724), so a
+       * blocker outside the filter — another sprint, another status — is
+       * judged; only one past the page cap, or deleted, is not, and
+       * `blockedState` then answers `undefined` rather than guessing. Hiding a task that may be
        * blocked from a *Blocked only* view is the damaging error, the same
        * judgement `blockedState` itself records for the card.
        */
@@ -961,8 +906,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           <SprintStrip
             sprints={sprints}
             loading={sprintsLoading}
-            tasks={allTasks}
-            partial={stripPartial}
+            tasks={board.state.all}
+            partial={board.state.truncated}
             selected={sprintScope}
             onSelect={(id) => {
               // Every sprint is a choice now, not the absence of one (LAI-713).
@@ -992,10 +937,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       */}
       <SpaceSlot
         context={
-          shownCount === board.byId.size
+          shownCount === board.state.tasks.length
             ? undefined
-            : `${String(shownCount)} of ${String(board.byId.size)} loaded ${
-                board.byId.size === 1 ? 'task' : 'tasks'
+            : `${String(shownCount)} of ${String(board.state.tasks.length)} loaded ${
+                board.state.tasks.length === 1 ? 'task' : 'tasks'
               } match`
         }
       />
@@ -1301,11 +1246,33 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       */}
       {board.state.status === 'ready' && board.state.truncated && (
         <p className="board-scope board-truncated" role="status">
-          Showing the first {board.state.tasks.length}{' '}
-          {board.state.tasks.length === 1 ? 'task' : 'tasks'} — this space has more than the board
-          loads at once, so every count here covers only these. Narrow the filter to see the rest.
+          Showing the first {board.state.all.length}{' '}
+          {board.state.all.length === 1 ? 'task' : 'tasks'} — this space has more than the board
+          loads at once, so every count here covers only these.{' '}
+          <strong>Filters apply only to these loaded tasks</strong>: a match past them is not shown.
         </p>
       )}
+
+      {/*
+        **A filter value the server would have refused** (LAI-724 review,
+        S4a). Named and ignored, rather than an empty board that looks like a
+        project with no work.
+      */}
+      {badFilters.map(([key, value]) => (
+        <p key={key} className="board-alert board-bad-filter" role="alert">
+          “{value}” is not a valid {key === 'tag' ? 'label' : 'priority'}, so that filter is not
+          applied.
+          <button
+            type="button"
+            className="board-alert-close"
+            onClick={() => {
+              setParam(key, undefined);
+            }}
+          >
+            Remove it
+          </button>
+        </p>
+      ))}
 
       {/*
         **A failed refresh keeps the board and says it is stale** (LAI-707). A
@@ -1331,9 +1298,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">
-          {shownCount} of {board.byId.size} loaded {board.byId.size === 1 ? 'task' : 'tasks'} match.{' '}
-          Search and the agent filter cover the tasks loaded below — the list endpoint has no text
-          search.
+          {shownCount} of {board.state.tasks.length} loaded{' '}
+          {board.state.tasks.length === 1 ? 'task' : 'tasks'} match. Search and the agent filter
+          cover the tasks loaded below — the list endpoint has no text search.
         </p>
       )}
 

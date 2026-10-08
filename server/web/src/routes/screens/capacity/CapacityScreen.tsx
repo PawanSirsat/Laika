@@ -1,5 +1,5 @@
 import { everyPage } from '../../../api/every-page.ts';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
@@ -12,6 +12,8 @@ import {
   type PresenceView,
 } from '../../../api/presence.ts';
 import { getTask, type Task } from '../../../api/tasks.ts';
+import { useProjectTasks } from '../../../api/use-project-tasks.ts';
+import { useRoute } from '../../use-route.ts';
 import { listProjects } from '../../../api/projects.ts';
 import { listUnlisted, type UnlistedWork } from '../../../api/unlisted.ts';
 import { UnlistedList } from '../unlisted/UnlistedList.tsx';
@@ -62,10 +64,28 @@ const POLL_MS = 20_000;
  */
 export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
   const { theme } = useTheme();
+  const { params } = useRoute();
   const [capacity, setCapacity] = useState<CapacityView | undefined>(undefined);
   const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
   const [unlisted, setUnlisted] = useState<readonly UnlistedWork[]>([]);
-  const [tasks, setTasks] = useState<ReadonlyMap<string, Task>>(new Map());
+  /**
+   * The tasks capacity names, **from the open project's set** (LAI-724).
+   *
+   * Capacity serves task **ids**, and this screen resolved each one with its
+   * own `GET /tasks/:id` — 133 of them on a 350-task project, on every 20s
+   * poll, ~4.6 s on a WAN. The project's one set (`task-store.ts`) already
+   * holds every task in the open space, so those resolve with no request.
+   *
+   * **Capacity is org-wide, the set is not**: an id from another project is
+   * genuinely missing from it, and only those are fetched by id — once per
+   * visit, kept in `elsewhere`. The server change that retires even those is
+   * for capacity to send each task's key, title and priority beside its id
+   * (filed from LAI-724).
+   */
+  const set = useProjectTasks(params.get('project') ?? undefined);
+  const [elsewhere, setElsewhere] = useState<ReadonlyMap<string, Task>>(new Map());
+  /** Ids capacity named on its last answer, for resolving. */
+  const [named, setNamed] = useState<readonly string[]>([]);
   /**
    * How many spaces this screen reads across.
    *
@@ -81,19 +101,7 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
       .then(([cap, pres]) => {
         setCapacity(cap);
         setPresence(pres);
-        return taskIdsToResolve(cap.people);
-      })
-      .then(async (ids) => {
-        // Deduped, and only the ids this render actually needs. No cache: a
-        // second copy of the truth is what this repo spent the day removing.
-        const resolved = await Promise.all(
-          ids.map((id) =>
-            getTask(id, signal)
-              .then((task) => [id, task] as const)
-              .catch(() => undefined),
-          ),
-        );
-        setTasks(new Map(resolved.filter((r): r is readonly [string, Task] => r !== undefined)));
+        setNamed(taskIdsToResolve(cap.people));
       })
       .catch((cause: unknown) => {
         if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -149,6 +157,43 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
       clearInterval(timer);
     };
   }, []);
+
+  /*
+   * Ids the open project's set does not hold — decided only once the set has
+   * answered, or every id would look missing while it loads.
+   */
+  const settled = set?.status !== 'loading';
+  const missing = useMemo(
+    () => (settled ? named.filter((id) => set?.byId.has(id) !== true && !elsewhere.has(id)) : []),
+    [settled, named, set?.byId, elsewhere],
+  );
+  useEffect(() => {
+    if (missing.length === 0) return;
+    const controller = new AbortController();
+    Promise.all(
+      missing.map((id) =>
+        getTask(id, controller.signal)
+          .then((task) => [id, task] as const)
+          .catch(() => undefined),
+      ),
+    )
+      .then((resolved) => {
+        if (controller.signal.aborted) return;
+        setElsewhere((prev) => {
+          const next = new Map(prev);
+          for (const entry of resolved) if (entry !== undefined) next.set(entry[0], entry[1]);
+          return next;
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+    };
+  }, [missing.join(',')]);
+
+  const tasks = {
+    get: (id: string): Task | undefined => set?.byId.get(id) ?? elsewhere.get(id),
+  };
 
   if (error !== null) {
     return <ApiErrorState error={error} resource="capacity" scope="organisation" />;

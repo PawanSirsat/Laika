@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { getPresence, type PresenceView } from '../../api/presence.ts';
 import { subscribeToEvents } from '../../api/event-stream.ts';
 
@@ -36,6 +36,16 @@ export interface SpaceLiveProps {
   readonly enabled: boolean;
   readonly children: ReactNode;
 }
+
+/**
+ * How long after a live frame presence is re-read (LAI-724).
+ *
+ * It was re-read on **every** frame, so an agent moving ten tasks cost ten
+ * presence requests per open tab. Now the first frame of a burst starts this
+ * wait and every frame inside it rides along: one read per burst, and a stream
+ * that never goes quiet still re-reads once per window rather than never.
+ */
+export const PRESENCE_SETTLE_MS = 1_500;
 
 /**
  * One `EventSource` for the whole space (LAI-251).
@@ -92,13 +102,12 @@ export function SpaceLive({ slug, enabled, children }: SpaceLiveProps) {
     });
   }, [slug, enabled]);
 
-  useEffect(() => {
-    if (!enabled) {
-      setPresence(undefined);
-      return;
-    }
-
+  /** Re-reads presence; aborted with the space. */
+  const reading = useRef<AbortController | undefined>(undefined);
+  const read = (): void => {
+    reading.current?.abort();
     const controller = new AbortController();
+    reading.current = controller;
     getPresence(controller.signal)
       .then((view) => {
         if (!controller.signal.aborted) setPresence(view);
@@ -107,11 +116,39 @@ export function SpaceLive({ slug, enabled, children }: SpaceLiveProps) {
         // A failure leaves the last answer standing rather than clearing it: a
         // strip that empties on one bad request reads as "everyone left".
       });
+  };
 
+  useEffect(() => {
+    if (!enabled) {
+      setPresence(undefined);
+      return;
+    }
+    read();
     return () => {
-      controller.abort();
+      reading.current?.abort();
     };
+  }, [enabled]);
+
+  /*
+   * After live frames: **one read per burst** (LAI-724). A frame inside the
+   * wait does not restart it, so frames that never stop still re-read once per
+   * window instead of starving the read.
+   */
+  const settling = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => {
+    if (!enabled || generation === 0 || settling.current !== undefined) return;
+    settling.current = setTimeout(() => {
+      settling.current = undefined;
+      read();
+    }, PRESENCE_SETTLE_MS);
   }, [enabled, generation]);
+  useEffect(
+    () => () => {
+      if (settling.current !== undefined) clearTimeout(settling.current);
+      settling.current = undefined;
+    },
+    [enabled],
+  );
 
   return (
     <LiveContext.Provider value={{ stream, presence, generation }}>{children}</LiveContext.Provider>

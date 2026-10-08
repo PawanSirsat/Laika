@@ -1,4 +1,5 @@
 import { NetworkError, toApiError } from './errors.ts';
+import { sharedCache } from './query-cache.ts';
 import { isSetupRequired } from './session-state.ts';
 
 /**
@@ -58,7 +59,62 @@ export function setSetupRequiredHandler(handler: (() => void) | undefined): void
   onSetupRequired = handler;
 }
 
+/**
+ * How long a GET's answer may be reused, by path (LAI-724, D-075).
+ *
+ * **Small, slow-changing lists only**, for {@link FRESH_MS}: the projects list,
+ * one project, its members, mentionable people, sprints, tags, meeting reviews
+ * and columns, and the org. Every one of them was asked for twice on a cold
+ * load, by the space frame and by the screen. Presence is polled, so it is
+ * reused only for a moment — enough for the frame and a screen asking at once.
+ *
+ * **Everything else is `0`: the request in flight is shared, an answer never
+ * is.** That includes the task list, whose one copy is `task-store.ts`'s and is
+ * kept current by the stream rather than by age, and `/me`, which is the
+ * session's question and is always asked afresh.
+ *
+ * What makes an answer stale before its time is in `store.ts` (a live frame
+ * about its project) and below (any write).
+ */
+export const FRESH_MS = 30_000;
+const PRESENCE_MS = 2_000;
+
+const CACHED: readonly RegExp[] = [
+  /^\/projects(\?|$)/,
+  /^\/projects\/[^/?]+$/,
+  /^\/projects\/[^/?]+\/(members|mentionable|sprints|tags|meeting-reviews|board-columns)(\?|$)/,
+  /^\/org$/,
+];
+
+export function freshFor(path: string): number {
+  if (path === '/presence') return PRESENCE_MS;
+  return CACHED.some((pattern) => pattern.test(path)) ? FRESH_MS : 0;
+}
+
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  const { method = 'GET', signal } = options;
+
+  if (method === 'GET') {
+    return sharedCache.read<T>(
+      path,
+      (shared) => send<T>(path, shared === undefined ? { method } : { method, signal: shared }),
+      { maxAge: freshFor(path), signal },
+    );
+  }
+
+  try {
+    return await send<T>(path, options);
+  } finally {
+    // **Any write makes every cached answer stale** — coarse on purpose. Which
+    // lists a write can change is the server's business (activating a sprint
+    // changes another; applying a meeting review creates tasks), and guessing
+    // narrower is how a screen shows what it just changed as unchanged. Lazy:
+    // nothing is refetched until a screen next asks.
+    sharedCache.invalidate(() => true);
+  }
+}
+
+async function send<T>(path: string, options: RequestOptions): Promise<T> {
   const { method = 'GET', body, signal } = options;
 
   // Built conditionally rather than with `undefined` values: the repo sets

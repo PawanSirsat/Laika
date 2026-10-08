@@ -132,11 +132,12 @@ export function TaskDetailPanel({
   const detail = useTaskDetail(slug, task.id);
 
   /*
-   * **The parent, from the page when it is on it, from the server when it is
-   * not** (D-066). A filter can hide the parent from `byId` while the child is
-   * showing, and a breadcrumb that reads *"a task outside this page"* for a
-   * task that plainly exists is the wrong answer; one `GET /tasks/:id` is the
-   * right one.
+   * **The parent, from the project's set when it is in it, from the server
+   * when it is not** (D-066). Since LAI-724 `byId` is the whole project's, so
+   * a filter no longer hides the parent from it; only a parent past the page
+   * cap does. A breadcrumb that reads *"a task outside this page"* for a task
+   * that plainly exists is the wrong answer; one `GET /tasks/:id` is the right
+   * one.
    */
   const parentOnPage = task.parent_task_id === null ? undefined : byId.get(task.parent_task_id);
   const [parentFetched, setParentFetched] = useState<Task | undefined>(undefined);

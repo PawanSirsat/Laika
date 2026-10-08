@@ -132,6 +132,19 @@ void describe('the badge, the chips and Clear all read one list (LAI-487)', () =
     assert.equal(filterCount(q('status=bogus&updated=90d&blocked=yes'), names), 0);
   });
 
+  /*
+   * **Priority and tag too** (LAI-724 follow-up). The board names a refused
+   * `?priority=` or `?tag=` and does not apply it; a chip and a badge counting
+   * it said the opposite, beside the notice saying it was ignored.
+   */
+  void test('a priority or tag the server would refuse is not counted, and has no chip', () => {
+    for (const bad of ['priority=p9', 'priority=P1', 'tag=-x', 'tag=a%20b']) {
+      assert.equal(filterCount(q(bad), names), 0, bad);
+      assert.deepEqual(activeFilters(q(bad), names), [], bad);
+    }
+    assert.equal(filterCount(q('priority=p1&tag=API'), names), 2, 'positive control');
+  });
+
   void test('the chip names a status the way the board does', () => {
     assert.equal(activeFilters(q('status=review'), names)[0]?.label, 'Status REVIEW');
   });

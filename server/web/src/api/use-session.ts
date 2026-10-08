@@ -3,6 +3,7 @@ import { setSetupRequiredHandler, setUnauthorizedHandler } from './client.ts';
 import { getMe } from './me.ts';
 import { sessionFromFailure, SESSION_TIMEOUT_MS, type SessionState } from './session-state.ts';
 import { signIn as apiSignIn, signOut as apiSignOut, type Credentials } from './auth.ts';
+import { setStoreUser } from './store.ts';
 
 export type { SessionState };
 
@@ -30,10 +31,19 @@ export function useSession(): UseSession {
     probing.current = true;
     try {
       const user = await getMe(signal);
+      /*
+       * **Before the state, not in an effect after it** (LAI-724). Children's
+       * effects run before their parent's, so a store told by an effect here
+       * would hear about the user after the first screen had already fetched
+       * without it — signed-out, and so unshared. A different user drops
+       * everything the store held for the last one.
+       */
+      setStoreUser(user.id);
       setSession({ status: 'authenticated', user });
     } catch (cause) {
       if (cause instanceof DOMException && cause.name === 'AbortError') return;
 
+      setStoreUser(undefined);
       setSession(sessionFromFailure(cause));
     } finally {
       probing.current = false;
@@ -83,6 +93,8 @@ export function useSession(): UseSession {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       if (probing.current) return;
+      // The session ended underneath us: nothing cached for it may outlive it.
+      setStoreUser(undefined);
       setSession((current) => (current.status === 'anonymous' ? current : { status: 'anonymous' }));
     });
     return () => {
@@ -101,6 +113,7 @@ export function useSession(): UseSession {
    */
   useEffect(() => {
     setSetupRequiredHandler(() => {
+      setStoreUser(undefined);
       setSession((current) =>
         current.status === 'setup-required' ? current : { status: 'setup-required' },
       );
@@ -125,6 +138,7 @@ export function useSession(): UseSession {
     try {
       await apiSignIn(credentials);
     } catch (cause) {
+      setStoreUser(undefined);
       // Back to anonymous before rethrowing. Left at `loading`, the effect
       // above re-reads `/me`, takes a 401, and that races the rejection the
       // caller is about to render.
@@ -143,6 +157,8 @@ export function useSession(): UseSession {
     } finally {
       // Locally anonymous either way. A failed sign-out that leaves the UI
       // looking signed in is worse than one that does not reach the server.
+      // And nothing the store held for this user survives it (LAI-724).
+      setStoreUser(undefined);
       setSession({ status: 'anonymous' });
     }
   }, []);

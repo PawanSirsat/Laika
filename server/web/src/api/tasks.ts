@@ -174,8 +174,10 @@ export interface TaskFilter {
    */
   readonly sprint?: string | undefined;
   /**
-   * A tag name. Filtering happens **server-side** — `?tag=` has been accepted
-   * since LAI-079 — so the board never loads everything and filters in memory.
+   * A tag name. The server has accepted `?tag=` since LAI-079. **The board no
+   * longer sends it**: since LAI-724 it holds the project's whole task set and
+   * applies this filter in memory (`task-filter.ts`), meaning what the
+   * server's `?tag=` means.
    */
   readonly tag?: string | undefined;
   /**
@@ -313,8 +315,12 @@ export function canCreateTask(
  * `01M1EN3K…`. Resolving a reference is not deriving a figure, so this stays
  * inside LAI-439's "every number comes from a response".
  *
- * **No client-side cache.** If this is ever visibly slow the answer is a bulk
- * endpoint, not a second copy of the truth kept here.
+ * **It was visibly slow** — a request per id, 133 on one Capacity load — and
+ * this said the answer was a bulk endpoint rather than a client cache. The
+ * owner chose the cache (D-075): Capacity now resolves ids from the project's
+ * one task set (`task-store.ts`) and calls this only for tasks in other
+ * projects. The bulk answer — capacity sending key and title beside each id —
+ * is still the way to retire those too.
  */
 export function getTask(taskId: string, signal?: AbortSignal): Promise<Task> {
   return request<Task>(

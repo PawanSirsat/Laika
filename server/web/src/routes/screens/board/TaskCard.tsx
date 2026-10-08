@@ -231,8 +231,10 @@ export function TaskCard({
         {/*
           **Subtasks, from both ends** (D-066). A parent says how far along it
           is; a child says whose it is, by key — the design's `↳`. Read off
-          `byId`, which is the page: a parent whose children are filtered off
-          it shows no bar, and a child whose parent is off it shows `↳ …`.
+          `byId`, which is the whole project's set (LAI-724, `allById`), not
+          the filtered page: a parent counts children a filter hides, and a
+          child names a parent a filter hides. Only a task past the page cap
+          is missing, and then a child shows `↳ …`.
         */}
         {fields.subtasks && progress !== undefined && (
           <span className="card-subtasks card-above t-meta" title="Subtasks done">

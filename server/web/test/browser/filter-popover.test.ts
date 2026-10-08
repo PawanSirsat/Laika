@@ -77,10 +77,10 @@ const EVERY = [LOGIN, ROUTES, SHIPPED];
 const TASKS = '/api/v1/projects/laika-core/tasks';
 
 /*
- * Server-side filters are keyed by query, so a row disappears because the
- * request changed. Matching is by subset (the harness), so `?status=done`
- * also answers a request carrying `priority` or `assignee` beside it.
- * **`status=done` answers nothing**: that is the empty List under test.
+ * Since LAI-724 the board filters the project's one set in memory, so only
+ * `?limit=200` is ever asked and the query-keyed stubs below are the old
+ * pattern's fixture. **No task is `done`**: `status=done` is the empty List
+ * under test, filtered from the set rather than answered by the stub.
  */
 const STUB: ApiStub = {
   '/api/v1/me': {
@@ -483,6 +483,12 @@ const DAY = 86_400_000;
 /** The Board as LAI-713 opens it: an active sprint, so the strip is populated. */
 const ACTIVE: ApiStub = {
   ...STUB,
+  // The board opens on the active sprint (LAI-713) and filters the held set in
+  // memory (LAI-724), so the cards it should draw have to be in that sprint.
+  [`${TASKS}?limit=200`]: {
+    data: EVERY.map((t) => ({ ...t, sprint_id: 's1' })),
+    next_cursor: null,
+  },
   '/api/v1/projects/laika-core/sprints': {
     data: [
       {
@@ -877,3 +883,50 @@ void describe('the active-filter chips (LAI-717)', () => {
     }
   });
 });
+
+/*
+ * **The Label options are the project's, not the filtered set's** (LAI-724
+ * review, the dropdown builder's question). `BoardScreen` offered the labels
+ * on the tasks the filter matched — so once a label was set, the options shrank
+ * to that one label and there was no way to pick another without clearing it.
+ * The board now holds the whole project's set, and the options come from it.
+ */
+for (const path of [
+  '/list?project=laika-core&tag=api',
+  '/board?project=laika-core&sprint=all&tag=api',
+  // A status filter narrows the cards too, and must not narrow the labels.
+  '/list?project=laika-core&status=todo',
+]) {
+  void test(`with a filter set, the Label options still offer every label (${path})`, async () => {
+    const tagged: ApiStub = {
+      ...STUB,
+      [`${TASKS}?limit=200`]: {
+        data: [
+          { ...LOGIN, tags: ['api'] },
+          { ...ROUTES, tags: ['web'] },
+          { ...SHIPPED, tags: ['mobile', 'api'] },
+        ],
+        next_cursor: null,
+      },
+    };
+    const h = await open(path, tagged);
+    try {
+      await h.page
+        .locator(path.startsWith('/list') ? '.list tbody tr' : '.card')
+        .first()
+        .waitFor({ timeout: 20_000 });
+      await openFilter(h);
+      const options = await h.page
+        .locator('.bt-pop .bt-field', { hasText: 'Label' })
+        .locator('select option')
+        .allInnerTexts();
+      assert.deepEqual(
+        options.map((o) => o.trim()),
+        ['Any', 'api', 'mobile', 'web'],
+        'the options shrank to the labels on the filtered tasks',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+}

@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { shownInFeed, type ActivityEvent } from '../../../api/activity.ts';
-import { request } from '../../../api/client.ts';
+import type { ActivityWindow } from '../../../api/activity-store.ts';
 import { ApiError } from '../../../api/errors.ts';
 import { listMembers, type Member } from '../../../api/members.ts';
 import { listMentionable } from '../../../api/mentions.ts';
 import { getMetrics, type MetricsView } from '../../../api/metrics.ts';
-import { listTasks, type Page, type Task } from '../../../api/tasks.ts';
+import { activityStore, taskStore } from '../../../api/store.ts';
+import type { Task } from '../../../api/tasks.ts';
+import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { useLive } from '../../../components/space/SpaceLive.tsx';
 
 /**
@@ -24,6 +26,15 @@ import { useLive } from '../../../components/space/SpaceLive.tsx';
  * first page would put a confidently wrong number in front of someone making a
  * decision, which is worse than no number.
  *
+ * ## Read from the store, caught up incrementally (LAI-723, LAI-724)
+ *
+ * The tasks are the project's one set (`task-store.ts`), shared with every
+ * other screen. The activity is a window kept by `activity-store.ts`: read in
+ * full once, then **caught up with only what is newer** on each burst of live
+ * frames — one small request, never a re-walk, and never cancelled by the next
+ * frame, which is how "All time" used to stay stale. Members and mentionable
+ * names are read once per project, not per frame.
+ *
  * ## Refreshes in place, and follows the stream (LAI-711)
  *
  * Only the first load of a project is `loading`. A range change, a Retry or a
@@ -32,9 +43,6 @@ import { useLive } from '../../../components/space/SpaceLive.tsx';
  * reason: a page that blanks on every change reads as broken. A refresh that
  * fails keeps what is shown and says so, unless the reader has lost access.
  */
-
-const MAX_PAGES = 20;
-const PAGE_LIMIT = 200;
 
 export type DashboardState =
   | { readonly status: 'loading' }
@@ -81,57 +89,62 @@ function isFatal(cause: unknown): boolean {
   );
 }
 
-async function walk<T>(
-  fetchPage: (cursor: string | undefined) => Promise<Page<T>>,
-): Promise<[T[], boolean]> {
-  const all: T[] = [];
-  let cursor: string | undefined;
+type Ready = Extract<DashboardState, { readonly status: 'ready' }>;
 
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const result = await fetchPage(cursor);
-    all.push(...result.data);
-    if (result.next_cursor === null || result.next_cursor === undefined) return [all, false];
-    cursor = result.next_cursor;
-  }
-
-  return [all, true];
-}
-
-/**
- * The project feed.
- *
- * Written here rather than in `api/activity.ts`: that module is Builder-B's and
- * only has the task-scoped call the detail panel needs. Adding the project-wide
- * one there is LAI-123; this uses the shared `request` client so it still goes
- * through one place that knows how to talk to the API.
- */
-function listProjectActivity(
-  slug: string,
-  query: { since?: number | undefined; cursor?: string | undefined },
-  signal?: AbortSignal,
-): Promise<Page<ActivityEvent>> {
-  const params = new URLSearchParams({ limit: String(PAGE_LIMIT) });
-  if (query.since !== undefined) params.set('since', String(query.since));
-  if (query.cursor !== undefined) params.set('cursor', query.cursor);
-
-  return request<Page<ActivityEvent>>(
-    `/projects/${encodeURIComponent(slug)}/activity?${params.toString()}`,
-    signal === undefined ? {} : { signal },
-  );
+interface People {
+  readonly slug: string;
+  readonly members: ReadonlyMap<string, Member>;
+  readonly names: ReadonlyMap<string, string>;
 }
 
 export function useDashboard(slug: string | undefined, since: number | undefined): UseDashboard {
-  const [state, setState] = useState<DashboardState>({ status: 'loading' });
   const [metrics, setMetrics] = useState<MetricsState>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  /** Which project's answer is on screen — a different one is a first load. */
-  const onScreen = useRef<string | undefined>(undefined);
   const metricsFor = useRef<string | undefined>(undefined);
 
+  /** The project's one task set — live through the store. */
+  const tasks = useProjectTasks(slug);
+
+  /** The activity feed for the range — caught up through the store. */
+  const [feed, setFeed] = useState<ActivityWindow | undefined>(undefined);
+  useEffect(() => {
+    if (slug === undefined) return;
+    return activityStore.subscribe(slug, since, setFeed);
+  }, [slug, since]);
+
   /*
-   * **Live**: the space already holds one stream (`SpaceLive`), and bumps
-   * `generation` on every frame. A burst — an agent moving ten tasks — settles
-   * into one refetch rather than ten.
+   * Names, once per project. A failure here must not fail the dashboard — the
+   * rows fall back to the raw id, which is worse but still true.
+   */
+  const [people, setPeople] = useState<People | undefined>(undefined);
+  useEffect(() => {
+    if (slug === undefined) return;
+    const controller = new AbortController();
+    Promise.all([
+      listMembers(slug, controller.signal).catch(() => ({ members: [] as Member[] })),
+      listMentionable(slug, controller.signal).catch(() => ({ users: [] })),
+    ])
+      .then(([memberList, mentionable]) => {
+        if (controller.signal.aborted) return;
+        const names = new Map<string, string>();
+        for (const user of mentionable.users) names.set(user.id, user.name);
+        for (const member of memberList.members) names.set(member.user_id, member.name);
+        setPeople({
+          slug,
+          members: new Map(memberList.members.map((m) => [m.user_id, m])),
+          names,
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+    };
+  }, [slug, attempt]);
+
+  /*
+   * **Live, for the metrics only**: the space already holds one stream
+   * (`SpaceLive`), and bumps `generation` on every frame. A burst settles into
+   * one re-read. Tasks and activity follow the stream through the store.
    */
   const { generation } = useLive();
   const seenGeneration = useRef(generation);
@@ -147,77 +160,59 @@ export function useDashboard(slug: string | undefined, since: number | undefined
     };
   }, [generation]);
 
-  useEffect(() => {
-    if (slug === undefined) return;
+  /** The last whole answer for this project — kept on screen while the next arrives. */
+  const shown = useRef<Ready | undefined>(undefined);
+  const shownFor = useRef<string | undefined>(undefined);
 
-    const controller = new AbortController();
-    const same = onScreen.current === slug;
-    if (same) {
-      setState((prev) => (prev.status === 'ready' ? { ...prev, refreshing: true } : prev));
-    } else {
-      onScreen.current = undefined;
-      setState({ status: 'loading' });
+  const events = useMemo(
+    () => (feed === undefined ? [] : shownInFeed(feed.events)),
+    [feed?.events],
+  );
+
+  const state = useMemo((): DashboardState => {
+    if (slug === undefined) return { status: 'loading' };
+    const last = shownFor.current === slug ? shown.current : undefined;
+    const failure =
+      tasks?.status === 'error'
+        ? tasks.error
+        : feed?.slug === slug && feed.since === since && feed.status === 'error'
+          ? feed.error
+          : null;
+    if (failure !== null) {
+      if (last !== undefined && !isFatal(failure)) {
+        return { ...last, refreshing: false, refreshError: failure };
+      }
+      return { status: 'error', error: failure };
     }
 
-    Promise.all([
-      walk<Task>((cursor) =>
-        listTasks(
-          slug,
-          cursor === undefined ? { limit: PAGE_LIMIT } : { limit: PAGE_LIMIT, cursor },
-          controller.signal,
-        ),
-      ),
-      walk<ActivityEvent>((cursor) =>
-        listProjectActivity(
-          slug,
-          {
-            ...(since === undefined ? {} : { since }),
-            ...(cursor === undefined ? {} : { cursor }),
-          },
-          controller.signal,
-        ),
-      ),
-      // Names. A failure here must not fail the dashboard — the rows fall
-      // back to the raw id, which is worse but still true.
-      listMembers(slug, controller.signal).catch(() => ({ members: [] as Member[] })),
-      listMentionable(slug, controller.signal).catch(() => ({ users: [] })),
-    ])
-      .then(([[tasks, tasksCut], [events, eventsCut], memberList, mentionable]) => {
-        const names = new Map<string, string>();
-        for (const user of mentionable.users) names.set(user.id, user.name);
-        for (const member of memberList.members) names.set(member.user_id, member.name);
-        onScreen.current = slug;
-        setState({
-          status: 'ready',
-          tasks,
-          // Reorders are recorded, never read as activity (LAI-473).
-          events: shownInFeed(events),
-          members: new Map(memberList.members.map((m) => [m.user_id, m])),
-          names,
-          truncated: tasksCut || eventsCut,
-          refreshing: false,
-          refreshError: null,
-          asOf: Date.now(),
-        });
-      })
-      .catch((cause: unknown) => {
-        if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        if (same && !isFatal(cause)) {
-          setState((prev) =>
-            prev.status === 'ready'
-              ? { ...prev, refreshing: false, refreshError: cause }
-              : { status: 'error', error: cause },
-          );
-          return;
-        }
-        onScreen.current = undefined;
-        setState({ status: 'error', error: cause });
-      });
+    const whole =
+      tasks?.status === 'ready' &&
+      feed?.slug === slug &&
+      feed.since === since &&
+      feed.status === 'ready' &&
+      people?.slug === slug;
+    if (!whole) return last === undefined ? { status: 'loading' } : { ...last, refreshing: true };
 
-    return () => {
-      controller.abort();
+    return {
+      status: 'ready',
+      tasks: tasks.tasks,
+      // Reorders are recorded, never read as activity (LAI-473).
+      events,
+      members: people.members,
+      names: people.names,
+      truncated: tasks.truncated || feed.truncated,
+      refreshing: tasks.refreshing || feed.refreshing,
+      refreshError: tasks.refreshError ?? feed.refreshError ?? null,
+      asOf: Math.max(tasks.asOf ?? 0, feed.asOf ?? 0),
     };
-  }, [slug, since, attempt, tick]);
+  }, [slug, since, tasks, feed, events, people]);
+
+  if (state.status === 'ready') {
+    shown.current = state;
+    shownFor.current = slug;
+  } else if (state.status === 'error') {
+    shown.current = undefined;
+  }
 
   /*
    * Throughput and cycle time follow the same window and the same refreshes,
@@ -249,8 +244,12 @@ export function useDashboard(slug: string | undefined, since: number | undefined
   }, [slug, since, attempt, tick]);
 
   const reload = useCallback((): void => {
+    if (slug !== undefined) {
+      taskStore.reload(slug);
+      activityStore.reload(slug);
+    }
     setAttempt((n) => n + 1);
-  }, []);
+  }, [slug]);
 
   return { state, metrics, reload };
 }

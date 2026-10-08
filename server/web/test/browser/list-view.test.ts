@@ -70,6 +70,10 @@ const BLOCKED = task({
   assignee_id: 'u1',
   tags: ['auth', 'core'],
   blocked_by: ['t1'],
+  // In the active sprint, as the `?sprint=s1` stub below always claimed: the
+  // board now filters the set in memory (LAI-724), so the fixture has to say
+  // what the stub used to answer regardless.
+  sprint_id: 's1',
 });
 
 const STUB: ApiStub = {
@@ -501,6 +505,9 @@ void describe('a board larger than one page', () => {
       const note = h.page.locator('.board-truncated');
       await note.waitFor({ timeout: 10_000 });
       assert.match(await note.innerText(), /first 1 task/i);
+      // And it says what that means for a filter (LAI-724 review, S4b): the
+      // filter is applied to what loaded, so a match past the cap is missed.
+      assert.match(await note.innerText(), /filters apply only to these loaded tasks/i);
       // The note only exists once the loop has *ended* — `truncated` is set
       // after it — so reaching this line already proves the loop is bounded.
       // What is left to prove is that it ended at the cap, not early. (Not an
@@ -783,10 +790,12 @@ void describe('timestamps read as moments (LAI-486)', () => {
  * within** (LAI-487). Driven on `/list`, where no filter test existed, and once
  * on `/board`, where the same popover lives.
  *
- * Server-side filters are keyed by query, so the rows really change because
- * the request changed; `?limit=200` alone serves everything. `updated_since`
- * is a timestamp computed at request time, so that one is asserted on the
- * request itself.
+ * **Since LAI-724 a filter asks the server nothing.** The project's set is
+ * held once and filtered in memory (`task-filter.ts`, which means what the
+ * server's `WHERE` means and is unit-tested clause by clause), so these assert
+ * the rows change, the URL carries the window and not the timestamp, and **no
+ * task request** follows a filter change. The query-keyed stubs below stay as
+ * the old pattern's fixture; only `?limit=200` is ever asked.
  */
 const DONE = task({ id: 't9', key: 'LC-9', number: 9, title: 'Shipped work', status: 'done' });
 const FILTERABLE: ApiStub = {
@@ -839,7 +848,7 @@ async function openFilter(h: Harness): Promise<void> {
 }
 
 void describe('the Filter popover on the List (LAI-487)', () => {
-  void test('status, sprint, blocked and updated each write the URL, change what is asked, and count', async () => {
+  void test('status, sprint, blocked and updated each write the URL, filter the held set, and count', async () => {
     const h = await open('/list?project=laika-core', FILTERABLE);
     const asked: string[] = [];
     h.page.on('request', (r) => {
@@ -852,8 +861,11 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         ['LC-1', 'LC-6', 'LC-9'],
         'positive control: all three',
       );
+      // The set was read once; every filter below is answered from it.
+      const loaded = asked.length;
+      assert.ok(loaded > 0, 'the positive control saw no task request — the listener is blind');
 
-      // Status — server-side, so the rows change because the request did.
+      // Status — the rows change, and nothing is asked.
       await openFilter(h);
       await field(h, 'Status').selectOption('done');
       await h.page.waitForURL(/status=done/, { timeout: 10_000 });
@@ -880,9 +892,8 @@ void describe('the Filter popover on the List (LAI-487)', () => {
       assert.deepEqual(await keysOnScreen(h), ['LC-6'], 'the blocked task is not the one shown');
 
       // Sprint — the same `?sprint=` the Board's strip writes. LC-1 is in no
-      // sprint and is no longer loaded, so LC-6's blocker **cannot be judged**:
-      // it stays, because hiding maybe-blocked work from "Blocked only" is the
-      // damaging error.
+      // sprint, so the filter hides it, but the board still holds the whole
+      // project (LAI-724): LC-6's blocker is judged open and LC-6 stays.
       await openFilter(h);
       await field(h, 'Sprint').selectOption('s1');
       await h.page.waitForURL(/sprint=s1/, { timeout: 10_000 });
@@ -895,16 +906,10 @@ void describe('the Filter popover on the List (LAI-487)', () => {
       await field(h, 'Updated within').selectOption('7d');
       await h.page.waitForURL(/updated=7d/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
-      const sent = asked
-        .map((u) => new URL(u).searchParams.get('updated_since'))
-        .filter((v) => v !== null);
-      assert.ok(sent.length > 0, 'no request carried updated_since');
-      const since = Number(sent.at(-1));
-      const expected = before - 7 * 86_400_000;
-      assert.ok(
-        Math.abs(since - expected) < 60_000,
-        `updated_since ${String(since)} is not seven days back`,
-      );
+      // Every task here was touched an hour ago, so all inside seven days stay.
+      assert.ok(Date.now() - before < 60_000);
+      assert.deepEqual(await keysOnScreen(h), ['LC-6'], 'the window hid work inside it');
+      assert.equal(asked.length, loaded, `a filter change asked the server: ${asked.join(', ')}`);
       assert.doesNotMatch(
         h.page.url(),
         /updated_since/,
@@ -921,6 +926,127 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         { timeout: 10_000 },
       );
       assert.equal(await badge(h), '0');
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **The window must hide what is outside it** (LAI-724 review, S1). The test
+   * above can only show the window keeps work inside it — every fixture task
+   * there was touched an hour ago — so this one adds a task last touched eight
+   * days ago that "Updated within 7d" must drop, beside three it must keep.
+   */
+  void test('Updated within drops work older than the window and keeps what is inside it', async () => {
+    const OLD = task({
+      id: 't20',
+      key: 'LC-20',
+      number: 20,
+      title: 'Untouched for eight days',
+      updated_at: Date.now() - 8 * 86_400_000,
+    });
+    const h = await open('/list?project=laika-core', {
+      ...FILTERABLE,
+      '/api/v1/projects/laika-core/tasks?limit=200': {
+        data: [OLD, BLOCKER, BLOCKED, DONE],
+        next_cursor: null,
+      },
+    });
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.deepEqual(
+        await keysOnScreen(h),
+        ['LC-1', 'LC-20', 'LC-6', 'LC-9'],
+        'positive control: the old task is listed before the window applies',
+      );
+      await openFilter(h);
+      await field(h, 'Updated within').selectOption('7d');
+      await h.page.waitForURL(/updated=7d/, { timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => document.querySelectorAll('.list tbody tr').length === 3,
+        undefined,
+        {
+          timeout: 5_000,
+        },
+      );
+      assert.deepEqual(
+        await keysOnScreen(h),
+        ['LC-1', 'LC-6', 'LC-9'],
+        'the window kept a task touched eight days ago, or dropped one touched an hour ago',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **A value the server would refuse is named, not drawn as an empty board**
+   * (LAI-724 review, S4a). Sent to the server, `?priority=p9` was a `400` and
+   * a malformed `?tag=` a `422`, and the board showed the error. Filtered in
+   * memory, the same URL matched nothing and looked like a project with no
+   * work. Now the value is ignored and named, with a way to remove it.
+   */
+  for (const [query, key, word] of [
+    ['priority=p9', 'priority', 'priority'],
+    ['tag=-not%20a%20tag', 'tag', 'label'],
+  ] as const) {
+    void test(`a ${word} the server would refuse is named and ignored (${query})`, async () => {
+      const h = await open(`/list?project=laika-core&${query}`, FILTERABLE);
+      try {
+        const notice = h.page.locator('.board-bad-filter');
+        await notice.waitFor({ timeout: 20_000 });
+        assert.match(await notice.innerText(), new RegExp(`not a valid ${word}`));
+        // Not applied, so not counted and not a chip (LAI-487's rule).
+        assert.equal(await h.page.locator('.bt-chip').count(), 0, 'the refused value has a chip');
+        assert.equal(await badge(h), '0', 'the badge counts a refused value');
+        await h.page.locator('.list tbody tr').first().waitFor({ timeout: 10_000 });
+        assert.deepEqual(
+          await keysOnScreen(h),
+          ['LC-1', 'LC-6', 'LC-9'],
+          'a refused value still filtered the rows',
+        );
+        await notice.getByRole('button', { name: 'Remove it' }).click();
+        await h.page.waitForFunction((k) => !new URLSearchParams(location.search).has(k), key, {
+          timeout: 5_000,
+        });
+        assert.equal(await notice.count(), 0, 'the notice outlived the value');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  /*
+   * **Blockers are judged against the whole project** (LAI-724 review, nit).
+   * `byId` was the filtered set, so a task whose blocker sat outside the
+   * filter could only be "cannot tell" — and "Blocked only" kept it. LC-7's one
+   * blocker is LC-9, which is done and in no sprint: LC-7 is not blocked, and
+   * under `sprint=s1` it must go while LC-6 (blocked by the open LC-1) stays.
+   */
+  void test('Blocked only judges a blocker outside the filter, from the whole project', async () => {
+    const FREED = task({
+      id: 't7',
+      key: 'LC-7',
+      number: 7,
+      title: 'Freed by finished work',
+      sprint_id: 's1',
+      blocked_by: ['t9'],
+    });
+    const h = await open('/list?project=laika-core&sprint=s1&blocked=true', {
+      ...FILTERABLE,
+      '/api/v1/projects/laika-core/tasks?limit=200': {
+        data: [BLOCKER, BLOCKED, DONE, FREED],
+        next_cursor: null,
+      },
+    });
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      assert.deepEqual(
+        await keysOnScreen(h),
+        ['LC-6'],
+        'a task whose only blocker is done was kept as "cannot tell"',
+      );
     } finally {
       await h.close();
     }
@@ -1003,7 +1129,10 @@ const moreItems = async (h: Harness): Promise<string[]> => {
 
 void describe('Board and List share one filter state (LAI-488)', () => {
   void test('filters and search travel Board → List, and back', async () => {
-    const h = await open('/board?project=laika-core&status=done&q=shipped', FILTERABLE);
+    // `sprint=all`: LC-9 is in no sprint, and the Board otherwise opens on the
+    // active one (LAI-713). The old stub served it regardless of `?sprint=`;
+    // the set is now filtered in memory, as the server would (LAI-724).
+    const h = await open('/board?project=laika-core&sprint=all&status=done&q=shipped', FILTERABLE);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       await tabTo(h, 'List');
@@ -1061,7 +1190,8 @@ void describe('Board and List share one filter state (LAI-488)', () => {
   });
 
   void test('the Board offers Group, card settings and "Show as list" — the control', async () => {
-    const h = await open('/board?project=laika-core', FILTERABLE);
+    // Every sprint: LC-1 and LC-9 are in none (see the test above).
+    const h = await open('/board?project=laika-core&sprint=all', FILTERABLE);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       assert.equal(

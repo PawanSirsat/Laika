@@ -32,7 +32,9 @@ const BASE_TASK = {
   acceptance_md: null,
   priority: 'p2',
   assignee_id: null,
-  sprint_id: null,
+  // The active sprint (`s2` below), which the Board opens on (LAI-713). The
+  // set is now filtered in memory (LAI-724), as the server would filter it.
+  sprint_id: 's2',
   created_by: 'u1',
   created_via: 'web',
   created_by_client: null,

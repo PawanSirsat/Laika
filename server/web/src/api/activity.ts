@@ -42,6 +42,26 @@ export function listTaskActivity(
 }
 
 /**
+ * One page of the project feed, newest first, at most 200 (§6.3) — from
+ * `since` (inclusive) and before `cursor` when given. The Dashboard's window
+ * (`activity-store.ts`) walks it; a `Page` function so the LAI-703 census in
+ * `one-page-reads.test.ts` can see every caller (LAI-724 review).
+ */
+export function listProjectActivityPage(
+  slug: string,
+  query: { readonly since?: number | undefined; readonly cursor?: string | undefined },
+  signal?: AbortSignal,
+): Promise<Page<ActivityEvent>> {
+  const params = new URLSearchParams({ limit: '200' });
+  if (query.since !== undefined) params.set('since', String(query.since));
+  if (query.cursor !== undefined) params.set('cursor', query.cursor);
+  return request<Page<ActivityEvent>>(
+    `/projects/${encodeURIComponent(slug)}/activity?${params.toString()}`,
+    signal === undefined ? {} : { signal },
+  );
+}
+
+/**
  * The project's recent activity, newest first.
  *
  * The panel is **seeded from here and then extended by the stream**. Without

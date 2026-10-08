@@ -3911,3 +3911,58 @@ owner's word: the owner's word is now the push.
 
 - HTTPS and a domain, a dashboard, and scheduled database backups — the things
   Dokploy would have brought. Each can be added to this pipeline later.
+
+## D-075 — The web app keeps one shared, in-memory client cache.
+
+**2026-10-08, the owner, through the orchestrator** (performance phase 2,
+LAI-724): the app gets a client cache. This **replaces** the stance written into
+`api/tasks.ts` (*"No client-side cache… the answer is a bulk endpoint, not a
+second copy of the truth"*) and `CapacityScreen.tsx` (*"No cache"*). Measured on
+a 350-task project over a WAN profile: every project tab walked the whole task
+list on its own, the List walked it twice, most small lists were requested
+twice on every cold load, Capacity made a `GET /tasks/:id` per task it named,
+and every live frame re-walked the board's lists. (D-074 is in flight on
+build-ui-polish; this takes the next number.)
+
+### Decided
+
+1. **One store, in memory, in `server/web/src/api/`**, built in-house — no
+   dependency (TanStack Query was the alternative and was not taken). Three
+   parts: a keyed GET cache under `request` (`query-cache.ts`), the current
+   project's task set (`task-store.ts`) and the Dashboard's activity window
+   (`activity-store.ts`), wired in one module (`store.ts`).
+2. **The same request in flight is one request.** Small, slow-changing lists —
+   the projects list, a project, its members, mentionable people, sprints,
+   tags, meeting reviews, columns, the org — are reused for 30 seconds;
+   presence for two. Everything else, including `/me`, task pages and activity,
+   is never reused once answered.
+3. **A request is aborted only when nobody still wants it**, after a one-second
+   grace, so a tab switch does not throw away the answer the next tab wants.
+4. **One task set per project, shared by every screen**, held across tab
+   switches and shown at once on a revisit. It is revalidated in the background
+   when it is older than 30 seconds or known stale. Only the current project's
+   set is held.
+5. **Live frames reach the store in one place**, before any screen hears them.
+   A frame marks the project's cached lists stale, lazily, so nothing is
+   refetched until a screen asks. A burst of frames costs **one** re-walk of
+   the task set, and a `gap` reloads it in full. A frame never aborts a walk; it
+   queues one more.
+6. **Writes invalidate.** Any non-GET request marks every cached answer stale.
+   It does not re-walk the task set, which the board writes into directly and
+   the stream keeps current.
+7. **Nothing survives a change of user.** Sign-out, a 401, the setup gate or a
+   different user drops every cached answer, task set and activity window, and
+   aborts every request in flight. An answer to a request made for the previous
+   user is never stored. With no user, nothing is cached at all.
+8. **The board filters in memory.** Its filter means exactly what the server's
+   `listTasks` `WHERE` means (`task-filter.ts`), so a filter change asks the
+   server nothing.
+
+### What this does not decide
+
+- Persisting anything across reloads or tabs. Each tab has its own store, and
+  a reload starts empty.
+- A slim `?fields=` task list, server pagination for the List, ETags on API
+  JSON, and code-splitting. These are later performance phases.
+- The server change that would retire Capacity's last per-task reads (for
+  tasks outside the open project). It is filed from LAI-724.

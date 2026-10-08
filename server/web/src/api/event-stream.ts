@@ -51,6 +51,26 @@ interface Shared {
 const streams = new Map<string, Shared>();
 
 /**
+ * Who hears every frame **before** any listener does (LAI-724).
+ *
+ * The client store (`store.ts`) marks cached answers stale and schedules the
+ * one re-walk a burst of frames costs. It has to run first: a listener that
+ * re-reads on a frame — the sidebar's sprint count — would otherwise be served
+ * the answer the frame has just made stale. `closed` says a project's stream
+ * went away, so frames may be missed until it is opened again.
+ */
+export interface StreamObserver {
+  readonly frame: (slug: string, frame: StreamFrame) => void;
+  readonly closed: (slug: string) => void;
+}
+
+let observer: StreamObserver | undefined;
+
+export function observeStreams(next: StreamObserver | undefined): void {
+  observer = next;
+}
+
+/**
  * `EventSource.CLOSED`, spelled out rather than read off the global.
  *
  * The value is fixed by the HTML standard, and writing it here keeps the module
@@ -110,6 +130,7 @@ function open(slug: string): Shared {
   const emit = (frame: StreamFrame): void => {
     // Copied before iterating: a listener that unsubscribes in response to a
     // frame would otherwise mutate the set mid-iteration.
+    observer?.frame(slug, frame);
     for (const listener of [...listeners]) listener(frame);
   };
 
@@ -144,6 +165,7 @@ function open(slug: string): Shared {
     // if access has since been granted, not a retry loop.
     if (permanent) forget(slug, shared);
     emit({ kind: 'error', permanent });
+    if (permanent) observer?.closed(slug);
   };
 
   return shared;
@@ -173,6 +195,7 @@ export function subscribeToEvents(slug: string, listener: StreamListener): () =>
     // replacement that was opened in the meantime.
     forget(slug, shared);
     shared.source.close();
+    observer?.closed(slug);
   };
 }
 

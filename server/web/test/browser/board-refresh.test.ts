@@ -395,27 +395,43 @@ void describe('the skeleton is for a new question only (LAI-707)', () => {
     }
   });
 
-  void test('a filter change is a new question, so it may show the skeleton', async () => {
+  /*
+   * **A filter change is answered from the held set** (LAI-724). It used to be
+   * a new question for the server, so it walked the project again and showed
+   * the skeleton meanwhile. The set is now held once per project and filtered
+   * in memory, so the new answer is on screen at once: the risk this guarded —
+   * the old answer shown as if it were the new one — cannot arise, because
+   * there is no old answer in between. Asserted as such: no request, no
+   * skeleton, and the cards are already the filtered ones.
+   */
+  void test('a filter change is answered at once from the held set, asking nothing', async () => {
     const server: Server = { version: 1, extra: 0, fail: 'none' };
     const h = await open('/board?project=laika-core', stub(server));
     try {
       await ready(h.page);
       await watch(h.page);
-      await h.page.route('**/api/v1/projects/laika-core/tasks**', async (route) => {
-        await new Promise((done) => setTimeout(done, 600));
-        await route.continue();
+      const asked: string[] = [];
+      h.page.on('request', (r) => {
+        if (r.url().includes('/tasks')) asked.push(r.url());
       });
       await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
+      // Every fixture task is p2, so p1 is the empty answer — not the old one.
       await h.page.locator('.bt-pop').getByLabel('Priority').selectOption('p1');
-      await h.page.waitForTimeout(400);
+      await h.page.waitForFunction(
+        () => document.querySelectorAll('.card').length === 0,
+        undefined,
+        {
+          timeout: 2_000,
+        },
+      );
+      await h.page.waitForTimeout(300);
+      assert.deepEqual(asked, [], 'a filter change asked the server again');
       assert.equal(
         await h.page.evaluate(() => (window as Probe).__skeleton === true),
-        true,
-        'a different question kept showing the old answer as if it were the new one',
+        false,
+        'a filter answered from memory still showed a skeleton',
       );
-      await h.page.waitForTimeout(400);
     } finally {
-      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
       await h.close();
     }
   });

@@ -1,11 +1,11 @@
-import { everyPage } from '../../../api/every-page.ts';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
-import { getPresence, type PresenceView } from '../../../api/presence.ts';
+import { useLive } from '../../../components/space/SpaceLive.tsx';
 import { useEvents } from '../../../api/use-events.ts';
-import { listMembers, listTasks, type Member, type Task } from '../../../api/tasks.ts';
+import { listMembers, type Member, type Task } from '../../../api/tasks.ts';
+import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { ActivityPanels, staleTasks, STALE_DAYS } from './ActivityPanels.tsx';
 import './activity.css';
 
@@ -28,31 +28,31 @@ export interface ActivityScreenProps {
  */
 export function ActivityScreen({ slug }: ActivityScreenProps) {
   const stream = useEvents(slug);
-  const [tasks, setTasks] = useState<readonly Task[] | undefined>(undefined);
+  /*
+   * The project's one task set (LAI-724), shared with every other tab and live
+   * through the store. A failure is an empty list, as it was.
+   */
+  const set = useProjectTasks(slug);
+  const tasks = useMemo(
+    (): readonly Task[] | undefined =>
+      set?.status === 'ready'
+        ? set.tasks.filter((t): t is Task => !('deleted' in t))
+        : set?.status === 'error'
+          ? []
+          : undefined,
+    [set?.status, set?.tasks],
+  );
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
-  /** `undefined` while the first read is in flight (LAI-440). */
-  const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
+  /**
+   * The space's presence (LAI-724) — the same answer the frame already holds
+   * and refreshes on live frames, where this screen used to ask for its own.
+   * `undefined` while the first read is in flight (LAI-440).
+   */
+  const { presence } = useLive();
 
   useEffect(() => {
     if (slug === undefined) return;
     const controller = new AbortController();
-
-    everyPage((cursor) =>
-      listTasks(
-        slug,
-        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
-        controller.signal,
-      ),
-    )
-      .then(({ items }) => {
-        // Every page, not the first (LAI-703); `page.data` is the whole list.
-        const page = { data: items };
-        if (!controller.signal.aborted)
-          setTasks(page.data.filter((t): t is Task => !('deleted' in t)));
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setTasks([]);
-      });
 
     listMembers(slug, controller.signal)
       .then((list) => {
@@ -61,14 +61,6 @@ export function ActivityScreen({ slug }: ActivityScreenProps) {
       })
       .catch(() => {
         // Names fall back to ids rather than the panel failing.
-      });
-
-    getPresence(controller.signal)
-      .then((view) => {
-        if (!controller.signal.aborted) setPresence(view);
-      })
-      .catch(() => {
-        // The sessions panel says it is loading rather than claiming zero.
       });
 
     return () => {

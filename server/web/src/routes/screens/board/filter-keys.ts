@@ -1,4 +1,5 @@
 import { ALL_STATUSES } from '../../../api/board-derive.ts';
+import { isPriority, isTagName } from '../../../api/task-filter.ts';
 import type { TaskStatus } from '../../../api/tasks.ts';
 
 /**
@@ -158,8 +159,10 @@ export function activeFilters(
   const status = readStatus(params);
   if (status !== undefined) found.push({ key: 'status', label: `Status ${names.status(status)}` });
 
+  // Priority and tag by the server's rules (LAI-724): a refused value is
+  // named by the board and not applied, so it is not counted either.
   const priority = params.get('priority');
-  if (priority !== null && priority !== '') {
+  if (priority !== null && isPriority(priority)) {
     found.push({ key: 'priority', label: `Priority ${priority}` });
   }
 
@@ -167,7 +170,7 @@ export function activeFilters(
   if (assignee !== null && assignee !== '') found.push({ key: 'assignee', label: 'Assignee' });
 
   const tag = params.get('tag');
-  if (tag !== null && tag !== '') found.push({ key: 'tag', label: `Tag ${tag}` });
+  if (tag !== null && isTagName(tag)) found.push({ key: 'tag', label: `Tag ${tag}` });
 
   // `all` is every sprint, chosen — not a filter (LAI-713).
   const sprint = readSprintScope(params);
