@@ -238,7 +238,7 @@ describe('every page is the page the unbounded list implies (LAI-722)', () => {
 
 describe('the page is read in SQL, not sliced in JS (LAI-722)', () => {
   function taskSelects(statements: string[]): string[] {
-    return statements.filter((sql) => /from "tasks"/.test(sql) && /order by/i.test(sql));
+    return statements.filter((sql) => sql.includes('from "tasks"') && /order by/i.test(sql));
   }
 
   it('asks SQLite for limit + 1 rows when nothing filters after the query', () => {
@@ -255,7 +255,7 @@ describe('the page is read in SQL, not sliced in JS (LAI-722)', () => {
     const statements = preparedDuring(t.sqlite, () =>
       listTasks(t.db, actor(), 'laika', { limit: 5, cursor: null }),
     );
-    const tagRead = statements.find((sql) => /from "task_tags"/.test(sql));
+    const tagRead = statements.find((sql) => sql.includes('from "task_tags"'));
 
     // One placeholder per task id: the six of `limit + 1`, not all 64.
     expect(tagRead).toBeDefined();

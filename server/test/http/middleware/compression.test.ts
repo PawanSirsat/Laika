@@ -122,7 +122,7 @@ describe('what is never compressed', () => {
     expect(res.headers.get('content-type')).toContain('text/event-stream');
     expect(res.headers.get('content-encoding')).toBeNull();
 
-    const reader = res.body!.getReader();
+    const reader: ReadableStreamDefaultReader<Uint8Array> = res.body!.getReader();
     const first = await reader.read();
     await reader.cancel();
 
