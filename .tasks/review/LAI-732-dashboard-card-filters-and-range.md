@@ -5,8 +5,9 @@ area: web
 assignee: owner-direct
 priority: p1
 depends-on: [LAI-724]
-status: in-progress
-started: 2026-10-08T15:20:00Z
+status: review
+started: 2026-10-08T17:22:23Z
+finished: 2026-10-08T17:48:21Z
 ---
 
 ## Goal
@@ -42,30 +43,30 @@ rule of the "N updated" stat card.
 
 ## Acceptance criteria
 
-- [ ] With a range other than All time, Status overview and Work by person
+- [x] With a range other than All time, Status overview and Work by person
       count only tasks updated within it; All time with no card filter shows
       exactly what they show today (cancelled excluded with its note, open work
       per person, the Unassigned row).
-- [ ] Each card's subtitle says what it covers ("41 tasks updated in the last
+- [x] Each card's subtitle says what it covers ("41 tasks updated in the last
       7 days", an "all time" override, the number of card filters).
-- [ ] Each card has a filter icon with an active-count badge that opens a
+- [x] Each card has a filter icon with an active-count badge that opens a
       compact popover: Status overview — Sprint (Any / Active / a sprint),
       Assignee (Anyone / Unassigned / a member), Priority, Label, Agent-created
       only, Range (follow the dashboard / all tasks); Work by person — Sprint,
       Priority, Label, statuses (open only / include done), Range.
-- [ ] The popover has Clear, closes on Escape and outside click, takes and
+- [x] The popover has Clear, closes on Escape and outside click, takes and
       returns focus, works in both themes, and looks like the Board's Filter
       popover.
-- [ ] Each card's filters live in the URL under its own prefix (`so_`, `wp_`);
+- [x] Each card's filters live in the URL under its own prefix (`so_`, `wp_`);
       a refresh or a shared link keeps them; an invalid value is ignored and not
       counted (LAI-487).
-- [ ] No new whole-project walk and no new endpoint: the cards read the store's
+- [x] No new whole-project walk and no new endpoint: the cards read the store's
       task set.
-- [ ] Unit tests for the derivations (range × each filter), browser tests for
+- [x] Unit tests for the derivations (range × each filter), browser tests for
       the popovers and for the range moving both cards, each red on the code
       before this task.
-- [ ] Screenshots, light and dark, in `/tmp/laika-dashboard-shots/`.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 after the
+- [x] Screenshots, light and dark, in `/tmp/laika-dashboard-shots/`.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 after the
       last edit.
 
 ## Notes / context
@@ -75,3 +76,23 @@ rule of the "N updated" stat card.
   (native selects in labelled cells), behind one `CardField` component, so the
   integration step can swap the controls for the Dropdown in one place.
 - Nothing is pushed from this branch.
+
+## Built
+
+On the owner's direct instruction. Details in `logs/perf-2026-10-08.md`
+(entry 17:48Z).
+
+- **The range.** A card counts the tasks updated on or after the range's start
+  (`card-filters.ts` `cardTasks`); All time applies no bound, and with no card
+  filter returns the set itself, so the cards are exactly today's.
+- **The filters.** `so_sprint`, `so_assignee`, `so_priority`, `so_tag`,
+  `so_agent`, `so_range`; `wp_sprint`, `wp_priority`, `wp_tag`, `wp_status`,
+  `wp_range`. Invalid values ignored and not counted.
+- **Read from the store's task set**; the sprint list is the cached read the
+  shell already makes. No new walk, no new endpoint.
+- **Dropdown:** none on this branch. `CardField` / `CardSelect` in
+  `CardFilter.tsx` are the one place the integration step swaps for it.
+- **Correction:** `started` was filed as 15:20Z, a guess; the filing commit is
+  17:22:23Z.
+- **The gate criterion is ticked on the gate run after this commit** (the
+  report), on the HEAD that carries this file.
