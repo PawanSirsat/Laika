@@ -1,26 +1,30 @@
 /**
- * `routes/screens/timeline/timeline-derive.ts` (LAI-084).
+ * `routes/screens/timeline/timeline-derive.ts` (LAI-084, LAI-721).
  *
- * The axis arithmetic. Two properties matter more than the rest: the track's
- * segments must always sum to the range (or the header stops lining up with the
- * bars), and **nothing here may give a task a position** — D-014's whole point.
+ * The axis arithmetic for sprint rows on a scrolling, zoomable axis. Two
+ * properties matter more than the rest: a sprint's span is exactly its
+ * inclusive dates on the window, and **nothing here gives a task a position**
+ * — §11.4.3, and D-074 withdrawing D-049's task rows.
  */
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { Sprint } from '../../../../src/api/sprints.ts';
 import {
+  chartWindow,
+  countdownFor,
+  DAY_WIDTH,
+  dayIndex,
   isCurrent,
   isPast,
   monthBands,
-  startOfDay,
-  countdownFor,
+  quarterBands,
+  readZoom,
+  sprintPhase,
+  sprintSpan,
   sprintSummary,
-  taskActuals,
-  taskBar,
-  timelineRange,
-  todayPosition,
-  toSegments,
+  startOfDay,
+  weekTicks,
 } from '../../../../src/routes/screens/timeline/timeline-derive.ts';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -46,194 +50,119 @@ function sprint(over: Partial<Sprint> & { id: string }): Sprint {
 const A = sprint({ id: 'a', starts_on: day('2026-08-01'), ends_on: day('2026-08-14') });
 const B = sprint({ id: 'b', starts_on: day('2026-08-20'), ends_on: day('2026-09-02') });
 
-void describe('timelineRange', () => {
-  void test('spans the earliest start to the latest end, inclusive', () => {
-    const range = timelineRange([A, B]);
-
-    assert.equal(range?.from, day('2026-08-01'));
-    assert.equal(range?.to, day('2026-09-02'));
-    // 1 Aug → 2 Sept inclusive is 33 days, not 32.
-    assert.equal(range?.days, 33);
+void describe('chartWindow — whole months around every sprint and today', () => {
+  void test('starts on the 1st and ends on the last day of a month, with a week of air', () => {
+    const w = chartWindow([A, B], day('2026-08-10'))!;
+    // A starts 1 Aug: a week earlier is July, so the window opens on 1 July.
+    assert.equal(w.from, day('2026-07-01'));
+    // B ends 2 Sept: a week later is still September, so it closes on 30 Sept.
+    assert.equal(w.to, day('2026-09-30'));
+    assert.equal(w.days, 92);
   });
 
-  void test('a single sprint is its own axis', () => {
-    assert.deepEqual(timelineRange([A]), {
-      from: day('2026-08-01'),
-      to: day('2026-08-14'),
-      days: 14,
-    });
+  void test('reaches today when today is outside every sprint — the Today button needs it', () => {
+    const w = chartWindow([A], day('2026-12-03'))!;
+    assert.equal(w.to, day('2026-12-31'), 'today is past the window');
   });
 
-  void test('no sprints means no axis at all, so the screen can say so', () => {
-    // `null` rather than a zero-width range: an axis with no bars is a chart
-    // that looks broken, and the screen renders the empty state instead.
-    assert.equal(timelineRange([]), null);
-  });
-
-  void test('is not stretched to reach today', () => {
-    // Deliberate: a project whose next sprint is in March would otherwise get an
-    // axis mostly made of empty January, squashing every bar to a sliver.
-    const range = timelineRange([A]);
-    assert.equal(range?.to, day('2026-08-14'));
-  });
-
-  void test('ignores the order sprints arrive in', () => {
-    assert.deepEqual(timelineRange([B, A]), timelineRange([A, B]));
+  void test('ignores the order sprints arrive in, and no sprints is no chart', () => {
+    assert.deepEqual(chartWindow([B, A], d(5)), chartWindow([A, B], d(5)));
+    assert.equal(chartWindow([], d(5)), null);
   });
 });
 
-void describe('toSegments', () => {
-  void test('lays sprints on one track with the gap between them', () => {
-    const range = timelineRange([A, B]);
-    const segments = toSegments([A, B], range!);
+void describe('dayIndex and sprintSpan — a sprint is its inclusive dates', () => {
+  const w = chartWindow([A, B], day('2026-08-10'))!;
 
-    assert.deepEqual(
-      segments.map((s) => [s.kind, s.days]),
-      [
-        ['sprint', 14], // 1–14 Aug
-        ['gap', 5], // 15–19 Aug
-        ['sprint', 14], // 20 Aug – 2 Sept
-      ],
-    );
+  void test('the first day is index 0, and the time of day does not move it', () => {
+    assert.equal(dayIndex(w, day('2026-07-01')), 0);
+    assert.equal(dayIndex(w, day('2026-07-01') + 23 * 60 * 60 * 1000), 0);
+    assert.equal(dayIndex(w, day('2026-08-01')), 31);
   });
 
-  void test('the segments always sum to the range', () => {
-    // The header bands and the track are drawn from the same day count. If these
-    // ever disagree the months stop lining up with the bars, which is the one
-    // thing a date axis must not do.
-    for (const set of [[A], [A, B], [B, A]]) {
-      const range = timelineRange(set)!;
-      const total = toSegments(set, range).reduce((n, s) => n + s.days, 0);
-      assert.equal(
-        total,
-        range.days,
-        `segments summed to ${String(total)} of ${String(range.days)}`,
-      );
-    }
+  void test('a sprint starts on its first day and covers its last', () => {
+    assert.deepEqual(sprintSpan(w, A), { start: 31, days: 14 });
+    assert.deepEqual(sprintSpan(w, B), { start: 50, days: 14 });
   });
 
-  void test('sorts by start date, so input order cannot reorder the track', () => {
-    const range = timelineRange([A, B])!;
-    assert.deepEqual(
-      toSegments([B, A], range)
-        .filter((s) => s.kind === 'sprint')
-        .map((s) => s.sprint.id),
-      ['a', 'b'],
-    );
-  });
-
-  void test('adjacent sprints get no gap between them', () => {
-    const next = sprint({ id: 'c', starts_on: day('2026-08-15'), ends_on: day('2026-08-28') });
-    const range = timelineRange([A, next])!;
-
-    assert.deepEqual(
-      toSegments([A, next], range).map((s) => s.kind),
-      ['sprint', 'sprint'],
-    );
-  });
-
-  void test('pads the tail when the range outlives the last sprint', () => {
-    // `timelineRange` never produces such a range — it ends at the last sprint —
-    // but `toSegments` takes the range as an argument and must be total over any
-    // of them. Without this the branch is unreachable and untested, which is how
-    // it stops working the day someone passes a fixed quarter.
-    const wide = { from: day('2026-08-01'), to: day('2026-08-31'), days: 31 };
-
-    assert.deepEqual(
-      toSegments([A], wide).map((s) => [s.kind, s.days]),
-      [
-        ['sprint', 14], // 1–14 Aug
-        ['gap', 17], // 15–31 Aug
-      ],
-    );
-    assert.equal(
-      toSegments([A], wide).reduce((n, s) => n + s.days, 0),
-      wide.days,
-    );
-  });
-
-  void test('a lone sprint fills the axis exactly', () => {
-    const range = timelineRange([A])!;
-    assert.deepEqual(
-      toSegments([A], range).map((s) => [s.kind, s.days]),
-      [['sprint', 14]],
-    );
+  void test('neighbours never overlap and the gap between them is real', () => {
+    const a = sprintSpan(w, A);
+    const b = sprintSpan(w, B);
+    assert.equal(b.start - (a.start + a.days), 5, '15–19 Aug is a five-day gap');
   });
 });
 
-void describe('monthBands', () => {
-  void test('weights each month by the days actually on the axis', () => {
-    // August contributes 31 days, September only 2 — a clipped month must get
-    // its real share or the header drifts out of line with the track.
-    const bands = monthBands(timelineRange([A, B])!);
+void describe('the header — months, quarters and Mondays', () => {
+  const w = chartWindow([A, B], day('2026-08-10'))!;
 
+  void test('month bands start where the month starts and sum to the window', () => {
     assert.deepEqual(
-      bands.map((b) => [b.label, b.days]),
+      monthBands(w).map((m) => [m.label, m.start, m.days]),
       [
-        ['Aug 2026', 31],
-        ['Sept 2026', 2],
+        ['Jul 2026', 0, 31],
+        ['Aug 2026', 31, 31],
+        ['Sept 2026', 62, 30],
       ],
     );
-  });
-
-  void test('the bands sum to the range', () => {
-    const range = timelineRange([A, B])!;
-    assert.equal(
-      monthBands(range).reduce((n, b) => n + b.days, 0),
-      range.days,
-    );
-  });
-
-  void test('labels consecutive months across a year boundary', () => {
-    const dec = sprint({ id: 'x', starts_on: day('2026-12-20'), ends_on: day('2027-01-10') });
-
     assert.deepEqual(
-      monthBands(timelineRange([dec])!).map((b) => b.label),
-      ['Dec 2026', 'Jan 2027'],
+      monthBands(w, true).map((m) => m.label),
+      ['Jul', 'Aug', 'Sept'],
     );
   });
 
   void test('gives every band a unique key, even the same month a year apart', () => {
-    // The bands are compared against the *previous* one only, so two Augusts
-    // twelve months apart are never adjacent and merge correctly whatever the
-    // key is. The key still has to be unique — it is a React key, and duplicates
-    // are a reconciliation bug rather than a layout one, which is exactly the
-    // kind that survives a screenshot review.
-    const long = sprint({ id: 'y', starts_on: day('2026-08-01'), ends_on: day('2027-09-30') });
-    const bands = monthBands(timelineRange([long])!);
+    const long = chartWindow(
+      [A, sprint({ id: 'z', starts_on: day('2027-08-01'), ends_on: day('2027-08-05') })],
+      day('2026-08-10'),
+    )!;
+    const keys = monthBands(long).map((m) => m.key);
+    assert.equal(new Set(keys).size, keys.length);
+  });
 
-    const augusts = bands.filter((b) => b.label.startsWith('Aug'));
-    assert.equal(augusts.length, 2, 'expected Aug 2026 and Aug 2027');
-    assert.equal(new Set(bands.map((b) => b.key)).size, bands.length, 'band keys must be unique');
+  void test('quarters cut where the calendar does', () => {
+    assert.deepEqual(
+      quarterBands(w).map((b) => [b.label, b.start, b.days]),
+      [['Q3 2026', 0, 92]],
+    );
+    assert.deepEqual(
+      quarterBands(chartWindow([A], day('2026-10-02'))!).map((b) => b.label),
+      ['Q3 2026', 'Q4 2026'],
+    );
+  });
+
+  void test('every tick is a Monday, a week apart', () => {
+    const ticks = weekTicks(w);
+    assert.ok(ticks.length >= 13, 'positive control: thirteen weeks in three months');
+    for (const tick of ticks) {
+      assert.equal(new Date(w.from + tick.index * DAY).getUTCDay(), 1, `day ${String(tick.index)}`);
+    }
+    for (let i = 1; i < ticks.length; i += 1) {
+      assert.equal(ticks[i]!.index - ticks[i - 1]!.index, 7);
+    }
+    // 6 July 2026 is the first Monday in the window.
+    assert.deepEqual(ticks[0], { index: 5, label: '6' });
   });
 });
 
-void describe('todayPosition', () => {
-  const range = timelineRange([A, B])!;
-
-  void test('marks a day inside the axis, at the centre of its column', () => {
-    const pos = todayPosition(range, day('2026-08-01'));
-    assert.equal(pos.on, 'axis');
-    // Day 0 of 33 → centre of the first column, not the very edge: a marker on
-    // the boundary reads as belonging to the day on either side of it.
-    assert.ok(pos.on === 'axis' && pos.percent > 0 && pos.percent < 100 / 33);
+void describe('zoom', () => {
+  void test('three scales, each wider than the next', () => {
+    assert.ok(DAY_WIDTH.weeks > DAY_WIDTH.months && DAY_WIDTH.months > DAY_WIDTH.quarters);
   });
 
-  void test('the last day is still on the axis, not after it', () => {
-    // `ends_on` is inclusive; an off-by-one here puts the marker off the chart
-    // on the final day of a sprint, which is when someone is most likely to look.
-    assert.equal(todayPosition(range, day('2026-09-02')).on, 'axis');
-    assert.equal(todayPosition(range, day('2026-09-03')).on, 'after');
+  void test('anything unknown in `?zoom=` is Months', () => {
+    assert.equal(readZoom('weeks'), 'weeks');
+    assert.equal(readZoom('quarters'), 'quarters');
+    assert.equal(readZoom(null), 'months');
+    assert.equal(readZoom('days'), 'months');
   });
+});
 
-  void test('says which side it falls on rather than drawing nothing', () => {
-    assert.equal(todayPosition(range, day('2026-07-31')).on, 'before');
-    assert.equal(todayPosition(range, day('2026-12-01')).on, 'after');
-  });
-
-  void test('ignores the time of day', () => {
-    const noon = day('2026-08-05') + 12 * 60 * 60 * 1000;
-    assert.deepEqual(todayPosition(range, noon), todayPosition(range, day('2026-08-05')));
+void describe('sprintPhase — by the dates, not the stored status', () => {
+  void test('past, current and future', () => {
+    assert.equal(sprintPhase(A, day('2026-08-20')), 'past');
+    assert.equal(sprintPhase(A, day('2026-08-14')), 'current');
+    assert.equal(sprintPhase(A, day('2026-07-31')), 'future');
+    assert.equal(sprintPhase({ ...A, status: 'active' }, day('2026-09-30')), 'past');
   });
 });
 
@@ -275,127 +204,6 @@ void describe('startOfDay', () => {
  * from a date the task does not have** — an unmeasured end falls back to the
  * sprint and is marked as a plan, and a task with neither gets no bar at all.
  */
-void describe('D-049 — no bar is drawn from a date the task does not have', () => {
-  const RANGE = timelineRange([sprint({ id: 's1', starts_on: d(0), ends_on: d(9) })])!;
-  const SPRINT = sprint({ id: 's1', starts_on: d(0), ends_on: d(9) });
-  const NOW = d(4);
-
-  void test('a finished task is measured, start to finish', () => {
-    const bar = taskBar(
-      { status: 'done', started_at: d(1), completed_at: d(3) },
-      SPRINT,
-      RANGE,
-      NOW,
-    );
-    assert.equal(bar?.kind, 'actual');
-    assert.equal(bar?.fromSprint, false);
-    assert.equal(bar?.from, d(1));
-    assert.equal(bar?.to, d(3));
-  });
-
-  void test('a running task is measured to today, then planned to the sprint end', () => {
-    const bar = taskBar(
-      { status: 'in_progress', started_at: d(2), completed_at: null },
-      SPRINT,
-      RANGE,
-      NOW,
-    );
-    assert.equal(bar?.kind, 'partial');
-    assert.equal(bar?.to, d(4), 'the solid part must stop at today, not run to the sprint end');
-    assert.ok((bar?.remainderDays ?? 0) > 0, 'the planned remainder is missing');
-  });
-
-  void test('a task with no actuals gets its sprint, marked as a plan', () => {
-    const bar = taskBar(
-      { status: 'todo', started_at: null, completed_at: null },
-      SPRINT,
-      RANGE,
-      NOW,
-    );
-    assert.equal(bar?.kind, 'planned');
-    assert.equal(bar?.fromSprint, true, 'a sprint-derived bar must say so');
-    assert.equal(bar?.from, d(0));
-  });
-
-  void test('**a done task with no completed_at is a plan, not a measurement**', () => {
-    // The load-bearing fallback. We know when it started and not when it
-    // finished, so drawing it as an actual would assert an end nobody gave us.
-    const bar = taskBar(
-      { status: 'done', started_at: d(1), completed_at: null },
-      SPRINT,
-      RANGE,
-      NOW,
-    );
-    assert.equal(bar?.kind, 'planned');
-    assert.equal(bar?.fromSprint, true);
-  });
-
-  void test('no actuals and no sprint means no bar at all', () => {
-    assert.equal(
-      taskBar({ status: 'todo', started_at: null, completed_at: null }, undefined, RANGE, NOW),
-      undefined,
-    );
-  });
-
-  void test('a running task with no sprint is still measured, with no remainder', () => {
-    // Actuals alone are enough to earn a position — the tray is for tasks with
-    // neither, not for tasks without a sprint.
-    const bar = taskBar(
-      { status: 'in_progress', started_at: d(2), completed_at: null },
-      undefined,
-      RANGE,
-      NOW,
-    );
-    assert.equal(bar?.kind, 'partial');
-    assert.equal(bar?.remainderDays, 0, 'a remainder with no sprint would be invented');
-  });
-
-  void test('a task crossing a sprint boundary draws one bar across both', () => {
-    // The case D-040 said was unrepresentable. It was — from sprint boundaries.
-    // From actuals it is one span, and that is the point of D-049.
-    const wide = timelineRange([
-      sprint({ id: 'a', starts_on: d(0), ends_on: d(4) }),
-      sprint({ id: 'b', starts_on: d(5), ends_on: d(9) }),
-    ])!;
-    const bar = taskBar(
-      { status: 'done', started_at: d(3), completed_at: d(7) },
-      sprint({ id: 'a', starts_on: d(0), ends_on: d(4) }),
-      wide,
-      d(9),
-    );
-    assert.equal(bar?.kind, 'actual');
-    assert.equal(bar?.from, d(3));
-    assert.equal(bar?.to, d(7), 'the bar must not be clipped to its own sprint');
-  });
-
-  void test('the segments always sum to the axis', () => {
-    // The same invariant the sprint track has: if they do not sum, the header
-    // stops lining up with the bars.
-    for (const task of [
-      { status: 'done', started_at: d(1), completed_at: d(3) },
-      { status: 'in_progress', started_at: d(2), completed_at: null },
-      { status: 'todo', started_at: null, completed_at: null },
-    ]) {
-      const bar = taskBar(task, SPRINT, RANGE, NOW);
-      assert.ok(bar !== undefined);
-      const total = bar.leadDays + bar.solidDays + bar.remainderDays + bar.trailDays;
-      assert.equal(
-        total,
-        RANGE.days,
-        `${task.status} sums to ${String(total)} not ${String(RANGE.days)}`,
-      );
-    }
-  });
-
-  void test('the axis widens to cover actuals rather than clamping them', () => {
-    // Clamping would move a bar's start to the axis edge, which asserts a date
-    // nobody gave us — the exact thing this describe block exists for.
-    const actuals = taskActuals([{ status: 'done', started_at: d(-3), completed_at: d(1) }]);
-    const widened = timelineRange([SPRINT], actuals)!;
-    assert.ok(widened.from <= d(-3), 'a task that started before the first sprint was clipped');
-  });
-});
-
 void describe('the active sprint strip: DONE · BLOCKED · WIP · DAYS LEFT', () => {
   /** All four differ on purpose — four equal counts is a test that cannot fail. */
   const TASKS = [

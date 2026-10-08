@@ -1,68 +1,85 @@
 import { everyPage } from '../../../api/every-page.ts';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
-import { SpaceBand, SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
-import { SprintStrip } from '../board/SprintStrip.tsx';
-import { statusLabel } from '../../../api/board-derive.ts';
-import { formatRange } from '../sprints/sprint-derive.ts';
-import { useSprints } from '../sprints/use-sprints.ts';
-import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
+import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
+import { blockedState, byIdIndex, statusLabel } from '../../../api/board-derive.ts';
+import { formatRange, progressFor } from '../sprints/sprint-derive.ts';
+import type { Sprint } from '../../../api/sprints.ts';
+import { useTimeline, type TasksLoad as TasksLoadView } from './use-timeline.ts';
 import { listMembers, type Member, type Task } from '../../../api/tasks.ts';
-import { LockIcon } from '../../../components/LockIcon.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import {
-  isCurrent,
+  chartWindow,
+  DAY_WIDTH,
+  dayIndex,
   monthBands,
+  quarterBands,
+  readZoom,
+  sprintPhase,
+  sprintSpan,
   sprintSummary,
-  taskActuals,
-  taskBar,
-  timelineRange,
-  todayPosition,
-  toSegments,
+  weekTicks,
+  ZOOM_LABELS,
+  ZOOMS,
+  type SprintCountdown,
+  type Zoom,
 } from './timeline-derive.ts';
 import './timeline.css';
 import { pickProject } from '../../../api/pick-project.ts';
 import { withProjectParam } from '../../nav-url.ts';
 
+/** What a sprint's dates say about it, in the lozenge's words. */
+const PHASE_LABEL = { past: 'Ended', current: 'Active', future: 'Planned' } as const;
+
+function countdownText(countdown: SprintCountdown): string {
+  switch (countdown.kind) {
+    case 'left':
+      return `${String(countdown.days)} ${countdown.days === 1 ? 'day' : 'days'} left`;
+    case 'starts_in':
+      return `starts in ${String(countdown.days)}d`;
+    case 'ended':
+      return `ended ${String(countdown.days)}d ago`;
+  }
+}
+
 /**
- * Timeline (SPEC §11.4.3, D-014 — LAI-084).
+ * Timeline (SPEC §11.4.3, LAI-721 — Jira's timeline, by sprint).
  *
- * A Gantt-style view drawn **entirely from sprint boundaries**. Because §4.15
- * forbids sprints of a project from overlapping, the axis is one track and this
- * is a rendering pass rather than a layout solver — that is the whole reason
- * D-014 chose sprints as the unit.
+ * **One row per sprint**, a bar across its dates, on an axis that scrolls
+ * sideways at a chosen zoom with today marked. A sprint opens to list its
+ * tasks, and **tasks get no bars** — the owner, 2026-10-08: *"by the sprints,
+ * like Jira … I don't want the tasks in time."* That is §11.4.3 as written;
+ * D-074 withdraws D-049's row per task, which had put three hundred rows on
+ * one squeezed axis.
  *
- * ## It reuses the sprints screen's data path on purpose
+ * ## Layout
  *
- * `useSprints` already fetches the project's sprints and tasks, walks both
- * cursors, groups tasks by sprint and computes progress. Both folders are mine
- * under D-028, so the alternative was a second copy of the cursor-walking and a
- * second definition of "done over total" — which is the drift LAI-119 is about,
- * one layer up. The mutations it exposes go unused here; this screen is read-only
- * (dragging a sprint edge is explicitly out of scope).
+ * One scroll container, both ways. Each row is a sticky left cell (the sprint
+ * or task) and a track exactly `days × DAY_WIDTH[zoom]` wide; the header is
+ * sticky at the top and its corner sticky at both. Nothing is measured from
+ * the card's width, so a zoom is a scale, not a squeeze.
  *
- * ## Tasks are contents, never bars
+ * ## Data, on demand
  *
- * The prototype draws a row per task with its own start and length. `tasks` has
- * no planned-start and no due-date column and D-014 keeps it that way, so those
- * rows are invented dates — the artifact class `docs/design/README.md` says not
- * to reproduce. Tasks here appear inside their sprint's bar when it is expanded,
- * or in the unscheduled tray, and nowhere on the axis.
+ * Only the sprints load up front (`use-timeline.ts`); a sprint's tasks are
+ * fetched with `?sprint=` when it is opened, and the tray's with
+ * `?sprint=none`. So a sprint's progress shows once it has been opened —
+ * `progressFor`, the Sprints screen's own "done over total", with `cancelled`
+ * out of the denominator. Read-only, as before.
  */
 export function TimelineScreen() {
   const { params, setParams } = useRoute();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
 
-  // Fixed at mount rather than read per render: every position on the axis is
-  // derived from it, and a clock that moved mid-render would shift the marker
-  // away from the bars it is meant to line up with.
+  // Fixed at mount: every position is derived from it, and a clock that moved
+  // mid-render would shift the today line away from the bars.
   const [now] = useState(() => Date.now());
 
   useEffect(() => {
@@ -75,12 +92,9 @@ export function TimelineScreen() {
       ),
     )
       .then(({ items }) => {
-        // Every page, not the first (LAI-703); `page.data` is the whole list.
-        const page = { data: items };
         // One rule on every screen (LAI-423): the most recently active
-        // project, never the alphabetically first, and written into the URL so
-        // the address bar names what is on screen.
-        const wanted = pickProject(page.data, slug);
+        // project, written into the URL so the address bar names it.
+        const wanted = pickProject(items, slug);
         setSlug(wanted?.slug);
         if (wanted !== undefined && slug === undefined) {
           setParams(new URLSearchParams(withProjectParam(params.toString(), wanted.slug)));
@@ -98,8 +112,8 @@ export function TimelineScreen() {
 
   const [members, setMembers] = useState<ReadonlyMap<string, Member>>(new Map());
 
-  // Names and avatar colours for the left column. A failure costs the initials,
-  // not the timeline, so it degrades to "?" rather than erroring the screen.
+  // Names and avatar colours for the task rows. A failure costs the initials,
+  // not the timeline.
   useEffect(() => {
     if (slug === undefined) return;
     const controller = new AbortController();
@@ -118,36 +132,86 @@ export function TimelineScreen() {
   }, [slug]);
 
   const { theme } = useTheme();
-  const sprints = useSprints(slug);
+  const timeline = useTimeline(slug);
+
+  /*
+   * **Every hook is up here, above the early returns** — a hook after them is
+   * called a different number of times on different renders, which React
+   * answers with a blank screen (the LAI-436 lesson).
+   */
+
+  /** `?zoom=`, so a zoom survives a reload and travels in a link. */
+  const zoom = readZoom(params.get('zoom'));
+  const setZoom = (next: Zoom): void => {
+    const changed = new URLSearchParams(params);
+    if (next === 'months') changed.delete('zoom');
+    else changed.set('zoom', next);
+    setParams(changed);
+  };
 
   /**
-   * Which sprint the strip is describing (LAI-436).
-   *
-   * `undefined` means "whichever is active", so the default survives the sprints
-   * arriving late without an effect to re-point it, and storing the id rather
-   * than the row keeps it valid across a refetch.
-   *
-   * **Declared here, above the early returns, and not beside the code that uses
-   * it.** It read better down there and it is a Rules of Hooks violation: this
-   * component returns early for loading, error and an empty range, so a hook
-   * after them is called a different number of times on different renders.
-   * React said so as `Minified React error #310` and a blank screen — no test
-   * asserted it, and every unit test still passed, because none of them mounts
-   * the component.
+   * Which sprints are open. **Collapsed by default** — the owner asked for
+   * sprints, not tasks — except one named by `?sprint=`, the board's chips'
+   * parameter, so a sprint picked there opens here.
    */
-  /**
-   * **`?sprint=` is the selection, not local state** — the same parameter the
-   * board's chips write. The design draws one chip row (`sprintChips`) and both
-   * screens read it, so picking S2 on the board and switching to Timeline keeps
-   * S2 rather than silently reverting to the current sprint.
-   */
-  const picked = params.get('sprint') ?? undefined;
-  const setPicked = (id: string | undefined): void => {
-    const next = new URLSearchParams(params);
-    if (id === undefined || id === '') next.delete('sprint');
-    else next.set('sprint', id);
-    setParams(next);
+  const named = params.get('sprint') ?? undefined;
+  const [open, setOpen] = useState<ReadonlySet<string>>(() =>
+    named === undefined ? new Set() : new Set([named]),
+  );
+  const toggle = (id: string): void => {
+    setOpen((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
+
+  const rows: readonly Sprint[] =
+    timeline.sprints.status === 'ready'
+      ? [...timeline.sprints.sprints].sort(
+          (a, b) => a.starts_on - b.starts_on || a.id.localeCompare(b.id),
+        )
+      : [];
+  const range = chartWindow(rows, now);
+
+  /** The tray's own disclosure — it fetches nothing until it is opened. */
+  const [trayOpen, setTrayOpen] = useState(false);
+
+  // An open sprint loads its tasks; `load` is a no-op once asked.
+  const { load } = timeline;
+  useEffect(() => {
+    for (const id of open) load(id);
+    if (trayOpen) load('none');
+  }, [open, trayOpen, load, rows.length]);
+  const dayWidth = DAY_WIDTH[zoom];
+
+  const scroller = useRef<HTMLDivElement>(null);
+  /** The day at the middle of the view, kept so a zoom stays where you were. */
+  const centreDay = useRef<number | undefined>(undefined);
+
+  /** The scrollport's width beside the sticky sprint column. */
+  const viewWidth = (el: HTMLElement): number =>
+    el.clientWidth - (el.querySelector<HTMLElement>('.tlx-corner')?.offsetWidth ?? 0);
+
+  const scrollToDay = (day: number, at: number): void => {
+    const el = scroller.current;
+    if (el === null) return;
+    el.scrollLeft = Math.max(0, day * dayWidth - viewWidth(el) * at);
+  };
+
+  const todayIndex = range === null ? undefined : dayIndex(range, now);
+
+  /*
+   * **Open on today, then keep the middle under a zoom.** Jira opens with
+   * today a third of the way in; changing the zoom rescales around what you
+   * were looking at rather than throwing you back to the start.
+   */
+  useLayoutEffect(() => {
+    if (range === null || todayIndex === undefined) return;
+    if (centreDay.current === undefined) scrollToDay(todayIndex, 1 / 3);
+    else scrollToDay(centreDay.current, 1 / 2);
+  }, [zoom, range?.from, range?.to]);
 
   if (projectError !== null) {
     return (
@@ -157,7 +221,7 @@ export function TimelineScreen() {
     );
   }
 
-  if (sprints.state.status === 'loading') {
+  if (timeline.sprints.status === 'loading') {
     return (
       <div className="timeline">
         <LoadingState shape="row" count={3} label="Loading timeline" />
@@ -165,401 +229,441 @@ export function TimelineScreen() {
     );
   }
 
-  if (sprints.state.status === 'error') {
+  if (timeline.sprints.status === 'error') {
     return (
       <div className="timeline">
         <ApiErrorState
-          error={sprints.state.error}
+          error={timeline.sprints.error}
           resource="this project's timeline"
           scope="project"
-          onRetry={sprints.reload}
+          onRetry={timeline.reload}
         />
       </div>
     );
   }
 
-  const { rows, unassigned } = sprints.state;
-  const allTasks = [...rows.flatMap((r) => r.tasks), ...unassigned];
-  const byTaskId = byIdIndex(allTasks);
-
-  // The axis covers the sprints **and** every measured date, so a task that
-  // started before the first sprint is drawn where it started rather than
-  // clipped to the edge — clipping would show a date nobody gave us (D-049).
-  const range = timelineRange(
-    rows.map((r) => r.sprint),
-    taskActuals(allTasks),
+  const tray = (
+    <UnscheduledTray
+      open={trayOpen}
+      onToggle={() => {
+        setTrayOpen((o) => !o);
+      }}
+      load={timeline.tasks('none')}
+    />
   );
 
-  // AC5: an empty project gets the empty state, not a bare axis. An axis with
-  // no bars is a chart that looks broken rather than a project that has not been
-  // planned yet.
-  if (range === null) {
+  if (range === null || todayIndex === undefined) {
     return (
       <div className="timeline">
         <EmptyState
           headline="Nothing scheduled yet"
           body="The timeline is drawn from sprints. Plan one and it will appear here."
         />
+        {tray}
       </div>
     );
   }
 
-  const segments = toSegments(
-    rows.map((r) => r.sprint),
-    range,
-  );
-  const bands = monthBands(range);
-  const today = todayPosition(range, now);
-  const byId = new Map(rows.map((r) => [r.sprint.id, r]));
+  const width = range.days * dayWidth;
+  const ticks = weekTicks(range);
+  const firstMonday = ticks[0]?.index ?? 0;
+  const top = zoom === 'quarters' ? quarterBands(range) : monthBands(range);
+  const lower = zoom === 'quarters' ? monthBands(range, true) : undefined;
+  const todayX = (todayIndex + 0.5) * dayWidth;
+  const allOpen = rows.length > 0 && rows.every((r) => open.has(r.id));
 
-  /** One drawn row per task that has earned a position. */
-  const drawn = rows.flatMap((row) =>
-    row.tasks.flatMap((task) => {
-      const bar = taskBar(task, row.sprint, range, now);
-      return bar === undefined ? [] : [{ task, sprint: row.sprint, bar }];
-    }),
-  );
-
-  /** `TUE 18 AUG` — the design's form for the pill beside the today line. */
+  /** `TUE 18 AUG`, for the pill on the today line. */
   const todayLabel = new Date(now)
     .toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })
     .toUpperCase()
     .replace(/,/g, '');
 
-  const active = rows.find((r) => isCurrent(r.sprint, now)) ?? rows[0];
+  const openTask = (taskId: string): void => {
+    // The space's own drawer reads `?task=` on every tab (`SpaceLayout`); a
+    // history entry, so Back closes it (LAI-252).
+    const next = new URLSearchParams(params);
+    next.set('task', taskId);
+    setParams(next, { push: true });
+  };
 
-  const shown = rows.find((r) => r.sprint.id === picked) ?? active;
+  const chartStyle = {
+    '--tlx-day': `${String(dayWidth)}px`,
+    '--tlx-width': `${String(width)}px`,
+    '--tlx-week-offset': `${String(firstMonday * dayWidth)}px`,
+  } as CSSProperties;
 
-  const blockedIn = (list: readonly Task[]): number =>
-    // `board-derive`'s rule, not a second one (LAI-215).
-    list.filter((task) => blockedState(task, byTaskId) === true).length;
-
-  const summary =
-    shown === undefined
-      ? undefined
-      : sprintSummary(shown.tasks, blockedIn(shown.tasks), shown.sprint, now);
+  const first = rows[0];
+  const last = rows[rows.length - 1];
 
   return (
     <div className="timeline">
       <SpaceSlot
-        /* Derived, never a fixture: the axis the chart actually drew and the
-           sprints actually on it. */
-        context={`${formatRange(range.from, range.to)} · ${String(rows.length)} ${
-          rows.length === 1 ? 'sprint' : 'sprints'
-        }`}
+        context={
+          first === undefined || last === undefined
+            ? undefined
+            : `${formatRange(first.starts_on, last.ends_on)} · ${String(rows.length)} ${
+                rows.length === 1 ? 'sprint' : 'sprints'
+              }`
+        }
       />
 
-      {/* Kept out of the header band rather than deleted with it: a Gantt
-          normally implies per-task bars, and their absence here is a decision
-          (D-014, D-040) rather than an omission. It belongs with the chart it
-          explains, not in a header that has to stay one line.
-
-          The second sentence is the part that earns its place. LAI-426 built
-          the design's row-per-task version and it had to be reverted: a task
-          belongs to exactly one sprint, so every bar in a sprint came out the
-          same length — 17 bars, 2 distinct geometries. **A constraint a reader
-          cannot see reads as a bug**, so the screen says outright why there is
-          no bar per task rather than leaving them to infer one is missing. */}
-      <p className="timeline-sub">
-        One row per task. A <strong>solid</strong> bar is what happened, from the day work started
-        to the day it finished. An <strong>outline</strong> is the sprint a task sits in — a plan,
-        not a measurement.
-      </p>
-
-      {/*
-        The task track (D-049, LAI-434).
-
-        **A solid bar is something that happened; an outline is somewhere a task
-        was put.** That distinction is the whole of what survives D-014, so it is
-        carried by *shape* — a filled bar against a hatched outline — and not by
-        colour alone: a colour-only difference disappears for a colour-blind
-        reader and in a screenshot.
-      */}
-      {/*
-        The sprint chips (LAI-436, re-homed for the design).
-
-        **One chip row for the whole product.** The design derives the board's
-        and the timeline's from the same `sprintChips` (prototype lines 151 and
-        209), and this screen had grown a second implementation of it — its own
-        markup, its own selection state, its own idea of what a fraction is.
-        It is now the board's component in the band above, which is where the
-        design puts it, and selection is `?sprint=` for both.
-      */}
-      {rows.length > 0 && (
-        <SpaceBand>
-          <SprintStrip
-            sprints={rows.map((r) => r.sprint)}
-            tasks={allTasks}
-            selected={picked}
-            onSelect={setPicked}
-          />
-        </SpaceBand>
-      )}
-
-      {summary !== undefined && shown !== undefined && (
-        <div className="tl-strip">
-          <span className="tl-strip-name">{shown.sprint.name}</span>
-          <span className="tl-stat">
-            DONE <b>{summary.done}</b>/{summary.total}
-          </span>
-          <span className="tl-stat tl-stat-blocked">
-            BLOCKED <b>{summary.blocked}</b>
-          </span>
-          <span className="tl-stat">
-            WIP <b>{summary.wip}</b>
-          </span>
-          {/* Three sentences, not one clamped number — see `SprintCountdown`. */}
-          <span className="tl-stat">
-            {summary.countdown.kind === 'left' && (
-              <>
-                DAYS LEFT <b>{summary.countdown.days}</b>
-              </>
-            )}
-            {summary.countdown.kind === 'starts_in' && (
-              <>
-                STARTS IN <b>{summary.countdown.days}</b>d
-              </>
-            )}
-            {summary.countdown.kind === 'ended' && (
-              <>
-                ENDED <b>{summary.countdown.days}</b>d ago
-              </>
-            )}
-          </span>
+      <div className="tlx-toolbar">
+        <button
+          type="button"
+          className="tlx-tool"
+          onClick={() => {
+            scrollToDay(todayIndex, 1 / 3);
+          }}
+        >
+          Today
+        </button>
+        <div className="tlx-zoom" role="group" aria-label="Zoom">
+          {ZOOMS.map((z) => (
+            <button
+              key={z}
+              type="button"
+              className={z === zoom ? 'tlx-zoom-option tlx-zoom-on' : 'tlx-zoom-option'}
+              aria-pressed={z === zoom}
+              onClick={() => {
+                setZoom(z);
+              }}
+            >
+              {ZOOM_LABELS[z]}
+            </button>
+          ))}
         </div>
-      )}
+        <span className="tlx-toolbar-spacer" />
+        <button
+          type="button"
+          className="tlx-tool"
+          onClick={() => {
+            setOpen(allOpen ? new Set() : new Set(rows.map((r) => r.id)));
+          }}
+        >
+          {allOpen ? 'Collapse all' : 'Expand all'}
+        </button>
+      </div>
 
-      <div className="tl-grid">
-        {/*
-          **One today line for the whole card** (prototype line 530: the header
-          pill and the body rule are drawn from the same `todayPre`).
-
-          It was two — one in the header, one over the rows — and they landed
-          12px apart, because the header measures the axis and the body measures
-          the axis *plus* the task column. Two markers for one fact will always
-          find a way to disagree; this is the fact, drawn once, with the pill at
-          the top where the design puts it.
-        */}
-        {today.on === 'axis' && (
-          <div
-            className="tl-today"
-            style={{
-              left: `calc(var(--tl-label) + (100% - var(--tl-label)) * ${String(today.percent / 100)})`,
-            }}
-            role="presentation"
-          >
-            <span className="tl-today-label">TODAY · {todayLabel}</span>
-          </div>
-        )}
-
-        <div className="tl-head">
-          <div className="tl-head-label">TASK</div>
-          <div className="tl-head-axis">
-            <div className="timeline-months" aria-hidden="true">
-              {bands.map((band) => (
-                <div key={band.key} className="timeline-month" style={{ flexGrow: band.days }}>
-                  <span className="timeline-month-label">{band.label}</span>
-                </div>
-              ))}
-            </div>
-            <div className="tl-bands">
-              {segments.map((segment, i) =>
-                segment.kind === 'gap' ? (
-                  <div
-                    key={`g${String(i)}`}
-                    className="tl-band-gap"
-                    style={{ flexGrow: segment.days }}
-                  />
-                ) : (
-                  <div
-                    key={segment.sprint.id}
-                    className={isCurrent(segment.sprint, now) ? 'tl-band tl-band-now' : 'tl-band'}
-                    style={{ flexGrow: segment.days }}
+      <div
+        ref={scroller}
+        className="tlx"
+        style={chartStyle}
+        onScroll={(event) => {
+          const el = event.currentTarget;
+          centreDay.current = (el.scrollLeft + viewWidth(el) / 2) / dayWidth;
+        }}
+      >
+        <div className="tlx-inner">
+          {/* The header: sticky to the top, its corner sticky both ways. */}
+          <div className="tlx-row tlx-head">
+            <div className="tlx-side tlx-corner">Sprint</div>
+            <div className="tlx-track tlx-scale" aria-hidden="true">
+              <div className="tlx-scale-row">
+                {top.map((band) => (
+                  <span
+                    key={band.key}
+                    className="tlx-scale-band"
+                    style={{ left: band.start * dayWidth, width: band.days * dayWidth }}
                   >
-                    <span className="tl-band-name">{segment.sprint.name}</span>
-                    <span className="tl-band-meta">
-                      {(() => {
-                        const row = byId.get(segment.sprint.id);
-                        return row === undefined || row.progress.total === 0
-                          ? 'no tasks'
-                          : `${String(row.progress.done)}/${String(row.progress.total)}`;
-                      })()}
-                    </span>
-                  </div>
-                ),
-              )}
+                    <span className="tlx-scale-label">{band.label}</span>
+                  </span>
+                ))}
+              </div>
+              <div className="tlx-scale-row tlx-scale-lower">
+                {lower === undefined
+                  ? ticks.map((tick) => (
+                      <span
+                        key={tick.index}
+                        className="tlx-scale-tick"
+                        style={{ left: tick.index * dayWidth }}
+                      >
+                        {zoom === 'weeks' || dayWidth * 7 >= 28 ? tick.label : ''}
+                      </span>
+                    ))
+                  : lower.map((band) => (
+                      <span
+                        key={band.key}
+                        className="tlx-scale-tick"
+                        style={{ left: band.start * dayWidth }}
+                      >
+                        {band.label}
+                      </span>
+                    ))}
+              </div>
+              <span className="tlx-today-pill" style={{ left: todayX }}>
+                TODAY · {todayLabel}
+              </span>
             </div>
           </div>
-        </div>
 
-        <div className="tl-body">
-          {drawn.length === 0 && (
-            <p className="timeline-task-empty">
-              No task has a sprint or a recorded start, so there is nothing to place on the axis.
-            </p>
-          )}
+          {/* One line for today, under the header and the sprint column. */}
+          <div
+            className="tlx-today"
+            style={{ left: `calc(var(--tlx-side) + ${String(todayX)}px)` }}
+          />
 
-          {drawn.map(({ task, bar }) => {
-            const who = task.assignee_id === null ? undefined : members.get(task.assignee_id);
-            const ink = avatarColor(task.assignee_id ?? task.id, theme);
-            const isBlocked = blockedState(task, byTaskId) === true;
+          {rows.map((sprint, index) => {
+            const phase = sprintPhase(sprint, now);
+            const span = sprintSpan(range, sprint);
+            const loaded = timeline.tasks(sprint.id);
+            const tasks = loaded?.status === 'ready' ? loaded.tasks : undefined;
+            /*
+             * Blocked by `board-derive`'s rule, against this sprint's tasks: a
+             * blocker in another sprint is not loaded, so it cannot be judged
+             * and is not counted — the rule's own "unknown", not a guess.
+             */
+            const byTaskId = byIdIndex(tasks ?? []);
+            const blocked = (tasks ?? []).filter((t) => blockedState(t, byTaskId) === true).length;
+            const summary = sprintSummary(tasks ?? [], blocked, sprint, now);
+            const done = tasks === undefined ? undefined : progressFor(tasks);
+            const isOpen = open.has(sprint.id);
+            const key = `S${String(index + 1)}`;
+            const tasksId = `tlx-tasks-${sprint.id}`;
+            const progress =
+              done === undefined
+                ? undefined
+                : done.total === 0
+                  ? 'no tasks'
+                  : `${String(done.done)}/${String(done.total)}`;
 
             return (
-              <div key={task.id} className="tl-row">
-                <div className="tl-row-label">
-                  <span
-                    className="tl-avatar"
-                    style={{ background: ink.background, color: ink.foreground }}
-                    title={who?.name ?? 'Unassigned'}
-                  >
-                    {who === undefined ? '?' : initials(who.name)}
-                  </span>
-                  <span className="tl-lines">
-                    <span className="tl-title" title={task.title}>
-                      {task.title}
-                    </span>
-                    <span className="tl-meta">
-                      <span className="tl-key">{task.key}</span>
-                      {/* `In progress`, not `in_progress` — the enum is the
-                          database's word for it, and the design writes the
-                          lane's name. */}
-                      <span className={`timeline-task-status timeline-task-${task.status}`}>
-                        {statusLabel(task.status)}
+              <div key={sprint.id} className={`tlx-group tlx-${phase}`} data-sprint-id={sprint.id}>
+                <div className="tlx-row tlx-sprint">
+                  <div className="tlx-side">
+                    <button
+                      type="button"
+                      className="tlx-chevron"
+                      aria-expanded={isOpen}
+                      aria-controls={tasksId}
+                      onClick={() => {
+                        toggle(sprint.id);
+                      }}
+                    >
+                      <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+                        <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                      <span className="visually-hidden">
+                        {isOpen ? 'Hide' : 'Show'} the tasks in {sprint.name}
                       </span>
-                      {/*
-                    The row says which dates the bar is. A sprint's range
-                    presented in the same voice as a measured one is the
-                    misreading D-014 exists to prevent, and it is invisible once
-                    the bar is drawn.
-                  */}
-                      <span className={bar.fromSprint ? 'tl-dates tl-dates-planned' : 'tl-dates'}>
-                        {formatRange(bar.from, bar.to)}
-                        {bar.fromSprint && <span className="tl-planned-note"> · sprint</span>}
+                    </button>
+                    <span className="tlx-sprint-key">{key}</span>
+                    <span className="tlx-sprint-text">
+                      <span className="tlx-sprint-name" title={sprint.goal ?? sprint.name}>
+                        {sprint.name}
+                      </span>
+                      <span className="tlx-sprint-meta">
+                        {formatRange(sprint.starts_on, sprint.ends_on)} ·{' '}
+                        {countdownText(summary.countdown)}
                       </span>
                     </span>
-                  </span>
+                    <span className={`tlx-lozenge tlx-lozenge-${phase}`}>{PHASE_LABEL[phase]}</span>
+                  </div>
+
+                  <div className="tlx-track">
+                    <button
+                      type="button"
+                      className={`tlx-bar tlx-bar-${phase}`}
+                      style={{ left: span.start * dayWidth, width: span.days * dayWidth }}
+                      title={`${key} ${sprint.name} · ${formatRange(sprint.starts_on, sprint.ends_on)}${
+                        progress === undefined ? '' : ` · ${progress} done`
+                      }`}
+                      aria-expanded={isOpen}
+                      aria-controls={tasksId}
+                      onClick={() => {
+                        toggle(sprint.id);
+                      }}
+                    >
+                      {done !== undefined && (
+                        <span
+                          className="tlx-bar-fill"
+                          style={{ width: `${String(done.percent)}%` }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="tlx-bar-name">
+                        <b>{key}</b> {sprint.name}
+                      </span>
+                      {progress !== undefined && <span className="tlx-bar-count">{progress}</span>}
+                      {blocked > 0 && <span className="tlx-bar-blocked">{blocked} blocked</span>}
+                    </button>
+                  </div>
                 </div>
 
-                <div className="tl-track">
-                  <div className="tl-lead" style={{ flexGrow: bar.leadDays }} />
-                  <div
-                    className={[
-                      'tl-bar',
-                      `tl-bar-${bar.kind}`,
-                      `tl-bar-${task.status}`,
-                      isBlocked ? 'tl-bar-blocked' : '',
-                    ]
-                      .filter((c) => c !== '')
-                      .join(' ')}
-                    style={{ flexGrow: bar.solidDays }}
-                    title={`${task.key} · ${formatRange(bar.from, bar.to)}${
-                      bar.fromSprint ? ' (the sprint, not the task)' : ''
-                    }`}
-                  >
-                    {/*
-                      **The key rides inside the bar.** The design writes it
-                      there (prototype line 563) and it is what makes a track of
-                      bars readable without tracing each one back to its row —
-                      ours drew an unlabelled block and a dot.
-                    */}
-                    <span className="tl-bar-key">{task.key}</span>
-                    {isBlocked && (
-                      <span className="tl-bar-blocked-mark">
-                        {/*
-                          **The dot is the non-colour marker** the greyscale
-                          guard checks for, and it is the part that survives a
-                          bar too narrow for any text. The lock and the blocker's
-                          key are the design's addition beside it, not a
-                          replacement for it.
-                        */}
-                        <span className="tl-blocked-dot" aria-hidden="true" />
-                        <LockIcon />
-                        {task.blocked_by
-                          .map((id) => byTaskId.get(id)?.key)
-                          .filter((k): k is string => k !== undefined)
-                          .join(', ')}
-                      </span>
+                {isOpen && (
+                  <div id={tasksId} role="group" aria-label={`Tasks in ${sprint.name}`}>
+                    {tasks === undefined && (
+                      <div className="tlx-row tlx-task">
+                        <div className="tlx-side tlx-task-side tlx-task-none" role="status">
+                          {loaded?.status === 'error'
+                            ? 'Could not load this sprint’s tasks. Close and open it to retry.'
+                            : 'Loading tasks…'}
+                        </div>
+                        <div className="tlx-track" />
+                      </div>
                     )}
-                    <span className="visually-hidden">
-                      {bar.fromSprint ? 'planned, from its sprint' : 'actual'}
-                      {isBlocked ? ', blocked' : ''}
-                    </span>
+                    {tasks?.length === 0 && (
+                      <div className="tlx-row tlx-task">
+                        <div className="tlx-side tlx-task-side tlx-task-none">
+                          No tasks in this sprint.
+                        </div>
+                        <div className="tlx-track" />
+                      </div>
+                    )}
+                    {tasks?.map((task) => (
+                      <TaskRow
+                        key={task.id}
+                        task={task}
+                        who={task.assignee_id === null ? undefined : members.get(task.assignee_id)}
+                        ink={avatarColor(task.assignee_id ?? task.id, theme)}
+                        blocked={blockedState(task, byTaskId) === true}
+                        span={{ left: span.start * dayWidth, width: span.days * dayWidth }}
+                        onOpen={openTask}
+                      />
+                    ))}
                   </div>
-                  {bar.remainderDays > 0 && (
-                    <div className="tl-remainder" style={{ flexGrow: bar.remainderDays }} />
-                  )}
-                  <div className="tl-trail" style={{ flexGrow: bar.trailDays }} />
-                </div>
+                )}
               </div>
             );
           })}
         </div>
       </div>
 
-      {/*
-        The design's legend (prototype lines 574–579). It names what each fill
-        means and what the grey columns between sprints are — the one thing on
-        this chart a reader cannot work out by looking.
-      */}
-      <div className="tl-legend">
-        <span className="tl-legend-item">
-          <span className="tl-swatch tl-swatch-flight" aria-hidden="true" />
-          in flight
+      <div className="tlx-legend">
+        <span className="tlx-legend-item">
+          <span className="tlx-swatch tlx-bar-current" aria-hidden="true" />
+          active
         </span>
-        <span className="tl-legend-item">
-          <span className="tl-swatch tl-swatch-blocked" aria-hidden="true" />
-          blocked
+        <span className="tlx-legend-item">
+          <span className="tlx-swatch tlx-bar-future" aria-hidden="true" />
+          planned
         </span>
-        <span className="tl-legend-item">
-          <span className="tl-swatch tl-swatch-done" aria-hidden="true" />
-          done
+        <span className="tlx-legend-item">
+          <span className="tlx-swatch tlx-bar-past" aria-hidden="true" />
+          ended
         </span>
-        <span className="tl-legend-item tl-legend-today">
-          <span className="tl-swatch tl-swatch-today" aria-hidden="true" />
-          today
-        </span>
-        <span className="tl-legend-note">
-          Grey columns are the gap between sprints. Click a row to open it.
+        <span className="tlx-legend-note">
+          A bar is a sprint; its fill is the share done. Open a sprint to see its tasks.
         </span>
       </div>
 
-      {today.on !== 'axis' && (
-        <p className="timeline-note" role="status">
-          {/* The axis is not stretched to reach today — that would squash every
-              bar to accommodate empty months. Saying where today is instead. */}
-          Today is {today.on === 'before' ? 'before' : 'after'} every sprint on this timeline.
-        </p>
-      )}
-
-      {/* §11.4.3's unscheduled tray. Read-only here: dragging into a sprint is
-          the Sprints screen's "Add tasks", and duplicating it is out of scope. */}
-      <section className="timeline-tray" aria-label="Unscheduled tasks">
-        <h2 className="timeline-tray-title">
-          Unscheduled <span className="timeline-tray-count">{unassigned.length}</span>
-        </h2>
-        {unassigned.length === 0 ? (
-          <p className="timeline-task-empty">
-            {/* "Every task is in a sprint" is vacuously true of a project with no
-                tasks at all, and reads as a claim about work that does not exist.
-                Two messages because they mean different things to the reader. */}
-            {rows.every((r) => r.tasks.length === 0)
-              ? 'This project has no tasks yet.'
-              : 'Every task is in a sprint.'}
-          </p>
-        ) : (
-          <ul className="timeline-tasks">
-            {unassigned.map((task) => (
-              <li key={task.id} className="timeline-task">
-                <span className="timeline-task-key">{task.key}</span>
-                <span className="timeline-task-title">{task.title}</span>
-                <span className={`timeline-task-status timeline-task-${task.status}`}>
-                  {task.status}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {tray}
     </div>
+  );
+}
+
+/**
+ * A task inside an open sprint: **a row, not a bar** (§11.4.3, D-074). The
+ * track behind it shows its sprint's span faintly, so the eye can still tell
+ * which bar it belongs to.
+ */
+function TaskRow({
+  task,
+  who,
+  ink,
+  blocked,
+  span,
+  onOpen,
+}: {
+  readonly task: Task;
+  readonly who: Member | undefined;
+  readonly ink: { readonly background: string; readonly foreground: string };
+  readonly blocked: boolean;
+  readonly span: { readonly left: number; readonly width: number };
+  readonly onOpen: (taskId: string) => void;
+}) {
+  return (
+    <div className="tlx-row tlx-task" data-task-id={task.id}>
+      <div className="tlx-side tlx-task-side">
+        <button
+          type="button"
+          className="tlx-task-open"
+          onClick={() => {
+            onOpen(task.id);
+          }}
+        >
+          <span className="tlx-task-key">{task.key}</span>
+          <span className="tlx-task-title" title={task.title}>
+            {task.title}
+          </span>
+        </button>
+        {blocked && <span className="tlx-task-blocked">Blocked</span>}
+        {/* `In progress`, not `in_progress`: the lane's word, not the enum's. */}
+        <span className={`timeline-task-status timeline-task-${task.status}`}>
+          {statusLabel(task.status)}
+        </span>
+        <span
+          className="tlx-avatar"
+          style={{ background: ink.background, color: ink.foreground }}
+          title={who?.name ?? 'Unassigned'}
+        >
+          {who === undefined ? '–' : initials(who.name)}
+        </span>
+      </div>
+      <div className="tlx-track">
+        <span className="tlx-span" style={span} aria-hidden="true" />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * §11.4.3's unscheduled tray: tasks in no sprint. **A disclosure that fetches
+ * on opening** (`?sprint=none`) — its list is as long as the backlog, and the
+ * chart above it needs none of it. Read-only: moving a task into a sprint is
+ * the Sprints screen's "Add tasks".
+ */
+function UnscheduledTray({
+  open,
+  onToggle,
+  load,
+}: {
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly load: TasksLoadView | undefined;
+}) {
+  const tasks = load?.status === 'ready' ? load.tasks : undefined;
+  return (
+    <section className="timeline-tray" aria-label="Unscheduled tasks">
+      <h2 className="timeline-tray-title">
+        <button
+          type="button"
+          className="timeline-tray-toggle"
+          aria-expanded={open}
+          aria-controls="timeline-tray-list"
+          onClick={onToggle}
+        >
+          <svg viewBox="0 0 24 24" fill="none" strokeWidth="2.4" aria-hidden="true">
+            <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Unscheduled
+          {tasks !== undefined && <span className="timeline-tray-count">{tasks.length}</span>}
+        </button>
+      </h2>
+      {open && (
+        <div id="timeline-tray-list">
+          {tasks === undefined ? (
+            <p className="timeline-task-empty" role="status">
+              {load?.status === 'error'
+                ? 'Could not load the unscheduled tasks. Close and open this to retry.'
+                : 'Loading tasks…'}
+            </p>
+          ) : tasks.length === 0 ? (
+            <p className="timeline-task-empty">Every task is in a sprint.</p>
+          ) : (
+            <ul className="timeline-tasks">
+              {tasks.map((task) => (
+                <li key={task.id} className="timeline-task">
+                  <span className="timeline-task-key">{task.key}</span>
+                  <span className="timeline-task-title">{task.title}</span>
+                  <span className={`timeline-task-status timeline-task-${task.status}`}>
+                    {statusLabel(task.status)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
   );
 }

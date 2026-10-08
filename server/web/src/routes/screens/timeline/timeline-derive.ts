@@ -2,34 +2,23 @@ import type { Sprint } from '../../../api/sprints.ts';
 import { daysLeft } from '../sprints/sprint-derive.ts';
 
 /**
- * The timeline's layout arithmetic (SPEC §11.4.3, D-014 — LAI-084).
+ * The timeline's layout arithmetic (SPEC §11.4.3, LAI-721).
  *
- * ## Why there is no layout solver here
+ * ## One row per sprint, Jira's way
  *
- * §4.15 forbids two sprints of a project from overlapping, and the server
- * enforces it under a write lock. That single rule is what makes this file
- * short: the bars go on **one track** in date order with gaps between them, and
- * there is no lane-packing, no collision resolution and no critical path. D-014
- * chose sprints as the unit precisely to buy that.
+ * The owner, 2026-10-08: *"by the sprints, like Jira … I don't want the tasks
+ * in time."* So the chart is §11.4.3 as written — **each sprint is one bar**,
+ * and a sprint opens to list its tasks, which have no bars of their own. D-074
+ * withdraws D-049's row per task.
  *
- * ## Tasks get bars, and where each one comes from is the whole point
+ * ## A pixel scale, because the axis scrolls
  *
- * **D-049 overturned D-040.** Until LAI-126 landed there were no per-task dates
- * to draw, so the only honest bar was a sprint's — that was D-040 and it was
- * right on the day. `TaskView` now carries `started_at` and `completed_at`,
- * stamped on the first entry into `in_progress` and never overwritten, so a
- * finished task's bar is a **measurement** rather than a plan.
- *
- * What survives of D-014 is one rule, and it is the only thing in this file
- * that is not arithmetic:
- *
- * > **Laika never asserts a date it was not told.**
- *
- * So a bar is `actual` only when both its ends were measured. Everything else
- * falls back to the sprint's range and is marked `planned`, which the screen
- * draws as an outline — *a solid bar is something that happened; an outline is
- * somewhere a task was put*. A task with neither goes to the unscheduled tray
- * and gets no bar at all.
+ * The old axis squeezed every day into the card's width with flex weights, so
+ * eight months of sprints came out a few pixels a day. Jira's timeline does the
+ * opposite: a **zoom** fixes how wide a day is, and the axis scrolls sideways.
+ * So positions here are day indexes, and the screen multiplies by
+ * {@link DAY_WIDTH}. Sprints of a project cannot overlap (§4.15), so every bar
+ * is a plain span on its own row — no packing, no solver.
  */
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -39,6 +28,11 @@ export function startOfDay(ms: number): number {
   return Math.floor(ms / DAY) * DAY;
 }
 
+/** Inclusive day count between two day-starts. */
+function days(from: number, to: number): number {
+  return Math.round((to - from) / DAY) + 1;
+}
+
 export interface TimelineRange {
   readonly from: number;
   readonly to: number;
@@ -46,165 +40,147 @@ export interface TimelineRange {
   readonly days: number;
 }
 
+/* ------------------------------------------------------------------- zoom */
+
+export const ZOOMS = ['weeks', 'months', 'quarters'] as const;
+export type Zoom = (typeof ZOOMS)[number];
+
+export const ZOOM_LABELS: Readonly<Record<Zoom, string>> = {
+  weeks: 'Weeks',
+  months: 'Months',
+  quarters: 'Quarters',
+};
+
 /**
- * The axis: first day of the earliest sprint to the last day of the latest.
- *
- * **Today does not stretch it.** A project whose next sprint starts in March
- * would otherwise get an axis mostly made of empty January, squashing every bar
- * to a sliver to accommodate a marker. Instead the axis stays the sprints, and
- * the screen says which side of it today falls on — see `todayPosition`. That is
- * a real trade and it is made here so it is visible.
+ * Pixels per day at each zoom. Weeks gives a day room for its own column;
+ * Months fits a two-week sprint in about 140px, a sprint name and a count;
+ * Quarters fits half a year on a laptop screen.
  */
-export function timelineRange(
-  sprints: readonly Sprint[],
-  /**
-   * Extra days the axis must cover — task actuals, from {@link taskActuals}.
-   *
-   * **The axis widens rather than the bars being clamped** (LAI-434). A task
-   * that started before the first sprint has to be drawn where it started;
-   * clipping it to the axis edge would show a start date nobody gave us, which
-   * is the one thing D-049 kept from D-014.
-   */
-  extra: readonly number[] = [],
-): TimelineRange | null {
-  if (sprints.length === 0 && extra.length === 0) return null;
+export const DAY_WIDTH: Readonly<Record<Zoom, number>> = {
+  weeks: 36,
+  months: 10,
+  quarters: 3.5,
+};
 
-  let from = Number.POSITIVE_INFINITY;
-  let to = Number.NEGATIVE_INFINITY;
+/** `?zoom=` — anything unknown is the default. */
+export function readZoom(raw: string | null): Zoom {
+  return (ZOOMS as readonly string[]).includes(raw ?? '') ? (raw as Zoom) : 'months';
+}
 
+/* ------------------------------------------------------------------ window */
+
+/**
+ * The days the chart draws: **whole calendar months** around every sprint and
+ * today, with at least a week of air on each side.
+ *
+ * Today is inside it on purpose. The squeezed axis kept today out so empty
+ * months would not shrink the bars; a scrolling axis has no such cost, and a
+ * Today button that cannot reach today is no button at all.
+ */
+export function chartWindow(sprints: readonly Sprint[], now: number): TimelineRange | null {
+  if (sprints.length === 0) return null;
+
+  let from = startOfDay(now);
+  let to = startOfDay(now);
   for (const sprint of sprints) {
     from = Math.min(from, startOfDay(sprint.starts_on));
     to = Math.max(to, startOfDay(sprint.ends_on));
   }
 
-  for (const at of extra) {
-    from = Math.min(from, startOfDay(at));
-    to = Math.max(to, startOfDay(at));
-  }
+  const first = new Date(from - 7 * DAY);
+  const last = new Date(to + 7 * DAY);
+  const start = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1);
+  // Day 0 of the next month is the last day of this one.
+  const end = Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0);
 
-  // `ends_on` is inclusive (§4.15), so the last day counts.
-  return { from, to, days: Math.round((to - from) / DAY) + 1 };
+  return { from: start, to: end, days: days(start, end) };
 }
 
-export type TimelineSegment =
-  | { readonly kind: 'gap'; readonly days: number }
-  | { readonly kind: 'sprint'; readonly days: number; readonly sprint: Sprint };
-
-/**
- * The single track: sprints in date order, with the empty stretches between
- * them as explicit gap segments.
- *
- * Gaps are segments rather than margins so the whole track is one flex row whose
- * children's `flex-grow` are day counts. That makes the drawing proportional
- * with no absolute positioning and no width maths in the component — and it
- * stays correct at any container width, which absolute pixel offsets do not.
- *
- * Overlapping sprints cannot occur (§4.15). If two ever did, they would render
- * as adjacent rather than stacked — wrong, but visibly wrong, and the server
- * would have had to break first.
- */
-export function toSegments(sprints: readonly Sprint[], range: TimelineRange): TimelineSegment[] {
-  const ordered = [...sprints].sort(
-    (a, b) => a.starts_on - b.starts_on || a.id.localeCompare(b.id),
-  );
-
-  const segments: TimelineSegment[] = [];
-  let cursor = range.from;
-
-  for (const sprint of ordered) {
-    const starts = startOfDay(sprint.starts_on);
-    const ends = startOfDay(sprint.ends_on);
-
-    const gap = Math.round((starts - cursor) / DAY);
-    if (gap > 0) segments.push({ kind: 'gap', days: gap });
-
-    segments.push({
-      kind: 'sprint',
-      days: Math.round((ends - starts) / DAY) + 1,
-      sprint,
-    });
-
-    cursor = ends + DAY;
-  }
-
-  // Unreachable for the range `timelineRange` produces — it ends at the last
-  // sprint's last day, so `cursor` lands exactly on `range.to + 1`. Kept because
-  // this function takes the range as an argument and should be total over any
-  // of them; a caller passing a wider window (a fixed quarter, say) must not get
-  // a track that stops short of its own axis. Exercised by its own test rather
-  // than left as a branch nobody has run.
-  const tail = Math.round((range.to + DAY - cursor) / DAY);
-  if (tail > 0) segments.push({ kind: 'gap', days: tail });
-
-  return segments;
+/** Which day of the window `ms` falls on, counting from 0. */
+export function dayIndex(range: TimelineRange, ms: number): number {
+  return Math.round((startOfDay(ms) - range.from) / DAY);
 }
 
-export interface MonthBand {
-  readonly label: string;
-  readonly days: number;
+/** A sprint's bar: the day it starts on and how many days it covers, inclusive. */
+export function sprintSpan(
+  range: TimelineRange,
+  sprint: Sprint,
+): { readonly start: number; readonly days: number } {
+  return {
+    start: dayIndex(range, sprint.starts_on),
+    days: days(startOfDay(sprint.starts_on), startOfDay(sprint.ends_on)),
+  };
+}
+
+/* ----------------------------------------------------------------- header */
+
+export interface Band {
   /** Stable key — months repeat across years. */
   readonly key: string;
+  readonly label: string;
+  /** The first day of the band, as an index into the window. */
+  readonly start: number;
+  readonly days: number;
 }
 
 /**
- * The header row: one band per calendar month the axis touches, weighted by how
- * many of its days are actually on the axis.
- *
- * A month clipped by the range gets its real share, not a whole month's width —
- * otherwise the header stops lining up with the track underneath it, which is
- * the one thing a date axis has to get right.
+ * One band per calendar month in the window. `short` is `Oct`, for the lower
+ * header row at Quarters; otherwise `Oct 2026`.
  */
-export function monthBands(range: TimelineRange): MonthBand[] {
-  const bands: MonthBand[] = [];
+export function monthBands(range: TimelineRange, short = false): Band[] {
+  return bands(range, (date) => ({
+    key: `${String(date.getUTCFullYear())}-${String(date.getUTCMonth())}`,
+    label: date.toLocaleDateString('en-GB', {
+      timeZone: 'UTC',
+      month: 'short',
+      ...(short ? {} : { year: 'numeric' }),
+    }),
+  }));
+}
 
+/** One band per calendar quarter in the window: `Q4 2026`. */
+export function quarterBands(range: TimelineRange): Band[] {
+  return bands(range, (date) => {
+    const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
+    const year = String(date.getUTCFullYear());
+    return { key: `${year}-Q${String(quarter)}`, label: `Q${String(quarter)} ${year}` };
+  });
+}
+
+function bands(
+  range: TimelineRange,
+  name: (date: Date) => { readonly key: string; readonly label: string },
+): Band[] {
+  const out: Band[] = [];
+  for (let i = 0; i < range.days; i += 1) {
+    const { key, label } = name(new Date(range.from + i * DAY));
+    const last = out[out.length - 1];
+    if (last?.key === key) {
+      out[out.length - 1] = { ...last, days: last.days + 1 };
+    } else {
+      out.push({ key, label, start: i, days: 1 });
+    }
+  }
+  return out;
+}
+
+export interface Tick {
+  readonly index: number;
+  /** `5` — the day of the month of a Monday. */
+  readonly label: string;
+}
+
+/** Every Monday in the window: the week lines, and the lower header row. */
+export function weekTicks(range: TimelineRange): Tick[] {
+  const out: Tick[] = [];
   for (let i = 0; i < range.days; i += 1) {
     const date = new Date(range.from + i * DAY);
-    const key = `${String(date.getUTCFullYear())}-${String(date.getUTCMonth())}`;
-    const last = bands[bands.length - 1];
-
-    if (last?.key === key) {
-      bands[bands.length - 1] = { ...last, days: last.days + 1 };
-      continue;
-    }
-
-    bands.push({
-      key,
-      days: 1,
-      label: date.toLocaleDateString('en-GB', {
-        timeZone: 'UTC',
-        month: 'short',
-        year: 'numeric',
-      }),
-    });
+    if (date.getUTCDay() === 1) out.push({ index: i, label: String(date.getUTCDate()) });
   }
-
-  return bands;
+  return out;
 }
 
-export type TodayPosition =
-  | { readonly on: 'axis'; readonly percent: number }
-  | { readonly on: 'before' }
-  | { readonly on: 'after' };
-
-/**
- * Where to draw the today marker, or which side of the axis today falls on.
- *
- * Returning a discriminated union rather than `number | null` so the screen has
- * to say something in the outside case. "Today is not on this axis" and "today
- * is three months after the last sprint" are different messages, and a `null`
- * would have let both collapse into drawing nothing.
- */
-export function todayPosition(range: TimelineRange, now: number): TodayPosition {
-  const today = startOfDay(now);
-
-  if (today < range.from) return { on: 'before' };
-  if (today > range.to) return { on: 'after' };
-
-  // Centre of the day's column: a marker on the boundary reads as belonging to
-  // the day on either side of it.
-  const index = Math.round((today - range.from) / DAY);
-  return { on: 'axis', percent: ((index + 0.5) / range.days) * 100 };
-}
+/* ------------------------------------------------------------ sprint state */
 
 /** §11.4.3: "Sprints entirely in the past are dimmed, not hidden." */
 export function isPast(sprint: Sprint, now: number): boolean {
@@ -217,124 +193,18 @@ export function isCurrent(sprint: Sprint, now: number): boolean {
   return today >= startOfDay(sprint.starts_on) && today <= startOfDay(sprint.ends_on);
 }
 
-/** Where a bar's extent came from — and therefore how it must be drawn. */
-export type BarKind =
-  /** Both ends measured. Drawn solid. */
-  | 'actual'
-  /** Started for real, still running: measured up to now, then the sprint. */
-  | 'partial'
-  /** Nothing measured. The sprint someone put it in. Drawn as an outline. */
-  | 'planned';
-
-export interface TaskBar {
-  readonly kind: BarKind;
-  /** Day counts across the axis; they sum to `range.days`. */
-  readonly leadDays: number;
-  /** The measured part, or the whole outline when `kind` is `planned`. */
-  readonly solidDays: number;
-  /** `partial` only: now → the sprint's end. Zero otherwise. */
-  readonly remainderDays: number;
-  readonly trailDays: number;
-  /** The extent the bar claims, for the row's label. */
-  readonly from: number;
-  readonly to: number;
-  /**
-   * True when `from`/`to` came from the sprint rather than the task.
-   *
-   * The row **must** say so. Presenting a sprint's range in the same voice as a
-   * measured one is the misreading D-014 exists to prevent, and it is invisible
-   * once the bar is drawn.
-   */
-  readonly fromSprint: boolean;
-}
-
-/** The dates a task can contribute to the axis — actuals only, never a plan. */
-export function taskActuals(tasks: readonly TimelineTask[]): number[] {
-  const out: number[] = [];
-  for (const task of tasks) {
-    if (task.started_at !== null) out.push(startOfDay(task.started_at));
-    if (task.completed_at !== null) out.push(startOfDay(task.completed_at));
-  }
-  return out;
-}
-
-/** The fields of a task this module reads. Structural, so tests need no fixture. */
-export interface TimelineTask {
-  readonly status: string;
-  readonly started_at: number | null;
-  readonly completed_at: number | null;
-}
-
 /**
- * Where a task's bar sits, or `undefined` when it has earned no bar.
- *
- * The table is D-049's, and the fallback is the load-bearing part: **an
- * unmeasured end demotes the whole bar to `planned`.** A `done` task with a
- * `started_at` and no `completed_at` is legacy data, not a measurement of when
- * it finished, so it is drawn as a plan rather than as a bar ending today.
+ * Where a sprint stands, **by its dates**. The stored status is a label people
+ * forget to move; a sprint left `active` after its end is ordinary, and the
+ * chart is about time.
  */
-export function taskBar(
-  task: TimelineTask,
-  sprint: Sprint | undefined,
-  range: TimelineRange,
-  now: number,
-): TaskBar | undefined {
-  const started = task.started_at === null ? undefined : startOfDay(task.started_at);
-  const completed = task.completed_at === null ? undefined : startOfDay(task.completed_at);
-
-  if (task.status === 'done' && started !== undefined && completed !== undefined) {
-    return span(range, started, completed, 'actual', 0, false);
-  }
-
-  if (task.status === 'in_progress' && started !== undefined) {
-    const today = startOfDay(now);
-    const solidTo = today < started ? started : today;
-    // The remainder is a plan, so it only exists where a plan does.
-    const plannedEnd = sprint === undefined ? solidTo : startOfDay(sprint.ends_on);
-    const remainder = Math.max(0, days(solidTo, plannedEnd) - 1);
-    return span(range, started, solidTo, 'partial', remainder, false);
-  }
-
-  if (sprint !== undefined) {
-    return span(
-      range,
-      startOfDay(sprint.starts_on),
-      startOfDay(sprint.ends_on),
-      'planned',
-      0,
-      true,
-    );
-  }
-
-  // No measurement and nowhere it was put. The tray, and no bar.
-  return undefined;
-}
-
-/** Inclusive day count between two day-starts. */
-function days(from: number, to: number): number {
-  return Math.round((to - from) / DAY) + 1;
-}
-
-function span(
-  range: TimelineRange,
-  from: number,
-  to: number,
-  kind: BarKind,
-  remainderDays: number,
-  fromSprint: boolean,
-): TaskBar {
-  // Clamping would move a bar's start to the axis edge, which asserts a date
-  // nobody gave us. `timelineRange` is widened by `taskActuals` instead, so a
-  // bar that falls outside the axis is a bug rather than something to hide.
-  const leadDays = Math.max(0, days(range.from, from) - 1);
-  const solidDays = Math.max(1, days(from, to));
-  const trailDays = Math.max(0, range.days - leadDays - solidDays - remainderDays);
-
-  return { kind, leadDays, solidDays, remainderDays, trailDays, from, to, fromSprint };
+export function sprintPhase(sprint: Sprint, now: number): 'past' | 'current' | 'future' {
+  if (isCurrent(sprint, now)) return 'current';
+  return isPast(sprint, now) ? 'past' : 'future';
 }
 
 /**
- * What the strip's fourth stat says, and it is not always "days left".
+ * What a sprint row's countdown says, and it is not always "days left".
  *
  * LAI-434 clamped `daysLeft` at zero so a finished sprint could not show minus
  * seven. That was right and it is not enough once a sprint can be *selected*
