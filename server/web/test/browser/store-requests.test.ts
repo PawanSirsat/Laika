@@ -304,6 +304,9 @@ void describe('a live change (LAI-724, keeping LAI-707 and LAI-708)', () => {
       await h.page
         .locator('article.card[data-task-id="t3"][data-flash]')
         .waitFor({ timeout: 10_000 });
+      // Counted now, while the glow is on: it fades after `FLASH_MS` (3.6 s),
+      // and the settle below can outlast it (LAI-724 review, S2).
+      const glowing = await h.page.locator('article.card[data-flash]').count();
       await settle(seen, h.page, 2_000);
 
       const step = seen.slice(from);
@@ -316,11 +319,7 @@ void describe('a live change (LAI-724, keeping LAI-707 and LAI-708)', () => {
         step.filter((u) => u === '/api/v1/presence').length <= 1,
         `presence was re-read per frame: ${step.join(', ')}`,
       );
-      assert.equal(
-        await h.page.locator('article.card[data-flash]').count(),
-        1,
-        'the wrong card glowed',
-      );
+      assert.equal(glowing, 1, 'a card nobody changed glowed');
     } finally {
       await h.close();
     }
