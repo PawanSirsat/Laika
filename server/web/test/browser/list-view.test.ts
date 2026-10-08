@@ -505,6 +505,9 @@ void describe('a board larger than one page', () => {
       const note = h.page.locator('.board-truncated');
       await note.waitFor({ timeout: 10_000 });
       assert.match(await note.innerText(), /first 1 task/i);
+      // And it says what that means for a filter (LAI-724 review, S4b): the
+      // filter is applied to what loaded, so a match past the cap is missed.
+      assert.match(await note.innerText(), /filters apply only to these loaded tasks/i);
       // The note only exists once the loop has *ended* — `truncated` is set
       // after it — so reaching this line already proves the loop is bounded.
       // What is left to prove is that it ended at the cap, not early. (Not an
@@ -889,9 +892,8 @@ void describe('the Filter popover on the List (LAI-487)', () => {
       assert.deepEqual(await keysOnScreen(h), ['LC-6'], 'the blocked task is not the one shown');
 
       // Sprint — the same `?sprint=` the Board's strip writes. LC-1 is in no
-      // sprint and is no longer loaded, so LC-6's blocker **cannot be judged**:
-      // it stays, because hiding maybe-blocked work from "Blocked only" is the
-      // damaging error.
+      // sprint, so the filter hides it, but the board still holds the whole
+      // project (LAI-724): LC-6's blocker is judged open and LC-6 stays.
       await openFilter(h);
       await field(h, 'Sprint').selectOption('s1');
       await h.page.waitForURL(/sprint=s1/, { timeout: 10_000 });
@@ -924,6 +926,124 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         { timeout: 10_000 },
       );
       assert.equal(await badge(h), '0');
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **The window must hide what is outside it** (LAI-724 review, S1). The test
+   * above can only show the window keeps work inside it — every fixture task
+   * there was touched an hour ago — so this one adds a task last touched eight
+   * days ago that "Updated within 7d" must drop, beside three it must keep.
+   */
+  void test('Updated within drops work older than the window and keeps what is inside it', async () => {
+    const OLD = task({
+      id: 't20',
+      key: 'LC-20',
+      number: 20,
+      title: 'Untouched for eight days',
+      updated_at: Date.now() - 8 * 86_400_000,
+    });
+    const h = await open('/list?project=laika-core', {
+      ...FILTERABLE,
+      '/api/v1/projects/laika-core/tasks?limit=200': {
+        data: [OLD, BLOCKER, BLOCKED, DONE],
+        next_cursor: null,
+      },
+    });
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      assert.deepEqual(
+        await keysOnScreen(h),
+        ['LC-1', 'LC-20', 'LC-6', 'LC-9'],
+        'positive control: the old task is listed before the window applies',
+      );
+      await openFilter(h);
+      await field(h, 'Updated within').selectOption('7d');
+      await h.page.waitForURL(/updated=7d/, { timeout: 10_000 });
+      await h.page.waitForFunction(
+        () => document.querySelectorAll('.list tbody tr').length === 3,
+        undefined,
+        {
+          timeout: 5_000,
+        },
+      );
+      assert.deepEqual(
+        await keysOnScreen(h),
+        ['LC-1', 'LC-6', 'LC-9'],
+        'the window kept a task touched eight days ago, or dropped one touched an hour ago',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **A value the server would refuse is named, not drawn as an empty board**
+   * (LAI-724 review, S4a). Sent to the server, `?priority=p9` was a `400` and
+   * a malformed `?tag=` a `422`, and the board showed the error. Filtered in
+   * memory, the same URL matched nothing and looked like a project with no
+   * work. Now the value is ignored and named, with a way to remove it.
+   */
+  for (const [query, key, word] of [
+    ['priority=p9', 'priority', 'priority'],
+    ['tag=-not%20a%20tag', 'tag', 'label'],
+  ] as const) {
+    void test(`a ${word} the server would refuse is named and ignored (${query})`, async () => {
+      const h = await open(`/list?project=laika-core&${query}`, FILTERABLE);
+      try {
+        const notice = h.page.locator('.board-bad-filter');
+        await notice.waitFor({ timeout: 20_000 });
+        assert.match(await notice.innerText(), new RegExp(`not a valid ${word}`));
+        await h.page.locator('.list tbody tr').first().waitFor({ timeout: 10_000 });
+        assert.deepEqual(
+          await keysOnScreen(h),
+          ['LC-1', 'LC-6', 'LC-9'],
+          'a refused value still filtered the rows',
+        );
+        await notice.getByRole('button', { name: 'Remove it' }).click();
+        await h.page.waitForFunction((k) => !new URLSearchParams(location.search).has(k), key, {
+          timeout: 5_000,
+        });
+        assert.equal(await notice.count(), 0, 'the notice outlived the value');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  /*
+   * **Blockers are judged against the whole project** (LAI-724 review, nit).
+   * `byId` was the filtered set, so a task whose blocker sat outside the
+   * filter could only be "cannot tell" — and "Blocked only" kept it. LC-7's one
+   * blocker is LC-9, which is done and in no sprint: LC-7 is not blocked, and
+   * under `sprint=s1` it must go while LC-6 (blocked by the open LC-1) stays.
+   */
+  void test('Blocked only judges a blocker outside the filter, from the whole project', async () => {
+    const FREED = task({
+      id: 't7',
+      key: 'LC-7',
+      number: 7,
+      title: 'Freed by finished work',
+      sprint_id: 's1',
+      blocked_by: ['t9'],
+    });
+    const h = await open('/list?project=laika-core&sprint=s1&blocked=true', {
+      ...FILTERABLE,
+      '/api/v1/projects/laika-core/tasks?limit=200': {
+        data: [BLOCKER, BLOCKED, DONE, FREED],
+        next_cursor: null,
+      },
+    });
+    try {
+      await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      assert.deepEqual(
+        await keysOnScreen(h),
+        ['LC-6'],
+        'a task whose only blocker is done was kept as "cannot tell"',
+      );
     } finally {
       await h.close();
     }

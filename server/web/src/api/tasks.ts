@@ -174,8 +174,10 @@ export interface TaskFilter {
    */
   readonly sprint?: string | undefined;
   /**
-   * A tag name. Filtering happens **server-side** — `?tag=` has been accepted
-   * since LAI-079 — so the board never loads everything and filters in memory.
+   * A tag name. The server has accepted `?tag=` since LAI-079. **The board no
+   * longer sends it**: since LAI-724 it holds the project's whole task set and
+   * applies this filter in memory (`task-filter.ts`), meaning what the
+   * server's `?tag=` means.
    */
   readonly tag?: string | undefined;
   /**

@@ -37,6 +37,7 @@ import { everyPage } from '../../api/every-page.ts';
 import { TaskDetailPanel } from './board/TaskDetailPanel.tsx';
 import { TaskDrawerContent } from '../../components/drawer/TaskDrawer.tsx';
 import { useBoard, type BoardPresenter } from '../../api/use-board.ts';
+import { isPriority, isTagName } from '../../api/task-filter.ts';
 import {
   flashTasks,
   motionAllowed,
@@ -189,7 +190,16 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * predate the tab.
    */
   const view: BoardViewMode = path === '/list' || params.get('view') === 'list' ? 'list' : 'kanban';
-  const priority = (params.get('priority') ?? undefined) as TaskPriority | undefined;
+  /*
+   * **Checked against the server's own rules** (LAI-724 review, S4a). The
+   * server refused an unknown priority (`400`) or a malformed tag (`422`) and
+   * the board showed the error; filtered in memory, the same URL would match
+   * nothing and look like a board with no work. A bad value is ignored and
+   * named instead — see `badFilters` below.
+   */
+  const priorityParam = params.get('priority') ?? undefined;
+  const priority: TaskPriority | undefined =
+    priorityParam !== undefined && isPriority(priorityParam) ? priorityParam : undefined;
   const assignee = params.get('assignee') ?? undefined;
   const readyParam = params.get('ready');
   const ready = readyParam === null ? undefined : readyParam === 'true';
@@ -201,7 +211,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * `?tag=` — in the URL so it survives a reload and can be linked (LAI-081),
    * the same mechanism `?project=` and `?sprint=` already use.
    */
-  const tagScope = params.get('tag') ?? undefined;
+  const tagParam = params.get('tag') ?? undefined;
+  const tagScope = tagParam !== undefined && isTagName(tagParam) ? tagParam : undefined;
+  /** URL filter values the server would have refused, as `[key, value]`. */
+  const badFilters = [
+    ...(priorityParam !== undefined && priority === undefined
+      ? [['priority', priorityParam] as const]
+      : []),
+    ...(tagParam !== undefined && tagScope === undefined ? [['tag', tagParam] as const] : []),
+  ];
 
   /*
    * **The four the owner asked for** (LAI-487). Each is read through a
@@ -216,7 +234,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   /*
    * The window becomes a timestamp **when the window changes**, not on every
    * render — `Date.now()` in the filter would change its identity each time
-   * and refetch in a loop.
+   * and re-filter the board on every render.
    */
   const since = useMemo(
     () => (updatedWindow === undefined ? undefined : updatedSince(updatedWindow, Date.now())),
@@ -230,10 +248,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       ...(priority === undefined ? {} : { priority }),
       ...(assignee === undefined ? {} : { assignee }),
       ...(ready === undefined ? {} : { ready }),
-      // Scoping to a sprint is server-side — the endpoint has always taken it.
+      // Every field is applied **in memory**, to the project's one task set
+      // (LAI-724, `task-filter.ts`), meaning exactly what the server's `?sprint=`
+      // and `?tag=` mean. Nothing here is sent to the server.
       ...(sprintScope === undefined ? {} : { sprint: sprintScope }),
-      // Same for the tag: `?tag=` has been accepted since LAI-079, so the board
-      // asks for the subset rather than loading everything and filtering here.
       ...(tagScope === undefined ? {} : { tag: tagScope }),
     }),
     [statusScope, since, priority, assignee, ready, sprintScope, tagScope],
@@ -487,14 +505,16 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const [composingIn, setComposingIn] = useState<string | undefined>(undefined);
   const [insightsOpen, setInsightsOpen] = useState(false);
   /**
-   * Labels to offer in the filter, from the tasks already loaded.
+   * Labels to offer in the filter: every label in use **in the project**.
    *
-   * Not a second request: `?tag=` filters server-side over the whole project,
-   * but the *list* of labels worth offering is the one actually in use here.
+   * From the whole set (`board.state.all`), never the filtered one (LAI-724
+   * review): built from the matching tasks, the options shrank to the labels
+   * on whatever any filter — a label, a status, a sprint — had left, so a set
+   * label could not be swapped for another without clearing it first.
    */
   const knownTags = useMemo(
-    () => [...new Set(board.state.tasks.flatMap((t) => t.tags))].sort(),
-    [board.state.tasks],
+    () => [...new Set(board.state.all.flatMap((t) => t.tags))].sort(),
+    [board.state.all],
   );
   const [overflowAt, setOverflowAt] = useState<{ top: number; right: number } | undefined>(
     undefined,
@@ -615,9 +635,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       /*
        * Blocked is decided here, not by the server: it needs the dependency
        * graph (LAI-487). **"Cannot tell" stays in**, i.e. `!== false`, not
-       * `=== true`. Under a server-side filter a blocker can sit outside the
-       * loaded set (another sprint, another status), and `blockedState` then
-       * answers `undefined` rather than guessing. Hiding a task that may be
+       * `=== true`. `board.byId` is the whole project's (LAI-724), so a
+       * blocker outside the filter — another sprint, another status — is
+       * judged; only one past the page cap, or deleted, is not, and
+       * `blockedState` then answers `undefined` rather than guessing. Hiding a task that may be
        * blocked from a *Blocked only* view is the damaging error, the same
        * judgement `blockedState` itself records for the card.
        */
@@ -916,10 +937,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       */}
       <SpaceSlot
         context={
-          shownCount === board.byId.size
+          shownCount === board.state.tasks.length
             ? undefined
-            : `${String(shownCount)} of ${String(board.byId.size)} loaded ${
-                board.byId.size === 1 ? 'task' : 'tasks'
+            : `${String(shownCount)} of ${String(board.state.tasks.length)} loaded ${
+                board.state.tasks.length === 1 ? 'task' : 'tasks'
               } match`
         }
       />
@@ -1225,11 +1246,33 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
       */}
       {board.state.status === 'ready' && board.state.truncated && (
         <p className="board-scope board-truncated" role="status">
-          Showing the first {board.state.tasks.length}{' '}
-          {board.state.tasks.length === 1 ? 'task' : 'tasks'} — this space has more than the board
-          loads at once, so every count here covers only these. Narrow the filter to see the rest.
+          Showing the first {board.state.all.length}{' '}
+          {board.state.all.length === 1 ? 'task' : 'tasks'} — this space has more than the board
+          loads at once, so every count here covers only these.{' '}
+          <strong>Filters apply only to these loaded tasks</strong>: a match past them is not shown.
         </p>
       )}
+
+      {/*
+        **A filter value the server would have refused** (LAI-724 review,
+        S4a). Named and ignored, rather than an empty board that looks like a
+        project with no work.
+      */}
+      {badFilters.map(([key, value]) => (
+        <p key={key} className="board-alert board-bad-filter" role="alert">
+          “{value}” is not a valid {key === 'tag' ? 'label' : 'priority'}, so that filter is not
+          applied.
+          <button
+            type="button"
+            className="board-alert-close"
+            onClick={() => {
+              setParam(key, undefined);
+            }}
+          >
+            Remove it
+          </button>
+        </p>
+      ))}
 
       {/*
         **A failed refresh keeps the board and says it is stale** (LAI-707). A
@@ -1255,9 +1298,9 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
       {(needle !== '' || agentOnly) && (
         <p className="board-scope" role="status">
-          {shownCount} of {board.byId.size} loaded {board.byId.size === 1 ? 'task' : 'tasks'} match.{' '}
-          Search and the agent filter cover the tasks loaded below — the list endpoint has no text
-          search.
+          {shownCount} of {board.state.tasks.length} loaded{' '}
+          {board.state.tasks.length === 1 ? 'task' : 'tasks'} match. Search and the agent filter
+          cover the tasks loaded below — the list endpoint has no text search.
         </p>
       )}
 

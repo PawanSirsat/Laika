@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { byIdIndex, type PendingMove } from './board-derive.ts';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PendingMove } from './board-derive.ts';
 import { ApiError } from './errors.ts';
 import { taskStore } from './store.ts';
 import { applyTaskFilter } from './task-filter.ts';
@@ -22,6 +22,12 @@ export interface BoardState {
    * longer walks the project twice.
    */
   readonly all: readonly Task[];
+  /**
+   * Every task in the project by id — children too (LAI-724 review). Blockers
+   * and parents outside the filter resolve, so "blocked" and `n/m` are judged
+   * against the project rather than answered "cannot tell".
+   */
+  readonly allById: ReadonlyMap<string, Task>;
   readonly error: unknown;
   /**
    * Set when the page cap was reached and the server still had more.
@@ -140,6 +146,7 @@ const INITIAL: BoardState = {
   status: 'loading',
   tasks: [],
   all: [],
+  allById: new Map(),
   error: null,
   truncated: false,
   refreshing: false,
@@ -165,12 +172,15 @@ function derive(
   prev: BoardState,
   deferred: boolean,
 ): BoardState {
-  if (snapshot === undefined || deferred) return { ...INITIAL, all: snapshot?.tasks ?? [] };
+  if (snapshot === undefined || deferred) {
+    return { ...INITIAL, all: snapshot?.tasks ?? [], allById: snapshot?.byId ?? INITIAL.allById };
+  }
   const filtered = applyTaskFilter(snapshot.tasks, filter);
   return {
     status: snapshot.status,
     tasks: sameItems(filtered, prev.tasks) ? prev.tasks : filtered,
     all: snapshot.tasks,
+    allById: snapshot.byId,
     error: snapshot.error,
     truncated: snapshot.truncated,
     refreshing: snapshot.refreshing,
@@ -441,7 +451,8 @@ export function useBoard(
     [slug],
   );
 
-  const byId = useMemo(() => byIdIndex(state.tasks), [state.tasks]);
+  /** The whole project's, not the filter's (LAI-724 review). */
+  const byId = state.allById;
 
   const reload = useCallback((): void => {
     if (slug !== undefined) taskStore.reload(slug);

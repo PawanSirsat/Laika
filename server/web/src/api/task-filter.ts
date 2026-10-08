@@ -1,4 +1,4 @@
-import type { Task, TaskFilter } from './tasks.ts';
+import { PRIORITIES, type Task, type TaskFilter, type TaskPriority } from './tasks.ts';
 
 /**
  * The board's filter, applied to the project's one task set (LAI-724).
@@ -61,4 +61,26 @@ export const EVERY_FILTER_FIELD_HANDLED: [Unhandled] extends [never] ? true : ne
 export function applyTaskFilter(tasks: readonly Task[], filter: TaskFilter): readonly Task[] {
   if (NARROWING.every((key) => filter[key] === undefined)) return tasks;
   return tasks.filter((task) => matchesTaskFilter(task, filter));
+}
+
+/**
+ * **The values the server accepts, so a bad one is said rather than drawn as
+ * an empty board** (LAI-724 review, S4a). Sent to the server, an unknown
+ * `?priority=` was a `400` and a malformed `?tag=` a `422`, and the board showed
+ * the error; filtered in memory, the same URL matched nothing and looked like a
+ * board with no work. `BoardScreen` checks both and says which value it is
+ * ignoring.
+ *
+ * `TAG_NAME` is `server/src/services/tags.ts`'s, character for character —
+ * `task-filter.test.ts` reads the server's and fails if they drift.
+ */
+export const TAG_NAME = /^[a-z0-9][a-z0-9-]{0,23}$/;
+
+export function isPriority(value: string): value is TaskPriority {
+  return (PRIORITIES as readonly string[]).includes(value);
+}
+
+/** After the server's own normalisation: trimmed and lower-cased. */
+export function isTagName(value: string): boolean {
+  return TAG_NAME.test(value.trim().toLowerCase());
 }

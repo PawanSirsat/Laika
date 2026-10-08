@@ -13,7 +13,14 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { applyTaskFilter, matchesTaskFilter } from '../../src/api/task-filter.ts';
+import { readFileSync } from 'node:fs';
+import {
+  applyTaskFilter,
+  isPriority,
+  isTagName,
+  matchesTaskFilter,
+  TAG_NAME,
+} from '../../src/api/task-filter.ts';
 import type { Task, TaskFilter } from '../../src/api/tasks.ts';
 
 function task(over: Partial<Task> & { id: string }): Task {
@@ -125,5 +132,34 @@ void describe('applyTaskFilter means what the server’s WHERE means', () => {
   void test('limit and cursor are paging, not filtering', () => {
     assert.equal(applyTaskFilter(SET, { limit: 1, cursor: 'x' }), SET);
     assert.equal(matchesTaskFilter(SET[0]!, { limit: 1 }), true);
+  });
+});
+
+/*
+ * **A value the server would refuse is refused here too** (LAI-724 review,
+ * S4a). The server answers an unknown `?priority=` with `400` and a malformed
+ * `?tag=` with `422`, and the board used to show that error; filtering in
+ * memory, the same URL silently drew an empty board. The board now names the
+ * bad value instead, so the rules must be the server's.
+ */
+void describe('the filter values the server accepts', () => {
+  void test('a priority is p1, p2 or p3', () => {
+    for (const ok of ['p1', 'p2', 'p3']) assert.equal(isPriority(ok), true, ok);
+    for (const bad of ['p9', 'P1', '', 'high']) assert.equal(isPriority(bad), false, bad);
+  });
+
+  void test('a tag is the server’s TAG_NAME after trimming and lower-casing', () => {
+    for (const ok of ['api', ' API ', 'web-2', 'a'.repeat(24)])
+      assert.equal(isTagName(ok), true, ok);
+    for (const bad of ['-api', 'api tag', 'émoji', 'a'.repeat(25), '']) {
+      assert.equal(isTagName(bad), false, bad);
+    }
+  });
+
+  void test('TAG_NAME is the server’s, character for character', () => {
+    const server = readFileSync(new URL('../../../src/services/tags.ts', import.meta.url), 'utf8');
+    const declared = /export const TAG_NAME = (\/.*\/);/.exec(server)?.[1];
+    assert.ok(declared !== undefined, 'the server’s TAG_NAME was not found — the guard is blind');
+    assert.equal(String(TAG_NAME), declared);
   });
 });
