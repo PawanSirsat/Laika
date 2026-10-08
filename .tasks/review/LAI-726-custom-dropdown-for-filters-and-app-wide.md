@@ -224,3 +224,37 @@ extend the no-native-select guard to `createElement('select'|'option')`; skip
 search autofocus on `(pointer: coarse)` and place with `visualViewport`; CSS
 clean-up (escaped backticks in a `task-panel.css` comment, dead
 `.panel-control`, `.bar-control select`, `.board-filter select` rules).
+
+### Round 1, as built (builder)
+
+Tests first in d5c7b66 (each red on ec1281a for its own reason), then
+ac5701f, bf68d46, 8caa1da.
+
+1. **Scroll** — a scroll that moves the trigger closes the panel; a trigger
+   off screen on resize closes it. A scroll that did not move the trigger is
+   ignored: the click that opens a panel scrolls its trigger into view first,
+   and that event (a frame late) closed the panel it had just opened — found
+   by the drawer test.
+2. **Modal** — portalled into the nearest `[aria-modal="true"]`. `.drawer` and
+   `.column-dialog` were centred with `transform`, which made each the
+   containing block of the fixed panel and clipped it (the column dialog
+   scrolls); both now centre with `inset: 0; margin: auto`, the drawer's
+   rise animates `top`/`bottom`. Placement is read back and corrected for any
+   containing block that remains.
+3. **Search box** — `role="combobox"`, `aria-autocomplete="list"`,
+   `aria-expanded="true"`, `aria-controls`.
+4. **Sprints** — labelled "S1 · Foundations"; the unused key/name props and
+   `.dd-key` removed.
+5. **Safari** — a press on an open trigger is marked on pointerdown/mousedown;
+   the search box's blur defers to the click. Tested with the events
+   dispatched in Safari's order.
+
+Nits: closed-trigger type-ahead from the value, buffer reset on close;
+value-to-index `Map`; the guard scans `createElement('select'|'option')`;
+no search autofocus on `(pointer: coarse)`; `placeWithin` places against
+`visualViewport`; `.panel-control`, `.board-filter select`,
+`.bar-control select` and the escaped backticks removed.
+
+Also unrendered, not named in review, left alone: `.panel-controls`
+(task-detail.css), `.board-filters`, `.board-filter`, `.board-filter-check`
+(board.css).
