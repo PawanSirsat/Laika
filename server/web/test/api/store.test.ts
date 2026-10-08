@@ -121,7 +121,11 @@ void describe('request reads through the cache once a user is known', () => {
 void describe('switching project', () => {
   void test('drops the last project’s cached lists, and keeps the org-wide ones', async () => {
     stub((url) =>
-      url.includes('/tasks') ? { data: [], next_cursor: null } : url.endsWith('/org') ? {} : { members: [] },
+      url.includes('/tasks')
+        ? { data: [], next_cursor: null }
+        : url.endsWith('/org')
+          ? {}
+          : { members: [] },
     );
     setStoreUser('u1');
     await listMembers('alpha');

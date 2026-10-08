@@ -258,7 +258,10 @@ void describe('a change of user clears everything (no cross-user data)', () => {
     calls[1]!.resolve('bob-members');
     assert.equal(await bob, 'bob-members');
     await flush();
-    assert.equal(await cache.read('/projects/x/members', fetcher, { maxAge: 30_000 }), 'bob-members');
+    assert.equal(
+      await cache.read('/projects/x/members', fetcher, { maxAge: 30_000 }),
+      'bob-members',
+    );
     assert.equal(calls.length, 2, 'bob’s answer was not the one kept');
   });
 

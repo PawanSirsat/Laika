@@ -209,7 +209,14 @@ export function createQueryCache(deps: QueryCacheDeps = {}): QueryCache {
 
       let entry = entries.get(key);
       if (entry === undefined) {
-        entry = { data: undefined, hasData: false, at: 0, epoch: 0, freshEpoch: -1, flight: undefined };
+        entry = {
+          data: undefined,
+          hasData: false,
+          at: 0,
+          epoch: 0,
+          freshEpoch: -1,
+          flight: undefined,
+        };
       } else {
         // Most recently used goes last: Map order is the eviction order.
         entries.delete(key);
