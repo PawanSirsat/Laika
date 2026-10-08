@@ -961,7 +961,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         'positive control: the old task is listed before the window applies',
       );
       await openFilter(h);
-      await field(h, 'Updated within').selectOption('7d');
+      await pick(field(h, 'Updated within'), '7d');
       await h.page.waitForURL(/updated=7d/, { timeout: 10_000 });
       await h.page.waitForFunction(
         () => document.querySelectorAll('.list tbody tr').length === 3,

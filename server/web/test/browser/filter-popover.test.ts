@@ -13,7 +13,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
-import { pick } from './dropdown.ts';
+import { offered, pick } from './dropdown.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -928,12 +928,11 @@ for (const path of [
         .first()
         .waitFor({ timeout: 20_000 });
       await openFilter(h);
-      const options = await h.page
-        .locator('.bt-pop .bt-field', { hasText: 'Label' })
-        .locator('select option')
-        .allInnerTexts();
+      const options = await offered(
+        h.page.locator('.bt-pop .bt-field', { hasText: 'Label' }).locator('[role="combobox"]'),
+      );
       assert.deepEqual(
-        options.map((o) => o.trim()),
+        options,
         ['Any', 'api', 'mobile', 'web'],
         'the options shrank to the labels on the filtered tasks',
       );
