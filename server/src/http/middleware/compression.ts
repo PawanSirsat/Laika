@@ -23,12 +23,16 @@ import { COMPRESS_MIN_BYTES } from '../static-cache.ts';
  *
  * ## Why the length is measured first
  *
- * `hono/compress` reads its threshold off `Content-Length`, and `c.json` does
- * not set one, so on its own it would gzip a 60-byte health check into an
- * 80-byte one. The body of a JSON response is already a string in memory, so
- * measuring it costs a copy, not a wait — and it is only done for JSON, never
- * for a stream.
+ * `hono/compress` reads its threshold off `Content-Length`, and neither
+ * `c.json` nor `c.text` sets one, so on its own it would gzip a 60-byte health
+ * check into an 80-byte one — or a 5-byte `text/plain` into 25. Any JSON
+ * (`application/json`, `application/problem+json`, …) or `text/*` body except
+ * an event stream is a string already in memory, so measuring it costs a copy,
+ * not a wait. A stream is never buffered.
  */
+
+/** The bodies measured before the threshold is applied: JSON of any flavour, and text. */
+const MEASURED = /json|^\s*text\//i;
 
 const EVENTS_PATH = '/api/v1/events';
 
@@ -48,7 +52,8 @@ export function apiCompression(): MiddlewareHandler {
       const type = res.headers.get('Content-Type') ?? '';
       if (
         res.body !== null &&
-        type.startsWith('application/json') &&
+        MEASURED.test(type) &&
+        !/event-stream/i.test(type) &&
         !res.headers.has('Content-Length') &&
         !res.headers.has('Content-Encoding')
       ) {

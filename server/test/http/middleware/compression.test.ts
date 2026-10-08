@@ -187,3 +187,53 @@ describe('what is never compressed', () => {
     expect(await res.text()).toBe(big);
   });
 });
+
+describe('the 1 KiB floor applies to every buffered body, not only JSON (LAI-722 review)', () => {
+  /** Mounted bare: the route is the only thing that shapes the response. */
+  function bare(path: string, body: string, contentType: string): Hono {
+    const app = new Hono();
+    app.use('*', apiCompression());
+    app.get(path, (c) => c.body(body, 200, { 'Content-Type': contentType }));
+    return app;
+  }
+
+  for (const contentType of ['text/plain; charset=UTF-8', 'application/problem+json']) {
+    it(`leaves a 5-byte ${contentType} body alone`, async () => {
+      const res = await bare('/api/v1/small', 'hello', contentType).request('/api/v1/small', {
+        headers: { 'Accept-Encoding': 'gzip' },
+      });
+
+      // gzip would make these 5 bytes about 25.
+      expect(res.headers.get('content-encoding')).toBeNull();
+      expect(res.headers.get('content-length')).toBe('5');
+      expect(await res.text()).toBe('hello');
+    });
+  }
+
+  it('still compresses a large text/plain body', async () => {
+    const big = 'line of text\n'.repeat(200);
+    const res = await bare('/api/v1/big', big, 'text/plain; charset=UTF-8').request('/api/v1/big', {
+      headers: { 'Accept-Encoding': 'gzip' },
+    });
+
+    expect(res.headers.get('content-encoding')).toBe('gzip');
+    expect(gunzipSync(Buffer.from(await res.arrayBuffer())).toString()).toBe(big);
+  });
+});
+
+describe('the SSE path is skipped by path, not only by type (LAI-722 review)', () => {
+  it('does not compress /api/v1/events even when it answers a large non-stream body', async () => {
+    // `hono/compress` already refuses `text/event-stream`, so a test through
+    // the real stream cannot see the path skip. This one can: the type here
+    // is compressible, so only the path rule keeps it plain.
+    const big = JSON.stringify({ rows: 'x'.repeat(4096) });
+    const app = new Hono();
+    app.use('*', apiCompression());
+    app.get('/api/v1/events', (c) => c.body(big, 200, { 'Content-Type': 'application/json' }));
+
+    const res = await app.request('/api/v1/events', { headers: { 'Accept-Encoding': 'gzip' } });
+
+    expect(res.headers.get('content-encoding')).toBeNull();
+    expect(await res.text()).toBe(big);
+  });
+});
