@@ -18,6 +18,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
+import { pick } from './dropdown.ts';
 import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
 
 const CORE = {
@@ -202,11 +203,14 @@ async function scopeShown(h: Harness, expected: string): Promise<string> {
 /** Every sprint, through the Filter popover's Sprint field. */
 async function chooseAllSprints(h: Harness): Promise<void> {
   await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
-  await h.page
-    .locator('.bt-field')
-    .filter({ has: h.page.locator('.bt-label', { hasText: /^Sprint$/ }) })
-    .locator('select')
-    .selectOption({ label: 'Any' });
+  // Any is the empty value, as it was on the `<select>`.
+  await pick(
+    h.page
+      .locator('.bt-field')
+      .filter({ has: h.page.locator('.bt-label', { hasText: /^Sprint$/ }) })
+      .locator('[role="combobox"]'),
+    '',
+  );
   await h.page.keyboard.press('Escape');
   await h.page.locator('.bt-catcher').waitFor({ state: 'detached', timeout: 5000 });
 }
