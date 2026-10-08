@@ -282,6 +282,39 @@ export function sprintTaskCounts(
   return counts;
 }
 
+/**
+ * A sprint as the project's sprint list serves it: the view, plus how much
+ * work sits in it (LAI-721).
+ *
+ * SPEC §11.4.3 wants a sprint's progress legible without expanding it, and the
+ * Timeline loads no tasks until a sprint is opened — so the counts come with
+ * the list. Only the list carries them: a sprint fetched by id or returned
+ * from a write is a `SprintView`.
+ */
+export interface SprintListItem extends SprintView {
+  task_counts: SprintTaskCounts;
+}
+
+/**
+ * Attach `task_counts` to a page of sprints — **one grouped query** for the
+ * whole project (`sprintTaskCounts`), not one per sprint, and behind the same
+ * `project.read` check the list itself makes. A sprint with no tasks gets
+ * zeroes rather than a missing field.
+ */
+export function withTaskCounts(
+  db: Db,
+  actor: ResolvedActor,
+  slug: string,
+  rows: readonly SprintView[],
+): SprintListItem[] {
+  const counts = sprintTaskCounts(db, actor, slug);
+  const empty = (): SprintTaskCounts => ({
+    total: 0,
+    by_status: Object.fromEntries(TASK_STATUSES.map((s) => [s, 0])) as Record<TaskStatus, number>,
+  });
+  return rows.map((row) => ({ ...row, task_counts: counts.get(row.id) ?? empty() }));
+}
+
 export function getSprint(db: Db, actor: ResolvedActor, sprintId: string): SprintView {
   const { sprint, project } = requireSprint(db, sprintId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
