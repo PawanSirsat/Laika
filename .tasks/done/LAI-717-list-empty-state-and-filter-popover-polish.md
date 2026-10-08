@@ -6,7 +6,7 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-08T10:28:16Z
 finished: 2026-10-08T11:12:02Z
 ---
@@ -217,3 +217,13 @@ Nits: the `.list-bulk` comment now says it floats over the card and its
 `max-width` is the card's; the resize test waits for `right <= innerWidth`
 instead of 200 ms; the Board fit and Escape tests also run with the
 active-sprint stub, where the populated sprint strip sits above the toolbar.
+
+## Accepted
+
+2026-10-08, by polly (orchestrator), on the owner's instruction to release
+("whatever is done, push it on master"). Independent review: APPROVE after
+round 2 (same-vendor Claude reviewer; no other vendor available on this host).
+Released at build-ui-polish `0f71328`. Two non-blocking follow-ups from the
+round-2 review are carried forward, not part of this release: a measured
+`--list-bulk-room` (ResizeObserver) and waiting on `.strip-chip` in the
+active-sprint Board fit test.

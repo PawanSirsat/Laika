@@ -5,7 +5,7 @@ area: server
 assignee: owner-direct
 priority: p1
 depends-on: []
-status: review
+status: done
 started: 2026-10-08T11:05:00Z
 finished: 2026-10-08T11:55:00Z
 ---
@@ -115,3 +115,11 @@ archive: TEST 0, LINT 0, FMT 0, with two git-dependent server tests skipped
    stream is excluded. Reworded: no other `/api/` route streams today, and a
    future streaming route must set `Content-Length` or be excluded there.
 
+
+## Accepted
+
+2026-10-08, by polly (orchestrator), on the owner's instruction to release.
+Independent review: APPROVE after round 1 (same-vendor Claude reviewer). The
+AC2 rewording made while in review only narrows wording to correct behaviour
+and is acknowledged here. Released at build-perf-delivery `e771230`. LAI-723
+(p1) is the client-side follow-up and is not part of this release.
