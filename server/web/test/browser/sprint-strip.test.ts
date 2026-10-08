@@ -7,10 +7,12 @@
  * goal — none of which the design has.
  *
  * **LAI-727 took the strip off the Board** on the owner's word, and kept its
- * three figures in the toolbar. So the tests here that are about the *strip*
- * — one row, the pager — now run on the Timeline, which still draws it; the
- * ones that are about the *board* — its figures, its band order, that it does
- * not jump — run on the Board against what replaced the strip.
+ * three figures in the toolbar. The tests here that were about the
+ * *strip* — one row, the pager — ran on the Timeline for a while, and went
+ * when LAI-721's Timeline stopped drawing it; with no screen left to draw it,
+ * `SprintStrip.tsx` went too. The ones about the *board* — its figures, its
+ * band order, that it does not jump — run on the Board against what replaced
+ * the strip.
  */
 
 import assert from 'node:assert/strict';
@@ -317,32 +319,8 @@ void describe('the bands are in the design’s order (LAI-272, LAI-727)', () => 
   });
 });
 
-/** The strip itself, where it still is (LAI-727): the Timeline. */
-void describe('the sprint strip', () => {
-  void test('is a single row of pills and figures', async () => {
-    const h = await open('/timeline?project=laika-core', STUB);
-    try {
-      await h.page.setViewportSize({ width: 1600, height: 1000 });
-      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
-
-      assert.equal(await h.page.locator('.strip-chip').count(), 4, 'one pill per sprint');
-
-      /*
-       * **One row.** A pill is ~38px; the band that used to sit under it took
-       * the strip past 100. Measuring the strip's height is what tells the two
-       * shapes apart — counting elements would not.
-       */
-      const height = (await h.page.locator('.strip').boundingBox())?.height ?? 0;
-      assert.ok(height < 80, `the strip is ${String(Math.round(height))}px tall — a row returned`);
-
-      // The band's parts are gone, not merely hidden.
-      assert.equal(await h.page.locator('.strip-ring').count(), 0, 'the ring survived');
-      assert.equal(await h.page.locator('.strip-summary').count(), 0, 'the second row survived');
-    } finally {
-      await h.close();
-    }
-  });
-
+/** The strip's figures, where they went (LAI-727): the Board's toolbar. */
+void describe('the sprint strip’s figures', () => {
   void test('the board carries the reference’s three figures, from real counts', async () => {
     /*
      * **On the Board, in the toolbar since LAI-727.** The figures were the
@@ -369,61 +347,6 @@ void describe('the sprint strip', () => {
       assert.match(stats, /BLK/);
       assert.match(stats, /LEFT/);
       assert.doesNotMatch(stats, /WIP/, 'WIP belongs on the In Progress header, not here');
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('the pager appears only when there are more sprints than fit', async () => {
-    const h = await open('/timeline?project=laika-core', STUB);
-    try {
-      await h.page.setViewportSize({ width: 1600, height: 1000 });
-      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(400);
-      /*
-       * **Present but disabled** (LAI-271). The reference draws the arrow
-       * whether or not it can scroll, so it does not appear and vanish as
-       * sprints are added; it is inert when there is nothing past the edge,
-       * and says so rather than pretending.
-       */
-      const pager = h.page.locator('.strip-pager');
-      assert.equal(await pager.count(), 1, 'the reference draws the arrow always');
-      assert.equal(await pager.isDisabled(), true, 'four pills fit — it must be inert');
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('and it does appear once there are', async () => {
-    /*
-     * **Many sprints, not a narrow window.** The pills share the row down to a
-     * floor, so shrinking the viewport makes them narrower rather than
-     * overflowing — the first version of this test resized to 900px and the
-     * pager never came, correctly. Twelve sprints is the real condition.
-     */
-    const many = Array.from({ length: 12 }, (_, i) =>
-      sprint(`s${String(i)}`, `Sprint number ${String(i)}`, 'planned', i * 14, i * 14 + 13),
-    );
-    const h = await open('/timeline?project=laika-core', {
-      ...STUB,
-      '/api/v1/projects/laika-core/sprints': { data: many, next_cursor: null },
-    });
-    try {
-      await h.page.setViewportSize({ width: 1600, height: 1000 });
-      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForFunction(
-        () => document.querySelector('.strip-pager')?.hasAttribute('disabled') === false,
-        { timeout: 10_000 },
-      );
-
-      // And it does something: the row is further along than it was.
-      const before = await h.page.locator('.strip-chips').evaluate((el) => el.scrollLeft);
-      await h.page.locator('.strip-pager').click();
-      await h.page.waitForFunction(
-        (was: number) => (document.querySelector('.strip-chips')?.scrollLeft ?? 0) > was,
-        before,
-        { timeout: 5000 },
-      );
     } finally {
       await h.close();
     }
@@ -543,10 +466,10 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
  * the most recently updated and so fell outside the first 200. Here, page two
  * carries three more S3 tasks in Review.
  *
- * **Since LAI-727 the figures are counted from the board's own sprint read**,
- * not a whole-project walk — so it is that read that is paged here, and the
- * whole-project pages are gone from the stub. A request for them would now
- * be refused and show in `unmatched`.
+ * **Since LAI-727 the figures are counted from the task set the board holds**
+ * — the project's one walk in the shared store (LAI-724), scoped to the sprint
+ * in memory — so it is that walk that is paged here. A sprint-scoped read
+ * would match no stub and show in `unmatched`.
  */
 void describe('the figures count every page of tasks (LAI-702)', () => {
   const S3 = [task('t1', 'LC-1', 'backlog', 's3'), task('t2', 'LC-2', 'done', 's3')];
@@ -557,9 +480,10 @@ void describe('the figures count every page of tasks (LAI-702)', () => {
   ];
   const PAGED: ApiStub = {
     ...STUB,
-    // The board itself, scoped to the sprint — over two pages.
-    '/api/v1/projects/laika-core/tasks?sprint=s3&limit=200': { data: S3, next_cursor: 'P2' },
-    '/api/v1/projects/laika-core/tasks?sprint=s3&limit=200&cursor=P2': {
+    // The project's one walk (LAI-724), which the board scopes to the sprint
+    // in memory — over two pages.
+    '/api/v1/projects/laika-core/tasks?limit=200': { data: S3, next_cursor: 'P2' },
+    '/api/v1/projects/laika-core/tasks?limit=200&cursor=P2': {
       data: LATER,
       next_cursor: null,
     },
@@ -591,7 +515,7 @@ void describe('the figures count every page of tasks (LAI-702)', () => {
     const endless: ApiStub = {
       ...PAGED,
       // Every page points at another: the helper's cap must stop it and say so.
-      '/api/v1/projects/laika-core/tasks?sprint=s3&limit=200': () => {
+      '/api/v1/projects/laika-core/tasks?limit=200': () => {
         served += 1;
         return {
           data: [task(`x${String(served)}`, `LC-${String(100 + served)}`, 'todo', 's3')],
