@@ -15,6 +15,7 @@ import { startScheduler } from './jobs/scheduler.ts';
 import { readEnv } from './env.ts';
 import { createLogger } from './log.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
+import { applyKeepAlive } from './http/keep-alive.ts';
 import { createRuntimeShutdown } from './shutdown.ts';
 import { readVersion } from './version.ts';
 
@@ -75,6 +76,12 @@ function main(): void {
       pid: process.pid,
     });
   });
+
+  // 65 s rather than Node's 5 s (LAI-722). `serve` is typed as possibly HTTP/2,
+  // which has no keep-alive timer; this process serves HTTP/1.1. Asserted
+  // against the built server in `test/tooling/build.test.ts`, which reads the
+  // value back off the `Keep-Alive` response header.
+  if ('keepAliveTimeout' in server) applyKeepAlive(server);
 
   // The wiring lives in `shutdown.ts` so it is reachable from a test (LAI-057).
   // It used to be four lines here, in a function nothing can call — and during
