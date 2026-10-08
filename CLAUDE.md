@@ -556,6 +556,26 @@ git merge --no-ff core
 **Never** create a worktree, delete one, or check out another session's branch.
 If you think you need one, say so — that is a CHIEF decision.
 
+**A temporary worktree ends with its work** (the owner, 2026-10-08, after
+finding eight of them on disk). The standing worktrees — `Laika/`,
+`Laika-core/`, `Laika-shell/` — stay. A task that needs its own checkout gets
+a temporary one, and the moment its branch is merged into `master` and pushed,
+it is removed **in the same sitting**, not left for a cleanup:
+
+```bash
+git worktree add -b build-<name> ../Laika-<name> master   # start
+# … work, gate, merge --no-ff into master, push …
+git -C ../Laika-<name> status --porcelain     # must print nothing
+git worktree remove ../Laika-<name>           # never --force
+git branch -d build-<name>                    # -d refuses an unmerged branch — that refusal is the check
+git push origin --delete build-<name>         # only if the branch was ever pushed
+```
+
+**A worktree with uncommitted files or commits not on `master` is somebody's
+work in flight** — never remove it, whoever created it; ask. `--force` and
+`git branch -D` are not used here: each would delete exactly the work the plain
+command refuses to.
+
 **Revert by name. Never `git checkout -- .` and never `git clean -fd`.** Both are
 **repo-wide**, and a worktree can have more than one session in it — during a
 hand-off, or when a task is reassigned mid-flight. *"Everything uncommitted

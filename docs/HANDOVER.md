@@ -193,6 +193,12 @@ asked for work directly:
 4. Move the task to review, merge with `--no-ff` into `master`, accept it, and
    log it.
 5. Gate on `master`, then push. The push deploys.
+6. Remove the temporary worktree and its branch in the same sitting: check
+   `status --porcelain` is empty, run `git worktree remove` without `--force`,
+   then `git branch -d`, as `CLAUDE.md` §4.2 shows. Only `Laika/`,
+   `Laika-core/` and `Laika-shell/` are permanent. As of 2026-10-08,
+   `Laika-shell/` holds SHELL's unmerged LAI-627 work and must not be
+   removed.
 
 Note in the task file that the change was made on the owner's direct
 instruction.
