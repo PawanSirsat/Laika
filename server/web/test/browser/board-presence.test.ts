@@ -256,28 +256,12 @@ void describe('the Board has no WORKING NOW row (LAI-727)', () => {
     }
   });
 
-  void test('presence off: still no row, and no heading', async () => {
-    // LAI-440's AC3, which held before LAI-727 removed the row for everyone:
-    // a permanent empty band on the main screen is a standing reproach for a
-    // setting somebody chose.
-    const off = { ...STUB, '/api/v1/presence': { enabled: false, present: [] } };
-    const h = await open('/board?project=laika-core', off);
-    try {
-      await h.page.locator('.board').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(700);
-      assert.equal(await h.page.locator('.presence').count(), 0, 'the strip survived');
-      assert.doesNotMatch(
-        await h.page.locator('body').innerText(),
-        /WORKING NOW/,
-        'the heading is still on the page',
-      );
-      /*
-       * The `Agent sessions` card moved to the Activity tab with the rest of
-       * the rail (LAI-281), so the board has none to hide. That the panel
-       * itself respects `presence.enabled` is asserted where it now lives.
-       */
-    } finally {
-      await h.close();
-    }
-  });
+  /*
+   * **"Presence off: still no row" was removed** (LAI-727 review, round 1).
+   * It held on 5adbfae too — the row already rendered nothing when presence
+   * was off (LAI-440's AC3) — so it could not tell the change from the code
+   * before it. The test above is the discriminating one: with people present,
+   * the only state the row ever drew in, nothing is drawn. Presence off is a
+   * weaker case of the same absence.
+   */
 });

@@ -497,15 +497,18 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
     }
   });
 
-  void test('a project with no sprints reserves nothing', async () => {
+  void test('a project with no sprints draws no band, and still gets its figures', async () => {
     /*
      * The other half, and the reason `loading` had to be a real flag rather
      * than "is the list empty": a board that genuinely has no sprints must
      * draw no strip at all. Reserving height for everyone would have turned
      * one jump into a permanent empty band.
      *
-     * The board draws no strip for anyone since LAI-727, so this now guards
-     * only that no empty band comes back with it.
+     * **Re-aimed in the LAI-727 review.** The board draws no strip for anyone
+     * now, so "no strip" alone passed on 5adbfae as well and proved nothing.
+     * What a sprintless project must also get is the figures: they no longer
+     * hang off a strip that is not drawn for it, so they are there with
+     * nothing to scope them but *All sprints*.
      */
     const h = await open('/board?project=laika-core', {
       ...STUB,
@@ -515,10 +518,19 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
       await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(600);
+      await h.page.waitForFunction(
+        () => /DONE\s*1\s*\/\s*2/.test(document.querySelector('.bstats')?.textContent ?? ''),
+        undefined,
+        { timeout: 10_000 },
+      );
 
       assert.equal(await h.page.locator('.strip').count(), 0, 'an empty strip is still drawn');
       assert.equal(await h.page.locator('.strip-chip-ghost').count(), 0);
+      assert.equal(
+        ((await h.page.locator('.bstats-scope').textContent()) ?? '').trim(),
+        'All sprints',
+      );
+      assert.match((await h.page.locator('.bstats-left').textContent()) ?? '', /LEFT\s*—/);
     } finally {
       await h.close();
     }
