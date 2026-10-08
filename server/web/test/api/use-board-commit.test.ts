@@ -26,13 +26,26 @@ void describe('use-board has one state writer (LAI-707)', () => {
     );
   });
 
-  void test('move() writes the board through commit', () => {
+  /*
+   * LAI-724 moved the set into `task-store.ts`. A local write now goes to the
+   * store — so every screen sees it, and the store's merge protects it from a
+   * refresh — and comes back to the board through the one subscription, which
+   * is the only caller of `commit` with the store's answers.
+   */
+  void test('move() writes through the store, never around commit', () => {
     const body = /const move = useCallback\([\s\S]*?\n {2}\}, \[/.exec(SOURCE)?.[0] ?? '';
     assert.ok(body.length > 0, 'move() not found — the scan is blind');
-    assert.match(body, /\bcommit\(/);
+    assert.match(body, /\btaskStore\.writeLocal\(/);
+    assert.match(body, /\btaskStore\.beginWrite\(/);
+    assert.doesNotMatch(body, /\bsetState\(/);
   });
 
-  void test('the fetch effect still depends on exactly [slug, filterKey, attempt]', () => {
-    assert.match(SOURCE, /\}, \[slug, filterKey, attempt\]\);/);
+  void test('the store’s answers reach the board only through commit', () => {
+    const effect = /taskStore\.subscribe\(slug, \(snapshot, change\) => \{[\s\S]*?\}\);/.exec(
+      SOURCE,
+    )?.[0];
+    assert.ok(effect !== undefined, 'the subscription was not found — the scan is blind');
+    assert.match(effect, /\bcommit\(derive\(snapshot,/);
+    assert.match(SOURCE, /\}, \[slug\]\);/, 'the subscription depends on the project alone');
   });
 });

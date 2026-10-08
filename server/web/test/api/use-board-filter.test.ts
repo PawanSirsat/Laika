@@ -22,12 +22,18 @@ async function hook(): Promise<string> {
 }
 
 void describe('useBoard forwards every filter field', () => {
+  /*
+   * LAI-724: the board filters the project's one set in memory rather than
+   * sending the filter to the server — the same failure is possible in a new
+   * place, so the same property is pinned there, and `task-filter.ts` refuses
+   * to compile without a clause for every field.
+   */
   void test('the filter is passed whole, not field by field', async () => {
     const src = await hook();
     assert.match(
       src,
-      /listTasks\(\s*slug,\s*\{\s*\.\.\.filter/,
-      'spread the filter — naming fields drops any added later',
+      /applyTaskFilter\(snapshot\.tasks, filter\)/,
+      'pass the filter whole — naming fields drops any added later',
     );
   });
 
@@ -42,6 +48,6 @@ void describe('useBoard forwards every filter field', () => {
   void test('the effect depends on the filter content', async () => {
     const src = await hook();
     assert.match(src, /filterKey/, 'a serialised key re-runs on any field changing');
-    assert.match(src, /\}, \[slug, filterKey, attempt\]\)/, 'and it must be in the dependencies');
+    assert.match(src, /\}, \[filterKey, deferred\]\)/, 'and it must be in the dependencies');
   });
 });

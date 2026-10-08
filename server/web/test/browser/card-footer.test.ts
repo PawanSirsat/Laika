@@ -31,7 +31,9 @@ const task = (n: number, over: Record<string, unknown> = {}) => ({
   status: 'in_progress',
   priority: 'p2',
   assignee_id: null,
-  sprint_id: null,
+  // The active sprint, which the Board opens on (LAI-713). The set is now
+  // filtered in memory (LAI-724), so a task in no sprint is rightly not drawn.
+  sprint_id: 's1',
   created_by: 'u1',
   created_via: 'web',
   created_by_client: null,

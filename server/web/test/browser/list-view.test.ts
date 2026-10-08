@@ -70,6 +70,10 @@ const BLOCKED = task({
   assignee_id: 'u1',
   tags: ['auth', 'core'],
   blocked_by: ['t1'],
+  // In the active sprint, as the `?sprint=s1` stub below always claimed: the
+  // board now filters the set in memory (LAI-724), so the fixture has to say
+  // what the stub used to answer regardless.
+  sprint_id: 's1',
 });
 
 const STUB: ApiStub = {
@@ -783,10 +787,12 @@ void describe('timestamps read as moments (LAI-486)', () => {
  * within** (LAI-487). Driven on `/list`, where no filter test existed, and once
  * on `/board`, where the same popover lives.
  *
- * Server-side filters are keyed by query, so the rows really change because
- * the request changed; `?limit=200` alone serves everything. `updated_since`
- * is a timestamp computed at request time, so that one is asserted on the
- * request itself.
+ * **Since LAI-724 a filter asks the server nothing.** The project's set is
+ * held once and filtered in memory (`task-filter.ts`, which means what the
+ * server's `WHERE` means and is unit-tested clause by clause), so these assert
+ * the rows change, the URL carries the window and not the timestamp, and **no
+ * task request** follows a filter change. The query-keyed stubs below stay as
+ * the old pattern's fixture; only `?limit=200` is ever asked.
  */
 const DONE = task({ id: 't9', key: 'LC-9', number: 9, title: 'Shipped work', status: 'done' });
 const FILTERABLE: ApiStub = {
@@ -839,7 +845,7 @@ async function openFilter(h: Harness): Promise<void> {
 }
 
 void describe('the Filter popover on the List (LAI-487)', () => {
-  void test('status, sprint, blocked and updated each write the URL, change what is asked, and count', async () => {
+  void test('status, sprint, blocked and updated each write the URL, filter the held set, and count', async () => {
     const h = await open('/list?project=laika-core', FILTERABLE);
     const asked: string[] = [];
     h.page.on('request', (r) => {
@@ -852,8 +858,11 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         ['LC-1', 'LC-6', 'LC-9'],
         'positive control: all three',
       );
+      // The set was read once; every filter below is answered from it.
+      const loaded = asked.length;
+      assert.ok(loaded > 0, 'the positive control saw no task request — the listener is blind');
 
-      // Status — server-side, so the rows change because the request did.
+      // Status — the rows change, and nothing is asked.
       await openFilter(h);
       await field(h, 'Status').selectOption('done');
       await h.page.waitForURL(/status=done/, { timeout: 10_000 });
@@ -895,16 +904,10 @@ void describe('the Filter popover on the List (LAI-487)', () => {
       await field(h, 'Updated within').selectOption('7d');
       await h.page.waitForURL(/updated=7d/, { timeout: 10_000 });
       await h.page.waitForTimeout(400);
-      const sent = asked
-        .map((u) => new URL(u).searchParams.get('updated_since'))
-        .filter((v) => v !== null);
-      assert.ok(sent.length > 0, 'no request carried updated_since');
-      const since = Number(sent.at(-1));
-      const expected = before - 7 * 86_400_000;
-      assert.ok(
-        Math.abs(since - expected) < 60_000,
-        `updated_since ${String(since)} is not seven days back`,
-      );
+      // Every task here was touched an hour ago, so all inside seven days stay.
+      assert.ok(Date.now() - before < 60_000);
+      assert.deepEqual(await keysOnScreen(h), ['LC-6'], 'the window hid work inside it');
+      assert.equal(asked.length, loaded, `a filter change asked the server: ${asked.join(', ')}`);
       assert.doesNotMatch(
         h.page.url(),
         /updated_since/,
@@ -1003,7 +1006,10 @@ const moreItems = async (h: Harness): Promise<string[]> => {
 
 void describe('Board and List share one filter state (LAI-488)', () => {
   void test('filters and search travel Board → List, and back', async () => {
-    const h = await open('/board?project=laika-core&status=done&q=shipped', FILTERABLE);
+    // `sprint=all`: LC-9 is in no sprint, and the Board otherwise opens on the
+    // active one (LAI-713). The old stub served it regardless of `?sprint=`;
+    // the set is now filtered in memory, as the server would (LAI-724).
+    const h = await open('/board?project=laika-core&sprint=all&status=done&q=shipped', FILTERABLE);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       await tabTo(h, 'List');
@@ -1061,7 +1067,8 @@ void describe('Board and List share one filter state (LAI-488)', () => {
   });
 
   void test('the Board offers Group, card settings and "Show as list" — the control', async () => {
-    const h = await open('/board?project=laika-core', FILTERABLE);
+    // Every sprint: LC-1 and LC-9 are in none (see the test above).
+    const h = await open('/board?project=laika-core&sprint=all', FILTERABLE);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       assert.equal(

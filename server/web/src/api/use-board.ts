@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { mergeTasks } from './board-merge.ts';
 import { byIdIndex, type PendingMove } from './board-derive.ts';
 import { ApiError } from './errors.ts';
-import {
-  changeStatus,
-  listTasks,
-  reorderTask,
-  type Task,
-  type TaskFilter,
-  type TaskStatus,
-} from './tasks.ts';
+import { taskStore } from './store.ts';
+import { applyTaskFilter } from './task-filter.ts';
+import type { TaskSetChange, TaskSetSnapshot } from './task-store.ts';
+import { changeStatus, reorderTask, type Task, type TaskFilter, type TaskStatus } from './tasks.ts';
 
 export interface BoardState {
   /**
@@ -19,7 +14,14 @@ export interface BoardState {
    * skeleton on every live frame was the flash the owner reported.
    */
   readonly status: 'loading' | 'ready' | 'error';
+  /** The tasks the filter matches, in the server's order. */
   readonly tasks: readonly Task[];
+  /**
+   * Every task in the project, unfiltered (LAI-724) — the sprint strip counts
+   * across sprints from this. The same set the board filters, so the List no
+   * longer walks the project twice.
+   */
+  readonly all: readonly Task[];
   readonly error: unknown;
   /**
    * Set when the page cap was reached and the server still had more.
@@ -115,67 +117,29 @@ export interface UseBoard {
  * moves it — correctness first. Smoothing that is a separate task, and it should
  * be, because the smooth version is where the lie lives.
  *
- * **No polling.** The stream (LAI-048, LAI-070) calls `reload()` when something
- * changes, as does the Refresh control. A reload of the same question
- * **refreshes in place** (LAI-707): the board stays, the answer is merged so
- * unchanged tasks keep their objects, and only what changed re-renders.
+ * **One task set, read through the store** (LAI-724, D-075). The board used to
+ * walk the project itself — filtered on the server, beside the sprint strip's
+ * own unfiltered walk — and again on every live frame. The set is now the
+ * project's one copy (`task-store.ts`): walked once, kept across tab switches,
+ * re-walked once per burst of live frames, and **filtered here, in memory**
+ * (`task-filter.ts`, which means what the server's `WHERE` means). A filter
+ * change is therefore instant and asks the server nothing.
  *
- * **One writer.** Every change to the board's state goes through `commit`, so
- * the two rules that keep a refresh from fighting a local write always apply:
- * a task with a write in flight (`pending`), or written after the refresh's
- * read began (`lastLocalWrite`), keeps its local version.
+ * **No polling.** The stream reaches the store (`store.ts`), as does the
+ * Refresh control through `reload()`. A refresh of the set **refreshes in
+ * place** (LAI-707): the store merges the answer so unchanged tasks keep their
+ * objects, and only what changed re-renders.
+ *
+ * **One writer.** Every change to the board's state goes through `commit`, and
+ * every local write goes through the store, so the two rules that keep a
+ * refresh from fighting a local write always apply: a task with a write in
+ * flight (`beginWrite`), or written after the refresh's read began (`record`),
+ * keeps its local version.
  */
-/** Rows per request. The server's own maximum, so this is the fewest calls. */
-const PAGE_SIZE = 200;
-
-/**
- * How many pages we will follow before stopping and saying so.
- *
- * 25 × 200 is 5,000 tasks — far past any board we have seen, and bounded so a
- * cursor that never terminates cannot spin the screen forever. Reaching it is
- * reported, never swallowed.
- */
-const MAX_PAGES = 25;
-
-/**
- * Every task, not the first page of them (LAI-621).
- *
- * `listTasks` is cursor-paginated and this asked for `limit: 200` **once**,
- * taking the first page as the whole answer. Measured on the owner's live
- * board: 251 tasks existed, 200 were drawn, and the 51 missing ones were
- * invisible on the board, in the List, and in every lane count — with nothing
- * on screen to suggest it.
- *
- * The board needs the whole set rather than a window, because it derives
- * counts and groups from it: a partial list does not show less, it shows
- * *wrong*.
- */
-async function fetchEveryPage(
-  slug: string,
-  filter: TaskFilter,
-  signal: AbortSignal,
-): Promise<{ readonly tasks: readonly Task[]; readonly truncated: boolean }> {
-  const tasks: Task[] = [];
-  let cursor: string | undefined;
-
-  for (let page = 0; page < MAX_PAGES; page += 1) {
-    const answer = await listTasks(
-      slug,
-      { ...filter, limit: PAGE_SIZE, ...(cursor === undefined ? {} : { cursor }) },
-      signal,
-    );
-    tasks.push(...answer.data);
-
-    if (answer.next_cursor === null) return { tasks, truncated: false };
-    cursor = answer.next_cursor;
-  }
-
-  return { tasks, truncated: true };
-}
-
 const INITIAL: BoardState = {
   status: 'loading',
   tasks: [],
+  all: [],
   error: null,
   truncated: false,
   refreshing: false,
@@ -183,38 +147,48 @@ const INITIAL: BoardState = {
   asOf: null,
 };
 
+/** The same elements in the same order — so an unchanged filter result keeps its identity. */
+function sameItems(a: readonly Task[], b: readonly Task[]): boolean {
+  return a.length === b.length && a.every((task, i) => task === b[i]);
+}
+
 /**
- * Errors that mean the reader may no longer see this board — so the old one
- * must not stay up. Anything else (a dropped connection, a 5xx) keeps it.
+ * The board's state from the project's set and the filter.
+ *
+ * `deferred` holds the board on its skeleton while the set loads behind it —
+ * the first fetch no longer waits for LAI-713's sprint decision, only the
+ * drawing does.
  */
-function isFatal(cause: unknown): boolean {
-  return (
-    cause instanceof ApiError &&
-    (cause.code === 'unauthorized' || cause.code === 'forbidden' || cause.code === 'not_found')
-  );
+function derive(
+  snapshot: TaskSetSnapshot | undefined,
+  filter: TaskFilter,
+  prev: BoardState,
+  deferred: boolean,
+): BoardState {
+  if (snapshot === undefined || deferred) return { ...INITIAL, all: snapshot?.tasks ?? [] };
+  const filtered = applyTaskFilter(snapshot.tasks, filter);
+  return {
+    status: snapshot.status,
+    tasks: sameItems(filtered, prev.tasks) ? prev.tasks : filtered,
+    all: snapshot.tasks,
+    error: snapshot.error,
+    truncated: snapshot.truncated,
+    refreshing: snapshot.refreshing,
+    refreshError: snapshot.refreshError,
+    asOf: snapshot.asOf,
+  };
 }
 
 export function useBoard(
   slug: string | undefined,
   filter: TaskFilter,
   presenter?: { readonly current: BoardPresenter | undefined },
+  /** Load the set, but keep the board on its skeleton (LAI-713's sprint decision). */
+  deferred = false,
 ): UseBoard {
   const [state, setState] = useState<BoardState>(INITIAL);
   /** The truth, written only by `commit`; React state follows it. */
   const stateRef = useRef<BoardState>(INITIAL);
-  /** `slug|filterKey` whose answer is on screen — the "same question" test. */
-  const settledKey = useRef<string | undefined>(undefined);
-  /** Tasks with a local write in flight. */
-  const pending = useRef(new Set<string>());
-  /** A counter bumped on every local write, and when each task was last written. */
-  const writeEpoch = useRef(0);
-  const lastLocalWrite = useRef(new Map<string, number>());
-  /** Which fetch is current; an older one never applies. */
-  const run = useRef(0);
-  /** Active holds, and the newest refresh answer waiting for them to end. */
-  const holds = useRef(0);
-  const held = useRef<(() => void) | undefined>(undefined);
-  const [attempt, setAttempt] = useState(0);
   const [movingId, setMovingId] = useState<string | undefined>(undefined);
   const [moveError, setMoveError] = useState<string | undefined>(undefined);
 
@@ -223,15 +197,19 @@ export function useBoard(
    * subset.
    *
    * The object is rebuilt every render, so depending on it directly would
-   * refetch forever. The previous fix for that was to destructure four named
+   * re-derive forever. The previous fix for that was to destructure four named
    * fields and depend on those — which meant `sprint`, added to `TaskFilter`
    * later, was accepted by the type, put in the URL, and then **silently
    * dropped here**: no request, no error, the board simply never scoped.
    *
    * A serialised key re-runs on any change to any field, including ones added
-   * after this line was written.
+   * after this line was written — and `applyTaskFilter` refuses to compile
+   * without a clause for every field (LAI-069).
    */
   const filterKey = JSON.stringify(filter, Object.keys(filter).sort());
+  /** What the store's listener filters by — the newest render's, whenever it fires. */
+  const question = useRef({ filter, deferred });
+  question.current = { filter, deferred };
 
   /**
    * The one place the board's state is written (LAI-707). `meta` says where the
@@ -246,7 +224,7 @@ export function useBoard(
    * paints the newest state. A first load is never animated.
    */
   const commit = useCallback(
-    (next: BoardState, meta: CommitMeta): void => {
+    (next: BoardState, meta: TaskSetChange): void => {
       const prev = stateRef.current;
       if (next === prev && meta.alongside === undefined) return;
       stateRef.current = next;
@@ -268,94 +246,49 @@ export function useBoard(
     [presenter],
   );
 
+  /*
+   * **The project's set, from the store.** Every answer — a first load, a
+   * merged refresh, a local write — arrives here with what it changed, and is
+   * filtered and committed. The store does the walking and the merging.
+   */
   useEffect(() => {
     if (slug === undefined) return;
+    const stop = taskStore.subscribe(slug, (snapshot, change) => {
+      const { filter: f, deferred: d } = question.current;
+      commit(derive(snapshot, f, stateRef.current, d), change);
+    });
+    commit(derive(taskStore.peek(slug), filter, stateRef.current, deferred), { origin: 'load' });
+    return stop;
+  }, [slug]);
 
-    const key = `${slug}|${filterKey}`;
-    const same = settledKey.current === key;
-    const mine = (run.current += 1);
-    const startedAt = writeEpoch.current;
-    const controller = new AbortController();
-
-    const now = stateRef.current;
-    if (same) {
-      commit({ ...now, refreshing: true }, { origin: 'refresh' });
-    } else {
-      // A different question: the old answer is not this one, so it shows the
-      // skeleton (the tasks are kept only so identical ones can be reused).
-      settledKey.current = undefined;
-      commit(
-        { ...now, status: 'loading', refreshing: false, refreshError: null },
-        { origin: 'load' },
-      );
-    }
-
-    fetchEveryPage(slug, filter, controller.signal)
-      .then(({ tasks, truncated }) => {
-        const apply = (): void => {
-          if (mine !== run.current) return;
-          const cur = stateRef.current;
-          const keep = new Set(pending.current);
-          for (const [id, at] of lastLocalWrite.current) {
-            if (at > startedAt) keep.add(id);
-            // A write this read already includes no longer needs protecting.
-            else lastLocalWrite.current.delete(id);
-          }
-          const merged = mergeTasks(cur.tasks, tasks, keep);
-          settledKey.current = key;
-          commit(
-            {
-              status: 'ready',
-              tasks: merged.tasks,
-              error: null,
-              truncated,
-              refreshing: false,
-              refreshError: null,
-              asOf: Date.now(),
-            },
-            { origin: same ? 'refresh' : 'load', changed: merged.changed },
-          );
-        };
-        if (same && holds.current > 0) held.current = apply;
-        else apply();
-      })
-      .catch((cause: unknown) => {
-        if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        if (mine !== run.current) return;
-        const cur = stateRef.current;
-        if (same && !isFatal(cause)) {
-          commit({ ...cur, refreshing: false, refreshError: cause }, { origin: 'refresh' });
-          return;
-        }
-        settledKey.current = undefined;
-        commit({ ...INITIAL, status: 'error', error: cause }, { origin: 'load' });
-      });
-
-    return () => {
-      controller.abort();
-    };
-    // `filterKey` stands in for `filter`: it is that object's content, and
-    // depending on the object itself would re-run on every render.
-  }, [slug, filterKey, attempt]);
+  /*
+   * **A new question is answered from the set at once** — a filter change, or
+   * the sprint decision arriving. Never animated, and nothing is fetched.
+   * `filterKey` stands in for `filter`: it is that object's content.
+   */
+  useEffect(() => {
+    if (slug === undefined) return;
+    commit(derive(taskStore.peek(slug), filter, stateRef.current, deferred), { origin: 'load' });
+  }, [filterKey, deferred]);
 
   const move = useCallback(
     async (taskId: string, to: TaskStatus): Promise<void> => {
+      if (slug === undefined) return;
       setMoveError(undefined);
       setMovingId(taskId);
-      pending.current.add(taskId);
+      taskStore.beginWrite(slug, taskId);
 
       try {
         const updated = await changeStatus(taskId, to);
-        writeEpoch.current += 1;
-        lastLocalWrite.current.set(taskId, writeEpoch.current);
         // Replace with the server's version rather than patching the status:
         // the move also changes `updated_at`, and may change `ready` if this
-        // task was some other task's last blocker.
-        const cur = stateRef.current;
-        commit(
-          { ...cur, tasks: cur.tasks.map((t) => (t.id === updated.id ? updated : t)) },
+        // task was some other task's last blocker. `record` keeps a refresh
+        // that was read before now from undoing it.
+        taskStore.writeLocal(
+          slug,
+          (tasks) => tasks.map((t) => (t.id === updated.id ? updated : t)),
           {
-            origin: 'local',
+            record: taskId,
             changed: new Set([taskId]),
             alongside: () => {
               setMovingId(undefined);
@@ -375,10 +308,10 @@ export function useBoard(
         setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
         setMovingId(undefined);
       } finally {
-        pending.current.delete(taskId);
+        taskStore.endWrite(slug, taskId);
       }
     },
-    [commit],
+    [slug],
   );
 
   /*
@@ -411,55 +344,50 @@ export function useBoard(
       to: { readonly afterId?: string | undefined; readonly beforeId?: string | undefined },
       status?: TaskStatus,
     ): Promise<void> => {
+      if (slug === undefined) return;
       const before = stateRef.current.tasks.find((t) => t.id === taskId);
       if (before === undefined) return;
       const target = status !== undefined && status !== before.status ? status : undefined;
       const reorders = to.afterId !== undefined || to.beforeId !== undefined;
       if (target === undefined && !reorders) return;
 
-      const replace = (next: Task, settled: boolean, alongside?: () => void): void => {
-        const cur = stateRef.current;
-        commit(
-          { ...cur, tasks: cur.tasks.map((t) => (t.id === next.id ? next : t)) },
-          {
-            origin: 'local',
-            changed: new Set([taskId]),
-            ...(settled ? { settled: taskId } : {}),
-            ...(alongside === undefined ? {} : { alongside }),
-          },
-        );
+      const replace = (
+        next: Task,
+        settled: boolean,
+        alongside?: () => void,
+        record?: string,
+      ): void => {
+        taskStore.writeLocal(slug, (tasks) => tasks.map((t) => (t.id === next.id ? next : t)), {
+          changed: new Set([taskId]),
+          settled: settled ? taskId : undefined,
+          alongside,
+          record,
+        });
       };
 
       setMoveError(undefined);
       setMovingId(taskId);
-      pending.current.add(taskId);
+      taskStore.beginWrite(slug, taskId);
       // The new lane and the new place in **one** commit (LAI-708): shown
       // apart, the card would land at the lane's end for a frame and then jump
       // to where it was put.
-      {
-        const cur = stateRef.current;
-        commit(
+      taskStore.writeLocal(
+        slug,
+        (tasks) =>
           target === undefined
-            ? cur
-            : {
-                ...cur,
-                tasks: cur.tasks.map((t) => (t.id === taskId ? { ...before, status: target } : t)),
-              },
-          {
-            origin: 'local',
-            changed: new Set([taskId]),
-            settled: taskId,
-            moves: true,
-            ...(reorders
-              ? {
-                  alongside: () => {
-                    setPlacing({ taskId, afterId: to.afterId, beforeId: to.beforeId });
-                  },
-                }
-              : {}),
-          },
-        );
-      }
+            ? tasks
+            : tasks.map((t) => (t.id === taskId ? { ...before, status: target } : t)),
+        {
+          changed: new Set([taskId]),
+          settled: taskId,
+          moves: true,
+          alongside: reorders
+            ? () => {
+                setPlacing({ taskId, afterId: to.afterId, beforeId: to.beforeId });
+              }
+            : undefined,
+        },
+      );
 
       /*
        * Ends the drop on screen. Handed to the commit that shows its outcome,
@@ -485,12 +413,10 @@ export function useBoard(
             before_task_id: to.beforeId,
           });
         }
-        writeEpoch.current += 1;
-        lastLocalWrite.current.set(taskId, writeEpoch.current);
         if (answer !== undefined) {
           // The answer and the end of `placing` in one render, so the card never
           // falls back to its old place for a frame between the two.
-          replace(answer, true, endPlacing);
+          replace(answer, true, endPlacing, taskId);
           handed = true;
         }
       } catch (cause) {
@@ -504,41 +430,31 @@ export function useBoard(
           }
         }
         if (statusLanded || (cause instanceof ApiError && cause.code === 'conflict')) {
-          setAttempt((n) => n + 1);
+          taskStore.reload(slug);
         }
         setMoveError(cause instanceof ApiError ? cause.message : 'That move could not be saved.');
       } finally {
-        pending.current.delete(taskId);
+        taskStore.endWrite(slug, taskId);
         if (!handed) endPlacing();
       }
     },
-    [commit],
+    [slug],
   );
 
   const byId = useMemo(() => byIdIndex(state.tasks), [state.tasks]);
 
   const reload = useCallback((): void => {
-    setAttempt((n) => n + 1);
-  }, []);
+    if (slug !== undefined) taskStore.reload(slug);
+  }, [slug]);
 
   const dismissMoveError = useCallback((): void => {
     setMoveError(undefined);
   }, []);
 
   const hold = useCallback((): (() => void) => {
-    holds.current += 1;
-    let released = false;
-    return () => {
-      if (released) return;
-      released = true;
-      holds.current = Math.max(0, holds.current - 1);
-      if (holds.current === 0 && held.current !== undefined) {
-        const apply = held.current;
-        held.current = undefined;
-        apply();
-      }
-    };
-  }, []);
+    if (slug === undefined) return () => undefined;
+    return taskStore.hold(slug);
+  }, [slug]);
 
   return {
     state,

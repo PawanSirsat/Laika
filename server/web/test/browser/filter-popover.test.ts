@@ -483,6 +483,12 @@ const DAY = 86_400_000;
 /** The Board as LAI-713 opens it: an active sprint, so the strip is populated. */
 const ACTIVE: ApiStub = {
   ...STUB,
+  // The board opens on the active sprint (LAI-713) and filters the held set in
+  // memory (LAI-724), so the cards it should draw have to be in that sprint.
+  [`${TASKS}?limit=200`]: {
+    data: EVERY.map((t) => ({ ...t, sprint_id: 's1' })),
+    next_cursor: null,
+  },
   '/api/v1/projects/laika-core/sprints': {
     data: [
       {

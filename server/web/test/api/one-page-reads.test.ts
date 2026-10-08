@@ -50,20 +50,23 @@ const PAGED = new Set(
  */
 const ALLOWED: ReadonlyMap<string, { readonly names: readonly string[]; readonly why: string }> =
   new Map([
+    /*
+     * LAI-724: the board, `use-sprints` and the dashboard no longer walk tasks
+     * themselves — every screen reads the project's one set, and `store.ts`
+     * hands `task-store.ts` the page fetcher it walks with `everyPage`. The
+     * dashboard's activity walk moved to `activity-store.ts`, which pages by
+     * its own capped loop over `request` (`activity-store.test.ts`).
+     */
     [
-      'api/use-board.ts',
+      'api/store.ts',
       {
         names: ['listTasks'],
-        why: '`fetchEveryPage` — the board’s own loop, older than the helper',
+        why: 'the task store’s page fetcher — `task-store.ts` walks it with `everyPage`',
       },
     ],
     [
       'routes/screens/sprints/use-sprints.ts',
-      { names: ['listSprints', 'listTasks'], why: 'its own cursor loops, reporting `truncated`' },
-    ],
-    [
-      'routes/screens/dashboard/use-dashboard.ts',
-      { names: ['listTasks', 'listProjectActivity'], why: '`walk` — its own cursor loop' },
+      { names: ['listSprints'], why: 'its own cursor loop, reporting `truncated`' },
     ],
     ['api/users.ts', { names: ['listUsers'], why: '`listAllUsers` — its own cursor loop' }],
     ['api/sprints.ts', { names: ['listSprints'], why: '`countAllSprints` — its own cursor loop' }],
