@@ -5,7 +5,7 @@ area: web
 assignee: chief
 priority: p1
 depends-on: [LAI-707]
-status: review
+status: done
 started: 2026-10-07T09:11:31Z
 finished: 2026-10-08T06:36:21Z
 ---
@@ -86,3 +86,24 @@ on the owner's direct instruction, on `build-dash`.
   master's code.
 - **Gate.** test, lint and format each exited 0. Server 2099, web 1333,
   cli 85.
+
+## CHIEF — accepted 2026-10-08T06:36:42Z
+
+Checked against the diff, the browser run and screenshots in both themes at
+1280, 1100 and 820px.
+
+- **Layout.** No sideways scroll, rows share both edges, nothing runs under the
+  next row, and the gutters match the space bar.
+- **Numbers.** Every number is counted from the fixture by the test's own
+  filters: the stat cards, the status legend and centre, open work per person
+  (including the org owner, who has no membership row), Unassigned last, and
+  the true stale count.
+- **Links.** A person opens the board filtered by `assignee`; a blocked task
+  opens `?task=`.
+- **No flash.** A range change never shows a skeleton, and a live frame
+  updates the page in place.
+- **Themes.** Both themes draw real slice colours.
+- **Red first.** Repeated with a trap restore after the interrupted run: all
+  ten tests fail against master's code.
+- **Delivery notes.** "One glide-free chart component" should read "one chart
+  component"; the slip is noted here rather than rewritten in a submitted file.
