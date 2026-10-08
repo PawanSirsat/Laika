@@ -105,6 +105,12 @@ const STUB: ApiStub = {
   },
   '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
   '/api/v1/tasks/t1/status': { ...TASK, status: 'done' },
+  // The task drawer, for the scroll and modal tests (review, round 1).
+  '/api/v1/tasks/t1': TASK,
+  '/api/v1/tasks/t1/comments': { data: [], next_cursor: null },
+  '/api/v1/tasks/t1/watchers': { watchers: [] },
+  '/api/v1/tasks/t1/dependencies': TASK,
+  '/api/v1/projects/laika-core/mentionable': { users: [{ id: 'u1', name: 'Ada' }] },
   '/api/v1/projects/laika-core/members': {
     members: [{ user_id: 'u1', name: 'Ada', email: 'a@example.com', role: 'lead', created_at: 1 }],
   },
@@ -134,6 +140,45 @@ async function assertOnTop(h: Harness, what: string): Promise<void> {
   assert.equal(onTop, true, `${what}: the panel is drawn under something`);
 }
 
+/**
+ * **Inside the modal, and still where it should be** (review, round 1). A
+ * panel portalled to `<body>` sits outside an `aria-modal="true"` dialog,
+ * which tells a screen reader to ignore everything outside it — the list
+ * would be there for the eye and gone for the ear. Drawn inside the dialog,
+ * it must still meet its trigger and not be clipped by it.
+ */
+async function assertInModalAndPlaced(h: Harness, trigger: Locator, what: string): Promise<void> {
+  const g = await panel(h).evaluate((p) => {
+    const modal = p.closest('[aria-modal="true"]');
+    const r = p.getBoundingClientRect();
+    return {
+      inModal: modal !== null,
+      side: (p as HTMLElement).dataset.side,
+      top: r.top,
+      bottom: r.bottom,
+      left: r.left,
+    };
+  });
+  const t = await trigger.evaluate((el) => {
+    const r = el.getBoundingClientRect();
+    return { top: r.top, bottom: r.bottom, left: r.left };
+  });
+  assert.equal(g.inModal, true, `${what}: the panel is outside the aria-modal dialog`);
+  if (g.side === 'below') {
+    assert.ok(
+      Math.abs(g.top - (t.bottom + 4)) <= 1,
+      `${what}: ${String(g.top)} is not under ${String(t.bottom)}`,
+    );
+  } else {
+    assert.ok(
+      Math.abs(g.bottom - (t.top - 4)) <= 1,
+      `${what}: ${String(g.bottom)} is not over ${String(t.top)}`,
+    );
+  }
+  assert.ok(Math.abs(g.left - t.left) <= 8 || g.left >= 8, `${what}: left at ${String(g.left)}`);
+  await assertOnTop(h, what);
+}
+
 void describe('the dropdown in a modal dialog (LAI-726)', () => {
   void test('Escape closes only the dropdown, and choosing keeps the dialog open', async () => {
     const h = await open('/board?project=laika-core', STUB);
@@ -147,6 +192,7 @@ void describe('the dropdown in a modal dialog (LAI-726)', () => {
       const category = dialog.getByRole('combobox', { name: /^Status category/ });
       await category.click();
       await assertOnTop(h, 'over the dialog');
+      await assertInModalAndPlaced(h, category, 'the new-column dialog');
 
       await h.page.keyboard.press('Escape');
       assert.equal(await panel(h).count(), 0, 'Escape left the dropdown open');
@@ -263,6 +309,74 @@ void describe('the dropdown as a form field (LAI-726)', () => {
       const posted = h.calls.filter((c) => c.method === 'POST' && c.path === '/api/v1/projects');
       assert.equal(posted.length, 1, 'no project was posted');
       assert.equal((posted[0]?.body as { visibility?: string }).visibility, 'public');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the dropdown in the task drawer (LAI-726 round 1)', () => {
+  const openDrawer = async (h: Harness): Promise<Locator> => {
+    await h.page.locator('.drawer').waitFor({ timeout: 20_000 });
+    const status = h.page.locator('.drawer').getByRole('combobox', { name: 'Status', exact: true });
+    await status.waitFor({ timeout: 10_000 });
+    return status;
+  };
+
+  void test('opens inside the drawer’s modal panel, placed against its trigger', async () => {
+    const h = await open('/board?project=laika-core&task=t1', STUB);
+    try {
+      const status = await openDrawer(h);
+      await status.click();
+      await assertInModalAndPlaced(h, status, 'the task drawer');
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **A scroll under the panel closes it** (review, round 1), as a native
+   * select's does. It used to re-place itself on every scroll and follow the
+   * trigger off the screen — measured at top: −234px in this drawer.
+   */
+  void test('closes when the drawer scrolls under it', async () => {
+    const h = await open('/board?project=laika-core&task=t1', STUB);
+    try {
+      // Short enough that the drawer's content scrolls.
+      await h.page.setViewportSize({ width: 1280, height: 420 });
+      const status = await openDrawer(h);
+      await status.click();
+      await panel(h).waitFor({ timeout: 5_000 });
+
+      const scrolled = await status.evaluate((el) => {
+        let node: HTMLElement | null = el.parentElement;
+        while (node !== null) {
+          const style = getComputedStyle(node);
+          if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) {
+            const before = node.scrollTop;
+            node.scrollTop = before + 120;
+            return node.scrollTop - before;
+          }
+          node = node.parentElement;
+        }
+        return 0;
+      });
+      assert.ok(scrolled > 0, 'positive control: something under the trigger scrolled');
+      await h.page
+        .waitForFunction(
+          () => document.querySelector('[data-dropdown-panel]') === null,
+          undefined,
+          {
+            timeout: 3_000,
+          },
+        )
+        .catch(() => undefined);
+      const left = await h.page.evaluate(() => {
+        const p = document.querySelector('[data-dropdown-panel]');
+        return p === null ? null : p.getBoundingClientRect().top;
+      });
+      assert.equal(left, null, `the panel stayed open after the scroll, at top ${String(left)}`);
+      assert.equal(await status.getAttribute('aria-expanded'), 'false');
     } finally {
       await h.close();
     }

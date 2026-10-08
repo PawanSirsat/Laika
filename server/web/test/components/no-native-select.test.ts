@@ -31,7 +31,35 @@ async function sources(dir: string): Promise<string[]> {
   return out;
 }
 
+/**
+ * What a native select looks like in source: JSX, or one made by hand with
+ * `createElement` (LAI-726 review, round 1 — a hand-built one would have
+ * slipped past a JSX-only scan).
+ */
+const NATIVE: readonly RegExp[] = [
+  /<select\b|<option\b/,
+  /createElement\(\s*['"](select|option)['"]/,
+];
+
 void describe('no native select (LAI-726)', () => {
+  void test('the scan recognises every way of making one', () => {
+    for (const sample of [
+      '<select value={x}>',
+      '<option value="a">A</option>',
+      "document.createElement('select')",
+      'document.createElement( "option" )',
+    ]) {
+      assert.ok(
+        NATIVE.some((pattern) => pattern.test(sample)),
+        `the scan does not see: ${sample}`,
+      );
+    }
+    assert.ok(
+      !NATIVE.some((pattern) => pattern.test("document.createElement('div')")),
+      'the scan flags an element that is not a select',
+    );
+  });
+
   void test('no component renders a <select> or an <option>', async () => {
     const files = (await sources(SRC)).filter((f) => !relative(SRC, f).startsWith(EXCLUDED));
     // Positive control: the walk reached the files this is about, so an empty
@@ -48,7 +76,7 @@ void describe('no native select (LAI-726)', () => {
     const offenders: string[] = [];
     for (const file of files) {
       const body = code(await readFile(file, 'utf8'));
-      if (/<select\b|<option\b/.test(body)) offenders.push(relative(SRC, file));
+      if (NATIVE.some((pattern) => pattern.test(body))) offenders.push(relative(SRC, file));
     }
     assert.deepEqual(offenders, [], `native selects remain: ${offenders.join(', ')}`);
   });

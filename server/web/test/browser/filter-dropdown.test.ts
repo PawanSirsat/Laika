@@ -474,8 +474,21 @@ void describe('the Label dropdown with 35 labels (LAI-726)', () => {
       await openFilter(h);
       const label = field(h, 'Label');
       await label.click();
-      const search = panel(h).getByRole('searchbox', { name: 'Search labels' });
+      /*
+       * **The search box is itself a combobox** (review, round 1): it owns the
+       * listbox while it has focus, so it says so — `aria-autocomplete`,
+       * `aria-expanded`, `aria-controls` — rather than being a bare searchbox
+       * carrying `aria-activedescendant`.
+       */
+      const search = panel(h).getByRole('combobox', { name: 'Search labels', exact: true });
       assert.equal(await isFocused(search), true, `focus went to ${await focused(h)}`);
+      assert.equal(await search.getAttribute('aria-autocomplete'), 'list');
+      assert.equal(await search.getAttribute('aria-expanded'), 'true');
+      assert.equal(
+        await search.getAttribute('aria-controls'),
+        await panel(h).getByRole('listbox').getAttribute('id'),
+        'the search box does not name the listbox it drives',
+      );
 
       await h.page.keyboard.type('WARE');
       const values = await panel(h)
@@ -665,8 +678,19 @@ void describe('rich options (LAI-726)', () => {
 
       await field(h, 'Sprint').click();
       const s3 = panel(h).locator('[data-value="s3"]');
-      assert.equal((await s3.locator('.dd-key').innerText()).trim(), 'S3');
-      assert.equal((await s3.locator('.dd-label').innerText()).trim(), 'Billing');
+      /*
+       * **The key is part of the name** (review, round 1): it was drawn in an
+       * `aria-hidden` icon, so a screen reader heard "Billing" for a sprint
+       * the chips and the strip call "S3 · Billing".
+       */
+      assert.equal(
+        await panel(h)
+          .getByRole('option', { name: /^S3 · Billing\b/ })
+          .count(),
+        1,
+        'the S3 option is not named "S3 · Billing"',
+      );
+      assert.equal((await s3.locator('.dd-label').innerText()).trim(), 'S3 · Billing');
       assert.equal((await s3.locator('.dd-badge').innerText()).trim(), 'Active');
       assert.notEqual((await s3.locator('.dd-detail').innerText()).trim(), '', 'no dates');
       assert.equal(
@@ -768,6 +792,150 @@ void describe('the dropdown near the bottom of the window (LAI-726)', () => {
         assert.ok(g.top >= 0, `runs off the top: ${String(g.top)}`);
         await h.page.keyboard.press('Escape');
       }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the dropdown, round 1 of review (LAI-726)', () => {
+  /*
+   * **Safari's order** (review, round 1). Safari does not focus a button on
+   * mousedown, so clicking the trigger of an open, searchable dropdown blurs
+   * the search box with no `relatedTarget` *before* the click — and a blur
+   * that closed the panel then let the click reopen it. Chromium focuses the
+   * button and never shows the bug, so the events are dispatched in Safari's
+   * order by hand.
+   */
+  void test('clicking the trigger closes a searchable dropdown, in Safari’s event order', async () => {
+    const h = await open('/list?project=laika-core', STUB);
+    try {
+      await ready(h, '.list tbody tr');
+      await openFilter(h);
+      const label = field(h, 'Label');
+      await label.click();
+      await panel(h).locator('.dd-search-input').waitFor();
+
+      await label.evaluate(async (trigger) => {
+        const tick = () => new Promise((done) => setTimeout(done, 0));
+        const at = trigger.getBoundingClientRect();
+        const xy = { bubbles: true, cancelable: true, clientX: at.left + 5, clientY: at.top + 5 };
+        trigger.dispatchEvent(new PointerEvent('pointerdown', { ...xy, pointerType: 'mouse' }));
+        trigger.dispatchEvent(new MouseEvent('mousedown', xy));
+        await tick();
+        // Safari: the search box loses focus to nothing.
+        (document.activeElement as HTMLElement | null)?.blur();
+        await tick();
+        trigger.dispatchEvent(new PointerEvent('pointerup', { ...xy, pointerType: 'mouse' }));
+        trigger.dispatchEvent(new MouseEvent('mouseup', xy));
+        trigger.dispatchEvent(new MouseEvent('click', xy));
+        await tick();
+      });
+      assert.equal(await panel(h).count(), 0, 'the click reopened the dropdown it was closing');
+      assert.equal(await label.getAttribute('aria-expanded'), 'false');
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **Type-ahead on a closed trigger starts from the selected option**
+   * (review, round 1), not from wherever the last session left the active
+   * one. Updated within has two options starting "L".
+   */
+  void test('type-ahead on a closed trigger starts from the selected option', async () => {
+    const h = await open('/list?project=laika-core&updated=7d', STUB);
+    try {
+      await ready(h, '.list tbody tr');
+      await openFilter(h);
+      const updated = field(h, 'Updated within');
+      const activeLabel = async (): Promise<string> => {
+        const id = await updated.getAttribute('aria-activedescendant');
+        if (id === null) return '(none)';
+        return (await h.page.locator(`[id="${id}"] .dd-label`).innerText()).trim();
+      };
+      await updated.focus();
+      // A first session that moves the active option and chooses nothing.
+      await h.page.keyboard.press('ArrowDown');
+      await h.page.keyboard.press('ArrowDown');
+      assert.equal(await activeLabel(), 'Last 30 days', 'positive control: the active one moved');
+      await h.page.keyboard.press('Escape');
+
+      // "L" from "Last 7 days", the value, is "Last 30 days".
+      await h.page.keyboard.press('l');
+      assert.equal(await activeLabel(), 'Last 30 days', 'type-ahead started from the old session');
+      await h.page.keyboard.press('Escape');
+      // And again at once: closing reset the buffer, so this is one "l", not "ll".
+      await h.page.keyboard.press('l');
+      assert.equal(await activeLabel(), 'Last 30 days', 'the buffer outlived the close');
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **A touch screen keeps its keyboard down** (review, round 1): focusing
+   * the search box on open raises the on-screen keyboard over the list the
+   * reader opened to look at. On a coarse pointer the search box is there but
+   * not focused. `matchMedia` is answered by an init script — Chromium has no
+   * switch for the pointer media feature.
+   */
+  void test('on a coarse pointer the search box is offered but not focused', async () => {
+    const h = await open('/list?project=laika-core', STUB, {
+      before: async (page) => {
+        await page.addInitScript(() => {
+          const real = window.matchMedia.bind(window);
+          window.matchMedia = (query: string) => {
+            const answer = real(query);
+            if (!/pointer:\s*coarse/.test(query)) return answer;
+            return Object.defineProperty(Object.create(answer) as MediaQueryList, 'matches', {
+              value: true,
+            });
+          };
+        });
+      },
+    });
+    try {
+      await ready(h, '.list tbody tr');
+      assert.equal(
+        await h.page.evaluate(() => matchMedia('(pointer: coarse)').matches),
+        true,
+        'positive control: the page sees a coarse pointer',
+      );
+      await openFilter(h);
+      const label = field(h, 'Label');
+      await label.click();
+      await panel(h).locator('.dd-search-input').waitFor();
+      assert.equal(
+        await panel(h)
+          .locator('.dd-search-input')
+          .evaluate((el) => el === document.activeElement),
+        false,
+        'the search box took focus on a touch screen',
+      );
+      assert.equal(await isFocused(label), true, `focus went to ${await focused(h)}`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('scrolling the list inside the panel keeps it open', async () => {
+    const h = await open('/list?project=laika-core', STUB);
+    try {
+      await ready(h, '.list tbody tr');
+      await openFilter(h);
+      await field(h, 'Label').click();
+      const list = panel(h).getByRole('listbox');
+      await list.hover();
+      await h.page.mouse.wheel(0, 300);
+      await h.page.waitForFunction(
+        () =>
+          (document.querySelector('[data-dropdown-panel] [role="listbox"]')?.scrollTop ?? 0) > 0,
+        undefined,
+        { timeout: 5_000 },
+      );
+      await h.page.waitForTimeout(150);
+      assert.equal(await panel(h).count(), 1, 'scrolling its own list closed the panel');
     } finally {
       await h.close();
     }

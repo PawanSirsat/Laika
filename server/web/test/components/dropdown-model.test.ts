@@ -13,6 +13,7 @@ import {
   move,
   noMatches,
   place,
+  placeWithin,
   typeahead,
   type ModelOption,
 } from '../../src/components/dropdown-model.ts';
@@ -157,5 +158,55 @@ void describe('dropdown placement (LAI-726)', () => {
     const p = place(at(100, 0, 100), 200, { width: 150, height: 768 }, opts);
     assert.equal(p.minWidth, 134);
     assert.equal(p.left, 8);
+  });
+});
+
+/*
+ * **The visible area, not the layout viewport** (LAI-726 review, round 1). On
+ * a phone the visual viewport is smaller than the layout one and can be
+ * scrolled inside it — the on-screen keyboard, a pinch zoom — so a panel
+ * placed against `innerHeight` lands under the keyboard. `placeWithin` places
+ * against the area actually visible and hands back fixed-position values.
+ */
+void describe('dropdown placement inside the visual viewport (LAI-726 round 1)', () => {
+  const opts = { gap: 4, margin: 8, cap: 288, floor: 160 };
+  const trigger = (top: number, left = 20, width = 200) => ({
+    top,
+    bottom: top + 32,
+    left,
+    right: left + width,
+    width,
+  });
+
+  void test('with no offset it is exactly `place`', () => {
+    const t = trigger(100);
+    const area = { left: 0, top: 0, width: 1366, height: 768 };
+    assert.deepEqual(placeWithin(t, 400, area, 768, opts), place(t, 400, area, opts));
+  });
+
+  void test('flips against the visible area, and its fixed values still meet the trigger', () => {
+    // The visible area starts 100px down the layout viewport and is 300 tall
+    // (a keyboard took the rest); the trigger sits 250px into it.
+    const area = { left: 0, top: 100, width: 400, height: 300 };
+    const t = trigger(350);
+    const p = placeWithin(t, 400, area, 800, opts);
+    assert.equal(p.side, 'above', 'placed below, under the keyboard');
+    // `bottom` is from the layout viewport's bottom: the panel's lower edge
+    // lands `gap` above the trigger.
+    assert.equal(800 - p.bottom!, t.top - 4);
+    assert.ok(p.maxHeight <= 250 - 12, `taller than the visible room: ${String(p.maxHeight)}`);
+  });
+
+  void test('below, the top is in layout coordinates and the panel stays in the visible area', () => {
+    const area = { left: 30, top: 50, width: 300, height: 600 };
+    const t = trigger(80, 40, 100);
+    const p = placeWithin(t, 200, area, 900, opts);
+    assert.equal(p.side, 'below');
+    assert.equal(p.top, t.bottom + 4);
+    assert.ok(p.left >= area.left + 8, `left of the visible area: ${String(p.left)}`);
+    assert.ok(
+      p.left + p.minWidth <= area.left + area.width - 8,
+      `past the visible area's right: ${String(p.left + p.minWidth)}`,
+    );
   });
 });
