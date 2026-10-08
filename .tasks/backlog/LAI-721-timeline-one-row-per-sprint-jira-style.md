@@ -2,12 +2,11 @@
 id: LAI-721
 title: 'Timeline, Jira-style: one row per sprint on a left-right scrolling axis, tasks only when a sprint is opened'
 area: web
-assignee: chief
+assignee: unclaimed
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
-started: 2026-10-08T10:59:00Z
+status: backlog
 ---
 
 ## Goal
@@ -74,3 +73,11 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
   endpoint, no new dependency.
 - Read-only, as today: dragging a sprint edge and dragging from the tray are
   still not built (§11.4.3 lists them; out of scope here).
+
+## Released, 2026-10-08
+
+Claimed and released the same day, before any code was committed: LAI-717 came
+back from review and one task is in progress at a time (CLAUDE.md §2). The
+builder's draft (`TimelineScreen.tsx`, `timeline-derive.ts`) is kept outside
+the repo and is re-claimed as soon as LAI-717 is back in review.
+
