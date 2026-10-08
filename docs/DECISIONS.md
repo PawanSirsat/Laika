@@ -3950,3 +3950,23 @@ SPEC §11.4.3 as written, which D-049 had overridden without amending.
 - Per-sprint counts without opening a sprint. That needs the server to serve
   them (a count on the sprint view, or a slim task list), which belongs to the
   data-layer work already planned.
+
+### Correction (LAI-721 review, same day)
+
+**"Returns the screen to SPEC §11.4.3 as written" was not true**, and is
+withdrawn. §11.4.3 described a single track of sprint bars with the tray
+beside the axis, no zoom, and a bar carrying name, goal and counts. What was
+built — at the owner's direction — is one *row* per sprint on a scrolling,
+zoomable axis, with the tray below it. §11.4.3 has been rewritten to describe
+the screen as built; this decision is what changed it.
+
+Two points above are also superseded by the same review:
+
+- **Counts without opening** are now served: `GET /projects/:slug/sprints`
+  carries `task_counts` per sprint, from the grouped query MCP's
+  `list_sprints` already used (§6.4). Every bar shows done over total before
+  it is opened. Blocked counts still need a sprint's tasks, so they appear
+  once it is opened — with blockers in other sprints counted as *unknown*,
+  never as unblocked.
+- **Dates the axis cannot hold** — far-future or not dates at all — are left
+  off it and listed beside it, and the window is bounded around today.
