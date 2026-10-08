@@ -18,11 +18,21 @@ disagree in two ways:
 1. **Removing the sprint chip means different things.** The toolbar chip goes
    through the popover's "Any" (`?sprint=all`, every sprint). The View-settings
    chip calls `setParam(key, undefined)` in `BoardScreen.tsx`, which deletes
-   `?sprint=`, and on the Board no `?sprint=` means "open on the active sprint"
-   (LAI-713). The same × on the same filter can land on two different boards.
+   `?sprint=`. **Correction (LAI-717 review):** a missing `?sprint=` does not
+   immediately mean the active sprint; the board re-applies its active-sprint
+   default (LAI-713) only on re-entry or a reload. So the deleted key shows
+   every sprint now and the active sprint later, while `sprint=all` keeps
+   every sprint across a reload.
 2. **The labels say less.** View settings shows `activeFilters` labels such as
    `Assignee` and `Sprint` with no name; the toolbar chips say
    `Assignee: Ada Lovelace` and `Sprint: S1 · Foundations` (`filter-chips.ts`).
+
+3. **The same split sits inside the toolbar's own chip row** (LAI-717
+   review): a sprint chip's × writes `sprint=all` (kept on reload), while the
+   row's *Clear all* — `withoutFilters`, unchanged by LAI-717 — deletes the
+   key, so the active sprint comes back on reload. The two now sit side by
+   side. Decide whether *Clear all* should leave `sprint=all`, and make View
+   settings match whichever is chosen.
 
 ## Acceptance criteria
 
