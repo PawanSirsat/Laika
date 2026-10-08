@@ -1,6 +1,7 @@
 import { everyPage } from '../../../api/every-page.ts';
-import { useEffect, useState } from 'react';
-import { listTasks, type Task } from '../../../api/tasks.ts';
+import { useEffect, useMemo, useState } from 'react';
+import type { Task } from '../../../api/tasks.ts';
+import { useProjectTasks } from '../../../api/use-project-tasks.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
 import { DemoNotice } from '../../../components/DemoNotice.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -31,30 +32,27 @@ const WEEKDAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
  * nothing more.
  */
 export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
-  const [tasks, setTasks] = useState<readonly Task[] | undefined>(undefined);
+  /*
+   * The project's one task set (LAI-724) — shared with every other tab and
+   * live through the store, where this screen used to walk it on every visit.
+   * A failure is an empty calendar, as it was.
+   */
+  const set = useProjectTasks(slug);
+  const tasks = useMemo(
+    (): readonly Task[] | undefined =>
+      set?.status === 'ready'
+        ? set.tasks.filter((t): t is Task => !('deleted' in t))
+        : set?.status === 'error'
+          ? []
+          : undefined,
+    [set?.status, set?.tasks],
+  );
   const [sprints, setSprints] = useState<readonly Sprint[]>([]);
   const now = Date.now();
 
   useEffect(() => {
     if (slug === undefined) return;
     const controller = new AbortController();
-
-    everyPage((cursor) =>
-      listTasks(
-        slug,
-        cursor === undefined ? { limit: 200 } : { limit: 200, cursor },
-        controller.signal,
-      ),
-    )
-      .then(({ items }) => {
-        // Every page, not the first (LAI-703); `page.data` is the whole list.
-        const page = { data: items };
-        if (!controller.signal.aborted)
-          setTasks(page.data.filter((t): t is Task => !('deleted' in t)));
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setTasks([]);
-      });
 
     everyPage((cursor) =>
       listSprints(slug, cursor === undefined ? {} : { cursor }, controller.signal),

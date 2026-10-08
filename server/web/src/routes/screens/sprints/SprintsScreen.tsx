@@ -7,7 +7,7 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { canAssignToSprints, canManageSprints, type Sprint } from '../../../api/sprints.ts';
 import { listProjects } from '../../../api/projects.ts';
-import { useSession } from '../../../api/use-session.ts';
+import { useShell } from '../../../components/shell/shell-context.ts';
 import { useRoute } from '../../use-route.ts';
 import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
 import { AssignTasksPanel } from './AssignTasksPanel.tsx';
@@ -42,7 +42,12 @@ import { withProjectParam } from '../../nav-url.ts';
  */
 export function SprintsScreen() {
   const { params, setParams, navigate } = useRoute();
-  const session = useSession();
+  /*
+   * **The shell's session, not a second one** (LAI-724). A `useSession()` here
+   * was a second session hook: it asked `/me` again on every visit, and it
+   * replaced the shell's 401 handler with its own and cleared it on leaving.
+   */
+  const { me } = useShell();
   const [slug, setSlug] = useState<string | undefined>(params.get('project') ?? undefined);
   const [projectId, setProjectId] = useState<string | undefined>(undefined);
   const [projectError, setProjectError] = useState<unknown>(null);
@@ -89,7 +94,6 @@ export function SprintsScreen() {
 
   const sprints = useSprints(slug);
 
-  const me = session.session.status === 'authenticated' ? session.session.user : undefined;
   const canManage =
     me !== undefined &&
     projectId !== undefined &&
