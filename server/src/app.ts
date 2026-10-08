@@ -48,6 +48,7 @@ import { users } from './db/schema.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
 import { StaticFileCache } from './http/static-cache.ts';
+import { apiCompression } from './http/middleware/compression.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
 import { translateAuthResponse } from './http/auth-errors.ts';
 
@@ -217,6 +218,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // Immediately after cors: response headers, so they apply to everything the
   // chain produces, including errors and the SPA document (SPEC §13.1).
   app.use('*', createSecurityHeaders(contentSecurityPolicyFor(staticOptions.fallbackDocument)));
+  // gzip for API JSON (LAI-722). Outside everything that produces or stores a
+  // body — idempotency keeps the plain bytes it replays — and it decides for
+  // itself which paths it may touch: never `/mcp`, never the SSE stream.
+  app.use('*', apiCompression());
   app.use('*', bodyLimit({ maxSize: BODY_LIMIT_BYTES }));
   // SPEC §11.2 position. Real when auth is configured, pass-through otherwise;
   // either way an anonymous request continues with `actor: null` rather than 401.
