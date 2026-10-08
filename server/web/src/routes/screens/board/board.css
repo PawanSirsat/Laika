@@ -64,16 +64,6 @@
   color: var(--text-secondary);
 }
 
-.board-filter select {
-  font: inherit;
-  font-size: var(--text-sm);
-  color: var(--text-primary);
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-chip);
-  padding: 2px var(--space-2);
-}
-
 .board-filter-check input {
   accent-color: var(--accent);
 }
@@ -567,7 +557,6 @@
   font-weight: var(--weight-heavy);
 }
 
-.bar-control select,
 .bar-control input[type='checkbox'] {
   font: inherit;
   font-size: var(--text-sm);
@@ -576,10 +565,6 @@
   color: inherit;
   padding: 0;
   margin: 0;
-}
-
-.bar-control select:focus {
-  outline: none;
 }
 
 /* Says what search actually covers. The endpoint has no text parameter, so a

@@ -1167,7 +1167,7 @@
   min-width: 0;
   width: 100%;
   /* Uncapped, as the select was: the negative margin below pulls it left, and
-     the dropdown's own \`max-width: 100%\` would then stop it short of its box. */
+     the dropdown's own `max-width: 100%` would then stop it short of its box. */
   max-width: none;
   font: inherit;
   font-size: 0.84375rem;
