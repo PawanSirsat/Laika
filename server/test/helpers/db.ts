@@ -135,20 +135,13 @@ export function expectSqliteError(fn: () => unknown, pattern: RegExp): void {
 }
 
 /**
- * `EXPLAIN QUERY PLAN` for every statement `run` prepares against `table`
- * (LAI-722).
+ * Every SQL statement `run` prepares, captured off the driver (LAI-722).
  *
- * The SQL is captured off the driver as the code **actually issues it**, not
- * retyped in the test — the reason `dependencies.test.ts` does the same: a
- * hand-written copy keeps passing while the real query scans. Placeholders are
- * bound with dummy values; without `sqlite_stat4` their values cannot change
- * the plan, only their count can.
+ * As the code **actually issues it**, not retyped in the test — the reason
+ * `dependencies.test.ts` does the same: a hand-written copy keeps passing while
+ * the real query does something else.
  */
-export function queryPlansOf(
-  sqlite: Database.Database,
-  table: string,
-  run: () => unknown,
-): string[] {
+export function preparedDuring(sqlite: Database.Database, run: () => unknown): string[] {
   const prepared: string[] = [];
   const real = sqlite.prepare.bind(sqlite);
   (sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
@@ -162,7 +155,23 @@ export function queryPlansOf(
     (sqlite as unknown as { prepare: typeof real }).prepare = real;
   }
 
-  const queries = prepared.filter((source) => new RegExp(`\\b"?${table}"?\\b`).test(source));
+  return prepared;
+}
+
+/**
+ * `EXPLAIN QUERY PLAN` for every statement `run` prepares against `table`.
+ *
+ * Placeholders are bound with dummy values; without `sqlite_stat4` their values
+ * cannot change the plan, only their count can.
+ */
+export function queryPlansOf(
+  sqlite: Database.Database,
+  table: string,
+  run: () => unknown,
+): string[] {
+  const queries = preparedDuring(sqlite, run).filter((source) =>
+    new RegExp(`\\b"?${table}"?\\b`).test(source),
+  );
   if (queries.length === 0) throw new Error(`nothing was prepared against ${table}`);
 
   return queries.map((source) => {
