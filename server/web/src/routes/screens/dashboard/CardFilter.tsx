@@ -32,7 +32,6 @@ export function CardFilter({
   const button = useRef<HTMLButtonElement>(null);
   const pop = useRef<HTMLDivElement>(null);
   const popId = useId();
-  const titleId = useId();
 
   const close = useCallback((returnFocus: boolean): void => {
     setOpen(false);
@@ -81,11 +80,11 @@ export function CardFilter({
         {active > 0 && <span className="dcf-badge">{active}</span>}
       </button>
       {open && (
-        <div ref={pop} id={popId} className="dcf-pop" role="dialog" aria-labelledby={titleId}>
+        <div ref={pop} id={popId} className="dcf-pop" role="dialog" aria-label={`${title} filters`}>
           <div className="dcf-head">
-            <h3 className="dcf-title" id={titleId}>
-              {title} filters
-            </h3>
+            {/* "Filters", as on the Board: the card it belongs to is right
+                behind it, and the full name did not leave room for Clear. */}
+            <h3 className="dcf-title">Filters</h3>
             {active > 0 && <span className="dcf-count">{active} active</span>}
             <button
               type="button"
@@ -111,14 +110,20 @@ export function CardFilter({
 export function CardField({
   label,
   set,
+  wide = false,
   children,
 }: {
   readonly label: string;
   readonly set: boolean;
+  /** Across both columns, for options too long for half the popover. */
+  readonly wide?: boolean;
   readonly children: ReactNode;
 }) {
+  const className = ['dcf-field', set ? 'dcf-field-set' : '', wide ? 'dcf-field-wide' : '']
+    .filter((c) => c !== '')
+    .join(' ');
   return (
-    <label className={set ? 'dcf-field dcf-field-set' : 'dcf-field'}>
+    <label className={className}>
       <span className="dcf-label">{label}</span>
       {children}
     </label>

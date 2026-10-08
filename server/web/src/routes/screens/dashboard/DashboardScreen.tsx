@@ -383,7 +383,7 @@ export function DashboardScreen() {
           }}
         />
       </CardField>
-      <CardField label="Range" set={statusFilter.allTasks}>
+      <CardField wide label="Range" set={statusFilter.allTasks}>
         <CardSelect
           value={statusFilter.allTasks ? ALL_TASKS : ''}
           options={rangeOptions}
@@ -442,7 +442,7 @@ export function DashboardScreen() {
           }}
         />
       </CardField>
-      <CardField label="Range" set={peopleFilter.allTasks}>
+      <CardField wide label="Range" set={peopleFilter.allTasks}>
         <CardSelect
           value={peopleFilter.allTasks ? ALL_TASKS : ''}
           options={rangeOptions}
