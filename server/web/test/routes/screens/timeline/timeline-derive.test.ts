@@ -293,8 +293,21 @@ void describe('chartWindow at Quarters — whole quarters (LAI-721 review)', () 
 
 void describe('todayLabel — the UTC day the line is drawn on (LAI-721 review)', () => {
   void test('23:30 UTC on 8 Oct is THU 8 OCT, whatever the local clock says', () => {
-    assert.equal(todayLabel(Date.UTC(2026, 9, 8, 23, 30)), 'THU 8 OCT');
-    assert.equal(todayLabel(Date.UTC(2026, 9, 9, 0, 30)), 'FRI 9 OCT');
+    // Either side of Greenwich: a local reading is a day out in one of them.
+    const zone = process.env.TZ;
+    try {
+      for (const tz of ['America/Los_Angeles', 'Pacific/Auckland', 'UTC']) {
+        process.env.TZ = tz;
+        assert.equal(todayLabel(Date.UTC(2026, 9, 8, 23, 30)), 'THU 8 OCT', tz);
+        assert.equal(todayLabel(Date.UTC(2026, 9, 9, 0, 30)), 'FRI 9 OCT', tz);
+      }
+      // Positive control: the zone change reached the clock this test reads.
+      process.env.TZ = 'America/Los_Angeles';
+      assert.equal(new Date(Date.UTC(2026, 9, 8, 0, 0)).getDate(), 7, 'TZ did not take');
+    } finally {
+      if (zone === undefined) delete process.env.TZ;
+      else process.env.TZ = zone;
+    }
   });
 });
 
