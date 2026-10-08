@@ -39,6 +39,9 @@ and one Dockerfile comment.
 - `server/src/services/tasks.ts` — `LIMIT` in SQL for `listTasks`
 - `server/src/db/schema.ts` and one generated migration — `heartbeats(created_at)`
 - tests under `server/test/` mirroring each of the above
+- `server/web/test/source-maps.test.ts` — the bundle names no source map
+  (added to this list in review round 1)
+- `logs/perf-2026-10-08.md` — this task's log (added in review round 1)
 
 ## Acceptance criteria
 
@@ -48,7 +51,8 @@ and one Dockerfile comment.
       with an `ETag`; the build-less fallback keeps `no-store`.
 - [x] Static text assets are compressed once per file version (brotli and gzip,
       node:zlib) and served by `Accept-Encoding` with `Content-Encoding` and
-      `Vary: Accept-Encoding`; woff2 and images are never compressed.
+      `Vary: Accept-Encoding`; raster images and fonts are never compressed
+      (SVG and ICO, being text, are — reworded in review round 1).
 - [x] API JSON above 1 KB is gzipped; `text/event-stream` (`/api/v1/events`),
       `/mcp` responses and already-encoded responses are not. Each is a test.
 - [x] HEAD, `304` and a `Range` request still answer correctly with compression on.
@@ -71,3 +75,26 @@ and one Dockerfile comment.
 - Out of scope (later phases): client cache or store, web data-fetching changes,
   `?fields=`, ETags on API JSON, CloudFront or any infrastructure.
 - Nothing is pushed from this branch; the owner releases it.
+
+## Review notes (round 1)
+
+Approved, no blockers; the reviewer ran the gate on 14910f9 (TEST 0, LINT 0,
+FMT 0), which verifies criterion 10. Follow-ups, each a new commit:
+
+1. Scope list was missing `server/web/test/source-maps.test.ts` and
+   `logs/perf-2026-10-08.md` — added above.
+2. EXPLAIN QUERY PLAN before and after (project, task and org feed, presence,
+   capacity) recorded in `logs/perf-2026-10-08.md`.
+3. The compression floor applied only to `application/json`; a 5-byte
+   `text/plain` or `application/problem+json` body was gzipped to ~25 bytes.
+   Now every `json`/`text/*` body that is not a stream is measured; tested.
+4. The `/api/v1/events` path skip was never tested on its own (hono/compress
+   also refuses `text/event-stream`); a bare-Hono test now fails on its removal.
+5. The static cache is warmed at boot, fire-and-forget, failures logged; tested.
+6. AC2 said "images" are never compressed, but SVG and ICO are — correctly.
+   The criterion is reworded to "raster images and fonts".
+7. The keep-alive comment claimed a current Node race; reworded as defensive.
+   `headersTimeout` is now proven against the built server too.
+8. LAI-723 raised to p1 with the reviewer's numbers.
+9. Optional, done: a `304` answers only the ETag of the representation served.
+
