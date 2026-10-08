@@ -24,7 +24,9 @@ import {
   readUpdated,
   updatedSince,
   withoutFilters,
+  type FilterKey,
 } from './board/filter-keys.ts';
+import { filterChips } from './board/filter-chips.ts';
 import { pageParam, readPage, readSort, sortParams } from './list/list-derive.ts';
 import { isOverdue } from '../../api/date-only.ts';
 import { NO_SELECTION } from './list/list-select.ts';
@@ -806,6 +808,26 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const applied = useMemo(() => activeFilters(params, filterNames), [params, filterNames]);
   const activeCount = applied.filter((f) => f.key !== 'q').length;
 
+  /*
+   * **The same filters, named the way the popover names them** (LAI-717): the
+   * chips under the toolbar say *which* member and *which* sprint, which the
+   * View-settings labels above do not.
+   */
+  const chips = useMemo(
+    () =>
+      filterChips(params, {
+        status: filterNames.status,
+        member: (id) => members.get(id)?.name,
+        sprint: (id) => {
+          const found = sprints.find((s) => s.id === id);
+          return found === undefined
+            ? undefined
+            : `${sprintLabels.get(found.id)?.label ?? ''} · ${found.name}`;
+        },
+      }),
+    [params, filterNames, members, sprints, sprintLabels],
+  );
+
   const editingColumn =
     editing === undefined ? undefined : columns.visible.find((c) => c.id === editing);
 
@@ -873,6 +895,21 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     next.delete('page');
     onParamsChange(next);
   }, [filters, params, onParamsChange]);
+
+  /**
+   * Remove one filter, **through the setter the popover's "Any" uses** — so
+   * a chip's × and choosing "Any" can never mean two different things. The
+   * sprint is the one key where that is not "delete it": no `?sprint=` means
+   * "open on the active sprint" (LAI-713), and every sprint is `all`.
+   */
+  const removeFilter = (key: FilterKey): void => {
+    setParam(key, key === 'sprint' ? ALL_SPRINTS : undefined);
+  };
+
+  /** Every filter key gone; project, task, group, sort kept (LAI-487). */
+  const clearFilters = (): void => {
+    onParamsChange(withoutFilters(params));
+  };
 
   if (projectError !== null) {
     return (
@@ -1027,12 +1064,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             setParam('group', value === 'column' ? undefined : value);
           }}
           showGroup={view !== 'list'}
-          onClearFilters={() => {
-            // Every filter in the one list — this used to be a literal that
-            // missed `sprint` (LAI-487). Sort, page, group and the open task
-            // are not filters and stay.
-            onParamsChange(withoutFilters(params));
-          }}
+          // Every filter in the one list — this used to be a literal that
+          // missed `sprint` (LAI-487). Sort, page, group and the open task
+          // are not filters and stay.
+          onClearFilters={clearFilters}
+          chips={chips}
+          onRemoveFilter={removeFilter}
           onInsights={() => {
             setInsightsOpen(true);
           }}
@@ -1467,6 +1504,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               sprints={sprints}
               theme={theme}
               filtered={filtered}
+              onClearFilters={clearFilters}
               canAdd={mayCreate}
               // Editing a task is member+ (§3.2), the gate the drawer uses.
               mayEdit={mayCreate}

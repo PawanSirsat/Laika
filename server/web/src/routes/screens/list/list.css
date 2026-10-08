@@ -44,6 +44,12 @@
  * it the box grows to the table and there is nothing to scroll.
  */
 .list-scroll {
+  /*
+   * A column, so the Create row can be pushed to the card's foot
+   * (`margin-top: auto` on `.list-create`) when the rows do not fill it.
+   */
+  display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   overflow-y: auto;
   min-height: 0;
@@ -58,6 +64,8 @@
 }
 
 .list {
+  /* Its own height, always: the free space is the Create row's to push. */
+  flex: none;
   /* The design's 64rem plus the Due column (D-066), so Summary keeps its room,
      plus the 1rem the priority icon added to PRI (LAI-705). */
   min-width: 71.75rem;
@@ -435,7 +443,32 @@
   border-bottom: none;
 }
 
+/*
+ * **The empty List, centred in the card** (LAI-717): the state takes the space
+ * above the Create row and centres itself in it, so the two never meet.
+ */
+.list-scroll-empty > .state {
+  flex: 1 1 auto;
+}
+
+/*
+ * **Pinned to the card's foot** (LAI-717, owner).
+ *
+ * Few rows: `margin-top: auto` takes the column's free space, so the blank
+ * sits between the last row and this one rather than under it. Many rows: there
+ * is no free space, and `sticky` holds it at the bottom of the scrollport while
+ * the rows pass beneath — at the end of the scroll it is back in its own place
+ * after the last row, so it never hides that row. `left: 0` keeps it in view
+ * when the table is scrolled sideways. The background is an opaque token and
+ * the stacking sits above the sticky header's, or rows would show through.
+ */
 .list-create {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  flex: none;
+  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 0.4375rem;

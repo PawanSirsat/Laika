@@ -49,6 +49,8 @@ export interface ListViewProps {
   readonly sprints: readonly Sprint[];
   readonly theme: Theme;
   readonly filtered: boolean;
+  /** Every filter removed — the empty state's way out when a filter emptied the List (LAI-717). */
+  readonly onClearFilters: () => void;
   readonly canAdd: boolean;
   /**
    * Member+ (§3.2), the same gate as the drawer's controls. A viewer gets no
@@ -141,6 +143,7 @@ export function ListView({
   sprints,
   theme,
   filtered,
+  onClearFilters,
   canAdd,
   mayEdit,
   maySetSprint,
@@ -243,12 +246,48 @@ export function ListView({
     });
   };
 
+  /*
+   * **The design closes the table with its own create row**, and since
+   * LAI-717 it is pinned to the card's foot: under a short list the blank
+   * space sits *above* it, and under a long one it stays in view as the rows
+   * scroll (`list.css`). One element for both cases below, so the empty List
+   * offers the same way to add work as the full one.
+   */
+  const createRow = canAdd && (
+    <button type="button" className="list-create" onClick={onAdd}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" />
+      </svg>
+      Create task
+    </button>
+  );
+
   if (rows.length === 0) {
+    /*
+     * **In the card, not loose in the row** (LAI-717). `.board-main` is a flex
+     * *row*, and a bare `EmptyState` in it is sized to its own content — so it
+     * centred its words inside a box pinned to the left edge, which is what
+     * the owner saw. Inside the card it takes the space above the Create row
+     * and centres itself in it, both ways.
+     *
+     * **Filtered, it says how to stop being filtered.** The chips under the
+     * toolbar name each filter; this clears them all in one go.
+     */
     return (
-      <EmptyState
-        headline={filtered ? 'Nothing here for this filter' : 'No tasks in this project yet'}
-        {...(filtered ? { body: 'Widen the range or switch the filter.' } : {})}
-      />
+      <div className="list-pane">
+        <div className="list-scroll list-scroll-empty">
+          <EmptyState
+            headline={filtered ? 'Nothing here for this filter' : 'No tasks in this project yet'}
+            {...(filtered
+              ? {
+                  body: 'Widen the range or switch the filter.',
+                  action: { label: 'Clear filters', onClick: onClearFilters },
+                }
+              : {})}
+          />
+          {createRow}
+        </div>
+      </div>
     );
   }
 
@@ -498,15 +537,7 @@ export function ListView({
           </tbody>
         </table>
 
-        {/* The design closes the table with its own create row. */}
-        {canAdd && (
-          <button type="button" className="list-create" onClick={onAdd}>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.4" />
-            </svg>
-            Create task
-          </button>
-        )}
+        {createRow}
       </div>
 
       {/*

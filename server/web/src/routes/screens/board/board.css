@@ -16,16 +16,12 @@
 }
 
 /*
- * **The list keeps its bottom margin; the board does not.**
- *
- * The board is a full-height column that ends at the viewport, so a margin
- * under it is dead space below the lanes rather than breathing room after
- * content — the owner's words were *"use the space we have … the bottom as
- * well"*. A list scrolls the page and still wants the gap.
+ * **No margin under the List's table** (LAI-717). This gave `.list` a
+ * `--space-6` bottom margin when the List scrolled the page. Since LAI-621 the
+ * table scrolls inside its own card, so the margin was 32px of blank card under
+ * the last row — the "extra padding" on a one-row List in the owner's
+ * screenshot. The board never wanted it either.
  */
-.list {
-  margin-bottom: var(--space-6);
-}
 
 .board-views {
   display: flex;
