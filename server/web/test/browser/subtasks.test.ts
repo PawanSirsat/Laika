@@ -95,12 +95,16 @@ const OTHER = task({
   title: 'Unrelated',
   due_on: JUL_12 + 365 * 86_400_000,
 });
-/** Not on the board's page — only the server knows it is LC-1's. */
+/**
+ * LC-1's third child, in the backlog. **In the unfiltered list, as the server
+ * serves it** (LAI-724 follow-up): this fixture used to serve it only under
+ * `?parent=t1`, a list the real server never answers that way.
+ */
 const HIDDEN = task({
   id: 't5',
   key: 'LC-5',
   number: 5,
-  title: 'Cookie policy, filtered off the board',
+  title: 'Cookie policy',
   parent_task_id: 't1',
 });
 
@@ -129,9 +133,9 @@ const STUB: ApiStub = {
     next_cursor: null,
   },
   '/api/v1/projects/laika-core': CORE,
-  // The board's own page, and the section's question — told apart by query.
+  // The project's whole set, and the section's question — told apart by query.
   '/api/v1/projects/laika-core/tasks?limit=200': {
-    data: [PARENT, DONE, OPEN, OTHER],
+    data: [PARENT, DONE, OPEN, OTHER, HIDDEN],
     next_cursor: null,
   },
   '/api/v1/projects/laika-core/tasks?parent=t1&limit=200': {
@@ -180,7 +184,7 @@ void describe('the Subtasks section', () => {
     try {
       await drawer(h);
       const section = h.page.locator('.sub-section');
-      // The server's answer, not the page's: LC-5 is on no card and still listed.
+      // The section asks the server (`?parent=t1`) and lists all three.
       await section.locator('.sub-row', { hasText: 'LC-5' }).waitFor({ timeout: 10_000 });
       assert.equal(await section.locator('.sub-row').count(), 3);
       assert.match(await section.locator('.sub-count').innerText(), /1\/3 done/);
@@ -252,8 +256,8 @@ void describe('subtasks and due dates on the cards', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
-      // Off the page, counted off the page: the board sees two children, one done.
-      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/2');
+      // Three children in the project, one done.
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
       assert.equal(await text(byKey(h, 'LC-3').locator('.card-parent')), '↳ LC-1');
       assert.equal(await byKey(h, 'LC-4').locator('.card-parent').count(), 0);
 
@@ -277,7 +281,25 @@ void describe('subtasks and due dates on the cards', () => {
       assert.equal(await byKey(h, 'LC-2').count(), 0);
       assert.equal(await byKey(h, 'LC-3').count(), 0);
       assert.equal(await byKey(h, 'LC-1').count(), 1);
-      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/2');
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
+    } finally {
+      await h.close();
+    }
+  });
+
+  /*
+   * **A filter that hides children does not change the count** (LAI-724).
+   * `byId` is the whole project's, so LC-1 counts the children `status=backlog`
+   * hides — the done LC-2 and the in-progress LC-3 — as well as LC-5, which it
+   * shows. Read off the filtered set it would say `0/1`.
+   */
+  void test('a filter that hides children keeps the parent’s whole count', async () => {
+    const h = await open('/board?project=laika-core&status=backlog', STUB);
+    try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      assert.equal(await byKey(h, 'LC-2').count(), 0, 'positive control: the filter hides LC-2');
+      assert.equal(await byKey(h, 'LC-5').count(), 1, 'positive control: LC-5 is shown');
+      assert.equal(await text(byKey(h, 'LC-1').locator('.card-subtasks')), '↳ 1/3');
     } finally {
       await h.close();
     }
