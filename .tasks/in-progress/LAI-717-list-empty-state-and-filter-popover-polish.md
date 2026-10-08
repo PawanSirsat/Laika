@@ -6,9 +6,8 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: in-progress
 started: 2026-10-08T10:28:16Z
-finished: 2026-10-08T10:50:12Z
 ---
 
 ## Goal
@@ -49,7 +48,7 @@ only**: the same fields, the same URL parameters, the same semantics.
 
 ## Acceptance criteria
 
-- [x] The List's filtered empty state is centred horizontally and vertically in
+- [ ] The List's filtered empty state is centred horizontally and vertically in
       the list area, measured in a real browser against the pane's box.
 - [x] When filters are active and the List is empty, the empty state offers
       **Clear filters**, which removes every filter key and keeps the project.
@@ -59,7 +58,7 @@ only**: the same fields, the same URL parameters, the same semantics.
       tokens only, and has its own reset control.
 - [x] Ready only, Blocked only, Top-level only, Overdue and Agent-created only
       read as one "Quick filters" group of pill toggles.
-- [x] The selects sit in a compact two-column grid; the open popover fits a
+- [ ] The selects sit in a compact two-column grid; the open popover fits a
       1366×768 laptop viewport without scrolling.
 - [x] With filters active and the popover closed, a row of removable chips sits
       under the toolbar, one per active filter (e.g. "Status: In progress ×"),
@@ -67,7 +66,7 @@ only**: the same fields, the same URL parameters, the same semantics.
 - [x] Escape and a click outside close the popover; focus moves into it on open
       and returns to the Filter button on close; every control is reachable by
       Tab and has an accessible name.
-- [x] Filter logic is unchanged: same fields, same URL parameters, same
+- [ ] Filter logic is unchanged: same fields, same URL parameters, same
       semantics. The popover is shared by the Board and the List and both are
       verified.
 - [x] **Added mid-task by the owner, same day:** the List's "+ Create task"
@@ -117,4 +116,46 @@ only**: the same fields, the same URL parameters, the same semantics.
   active-sprint default, not "Any"; its labels name no member or sprint),
   LAI-719 (the bulk bar floats over the pinned Create row while rows are
   selected).
+
+## Review notes (round 1)
+
+Sent back 2026-10-08, CHANGES REQUIRED. Gate on 051b067 confirmed green
+(TEST 0 / LINT 0 / FMT 0) and filter logic traced unchanged. Unticked: 1
+(centring proof), 6 (fit verified on the List only), 9 (Board not verified
+with an active sprint).
+
+Blocking
+- **B1** The centring test measured against `.list-scroll`, so a card that
+  shrank and pinned left would still pass. Measure against `.list-pane` /
+  `.board-main`, assert `.list-scroll` fills `.list-pane`, and prove it fails
+  when `.board-main > .list-pane { flex: 1 1 0 }` is removed.
+- **B2** The Tab test computed the Shift+Tab target and never asserted it.
+  Assert it is Clear all and inside `.bt-pop`.
+
+Should-fix
+1. Focus goes to `<body>` when a control removes itself: a field's Reset → its
+   select; a chip's × → next chip, else previous, else Filter; the chip row's
+   Clear all and the last chip → Filter; the empty state's Clear filters →
+   something sensible. Tests.
+2. Run the fit-at-1366×768 and focus tests on `/board` as well as `/list`.
+3. Board with an active sprint (LAI-713): a test that the Sprint chip shows and
+   its × writes `sprint=all`; keep the chip; light and dark screenshots.
+4. The bulk bar covers the pinned Create row on short lists, and at the end of
+   a long scroll — a regression of this task. Fix, test, and close LAI-719.
+5. "Unknown member" / "Unknown sprint" chip labels while members and sprints
+   load: a neutral placeholder until they arrive; unit test.
+
+Nits
+- Selects back on `--bg-column` (the owner rejected `--bg-input`).
+- A set select's background must be opaque (translucent `--accent-bg` paints
+  the native option list in dark mode on Windows/Linux).
+- Hover on an unset select must not look set: a neutral hover border.
+- The Quick filters `<legend>` sits on the `border-top` divider.
+- Popover slide: `left - 8` can go negative; clamp, and recompute on resize.
+- The orphaned comment in `board.css`: delete or move beside `list.css`.
+- `ready=false` counts and gets a chip, but the popover does not show it.
+- LAI-718: add the review's two notes (× writes `sprint=all`, Clear all deletes
+  the key; no `?sprint=` means the active sprint only on re-entry or reload).
+- `list-create-row.test.ts`: the opaque-background assertion already passed on
+  the old code; say so, do not claim it as a regression catch.
 
