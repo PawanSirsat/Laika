@@ -407,7 +407,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const refresh = board.reload;
 
   /** DONE / BLK / LEFT, from the task set the board already holds (LAI-727). */
-  const stats = useSprintStats(slug, filter, board.state);
+  const stats = useSprintStats(filter, board.state);
 
   /*
    * **Hold refresh answers for the length of a pointer drag** (LAI-707). A
@@ -1039,7 +1039,6 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           scope={statsScope(sprintScope, sprintsKnown ? sprints : undefined, Date.now())}
           counts={stats.counts}
           partial={stats.partial}
-          filtered={stats.filtered}
         />
       </div>
 

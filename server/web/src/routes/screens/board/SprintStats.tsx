@@ -26,7 +26,6 @@ export interface SprintStatsProps {
   readonly scope: StatsScope;
   readonly counts: StatCounts | undefined;
   readonly partial: boolean;
-  readonly filtered: boolean;
 }
 
 /**
@@ -59,7 +58,7 @@ export interface SprintStatsProps {
  * group is always the pill, so a data-driven width change cannot reflow those
  * lines through a tier change.
  */
-export function SprintStats({ scope, counts, partial, filtered }: SprintStatsProps) {
+export function SprintStats({ scope, counts, partial }: SprintStatsProps) {
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [tier, setTier] = useState<Tier>('full');
   /** Bumped by the resize observer, so the layout effect below measures again. */
@@ -142,7 +141,7 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
   if (host === null) return null;
 
   const named = scope.name === undefined ? scope.label : `${scope.label} · ${scope.name}`;
-  const label = `Sprint progress, ${named}${filtered ? ', counted from the filtered tasks' : ''}`;
+  const label = `Sprint progress, ${named}`;
   const known = counts !== undefined;
   const dash = '—';
   const doneSaid = known
@@ -209,17 +208,10 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
             },
           }
         : { role: 'group', 'aria-label': label })}
-      title={
-        pill
-          ? undefined
-          : filtered
-            ? `${named} — counted from the filtered tasks. Clear the filters to count every sprint.`
-            : named
-      }
+      title={pill ? undefined : named}
     >
       <span className="bstats-scope" aria-hidden="true">
         {scope.label}
-        {filtered && <span className="bstats-filtered"> · filtered</span>}
       </span>
 
       <span className="bstats-stat bstats-done" title={pill ? undefined : doneSaid}>

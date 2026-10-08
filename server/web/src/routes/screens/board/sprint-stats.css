@@ -2,8 +2,9 @@
  * DONE / BLK / LEFT in the toolbar row (LAI-727). Tokens only.
  *
  * The strip's summary box, moved: the same bordered, segmented group with the
- * same type and colours (`sprint-strip.css`, `.strip-stats`), led by the scope
- * it describes now that the chips that used to say so are gone.
+ * same type and colours (`sprint-strip.css`, `.strip-stats`, deleted with
+ * the strip once LAI-721 left it no screen), led by the scope it describes now
+ * that the chips that used to say so are gone.
  */
 
 /* The toolbar's slot takes no box of its own, so the anchor is a flex item
@@ -53,11 +54,6 @@
   font-size: 0.75rem;
   font-weight: var(--weight-heavy);
   color: var(--text-secondary);
-}
-
-.bstats-filtered {
-  font-weight: var(--weight-semibold);
-  color: var(--text-muted);
 }
 
 .bstats-stat + .bstats-stat {
@@ -160,8 +156,7 @@
 
 .bstats-pill .bstats-blocked,
 .bstats-pill .bstats-left,
-.bstats-pill .bstats-key,
-.bstats-pill .bstats-filtered {
+.bstats-pill .bstats-key {
   display: none;
 }
 

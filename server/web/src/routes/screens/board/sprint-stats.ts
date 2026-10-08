@@ -1,6 +1,6 @@
 import { daysLeft } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
-import type { Task, TaskFilter } from '../../../api/tasks.ts';
+import type { Task } from '../../../api/tasks.ts';
 
 /**
  * The toolbar's DONE / BLK / LEFT (LAI-727) — the figures the sprint strip
@@ -61,24 +61,4 @@ export function statsScope(
     name: found.name,
     daysLeft: daysLeft(found.ends_on, now),
   };
-}
-
-/**
- * Whether the board's read is narrower than the sprint it is scoped to.
- *
- * When it is not, the board's own task set **is** the set the strip counted
- * for that sprint, and no second read is needed. Search, Blocked, Top-level,
- * Overdue and the agent toggle are applied in the browser after the read, so
- * they never narrow it; these are the ones the server applies.
- */
-export function narrowsBeyondSprint(filter: TaskFilter): boolean {
-  return (
-    filter.status !== undefined ||
-    filter.priority !== undefined ||
-    filter.assignee !== undefined ||
-    filter.ready !== undefined ||
-    filter.tag !== undefined ||
-    filter.updated_since !== undefined ||
-    filter.parent !== undefined
-  );
 }

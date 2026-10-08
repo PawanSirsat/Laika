@@ -21,6 +21,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
+import { pick } from './dropdown.ts';
 import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
 
 const DAY = 86_400_000;
@@ -348,23 +349,33 @@ void describe('DONE / BLK / LEFT are the strip’s figures (LAI-727)', () => {
   });
 });
 
-void describe('the figures come from the board’s own read (LAI-727)', () => {
-  void test('a sprint-scoped board makes no whole-project task read', async () => {
+/**
+ * **No read of their own** (LAI-727 on LAI-724's store). The board holds the
+ * project's whole task set and filters it in memory, so the one walk of the
+ * project is the only task read there is — the strip's second walk, and the
+ * `?sprint=` read LAI-727 first made under a narrowing filter, are both gone.
+ */
+const theWalk = (urls: readonly string[]): string[] =>
+  urls.filter((q) => {
+    const p = new URLSearchParams(q);
+    return [...p.keys()].every((k) => k === 'limit' || k === 'cursor');
+  });
+
+void describe('the figures come from the task set in the browser (LAI-727)', () => {
+  void test('a sprint-scoped board makes one task read: the project’s walk', async () => {
     const urls: string[] = [];
     const h = await open('/board?project=laika-core', STUB, { before: recordTaskReads(urls) });
     try {
       await reads(h, `S2 ${stripSummary('s2')}`);
       await h.page.waitForTimeout(800);
-      assert.ok(urls.length > 0, 'positive control: the board read its tasks');
-      const unscoped = urls.filter((q) => !new URLSearchParams(q).has('sprint'));
-      assert.deepEqual(unscoped, [], 'a task read without ?sprint= — the whole-project walk');
+      assert.deepEqual(urls, ['?limit=200'], 'a task read beside the project’s one walk');
       assert.deepEqual(h.unmatched, []);
     } finally {
       await h.close();
     }
   });
 
-  void test('narrowed by assignee, a sprint’s figures stay the sprint’s — one ?sprint= read', async () => {
+  void test('narrowed by assignee, a sprint’s figures stay the sprint’s — and nothing is read', async () => {
     const urls: string[] = [];
     const h = await open('/board?project=laika-core&sprint=s2&assignee=u2', STUB, {
       before: recordTaskReads(urls),
@@ -378,40 +389,33 @@ void describe('the figures come from the board’s own read (LAI-727)', () => {
       );
       await reads(h, `S2 ${stripSummary('s2')}`);
       await h.page.waitForTimeout(800);
-      const plain = urls.filter((q) => {
-        const p = new URLSearchParams(q);
-        return p.get('sprint') === 's2' && !p.has('assignee');
-      });
-      assert.equal(plain.length, 1, `expected one unnarrowed sprint read, saw ${plain.join(' ')}`);
-      assert.deepEqual(
-        urls.filter((q) => !new URLSearchParams(q).has('sprint')),
-        [],
-        'a whole-project read',
-      );
+      assert.deepEqual(urls, theWalk(urls), `a scoped task read: ${urls.join(' ')}`);
+      assert.equal(urls.length, 1, `expected the one walk, saw ${urls.join(' ')}`);
     } finally {
       await h.close();
     }
   });
 
-  void test('narrowed on All sprints, the figures are the shown tasks’ and say so', async () => {
+  void test('narrowed on All sprints, the figures are still every task’s', async () => {
     const urls: string[] = [];
     const h = await open('/board?project=laika-core&sprint=all&assignee=u2', STUB, {
       before: recordTaskReads(urls),
     });
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
-      await reads(h, 'All sprints · filtered DONE 1/3 BLK 1 LEFT —');
-      assert.match(
+      assert.equal(
+        await h.page.locator('.card').count(),
+        3,
+        'positive control: the board is narrowed',
+      );
+      await reads(h, `All sprints ${stripSummary(undefined)}`);
+      assert.doesNotMatch(
         (await h.page.locator('.bstats').getAttribute('aria-label')) ?? '',
         /filtered/i,
-        'the label does not say the figures are of the filtered tasks',
+        'the figures are the project’s, not the filtered tasks’',
       );
       await h.page.waitForTimeout(800);
-      assert.deepEqual(
-        urls.filter((q) => !new URLSearchParams(q).has('assignee')),
-        [],
-        'the whole project was read to count every sprint',
-      );
+      assert.equal(urls.length, 1, `expected the one walk, saw ${urls.join(' ')}`);
     } finally {
       await h.close();
     }
@@ -423,7 +427,7 @@ void describe('sprints are switched in the Filter now (LAI-727)', () => {
     h.page
       .locator('.bt-field')
       .filter({ has: h.page.locator('.bt-label', { hasText: /^Sprint$/ }) })
-      .locator('select');
+      .locator('[role="combobox"]');
 
   void test('choosing a sprint moves the figures; Any and the chip’s × are All sprints', async () => {
     const h = await open('/board?project=laika-core', STUB);
@@ -431,19 +435,20 @@ void describe('sprints are switched in the Filter now (LAI-727)', () => {
       await reads(h, `S2 ${stripSummary('s2')}`);
 
       await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
-      await sprintSelect(h).selectOption('s3');
+      await pick(sprintSelect(h), 's3');
       await h.page.waitForFunction(() => location.search.includes('sprint=s3'), undefined, {
         timeout: 5000,
       });
       await reads(h, `S3 ${stripSummary('s3')}`);
 
-      await sprintSelect(h).selectOption({ label: 'Any' });
+      // Any is the empty value, as it was on the `<select>`.
+      await pick(sprintSelect(h), '');
       await h.page.waitForFunction(() => location.search.includes('sprint=all'), undefined, {
         timeout: 5000,
       });
       await reads(h, `All sprints ${stripSummary(undefined)}`);
 
-      await sprintSelect(h).selectOption('s1');
+      await pick(sprintSelect(h), 's1');
       await h.page.waitForFunction(() => location.search.includes('sprint=s1'), undefined, {
         timeout: 5000,
       });
@@ -923,11 +928,13 @@ void describe('the board does not move after it is drawn (LAI-727 review)', () =
         const before = await rowGeometry(h);
 
         await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
-        await h.page
-          .locator('.bt-field')
-          .filter({ has: h.page.locator('.bt-label', { hasText: /^Priority$/ }) })
-          .locator('select')
-          .selectOption('p2');
+        await pick(
+          h.page
+            .locator('.bt-field')
+            .filter({ has: h.page.locator('.bt-label', { hasText: /^Priority$/ }) })
+            .locator('[role="combobox"]'),
+          'p2',
+        );
         await h.page.keyboard.press('Escape');
         await h.page.waitForFunction(() => location.search.includes('priority=p2'), undefined, {
           timeout: 5000,
@@ -960,7 +967,8 @@ void describe('a board too long to read says its figures are partial (LAI-727)',
     let served = 0;
     const h = await open('/board?project=laika-core&sprint=s2', {
       ...STUB,
-      '/api/v1/projects/laika-core/tasks?limit=200&sprint=s2': () => {
+      // The project's one walk (LAI-724): every page points at another.
+      '/api/v1/projects/laika-core/tasks?limit=200': () => {
         served += 1;
         return {
           data: [

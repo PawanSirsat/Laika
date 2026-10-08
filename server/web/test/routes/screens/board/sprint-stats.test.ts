@@ -11,11 +11,7 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import {
-  countStats,
-  narrowsBeyondSprint,
-  statsScope,
-} from '../../../../src/routes/screens/board/sprint-stats.ts';
+import { countStats, statsScope } from '../../../../src/routes/screens/board/sprint-stats.ts';
 import type { Sprint } from '../../../../src/api/sprints.ts';
 import type { TaskStatus } from '../../../../src/api/tasks.ts';
 
@@ -122,26 +118,5 @@ void describe('statsScope names what the figures describe (LAI-727)', () => {
     assert.equal(statsScope('gone', SPRINTS, NOW).label, 'Unknown sprint');
     // Not "Unknown" before the list has answered — that is a claim it cannot make.
     assert.equal(statsScope('s2', undefined, NOW).label, 'Sprint');
-  });
-});
-
-void describe('narrowsBeyondSprint decides whose task set is counted (LAI-727)', () => {
-  void test('the sprint alone does not narrow — the board’s set is the strip’s', () => {
-    assert.equal(narrowsBeyondSprint({}), false);
-    assert.equal(narrowsBeyondSprint({ sprint: 's2' }), false);
-  });
-
-  void test('every other server-side filter does', () => {
-    for (const filter of [
-      { status: 'todo' as const },
-      { priority: 'p1' as const },
-      { assignee: 'u1' },
-      { ready: true },
-      { ready: false },
-      { tag: 'ui' },
-      { updated_since: 1 },
-    ]) {
-      assert.equal(narrowsBeyondSprint({ sprint: 's2', ...filter }), true, JSON.stringify(filter));
-    }
   });
 });
