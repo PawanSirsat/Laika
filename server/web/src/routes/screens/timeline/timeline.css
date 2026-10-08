@@ -13,7 +13,16 @@
  * a header bar that stops short of the edges is not the design's header bar.
  */
 .timeline {
-  padding-bottom: var(--space-6);
+  /*
+   * A column the height of the space, as the board is: the chart takes what is
+   * left and is the one vertical scroller, so the page does not scroll around
+   * a scroller (LAI-721 review).
+   */
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: var(--space-4);
 }
 
 .timeline > :not(.screen-bar) {
@@ -63,7 +72,6 @@
 .tlx-tool:focus-visible,
 .tlx-zoom-option:focus-visible,
 .tlx-chevron:focus-visible,
-.tlx-bar:focus-visible,
 .tlx-task-open:focus-visible,
 .timeline-tray-toggle:focus-visible {
   outline: 2px solid var(--accent);
@@ -110,13 +118,18 @@
   position: relative;
   overflow: auto;
   overscroll-behavior: contain;
-  max-height: calc(100vh - 15rem);
-  min-height: 10rem;
+  flex: 1 1 auto;
+  min-height: 14rem;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
   margin-bottom: 0.75rem;
+}
+
+.tlx:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .tlx-inner {
@@ -203,10 +216,14 @@
   box-sizing: border-box;
 }
 
-/* The month stays readable while its band scrolls past the sprint column. */
+/*
+ * Placed by the screen: at the left of the view while its band is under it,
+ * never past the band's end, and not drawn when it would not fit — a sticky
+ * label left a clipped tail ("326") beside the next month (LAI-721 review).
+ */
 .tlx-scale-label {
-  position: sticky;
-  left: calc(var(--tlx-side) + 0.5rem);
+  position: absolute;
+  top: 0;
   display: inline-block;
   padding: 0.3125rem 0.5rem 0;
   font-family: var(--font-mono);
@@ -379,10 +396,8 @@
   overflow: hidden;
   border: 1px solid;
   border-radius: var(--radius-chip);
-  font: inherit;
   font-size: 0.78125rem;
   color: var(--text-primary);
-  text-align: left;
   cursor: pointer;
 }
 
@@ -512,6 +527,30 @@
   flex: none;
 }
 
+/* Unassigned: a neutral, dashed mark — no colour pretending to be a person. */
+.tlx-avatar-none {
+  color: var(--text-muted);
+  background: var(--bg-column);
+  border: 1px dashed var(--border-default);
+}
+
+/* A blocker that is not loaded: said, not guessed — in a quieter voice. */
+.tlx-task-unknown {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+}
+
+.tlx-notice {
+  margin: 0 0 0.625rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-primary);
+  background: var(--chip-orange-bg);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-card);
+}
+
 .tlx-avatar {
   display: inline-flex;
   align-items: center;
@@ -522,16 +561,6 @@
   border-radius: 50%;
   font-size: 0.5625rem;
   font-weight: var(--weight-heavy);
-}
-
-/* The sprint's span behind its tasks: where they belong, not when they ran. */
-.tlx-span {
-  position: absolute;
-  top: 0.875rem;
-  bottom: 0.875rem;
-  border-radius: var(--radius-chip);
-  background: var(--bg-column);
-  border: 1px dashed var(--border-default);
 }
 
 /* ------------------------------------------------------------------ legend */
@@ -686,4 +715,19 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-chip);
   padding: 2px var(--space-2);
+}
+
+/* The tray's own list scrolls inside it — beside the chart, never inside it. */
+.timeline-tray-list {
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.timeline-tray {
+  flex: none;
+}
+
+.tlx-toolbar,
+.tlx-legend {
+  flex: none;
 }

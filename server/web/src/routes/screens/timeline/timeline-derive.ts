@@ -1,4 +1,6 @@
-import type { Sprint } from '../../../api/sprints.ts';
+import type { Sprint, SprintTaskCounts } from '../../../api/sprints.ts';
+import type { Task } from '../../../api/tasks.ts';
+import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
 import { daysLeft } from '../sprints/sprint-derive.ts';
 
 /**
@@ -70,14 +72,43 @@ export function readZoom(raw: string | null): Zoom {
 /* ------------------------------------------------------------------ window */
 
 /**
- * The days the chart draws: **whole calendar months** around every sprint and
- * today, with at least a week of air on each side.
+ * How far from today a sprint's dates may be and still be drawn.
+ *
+ * **A guard, not a policy.** A sprint saved with `ends_on` in 2062 made every
+ * chevron click take a second; 9999 made one render take a minute and draw
+ * 416,000 week ticks; `1e17` is not a date at all and blanked the header with
+ * "Invalid Date" (LAI-721 review). Five years either side covers any real
+ * plan; anything beyond it is listed beside the chart, not drawn on it.
+ */
+export const AXIS_YEARS = 5;
+
+/** True when both of a sprint's dates are real days within reach of the axis. */
+export function onAxis(sprint: Sprint, now: number): boolean {
+  const { starts_on: from, ends_on: to } = sprint;
+  if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return false;
+  const reach = AXIS_YEARS * 366 * DAY;
+  const today = startOfDay(now);
+  return from >= today - reach && to <= today + reach;
+}
+
+/**
+ * The days the chart draws: **whole calendar months** — or quarters, at the
+ * Quarters zoom — around every sprint and today, with at least a week of air on
+ * each side.
  *
  * Today is inside it on purpose. The squeezed axis kept today out so empty
  * months would not shrink the bars; a scrolling axis has no such cost, and a
  * Today button that cannot reach today is no button at all.
+ *
+ * The caller passes only sprints that are {@link onAxis}, so the window is at
+ * most about ten years: a few hundred week ticks at worst, never hundreds of
+ * thousands.
  */
-export function chartWindow(sprints: readonly Sprint[], now: number): TimelineRange | null {
+export function chartWindow(
+  sprints: readonly Sprint[],
+  now: number,
+  zoom: Zoom = 'months',
+): TimelineRange | null {
   if (sprints.length === 0) return null;
 
   let from = startOfDay(now);
@@ -89,9 +120,13 @@ export function chartWindow(sprints: readonly Sprint[], now: number): TimelineRa
 
   const first = new Date(from - 7 * DAY);
   const last = new Date(to + 7 * DAY);
-  const start = Date.UTC(first.getUTCFullYear(), first.getUTCMonth(), 1);
-  // Day 0 of the next month is the last day of this one.
-  const end = Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0);
+  // A quarter's axis starts and ends with its quarters, not mid-Q4.
+  const span = zoom === 'quarters' ? 3 : 1;
+  const startMonth = first.getUTCMonth() - (first.getUTCMonth() % span);
+  const endMonth = last.getUTCMonth() - (last.getUTCMonth() % span) + span;
+  const start = Date.UTC(first.getUTCFullYear(), startMonth, 1);
+  // Day 0 of the month after the last is the last day of the last.
+  const end = Date.UTC(last.getUTCFullYear(), endMonth, 0);
 
   return { from: start, to: end, days: days(start, end) };
 }
@@ -128,39 +163,48 @@ export interface Band {
  * header row at Quarters; otherwise `Oct 2026`.
  */
 export function monthBands(range: TimelineRange, short = false): Band[] {
-  return bands(range, (date) => ({
-    key: `${String(date.getUTCFullYear())}-${String(date.getUTCMonth())}`,
-    label: date.toLocaleDateString('en-GB', {
-      timeZone: 'UTC',
-      month: 'short',
-      ...(short ? {} : { year: 'numeric' }),
-    }),
-  }));
+  return bands(
+    range,
+    (date) => `${String(date.getUTCFullYear())}-${String(date.getUTCMonth())}`,
+    (date) =>
+      date.toLocaleDateString('en-GB', {
+        timeZone: 'UTC',
+        month: 'short',
+        ...(short ? {} : { year: 'numeric' }),
+      }),
+  );
 }
 
 /** One band per calendar quarter in the window: `Q4 2026`. */
 export function quarterBands(range: TimelineRange): Band[] {
-  return bands(range, (date) => {
-    const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
-    const year = String(date.getUTCFullYear());
-    return { key: `${year}-Q${String(quarter)}`, label: `Q${String(quarter)} ${year}` };
-  });
+  const quarterOf = (date: Date): string =>
+    `Q${String(Math.floor(date.getUTCMonth() / 3) + 1)} ${String(date.getUTCFullYear())}`;
+  return bands(range, quarterOf, quarterOf);
 }
 
+/**
+ * Runs of days that share a key. **The label is formatted once per band**, at
+ * its first day: `toLocaleDateString` for every day of a ten-year window was a
+ * measurable share of a render (LAI-721 review).
+ */
 function bands(
   range: TimelineRange,
-  name: (date: Date) => { readonly key: string; readonly label: string },
+  keyOf: (date: Date) => string,
+  labelOf: (date: Date) => string,
 ): Band[] {
   const out: Band[] = [];
+  let current: { key: string; label: string; start: number; days: number } | undefined;
   for (let i = 0; i < range.days; i += 1) {
-    const { key, label } = name(new Date(range.from + i * DAY));
-    const last = out[out.length - 1];
-    if (last?.key === key) {
-      out[out.length - 1] = { ...last, days: last.days + 1 };
-    } else {
-      out.push({ key, label, start: i, days: 1 });
+    const date = new Date(range.from + i * DAY);
+    const key = keyOf(date);
+    if (current?.key === key) {
+      current.days += 1;
+      continue;
     }
+    if (current !== undefined) out.push(current);
+    current = { key, label: labelOf(date), start: i, days: 1 };
   }
+  if (current !== undefined) out.push(current);
   return out;
 }
 
@@ -178,6 +222,63 @@ export function weekTicks(range: TimelineRange): Tick[] {
     if (date.getUTCDay() === 1) out.push({ index: i, label: String(date.getUTCDate()) });
   }
   return out;
+}
+
+/**
+ * `THU 8 OCT` — the today pill's words, **for the UTC day the line is drawn
+ * on**. The line is placed by `startOfDay(now)` in UTC, as every date on this
+ * axis is; a pill read from the local clock said tomorrow's date beside
+ * today's line for anyone east of Greenwich after their midnight (LAI-721
+ * review).
+ */
+export function todayLabel(now: number): string {
+  return new Date(startOfDay(now))
+    .toLocaleDateString('en-GB', {
+      timeZone: 'UTC',
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    })
+    .toUpperCase()
+    .replace(/,/g, '');
+}
+
+/* ---------------------------------------------------------------- counts */
+
+/**
+ * Done over total from the sprint list's `task_counts` (LAI-721) — the
+ * Sprints screen's rule (`progressFor`): `cancelled` is in neither, because
+ * work that will not happen must not hold a finished sprint short of done.
+ */
+export function countsProgress(counts: SprintTaskCounts): {
+  readonly done: number;
+  readonly total: number;
+  readonly percent: number;
+} {
+  const done = counts.by_status.done;
+  const total = counts.total - counts.by_status.cancelled;
+  return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) };
+}
+
+/**
+ * Blocked, and **cannot tell** — by `board-derive`'s rule (`blockedState`),
+ * against the tasks loaded for one sprint. A blocker in another sprint or in
+ * the tray is not loaded, so its task is `unknown`, not unblocked: guessing
+ * "not blocked" is the more damaging error (LAI-721 review).
+ */
+export function blockedTally(tasks: readonly Task[]): {
+  readonly blocked: number;
+  readonly unknown: number;
+} {
+  const byId = byIdIndex(tasks);
+  let blocked = 0;
+  let unknown = 0;
+  for (const task of tasks) {
+    const state = blockedState(task, byId);
+    if (state === true) blocked += 1;
+    else if (state === undefined) unknown += 1;
+  }
+  return { blocked, unknown };
 }
 
 /* ------------------------------------------------------------ sprint state */
@@ -220,55 +321,6 @@ export type SprintCountdown =
   | { readonly kind: 'starts_in'; readonly days: number }
   /** It is over. `ENDED`, and how long ago. */
   | { readonly kind: 'ended'; readonly days: number };
-
-export interface SprintSummary {
-  readonly done: number;
-  readonly total: number;
-  readonly blocked: number;
-  readonly wip: number;
-  /**
-   * The fourth stat, labelled by its own kind.
-   *
-   * There is deliberately **no `daysLeft` alongside this**. Keeping both would
-   * leave the old field as the easy one to reach for, and it is the one that
-   * cannot tell a finished sprint from one ending tonight.
-   */
-  readonly countdown: SprintCountdown;
-}
-
-/**
- * A sprint's strip: DONE · BLOCKED · WIP · and the countdown.
- *
- * All four are derived. `blocked` is passed in rather than recomputed —
- * `board-derive.ts` already owns that rule and a second one would drift from it
- * (the LAI-215 `initials()` problem).
- *
- * **Any sprint, not only the active one** (LAI-436). The screen can select a
- * finished or a future sprint, which is what forced `daysLeft` to become
- * `countdown`: the three cases are genuinely different sentences, and a single
- * clamped number said the wrong one for two of them.
- */
-export function sprintSummary(
-  tasks: readonly { readonly status: string }[],
-  blockedCount: number,
-  sprint: Sprint,
-  now: number,
-): SprintSummary {
-  let done = 0;
-  let wip = 0;
-  for (const task of tasks) {
-    if (task.status === 'done') done += 1;
-    if (task.status === 'in_progress') wip += 1;
-  }
-
-  return {
-    done,
-    total: tasks.length,
-    blocked: blockedCount,
-    wip,
-    countdown: countdownFor(sprint, now),
-  };
-}
 
 /**
  * Which of the three sentences this sprint gets.

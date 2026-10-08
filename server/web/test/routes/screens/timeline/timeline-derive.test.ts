@@ -11,19 +11,23 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import type { Sprint } from '../../../../src/api/sprints.ts';
 import {
+  AXIS_YEARS,
+  blockedTally,
   chartWindow,
   countdownFor,
+  countsProgress,
   DAY_WIDTH,
   dayIndex,
   isCurrent,
   isPast,
   monthBands,
+  onAxis,
   quarterBands,
   readZoom,
   sprintPhase,
   sprintSpan,
-  sprintSummary,
   startOfDay,
+  todayLabel,
   weekTicks,
 } from '../../../../src/routes/screens/timeline/timeline-derive.ts';
 
@@ -192,97 +196,6 @@ void describe('startOfDay', () => {
   });
 });
 
-/**
- * The successor to *"D-014 — tasks never get a position on the axis"*.
- *
- * **D-049 retired that guard and authorised this replacement.** Tasks get bars
- * now; what survives is the rule the old guard was really protecting:
- *
- * > **Laika never asserts a date it was not told.**
- *
- * So this does not check that bars are absent. It checks that **no bar is drawn
- * from a date the task does not have** — an unmeasured end falls back to the
- * sprint and is marked as a plan, and a task with neither gets no bar at all.
- */
-void describe('the active sprint strip: DONE · BLOCKED · WIP · DAYS LEFT', () => {
-  /** All four differ on purpose — four equal counts is a test that cannot fail. */
-  const TASKS = [
-    { status: 'done' },
-    { status: 'done' },
-    { status: 'done' },
-    { status: 'in_progress' },
-    { status: 'in_progress' },
-    { status: 'todo' },
-    { status: 'todo' },
-    { status: 'todo' },
-    { status: 'todo' },
-  ];
-  const BLOCKED = 1;
-  const SPRINT = sprint({ id: 's', starts_on: d(0), ends_on: d(9) });
-
-  void test('each count is itself, and no two are accidentally equal', () => {
-    const summary = sprintSummary(TASKS, BLOCKED, SPRINT, d(3));
-    assert.deepEqual(summary, {
-      done: 3,
-      total: 9,
-      blocked: 1,
-      wip: 2,
-      countdown: { kind: 'left', days: 7 },
-    });
-
-    const four = [summary.done, summary.blocked, summary.wip, summary.countdown.days];
-    assert.equal(new Set(four).size, 4, 'the fixture must keep all four distinct');
-  });
-
-  void test('blocked is passed in, not recomputed', () => {
-    // `board-derive.ts` owns that rule. A second one drifts from it — the
-    // LAI-215 `initials()` problem.
-    assert.equal(sprintSummary(TASKS, 7, SPRINT, d(3)).blocked, 7);
-  });
-
-  void test('a finished sprint says it ended, rather than having zero days left', () => {
-    // LAI-434 clamped this at zero, which stopped it reading minus seven — and
-    // left `DAYS LEFT 0` on a sprint that finished last week, which is
-    // indistinguishable from one ending tonight. Once a sprint can be selected
-    // (LAI-436) that difference is the whole point of selecting it.
-    assert.deepEqual(sprintSummary(TASKS, 0, SPRINT, d(20)).countdown, {
-      kind: 'ended',
-      days: 11,
-    });
-  });
-
-  void test('a sprint that has not begun counts to its start, not from its end', () => {
-    assert.deepEqual(sprintSummary(TASKS, 0, SPRINT, d(-3)).countdown, {
-      kind: 'starts_in',
-      days: 3,
-    });
-  });
-
-  void test('the last day of the sprint has one day left, not zero', () => {
-    // **This assertion is the opposite of the one it replaces, and the flip is
-    // the finding.** The old one said zero, citing §4.15 for *"on the final day
-    // there is no day left after today"* — §4.15 says only that the dates are
-    // date-only, and if `ends_on` is inclusive then the final day is a day left.
-    //
-    // `sprint-derive`'s `daysLeft` has always said one, with the better reason:
-    // *"the day you are standing in is still a day you can work"*. **The board's
-    // strip and the timeline's were showing different numbers for the same
-    // sprint on the same day.** `countdownFor` now calls `daysLeft` rather than
-    // counting again, so there is one answer.
-    assert.equal(sprintSummary(TASKS, 0, SPRINT, d(9)).countdown.days, 1);
-  });
-
-  void test('an empty sprint is zeroes, not a division by nothing', () => {
-    assert.deepEqual(sprintSummary([], 0, SPRINT, d(3)), {
-      done: 0,
-      total: 0,
-      blocked: 0,
-      wip: 2 - 2,
-      countdown: { kind: 'left', days: 7 },
-    });
-  });
-});
-
 void describe('countdownFor — the three sentences and their edges (LAI-436)', () => {
   const SPRINT = sprint({ id: 'sc', starts_on: d(0), ends_on: d(9) });
 
@@ -306,5 +219,110 @@ void describe('countdownFor — the three sentences and their edges (LAI-436)', 
 
     const early = { ...SPRINT, status: 'completed' as const };
     assert.equal(countdownFor(early, d(2)).kind, 'left');
+  });
+});
+
+void describe('onAxis — a date the axis cannot hold is not drawn (LAI-721 review)', () => {
+  const NOW = day('2026-10-08');
+  const at = (starts: number, ends: number) =>
+    sprint({ id: 'x', starts_on: starts, ends_on: ends });
+
+  void test('a real sprint near today is drawn', () => {
+    assert.equal(onAxis(at(day('2026-10-01'), day('2026-10-14')), NOW), true);
+  });
+
+  void test('2062, 9999 and 1e17 are not — nor NaN, nor a sprint that ends before it starts', () => {
+    assert.equal(onAxis(at(day('2026-10-01'), day('2062-03-01')), NOW), false, '2062');
+    assert.equal(onAxis(at(day('2026-10-01'), Date.UTC(9999, 0, 1)), NOW), false, '9999');
+    assert.equal(onAxis(at(day('2026-10-01'), 1e17), NOW), false, '1e17');
+    assert.equal(onAxis(at(Number.NaN, day('2026-10-14')), NOW), false, 'NaN');
+    assert.equal(onAxis(at(day('2026-10-14'), day('2026-10-01')), NOW), false, 'backwards');
+  });
+
+  void test(`the reach is ${String(AXIS_YEARS)} years either side of today`, () => {
+    const year = 366 * DAY;
+    assert.equal(onAxis(at(NOW, NOW + (AXIS_YEARS - 0.1) * year), NOW), true);
+    assert.equal(onAxis(at(NOW, NOW + (AXIS_YEARS + 0.1) * year), NOW), false);
+  });
+
+  void test('the widest drawable window builds its header in milliseconds', () => {
+    const reach = AXIS_YEARS * 365 * DAY;
+    const wide = chartWindow(
+      [at(NOW - reach, NOW - reach + 13 * DAY), at(NOW + reach - 13 * DAY, NOW + reach)],
+      NOW,
+    )!;
+    const calls = { n: 0 };
+    const original = Date.prototype.toLocaleDateString;
+    Date.prototype.toLocaleDateString = function (
+      this: Date,
+      ...args: Parameters<Date['toLocaleDateString']>
+    ) {
+      calls.n += 1;
+      return original.apply(this, args);
+    };
+    try {
+      const started = performance.now();
+      const months = monthBands(wide);
+      const ticks = weekTicks(wide);
+      const elapsed = performance.now() - started;
+      // One label per band, not one per day: ~120 months, not ~3,700 days.
+      assert.equal(calls.n, months.length, 'formatted a label for every day');
+      assert.ok(ticks.length < 600, `${String(ticks.length)} ticks`);
+      assert.ok(elapsed < 200, `the header took ${elapsed.toFixed(1)} ms`);
+    } finally {
+      Date.prototype.toLocaleDateString = original;
+    }
+  });
+});
+
+void describe('chartWindow at Quarters — whole quarters (LAI-721 review)', () => {
+  void test('starts on a quarter’s first day and ends on a quarter’s last', () => {
+    const w = chartWindow([B], day('2026-08-10'), 'quarters')!;
+    assert.equal(w.from, day('2026-07-01'), 'Q3 starts 1 July');
+    assert.equal(w.to, day('2026-09-30'), 'Q3 ends 30 Sept');
+    const later = chartWindow([B], day('2026-11-20'), 'quarters')!;
+    assert.equal(later.to, day('2026-12-31'), 'not mid-Q4');
+  });
+});
+
+void describe('todayLabel — the UTC day the line is drawn on (LAI-721 review)', () => {
+  void test('23:30 UTC on 8 Oct is THU 8 OCT, whatever the local clock says', () => {
+    assert.equal(todayLabel(Date.UTC(2026, 9, 8, 23, 30)), 'THU 8 OCT');
+    assert.equal(todayLabel(Date.UTC(2026, 9, 9, 0, 30)), 'FRI 9 OCT');
+  });
+});
+
+void describe('counts from the sprint list (LAI-721 review)', () => {
+  void test('done over total leaves cancelled out of both', () => {
+    assert.deepEqual(
+      countsProgress({
+        total: 5,
+        by_status: { backlog: 1, todo: 0, in_progress: 1, review: 0, done: 2, cancelled: 1 },
+      }),
+      { done: 2, total: 4, percent: 50 },
+    );
+    assert.deepEqual(
+      countsProgress({
+        total: 0,
+        by_status: { backlog: 0, todo: 0, in_progress: 0, review: 0, done: 0, cancelled: 0 },
+      }),
+      { done: 0, total: 0, percent: 0 },
+    );
+  });
+
+  void test('a blocker that is not loaded is unknown, not unblocked', () => {
+    const t = (id: string, status: string, blocked_by: string[] = []) =>
+      ({ id, status, blocked_by }) as unknown as Parameters<typeof blockedTally>[0][number];
+    assert.deepEqual(
+      blockedTally([
+        t('a', 'todo'),
+        t('b', 'todo', ['a']), // blocked by an open task here
+        t('c', 'todo', ['elsewhere']), // blocker not loaded
+        t('d', 'todo', ['gone', 'a']), // blocked here, whatever the other is
+        t('e', 'done', ['f']),
+        t('f', 'done'),
+      ]),
+      { blocked: 2, unknown: 1 },
+    );
   });
 });

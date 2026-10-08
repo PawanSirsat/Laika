@@ -231,9 +231,19 @@ const PAIRS: readonly Pair[] = [
     clientFile: 'projects.ts',
   },
   {
-    server: 'SprintView',
+    // The list item, not the bare view (LAI-721): the client's `Sprint`
+    // declares `task_counts`, which only the list sends — so pairing it with
+    // `SprintView` would call the field undeclared on the server side.
+    // `SprintListItem extends SprintView`, so every view field is still here.
+    server: 'SprintListItem',
     serverFile: 'services/sprints.ts',
     client: 'Sprint',
+    clientFile: 'sprints.ts',
+  },
+  {
+    server: 'SprintTaskCounts',
+    serverFile: 'services/sprints.ts',
+    client: 'SprintTaskCounts',
     clientFile: 'sprints.ts',
   },
   {
