@@ -555,7 +555,9 @@ export function TaskDetailPanel({
             aria-label="Copy link to this task"
             title="Copy link"
             onClick={() => {
-              void navigator.clipboard?.writeText(window.location.href);
+              // Through the one clipboard implementation (CopyButton's), not a
+              // second call site of its own.
+              void copyText(window.location.href);
             }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -363,22 +364,20 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
             <label className="conn-label" htmlFor="conn-project">
               Project
             </label>
-            <select
+            {/* The product's own picker, not a native <select> (LAI-726). */}
+            <Dropdown
               id="conn-project"
+              variant="bare"
               className="conn-select"
+              noun="projects"
               value={project.slug}
-              onChange={(event) => {
-                setSlug(event.target.value);
-              }}
-            >
-              {projects.projects
+              options={projects.projects
                 .filter((row): row is typeof row & { slug: string } => 'slug' in row)
-                .map((row) => (
-                  <option key={row.slug} value={row.slug}>
-                    {row.name}
-                  </option>
-                ))}
-            </select>
+                .map((row) => ({ value: row.slug, label: row.name }))}
+              onChange={(slug) => {
+                setSlug(slug);
+              }}
+            />
 
             <div className="conn-block">
               <div className="conn-block-bar">

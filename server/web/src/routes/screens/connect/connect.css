@@ -309,7 +309,7 @@
 .conn-body code,
 .conn-note code {
   font-family: var(--font-mono);
-  font-size: 0.9em;
+  font-size: var(--text-base);
   color: var(--accent);
   background: var(--accent-bg);
   border: 1px solid var(--accent-border);

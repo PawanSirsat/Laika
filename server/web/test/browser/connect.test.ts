@@ -10,6 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
+import { pick } from './dropdown.ts';
 import { closeBrowser, open, type ApiStub } from './harness.ts';
 
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotRenderTwice';
@@ -186,7 +187,7 @@ void describe('minting fills the page in', () => {
     const h = await open('/connect', stub(MINTS));
     try {
       await h.page.locator('.conn-claude-md').waitFor({ timeout: 20_000 });
-      await h.page.locator('#conn-project').selectOption('skynet');
+      await pick(h.page.locator('#conn-project'), 'skynet');
       await h.page.waitForFunction(
         () => (document.querySelector('.conn-claude-md')?.textContent ?? '').includes('skynet'),
         undefined,
