@@ -1,4 +1,4 @@
-import { useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { StatCounts, StatsScope } from './sprint-stats.ts';
 import './sprint-stats.css';
@@ -9,6 +9,18 @@ import './sprint-stats.css';
  * so the toolbar's own file does not grow props for figures it never reads.
  */
 export const BOARD_STATS_SLOT_ID = 'board-stats-slot';
+
+/**
+ * The narrowest the search field may get before the group gives up its place
+ * in the row (LAI-727 review). Below this it is a magnifier and a few letters.
+ */
+const SEARCH_FLOOR_PX = 120;
+/** Room to spare before the group comes back, so a boundary width cannot flap. */
+const RETURN_MARGIN_PX = 8;
+/** `.bt`'s `gap`: the group is one more item in that row. */
+const ROW_GAP_PX = 4;
+
+type Placement = 'row' | 'above';
 
 export interface SprintStatsProps {
   readonly scope: StatsScope;
@@ -28,9 +40,25 @@ export interface SprintStatsProps {
  * 30"* — because `DONE 7/30` read aloud is a string of tokens. When the
  * toolbar row is narrow the words give way to a glyph each (`sprint-stats.css`)
  * rather than squeezing the search field, and the sentences stay.
+ *
+ * **When even that leaves search under 120px, the group leaves the row** for
+ * a line of its own above it, right-aligned — where the strip's summary sat
+ * (LAI-727 review). Measured, not a breakpoint: how full the row is depends
+ * on the sidebar, the member count and the Group label, not on the window. At
+ * 920px with the sidebar open, six members and an active Group, the row
+ * without the group at all left search ~111px; nothing the group could shed
+ * would have fixed that. Above the toolbar it cannot meet the Filter popover
+ * (which drops down) or the chip row (which is below).
+ *
+ * It must be rendered inside `.board-bar`: the line above is that row's first
+ * flex line (`order: -1`).
  */
 export function SprintStats({ scope, counts, partial, filtered }: SprintStatsProps) {
   const [host, setHost] = useState<HTMLElement | null>(null);
+  const [placement, setPlacement] = useState<Placement>('row');
+  /** Bumped by the resize observer, so the layout effect below measures again. */
+  const [, setResized] = useState(0);
+  const group = useRef<HTMLDivElement>(null);
 
   // Layout, not passive: the group is in place before the first paint rather
   // than one frame after it. Re-checked each render in case the toolbar
@@ -39,6 +67,45 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
     const slot = document.getElementById(BOARD_STATS_SLOT_ID);
     if (slot !== host) setHost(slot);
   });
+
+  /*
+   * In the row while search keeps its floor; above it when it would not.
+   * Reads the toolbar's own boxes, `.bt-search` and `.bt-spacer`: while the
+   * group is above, the room it would take back is search plus the spacer's
+   * slack, less its own width and one gap.
+   */
+  useLayoutEffect(() => {
+    const row = host?.closest('.board-bar');
+    const search = row?.querySelector('.bt-search');
+    const spacer = row?.querySelector('.bt-spacer');
+    const own = group.current;
+    if (search == null || spacer == null || own === null) return;
+    const searchWidth = search.getBoundingClientRect().width;
+    if (placement === 'row') {
+      if (searchWidth < SEARCH_FLOOR_PX) setPlacement('above');
+      return;
+    }
+    const room =
+      searchWidth +
+      spacer.getBoundingClientRect().width -
+      own.getBoundingClientRect().width -
+      ROW_GAP_PX;
+    if (room >= SEARCH_FLOOR_PX + RETURN_MARGIN_PX) setPlacement('row');
+  });
+
+  useEffect(() => {
+    const row = host?.closest('.board-bar');
+    if (row == null) return;
+    const observer = new ResizeObserver(() => {
+      setResized((n) => n + 1);
+    });
+    observer.observe(row);
+    const search = row.querySelector('.bt-search');
+    if (search !== null) observer.observe(search);
+    return () => {
+      observer.disconnect();
+    };
+  }, [host]);
 
   if (host === null) return null;
 
@@ -52,11 +119,12 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
   const blockedSaid = known ? `Blocked ${String(counts.blocked)}` : 'Blocked: not counted yet';
   const leftSaid =
     scope.daysLeft === undefined
-      ? 'No days left to count'
+      ? 'No sprint end date'
       : `${String(scope.daysLeft)} ${scope.daysLeft === 1 ? 'day' : 'days'} left`;
 
-  return createPortal(
+  const figures = (
     <div
+      ref={group}
       className="bstats"
       role="group"
       aria-label={label}
@@ -111,7 +179,12 @@ export function SprintStats({ scope, counts, partial, filtered }: SprintStatsPro
         </span>
         <span className="visually-hidden">{leftSaid}</span>
       </span>
-    </div>,
-    host,
+    </div>
+  );
+
+  return placement === 'row' ? (
+    createPortal(figures, host)
+  ) : (
+    <div className="bstats-above">{figures}</div>
   );
 }

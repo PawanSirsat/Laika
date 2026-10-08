@@ -13,7 +13,9 @@
 }
 
 /* Sized by the row, not the viewport: the sidebar takes 212px at some widths
-   and none at others, so the same window can leave very different room. */
+   and none at others, so the same window can leave very different room.
+   Coupling: `.board-bar` is board-toolbar.css's selector; this only names it a
+   container, and that file must not set `container` on it too. */
 .board-bar {
   container: board-bar / inline-size;
 }
@@ -142,12 +144,36 @@
 }
 
 /*
- * **Narrowest: the scope goes too** — around 41rem, which is a 900–940px
- * window with the sidebar open. It is still the group's tooltip and
- * accessible name, and the chip row under the toolbar names the sprint.
+ * **A line of its own, above the toolbar** (LAI-727 review), when even the
+ * compact form would leave search under 120px — `SprintStats` measures and
+ * decides. The first flex line of `.board-bar`, right-aligned under the space
+ * bar where the strip's summary used to end. With a line to itself it has the
+ * room for the words again, so the compact form is undone here.
+ *
+ * The scope is never hidden: a sprint is also named by its Filter chip, but
+ * *All sprints* has no chip, and an unscoped "3/12" says nothing.
  */
-@container board-bar (max-width: 44rem) {
-  .bstats-scope {
-    display: none;
-  }
+.bstats-above {
+  order: -1;
+  flex: 1 0 100%;
+  display: flex;
+  justify-content: flex-end;
+  padding-bottom: 0.5rem;
+}
+
+.bstats-above .bstats {
+  margin-inline-end: 0;
+}
+
+.bstats-above .bstats-key {
+  display: inline;
+}
+
+.bstats-above .bstats-glyph {
+  display: none;
+}
+
+.bstats-above .bstats-scope,
+.bstats-above .bstats-stat {
+  padding: 0 0.625rem;
 }

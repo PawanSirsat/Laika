@@ -478,6 +478,70 @@ void describe('the group is readable without sight (LAI-727)', () => {
   });
 });
 
+/** Every box the group must not touch, and the group's own. */
+function measureToolbar(h: Harness) {
+  return h.page.evaluate(() => {
+    const r = (el: Element | null | undefined) => {
+      if (el === null || el === undefined) return null;
+      const b = el.getBoundingClientRect();
+      return { l: b.left, t: b.top, r: b.right, b: b.bottom, w: b.width };
+    };
+    const button = (text: string) =>
+      [...document.querySelectorAll('.bt-button')].find((b) =>
+        (b.textContent ?? '').includes(text),
+      );
+    const others: Record<string, ReturnType<typeof r>> = {
+      search: r(document.querySelector('.bt-search')),
+      faces: r(document.querySelector('.bt-members')),
+      filter: r(button('Filter')),
+      group: r(button('Group')),
+      chips: r(document.querySelector('.bt-chips')),
+      popover: r(document.querySelector('.bt-pop')),
+    };
+    document.querySelectorAll('.bt-icon').forEach((el, i) => {
+      others[`icon${String(i)}`] = r(el);
+    });
+    const rail = document.querySelector('#sidebar, .sidebar')?.getBoundingClientRect();
+    return {
+      stats: r(document.querySelector('.bstats')),
+      others,
+      search: Math.round(document.querySelector('.bt-search')?.getBoundingClientRect().width ?? 0),
+      spacer: document.querySelector('.bt-spacer')?.getBoundingClientRect().width ?? 0,
+      inRow: document.querySelector('.bt .bstats') !== null,
+      railOpen: rail !== undefined && rail.left >= 0 && rail.width > 150,
+      sideways: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+    };
+  });
+}
+
+type Measured = Awaited<ReturnType<typeof measureToolbar>>;
+
+function assertFits(m: Measured, when: string): void {
+  assert.ok(m.stats !== null, `${when}: no stat group`);
+  assert.ok(m.stats.w > 40, `${when}: the group collapsed to nothing`);
+  assert.equal(m.sideways, false, `${when}: the page scrolls sideways`);
+  for (const [name, box] of Object.entries(m.others)) {
+    if (box === null) continue;
+    const overlaps: boolean =
+      m.stats.l < box.r - 0.5 &&
+      box.l < m.stats.r - 0.5 &&
+      m.stats.t < box.b - 0.5 &&
+      box.t < m.stats.b - 0.5;
+    assert.equal(overlaps, false, `${when}: the group overlaps ${name}`);
+  }
+}
+
+/** Closed, then with the Filter popover open — the group must clear both. */
+async function assertFitsOpenAndClosed(h: Harness, when: string): Promise<void> {
+  assertFits(await measureToolbar(h), `${when}, closed`);
+  await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
+  await h.page.locator('.bt-pop').waitFor({ timeout: 5000 });
+  const opened = await measureToolbar(h);
+  assert.ok(opened.others.popover !== null, `${when}: positive control: the popover is open`);
+  assertFits(opened, `${when}, popover open`);
+  await h.page.keyboard.press('Escape');
+}
+
 void describe('the group fits the toolbar (LAI-727)', () => {
   const SIZES = [
     { width: 1366, height: 768 },
@@ -495,62 +559,136 @@ void describe('the group fits the toolbar (LAI-727)', () => {
           await h.page.setViewportSize(size);
           // The chips row is drawn: the default sprint is an active filter.
           await h.page.locator('.bt-chip').first().waitFor({ timeout: 10_000 });
-
-          const measure = () =>
-            h.page.evaluate(() => {
-              const r = (el: Element | null) => {
-                if (el === null) return null;
-                const b = el.getBoundingClientRect();
-                return { l: b.left, t: b.top, r: b.right, b: b.bottom };
-              };
-              const others: Record<string, ReturnType<typeof r>> = {
-                search: r(document.querySelector('.bt-search')),
-                filter: r(
-                  [...document.querySelectorAll('.bt-button')].find((b) =>
-                    (b.textContent ?? '').includes('Filter'),
-                  ) ?? null,
-                ),
-                chips: r(document.querySelector('.bt-chips')),
-                popover: r(document.querySelector('.bt-pop')),
-              };
-              document.querySelectorAll('.bt-icon').forEach((el, i) => {
-                others[`icon${String(i)}`] = r(el);
-              });
-              return {
-                stats: r(document.querySelector('.bstats')),
-                others,
-                sideways:
-                  document.documentElement.scrollWidth > document.documentElement.clientWidth,
-              };
-            });
-
-          const check = (m: Awaited<ReturnType<typeof measure>>, when: string) => {
-            assert.ok(m.stats !== null, `${when}: no stat group`);
-            assert.ok(m.stats.r - m.stats.l > 40, `${when}: the group collapsed to nothing`);
-            assert.equal(m.sideways, false, `${when}: the page scrolls sideways`);
-            for (const [name, box] of Object.entries(m.others)) {
-              if (box === null) continue;
-              const overlaps: boolean =
-                m.stats.l < box.r - 0.5 &&
-                box.l < m.stats.r - 0.5 &&
-                m.stats.t < box.b - 0.5 &&
-                box.t < m.stats.b - 0.5;
-              assert.equal(overlaps, false, `${when}: the group overlaps ${name}`);
-            }
-          };
-
-          check(await measure(), 'closed');
-          await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
-          await h.page.locator('.bt-pop').waitFor({ timeout: 5000 });
-          const opened = await measure();
-          assert.ok(opened.others.popover !== null, 'positive control: the popover is open');
-          check(opened, 'popover open');
+          await assertFitsOpenAndClosed(h, `${String(size.width)}px ${theme}`);
         } finally {
           await h.close();
         }
       });
     }
   }
+});
+
+/**
+ * **The tightest row there is** (LAI-727 review, should-fix 2).
+ *
+ * The sidebar folds away below 900px, so the narrowest *toolbar* is just
+ * above that, with the sidebar open: 212px gone from a ~920px window. Crowd it
+ * the way a real project does — six members, so the face pile is at its
+ * widest (four faces and `+2`; `CLUSTER_LIMIT` is 4), and an active Group,
+ * whose button then carries its label. Measured on 2d6036a: the search field
+ * was **26px** at 920 and **35px** at 1024, its floor.
+ *
+ * **What the group owes search is all of it, below 120px.** At 920 on a
+ * sprint the toolbar's own controls leave search **113px** with no group in
+ * the row at all — the Filter badge is the difference from All sprints, which
+ * clears 120. That floor is the toolbar's (filed as LAI-730), and nothing the
+ * group sheds can lift it. So the assertion is: search is at least 120px, or
+ * the group is out of the row and the row has no slack left to give.
+ */
+const SIX_MEMBERS: ApiStub = {
+  ...STUB,
+  '/api/v1/projects/laika-core/members': {
+    members: [
+      { user_id: 'u1', name: 'Ada Lovelace', email: 'a@example.com', role: 'lead' },
+      { user_id: 'u2', name: 'Grace Hopper', email: 'g@example.com', role: 'member' },
+      { user_id: 'u3', name: 'Tomas Nel', email: 't@example.com', role: 'member' },
+      { user_id: 'u4', name: 'Priya Raman', email: 'p@example.com', role: 'member' },
+      { user_id: 'u5', name: 'Kenji Sato', email: 'k@example.com', role: 'member' },
+      { user_id: 'u6', name: 'Lena Fischer', email: 'l@example.com', role: 'member' },
+    ],
+  },
+};
+
+void describe('the sidebar open, the row crowded (LAI-727 review)', () => {
+  for (const width of [1024, 920]) {
+    for (const scope of ['s2', 'all']) {
+      for (const theme of ['Light', 'Dark']) {
+        void test(`${String(width)}px, ${scope === 'all' ? 'All sprints' : 'S2'}, ${theme}: search keeps 120px`, async () => {
+          const h = await open(
+            `/board?project=laika-core&sprint=${scope}&group=assignee`,
+            SIX_MEMBERS,
+          );
+          try {
+            await h.page.locator('.bstats').waitFor({ timeout: 20_000 });
+            await setTheme(h.page, theme);
+            await h.page.setViewportSize({ width, height: 768 });
+            await h.page.locator('.lane').first().waitFor({ timeout: 10_000 });
+            await h.page.waitForTimeout(500);
+
+            // The crowding is real, or the width proves nothing.
+            const m = await measureToolbar(h);
+            assert.equal(m.railOpen, true, 'the sidebar is not open — the wrong state');
+            assert.equal(
+              await h.page.locator('.bt-member').count(),
+              4,
+              'the face pile is not full',
+            );
+            assert.equal(
+              (await h.page.locator('.bt-member-more').textContent())?.trim(),
+              '+2',
+              'six members should overflow the pile by two',
+            );
+            assert.match(
+              (await h.page.locator('.bt-button', { hasText: 'Group' }).textContent()) ?? '',
+              /Group: Assignee/,
+              'the Group button is not carrying an active label',
+            );
+
+            assert.ok(
+              m.search >= 120 || (!m.inRow && m.spacer < 1),
+              `the search field is ${String(m.search)}px wide with the group ${
+                m.inRow ? 'still in the row' : 'out of the row'
+              } and ${String(Math.round(m.spacer))}px of slack`,
+            );
+            await assertFitsOpenAndClosed(h, `${String(width)}px ${scope} ${theme}`);
+          } finally {
+            await h.close();
+          }
+        });
+      }
+    }
+  }
+});
+
+/**
+ * **All sprints keeps a visible scope at every width** (LAI-727 review).
+ *
+ * A sprint is named twice — the group's scope and its Filter chip — so the
+ * scope may give way when room is short. *All sprints* has no chip
+ * (`sprint=all` is not a filter), so if the scope went, nothing on screen
+ * would say what the figures are of.
+ */
+void describe('All sprints is always named (LAI-727 review)', () => {
+  for (const width of [920, 901, 760, 600, 360]) {
+    void test(`${String(width)}px: the scope reads "All sprints" and is visible`, async () => {
+      const h = await open('/board?project=laika-core&sprint=all', STUB);
+      try {
+        await reads(h, `All sprints ${stripSummary(undefined)}`);
+        await h.page.setViewportSize({ width, height: 768 });
+        await h.page.waitForTimeout(500);
+        assert.equal(await h.page.locator('.bt-chip').count(), 0, 'positive control: no chip');
+        const scope = h.page.locator('.bstats-scope');
+        assert.equal(await scope.isVisible(), true, 'the scope is hidden');
+        const box = await scope.boundingBox();
+        assert.ok(box !== null && box.width > 20, 'the scope has no width');
+        assert.equal(((await scope.innerText()) ?? '').trim(), 'All sprints');
+      } finally {
+        await h.close();
+      }
+    });
+  }
+
+  void test('LEFT says there is no end date, not "no days left"', async () => {
+    const h = await open('/board?project=laika-core&sprint=all', STUB);
+    try {
+      await reads(h, `All sprints ${stripSummary(undefined)}`);
+      const left = h.page.locator('.bstats-left');
+      assert.equal(await left.getAttribute('title'), 'No sprint end date');
+      assert.equal(await left.locator('.visually-hidden').textContent(), 'No sprint end date');
+    } finally {
+      await h.close();
+    }
+  });
 });
 
 void describe('a board too long to read says its figures are partial (LAI-727)', () => {
