@@ -625,6 +625,19 @@ function SprintGroup({
         ? 'no tasks'
         : `${String(done.done)}/${String(done.total)}`;
   const blockedLabel = tally === undefined ? '' : blockedText(tally);
+  /*
+   * **The key first.** At Quarters a two-week bar is ~50px. What does not fit
+   * inside it without squeezing the sprint's own name off — the count, the
+   * blocked note — goes just past the bar's end, on the same row (each sprint
+   * has a row to itself, so nothing else is there).
+   */
+  const barWidth = span.days * dayWidth;
+  const roomForCount = barWidth >= 96;
+  const roomForBlocked = barWidth >= 220;
+  const count = progress === undefined ? null : <span className="tlx-bar-count">{progress}</span>;
+  const blockedNote =
+    blockedLabel === '' ? null : <span className="tlx-bar-blocked">{blockedLabel}</span>;
+  const aside = [!roomForCount && count, !roomForBlocked && blockedNote].filter(Boolean);
 
   return (
     <div className={`tlx-group tlx-${phase}`} data-sprint-id={sprint.id}>
@@ -664,7 +677,9 @@ function SprintGroup({
             style={{ left: span.start * dayWidth, width: span.days * dayWidth }}
             title={`${key} ${sprint.name} · ${formatRange(sprint.starts_on, sprint.ends_on)}${
               progress === undefined ? '' : ` · ${progress} done`
-            }${sprint.goal === null ? '' : `\n${sprint.goal}`}`}
+            }${blockedLabel === '' ? '' : ` · ${blockedLabel}`}${
+              sprint.goal === null ? '' : `\n${sprint.goal}`
+            }`}
             onClick={onToggle}
           >
             {done !== undefined && (
@@ -677,9 +692,17 @@ function SprintGroup({
             <span className="tlx-bar-name">
               <b>{key}</b> {sprint.name}
             </span>
-            {progress !== undefined && <span className="tlx-bar-count">{progress}</span>}
-            {blockedLabel !== '' && <span className="tlx-bar-blocked">{blockedLabel}</span>}
+            {roomForCount && count}
+            {roomForBlocked && blockedNote}
           </div>
+          {aside.length > 0 && (
+            <span
+              className="tlx-bar-aside"
+              style={{ left: (span.start + span.days) * dayWidth + 6 }}
+            >
+              {aside}
+            </span>
+          )}
         </div>
       </div>
 
@@ -763,9 +786,9 @@ function TaskRow({
         {blocked === undefined && (
           <span
             className="tlx-task-blocked tlx-task-unknown"
-            title="Blocked by a task in another sprint or in no sprint; its status is not loaded here"
+            title="Blocked by a task in another sprint or in no sprint, whose status is not loaded here"
           >
-            Blocker elsewhere
+            Blocked?
           </span>
         )}
         {/* `In progress`, not `in_progress`: the lane's word, not the enum's. */}

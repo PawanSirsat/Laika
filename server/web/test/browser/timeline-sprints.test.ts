@@ -540,7 +540,7 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
           .locator('.tlx-task', { has: h.page.locator('.tlx-task-key', { hasText: key }) })
           .locator('.tlx-task-blocked');
       assert.equal((await label('LC-2').innerText()).trim(), 'Blocked');
-      assert.equal((await label('LC-5').innerText()).trim(), 'Blocker elsewhere');
+      assert.equal((await label('LC-5').innerText()).trim(), 'Blocked?');
       assert.equal(await label('LC-9').count(), 0, 'an unblocked task is marked');
     } finally {
       await h.close();

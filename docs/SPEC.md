@@ -1731,10 +1731,11 @@ boundaries** (§4.15) and shaped like Jira's timeline (D-074).
 - **Today** is one line across the header and rows, with a pill naming the UTC
   day it is drawn on, and a *Today* button scrolls back to it.
 - **A sprint opens to list its tasks** — key, title, status, assignee, and
-  *Blocked* or *Blocker elsewhere* — loaded with `?sprint=<id>` when it is
-  opened, at most three sprints at a time. **Tasks have no bars of their own.**
-  An opened sprint's bar adds its blocked count, with blockers outside it
-  counted as *unknown*. A task opens in the drawer.
+  *Blocked* or *Blocked?* (a blocker in another sprint, not loaded) — loaded
+  with `?sprint=<id>` when it is opened, at most three sprints at a time.
+  **Tasks have no bars of their own.** An opened sprint's bar adds its blocked
+  count, with blockers outside it counted as *unknown*. A task opens in the
+  drawer.
 - `?sprint=<id>` opens that sprint and starts the chart at it; the Board's
   `all` and `none` are not sprints and open nothing.
 - Sprints entirely in the past are dimmed, not hidden. A sprint whose dates the
