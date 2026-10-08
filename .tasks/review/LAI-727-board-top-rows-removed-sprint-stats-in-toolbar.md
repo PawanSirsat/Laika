@@ -192,3 +192,42 @@ Follow-ups taken on this branch (frozen criteria unchanged):
 6. Presence-off removed with its reason (`board-presence.test.ts:259`); the
    no-sprints test re-aimed to also assert the figures a sprintless project
    gets (`sprint-strip.test.ts:500`), which fails on 5adbfae.
+
+## Review notes (round 2)
+
+**CHANGES REQUIRED.** The placement code cannot loop and cleans up, but no
+test asserts the group ever sits in the row, and moving it to its own line
+after first paint shifts every lane down — the LAI-297 class of defect.
+
+**Decision (orchestrator, product call):** drop the "own line" fallback. The
+owner asked for these rows to go; the figures must never make a row of their
+own. At tight widths the group collapses **in place** to one compact pill in
+the toolbar row (`S4 · 7/30`, done of total), with BLK and LEFT in a tooltip
+or popover that opens on hover, focus or click; its accessible name carries
+all three figures. It never wraps, never leaves the row, and never moves the
+board when data lands. Tiers full / compact / pill are chosen from the row's
+measured width with hysteresis, and no tier change may change the toolbar's
+height. If search is still under 120px at 920 with the sidebar open, that is
+the toolbar's floor (LAI-730); keep that clause and also assert the pill is in
+the row.
+
+Blocking:
+1. Assert the group is in the row at 1366 and in every tier; assert it never
+   renders above the toolbar; prove it fails with placement forced 'above'.
+2. No layout shift after first paint: at 920 and 1024, sidebar open, six
+   members, `.kanban` top after the first card vs after members, counts and
+   sprints settle — within 1px; the same when a filter widens the Filter
+   badge. Prove it fails on 4c65453.
+
+Should-fix 3 — **round-1 SF1 is DEFERRED to the integration step.** The
+duplicate `?sprint=` read on a filter change (`use-sprint-stats.ts:58`, the
+effect that re-reads the sprint after each board answer) is not changed here.
+Once build-perf-store merges, the figures count `board.state.all` filtered by
+`sprint_id` and this hook's read goes away.
+
+Nits: count the row's `margin-inline-end` in the room figure
+(`SprintStats.tsx:93`, `ROW_GAP_PX` at `:21`), or keep the hysteresis honest
+under the pill; remove the `order: -1` above-placement CSS
+(`sprint-stats.css:156`) with the fallback; the All-sprints scope test at
+360, 600 and 760px also asserts no sideways scroll and no clipping; LAI-730
+`depends-on: [LAI-726]`.

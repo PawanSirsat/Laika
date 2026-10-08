@@ -4,7 +4,7 @@ title: 'The Board toolbar''s own controls leave search 113px at 920px with the s
 area: web
 assignee: unclaimed
 priority: p3
-depends-on: []
+depends-on: [LAI-726]
 discovered-from: LAI-727
 status: backlog
 ---
