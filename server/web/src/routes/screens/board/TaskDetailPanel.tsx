@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
+import { copyText } from '../../../components/CopyButton.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
@@ -554,7 +555,9 @@ export function TaskDetailPanel({
             aria-label="Copy link to this task"
             title="Copy link"
             onClick={() => {
-              void navigator.clipboard?.writeText(window.location.href);
+              // Through the one clipboard implementation (CopyButton's), not a
+              // second call site of its own.
+              void copyText(window.location.href);
             }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -583,7 +586,7 @@ export function TaskDetailPanel({
                 <button
                   type="button"
                   onClick={() => {
-                    void navigator.clipboard?.writeText(task.key);
+                    void copyText(task.key);
                     setOverflowOpen(false);
                   }}
                 >
@@ -594,7 +597,7 @@ export function TaskDetailPanel({
                 <button
                   type="button"
                   onClick={() => {
-                    void navigator.clipboard?.writeText(window.location.href);
+                    void copyText(window.location.href);
                     setOverflowOpen(false);
                   }}
                 >

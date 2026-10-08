@@ -10,7 +10,7 @@ import {
 import { ask, askSecret, closePrompt, confirm } from './prompt.ts';
 
 /**
- * `npx laika init` — M4's exit criterion.
+ * `laika init` — M4's exit criterion.
  *
  * *"A new repo goes from nothing to an agent working the board in one
  * command."* Reachability, sign-in, mint, write — and it must work for somebody

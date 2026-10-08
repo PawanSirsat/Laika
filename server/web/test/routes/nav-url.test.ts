@@ -68,6 +68,9 @@ void describe('it does not attach a project where there is none', () => {
   void test('org-level destinations stay bare', () => {
     assert.equal(navHref('/organisation', SLUG), '/organisation');
     assert.equal(navHref('/tokens', SLUG), '/tokens');
+    // Connect is org-level too (LAI-622). Without this line its `orgLevel`
+    // flag is untested and a later removal would be silent.
+    assert.equal(navHref('/connect', SLUG), '/connect');
   });
 
   void test('no project yet means no dangling query string', () => {

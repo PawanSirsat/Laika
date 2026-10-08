@@ -93,6 +93,16 @@
   gap: 1px;
 }
 
+/*
+ * **SETTINGS at the bottom** (the owner, 2026-10-09). The nav is a full-height
+ * column, so an auto top margin pushes the group down to the footer. When the
+ * spaces list is long enough to scroll, the margin is zero and SETTINGS simply
+ * follows it, so nothing is ever hidden behind it.
+ */
+.sidebar-group-end {
+  margin-top: auto;
+}
+
 .sidebar-group-title {
   font-size: 0.6875rem;
   font-weight: var(--weight-heavy);

@@ -61,6 +61,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'Nothing unlisted',
     body: 'Agents log work here when they notice something outside any project — a stale dependency, a broken script. Promote what matters into a task; dismiss the rest.',
   },
+  '/connect': {
+    headline: 'No project to mirror work into',
+    body: 'Setup still works without one — a session can connect and report in. Create a project and this page fills in the block its lead commits.',
+  },
   '/tokens': {
     headline: 'No tokens yet',
     body: 'A personal access token lets an agent read and write this board as you. It is shown once when created.',

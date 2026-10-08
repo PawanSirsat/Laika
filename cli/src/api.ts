@@ -1,4 +1,4 @@
-import { failure, failureForStatus, type Failure } from './failures.ts';
+import { failure, failureForStatus, failureForTokenStatus, type Failure } from './failures.ts';
 
 /**
  * The three calls `init` makes, and nothing else.
@@ -133,4 +133,49 @@ export async function mintToken(
     prefix: body.token?.prefix ?? '',
     secret: body.secret,
   });
+}
+
+export interface Identity {
+  readonly name: string;
+  readonly email: string;
+  readonly org_role: string;
+  readonly memberships: readonly unknown[];
+}
+
+/**
+ * Who a **token** says you are (LAI-623).
+ *
+ * Separate from {@link signIn} because the credential is different, and so are
+ * the failures: a refused token has been revoked, rotated or has expired, and
+ * telling its holder to check an email and password sends them somewhere that
+ * cannot help — `whoami` has no password to be wrong. Hence
+ * {@link failureForTokenStatus} rather than `failureForStatus`.
+ */
+export async function whoAmI(url: string, token: string): Promise<Result<Identity>> {
+  let response: Response;
+  try {
+    response = await fetch(`${url}/api/v1/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (cause) {
+    return bad(failure('unreachable', cause instanceof Error ? cause.message : undefined));
+  }
+
+  if (!response.ok) return bad(failureForTokenStatus(response.status));
+
+  try {
+    const body = (await response.json()) as Partial<Identity>;
+    if (typeof body.email !== 'string' || typeof body.org_role !== 'string') {
+      // Something answered and it is not Laika's `/me`.
+      return bad(failure('not_laika'));
+    }
+    return ok({
+      name: typeof body.name === 'string' ? body.name : body.email,
+      email: body.email,
+      org_role: body.org_role,
+      memberships: Array.isArray(body.memberships) ? body.memberships : [],
+    });
+  } catch {
+    return bad(failure('not_laika'));
+  }
 }
