@@ -141,3 +141,27 @@ behind `path === '/board'` in `SpaceLayout`. No other tab showed either. The
 presence read in `SpaceLive` stays because `Agents N` reads it; Activity and
 Capacity fetch their own. This retires audit finding L20 ("Working now labels
 other projects' tasks").
+
+## Review notes (round 1)
+
+**APPROVED**, no blockers. Reviewer's own gate on 2d6036a: `pnpm test` 0,
+`pnpm lint` 0, `pnpm format` 0.
+
+Deferred to the integration step when the branches combine (not done here):
+rebasing `use-sprint-stats.ts` onto build-perf-store's in-memory task set;
+porting the tests' `selectOption` calls to the new dropdown helper; retiring
+the strip tests the new Timeline breaks; the `SpaceSlot` and `SpaceLayout`
+comments.
+
+Follow-ups taken on this branch (frozen criteria unchanged):
+1. Should-fix 2 — the tightest layout (sidebar open, 920–1024px) untested:
+   assert `.bt-search` ≥ 120px with ≥6 member faces and an active Group;
+   tighten the compact rules if it fails; screenshots at both widths.
+2. All sprints has no chip to name it, so the compact form must keep a
+   visible scope for it, or the comment must stop claiming one.
+3. `SprintStats.tsx` LEFT tooltip for All sprints reads oddly.
+4. `sprint-stats.css` sets `container` on `.board-bar`, which
+   `board-toolbar.css` owns — say so in a comment; do not edit that file.
+5. `SpaceLive.tsx` still names the presence strip as a consumer.
+6. `board-presence` "presence off: still no row" and `sprint-strip` "a
+   project with no sprints reserves nothing" pass on old and new code alike.
