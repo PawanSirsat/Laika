@@ -6,8 +6,9 @@ assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
 discovered-from: LAI-722
-status: in-progress
-started: 2026-10-08T14:05:00Z
+status: review
+started: 2026-10-08T12:28:47Z
+finished: 2026-10-08T13:00:32Z
 ---
 
 ## Goal
@@ -30,10 +31,10 @@ Make the Dashboard's activity read proportionate to what it draws.
 
 ## Acceptance criteria
 
-- [ ] A live refresh does not re-read events the Dashboard already holds.
-- [ ] The "all time" range does not fetch more events than the screen uses,
+- [x] A live refresh does not re-read events the Dashboard already holds.
+- [x] The "all time" range does not fetch more events than the screen uses,
       or the server answers the aggregate the screen needs instead.
-- [ ] The counts on screen are unchanged against a project with more than
+- [x] The counts on screen are unchanged against a project with more than
       200 events in the window (the case LAI-722 made correct).
 
 ## Notes / context
@@ -55,3 +56,23 @@ Make the Dashboard's activity read proportionate to what it draws.
   screen **stay stale** indefinitely.
 
 Not fixed in LAI-722: it is client work, for the client performance phase.
+
+## Closed by LAI-724
+
+- **Incremental, not an aggregate.** `server/web/src/api/activity-store.ts`
+  reads the window in full once, then a live frame (debounced 500 ms) costs one
+  `?since=<newest held>` request; duplicates at that millisecond are dropped by
+  id. Activity is append-only, so the counts are what a full re-walk reads —
+  `activity-store.test.ts` compares against one over 450 events (more than 200
+  in the window). No server change.
+- **Nothing cancels a walk.** A frame during a walk queues one catch-up after
+  it, so "All time" finishes under any frame rate (tested with ten settled
+  frames during a paused 900-event walk).
+- **"All time" fetches what the screen uses**: the feed lists and counts every
+  event in the range, so the first read is the whole range (capped at 20
+  pages, and the screen says so when capped). A revisit, a narrower range or a
+  live frame reads only what is new.
+- Measured (WAN): one live change with the Dashboard open went from 10
+  requests to 5, with one activity request.
+- **Correction:** `started` was claimed as 14:05Z, a guess; the claim commit is
+  12:28:47Z.

@@ -5,8 +5,9 @@ area: web
 assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
-status: in-progress
-started: 2026-10-08T14:00:00Z
+status: review
+started: 2026-10-08T12:28:38Z
+finished: 2026-10-08T13:00:32Z
 ---
 
 ## Goal
@@ -58,33 +59,33 @@ Not touched: `routes/screens/timeline/TimelineScreen.tsx`, `timeline.css`,
 
 ## Acceptance criteria
 
-- [ ] One in-memory store under `server/web/src/api/`, kept across tab switches:
+- [x] One in-memory store under `server/web/src/api/`, kept across tab switches:
       the same GET in flight twice is one request; cached data shows at once on
       revisiting a tab and revalidates in the background at most once per 30 s
       or on an invalidation; a request is aborted only when no subscriber
       remains; only the current project's task set is held.
-- [ ] Everything cached is dropped on sign-out and on a change of user, and an
+- [x] Everything cached is dropped on sign-out and on a change of user, and an
       answer to a request made for the previous user is never stored — tested.
-- [ ] Board, List, sprint strip, Timeline (through `use-sprints.ts`), Calendar,
+- [x] Board, List, sprint strip, Timeline (through `use-sprints.ts`), Calendar,
       Sprints, Dashboard, Capacity, Activity and Meeting review read one task
       set per project: one walk, not one per screen or per list.
-- [ ] Live frames reach the store in one place, debounced: one task re-walk per
+- [x] Live frames reach the store in one place, debounced: one task re-walk per
       burst; presence is refetched debounced, not per frame; a `gap` still
       reloads in full. LAI-707's in-place refresh and LAI-708's glow work as
       before, the store keeps every child in `byId`.
-- [ ] Capacity reads the open project's tasks from the store and makes no
+- [x] Capacity reads the open project's tasks from the store and makes no
       `GET /tasks/:id` for them; its cold load is 16 requests or fewer.
-- [ ] LAI-723: a live frame costs the Dashboard one small activity request, the
+- [x] LAI-723: a live frame costs the Dashboard one small activity request, the
       counts are unchanged against a project with more than 200 events in the
       window, and "All time" cannot be held stale by frequent frames.
-- [ ] No endpoint is requested twice on the cold load of any tab.
-- [ ] Unit tests: dedupe, stale-while-revalidate, subscriber-counted abort,
+- [x] No endpoint is requested twice on the cold load of any tab.
+- [x] Unit tests: dedupe, stale-while-revalidate, subscriber-counted abort,
       clear on sign-out or user change, event coalescing. Browser tests: a tab
       sequence's request counts, the live glow, Capacity's request count.
-- [ ] Before/after measurement (WAN profile) for every tab, the tab sequence,
+- [x] Before/after measurement (WAN profile) for every tab, the tab sequence,
       one live change with Board and with Dashboard open, and Capacity — in the
       log.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 after the
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 after the
       last edit.
 
 ## Notes / context
@@ -92,3 +93,15 @@ Not touched: `routes/screens/timeline/TimelineScreen.tsx`, `timeline.css`,
 - Out of scope (later phases): a slim `?fields=` list, server pagination for
   the List, ETags on API JSON, code-splitting, infrastructure.
 - Nothing is pushed from this branch; the owner releases it.
+
+## Built
+
+On the owner's direct instruction; performance phase 2. Summary, measurements
+and every changed file are in `logs/perf-2026-10-08.md` (entry 13:00Z).
+
+- D-075 (not D-074, which is uncommitted on build-ui-polish).
+- Filed LAI-728 (capacity sends task refs), `discovered-from: LAI-724`.
+- **Correction:** this file was filed with `started: 2026-10-08T14:00:00Z`, a
+  guess; the filing commit is 12:28:38Z, and `started` now says so.
+- **The gate criterion is ticked on the gate run after this commit** — the
+  exit codes are in the builder's report, on the HEAD that carries this file.
