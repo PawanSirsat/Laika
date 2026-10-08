@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Donut } from '../../../components/Donut.tsx';
 import { percentLabel, roundedPercents } from '../../../components/donut-arcs.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
@@ -38,6 +38,7 @@ function detail(row: PersonLoad): string {
   if (row.byStatus.review > 0) parts.push(`${String(row.byStatus.review)} review`);
   const waiting = row.byStatus.todo + row.byStatus.backlog;
   if (waiting > 0) parts.push(`${String(waiting)} to do`);
+  if (row.done > 0) parts.push(`${String(row.done)} done`);
   if (row.blocked > 0) parts.push(`${String(row.blocked)} blocked`);
   return parts.join(' · ');
 }
@@ -49,17 +50,32 @@ function detail(row: PersonLoad): string {
  *
  * Each person opens the board filtered to them; Unassigned opens the board's
  * own "no assignee" filter. "Others" is several people and goes nowhere.
+ *
+ * **It counts what its scope says** (LAI-732): the dashboard's range and the
+ * card's own filter choose the tasks — done work too, when the card includes
+ * it — and `scope` says which.
  */
 export function WorkByPerson({
   workload,
   nameOf,
   slug,
   theme,
+  scope,
+  narrowed = false,
+  includeDone = false,
+  filter,
 }: {
   readonly workload: Workload;
   readonly nameOf: (id: string) => string;
   readonly slug: string;
   readonly theme: Theme;
+  /** What the card counts: "4 people · open work updated in the last 7 days". */
+  readonly scope?: string | undefined;
+  readonly narrowed?: boolean;
+  /** Done work is counted beside open work. */
+  readonly includeDone?: boolean;
+  /** The card's filter control (`CardFilter`). */
+  readonly filter?: ReactNode;
 }) {
   const [active, setActive] = useState<string | undefined>(undefined);
   const percents = roundedPercents(workload.rows.map((row) => row.count));
@@ -85,19 +101,36 @@ export function WorkByPerson({
         <h2 id="dash-people-title" className="dash-card-title">
           Work by person
         </h2>
-        <span className="dash-card-meta">
-          {people} {people === 1 ? 'person' : 'people'} · open work
+        <span className="dash-card-tools">
+          <span className="dash-card-meta" title={scope}>
+            {scope ?? `${String(people)} ${people === 1 ? 'person' : 'people'} · open work`}
+          </span>
+          {filter}
         </span>
       </header>
 
       {workload.open === 0 ? (
-        <p className="dash-empty">No open work — nothing to divide.</p>
+        <p className="dash-empty">
+          {narrowed
+            ? 'No work in this card’s scope.'
+            : includeDone
+              ? 'No work — nothing to divide.'
+              : 'No open work — nothing to divide.'}
+        </p>
       ) : (
         <div className="dash-chart">
           <Donut
-            label="Open work by person"
+            label={includeDone ? 'Work by person' : 'Open work by person'}
             value={workload.open}
-            caption={workload.open === 1 ? 'open task' : 'open tasks'}
+            caption={
+              includeDone
+                ? workload.open === 1
+                  ? 'task'
+                  : 'tasks'
+                : workload.open === 1
+                  ? 'open task'
+                  : 'open tasks'
+            }
             slices={colored.map(({ row, color }) => ({
               key: row.id,
               label: label(row),

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { statusLabel } from '../../../api/board-derive.ts';
 import type { TaskStatus } from '../../../api/tasks.ts';
 import { Donut } from '../../../components/Donut.tsx';
@@ -27,13 +27,26 @@ const STATUS_COLOR: Readonly<Record<TaskStatus, string>> = {
  * gives — work that will not happen must not make a finished project look
  * unfinished — and named beneath it, so the cancellations are still a fact on
  * the page.
+ *
+ * **It counts what its scope says** (LAI-732): the dashboard's range and the
+ * card's own filter (`card-filters.ts`) choose the tasks, and `scope` — the
+ * subtitle — says which, so a smaller number never looks wrong unexplained.
  */
 export function StatusOverview({
   breakdown,
   slug,
+  scope,
+  narrowed = false,
+  filter,
 }: {
   readonly breakdown: StatusBreakdown;
   readonly slug: string;
+  /** What the card counts: "343 tasks", "41 tasks updated in the last 7 days". */
+  readonly scope?: string | undefined;
+  /** A range or a filter narrows the card, so an empty one is not an empty project. */
+  readonly narrowed?: boolean;
+  /** The card's filter control (`CardFilter`). */
+  readonly filter?: ReactNode;
 }) {
   const [active, setActive] = useState<string | undefined>(undefined);
   const live = breakdown.counts.filter((c) => c.status !== 'cancelled');
@@ -47,13 +60,18 @@ export function StatusOverview({
         <h2 id="dash-status-title" className="dash-card-title">
           Status overview
         </h2>
-        <span className="dash-card-meta">
-          {breakdown.live} {breakdown.live === 1 ? 'task' : 'tasks'}
+        <span className="dash-card-tools">
+          <span className="dash-card-meta" title={scope}>
+            {scope ?? `${String(breakdown.live)} ${breakdown.live === 1 ? 'task' : 'tasks'}`}
+          </span>
+          {filter}
         </span>
       </header>
 
       {breakdown.live === 0 ? (
-        <p className="dash-empty">This project has no tasks yet.</p>
+        <p className="dash-empty">
+          {narrowed ? 'No tasks in this card’s scope.' : 'This project has no tasks yet.'}
+        </p>
       ) : (
         <div className="dash-chart">
           <Donut
