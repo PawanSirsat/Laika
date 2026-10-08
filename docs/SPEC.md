@@ -1620,7 +1620,7 @@ call MCP; agents do.
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Capacity** | 5 | `GET /capacity`, `GET /presence`, `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /events` | `log_unlisted_work` | ✅ |
-| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /activity`, `GET /projects/:slug/activity` | all, indirectly via `activity` | ✅ |
+| **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
 | **Calendar** | ? | *none defined* | — | ⛔ **no decision — §14, q10** |
@@ -1687,8 +1687,13 @@ anything missing sends the task back.
   sessions distinct from humans; in-progress work across projects; last seen;
   **unlisted work with one-click promote to a task**; disabled state when
   `presence_enabled = 0`.
-- **Dashboard** — progress by status; activity feed with an **agent/human
-  filter**; stale warnings; throughput and cycle time; read-only for Viewer.
+- **Dashboard** — shaped like Jira's project Summary (D-072): **done, updated,
+  created and due soon** for the chosen range; a **status donut** with the share
+  done at its centre; a **donut of open work by person**, Unassigned as its own
+  share, each person opening the board filtered to them; activity feed with an
+  **agent/human filter**; **needs attention** (blocked and stale, true counts);
+  priority breakdown; throughput and cycle time; updates in place on a live
+  change; read-only for Viewer.
 - **Meeting review** — the proposals, tagged **NEW / CHANGED / DEAD /
   DECISION**, each shown **with the transcript quote it was reacting to**;
   per-line accept and reject; apply acts only on accepted items; discard the set.
