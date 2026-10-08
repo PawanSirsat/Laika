@@ -1,9 +1,11 @@
 /**
- * The cache as `request` uses it (LAI-724, D-075).
+ * `src/api/store.ts` — the client store, wired (LAI-724, D-075).
  *
- * `query-cache.test.ts` pins the mechanism; this pins the policy in
- * `client.ts` and the wiring in `store.ts`: which answers are reused, that a
- * write makes them stale, and that the session's user decides whose they are.
+ * `query-cache.test.ts`, `task-store.test.ts` and `activity-store.test.ts` pin
+ * the mechanisms; this pins how they are put together: the policy in
+ * `client.ts` (which answers are reused), that a write makes them stale, and
+ * that `setStoreUser` — the session — decides whose they are, for the cache
+ * and the task store alike.
  */
 
 import assert from 'node:assert/strict';
