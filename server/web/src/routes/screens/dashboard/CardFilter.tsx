@@ -1,4 +1,15 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { Dropdown } from '../../../components/Dropdown.tsx';
+import { isInDropdownPanel } from '../../../components/dropdown-model.ts';
 
 /**
  * A dashboard card's own filter: an icon with a count, and a compact popover
@@ -11,9 +22,10 @@ import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 
  * click outside close it; it takes focus on opening and gives it back to the
  * icon on Escape.
  *
- * **The controls are swappable.** The shared Dropdown is being built on
- * build-ui-dropdown; until it lands every field is a native select inside
- * {@link CardField}, so the integration step changes that one component.
+ * **Every control is the app's `Dropdown`** (LAI-726), through
+ * {@link CardSelect}: themed, searchable past eight options, never the OS's
+ * own list. Its panel is portalled to `<body>`, so a click in it is not a click
+ * outside, and an Escape it used to close itself does not close the popover.
  */
 export function CardFilter({
   title,
@@ -38,17 +50,27 @@ export function CardFilter({
     if (returnFocus) button.current?.focus();
   }, []);
 
+  /**
+   * **The first field, never Clear** (LAI-732 review). Clear sits before the
+   * fields and is enabled whenever a filter is set, so "the first focusable
+   * thing" was Clear — and Enter, the natural next key, wiped every filter.
+   */
+  const focusFirstField = (): void => {
+    pop.current?.querySelector<HTMLElement>('.dcf-fields [role="combobox"]')?.focus();
+  };
+
   useEffect(() => {
     if (!open) return;
-    // Into the popover, on its first control: a keyboard reader lands where
-    // the choices are, not back at the top of the page.
-    pop.current?.querySelector<HTMLElement>('select, input, button:not(:disabled)')?.focus();
+    focusFirstField();
 
     const onDown = (event: MouseEvent): void => {
+      // A dropdown's panel is portalled to <body>: choosing in it is not outside.
+      if (isInDropdownPanel(event.target)) return;
       if (anchor.current !== null && !anchor.current.contains(event.target as Node)) close(false);
     };
     const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') close(true);
+      // An Escape a dropdown already used to close itself is not this one's.
+      if (event.key === 'Escape' && !event.defaultPrevented) close(true);
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -92,8 +114,9 @@ export function CardFilter({
               disabled={active === 0}
               onClick={() => {
                 onClear();
-                // The button just disabled itself; keep focus in the popover.
-                pop.current?.querySelector<HTMLElement>('select')?.focus();
+                // The button just disabled itself: focus goes to a field, not
+                // to nothing (the body) and not back to a Clear that is gone.
+                focusFirstField();
               }}
             >
               Clear
@@ -105,6 +128,9 @@ export function CardFilter({
     </span>
   );
 }
+
+/** The id of the words naming the field a {@link CardSelect} sits in. */
+const FieldLabel = createContext<string | undefined>(undefined);
 
 /** One labelled control, drawn in the accent when it holds anything but its default. */
 export function CardField({
@@ -119,39 +145,44 @@ export function CardField({
   readonly wide?: boolean;
   readonly children: ReactNode;
 }) {
+  const labelId = useId();
   const className = ['dcf-field', set ? 'dcf-field-set' : '', wide ? 'dcf-field-wide' : '']
     .filter((c) => c !== '')
     .join(' ');
   return (
+    // A <label>, as on the Board: clicking the words opens the field.
     <label className={className}>
-      <span className="dcf-label">{label}</span>
-      {children}
+      <span className="dcf-label" id={labelId}>
+        {label}
+      </span>
+      <FieldLabel.Provider value={labelId}>{children}</FieldLabel.Provider>
     </label>
   );
 }
 
-/** A select that writes one URL value, `''` meaning the default. */
+/** A choice that writes one URL value, `''` meaning the default — the app's `Dropdown`. */
 export function CardSelect({
   value,
   onChange,
   options,
+  noun,
 }: {
   readonly value: string;
   readonly onChange: (value: string | undefined) => void;
   readonly options: readonly (readonly [value: string, label: string])[];
+  /** What the search box searches, past eight options: "sprints", "people". */
+  readonly noun?: string | undefined;
 }) {
+  const labelId = useContext(FieldLabel);
   return (
-    <select
+    <Dropdown
+      aria-labelledby={labelId}
+      noun={noun}
       value={value}
-      onChange={(event) => {
-        onChange(event.target.value === '' ? undefined : event.target.value);
+      options={options.map(([v, label]) => ({ value: v, label }))}
+      onChange={(next) => {
+        onChange(next === '' ? undefined : next);
       }}
-    >
-      {options.map(([v, label]) => (
-        <option key={v} value={v}>
-          {label}
-        </option>
-      ))}
-    </select>
+    />
   );
 }

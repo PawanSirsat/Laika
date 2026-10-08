@@ -136,6 +136,18 @@ void describe('the dashboard range applies to the cards', () => {
     ]);
   });
 
+  /*
+   * **The bound is inclusive, to the millisecond** (LAI-732 review): the
+   * "N updated" stat counts `updated_at >= since`, and a card that used `>`
+   * would drop a task touched at the very start of the window.
+   */
+  void test('a task updated exactly at the range’s start is kept; one a millisecond earlier is not', () => {
+    const at = recent({ id: 'at', updated_at: WEEK });
+    const before = recent({ id: 'before', updated_at: WEEK - 1 });
+    const filter = readStatusCard(q(''), KNOWN);
+    assert.deepEqual(ids(cardTasks([at, before], filter, SEVEN)), ['at']);
+  });
+
   void test('"All tasks" on a card overrides the range, and counts as a filter', () => {
     const so = readStatusCard(q('so_range=all'), KNOWN);
     assert.deepEqual(ids(cardTasks(SET, so, SEVEN)), ids(SET));

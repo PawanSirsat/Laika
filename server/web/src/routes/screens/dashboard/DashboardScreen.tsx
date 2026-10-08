@@ -332,6 +332,7 @@ export function DashboardScreen() {
       <CardField label="Sprint" set={statusFilter.sprint !== undefined}>
         <CardSelect
           value={statusFilter.sprint ?? ''}
+          noun="sprints"
           options={sprintOptions}
           onChange={(v) => {
             setCard({ [STATUS_KEYS.sprint]: v });
@@ -365,6 +366,7 @@ export function DashboardScreen() {
       <CardField label="Label" set={statusFilter.tag !== undefined}>
         <CardSelect
           value={statusFilter.tag ?? ''}
+          noun="labels"
           options={labelOptions}
           onChange={(v) => {
             setCard({ [STATUS_KEYS.tag]: v });
@@ -406,6 +408,7 @@ export function DashboardScreen() {
       <CardField label="Sprint" set={peopleFilter.sprint !== undefined}>
         <CardSelect
           value={peopleFilter.sprint ?? ''}
+          noun="sprints"
           options={sprintOptions}
           onChange={(v) => {
             setCard({ [PEOPLE_KEYS.sprint]: v });
@@ -424,6 +427,7 @@ export function DashboardScreen() {
       <CardField label="Label" set={peopleFilter.tag !== undefined}>
         <CardSelect
           value={peopleFilter.tag ?? ''}
+          noun="labels"
           options={labelOptions}
           onChange={(v) => {
             setCard({ [PEOPLE_KEYS.tag]: v });

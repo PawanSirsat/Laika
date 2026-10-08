@@ -13,6 +13,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
+import { pick, valueOf } from './dropdown.ts';
 import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
 
 const NOW = Date.now();
@@ -211,8 +212,19 @@ async function openPop(page: Page, card: string): Promise<void> {
   await page.locator(`${card} .dcf-pop`).waitFor({ timeout: 5_000 });
 }
 
+/** A field's control: the app's `Dropdown` (LAI-726), driven with `pick`. */
 const field = (page: Page, card: string, label: string) =>
-  page.locator(`${card} .dcf-pop .dcf-field`, { hasText: label }).locator('select');
+  page.locator(`${card} .dcf-pop .dcf-field`, { hasText: label }).locator('[role="combobox"]');
+
+/** Which field, by its label, holds focus — or what does, when no field does. */
+const focusedField = (page: Page, card: string): Promise<string> =>
+  page.evaluate((sel) => {
+    const active = document.activeElement;
+    const cell = active?.closest(`${sel} .dcf-pop .dcf-field`);
+    if (cell !== null && cell !== undefined)
+      return cell.querySelector('.dcf-label')?.textContent?.trim() ?? '?';
+    return `${active?.tagName ?? 'nothing'}.${active?.className ?? ''}: ${active?.textContent?.trim() ?? ''}`;
+  }, card);
 
 void after(async () => {
   await closeBrowser();
@@ -265,7 +277,7 @@ void describe('the Status overview filter', () => {
         'focus did not move into the popover',
       );
 
-      await field(h.page, STATUS, 'Priority').selectOption('p1');
+      await pick(field(h.page, STATUS, 'Priority'), 'p1');
       await h.page.waitForFunction(
         () => new URL(location.href).searchParams.get('so_priority') === 'p1',
       );
@@ -278,7 +290,7 @@ void describe('the Status overview filter', () => {
       assert.equal(await badge(h.page, STATUS), '1');
       assert.equal(await badge(h.page, PEOPLE), null, 'the other card was filtered');
 
-      await field(h.page, STATUS, 'Sprint').selectOption('active');
+      await pick(field(h.page, STATUS, 'Sprint'), 'active');
       await h.page.waitForFunction(
         (sel) => document.querySelector(sel)?.textContent?.trim() === '3 tasks · 2 filters',
         `${STATUS} .dash-card-meta`,
@@ -354,8 +366,8 @@ void describe('the Work by person filter', () => {
       assert.equal(await centre(h.page, PEOPLE), '3', 'a refresh lost the card’s filter');
 
       await openPop(h.page, PEOPLE);
-      assert.equal(await field(h.page, PEOPLE, 'Statuses').inputValue(), 'all');
-      await field(h.page, PEOPLE, 'Statuses').selectOption('');
+      assert.equal(await valueOf(field(h.page, PEOPLE, 'Statuses')), 'all');
+      await pick(field(h.page, PEOPLE, 'Statuses'), '');
       await h.page.waitForFunction(
         () => new URL(location.href).searchParams.get('wp_status') === null,
       );
@@ -380,6 +392,90 @@ void describe('the Work by person filter', () => {
       // api: LC-1 and LC-5. p1, open: LC-1 and LC-5.
       assert.equal(await meta(h.page, STATUS), '2 tasks · 1 filter');
       assert.equal(await centre(h.page, PEOPLE), '2');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * **Focus lands on a field, never on Clear** (LAI-732 review). With a filter
+ * set, Clear is enabled and comes first in the popover, and the old "first
+ * focusable" query put focus on it — so Enter, the natural next key, wiped
+ * every filter. Clear, once pressed, disables itself and must hand focus to a
+ * field rather than to nothing.
+ */
+void describe('focus in the popover', () => {
+  void test('opened with a filter set, focus lands on the first field, not Clear', async () => {
+    const h = await open('/dashboard?project=laika-core&so_priority=p1', STUB);
+    try {
+      await ready(h.page);
+      assert.equal(await badge(h.page, STATUS), '1', 'positive control: a filter is set');
+      await openPop(h.page, STATUS);
+      await h.page.waitForTimeout(100);
+      assert.equal(await focusedField(h.page, STATUS), 'Sprint');
+
+      await h.page.locator(`${STATUS} .dcf-clear`).click();
+      await h.page.waitForFunction(() => !new URL(location.href).search.includes('so_'));
+      await h.page.waitForTimeout(100);
+      assert.equal(await focusedField(h.page, STATUS), 'Sprint', 'Clear left focus on nothing');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('choosing an option keeps the popover open (the panel is not "outside")', async () => {
+    const h = await open('/dashboard?project=laika-core', STUB);
+    try {
+      await ready(h.page);
+      await openPop(h.page, PEOPLE);
+      await pick(field(h.page, PEOPLE, 'Priority'), 'p1');
+      assert.equal(
+        await h.page.locator(`${PEOPLE} .dcf-pop`).count(),
+        1,
+        'choosing closed the popover',
+      );
+      // Escape closes the dropdown first, then the popover.
+      await field(h.page, PEOPLE, 'Label').click();
+      await h.page.keyboard.press('Escape');
+      assert.equal(await h.page.locator(`${PEOPLE} .dcf-pop`).count(), 1, 'one Escape closed both');
+      await h.page.keyboard.press('Escape');
+      await h.page.locator(`${PEOPLE} .dcf-pop`).waitFor({ state: 'detached', timeout: 5_000 });
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * **Blocked is judged from the whole project, on the screen** (LAI-732
+ * review). LC-8, Ada's, waits only on LC-7, which is done — and in sprint s2.
+ * Filtered to s1, the card no longer holds LC-7; judged from the filtered few
+ * it is "unknown", which counts as blocked. It must read as free.
+ */
+void describe('Work by person judges blocked from the whole project', () => {
+  void test('a blocker the card filters out still frees the task it blocked', async () => {
+    const freed = task(8, {
+      status: 'todo',
+      assignee_id: 'u1',
+      sprint_id: 's1',
+      blocked_by: ['t7'],
+    });
+    const h = await open('/dashboard?project=laika-core&range=all&wp_sprint=s1', {
+      ...STUB,
+      '/api/v1/projects/laika-core/tasks': { data: [...TASKS, freed], next_cursor: null },
+    });
+    try {
+      await ready(h.page);
+      const ada = h.page.locator(`${PEOPLE} .dash-legend-row`, { hasText: 'Ada Lovelace' });
+      await ada.waitFor({ timeout: 10_000 });
+      // Positive control: LC-8 is counted in Ada's row (LC-1 in progress, LC-8 to do).
+      assert.match((await ada.textContent()) ?? '', /1 in progress · 1 to do/);
+      assert.doesNotMatch(
+        (await ada.textContent()) ?? '',
+        /blocked/,
+        'a task whose blocker is done was counted blocked',
+      );
     } finally {
       await h.close();
     }
