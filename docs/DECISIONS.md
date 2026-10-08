@@ -3875,3 +3875,39 @@ the earlier runs were — a crossing made on that instruction, not a precedent.
   offered to the owner, not built.
 - `/metrics`' "stuck" and "WIP by user", which SPEC §6.4 promises and the server
   does not serve (LAI-712).
+
+## D-073 — A push to master deploys itself.
+
+**2026-10-08, the owner, directly to CHIEF**: *"if I push on master, that must
+deploy automatically — that's it."* After Dokploy was weighed and set aside —
+the production instance is a t4g.micro with 1 GB of memory, a 15 GB disk and
+Amazon Linux, below Dokploy's floor of 2 GB, 30 GB and Ubuntu or Debian — the
+owner chose GitHub Actions deploying to the instance Laika already runs on.
+Carried by LAI-714. This **replaces** the practice of releasing only on the
+owner's word: the owner's word is now the push.
+
+### Decided
+
+1. **Every push runs the gate** in GitHub Actions — `pnpm lint`, `pnpm format`,
+   `pnpm test`, three steps, three exit codes (§5). A red gate deploys nothing.
+2. **On `master`, a green gate is a release.** The arm64 image is built on a
+   GitHub arm64 runner, pushed to ECR tagged with the commit, `latest` is
+   pointed at it, and the instance is restarted on that **exact digest** over
+   SSM. The image is pulled before the old container stops, so the gap is the
+   container's start time.
+3. **A release proves itself or rolls back.** Healthy from inside within 90
+   seconds, running the exact image, freshly up and serving the web app from
+   outside — or production is put back on the image it replaced and the run
+   fails.
+4. **One release at a time; the newest waiting commit wins.**
+5. **No long-lived keys.** GitHub assumes `laika-github-deploy` through OIDC,
+   trusted for `master` of `PawanSirsat/Laika` only, allowed ECR push to
+   `laika`, SSM on the one instance, and describing instances. It is created
+   from `infra/github-deploy-role.yml`, stack `laika-github-deploy`.
+6. **The manual path stays** for when Actions is down: build with `--push`,
+   match the digest, SSM restart, check from outside.
+
+### What this does not decide
+
+- HTTPS and a domain, a dashboard, and scheduled database backups — the things
+  Dokploy would have brought. Each can be added to this pipeline later.
