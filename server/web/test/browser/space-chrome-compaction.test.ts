@@ -149,8 +149,9 @@ void describe('the bar is two lines: identity, then tabs', () => {
  * Both sessions assumed the board's row had to portal into a container the
  * space layout owned, and negotiated a seam for it over two messages. Measuring
  * `SpaceLayout` settled it: `{children}` — the screen's own output — already
- * renders directly below `PresenceStrip`. The board renders its row inline and
- * the seam does not exist.
+ * renders directly below `PresenceStrip` (below the bar itself since LAI-727
+ * removed that row). The board renders its row inline and the seam does not
+ * exist.
  *
  * Asserted so the slot is not reintroduced by someone reading the old plan.
  */

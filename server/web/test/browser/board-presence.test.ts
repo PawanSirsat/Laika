@@ -1,5 +1,6 @@
 /**
- * The Board's WORKING NOW strip and the agent-sessions rail (LAI-440).
+ * The Board's WORKING NOW strip and the agent-sessions rail (LAI-440) — and,
+ * since LAI-727, the Board without the strip.
  *
  * Both rendered a heading and **nothing** in the shipped build: their contents
  * came from `demo/presence.ts` and `demo/agent-sessions.ts`, which return
@@ -10,7 +11,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
+import { closeBrowser, open, type ApiStub } from './harness.ts';
 
 const now = 1788272050095;
 const P = {
@@ -214,87 +215,53 @@ void after(async () => {
   await closeBrowser();
 });
 
-void describe('the WORKING NOW strip', () => {
-  void test('renders real people, and the withheld one is still a person', async () => {
+/*
+ * **The row is gone from the Board (LAI-727)**, on the owner's word: *"then
+ * also remove this row, that's it."* Three tests here asserted what the row
+ * drew, and each property still holds where presence is still drawn:
+ *
+ * - *the withheld person is still a person, in both themes* —
+ *   `capacity.test.ts`, "a person with no visible repo renders as a person";
+ * - *an agent is marked and a human is not* — `capacity.test.ts`, "an agent
+ *   session is marked, and a human is not"; and `activity-tab.test.ts`,
+ *   "lists real agent sessions, and only agents";
+ * - *nobody working says so* — `activity-tab.test.ts`, "no agent working
+ *   says so".
+ *
+ * All three render through the one `PresencePerson`, which the row also used.
+ * What is left to assert on the Board is that the row stays gone in the state
+ * it used to draw in, and that the count the header still takes from
+ * presence is unaffected.
+ */
+void describe('the Board has no WORKING NOW row (LAI-727)', () => {
+  void test('people present: no row, and the header still counts the agents', async () => {
     const h = await open('/board?project=laika-core', STUB);
-    try {
-      await h.page.locator('.presence-chip').first().waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.presence-chip').count(), 2);
-
-      // A chip reads `Tomas N.` since LAI-271 — the design's short form.
-      const withheld = h.page.locator('.presence-chip', { hasText: 'Tomas N.' });
-      for (const theme of ['Light', 'Dark']) {
-        await setTheme(h.page, theme);
-        await h.page.waitForTimeout(300);
-
-        const text = await withheld.innerText();
-        assert.match(text, /Tomas N\./, `${theme}: the person is missing`);
-        assert.match(text, /working elsewhere/, `${theme}: no sentence in place of the location`);
-        assert.doesNotMatch(text, /unknown|undefined|null/i, `${theme}: a placeholder leaked`);
-        assert.equal(await withheld.locator('.pp-repo').count(), 0, `${theme}: leaked a repo`);
-
-        const box = await withheld.boundingBox();
-        assert.ok(box !== null && box.width > 0, `${theme}: the chip has no box`);
-      }
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('an agent chip is marked and a human chip is not', async () => {
-    const h = await open('/board?project=laika-core', STUB);
-    try {
-      const agent = h.page.locator('.presence-chip', { hasText: 'Ada L.' });
-      await agent.waitFor({ timeout: 20_000 });
-      // A **dot** since LAI-271 — the design marks the session's kind here and
-      // keeps the word for the Capacity row, which has space for it.
-      assert.equal(await agent.locator('.pp-dot-agent').count(), 1);
-      const human = h.page.locator('.presence-chip', { hasText: 'Tomas N.' });
-      assert.equal(await human.locator('.pp-dot-agent').count(), 0);
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('nobody working says so, rather than showing a bare heading', async () => {
-    const quiet = { ...STUB, '/api/v1/presence': { enabled: true, present: [] } };
-    const h = await open('/board?project=laika-core', quiet);
-    try {
-      await h.page.locator('.presence').waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(500);
-      assert.equal(await h.page.locator('.presence-chip').count(), 0);
-      assert.match(
-        await h.page.locator('.presence').innerText(),
-        /nobody has a session/i,
-        'an empty strip under a heading reads as broken',
-      );
-    } finally {
-      await h.close();
-    }
-  });
-
-  void test('presence off hides the strip entirely', async () => {
-    // AC3: on the Board there is nothing to explain and no room to explain it.
-    // A permanent empty band on the main screen is a standing reproach for a
-    // setting somebody chose.
-    const off = { ...STUB, '/api/v1/presence': { enabled: false, present: [] } };
-    const h = await open('/board?project=laika-core', off);
     try {
       await h.page.locator('.board').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(700);
-      assert.equal(await h.page.locator('.presence').count(), 0, 'the strip survived');
-      assert.doesNotMatch(
-        await h.page.locator('body').innerText(),
-        /WORKING NOW/,
-        'the heading is still on the page',
+      // Positive control: presence did land — one of the two sessions is an agent.
+      await h.page.waitForFunction(
+        () =>
+          /Agents\s*1/.test(
+            [...document.querySelectorAll('.space-chip')].map((e) => e.textContent ?? '').join(' '),
+          ),
+        undefined,
+        { timeout: 20_000 },
       );
-      /*
-       * The `Agent sessions` card moved to the Activity tab with the rest of
-       * the rail (LAI-281), so the board has none to hide. That the panel
-       * itself respects `presence.enabled` is asserted where it now lives.
-       */
+      await h.page.waitForTimeout(400);
+      assert.equal(await h.page.locator('.presence').count(), 0, 'the row is drawn');
+      assert.equal(await h.page.locator('.presence-chip').count(), 0, 'a presence chip is drawn');
+      assert.doesNotMatch(await h.page.locator('body').innerText(), /WORKING NOW/);
     } finally {
       await h.close();
     }
   });
+
+  /*
+   * **"Presence off: still no row" was removed** (LAI-727 review, round 1).
+   * It held on 5adbfae too — the row already rendered nothing when presence
+   * was off (LAI-440's AC3) — so it could not tell the change from the code
+   * before it. The test above is the discriminating one: with people present,
+   * the only state the row ever drew in, nothing is drawn. Presence off is a
+   * weaker case of the same absence.
+   */
 });

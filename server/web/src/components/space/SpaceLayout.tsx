@@ -6,8 +6,7 @@ import { listMembers, type Member } from '../../api/tasks.ts';
 import { listMeetingReviews } from '../../api/meeting-reviews.ts';
 import { listProjectTags, type ProjectTag } from '../../api/tags.ts';
 import { TaskDrawer } from '../drawer/TaskDrawer.tsx';
-import { PresenceStrip } from './PresenceStrip.tsx';
-import { SpaceLive, useLive } from './SpaceLive.tsx';
+import { SpaceLive } from './SpaceLive.tsx';
 import { SpaceTopBar } from './SpaceTopBar.tsx';
 import { SpaceFilterClaim } from './SpaceSlot.tsx';
 import { BAND_SLOT_ID, SLOT_ID } from './SpaceSlot.tsx';
@@ -36,8 +35,9 @@ export interface SpaceLayoutProps {
 /**
  * The frame every view of a space mounts into (LAI-251).
  *
- * Top to bottom, as the design has it: identity and controls, the view tabs,
- * who is working now, then the view. One bar for the whole space — a screen
+ * Top to bottom: identity and controls with the view tabs, then the view. The
+ * WORKING NOW row that sat between them on the board was removed on the
+ * owner's word (LAI-727). One bar for the whole space — a screen
  * that drew its own header would be the second one, which is why
  * `SpaceSlot` exists for the per-view context line.
  */
@@ -84,7 +84,6 @@ function SpaceFrame({
   orgRole,
   children,
 }: SpaceFrameProps) {
-  const { presence } = useLive();
   /**
    * The space's display name.
    *
@@ -166,8 +165,6 @@ function SpaceFrame({
     setParams(next);
   };
 
-  const assignee = params.get('assignee') ?? undefined;
-
   return (
     <SpaceFilterClaim>
       <div className="space">
@@ -175,7 +172,7 @@ function SpaceFrame({
           {/*
             **Identity and tabs on one line** (LAI-292). The owner asked for the
             project name to move up so the row it had can be used for something
-            else — and with the board's own controls moving below WORKING NOW,
+            else — and with the board's own controls moving below the bar,
             what is left of the bar is narrow enough to sit beside the tabs.
           */}
           <div className="space-bar-top">
@@ -232,28 +229,19 @@ function SpaceFrame({
         </div>
 
         {/*
-        Between the bar and WORKING NOW — the design's order is tabs, then
-        sprints, then who is working (LAI-272). The board fills this.
+        A full-width band under the bar, for a view that has one — the
+        Timeline's sprint chips (LAI-272). The board's sprint strip used it
+        until LAI-727 removed the strip.
       */}
         <div id={BAND_SLOT_ID} />
 
         {/*
-        **WORKING NOW belongs to the board.** The design wraps the presence
-        strip, the grid and the rail in one `boardLive` condition (prototype
-        line 2273); every other view of a space is a single full-width pane.
-        It sat on all of them, which is what made List and Timeline read as the
-        board with the middle swapped out.
+        **No WORKING NOW row** (LAI-727). It sat here on the board only, from
+        the design's `boardLive` band (prototype line 2273); the owner asked for
+        it to go. The header's `Agents` count still reads presence through
+        `SpaceLive`, which is why that read stays; Activity and Capacity read
+        their own.
       */}
-        {path === '/board' && (
-          <PresenceStrip
-            presence={presence}
-            spaceSlug={slug}
-            assignee={assignee}
-            onFilter={(userId) => {
-              setParam('assignee', userId);
-            }}
-          />
-        )}
 
         {children}
 

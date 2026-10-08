@@ -831,6 +831,7 @@ export function BoardToolbar({
         )}
 
         <span className="bt-spacer" />
+        <span id="board-stats-slot" className="bt-stats-slot" />
 
         <button type="button" className="bt-icon" title="Insights" onClick={onInsights}>
           <svg viewBox="0 0 24 24" fill="none" strokeWidth="2" aria-hidden="true">

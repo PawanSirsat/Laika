@@ -1,0 +1,230 @@
+/*
+ * DONE / BLK / LEFT in the toolbar row (LAI-727). Tokens only.
+ *
+ * The strip's summary box, moved: the same bordered, segmented group with the
+ * same type and colours (`sprint-strip.css`, `.strip-stats`), led by the scope
+ * it describes now that the chips that used to say so are gone.
+ */
+
+/* The toolbar's slot takes no box of its own, so the anchor is a flex item
+   of `.bt` like the buttons around it. */
+.bt-stats-slot {
+  display: contents;
+}
+
+/* The pill's popover is placed against this; it adds no box of its own. */
+.bstats-anchor {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+}
+
+.bstats {
+  flex: none;
+  display: inline-flex;
+  align-items: stretch;
+  /* The icon buttons' height: it sits beside them and lines up with them. */
+  height: 36px;
+  margin-inline-end: 0.25rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.bstats-scope,
+.bstats-stat {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.625rem;
+}
+
+.bstats-stat > [aria-hidden='true'] {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.3125rem;
+}
+
+.bstats-scope {
+  background: var(--bg-column);
+  border-right: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: var(--weight-heavy);
+  color: var(--text-secondary);
+}
+
+.bstats-filtered {
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.bstats-stat + .bstats-stat {
+  border-left: 1px solid var(--border-subtle);
+}
+
+.bstats-key {
+  font-size: 0.6875rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.bstats b {
+  font-size: 0.84375rem;
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.bstats-of {
+  margin-inline-start: -0.3125rem;
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.bstats-partial {
+  margin-inline-start: -0.25rem;
+  font-size: 0.75rem;
+  font-weight: var(--weight-heavy);
+  color: var(--text-muted);
+  cursor: help;
+}
+
+/* Blocked is the danger token, as it was in the strip. */
+.bstats-blocked .bstats-key,
+.bstats-blocked b {
+  color: var(--overdue);
+}
+
+/* Drawn only in the compact tier. */
+.bstats-glyph {
+  display: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: none;
+  align-self: center;
+  stroke: currentColor;
+  color: var(--text-muted);
+}
+
+.bstats-blocked .bstats-glyph {
+  color: var(--overdue);
+}
+
+/*
+ * **The tiers** (LAI-727 review, round 2). `SprintStats` measures the row and
+ * sets one of `.bstats-full`, `.bstats-compact`, `.bstats-pill` on the group:
+ * the widest that leaves search 120px. Every tier is the same 36px line in the
+ * toolbar row — none wraps, none takes a row of its own — so a tier change
+ * moves nothing below the toolbar. Measured on 2d6036a: the full group is
+ * 249px; with the sidebar open at 920–1024px it left search 26–35px.
+ */
+
+/* Compact: the words give way to a glyph each. */
+.bstats-compact .bstats-key {
+  display: none;
+}
+
+.bstats-compact .bstats-glyph {
+  display: block;
+}
+
+.bstats-compact .bstats-scope,
+.bstats-compact .bstats-stat {
+  padding: 0 0.4375rem;
+}
+
+.bstats-compact .bstats-stat > [aria-hidden='true'] {
+  gap: 0.25rem;
+}
+
+/*
+ * Pill: one figure, `S4 · 7/30` — the scope and done of total. BLK and LEFT
+ * are in its popover and in its accessible name, so they are hidden here, not
+ * lost. A control, so it shows it can be pressed.
+ */
+.bstats-pill {
+  cursor: pointer;
+}
+
+.bstats-pill:hover {
+  border-color: var(--accent-border);
+}
+
+.bstats-pill:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.bstats-pill .bstats-blocked,
+.bstats-pill .bstats-left,
+.bstats-pill .bstats-key,
+.bstats-pill .bstats-filtered {
+  display: none;
+}
+
+.bstats-pill .bstats-scope,
+.bstats-pill .bstats-stat {
+  padding: 0 0.5rem;
+}
+
+.bstats-pill .bstats-scope {
+  border-right: 0;
+  padding-right: 0;
+}
+
+.bstats-pill .bstats-done > [aria-hidden='true']::before {
+  content: '·';
+  color: var(--text-muted);
+  margin-inline-end: 0.0625rem;
+}
+
+/* Over the board, under the pill, right edges aligned; never in flow. */
+.bstats-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 32;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-modal);
+  white-space: nowrap;
+}
+
+.bstats-pop-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+}
+
+.bstats-pop-key {
+  min-width: 2.75rem;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.bstats-pop b {
+  font-size: 0.84375rem;
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.bstats-pop-of {
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.bstats-pop-blocked .bstats-pop-key,
+.bstats-pop-blocked b {
+  color: var(--overdue);
+}

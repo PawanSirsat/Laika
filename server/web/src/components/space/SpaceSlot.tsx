@@ -4,12 +4,13 @@ import { createPortal } from 'react-dom';
 export const SLOT_ID = 'space-slot';
 
 /**
- * The band between the space bar and WORKING NOW.
+ * The band between the space bar and the view.
  *
- * The design's order is **tabs → sprints → working now → the view**, and the
- * sprint strip belongs to the board while the presence strip belongs to the
+ * The design's order was **tabs → sprints → working now → the view**, and the
+ * sprint strip belonged to the board while the presence strip belonged to the
  * space — so without a slot here the board's strip could only render *below*
- * presence, which is where it wrongly sat.
+ * presence, which is where it wrongly sat. The board's strip and WORKING NOW
+ * are both gone (LAI-727); the Timeline's sprint chips still use the band.
  */
 export const BAND_SLOT_ID = 'space-band-slot';
 
@@ -62,8 +63,8 @@ export interface SpaceBandProps {
 }
 
 /**
- * A full-width band a view contributes above WORKING NOW — the sprint strip is
- * the one the design has.
+ * A full-width band a view contributes under the space bar — the Timeline's
+ * sprint strip is the one left (LAI-727).
  *
  * A portal for the same reason `SpaceSlot` is one: the band belongs to the
  * space's layout and its contents belong to the screen that has the data.

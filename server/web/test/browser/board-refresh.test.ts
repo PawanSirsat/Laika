@@ -469,25 +469,36 @@ void describe('a live change redraws in place (LAI-707)', () => {
     }
   });
 
-  void test('the sprint strip follows a live change', async () => {
+  void test('the sprint figures follow a live change', async () => {
+    /*
+     * **The figures, not the strip's chip, since LAI-727.** The chip was where
+     * a sprint's `done/total` showed; it is the toolbar's DONE now, counted
+     * from the board's own read — so it must move when that read does.
+     */
     const server: Server = { version: 1, extra: 0, fail: 'none' };
     const h = await open('/board?project=laika-core', stub(server), { before: fakeStream });
     try {
       await ready(h.page);
-      const frac = h.page.locator('.strip-chip-frac').first();
+      const done = h.page.locator('.bstats-done [aria-hidden="true"]');
       await h.page.waitForFunction(
-        () => /1\s*\/\s*4/.test(document.querySelector('.strip-chip-frac')?.textContent ?? ''),
+        () =>
+          /DONE\s*1\s*\/\s*4/.test(
+            document.querySelector('.bstats-done [aria-hidden="true"]')?.textContent ?? '',
+          ),
         undefined,
         { timeout: 10_000 },
       );
       server.version = 2;
       await frame(h.page, 't3', 10);
       await h.page.waitForFunction(
-        () => /2\s*\/\s*4/.test(document.querySelector('.strip-chip-frac')?.textContent ?? ''),
+        () =>
+          /DONE\s*2\s*\/\s*4/.test(
+            document.querySelector('.bstats-done [aria-hidden="true"]')?.textContent ?? '',
+          ),
         undefined,
         { timeout: 10_000 },
       );
-      assert.match(await frac.innerText(), /2\s*\/\s*4/);
+      assert.match((await done.textContent()) ?? '', /2\s*\/\s*4/);
     } finally {
       await h.close();
     }

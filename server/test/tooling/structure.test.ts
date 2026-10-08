@@ -100,6 +100,13 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'routes/screens/board/use-view-preferences.ts',
     'a React hook — no renderer in this package (CONVENTIONS §4). The pure half it wraps, view-preferences.ts, is mirrored.',
   ],
+  [
+    'routes/screens/board/use-sprint-stats.ts',
+    // LAI-727. Which task set the toolbar's figures are counted from, and that
+    // no whole-project read is made for them, are request-level facts a
+    // browser can see and a unit test of the hook could not.
+    'a React hook — no renderer in this package (CONVENTIONS §4). Its choice of task set and its requests are asserted in test/browser/board-sprint-stats.test.ts; the pure half, sprint-stats.ts, is mirrored.',
+  ],
   ['api/use-projects.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-members.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],

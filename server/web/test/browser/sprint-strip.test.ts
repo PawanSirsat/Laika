@@ -5,6 +5,12 @@
  * [S3 …] [S4 …] [DONE x/y | BLK n | LEFT n] [›]`, on a single line. Ours had a
  * second band carrying a percentage ring, the sprint's name, its dates and its
  * goal — none of which the design has.
+ *
+ * **LAI-727 took the strip off the Board** on the owner's word, and kept its
+ * three figures in the toolbar. So the tests here that are about the *strip*
+ * — one row, the pager — now run on the Timeline, which still draws it; the
+ * ones that are about the *board* — its figures, its band order, that it does
+ * not jump — run on the Board against what replaced the strip.
  */
 
 import assert from 'node:assert/strict';
@@ -122,8 +128,9 @@ const STUB: ApiStub = {
     created_at: 1,
     updated_at: 1,
   },
-  // Presence **on**, with somebody in it: the band-order test needs WORKING NOW
-  // to render at all, and `enabled: false` makes the strip render nothing.
+  // Presence **on**, with somebody in it: the state WORKING NOW used to draw
+  // its row in, so the band-order test's "not back" means something
+  // (LAI-727). `enabled: false` made the row render nothing anyway.
   '/api/v1/presence': {
     enabled: true,
     present: [
@@ -275,45 +282,45 @@ void describe('the board matches the reference (LAI-270)', () => {
   });
 });
 
-void describe('the bands are in the design’s order (LAI-272)', () => {
+void describe('the bands are in the design’s order (LAI-272, LAI-727)', () => {
   /**
-   * **Tabs → sprints → working now → the view.**
+   * **Tabs → the board's own row → the view**, since LAI-727.
    *
-   * Ours had the sprint strip *below* WORKING NOW, because the strip belongs to
-   * the board and the presence strip belongs to the space, so the board could
-   * only render underneath. Measured by position, which is the only thing that
-   * can tell the two arrangements apart — both render all four bands.
+   * This was *tabs → sprints → working now → the view*, and it caught the
+   * sprint strip rendering below WORKING NOW. The owner then removed both
+   * bands. What is left to get wrong is the order of the three that remain,
+   * and that nothing has crept back between them. Measured by position, which
+   * is the only thing that tells a band in the DOM from a band on the screen.
    */
-  void test('the sprint strip sits above WORKING NOW', async () => {
+  void test('the toolbar row follows the tabs, and the lanes follow it', async () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
-      await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
-      await h.page.locator('.presence').waitFor({ timeout: 20_000 });
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.bstats').waitFor({ timeout: 20_000 });
 
       const top = async (selector: string) =>
         (await h.page.locator(selector).first().boundingBox())?.y ?? -1;
 
       const tabs = await top('.view-tabs');
-      const sprints = await top('.strip');
-      const working = await top('.presence');
+      const row = await top('.board-bar');
       const lanes = await top('.kanban');
 
-      assert.ok(tabs > 0 && sprints > 0 && working > 0 && lanes > 0, 'a band is missing');
-      assert.ok(tabs < sprints, `the tabs are below the sprints (${tabs} vs ${sprints})`);
-      assert.ok(
-        sprints < working,
-        `the sprint strip is below WORKING NOW (${sprints} vs ${working}) — the owner's report`,
-      );
-      assert.ok(working < lanes, `WORKING NOW is below the lanes (${working} vs ${lanes})`);
+      assert.ok(tabs > 0 && row > 0 && lanes > 0, 'a band is missing');
+      assert.ok(tabs < row, `the tabs are below the toolbar row (${tabs} vs ${row})`);
+      assert.ok(row < lanes, `the toolbar row is below the lanes (${row} vs ${lanes})`);
+      // Presence is on and somebody is in it: the state WORKING NOW drew in.
+      assert.equal(await h.page.locator('.presence').count(), 0, 'WORKING NOW is back');
+      assert.equal(await h.page.locator('.strip').count(), 0, 'the sprint strip is back');
     } finally {
       await h.close();
     }
   });
 });
 
+/** The strip itself, where it still is (LAI-727): the Timeline. */
 void describe('the sprint strip', () => {
   void test('is a single row of pills and figures', async () => {
-    const h = await open('/board?project=laika-core', STUB);
+    const h = await open('/timeline?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
       await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
@@ -336,20 +343,25 @@ void describe('the sprint strip', () => {
     }
   });
 
-  void test('carries the reference’s three figures, from real counts', async () => {
+  void test('the board carries the reference’s three figures, from real counts', async () => {
+    /*
+     * **On the Board, in the toolbar since LAI-727.** The figures were the
+     * strip's on the board; they are the board's own now, and the requirement
+     * — three figures, real counts, no WIP — is the same one.
+     */
     const h = await open('/board?project=laika-core', STUB);
     try {
       /*
-       * **Wait for the tasks, not the element.** The figures render as `0/0`
-       * the moment the strip mounts and fill in when the board's tasks land —
+       * **Wait for the tasks, not the element.** The figures render as dashes
+       * the moment the group mounts and fill in when the board's tasks land —
        * reading on the element's appearance is a race, and it read `0/0` once.
        */
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
       await h.page.waitForFunction(
-        () => /DONE\s*1/.test(document.querySelector('.strip-stats')?.textContent ?? ''),
+        () => /DONE\s*1/.test(document.querySelector('.bstats')?.textContent ?? ''),
         { timeout: 10_000 },
       );
-      const stats = (await h.page.locator('.strip-stats').innerText()).replace(/\s+/g, ' ');
+      const stats = ((await h.page.locator('.bstats').textContent()) ?? '').replace(/\s+/g, ' ');
 
       // Two tasks, one done — the figures are the board's own, not a fixture.
       assert.match(stats, /DONE/);
@@ -363,7 +375,7 @@ void describe('the sprint strip', () => {
   });
 
   void test('the pager appears only when there are more sprints than fit', async () => {
-    const h = await open('/board?project=laika-core', STUB);
+    const h = await open('/timeline?project=laika-core', STUB);
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
       await h.page.locator('.strip-chip').first().waitFor({ timeout: 20_000 });
@@ -392,7 +404,7 @@ void describe('the sprint strip', () => {
     const many = Array.from({ length: 12 }, (_, i) =>
       sprint(`s${String(i)}`, `Sprint number ${String(i)}`, 'planned', i * 14, i * 14 + 13),
     );
-    const h = await open('/board?project=laika-core', {
+    const h = await open('/timeline?project=laika-core', {
       ...STUB,
       '/api/v1/projects/laika-core/sprints': { data: many, next_cursor: null },
     });
@@ -420,6 +432,11 @@ void describe('the sprint strip', () => {
 
 /**
  * The strip reserves its height while the sprint list is in flight (LAI-297).
+ *
+ * **The strip is gone from the board (LAI-727); the guard is not.** What the
+ * owner saw was the *board* jumping when the sprints landed, and the board
+ * still reads sprints — for the default sprint, the Filter and the stats'
+ * scope and days left. So this still waits for that answer and measures.
  *
  * It rendered `null` until the sprints arrived, then appeared at full height
  * and pushed the whole board down 57px. Measured on the seeded instance:
@@ -457,7 +474,8 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
       const during = await boardTop(h);
       assert.ok(during !== null, 'the board never rendered — nothing to measure');
 
-      await h.page.locator('.strip-pill, .strip-chips > *').first().waitFor({ timeout: 20_000 });
+      // The sprint list lands: the stats' LEFT is filled in from it.
+      await h.page.waitForResponse((r) => r.url().includes('/sprints'), { timeout: 20_000 });
       await h.page.waitForTimeout(400);
 
       const after = await boardTop(h);
@@ -479,12 +497,18 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
     }
   });
 
-  void test('a project with no sprints reserves nothing', async () => {
+  void test('a project with no sprints draws no band, and still gets its figures', async () => {
     /*
      * The other half, and the reason `loading` had to be a real flag rather
      * than "is the list empty": a board that genuinely has no sprints must
      * draw no strip at all. Reserving height for everyone would have turned
      * one jump into a permanent empty band.
+     *
+     * **Re-aimed in the LAI-727 review.** The board draws no strip for anyone
+     * now, so "no strip" alone passed on 5adbfae as well and proved nothing.
+     * What a sprintless project must also get is the figures: they no longer
+     * hang off a strip that is not drawn for it, so they are there with
+     * nothing to scope them but *All sprints*.
      */
     const h = await open('/board?project=laika-core', {
       ...STUB,
@@ -494,10 +518,19 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
     try {
       await h.page.setViewportSize({ width: 1600, height: 1000 });
       await h.page.locator('.lane').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(600);
+      await h.page.waitForFunction(
+        () => /DONE\s*1\s*\/\s*2/.test(document.querySelector('.bstats')?.textContent ?? ''),
+        undefined,
+        { timeout: 10_000 },
+      );
 
       assert.equal(await h.page.locator('.strip').count(), 0, 'an empty strip is still drawn');
       assert.equal(await h.page.locator('.strip-chip-ghost').count(), 0);
+      assert.equal(
+        ((await h.page.locator('.bstats-scope').textContent()) ?? '').trim(),
+        'All sprints',
+      );
+      assert.match((await h.page.locator('.bstats-left').textContent()) ?? '', /LEFT\s*—/);
     } finally {
       await h.close();
     }
@@ -509,8 +542,13 @@ void describe('the strip holds its place while it loads (LAI-297)', () => {
  * Onroute's S3 read 7/42 while it held 157, because its 149 Review tasks were
  * the most recently updated and so fell outside the first 200. Here, page two
  * carries three more S3 tasks in Review.
+ *
+ * **Since LAI-727 the figures are counted from the board's own sprint read**,
+ * not a whole-project walk — so it is that read that is paged here, and the
+ * whole-project pages are gone from the stub. A request for them would now
+ * be refused and show in `unmatched`.
  */
-void describe('the strip counts every page of tasks (LAI-702)', () => {
+void describe('the figures count every page of tasks (LAI-702)', () => {
   const S3 = [task('t1', 'LC-1', 'backlog', 's3'), task('t2', 'LC-2', 'done', 's3')];
   const LATER = [
     task('t3', 'LC-3', 'review', 's3'),
@@ -519,27 +557,23 @@ void describe('the strip counts every page of tasks (LAI-702)', () => {
   ];
   const PAGED: ApiStub = {
     ...STUB,
-    '/api/v1/projects/laika-core/tasks?limit=200': { data: S3, next_cursor: 'P2' },
-    '/api/v1/projects/laika-core/tasks?limit=200&cursor=P2': { data: LATER, next_cursor: null },
-    // The board itself, scoped to the sprint — all five, in one page.
-    '/api/v1/projects/laika-core/tasks?sprint=s3&limit=200': {
-      data: [...S3, ...LATER],
+    // The board itself, scoped to the sprint — over two pages.
+    '/api/v1/projects/laika-core/tasks?sprint=s3&limit=200': { data: S3, next_cursor: 'P2' },
+    '/api/v1/projects/laika-core/tasks?sprint=s3&limit=200&cursor=P2': {
+      data: LATER,
       next_cursor: null,
     },
   };
 
-  void test('a sprint’s chip and the DONE figure count the second page too', async () => {
+  void test('the DONE figure counts the second page too', async () => {
     const h = await open('/board?project=laika-core&sprint=s3', PAGED);
     try {
       await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
-      const chip = h.page.locator('.strip-chip').nth(2).locator('.strip-chip-frac');
       await h.page.waitForFunction(
-        () =>
-          /1\s*\/\s*5/.test(document.querySelectorAll('.strip-chip-frac')[2]?.textContent ?? ''),
+        () => /DONE\s*1\s*\/\s*5/.test(document.querySelector('.bstats')?.textContent ?? ''),
         { timeout: 10_000 },
       );
-      assert.equal((await chip.innerText()).replace(/\s+/g, ''), '1/5');
-      const stats = (await h.page.locator('.strip-stats').innerText()).replace(/\s+/g, ' ');
+      const stats = ((await h.page.locator('.bstats').textContent()) ?? '').replace(/\s+/g, ' ');
       assert.match(stats, /DONE 1\s*\/\s*5/, `the summary read "${stats}"`);
       // The board under it agrees: five cards, three of them in Review.
       assert.equal(await h.page.locator('.card').count(), 5);
@@ -557,7 +591,7 @@ void describe('the strip counts every page of tasks (LAI-702)', () => {
     const endless: ApiStub = {
       ...PAGED,
       // Every page points at another: the helper's cap must stop it and say so.
-      '/api/v1/projects/laika-core/tasks?limit=200': () => {
+      '/api/v1/projects/laika-core/tasks?sprint=s3&limit=200': () => {
         served += 1;
         return {
           data: [task(`x${String(served)}`, `LC-${String(100 + served)}`, 'todo', 's3')],
@@ -567,9 +601,9 @@ void describe('the strip counts every page of tasks (LAI-702)', () => {
     };
     const h = await open('/board?project=laika-core&sprint=s3', endless);
     try {
-      await h.page.locator('.strip-partial').waitFor({ timeout: 20_000 });
+      await h.page.locator('.bstats-partial').waitFor({ timeout: 20_000 });
       assert.match(
-        (await h.page.locator('.strip-partial').getAttribute('title')) ?? '',
+        (await h.page.locator('.bstats-partial').getAttribute('title')) ?? '',
         /partial|first/i,
       );
     } finally {

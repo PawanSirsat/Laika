@@ -9,6 +9,10 @@
  * the active sprint" is read from the cards drawn, not from a URL alone. A
  * MutationObserver watches every card that is ever drawn, which is what proves
  * the board never shows every sprint first and then narrows.
+ *
+ * **The strip's `All sprints` button is gone (LAI-727).** Which scope is shown
+ * is read from the toolbar's stat group, which names it, and *All sprints* is
+ * chosen through the Filter's Sprint field — the only control left for it.
  */
 
 import assert from 'node:assert/strict';
@@ -183,6 +187,30 @@ async function settle(h: Harness, expected: readonly string[]): Promise<void> {
 
 const sprintInUrl = (h: Harness): string | null => new URL(h.page.url()).searchParams.get('sprint');
 
+/** The scope the toolbar's figures are of, once the sprint list has named it. */
+async function scopeShown(h: Harness, expected: string): Promise<string> {
+  await h.page
+    .waitForFunction(
+      (want) => document.querySelector('.bstats-scope')?.textContent === want,
+      expected,
+      { timeout: 10_000 },
+    )
+    .catch(() => undefined);
+  return (await h.page.locator('.bstats-scope').textContent()) ?? '';
+}
+
+/** Every sprint, through the Filter popover's Sprint field. */
+async function chooseAllSprints(h: Harness): Promise<void> {
+  await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
+  await h.page
+    .locator('.bt-field')
+    .filter({ has: h.page.locator('.bt-label', { hasText: /^Sprint$/ }) })
+    .locator('select')
+    .selectOption({ label: 'Any' });
+  await h.page.keyboard.press('Escape');
+  await h.page.locator('.bt-catcher').waitFor({ state: 'detached', timeout: 5000 });
+}
+
 void after(async () => {
   await closeBrowser();
 });
@@ -198,11 +226,7 @@ void describe('the board opens on the active sprint (LAI-713)', () => {
         [...IN_S2].sort(),
         'cards from other sprints were drawn first',
       );
-      assert.equal(
-        await h.page.locator('.strip-all').getAttribute('aria-pressed'),
-        'false',
-        'All sprints still reads as selected',
-      );
+      assert.equal(await scopeShown(h, 'S2'), 'S2', 'the figures are not of the active sprint');
     } finally {
       await h.close();
     }
@@ -213,7 +237,7 @@ void describe('the board opens on the active sprint (LAI-713)', () => {
     try {
       await settle(h, EVERY);
       assert.equal(sprintInUrl(h), null);
-      assert.equal(await h.page.locator('.strip-all').getAttribute('aria-pressed'), 'true');
+      assert.equal(await scopeShown(h, 'All sprints'), 'All sprints');
     } finally {
       await h.close();
     }
@@ -223,13 +247,13 @@ void describe('the board opens on the active sprint (LAI-713)', () => {
     const h = await open('/board?project=laika-core', stub(WITH_ACTIVE));
     try {
       await settle(h, IN_S2);
-      await h.page.locator('.strip-all').click();
+      await chooseAllSprints(h);
       await settle(h, EVERY);
       assert.equal(sprintInUrl(h), 'all');
       await h.page.reload();
       await settle(h, EVERY);
       assert.equal(sprintInUrl(h), 'all', 'the default overrode the choice on reload');
-      assert.equal(await h.page.locator('.strip-all').getAttribute('aria-pressed'), 'true');
+      assert.equal(await scopeShown(h, 'All sprints'), 'All sprints');
     } finally {
       await h.close();
     }
