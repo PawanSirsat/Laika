@@ -252,7 +252,13 @@ void describe('onAxis — a date the axis cannot hold is not drawn (LAI-721 revi
       NOW,
     )!;
     const calls = { n: 0 };
-    const original = Date.prototype.toLocaleDateString;
+    // The descriptor, not `Date.prototype.toLocaleDateString`: the method is
+    // restored below, never called detached from a date.
+    const descriptor = Object.getOwnPropertyDescriptor(Date.prototype, 'toLocaleDateString')!;
+    const original = descriptor.value as (
+      this: Date,
+      ...args: Parameters<Date['toLocaleDateString']>
+    ) => string;
     Date.prototype.toLocaleDateString = function (
       this: Date,
       ...args: Parameters<Date['toLocaleDateString']>
@@ -270,7 +276,7 @@ void describe('onAxis — a date the axis cannot hold is not drawn (LAI-721 revi
       assert.ok(ticks.length < 600, `${String(ticks.length)} ticks`);
       assert.ok(elapsed < 200, `the header took ${elapsed.toFixed(1)} ms`);
     } finally {
-      Date.prototype.toLocaleDateString = original;
+      Object.defineProperty(Date.prototype, 'toLocaleDateString', descriptor);
     }
   });
 });
