@@ -865,7 +865,17 @@ void describe('the dropdown, round 1 of review (LAI-726)', () => {
       await h.page.keyboard.press('l');
       assert.equal(await activeLabel(), 'Last 30 days', 'type-ahead started from the old session');
       await h.page.keyboard.press('Escape');
-      // And again at once: closing reset the buffer, so this is one "l", not "ll".
+      /*
+       * **Closing resets the buffer** (review, round 2). Two different
+       * letters across a close, inside the 600ms window: "a" lands on "Any
+       * time"; then, at once, "l". A buffer that outlived the close reads
+       * "al", matches nothing and leaves the active option on the value; a
+       * fresh one reads "l" and moves on from the value to "Last 30 days".
+       * (The same letter twice could not tell the two apart: "ll" is "l".)
+       */
+      await h.page.keyboard.press('a');
+      assert.equal(await activeLabel(), 'Any time', 'positive control: "a" is Any time');
+      await h.page.keyboard.press('Escape');
       await h.page.keyboard.press('l');
       assert.equal(await activeLabel(), 'Last 30 days', 'the buffer outlived the close');
     } finally {

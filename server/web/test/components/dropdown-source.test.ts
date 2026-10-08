@@ -35,11 +35,34 @@ void describe('Dropdown source (LAI-726 round 1)', () => {
   });
 });
 
+/**
+ * A `select` **element** in a selector: at the start, after a combinator, or
+ * inside a functional pseudo-class — `:is(select`, `:has(select)` (round 2).
+ * Not part of a class or property name.
+ */
+const STYLES_SELECT = /(^|[\s>+~(,])select(?![\w-])/;
+
 void describe('stylesheets after LAI-726 (round 1)', () => {
   /*
    * No `<select>` is rendered anywhere (`no-native-select.test.ts`), so a rule
    * that styles one styles nothing — and reads as though one existed.
    */
+  void test('the select-element pattern sees it wherever a selector can put it', () => {
+    for (const sample of [
+      'select',
+      '.bar-control select',
+      '.a > select',
+      '.a:is(select',
+      '.a:has(select)',
+      ':is(select',
+    ]) {
+      assert.ok(STYLES_SELECT.test(sample), `the guard does not see: ${sample}`);
+    }
+    for (const sample of ['.lane-move-select', '.dd-option-selected', '.selector', 'user-select']) {
+      assert.ok(!STYLES_SELECT.test(sample), `the guard flags a class, not an element: ${sample}`);
+    }
+  });
+
   void test('no rule styles a select element', async () => {
     const sheets = await files(SRC, /\.css$/);
     assert.ok(sheets.length > 10, 'positive control: the stylesheets were found');
@@ -48,7 +71,7 @@ void describe('stylesheets after LAI-726 (round 1)', () => {
       const css = (await readFile(sheet, 'utf8')).replace(/\/\*[\s\S]*?\*\//g, '');
       for (const [, selector] of css.matchAll(/([^{}]+)\{/g)) {
         for (const part of (selector ?? '').split(',')) {
-          if (/(^|[\s>+~])select(?![\w-])/.test(part.trim())) {
+          if (STYLES_SELECT.test(part.trim())) {
             offenders.push(`${relative(SRC, sheet)}: ${part.trim()}`);
           }
         }

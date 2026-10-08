@@ -161,7 +161,7 @@ async function assertInModalAndPlaced(h: Harness, trigger: Locator, what: string
   });
   const t = await trigger.evaluate((el) => {
     const r = el.getBoundingClientRect();
-    return { top: r.top, bottom: r.bottom, left: r.left };
+    return { top: r.top, bottom: r.bottom, left: r.left, width: r.width, vw: innerWidth };
   });
   assert.equal(g.inModal, true, `${what}: the panel is outside the aria-modal dialog`);
   if (g.side === 'below') {
@@ -175,7 +175,18 @@ async function assertInModalAndPlaced(h: Harness, trigger: Locator, what: string
       `${what}: ${String(g.bottom)} is not over ${String(t.top)}`,
     );
   }
-  assert.ok(Math.abs(g.left - t.left) <= 8 || g.left >= 8, `${what}: left at ${String(g.left)}`);
+  /*
+   * **Across, too** (review, round 2): left-aligned with the trigger, slid
+   * back only as far as keeps it 8px inside the window. The panel's narrowest
+   * is the trigger's width or 160px, whichever is wider. This used to accept
+   * any left past 8px — a panel 300px off its trigger passed.
+   */
+  const narrowest = Math.min(Math.max(t.width, 160), t.vw - 16);
+  const expected = Math.max(8, Math.min(t.left, t.vw - 8 - narrowest));
+  assert.ok(
+    Math.abs(g.left - expected) <= 1,
+    `${what}: the panel's left is ${String(g.left)}, its trigger's ${String(t.left)} (expected ${String(expected)})`,
+  );
   await assertOnTop(h, what);
 }
 
@@ -329,6 +340,21 @@ void describe('the dropdown in the task drawer (LAI-726 round 1)', () => {
       const status = await openDrawer(h);
       await status.click();
       await assertInModalAndPlaced(h, status, 'the task drawer');
+      /*
+       * And once the drawer's 0.2s rise is over (round 2): the rise is a
+       * transform, so a panel opened during it was placed inside a
+       * containing block that then went away.
+       */
+      await h.page.waitForFunction(() => {
+        const d = document.querySelector('.drawer');
+        return d !== null && d.getAnimations().every((a) => a.playState === 'finished');
+      });
+      assert.equal(
+        await h.page.locator('.drawer').evaluate((d) => getComputedStyle(d).transform),
+        'none',
+        'the drawer kept a transform after its rise, and contains the panel',
+      );
+      await assertInModalAndPlaced(h, status, 'the task drawer, after its rise');
     } finally {
       await h.close();
     }
@@ -377,6 +403,150 @@ void describe('the dropdown in the task drawer (LAI-726 round 1)', () => {
       });
       assert.equal(left, null, `the panel stayed open after the scroll, at top ${String(left)}`);
       assert.equal(await status.getAttribute('aria-expanded'), 'false');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/*
+ * **Both column dialogs are centred, and their scrims cover the window**
+ * (review, round 2 — blocking). Round 1 centred `.column-dialog` with
+ * `inset: 0; margin: auto`, and `NewColumnDialog` rendered as a child of
+ * `.board`, whose children all get an 18px side margin that outranks
+ * `margin: auto` — so "Create status" sat against the left edge (x=18 at
+ * 1366, where ec1281a had 492) and its scrim left undimmed strips at both
+ * sides. Measured at a laptop, a 900px window and a phone.
+ */
+void describe('the column dialogs (LAI-726 round 2)', () => {
+  const DIALOGS = [
+    {
+      name: 'Create status',
+      open: async (h: Harness) => {
+        await h.page.locator('.lane-new').click();
+      },
+    },
+    {
+      name: 'Configure To do',
+      open: async (h: Harness) => {
+        const menu = h.page.getByRole('button', { name: 'Configure To do', exact: true });
+        await menu.focus();
+        await menu.click();
+      },
+    },
+  ] as const;
+
+  for (const [width, height] of [
+    [1366, 768],
+    [900, 700],
+    [390, 800],
+  ] as const) {
+    void test(`are centred with a full-window scrim at ${String(width)}×${String(height)}`, async () => {
+      const h = await open('/board?project=laika-core', STUB);
+      try {
+        await h.page.setViewportSize({ width, height });
+        await h.page.locator('.lane-title').first().waitFor({ timeout: 20_000 });
+        for (const dialog of DIALOGS) {
+          await dialog.open(h);
+          const box = h.page.getByRole('dialog', { name: dialog.name, exact: true });
+          await box.waitFor({ timeout: 5_000 });
+          const g = await box.evaluate((el) => {
+            const r = el.getBoundingClientRect();
+            // The scrim drawn with this dialog: its sibling.
+            const scrim = el.parentElement?.querySelector('.column-dialog-scrim');
+            const s = scrim?.getBoundingClientRect();
+            return {
+              left: r.left,
+              right: innerWidth - r.right,
+              top: r.top,
+              bottom: innerHeight - r.bottom,
+              scrim:
+                s === undefined
+                  ? null
+                  : { left: s.left, top: s.top, right: s.right, bottom: s.bottom },
+              vw: innerWidth,
+              vh: innerHeight,
+            };
+          });
+          const at = `${dialog.name} at ${String(width)}`;
+          assert.ok(g.left >= 0 && g.right >= 0, `${at}: off the side, ${JSON.stringify(g)}`);
+          assert.ok(
+            Math.abs(g.left - g.right) <= 1,
+            `${at}: not centred across — ${String(g.left)}px left, ${String(g.right)}px right`,
+          );
+          assert.ok(
+            Math.abs(g.top - g.bottom) <= 1,
+            `${at}: not centred down — ${String(g.top)}px above, ${String(g.bottom)}px below`,
+          );
+          assert.ok(g.scrim !== null, `${at}: no scrim beside the dialog`);
+          assert.deepEqual(
+            g.scrim,
+            { left: 0, top: 0, right: g.vw, bottom: g.vh },
+            `${at}: the scrim leaves part of the window undimmed`,
+          );
+          await h.page.keyboard.press('Escape');
+          await box.waitFor({ state: 'detached', timeout: 5_000 });
+        }
+      } finally {
+        await h.close();
+      }
+    });
+  }
+});
+
+/*
+ * **A press that drags off the trigger is over when the pointer lifts**
+ * (review, round 2). `pressing` was cleared only by the search box's blur or
+ * the trigger's click, so a press dragged off the trigger left it set, and
+ * the next blur of the search box — focus going anywhere — was ignored and
+ * left the panel open.
+ */
+void describe('a press dragged off the trigger (LAI-726 round 2)', () => {
+  void test('does not stop the next blur from closing the panel', async () => {
+    const h = await open('/board?project=laika-core&task=t1', {
+      ...STUB,
+      // Enough people that Assignee searches (more than eight options).
+      '/api/v1/projects/laika-core/members': {
+        members: Array.from({ length: 9 }, (_, i) => ({
+          user_id: `u${String(i + 1)}`,
+          name: `Person ${String(i + 1)}`,
+          email: `p${String(i + 1)}@example.com`,
+          role: i === 0 ? 'lead' : 'member',
+          created_at: 1,
+        })),
+      },
+    });
+    try {
+      await h.page.locator('.drawer').waitFor({ timeout: 20_000 });
+      const assignee = h.page
+        .locator('.drawer .meta-person')
+        .getByRole('combobox', { name: 'Assignee', exact: true });
+      await assignee.click();
+      await panel(h).locator('.dd-search-input').waitFor({ timeout: 5_000 });
+
+      await assignee.evaluate(async (trigger) => {
+        const tick = () => new Promise((done) => setTimeout(done, 0));
+        const at = trigger.getBoundingClientRect();
+        const on = { bubbles: true, cancelable: true, clientX: at.left + 4, clientY: at.top + 4 };
+        const off = { bubbles: true, cancelable: true, clientX: 2, clientY: 2 };
+        // Pressed on the trigger, dragged away, released elsewhere: no click.
+        trigger.dispatchEvent(new PointerEvent('pointerdown', { ...on, pointerType: 'mouse' }));
+        trigger.dispatchEvent(new MouseEvent('mousedown', on));
+        await tick();
+        document.body.dispatchEvent(
+          new PointerEvent('pointerup', { ...off, pointerType: 'mouse' }),
+        );
+        document.body.dispatchEvent(new MouseEvent('mouseup', off));
+        await tick();
+        // Later, focus leaves the search box for nowhere in particular.
+        (document.querySelector('[data-dropdown-panel] .dd-search-input') as HTMLElement).blur();
+        await tick();
+      });
+      assert.equal(
+        await panel(h).count(),
+        0,
+        'the panel stayed open: a press that never became a click still swallowed the blur',
+      );
     } finally {
       await h.close();
     }
