@@ -5,8 +5,9 @@ area: server
 assignee: owner-direct
 priority: p1
 depends-on: []
-status: in-progress
+status: review
 started: 2026-10-08T11:05:00Z
+finished: 2026-10-08T11:55:00Z
 ---
 
 ## Goal
@@ -41,28 +42,28 @@ and one Dockerfile comment.
 
 ## Acceptance criteria
 
-- [ ] Hashed `/assets/*` answer `Cache-Control: public, max-age=31536000, immutable`;
+- [x] Hashed `/assets/*` answer `Cache-Control: public, max-age=31536000, immutable`;
       `index.html` and the SPA document answer `no-cache` with a strong `ETag`
       and `304` on `If-None-Match`; non-hashed public files answer `no-cache`
       with an `ETag`; the build-less fallback keeps `no-store`.
-- [ ] Static text assets are compressed once per file version (brotli and gzip,
+- [x] Static text assets are compressed once per file version (brotli and gzip,
       node:zlib) and served by `Accept-Encoding` with `Content-Encoding` and
       `Vary: Accept-Encoding`; woff2 and images are never compressed.
-- [ ] API JSON above 1 KB is gzipped; `text/event-stream` (`/api/v1/events`),
+- [x] API JSON above 1 KB is gzipped; `text/event-stream` (`/api/v1/events`),
       `/mcp` responses and already-encoded responses are not. Each is a test.
-- [ ] HEAD, `304` and a `Range` request still answer correctly with compression on.
-- [ ] The HTTP server's `keepAliveTimeout` is 65 s and `headersTimeout` above it,
+- [x] HEAD, `304` and a `Range` request still answer correctly with compression on.
+- [x] The HTTP server's `keepAliveTimeout` is 65 s and `headersTimeout` above it,
       proved against the built server.
-- [ ] `*.map` answers `404` and the built bundle carries no `sourceMappingURL`.
-- [ ] `activity?limit=200` returns `next_cursor` when more than 200 rows exist,
+- [x] `*.map` answers `404` and the built bundle carries no `sourceMappingURL`.
+- [x] `activity?limit=200` returns `next_cursor` when more than 200 rows exist,
       for the project and the org feed; the regression test fails on 1f06924.
-- [ ] `listTasks` pushes `LIMIT limit+1` into SQL when no `ready` filter applies,
+- [x] `listTasks` pushes `LIMIT limit+1` into SQL when no `ready` filter applies,
       and pages in bounded batches when one does; a test proves every query shape
       answers exactly what the unbounded list answers, over every cursor.
-- [ ] One migration adds `heartbeats(created_at)` and nothing else; the project
+- [x] One migration adds `heartbeats(created_at)` and nothing else; the project
       activity feed's plan uses `activity_project_created_at_idx`; both shown with
       `EXPLAIN QUERY PLAN` before and after.
-- [ ] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 after the last edit.
+- [x] Repo-root `pnpm test`, `pnpm lint`, `pnpm format` each exit 0 after the last edit.
 
 ## Notes / context
 
