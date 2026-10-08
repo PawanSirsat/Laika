@@ -6,8 +6,9 @@ assignee: ui-dropdown
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-08T12:35:36Z
+finished: 2026-10-08T13:23:13Z
 ---
 
 ## Goal
@@ -87,60 +88,60 @@ work in flight).
 ## Acceptance criteria
 
 The component
-- [ ] `Dropdown` in `server/web/src/components/`, no new dependency, follows
+- [x] `Dropdown` in `server/web/src/components/`, no new dependency, follows
       the WAI-ARIA select-only combobox pattern: trigger `role="combobox"` with
       `aria-expanded`, `aria-controls`, `aria-haspopup="listbox"` and
       `aria-activedescendant`; panel `role="listbox"`; options `role="option"`
       with `aria-selected`.
-- [ ] Trigger keeps the field's height and `--bg-column` background, LAI-717's
+- [x] Trigger keeps the field's height and `--bg-column` background, LAI-717's
       set-state marking (accent border, ring, dot) and reset, shows the current
       value with its icon or avatar, and a chevron.
-- [ ] Panel opens below, flips above when there is no room, never leaves the
+- [x] Panel opens below, flips above when there is no room, never leaves the
       viewport, is at least the trigger's width, has a ~18rem max-height with
       its own slim, themed scrollbar, and uses surface tokens, border, shadow
       and radius matching the popover — light and dark.
-- [ ] "Any"/"Anyone" pinned first and separated; the selected option shows a
+- [x] "Any"/"Anyone" pinned first and separated; the selected option shows a
       check and is scrolled into view on open; hover and active highlight on
       tokens; long names truncate with a tooltip.
-- [ ] Rich options: status dot, LAI-705 priority icons, member avatars,
+- [x] Rich options: status dot, LAI-705 priority icons, member avatars,
       tag-styled label chips, sprint key + name with the active sprint marked
       and dates muted (from data already loaded), plain Updated within.
-- [ ] Lists of more than 8 options get a search box pinned at the top: focus
+- [x] Lists of more than 8 options get a search box pinned at the top: focus
       on open, case-insensitive filtering with the match highlighted, "No
       matches" when nothing fits.
-- [ ] Keyboard: Up/Down, Home/End, Enter/Space select, type-ahead without a
+- [x] Keyboard: Up/Down, Home/End, Enter/Space select, type-ahead without a
       search box, Tab closes without selecting, Escape closes only the panel
       and returns focus to the trigger; a second Escape closes the popover.
-- [ ] Mouse: an option click selects and closes; a click elsewhere in the
+- [x] Mouse: an option click selects and closes; a click elsewhere in the
       popover closes only the panel; the popover's outside-click handler does
       not treat a click in the (portalled) panel as outside — tested.
-- [ ] Touch: option rows at least 36px tall.
+- [x] Touch: option rows at least 36px tall.
 
 The Filter popover
-- [ ] All six fields use it, on the Board and the List; each option click
+- [x] All six fields use it, on the Board and the List; each option click
       writes the same URL parameter as before, for every field.
-- [ ] The closed popover still fits 1366×768; an open panel may leave the
+- [x] The closed popover still fits 1366×768; an open panel may leave the
       popover but never the viewport (1366×768 and 900px wide).
 
 App-wide
-- [ ] No native `<select>` remains under `server/web/src/` outside
+- [x] No native `<select>` remains under `server/web/src/` outside
       `routes/screens/timeline/`; a structural test asserts it.
-- [ ] Each replaced control writes what it wrote before; the tests that drove
+- [x] Each replaced control writes what it wrote before; the tests that drove
       them still assert the same outcomes.
 
 LAI-717 follow-ups
-- [ ] `--list-bulk-room` is measured from `.list-bulk` by a ResizeObserver;
+- [x] `--list-bulk-room` is measured from `.list-bulk` by a ResizeObserver;
       a test with a tall (wrapped) bar asserts `lastRow.bottom <= bulk.top` at
       the end of the scroll.
-- [ ] The active-sprint Board fit test waits for `.strip-chip` and
+- [x] The active-sprint Board fit test waits for `.strip-chip` and
       `sprint=s1` before measuring.
 
 Verification
-- [ ] Every new test fails on the old code (old files swapped in, restored in
+- [x] Every new test fails on the old code (old files swapped in, restored in
       a trap); the log records how.
-- [ ] Screenshots in `/tmp/laika-ui-dropdown-shots/`, light and dark: Label
+- [x] Screenshots in `/tmp/laika-ui-dropdown-shots/`, light and dark: Label
       (search + scroll, 35 labels), Assignee, Sprint, Status, flip-above.
-- [ ] Repo gate after the last edit: `TEST 0`, `LINT 0`, `FMT 0`.
+- [x] Repo gate after the last edit: `TEST 0`, `LINT 0`, `FMT 0`.
 
 ## Notes / context
 
@@ -149,3 +150,44 @@ Verification
 - The panel is portalled to `<body>`: the popover scrolls (`overflow-y: auto`)
   and is slid with `translate`, either of which would clip or re-anchor a
   panel drawn inside it.
+
+## As built (2026-10-08, for the reviewer)
+
+**Scope, against the list above.** `ListView.tsx` and `list-bulk.test.ts` were
+not needed: the observer lives in `BulkBar.tsx`, and the wrapped-bar test sits
+with the existing bulk-bar geometry tests in `list-create-row.test.ts`. Added,
+each for a stated reason:
+- `board/TaskDetailPanel.tsx` — one line, the status ref's type
+  (`HTMLSelectElement` → `HTMLButtonElement`).
+- `test/components/no-native-select.test.ts` — the "no native select" scan is a
+  source test, so it is not under `browser/`.
+- `test/routes/screens/board/new-column-dialog.test.ts`,
+  `test/routes/screens/task/sprint-control.test.ts` — source tests that
+  grepped `{STATUSES.map(` and `<option value="">No sprint</option>`; they now
+  assert the same of the `Dropdown` options.
+- CSS that styled a site's `<select>`: `forms.css`, `space.css`,
+  `members.css`, `organisation.css`, `board.css`, `column-composer.css`,
+  `assign.css`, `task-detail.css`, `task-panel.css`.
+
+**Deviations from the brief, and why.**
+- **Space selects only when there is no search box.** In a search box a space
+  is part of the search; Enter chooses there.
+- **Sprint "Any" writes `sprint=all` on both screens** — `BoardScreen` maps
+  it for the List too, as before (the brief's test idea assumed the List
+  wrote nothing; the code never did).
+- **The panel is portalled to `<body>`.** `useDismiss` asks
+  `isInDropdownPanel()` before treating a click as outside, and ignores an
+  Escape a dropdown already used; a targeted mutation of the first goes red.
+
+**Tests that changed, none weakened:** `filter-popover`, `list-view`,
+`space-bar`, `board-refresh`, `column-reorder`, `organisation-roles`,
+`task-panel`, `subtasks`, `priority-icons`, `task-drawer` drive the control
+with `pick()` / `optionsOf()` / `valueOf()` instead of `selectOption()`,
+`option` reads and `inputValue()`.
+
+**Noticed, not changed:** on the real server, choosing a Label narrows the
+loaded tasks, and the popover offers only labels in use on them, so after
+`?tag=warehouse` the Label list holds that task's labels, not all 35. This
+predates LAI-726 (`BoardScreen` derives `knownTags` from loaded tasks); the
+stubbed tests do not see it because the stub ignores `tag`.
+
