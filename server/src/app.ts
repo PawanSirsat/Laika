@@ -46,7 +46,14 @@ import { SignInThrottle } from './auth/sign-in-throttle.ts';
 import { type Db } from './db/client.ts';
 import { users } from './db/schema.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
-import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
+import {
+  createSpaHandler,
+  createStaticHandler,
+  isReservedPath,
+  warmStaticCache,
+} from './http/static.ts';
+import { StaticFileCache } from './http/static-cache.ts';
+import { apiCompression } from './http/middleware/compression.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
 import { translateAuthResponse } from './http/auth-errors.ts';
 
@@ -120,6 +127,12 @@ export interface CreateAppOptions {
   /** Overridable so tests can point at a directory whose contents they control. */
   publicDir?: string;
   fallbackDocument?: string;
+  /**
+   * Read and compress the build output at startup rather than on the first
+   * request (LAI-722). Fire-and-forget: `createApp` does not wait for it.
+   * `index.ts` sets it; tests and tools that build an app do not pay for it.
+   */
+  warmStaticCache?: boolean;
 }
 
 /**
@@ -184,7 +197,24 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // Re-read per request: setup stops being required the moment it succeeds,
     // and the app is built once at startup.
     setupRequired: db === undefined ? undefined : () => setupRequired(db),
+    // One store for both handlers, so `/` and `/index.html` are read and
+    // compressed once between them (LAI-722).
+    cache: new StaticFileCache(),
   };
+
+  if (options.warmStaticCache === true) {
+    // Not awaited: listening must never wait on this, and a failure costs only
+    // the first visitor's latency, so it is logged rather than thrown.
+    warmStaticCache({ publicDir: staticOptions.publicDir, cache: staticOptions.cache, log })
+      .then((files) => {
+        log.info('static.warmed', { files });
+      })
+      .catch((error: unknown) => {
+        log.warn('static.warm_failed', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+  }
 
   const app = new Hono<AppEnv>();
 
@@ -213,6 +243,10 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
   // Immediately after cors: response headers, so they apply to everything the
   // chain produces, including errors and the SPA document (SPEC §13.1).
   app.use('*', createSecurityHeaders(contentSecurityPolicyFor(staticOptions.fallbackDocument)));
+  // gzip for API JSON (LAI-722). Outside everything that produces or stores a
+  // body — idempotency keeps the plain bytes it replays — and it decides for
+  // itself which paths it may touch: never `/mcp`, never the SSE stream.
+  app.use('*', apiCompression());
   app.use('*', bodyLimit({ maxSize: BODY_LIMIT_BYTES }));
   // SPEC §11.2 position. Real when auth is configured, pass-through otherwise;
   // either way an anonymous request continues with `actor: null` rather than 401.

@@ -566,31 +566,71 @@ export function listTasks(
   if (filter.updatedSince !== null && filter.updatedSince !== undefined) {
     conditions.push(gte(tasks.updatedAt, filter.updatedSince));
   }
-  if (filter.cursor !== null) {
-    const key = Number(filter.cursor.sortKey);
-    conditions.push(
-      or(gt(tasks.updatedAt, key), and(eq(tasks.updatedAt, key), gt(tasks.id, filter.cursor.id)))!,
-    );
-  }
 
-  const rows = db
-    .select()
-    .from(tasks)
-    .where(and(...conditions))
-    .orderBy(asc(tasks.updatedAt), asc(tasks.id))
-    .all();
+  // One over the limit, so the route can tell whether another page exists.
+  const wanted = filter.limit + 1;
 
-  // One context for the whole page — the point of LAI-091's batching.
-  const context = loadViewContext(db, rows);
-  const views = rows.map((row) => toView(row, project.prefix, context));
+  /**
+   * The next `size` rows after `cursor`, in page order, as views.
+   *
+   * **The page is cut in SQL** (LAI-722). This used to read every row after the
+   * cursor, build the view context for all of them and slice one page off the
+   * front, so walking a project to the end was quadratic in its size. One
+   * context per read is still LAI-091's batching; it is just no longer the
+   * whole remainder of the project.
+   */
+  const read = (cursor: ListTasksFilter['cursor'], size: number): TaskView[] => {
+    const where =
+      cursor === null
+        ? conditions
+        : [
+            ...conditions,
+            or(
+              gt(tasks.updatedAt, Number(cursor.sortKey)),
+              and(eq(tasks.updatedAt, Number(cursor.sortKey)), gt(tasks.id, cursor.id)),
+            )!,
+          ];
+    const rows = db
+      .select()
+      .from(tasks)
+      .where(and(...where))
+      .orderBy(asc(tasks.updatedAt), asc(tasks.id))
+      .limit(size)
+      .all();
+
+    const context = loadViewContext(db, rows);
+    return rows.map((row) => toView(row, project.prefix, context));
+  };
+
+  if (filter.ready === undefined) return read(filter.cursor, wanted);
 
   // `ready` is derived, so it cannot be a SQL predicate without duplicating the
-  // rule (§4.5). Filtering after the query keeps one definition of readiness.
-  const filtered =
-    filter.ready === undefined ? views : views.filter((v) => v.ready === filter.ready);
+  // rule (§4.5). Filtering after the query keeps one definition of readiness —
+  // so this reads **in batches** until it has `limit + 1` matches or runs out.
+  // Same rows in the same order as filtering the whole remainder at once, so
+  // the same answer; it only stops reading once it has enough.
+  const size = Math.max(wanted, READY_BATCH);
+  const matched: TaskView[] = [];
+  let cursor = filter.cursor;
 
-  return filtered.slice(0, filter.limit + 1);
+  for (;;) {
+    const views = read(cursor, size);
+    matched.push(...views.filter((v) => v.ready === filter.ready));
+
+    const last = views[views.length - 1];
+    if (matched.length >= wanted || views.length < size || last === undefined) break;
+    cursor = { sortKey: last.updated_at, id: last.id };
+  }
+
+  return matched.slice(0, wanted);
 }
+
+/**
+ * The smallest batch read while looking for `ready` matches — see `listTasks`.
+ * A page of 200 reads 201 at a time; a page of 10 reads 50, so a sparse match
+ * does not cost a query per handful of rows.
+ */
+const READY_BATCH = 50;
 
 export interface UpdateTaskInput {
   title?: string | undefined;

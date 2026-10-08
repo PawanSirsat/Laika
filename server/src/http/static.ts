@@ -11,11 +11,21 @@
  * committed there. Nothing is ever committed into `public/`.
  */
 
-import { readFile, stat } from 'node:fs/promises';
+import { readdir, readFile, stat } from 'node:fs/promises';
 import { join, normalize, resolve, sep } from 'node:path';
 import { type Context } from 'hono';
+import { type Logger } from '../log.ts';
 import { type AppEnv } from './context.ts';
 import { SETUP_PATH } from './middleware/setup-gate.ts';
+import {
+  cacheControlFor,
+  type CachedFile,
+  ifNoneMatchHits,
+  negotiateEncoding,
+  REVALIDATE,
+  StaticFileCache,
+  type Encoding,
+} from './static-cache.ts';
 
 /**
  * Prefixes the SPA fallback must never swallow (SPEC §11.4). A request to an
@@ -41,7 +51,6 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.jpeg': 'image/jpeg',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
-  '.map': 'application/json; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
   '.png': 'image/png',
   '.svg': 'image/svg+xml',
@@ -106,6 +115,48 @@ export interface StaticOptions {
    * succeeds, and the app is built once at startup.
    */
   setupRequired?: (() => boolean) | undefined;
+  /**
+   * The read-and-compress-once store (LAI-722). Shared by the two handlers so
+   * `/` and `/index.html` are one entry; each makes its own when not given one.
+   */
+  cache?: StaticFileCache | undefined;
+}
+
+/**
+ * Answer with one representation of `file`, or `304` (LAI-722).
+ *
+ * The `ETag` names the representation sent, and only a match against **that**
+ * tag is a `304`. A `304` tells a cache to reuse what it stored under the
+ * validator; answering one for the brotli tag to a client now negotiating
+ * gzip would point it at bytes it never stored (LAI-722 review).
+ *
+ * `Range` is ignored: every answer is a whole `200`. That is a legal response
+ * to a range request, and it is the safe one here — a `206` would have to count
+ * bytes of the encoding actually sent, which nothing in the SPA needs.
+ */
+function serveFile(c: Context<AppEnv>, file: CachedFile, cacheControl: string): Response {
+  const available = Object.keys(file.encoded) as Encoding[];
+  const encoding = negotiateEncoding(c.req.header('Accept-Encoding'), available);
+  const sent = encoding === null ? file : file.encoded[encoding]!;
+
+  const headers: Record<string, string> = {
+    'Content-Type': file.contentType,
+    'Cache-Control': cacheControl,
+    ETag: sent.etag,
+  };
+  // On every answer for a file that has encodings, identity included: a shared
+  // cache that stored the plain one must not hand it to the next brotli client,
+  // nor the reverse.
+  if (available.length > 0) headers.Vary = 'Accept-Encoding';
+
+  if (ifNoneMatchHits(c.req.header('If-None-Match'), [sent.etag])) {
+    return c.body(null, 304, headers);
+  }
+
+  if (encoding !== null) headers['Content-Encoding'] = encoding;
+  headers['Content-Length'] = String(sent.body.byteLength);
+
+  return c.body(sent.body, 200, headers);
 }
 
 /**
@@ -113,6 +164,8 @@ export interface StaticOptions {
  * `notFound` handler so it runs only after every real route has declined.
  */
 export function createSpaHandler(options: StaticOptions) {
+  const cache = options.cache ?? new StaticFileCache();
+
   return async (c: Context<AppEnv>): Promise<Response> => {
     // Before an org exists every route leads to setup (LAI-009 AC1). Redirecting
     // here rather than in a middleware is deliberate: this runs only for paths
@@ -124,10 +177,11 @@ export function createSpaHandler(options: StaticOptions) {
 
     const indexPath = join(options.publicDir, 'index.html');
 
-    const built = await readFileIfPresent(indexPath);
-    if (built !== null) {
-      return c.body(new Uint8Array(built), 200, { 'Content-Type': CONTENT_TYPES['.html']! });
-    }
+    // `no-cache`, not `no-store`: the browser keeps it and asks every time, and
+    // an unchanged document costs a `304`. It is the file that names the current
+    // hashed bundle, so it must never be served from cache without asking.
+    const built = await cache.load(indexPath, CONTENT_TYPES['.html']!);
+    if (built !== null) return serveFile(c, built, REVALIDATE);
 
     const fallback = await readFileIfPresent(options.fallbackDocument);
     if (fallback !== null) {
@@ -151,16 +205,65 @@ export function createSpaHandler(options: StaticOptions) {
  * request falls through to the SPA handler.
  */
 export function createStaticHandler(options: StaticOptions) {
+  const cache = options.cache ?? new StaticFileCache();
+
   return async (c: Context<AppEnv>, next: () => Promise<void>): Promise<Response | void> => {
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return next();
     if (isReservedPath(c.req.path)) return next();
 
+    // **Source maps are not published** (LAI-722). The build writes them
+    // (`sourcemap: 'hidden'`) for local debugging, and nothing links to them;
+    // this makes sure that stays true of a map that is on disk anyway. A
+    // `404` rather than falling through, which would answer a `.map` request
+    // with the SPA document and a `200`.
+    if (c.req.path.toLowerCase().endsWith('.map')) {
+      return c.text('Not found', 404, { 'Cache-Control': 'no-store' });
+    }
+
     const filePath = resolveWithinRoot(options.publicDir, c.req.path);
     if (filePath === null) return next();
 
-    const contents = await readFileIfPresent(filePath);
-    if (contents === null) return next();
+    const file = await cache.load(filePath, contentTypeFor(filePath));
+    if (file === null) return next();
 
-    return c.body(new Uint8Array(contents), 200, { 'Content-Type': contentTypeFor(filePath) });
+    return serveFile(c, file, cacheControlFor(c.req.path));
   };
+}
+
+/**
+ * Read and compress the build output before anybody asks for it (LAI-722).
+ *
+ * The cache otherwise fills on first request, and on a t4g.micro the first
+ * visitor after a deploy would wait for brotli on a 711 KB bundle. Called
+ * fire-and-forget from `createApp` when `warmStaticCache` is set — `index.ts`
+ * sets it, nothing waits on it to listen, and a request that arrives first
+ * shares the same load rather than starting a second one.
+ *
+ * `index.html` and every file in `assets/`, except source maps, which are
+ * never served. A missing build is the normal clean-clone case and warms
+ * nothing; anything else is the caller's to log. Resolves to the number of
+ * files now held.
+ */
+export async function warmStaticCache(options: {
+  publicDir: string;
+  cache: StaticFileCache;
+  log: Logger;
+}): Promise<number> {
+  const { publicDir, cache } = options;
+
+  let assets: string[];
+  try {
+    assets = (await readdir(join(publicDir, 'assets'))).map((name) => join('assets', name));
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== 'ENOENT') throw error;
+    assets = [];
+  }
+
+  const loaded = await Promise.all(
+    ['index.html', ...assets]
+      .filter((path) => !path.toLowerCase().endsWith('.map'))
+      .map((path) => cache.load(join(publicDir, path), contentTypeFor(path))),
+  );
+
+  return loaded.filter((file) => file !== null).length;
 }

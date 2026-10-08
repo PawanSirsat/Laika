@@ -133,3 +133,51 @@ export function expectSqliteError(fn: () => unknown, pattern: RegExp): void {
     throw new Error(`Expected a SQLite error matching ${String(pattern)}, got: ${message}`);
   }
 }
+
+/**
+ * Every SQL statement `run` prepares, captured off the driver (LAI-722).
+ *
+ * As the code **actually issues it**, not retyped in the test — the reason
+ * `dependencies.test.ts` does the same: a hand-written copy keeps passing while
+ * the real query does something else.
+ */
+export function preparedDuring(sqlite: Database.Database, run: () => unknown): string[] {
+  const prepared: string[] = [];
+  const real = sqlite.prepare.bind(sqlite);
+  (sqlite as unknown as { prepare: typeof real }).prepare = (source: string) => {
+    prepared.push(source);
+    return real(source);
+  };
+
+  try {
+    run();
+  } finally {
+    (sqlite as unknown as { prepare: typeof real }).prepare = real;
+  }
+
+  return prepared;
+}
+
+/**
+ * `EXPLAIN QUERY PLAN` for every statement `run` prepares against `table`.
+ *
+ * Placeholders are bound with dummy values; without `sqlite_stat4` their values
+ * cannot change the plan, only their count can.
+ */
+export function queryPlansOf(
+  sqlite: Database.Database,
+  table: string,
+  run: () => unknown,
+): string[] {
+  const queries = preparedDuring(sqlite, run).filter((source) =>
+    new RegExp(`\\b"?${table}"?\\b`).test(source),
+  );
+  if (queries.length === 0) throw new Error(`nothing was prepared against ${table}`);
+
+  return queries.map((source) => {
+    const bindings = Array.from({ length: (source.match(/\?/g) ?? []).length }, () => 'x');
+    return (sqlite.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...bindings) as { detail: string }[])
+      .map((row) => row.detail)
+      .join('\n');
+  });
+}

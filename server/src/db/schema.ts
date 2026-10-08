@@ -602,6 +602,9 @@ export const heartbeats = sqliteTable(
   },
   (t) => [
     index('heartbeats_user_created_at_idx').on(t.userId, t.createdAt),
+    // Presence and Capacity ask for "the last five minutes" by `created_at`
+    // alone, which the pair above cannot serve — both scanned (LAI-722).
+    index('heartbeats_created_at_idx').on(t.createdAt),
     index('heartbeats_matched_task_id_idx').on(t.matchedTaskId),
     index('heartbeats_token_id_idx').on(t.tokenId),
   ],

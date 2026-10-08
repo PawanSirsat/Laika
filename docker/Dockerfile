@@ -10,7 +10,10 @@
 #
 # Stages: deps -> web -> server -> prod-deps -> runtime.
 # Only the last stage ships. It carries compiled JS and production node_modules;
-# no TypeScript, no toolchain, no source maps, and no database.
+# no TypeScript, no toolchain, and no database. Source maps do ship, and are
+# not served: the server's own sit beside dist/*.js, and the SPA's are built
+# `hidden` (linked from nothing) into public/, where the server refuses `*.map`
+# with a 404 (LAI-722).
 
 ARG NODE_VERSION=22
 ARG PNPM_VERSION=10.32.1

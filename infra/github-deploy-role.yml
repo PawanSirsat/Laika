@@ -58,6 +58,8 @@ Resources:
                 # fork or a pull request cannot assume this role.
                 token.actions.githubusercontent.com:sub: !Sub ${SubjectPrefix}:ref:refs/heads/${Branch}
       Policies:
+        # Push, retag, and after a successful deploy delete every image but the
+        # live one (LAI-720).
         - PolicyName: push-image
           PolicyDocument:
             Version: '2012-10-17'
@@ -70,11 +72,13 @@ Resources:
                 Effect: Allow
                 Action:
                   - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchDeleteImage
                   - ecr:BatchGetImage
                   - ecr:CompleteLayerUpload
                   - ecr:DescribeImages
                   - ecr:GetDownloadUrlForLayer
                   - ecr:InitiateLayerUpload
+                  - ecr:ListImages
                   - ecr:PutImage
                   - ecr:UploadLayerPart
                 Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/${EcrRepositoryName}
