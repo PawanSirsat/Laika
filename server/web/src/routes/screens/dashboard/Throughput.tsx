@@ -49,7 +49,9 @@ export function Throughput({
       {metrics.status === 'loading' ? (
         <p className="dash-empty">Counting what finished…</p>
       ) : metrics.status === 'error' ? (
-        <p className="dash-empty">Throughput could not be loaded. The rest of the page is current.</p>
+        <p className="dash-empty">
+          Throughput could not be loaded. The rest of the page is current.
+        </p>
       ) : total === 0 ? (
         <p className="dash-empty">Nothing was completed {window}.</p>
       ) : (

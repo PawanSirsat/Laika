@@ -5,7 +5,12 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { describeProjectEvent, relativeTime, shownInFeed, statusChange } from './dashboard-derive.ts';
+import {
+  describeProjectEvent,
+  relativeTime,
+  shownInFeed,
+  statusChange,
+} from './dashboard-derive.ts';
 import { DashLink, boardHref } from './DashLink.tsx';
 import { dayHeading } from './summary-derive.ts';
 
@@ -116,11 +121,13 @@ export function ActivityFeed({
               const moved = statusChange(event);
               const day = dayHeading(event.created_at, now);
               const heading =
-                day === lastDay ? [] : [
-                  <li key={`day-${day}`} className="dash-day" aria-hidden="true">
-                    {day}
-                  </li>,
-                ];
+                day === lastDay
+                  ? []
+                  : [
+                      <li key={`day-${day}`} className="dash-day" aria-hidden="true">
+                        {day}
+                      </li>,
+                    ];
               lastDay = day;
               const task = event.task_id === null ? undefined : tasksById.get(event.task_id);
 

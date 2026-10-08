@@ -199,7 +199,9 @@ export function DashboardScreen() {
   const window = range.ms === null ? 'all time' : `in the ${range.label.toLowerCase()}`;
   const breakdown = statusBreakdown(tasks);
   const metricsDone =
-    dashboard.metrics.status === 'ready' ? completedIn(dashboard.metrics.view.throughput) : undefined;
+    dashboard.metrics.status === 'ready'
+      ? completedIn(dashboard.metrics.view.throughput)
+      : undefined;
   // All time has no window for `/metrics` to sum (it answers its own 30 days),
   // so all-time done is the task list's own count.
   const done = range.ms === null ? breakdown.done : metricsDone;

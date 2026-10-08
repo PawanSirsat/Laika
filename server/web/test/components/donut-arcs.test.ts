@@ -8,12 +8,7 @@ void describe('donut geometry (LAI-711)', () => {
     // Two equal small shares can round apart; the legend writes `<1%` for a
     // share that rounds to nothing, so neither reads as zero work.
     assert.deepEqual(roundedPercents([206, 2, 2, 133]), [60, 1, 0, 39]);
-    for (const values of [
-      [7, 3],
-      [1, 2, 3, 4, 5, 6],
-      [99, 1, 0],
-      [5],
-    ]) {
+    for (const values of [[7, 3], [1, 2, 3, 4, 5, 6], [99, 1, 0], [5]]) {
       const sum = roundedPercents(values).reduce((a, b) => a + b, 0);
       assert.equal(sum, 100, `${JSON.stringify(values)} adds to ${String(sum)}`);
     }

@@ -98,9 +98,7 @@ export function StatusOverview({
                   <span className="dash-legend-n" data-status={c.status}>
                     {c.count}
                   </span>
-                  <span className="dash-legend-pct">
-                    {percentLabel(percents[i] ?? 0, c.count)}
-                  </span>
+                  <span className="dash-legend-pct">{percentLabel(percents[i] ?? 0, c.count)}</span>
                 </DashLink>
               </li>
             ))}

@@ -72,10 +72,7 @@ export function NeedsAttention({
             <ul className="dash-att-list">
               {blocked.map((row) => (
                 <li key={row.task.id}>
-                  <DashLink
-                    href={boardHref(slug, { task: row.task.id })}
-                    className="dash-att-row"
-                  >
+                  <DashLink href={boardHref(slug, { task: row.task.id })} className="dash-att-row">
                     <span className="dash-key">{row.task.key}</span>
                     <span className="dash-att-title">{row.task.title}</span>
                     <span className="dash-att-meta">

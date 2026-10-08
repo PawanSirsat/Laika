@@ -166,7 +166,13 @@ function world(): World {
           day: new Date(TODAY - (7 - i) * DAY).toISOString().slice(0, 10),
           completed,
         })),
-        cycle_time: { measured: 21, unmeasured: 0, p50_ms: 3 * DAY, p75_ms: 5 * DAY, p90_ms: 9 * DAY },
+        cycle_time: {
+          measured: 21,
+          unmeasured: 0,
+          p50_ms: 3 * DAY,
+          p75_ms: 5 * DAY,
+          p90_ms: 9 * DAY,
+        },
       },
       '/api/v1/projects/laika-core/tags': { tags: [] },
       '/api/v1/org': {
@@ -226,7 +232,10 @@ void describe('the dashboard is aligned (LAI-711)', () => {
         assert.equal(m.stats.length, 4, 'four stat cards');
         assert.equal(m.cards.length, 6, 'six cards in the grid');
         for (const card of [...m.stats, ...m.cards]) {
-          assert.ok(card.right <= m.viewport, `a card runs past the window: ${JSON.stringify(card)}`);
+          assert.ok(
+            card.right <= m.viewport,
+            `a card runs past the window: ${JSON.stringify(card)}`,
+          );
         }
         // Cards that share a row share both edges.
         const rows = new Map<number, typeof m.cards>();
@@ -247,7 +256,10 @@ void describe('the dashboard is aligned (LAI-711)', () => {
           const prev = sorted[i - 1]!;
           const cur = sorted[i]!;
           if (Math.round(cur.top) !== Math.round(prev.top)) {
-            assert.ok(cur.top >= prev.bottom, `a card runs under the next row: ${JSON.stringify([prev, cur])}`);
+            assert.ok(
+              cur.top >= prev.bottom,
+              `a card runs under the next row: ${JSON.stringify([prev, cur])}`,
+            );
           }
         }
         // The gutters are the space bar's.
@@ -282,7 +294,9 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
           (t) => open7(t) && t.due_on !== null && t.due_on >= TODAY && t.due_on < TODAY + 7 * DAY,
         ).length,
       };
-      const overdue = w.tasks.filter((t) => open7(t) && t.due_on !== null && t.due_on < TODAY).length;
+      const overdue = w.tasks.filter(
+        (t) => open7(t) && t.due_on !== null && t.due_on < TODAY,
+      ).length;
       assert.ok(expected.due > 0 && overdue > 0, 'the fixture must exercise both');
       for (const [kind, value] of Object.entries(expected)) {
         assert.equal(await numberOf(h.page, `[data-stat="${kind}"]`), value, kind);
@@ -314,7 +328,10 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
         (await h.page.locator('.dash-status .donut-value').textContent())?.trim(),
         `${String(Math.round((done / live.length) * 100))}%`,
       );
-      assert.match((await h.page.locator('.dash-status .dash-card-foot').textContent()) ?? '', /^2 cancelled/);
+      assert.match(
+        (await h.page.locator('.dash-status .dash-card-foot').textContent()) ?? '',
+        /^2 cancelled/,
+      );
     } finally {
       await h.close();
     }
@@ -351,7 +368,10 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
         .locator('.dash-people .donut-slice')
         .evaluateAll((els) => els.map((el) => getComputedStyle(el).stroke));
       assert.equal(strokes.length, names.length);
-      assert.ok(strokes.every((s) => s !== '' && s !== 'none'), JSON.stringify(strokes));
+      assert.ok(
+        strokes.every((s) => s !== '' && s !== 'none'),
+        JSON.stringify(strokes),
+      );
       assert.equal(new Set(strokes).size, strokes.length, 'two slices share a colour');
     } finally {
       await h.close();
@@ -364,7 +384,10 @@ void describe('the numbers are the fixture’s (LAI-711)', () => {
     try {
       await ready(h.page);
       const stale = w.tasks.filter((t) => open7(t) && NOW - t.updated_at > 5 * DAY).length;
-      assert.ok(stale > 5, `the fixture must have more than five stale tasks, has ${String(stale)}`);
+      assert.ok(
+        stale > 5,
+        `the fixture must have more than five stale tasks, has ${String(stale)}`,
+      );
       const tab = h.page.locator('.dash-tab', { hasText: 'Stale' });
       assert.equal(Number(await tab.locator('.dash-tab-count').textContent()), stale);
       await tab.click();
@@ -476,9 +499,8 @@ void describe('the page never blanks (LAI-711)', () => {
       });
       await h.page.waitForFunction(
         (want) =>
-          Number(
-            document.querySelector('.dash-people [data-person="u3"]')?.textContent?.trim(),
-          ) === want,
+          Number(document.querySelector('.dash-people [data-person="u3"]')?.textContent?.trim()) ===
+          want,
         before + 3,
         { timeout: 5000 },
       );

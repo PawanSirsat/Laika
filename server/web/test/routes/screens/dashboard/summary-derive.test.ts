@@ -56,7 +56,7 @@ function task(over: Partial<Task> & { id: string }): Task {
     created_at: NOW - 100 * DAY_MS,
     updated_at: NOW - 100 * DAY_MS,
     ...over,
-  } as Task;
+  };
 }
 
 void describe('isOpen', () => {
@@ -115,14 +115,7 @@ void describe('windowCounts', () => {
 
 void describe('completedIn', () => {
   void test('sums the server’s days', () => {
-    assert.equal(
-      completedIn([
-        { completed: 3 },
-        { completed: 0 },
-        { completed: 4 },
-      ]),
-      7,
-    );
+    assert.equal(completedIn([{ completed: 3 }, { completed: 0 }, { completed: 4 }]), 7);
     assert.equal(completedIn([]), 0);
   });
 });

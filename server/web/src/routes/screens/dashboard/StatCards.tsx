@@ -60,7 +60,7 @@ function Stat({
       <div className="dash-stat-text">
         <p className="dash-stat-figure">
           <span className="dash-stat-n" data-stat={kind}>
-            {figure === undefined ? '—' : figure}
+            {figure ?? '—'}
           </span>{' '}
           {noun}
         </p>
