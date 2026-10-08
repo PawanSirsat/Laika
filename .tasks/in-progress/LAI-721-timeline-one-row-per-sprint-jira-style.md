@@ -2,11 +2,12 @@
 id: LAI-721
 title: 'Timeline, Jira-style: one row per sprint on a left-right scrolling axis, tasks only when a sprint is opened'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: backlog
+status: in-progress
+started: 2026-10-08T11:18:42Z
 ---
 
 ## Goal
@@ -32,6 +33,8 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
 - `server/web/src/routes/screens/timeline/TimelineScreen.tsx`
 - `server/web/src/routes/screens/timeline/timeline.css`
 - `server/web/src/routes/screens/timeline/timeline-derive.ts`
+- `server/web/src/routes/screens/timeline/use-timeline.ts` (new) — the
+  on-demand data hook
 - `server/web/test/routes/screens/timeline/timeline-derive.test.ts`
 - `server/web/test/browser/timeline-bars.test.ts` — rewritten for sprint rows
 - `server/web/test/browser/timeline-blocked-and-tabs.test.ts` — rewritten or
@@ -42,10 +45,14 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
 ## Acceptance criteria
 
 - [ ] One row per sprint, in date order. No row per task on the axis.
-- [ ] Each sprint row's left column names it (`S4` and its name), its dates,
-      its state (active, completed, planned) and progress (`done/total`); its
-      bar spans `starts_on` to `ends_on` on the axis and shows progress and a
-      blocked count when there is one.
+- [ ] Each sprint row's left column names it (`S4` and its name), its dates
+      and its state (active, ended, planned); its bar spans `starts_on` to
+      `ends_on` on the axis. Once a sprint is opened and its tasks are loaded,
+      its row and bar show progress (`done/total`) and a blocked count.
+- [ ] **No whole-project walk** (owner's orchestrator, 2026-10-08): only the
+      sprint list loads up front; an opened sprint's tasks are fetched with
+      `?sprint=<id>`, and the Unscheduled tray's with `?sprint=none` when it is
+      opened. Asserted on the requests the page makes.
 - [ ] The axis scrolls left and right inside the card; the sprint column stays
       put while it does; the header (months, then weeks or months) stays put
       while rows scroll.
@@ -69,8 +76,13 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
 
 ## Notes / context
 
-- Data stays `useSprints` (sprints, tasks grouped by sprint, progress). No new
-  endpoint, no new dependency.
+- **Data: on demand, not `useSprints`.** `useSprints` walks every task with
+  full markdown (`use-sprints.ts`), and a later performance phase will replace
+  the client data layer; this screen must not add a walk. The sprints carry no
+  counts and the tasks endpoint has no count or field projection, so progress
+  needs a sprint's tasks: they are fetched when the sprint is opened, with the
+  existing `sprint` filter. *Expand all* is an explicit request for every
+  sprint's tasks. No new endpoint, no new dependency.
 - Read-only, as today: dragging a sprint edge and dragging from the tray are
   still not built (§11.4.3 lists them; out of scope here).
 
@@ -80,4 +92,10 @@ Claimed and released the same day, before any code was committed: LAI-717 came
 back from review and one task is in progress at a time (CLAUDE.md §2). The
 builder's draft (`TimelineScreen.tsx`, `timeline-derive.ts`) is kept outside
 the repo and is re-claimed as soon as LAI-717 is back in review.
+
+## Re-claimed, 2026-10-08T11:18:42Z
+
+On the go-ahead after LAI-717 went to review. If LAI-717 comes back with
+changes, those take priority: this task pauses at a clean commit, and having
+two tasks in progress for that reason is recorded in both files.
 
