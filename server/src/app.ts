@@ -47,6 +47,7 @@ import { type Db } from './db/client.ts';
 import { users } from './db/schema.ts';
 import { ActivityFeed } from './services/activity-feed.ts';
 import { createSpaHandler, createStaticHandler, isReservedPath } from './http/static.ts';
+import { StaticFileCache } from './http/static-cache.ts';
 import { allowedMethodsFor } from './http/allowed-methods.ts';
 import { translateAuthResponse } from './http/auth-errors.ts';
 
@@ -184,6 +185,9 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // Re-read per request: setup stops being required the moment it succeeds,
     // and the app is built once at startup.
     setupRequired: db === undefined ? undefined : () => setupRequired(db),
+    // One store for both handlers, so `/` and `/index.html` are read and
+    // compressed once between them (LAI-722).
+    cache: new StaticFileCache(),
   };
 
   const app = new Hono<AppEnv>();

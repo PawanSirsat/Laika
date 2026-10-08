@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import { describe, expect, it } from 'vitest';
 import { isReservedPath, resolveWithinRoot } from '../../src/http/static.ts';
 import { FALLBACK_DOCUMENT, PUBLIC_DIR } from '../../src/paths.ts';
@@ -112,6 +113,168 @@ describe('SPA fallback with a build present', () => {
 
       expect(res.status).toBe(404);
       expect(res.headers.get('content-type')).toContain('application/json');
+    });
+  });
+});
+
+describe('caching and compression of the build output (LAI-722)', () => {
+  const JS = `export const rows = [${Array.from({ length: 400 }, (_, i) => `"row-${String(i)}"`).join(',')}];\n`;
+  const HASHED_JS = '/assets/index-DfSpNg7Z.js';
+  const FONT = '/assets/mono-latin-wght-normal-DBQx-q_a.woff2';
+
+  /** A build output this test owns: an index, a hashed bundle, a font, a map. */
+  async function withBuild<T>(fn: (app: ReturnType<typeof testApp>['app']) => Promise<T>) {
+    return withTempDir(async (dir) => {
+      await mkdir(join(dir, 'assets'));
+      await writeFile(join(dir, 'index.html'), '<!doctype html><title>built spa</title>', 'utf8');
+      await writeFile(join(dir, HASHED_JS), JS, 'utf8');
+      await writeFile(join(dir, `${HASHED_JS}.map`), '{"version":3,"sources":["src/secret.ts"]}');
+      await writeFile(join(dir, FONT), JS, 'utf8');
+      await writeFile(join(dir, 'favicon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+      return fn(testApp({ publicDir: dir }).app);
+    });
+  }
+
+  it('lets a browser keep a hashed asset for a year without asking again', async () => {
+    await withBuild(async (app) => {
+      for (const path of [HASHED_JS, FONT]) {
+        const res = await app.request(path);
+        expect(res.status, path).toBe(200);
+        expect(res.headers.get('cache-control'), path).toBe('public, max-age=31536000, immutable');
+      }
+    });
+  });
+
+  it('makes the SPA document revalidate, and answers 304 when it has not changed', async () => {
+    await withBuild(async (app) => {
+      for (const path of ['/', '/board/LAI-1', '/index.html']) {
+        const first = await app.request(path);
+        const etag = first.headers.get('etag');
+
+        expect(first.status, path).toBe(200);
+        expect(first.headers.get('cache-control'), path).toBe('no-cache');
+        expect(etag, path).toMatch(/^"[^"]+"$/);
+
+        const again = await app.request(path, { headers: { 'If-None-Match': etag! } });
+        expect(again.status, path).toBe(304);
+        expect(await again.text(), path).toBe('');
+        expect(again.headers.get('etag'), path).toBe(etag);
+      }
+    });
+  });
+
+  it('serves a changed document in full to a browser holding the old ETag', async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(join(dir, 'index.html'), '<!doctype html><title>one</title>', 'utf8');
+      const { app } = testApp({ publicDir: dir });
+      const old = (await app.request('/')).headers.get('etag')!;
+
+      await writeFile(
+        join(dir, 'index.html'),
+        '<!doctype html><title>two, rebuilt</title>',
+        'utf8',
+      );
+      const res = await app.request('/', { headers: { 'If-None-Match': old } });
+
+      expect(res.status).toBe(200);
+      expect(await res.text()).toContain('two, rebuilt');
+    });
+  });
+
+  it('makes a non-hashed public file revalidate too', async () => {
+    await withBuild(async (app) => {
+      const res = await app.request('/favicon.svg');
+
+      expect(res.headers.get('cache-control')).toBe('no-cache');
+      expect(res.headers.get('etag')).toMatch(/^"[^"]+"$/);
+    });
+  });
+
+  it('serves brotli, then gzip, then identity, by Accept-Encoding', async () => {
+    await withBuild(async (app) => {
+      const br = await app.request(HASHED_JS, { headers: { 'Accept-Encoding': 'gzip, br' } });
+      expect(br.headers.get('content-encoding')).toBe('br');
+      const brBytes = Buffer.from(await br.arrayBuffer());
+      expect(brotliDecompressSync(brBytes).toString()).toBe(JS);
+      expect(Number(br.headers.get('content-length'))).toBe(brBytes.length);
+      expect(brBytes.length).toBeLessThan(JS.length);
+
+      const gz = await app.request(HASHED_JS, { headers: { 'Accept-Encoding': 'gzip' } });
+      expect(gz.headers.get('content-encoding')).toBe('gzip');
+      expect(gunzipSync(Buffer.from(await gz.arrayBuffer())).toString()).toBe(JS);
+
+      const plain = await app.request(HASHED_JS);
+      expect(plain.headers.get('content-encoding')).toBeNull();
+      expect(await plain.text()).toBe(JS);
+
+      // Every one of the three says it varies, or a shared cache could hand
+      // brotli to a client that never asked for it.
+      for (const res of [br, gz, plain]) {
+        expect(res.headers.get('vary')).toMatch(/\bAccept-Encoding\b/);
+      }
+    });
+  });
+
+  it('never compresses a font, whatever the client accepts', async () => {
+    await withBuild(async (app) => {
+      const res = await app.request(FONT, { headers: { 'Accept-Encoding': 'br, gzip' } });
+
+      expect(res.headers.get('content-encoding')).toBeNull();
+      expect(await res.text()).toBe(JS);
+    });
+  });
+
+  it('answers HEAD with the headers of the representation GET would send', async () => {
+    await withBuild(async (app) => {
+      const get = await app.request(HASHED_JS, { headers: { 'Accept-Encoding': 'br' } });
+      const head = await app.request(HASHED_JS, {
+        method: 'HEAD',
+        headers: { 'Accept-Encoding': 'br' },
+      });
+
+      expect(head.status).toBe(200);
+      expect(head.headers.get('content-encoding')).toBe('br');
+      expect(head.headers.get('content-length')).toBe(get.headers.get('content-length'));
+      expect(head.headers.get('etag')).toBe(get.headers.get('etag'));
+      expect(await head.text()).toBe('');
+    });
+  });
+
+  it('answers 304 to an ETag taken from any representation', async () => {
+    await withBuild(async (app) => {
+      const br = await app.request(HASHED_JS, { headers: { 'Accept-Encoding': 'br' } });
+      const res = await app.request(HASHED_JS, {
+        headers: { 'Accept-Encoding': 'gzip', 'If-None-Match': br.headers.get('etag')! },
+      });
+
+      expect(res.status).toBe(304);
+      expect(res.headers.get('cache-control')).toBe('public, max-age=31536000, immutable');
+      expect(res.headers.get('vary')).toMatch(/\bAccept-Encoding\b/);
+    });
+  });
+
+  it('ignores Range rather than answering compressed bytes against an identity range', async () => {
+    // No Range support is a legal answer (RFC 9110 §14.2). A 206 whose
+    // Content-Range counted bytes of a different encoding would not be.
+    await withBuild(async (app) => {
+      const res = await app.request(HASHED_JS, {
+        headers: { 'Accept-Encoding': 'br', Range: 'bytes=0-9' },
+      });
+
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-range')).toBeNull();
+      expect(brotliDecompressSync(Buffer.from(await res.arrayBuffer())).toString()).toBe(JS);
+    });
+  });
+
+  it('refuses source maps with 404, even when one is on disk', async () => {
+    await withBuild(async (app) => {
+      const res = await app.request(`${HASHED_JS}.map`);
+
+      expect(res.status).toBe(404);
+      const body = await res.text();
+      expect(body).not.toContain('secret.ts');
+      expect(body).not.toContain('built spa');
     });
   });
 });
