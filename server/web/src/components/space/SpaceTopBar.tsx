@@ -268,7 +268,7 @@ export function SpaceTopBar({
                   noun="priorities"
                   value={priority ?? ''}
                   onChange={(value) => {
-                    onPriority(value === '' ? undefined : (value));
+                    onPriority(value === '' ? undefined : value);
                   }}
                   options={[
                     { value: '', label: 'Priority: all', pinned: true },
