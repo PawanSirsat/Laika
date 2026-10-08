@@ -348,7 +348,14 @@ export function Dropdown<V extends string = string>({
     vv?.addEventListener('resize', placePanel);
     vv?.addEventListener('scroll', placePanel);
     window.addEventListener('scroll', onScroll, true);
+    /*
+     * An ancestor that finishes animating — the drawer's rise ends its
+     * transform — stops being the panel's containing block, and the
+     * correction made while it was one no longer holds: place again.
+     */
+    window.addEventListener('animationend', placePanel, true);
     return () => {
+      window.removeEventListener('animationend', placePanel, true);
       window.removeEventListener('resize', placePanel);
       vv?.removeEventListener('resize', placePanel);
       vv?.removeEventListener('scroll', placePanel);
@@ -375,6 +382,25 @@ export function Dropdown<V extends string = string>({
     else if (el.offsetTop + el.offsetHeight > l.scrollTop + l.clientHeight)
       l.scrollTop = el.offsetTop + el.offsetHeight - l.clientHeight;
   }, [open, activeIndex]);
+
+  /*
+   * **A press is over when the pointer lifts, wherever it lifts** (round 2).
+   * Pressed on the trigger and dragged off, it never becomes the click that
+   * would clear `pressing`, and the search box's next blur — focus going
+   * anywhere — would be ignored and leave the panel open.
+   */
+  useEffect(() => {
+    if (!open) return;
+    const release = (): void => {
+      pressing.current = false;
+    };
+    document.addEventListener('pointerup', release, true);
+    document.addEventListener('pointercancel', release, true);
+    return () => {
+      document.removeEventListener('pointerup', release, true);
+      document.removeEventListener('pointercancel', release, true);
+    };
+  }, [open]);
 
   // A click anywhere but the trigger and the panel closes it, focus untouched.
   useEffect(() => {

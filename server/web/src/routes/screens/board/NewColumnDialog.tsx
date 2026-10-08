@@ -1,6 +1,7 @@
 import { Spinner } from '../../../components/Spinner.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { STATUSES, type TaskStatus } from '../../../api/tasks.ts';
 import { statusLabel } from '../../../api/board-derive.ts';
 import type { BoardColumn } from '../../../api/columns.ts';
@@ -71,7 +72,14 @@ export function NewColumnDialog({ all, busy, error, onCreate, onClose }: NewColu
     onCreate(trimmed, status === '' ? null : status);
   };
 
-  return (
+  /*
+   * **Portalled to `<body>`, as `ColumnDialog` is** (LAI-726 round 2). It is
+   * rendered from inside `.board`, whose children all take an 18px side
+   * margin (`board.css`); that outranked the dialog's `margin: auto`, pinning
+   * it 18px from the left edge, and inset the scrim, leaving undimmed strips
+   * down both sides. Out of `.board`, neither rule reaches it.
+   */
+  return createPortal(
     <>
       <div className="column-dialog-scrim" aria-hidden="true" onClick={onClose} />
       <div
@@ -170,6 +178,7 @@ export function NewColumnDialog({ all, busy, error, onCreate, onClose }: NewColu
           </button>
         </footer>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }

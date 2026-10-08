@@ -89,16 +89,19 @@
 }
 
 @keyframes drawer-slidein {
-  /* The same 12px rise as before, without a transform (see `.drawer`): both
-     insets move together, so the box keeps its size and only shifts. */
+  /*
+   * The 12px rise as a transform again (round 2), but one that **ends at
+   * `none`**: with no fill mode nothing remains once the animation is over,
+   * so the drawer is not the containing block of the dropdown panel drawn
+   * inside it (see `.drawer`), and the rise animates on the compositor
+   * rather than relaying the drawer out every frame.
+   */
   from {
-    top: 12px;
-    bottom: -12px;
+    transform: translateY(12px);
     opacity: 0;
   }
   to {
-    top: 0;
-    bottom: 0;
+    transform: none;
     opacity: 1;
   }
 }

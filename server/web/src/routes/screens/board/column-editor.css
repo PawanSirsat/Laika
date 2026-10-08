@@ -24,6 +24,9 @@
   inset: 0;
   margin: auto;
   height: fit-content;
+  /* The whole box, padding and border included, or a phone's 1rem gutters
+     come out 20px short on the right (round 2). */
+  box-sizing: border-box;
   width: min(24rem, calc(100vw - 2rem));
   max-height: calc(100vh - 4rem);
   overflow-y: auto;
