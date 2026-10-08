@@ -645,3 +645,21 @@ describe('sprintTaskCounts (LAI-611)', () => {
     expectApiError(() => sprintTaskCounts(t.db, actor(outsider), 'laika'), 'forbidden');
   });
 });
+
+describe('sprintTaskCounts for one page of sprints (LAI-721 review)', () => {
+  it('counts only the sprints it is asked about — a page, not the project', () => {
+    const one = sprint({ name: 'Page one', starts_on: jan(1), ends_on: jan(14) });
+    const two = sprint({ name: 'Page two', starts_on: jan(15), ends_on: jan(28) });
+    addTasksToSprint(t.sqlite, t.db, actor(adminId), one.id, [task('a'), task('b')]);
+    addTasksToSprint(t.sqlite, t.db, actor(adminId), two.id, [task('c')]);
+
+    // Positive control: the whole project has both.
+    expect([...sprintTaskCounts(t.db, actor(adminId), 'laika').keys()].sort()).toEqual(
+      [one.id, two.id].sort(),
+    );
+
+    const page = sprintTaskCounts(t.db, actor(adminId), 'laika', [one.id]);
+    expect([...page.keys()]).toEqual([one.id]);
+    expect(page.get(one.id)?.total).toBe(2);
+  });
+});

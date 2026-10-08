@@ -249,6 +249,12 @@ export function sprintTaskCounts(
   db: Db,
   actor: ResolvedActor,
   slug: string,
+  /**
+   * Only these sprints (LAI-721 review): a page of the REST list counts its
+   * own sprints, not the whole project's on every page. Omitted, the whole
+   * project — what MCP's `list_sprints` asks for.
+   */
+  only?: readonly string[],
 ): Map<string, SprintTaskCounts> {
   const project = requireProjectBySlug(db, slug);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
@@ -259,7 +265,11 @@ export function sprintTaskCounts(
     .select({ sprintId: sprints.id, status: tasks.status, total: sql<number>`COUNT(*)` })
     .from(tasks)
     .innerJoin(sprints, eq(sprints.id, tasks.sprintId))
-    .where(eq(tasks.projectId, project.id))
+    .where(
+      only === undefined
+        ? eq(tasks.projectId, project.id)
+        : and(eq(tasks.projectId, project.id), inArray(sprints.id, [...only])),
+    )
     .groupBy(sprints.id, tasks.status)
     .all();
 
@@ -307,7 +317,13 @@ export function withTaskCounts(
   slug: string,
   rows: readonly SprintView[],
 ): SprintListView[] {
-  const counts = sprintTaskCounts(db, actor, slug);
+  if (rows.length === 0) return [];
+  const counts = sprintTaskCounts(
+    db,
+    actor,
+    slug,
+    rows.map((row) => row.id),
+  );
   const empty = (): SprintTaskCounts => ({
     total: 0,
     by_status: Object.fromEntries(TASK_STATUSES.map((s) => [s, 0])) as Record<TaskStatus, number>,
