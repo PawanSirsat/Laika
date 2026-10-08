@@ -131,7 +131,14 @@ const measure = (h: Harness) =>
   });
 
 void describe('the List’s Create row (LAI-717)', () => {
-  void test('few rows: it sits on the card’s foot, with the blank space above it', async () => {
+  /*
+   * **No blank card at all** (LAI-735, owner). LAI-717 pushed the Create row to
+   * the foot of a card stretched to the pane, which moved the blank above it:
+   * a band of empty card between the last row and Create. The card is now as
+   * tall as its rows, so both "Create on the card's foot" and "Create under the
+   * last row" hold. Under one row the band measured 349px on the old CSS.
+   */
+  void test('few rows: it sits directly under the last row, on the card’s foot', async () => {
     const h = await open('/list?project=laika-core', stub(1));
     try {
       await h.page.locator('.list-row').first().waitFor({ timeout: 20_000 });
@@ -143,9 +150,25 @@ void describe('the List’s Create row (LAI-717)', () => {
         `the Create row ends at ${String(m.createBottom)}, the card at ${String(m.cardBottom)}`,
       );
       assert.ok(
-        m.createTop - m.lastBottom > 200,
-        `the blank is not between the row and Create: ${String(m.createTop - m.lastBottom)}px`,
+        Math.abs(m.createTop - m.lastBottom) <= 1,
+        `a ${String(m.createTop - m.lastBottom)}px band of blank card between the row and Create`,
       );
+
+      // **The card has an edge** (LAI-735): `--border-subtle` (alpha 0.09 light,
+      // 0.08 dark) painted within 6 levels of the light canvas. This reads the
+      // token's alpha, not the pixels.
+      for (const theme of ['light', 'dark']) {
+        await setTheme(h.page, theme);
+        const alpha = await h.page.locator('.list-scroll').evaluate((el) => {
+          const found = /rgba\([^)]*,\s*([\d.]+)\)/.exec(getComputedStyle(el).borderTopColor);
+          return found === null ? null : [found[0], found[1]];
+        });
+        assert.ok(
+          alpha !== null && Number(alpha[1]) >= 0.15,
+          `${theme}: the card's border is too faint to see — ${String(alpha?.[0])}`,
+        );
+      }
+      await setTheme(h.page, 'light');
 
       // Still the control it was.
       await h.page.locator('.list-create').click();
