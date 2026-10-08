@@ -289,6 +289,7 @@ void describe('the Board’s top rows are gone (LAI-727)', () => {
           undefined,
           { timeout: 10_000 },
         );
+        // Kept as a sleep (LAI-715 sweep): a quiet window before absences: a condition cannot show that nothing more arrives.
         await h.page.waitForTimeout(400);
 
         assert.equal(await h.page.locator('.strip').count(), 0, 'the sprint strip is drawn');
@@ -367,6 +368,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
     const h = await open('/board?project=laika-core', STUB, { before: recordTaskReads(urls) });
     try {
       await reads(h, `S2 ${stripSummary('s2')}`);
+      // Kept as a sleep (LAI-715 sweep): a quiet window: a second read would come after this, so no condition can stand in.
       await h.page.waitForTimeout(800);
       assert.deepEqual(urls, ['?limit=200'], 'a task read beside the project’s one walk');
       assert.deepEqual(h.unmatched, []);
@@ -388,6 +390,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
         'positive control: the board is narrowed',
       );
       await reads(h, `S2 ${stripSummary('s2')}`);
+      // Kept as a sleep (LAI-715 sweep): a quiet window: a second read would come after this, so no condition can stand in.
       await h.page.waitForTimeout(800);
       assert.deepEqual(urls, theWalk(urls), `a scoped task read: ${urls.join(' ')}`);
       assert.equal(urls.length, 1, `expected the one walk, saw ${urls.join(' ')}`);
@@ -414,6 +417,7 @@ void describe('the figures come from the task set in the browser (LAI-727)', () 
         /filtered/i,
         'the figures are the project’s, not the filtered tasks’',
       );
+      // Kept as a sleep (LAI-715 sweep): a quiet window: a second read would come after this, so no condition can stand in.
       await h.page.waitForTimeout(800);
       assert.equal(urls.length, 1, `expected the one walk, saw ${urls.join(' ')}`);
     } finally {
@@ -643,7 +647,7 @@ void describe('the sidebar open, the row crowded (LAI-727 review)', () => {
             await setTheme(h.page, theme);
             await h.page.setViewportSize({ width, height: 768 });
             await h.page.locator('.lane').first().waitFor({ timeout: 10_000 });
-            await h.page.waitForTimeout(500);
+            await settled(h);
 
             // The crowding is real, or the width proves nothing.
             const m = await measureToolbar(h);
@@ -696,7 +700,7 @@ void describe('All sprints is always named (LAI-727 review)', () => {
       try {
         await reads(h, `All sprints ${stripSummary(undefined)}`);
         await h.page.setViewportSize({ width, height: 768 });
-        await h.page.waitForTimeout(500);
+        await settled(h);
         assert.equal(await h.page.locator('.bt-chip').count(), 0, 'positive control: no chip');
         const scope = h.page.locator('.bstats-scope');
         assert.equal(await scope.isVisible(), true, 'the scope is hidden');
@@ -746,7 +750,7 @@ void describe('the group is in the toolbar row in every tier (LAI-727 review)', 
       const seen = new Set<string>();
       for (const width of [...WIDTHS, ...[...WIDTHS].reverse()]) {
         await h.page.setViewportSize({ width, height: 768 });
-        await h.page.waitForTimeout(250);
+        await settled(h);
         const m = await measureToolbar(h);
         assertFits(m, `${String(width)}px`);
         seen.add(m.tier);
@@ -773,7 +777,7 @@ void describe('the pill (LAI-727 review)', () => {
         await setTheme(h.page, theme);
         await h.page.setViewportSize({ width: 920, height: 768 });
         await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
-        await h.page.waitForTimeout(400);
+        await settled(h);
 
         const pill = h.page.locator('.bstats');
         assert.match(
@@ -828,6 +832,7 @@ void describe('the pill (LAI-727 review)', () => {
         await tip.waitFor({ state: 'visible', timeout: 3000 });
         assert.equal(await pill.getAttribute('aria-expanded'), 'true');
         await h.page.mouse.move(5, 760);
+        // Kept as a sleep (LAI-715 sweep): a quiet window: the assertion is that the tip did *not* close.
         await h.page.waitForTimeout(200);
         assert.equal(await tipShows(), true, 'a clicked pill closed when the pointer left');
         await pill.click();
@@ -839,6 +844,44 @@ void describe('the pill (LAI-727 review)', () => {
     });
   }
 });
+
+/**
+ * **Wait for the layout to stop moving, not for a length of time** (LAI-715).
+ *
+ * These measurements used to follow a fixed 200–600ms sleep, which is a guess
+ * about the machine: on GitHub's runner a resize, a theme switch or a late
+ * answer could still be settling when the sleep ran out, and on a fast one the
+ * sleep is waste. The group picks its tier from a `ResizeObserver` and nothing
+ * here runs on a timer, so the layout is settled when the boxes that move —
+ * the toolbar, its chips, the figures, the faces and the lanes — read the same
+ * across three animation frames running.
+ */
+async function settled(h: Harness): Promise<void> {
+  await h.page.waitForFunction(
+    () =>
+      new Promise<boolean>((resolve) => {
+        const boxes = (): string =>
+          JSON.stringify(
+            [
+              ...document.querySelectorAll('.bt, .bt-chips, .bstats, .bt-member, .kanban, .lane'),
+            ].map((el) => {
+              const r = el.getBoundingClientRect();
+              return [r.top, r.left, r.width, r.height];
+            }),
+          );
+        const before = boxes();
+        const frames = (left: number): void => {
+          requestAnimationFrame(() => {
+            if (left > 1) frames(left - 1);
+            else resolve(boxes() === before);
+          });
+        };
+        frames(3);
+      }),
+    undefined,
+    { timeout: 10_000 },
+  );
+}
 
 /** `.kanban`'s top and the toolbar row's box, for "did anything move". */
 const rowGeometry = (h: Harness) =>
@@ -861,12 +904,19 @@ const rowGeometry = (h: Harness) =>
  * a line above, and the board dropped ~46px under the reader. Members,
  * sprints and presence are held back here so the first card is drawn before
  * any of them, which is the order a slow server produces.
+ *
+ * **Held on a gate, not delayed by a clock** (LAI-715). A 1200ms delay is
+ * only "after the first card" on a machine that draws the board in under
+ * 1200ms; GitHub's runner is not always one, and under 20x CPU throttling the
+ * board takes ~1.5s. The answers now wait until the first card has been
+ * measured, so the order is the test's, not the machine's.
  */
 void describe('the board does not move after it is drawn (LAI-727 review)', () => {
-  const late = async (page: Page): Promise<void> => {
+  const LATE = ['/members', '/sprints', '/presence'];
+  const late = async (page: Page, held: Promise<void>): Promise<void> => {
     for (const glob of ['**/members*', '**/sprints*', '**/presence*']) {
       await page.route(glob, async (route) => {
-        await new Promise((r) => setTimeout(r, 1200));
+        await held;
         await route.continue();
       });
     }
@@ -874,10 +924,14 @@ void describe('the board does not move after it is drawn (LAI-727 review)', () =
 
   for (const width of [1024, 920]) {
     void test(`${String(width)}px, sidebar open: members, sprints and counts land without a shift`, async () => {
+      let release = (): void => undefined;
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
       const h = await open('/board?project=laika-core&sprint=s2', SIX_MEMBERS, {
         before: async (page) => {
           await page.setViewportSize({ width, height: 768 });
-          await late(page);
+          await late(page, held);
         },
       });
       try {
@@ -888,17 +942,29 @@ void describe('the board does not move after it is drawn (LAI-727 review)', () =
           0,
           'positive control: the members had already landed — nothing late to measure',
         );
+        // Every held answer, counted as it lands — not a guess at when it has.
+        const landed = Promise.all(
+          LATE.map((path) =>
+            h.page.waitForResponse((r) => new URL(r.url()).pathname.endsWith(path), {
+              timeout: 20_000,
+            }),
+          ),
+        );
+        release();
+        await landed;
         await h.page.locator('.bt-member').first().waitFor({ timeout: 10_000 });
         await reads(h, `S2 ${stripSummary('s2')}`);
-        await h.page.waitForTimeout(600);
-        const settled = await rowGeometry(h);
+        await settled(h);
+        const after = await rowGeometry(h);
         assert.ok(
-          Math.abs(settled.kanban - first.kanban) <= 1,
-          `the lanes moved ${String(settled.kanban - first.kanban)}px after the first card`,
+          Math.abs(after.kanban - first.kanban) <= 1,
+          `the lanes moved ${String(after.kanban - first.kanban)}px after the first card`,
         );
-        assert.ok(Math.abs(settled.rowTop - first.rowTop) <= 1, 'the toolbar row moved');
-        assert.ok(Math.abs(settled.rowHeight - first.rowHeight) <= 1, 'the toolbar row grew');
+        assert.ok(Math.abs(after.rowTop - first.rowTop) <= 1, 'the toolbar row moved');
+        assert.ok(Math.abs(after.rowHeight - first.rowHeight) <= 1, 'the toolbar row grew');
       } finally {
+        // Released before unrouting, so a failure above cannot leave a route waiting.
+        release();
         await h.page.unrouteAll({ behavior: 'ignoreErrors' });
         await h.close();
       }
@@ -924,7 +990,7 @@ void describe('the board does not move after it is drawn (LAI-727 review)', () =
         await h.page.setViewportSize({ width, height: 768 });
         await h.page.locator('.bt-member').first().waitFor({ timeout: 20_000 });
         await h.page.locator('.card').first().waitFor({ timeout: 10_000 });
-        await h.page.waitForTimeout(600);
+        await settled(h);
         const before = await rowGeometry(h);
 
         await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
@@ -940,7 +1006,7 @@ void describe('the board does not move after it is drawn (LAI-727 review)', () =
           timeout: 5000,
         });
         await h.page.locator('.bt-badge').waitFor({ timeout: 5000 });
-        await h.page.waitForTimeout(600);
+        await settled(h);
         const after = await rowGeometry(h);
 
         assert.ok(
