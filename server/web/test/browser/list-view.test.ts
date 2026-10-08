@@ -996,6 +996,9 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         const notice = h.page.locator('.board-bad-filter');
         await notice.waitFor({ timeout: 20_000 });
         assert.match(await notice.innerText(), new RegExp(`not a valid ${word}`));
+        // Not applied, so not counted and not a chip (LAI-487's rule).
+        assert.equal(await h.page.locator('.bt-chip').count(), 0, 'the refused value has a chip');
+        assert.equal(await badge(h), '0', 'the badge counts a refused value');
         await h.page.locator('.list tbody tr').first().waitFor({ timeout: 10_000 });
         assert.deepEqual(
           await keysOnScreen(h),

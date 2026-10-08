@@ -13,7 +13,21 @@ import { SpaceFilterClaim } from './SpaceSlot.tsx';
 import { BAND_SLOT_ID, SLOT_ID } from './SpaceSlot.tsx';
 import { ViewTabs } from './ViewTabs.tsx';
 import type { TaskPriority } from '../../api/tasks.ts';
+import { isPriority, isTagName } from '../../api/task-filter.ts';
 import './space.css';
+
+/**
+ * The bar shows only values the board applies (LAI-724): a refused
+ * `?priority=` or `?tag=` is named by the board and ignored, so the bar's
+ * controls must not present it as set.
+ */
+function validPriority(raw: string | null): TaskPriority | undefined {
+  return raw !== null && isPriority(raw) ? raw : undefined;
+}
+
+function validTag(raw: string | null): string | undefined {
+  return raw !== null && isTagName(raw) ? raw : undefined;
+}
 
 export interface SpaceLayoutProps {
   readonly children: ReactNode;
@@ -168,10 +182,10 @@ function SpaceFrame({
             <SpaceTopBar
               members={members}
               query={params.get('q') ?? ''}
-              priority={(params.get('priority') ?? undefined) as TaskPriority | undefined}
+              priority={validPriority(params.get('priority'))}
               agentOnly={params.get('agent') === 'true'}
               tags={tags}
-              tag={params.get('tag') ?? undefined}
+              tag={validTag(params.get('tag'))}
               assignee={params.get('assignee') ?? undefined}
               ready={params.get('ready') === 'true'}
               onQuery={(value) => {
