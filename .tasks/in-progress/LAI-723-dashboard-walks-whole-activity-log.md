@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
 discovered-from: LAI-722
-status: review
+status: in-progress
 started: 2026-10-08T12:28:47Z
 finished: 2026-10-08T13:00:32Z
 ---
@@ -34,7 +34,7 @@ Make the Dashboard's activity read proportionate to what it draws.
 - [x] A live refresh does not re-read events the Dashboard already holds.
 - [x] The "all time" range does not fetch more events than the screen uses,
       or the server answers the aggregate the screen needs instead.
-- [x] The counts on screen are unchanged against a project with more than
+- [ ] The counts on screen are unchanged against a project with more than
       200 events in the window (the case LAI-722 made correct).
 
 ## Notes / context
@@ -76,3 +76,11 @@ Not fixed in LAI-722: it is client work, for the client performance phase.
   requests to 5, with one activity request.
 - **Correction:** `started` was claimed as 14:05Z, a guess; the claim commit is
   12:28:47Z.
+
+## Review notes (round 1)
+
+**CHANGES REQUIRED** (with LAI-724). Unticked: the exact-counts criterion.
+Frames that arrive during the **first** walk of the window were dropped
+(`activity-store.ts:341`), so the window could end one event short with no
+further request. The "Closed by" section above claimed more than the tests
+proved. The orchestrator ran the full gate on 6639cf7: TEST 0, LINT 0, FMT 0.

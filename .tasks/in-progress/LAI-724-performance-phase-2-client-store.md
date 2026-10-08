@@ -5,7 +5,7 @@ area: web
 assignee: owner-direct
 priority: p1
 depends-on: [LAI-722]
-status: review
+status: in-progress
 started: 2026-10-08T12:28:38Z
 finished: 2026-10-08T13:00:32Z
 ---
@@ -59,7 +59,7 @@ Not touched: `routes/screens/timeline/TimelineScreen.tsx`, `timeline.css`,
 
 ## Acceptance criteria
 
-- [x] One in-memory store under `server/web/src/api/`, kept across tab switches:
+- [ ] One in-memory store under `server/web/src/api/`, kept across tab switches:
       the same GET in flight twice is one request; cached data shows at once on
       revisiting a tab and revalidates in the background at most once per 30 s
       or on an invalidation; a request is aborted only when no subscriber
@@ -75,7 +75,7 @@ Not touched: `routes/screens/timeline/TimelineScreen.tsx`, `timeline.css`,
       before, the store keeps every child in `byId`.
 - [x] Capacity reads the open project's tasks from the store and makes no
       `GET /tasks/:id` for them; its cold load is 16 requests or fewer.
-- [x] LAI-723: a live frame costs the Dashboard one small activity request, the
+- [ ] LAI-723: a live frame costs the Dashboard one small activity request, the
       counts are unchanged against a project with more than 200 events in the
       window, and "All time" cannot be held stale by frequent frames.
 - [x] No endpoint is requested twice on the cold load of any tab.
@@ -105,3 +105,39 @@ and every changed file are in `logs/perf-2026-10-08.md` (entry 13:00Z).
   guess; the filing commit is 12:28:38Z, and `started` now says so.
 - **The gate criterion is ticked on the gate run after this commit** — the
   exit codes are in the builder's report, on the HEAD that carries this file.
+
+## Review notes (round 1)
+
+**Verdict: CHANGES REQUIRED** — two blocking, five should-fix, four nits, one
+question. No cross-user leak was found, and the isolation and lifecycle design
+passed. The **orchestrator** ran the full gate on 6639cf7: TEST 0, LINT 0,
+FMT 0 (this answers should-fix 6, the evidence for the gate criterion).
+
+Unticked: AC1 (bounded memory) and the LAI-723 sub-criterion (exact counts).
+
+- **B1** — the shared cache keeps every GET answer for the session, whatever
+  its `maxAge` (`query-cache.ts:102-110`); entries drop only in `setUser`.
+  New keys keep arriving (`activity?since=`, cursor pages, `/tasks/:id`,
+  other projects). Fix: keep data only when `maxAge > 0`, drop a `maxAge: 0`
+  entry when it settles, evict other projects' keys on a switch, a hard LRU
+  cap; remove the unused `peek`.
+- **B2** — frames during the first activity walk are dropped
+  (`activity-store.ts:341` returns while nothing is held): 450 of 451 and no
+  further request. Fix: queue a catch-up whenever a flight is running. Correct
+  the header and LAI-723's "Closed by" to claim only what the tests prove.
+- **S1** — the "Updated within" test lost its teeth (every task an hour old).
+- **S2** — the glow test counts `[data-flash]` after a settle that races
+  `FLASH_MS`.
+- **S3** — comments in `tasks.ts:177-178` and `BoardScreen.tsx` still say
+  filtering is server-side.
+- **S4** — (a) an invalid `?priority=`/`?tag=` used to be a 400/422 and is now a
+  silently empty board; (b) past the page cap, filters apply only to the loaded
+  tasks and the banner does not say so; file the web-vs-server filter
+  equivalence test.
+- **S5** — presence can stay stale (settle 1.5 s < freshness 2 s, frames do not
+  invalidate `/presence`).
+- **Nits** — `store.ts` in the scope list; the activity request bypasses the
+  one-page-reads guard; `byId`/`blockedState` should use the whole project;
+  a comment that catching up by `seq` would be sturdier.
+- **Question** — do the Label (and other) filter options derive from the full
+  project or the filtered set?
