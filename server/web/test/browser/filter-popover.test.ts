@@ -13,6 +13,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { pick } from './dropdown.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -264,7 +265,8 @@ void describe('the Filter popover (LAI-717)', () => {
       assert.equal(await clearAll.count(), 1, 'the header has no Clear all');
       assert.equal(await clearAll.isDisabled(), true, 'Clear all is live with nothing to clear');
 
-      await dialog.getByRole('combobox', { name: 'Status' }).selectOption('in_progress');
+      // The field is the app's dropdown now (LAI-726): chosen as a person does.
+      await pick(dialog.getByRole('combobox', { name: 'Status', exact: true }), 'in_progress');
       await waitForRows(h, 1);
       assert.equal(await clearAll.isDisabled(), false, 'Clear all stayed disabled');
 
@@ -302,9 +304,10 @@ void describe('the Filter popover (LAI-717)', () => {
           },
           [name, property] as const,
         );
+      // The field's own control — the dropdown's trigger since LAI-726.
       const style = (label: string) =>
         cell(label)
-          .locator('select')
+          .locator('[role="combobox"]')
           .evaluate((el) => {
             const cs = getComputedStyle(el);
             return { border: cs.borderTopColor, background: cs.backgroundColor };
@@ -327,7 +330,7 @@ void describe('the Filter popover (LAI-717)', () => {
       );
 
       // Hovering an unset field must not look like setting it.
-      await cell('Label').locator('select').hover();
+      await cell('Label').locator('[role="combobox"]').hover();
       const hovered = (await style('Label')).border;
       assert.notEqual(hovered, accent, 'hover on an unset field reads as set');
       assert.notEqual(
@@ -511,9 +514,12 @@ const SCREENS = [
   { name: 'Board', path: '/board?project=laika-core', ready: '.card', stub: STUB },
   {
     // The populated sprint strip sits above the toolbar (review, round 2).
+    // Ready once its chip is drawn, not once `.strip` exists: the strip mounts
+    // before its sprints arrive, and measuring then measured the short Board
+    // (LAI-717 round 2, carried by LAI-726).
     name: 'Board with an active sprint',
     path: '/board?project=laika-core',
-    ready: '.strip',
+    ready: '.strip .strip-chip',
     stub: ACTIVE,
   },
 ] as const;
@@ -525,6 +531,12 @@ for (const screen of SCREENS) {
       try {
         await h.page.setViewportSize({ width: 1366, height: 768 });
         await h.page.locator(screen.ready).first().waitFor({ timeout: 20_000 });
+        if (screen.stub === ACTIVE) {
+          // …and the Board has opened itself on that sprint (LAI-713).
+          await h.page.waitForFunction(() => location.search.includes('sprint=s1'), undefined, {
+            timeout: 10_000,
+          });
+        }
         await openFilter(h);
         const fit = await h.page.locator('.bt-pop').evaluate((pop) => {
           const r = pop.getBoundingClientRect();
@@ -604,7 +616,7 @@ for (const screen of SCREENS) {
       );
       try {
         await h.page.locator(screen.ready).first().waitFor({ timeout: 20_000 });
-        // A field's reset → that field's select.
+        // A field's reset → that field's control.
         await openFilter(h);
         await h.page.getByRole('button', { name: 'Reset Priority', exact: true }).click();
         await h.page.waitForFunction(() => !location.search.includes('priority='), undefined, {
@@ -615,7 +627,7 @@ for (const screen of SCREENS) {
             .locator('.bt-pop .bt-cell', {
               has: h.page.locator('.bt-label', { hasText: 'Priority' }),
             })
-            .locator('select')
+            .locator('[role="combobox"]')
             .evaluate((el) => el === document.activeElement),
           true,
           `Reset Priority left focus on ${await focused(h)}`,
@@ -703,11 +715,11 @@ void describe('Tab order in the Filter popover (LAI-717)', () => {
         .locator('.bt-pop')
         .evaluate(
           (pop) =>
-            [...pop.querySelectorAll('select, input, button')].filter(
+            [...pop.querySelectorAll('[role="combobox"], input, button')].filter(
               (el) => !(el as HTMLButtonElement).disabled,
             ).length,
         );
-      // 6 selects, 5 toggles, Clear all and Status's reset.
+      // 6 dropdowns, 5 toggles, Clear all and Status's reset.
       assert.equal(expected, 13, 'positive control: the controls are all there');
 
       const reached: string[] = [];
@@ -715,7 +727,7 @@ void describe('Tab order in the Filter popover (LAI-717)', () => {
         const step = await h.page.evaluate(() => {
           const el = document.activeElement as HTMLElement | null;
           if (el === null || !document.querySelector('.bt-pop')?.contains(el)) return null;
-          // The name, by the route each control here gets one: a select or a
+          // The name, by the route each control here gets one: a dropdown or a
           // checkbox from its <label> (the field's own words, not its options),
           // a button from its text.
           const label = (el as HTMLInputElement).labels?.[0];
@@ -730,7 +742,7 @@ void describe('Tab order in the Filter popover (LAI-717)', () => {
         await h.page.keyboard.press('Tab');
       }
       // Backwards from the first field reaches the header's Clear all.
-      await h.page.locator('.bt-pop select').first().focus();
+      await h.page.locator('.bt-pop [role="combobox"]').first().focus();
       await h.page.keyboard.press('Shift+Tab');
       const before = await focused(h);
       assert.equal(

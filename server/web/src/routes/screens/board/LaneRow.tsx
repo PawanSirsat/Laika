@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { TaskCard, type KeyMove } from './TaskCard.tsx';
 import {
   dropNeighbours,
@@ -547,19 +548,19 @@ export function LaneRow({
               {onReorder !== undefined && showColumnConfig && (
                 <label className="lane-order">
                   <span className="visually-hidden">Position of {column.name}</span>
-                  <select
+                  <Dropdown
+                    variant="bare"
                     className="lane-order-select"
-                    value={index + 1}
-                    onChange={(event) => {
-                      moveColumn(column.id, Number(event.target.value) - 1);
+                    noun="positions"
+                    value={String(index + 1)}
+                    onChange={(value) => {
+                      moveColumn(column.id, Number(value) - 1);
                     }}
-                  >
-                    {order.map((_, n) => (
-                      <option key={n} value={n + 1}>
-                        Position {n + 1} of {order.length}
-                      </option>
-                    ))}
-                  </select>
+                    options={order.map((_, n) => ({
+                      value: String(n + 1),
+                      label: `Position ${String(n + 1)} of ${String(order.length)}`,
+                    }))}
+                  />
                 </label>
               )}
             </header>
@@ -620,31 +621,32 @@ export function LaneRow({
                     */}
                       <label className="lane-move">
                         <span className="visually-hidden">Move {task.key} to</span>
-                        <select
-                          className="lane-move-select"
-                          value={task.status}
-                          disabled={movingId === task.id}
-                          onChange={(event) => {
-                            const to = event.target.value as MovableStatus;
-                            if (to !== task.status) onMove(task.id, to);
-                          }}
-                        >
-                          {/*
+                        {/*
                           The card's status control reads in **this board's**
                           names too (LAI-617) — picking "Testing" still stores
                           `review`. `lanes` carries every drawn column, which
                           is every column a movable status can live in; a
                           status with no owner falls back to its own name.
                         */}
-                          {MOVABLE_STATUSES.map((c) => (
-                            <option key={c} value={c}>
-                              {boardStatusLabel(
-                                c,
-                                lanes.map((l) => l.column),
-                              )}
-                            </option>
-                          ))}
-                        </select>
+                        <Dropdown
+                          variant="bare"
+                          className="lane-move-select"
+                          noun="statuses"
+                          value={task.status}
+                          disabled={movingId === task.id}
+                          onChange={(value) => {
+                            const to = value as MovableStatus;
+                            if (to !== task.status) onMove(task.id, to);
+                          }}
+                          options={MOVABLE_STATUSES.map((c) => ({
+                            value: c,
+                            label: boardStatusLabel(
+                              c,
+                              lanes.map((l) => l.column),
+                            ),
+                            icon: <span className={`dd-dot dd-dot-${c}`} />,
+                          }))}
+                        />
                       </label>
                     </div>
                   ),

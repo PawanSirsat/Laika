@@ -29,6 +29,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, refuse, type ApiStub, type Harness } from './harness.ts';
+import { pick } from './dropdown.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -333,7 +334,8 @@ void describe('the keyboard route', () => {
     try {
       await board(h);
 
-      await h.page.locator('.lane:nth-of-type(3) .lane-order-select').selectOption('1');
+      // The position control is the app's dropdown since LAI-726.
+      await pick(h.page.locator('.lane:nth-of-type(3) .lane-order-select'), '1');
       await h.page.waitForTimeout(150);
 
       assert.deepEqual(await titles(h), ['Review', 'To do', 'In progress', 'Done']);

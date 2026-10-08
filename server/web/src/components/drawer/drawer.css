@@ -38,11 +38,17 @@
  */
 .drawer {
   position: fixed;
-  top: 50%;
-  left: 50%;
-  right: auto;
-  bottom: auto;
-  transform: translate(-50%, -50%);
+  /*
+   * **Centred by its margins, not a transform** (LAI-726 round 1). A transform
+   * makes this box the containing block of every `position: fixed` element
+   * inside it, and with `overflow: hidden` it then clips them — a dropdown's
+   * list drawn inside the task panel (it must be, the panel is
+   * `aria-modal`) was cut off at the drawer's edge. Width and height are both
+   * set, so `inset: 0` and `margin: auto` centre it exactly as the transform
+   * did.
+   */
+  inset: 0;
+  margin: auto;
   /* Never taller than the window, and never touching it. */
   height: min(86vh, 56rem);
   max-height: 86vh;
@@ -83,14 +89,19 @@
 }
 
 @keyframes drawer-slidein {
+  /*
+   * The 12px rise as a transform again (round 2), but one that **ends at
+   * `none`**: with no fill mode nothing remains once the animation is over,
+   * so the drawer is not the containing block of the dropdown panel drawn
+   * inside it (see `.drawer`), and the rise animates on the compositor
+   * rather than relaying the drawer out every frame.
+   */
   from {
-    /* Keeps the centring transform — animating `translateX` alone would throw
-       the dialog half a screen left for the length of the animation. */
-    transform: translate(-50%, calc(-50% + 12px));
+    transform: translateY(12px);
     opacity: 0;
   }
   to {
-    transform: translate(-50%, -50%);
+    transform: none;
     opacity: 1;
   }
 }

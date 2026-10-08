@@ -1,4 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { createTask, PRIORITIES } from '../../../api/tasks.ts';
@@ -114,19 +115,16 @@ export function ColumnComposer({
       <div className="composer-foot">
         <label className={`composer-prio composer-prio-${priority}`}>
           <span className="visually-hidden">Priority</span>
-          <select
+          <Dropdown
+            variant="bare"
+            noun="priorities"
             value={priority}
             disabled={busy}
-            onChange={(event) => {
-              setPriority(event.target.value as (typeof PRIORITIES)[number]);
+            onChange={(value) => {
+              setPriority(value);
             }}
-          >
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p.toUpperCase()}
-              </option>
-            ))}
-          </select>
+            options={PRIORITIES.map((p) => ({ value: p, label: p.toUpperCase() }))}
+          />
         </label>
 
         {/* Where it will land, said rather than implied — the whole defect this

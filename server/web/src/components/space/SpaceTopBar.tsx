@@ -7,6 +7,7 @@ import { agentCount, cluster } from './top-bar-derive.ts';
 import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
 import { useSpaceFiltersClaimed } from './SpaceSlot.tsx';
 import { useShell } from '../shell/shell-context.ts';
+import { Dropdown } from '../Dropdown.tsx';
 
 export interface SpaceTopBarProps {
   readonly members: readonly Member[];
@@ -86,6 +87,8 @@ export function SpaceTopBar({
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable) {
           return;
         }
+        // A `Dropdown` is a select too (LAI-726): a key typed there is its own.
+        if (target.getAttribute('role') === 'combobox') return;
       }
 
       event.preventDefault();
@@ -260,21 +263,18 @@ export function SpaceTopBar({
                 className={priority === undefined ? 'space-select' : 'space-select space-chip-on'}
               >
                 <span className="visually-hidden">Priority</span>
-                <select
+                <Dropdown
+                  variant="bare"
+                  noun="priorities"
                   value={priority ?? ''}
-                  onChange={(event) => {
-                    onPriority(
-                      event.target.value === '' ? undefined : (event.target.value as TaskPriority),
-                    );
+                  onChange={(value) => {
+                    onPriority(value === '' ? undefined : value);
                   }}
-                >
-                  <option value="">Priority: all</option>
-                  {PRIORITIES.map((p) => (
-                    <option key={p} value={p}>
-                      Priority: {p.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'Priority: all', pinned: true },
+                    ...PRIORITIES.map((p) => ({ value: p, label: `Priority: ${p.toUpperCase()}` })),
+                  ]}
+                />
               </label>
 
               {tags.length > 0 && (
@@ -282,19 +282,21 @@ export function SpaceTopBar({
                   className={tag === undefined ? 'space-select' : 'space-select space-chip-on'}
                 >
                   <span className="visually-hidden">Tag</span>
-                  <select
+                  <Dropdown
+                    variant="bare"
+                    noun="tags"
                     value={tag ?? ''}
-                    onChange={(event) => {
-                      onTag(event.target.value === '' ? undefined : event.target.value);
+                    onChange={(value) => {
+                      onTag(value === '' ? undefined : value);
                     }}
-                  >
-                    <option value="">Any tag</option>
-                    {tags.map((t) => (
-                      <option key={t.name} value={t.name}>
-                        {t.name} ({t.task_count})
-                      </option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: '', label: 'Any tag', pinned: true },
+                      ...tags.map((t) => ({
+                        value: t.name,
+                        label: `${t.name} (${String(t.task_count)})`,
+                      })),
+                    ]}
+                  />
                 </label>
               )}
 
@@ -302,20 +304,19 @@ export function SpaceTopBar({
                 className={assignee === undefined ? 'space-select' : 'space-select space-chip-on'}
               >
                 <span className="visually-hidden">Assignee</span>
-                <select
+                <Dropdown
+                  variant="bare"
+                  noun="people"
                   value={assignee ?? ''}
-                  onChange={(event) => {
-                    onAssignee(event.target.value === '' ? undefined : event.target.value);
+                  onChange={(value) => {
+                    onAssignee(value === '' ? undefined : value);
                   }}
-                >
-                  <option value="">Anyone</option>
-                  <option value="none">Unassigned</option>
-                  {members.map((m) => (
-                    <option key={m.user_id} value={m.user_id}>
-                      {m.name}
-                    </option>
-                  ))}
-                </select>
+                  options={[
+                    { value: '', label: 'Anyone', pinned: true },
+                    { value: 'none', label: 'Unassigned', pinned: true },
+                    ...members.map((m) => ({ value: m.user_id, label: m.name })),
+                  ]}
+                />
               </label>
 
               <button

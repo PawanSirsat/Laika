@@ -199,7 +199,7 @@ export function TaskDetailPanel({
   const [draft, setDraft] = useState('');
   const [overflowOpen, setOverflowOpen] = useState(false);
   const [handoff, setHandoff] = useState<string | undefined>(undefined);
-  const statusRef = useRef<HTMLSelectElement | null>(null);
+  const statusRef = useRef<HTMLButtonElement | null>(null);
   const { theme } = useTheme();
   const now = Date.now();
   /*

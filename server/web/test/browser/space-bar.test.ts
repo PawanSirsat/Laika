@@ -16,6 +16,7 @@ import {
   type Harness,
   type StubCall,
 } from './harness.ts';
+import { pick } from './dropdown.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -275,10 +276,8 @@ void describe('the space bar', () => {
        * unchanged — choosing a priority writes `?priority=`.
        */
       await h.page.locator('.bt-button', { hasText: 'Filter' }).click();
-      await h.page
-        .locator('.bt-field', { hasText: 'Priority' })
-        .locator('select')
-        .selectOption('p1');
+      // The field is the app's dropdown since LAI-726, chosen as a person does.
+      await pick(h.page.locator('.bt-field', { hasText: 'Priority' }).getByRole('combobox'), 'p1');
       await h.page.waitForFunction(
         () => window.location.search.includes('priority=p1'),
         undefined,

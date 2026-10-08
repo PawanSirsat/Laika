@@ -1,4 +1,5 @@
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ALL_STATUSES, statusLabel } from '../../../api/board-derive.ts';
@@ -228,20 +229,15 @@ export function ColumnDialog({
                     Its statuses ({column.statuses.map(statusLabel).join(', ')}) need a column. Move
                     them to:
                   </span>
-                  <select
+                  <Dropdown
+                    variant="bare"
                     className="cd-select"
+                    noun="columns"
                     value={target}
                     disabled={busy}
-                    onChange={(event) => {
-                      setTarget(event.target.value);
-                    }}
-                  >
-                    {others.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setTarget}
+                    options={others.map((c) => ({ value: c.id, label: c.name }))}
+                  />
                 </label>
               )}
 

@@ -85,7 +85,7 @@
   text-overflow: ellipsis;
 }
 
-.member-role select {
+.member-role .dd-trigger {
   font: inherit;
   font-size: var(--text-sm);
   color: var(--text-primary);
@@ -95,7 +95,7 @@
   padding: var(--space-1) var(--space-2);
 }
 
-.member-role select:focus-visible {
+.member-role .dd-trigger:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }

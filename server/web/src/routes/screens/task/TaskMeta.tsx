@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { AssignControl } from '../board/AssignControl.tsx';
 import { TagPicker } from '../board/TagPicker.tsx';
 import { ALL_STATUSES, boardStatusLabel } from '../../../api/board-derive.ts';
@@ -17,6 +17,7 @@ import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
 import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import type { DemoAgentBuild, DemoClaimLock } from '../../../demo/agent-runtime.ts';
 import './task-panel.css';
 
@@ -59,7 +60,11 @@ export interface TaskMetaProps {
   readonly onTagsChanged: (tags: readonly string[]) => void;
   /** Open another task in this drawer — the parent, or where this was discovered. */
   readonly onOpen: (taskId: string) => void;
-  readonly statusRef: React.RefObject<HTMLSelectElement | null>;
+  /**
+   * The status control. `HTMLElement`, not the `<select>` it was: since
+   * LAI-726 the control is `Dropdown`'s trigger, a `<button>`.
+   */
+  readonly statusRef: React.RefObject<HTMLElement | null>;
 }
 
 /** `4m`, `6d` — the design's short form beside a field. */
@@ -144,6 +149,12 @@ export function TaskMeta({
   const [detailsOpen, setDetailsOpen] = useState(() => readOpen('details', true));
   const [devOpen, setDevOpen] = useState(() => readOpen('development', false));
   const [error, setError] = useState<string | undefined>(undefined);
+  // The words that name each rail control (LAI-726), pointed at explicitly with
+  // `aria-labelledby`, so the name never rests on how a browser reads a label
+  // that also holds the control's value.
+  const statusId = useId();
+  const priorityId = useId();
+  const sprintId = useId();
 
   const named = (watchers ?? [])
     .map((id) => members.get(id)?.name)
@@ -184,27 +195,36 @@ export function TaskMeta({
       {/* The status, as Jira's coloured control: the field a reader changes most. */}
       <div className="meta-status-row">
         <label className={`meta-status meta-status-${task.status}`}>
-          <span className="visually-hidden">Status</span>
-          <select
-            ref={statusRef}
+          <span className="visually-hidden" id={statusId}>
+            Status
+          </span>
+          {/*
+            **All six, `cancelled` included** (LAI-266). The board never
+            resolves a drop to `cancelled` — a mis-drag must not cancel
+            somebody's work — so this control is the only way to reach it.
+            The pill shows the name alone; the list adds each status's dot
+            (LAI-726). The caret is the label's, so the trigger draws none.
+          */}
+          <Dropdown
+            variant="bare"
+            chevron={false}
+            triggerRef={(el) => {
+              statusRef.current = el;
+            }}
+            aria-labelledby={statusId}
+            noun="statuses"
             value={task.status}
             disabled={moving || !mayEdit}
-            onChange={(event) => {
-              const to = event.target.value as TaskStatus;
+            display={<span className="dd-value">{boardStatusLabel(task.status, columns)}</span>}
+            options={ALL_STATUSES.map((c) => ({
+              value: c,
+              label: boardStatusLabel(c, columns),
+              icon: <span className={`dd-dot dd-dot-${c}`} />,
+            }))}
+            onChange={(to) => {
               if (to !== task.status) onMove(task.id, to);
             }}
-          >
-            {/*
-              **All six, `cancelled` included** (LAI-266). The board never
-              resolves a drop to `cancelled` — a mis-drag must not cancel
-              somebody's work — so this control is the only way to reach it.
-            */}
-            {ALL_STATUSES.map((c) => (
-              <option key={c} value={c}>
-                {boardStatusLabel(c, columns)}
-              </option>
-            ))}
-          </select>
+          />
           <span className="meta-status-caret" aria-hidden="true" />
         </label>
         {mayEdit && task.status !== 'review' && task.status !== 'done' && (
@@ -300,20 +320,27 @@ export function TaskMeta({
                     `<label>` so its name does not join the select's. */}
                 <PriorityIcon priority={task.priority} />
                 <label className={`meta-select meta-prio meta-prio-${task.priority}`}>
-                  <span className="visually-hidden">Priority</span>
-                  <select
+                  <span className="visually-hidden" id={priorityId}>
+                    Priority
+                  </span>
+                  {/* The icon is already before the control, so the trigger
+                      shows the level's words alone; the list draws each. */}
+                  <Dropdown
+                    variant="bare"
+                    aria-labelledby={priorityId}
+                    noun="priorities"
                     value={task.priority}
                     disabled={!mayEdit}
-                    onChange={(event) => {
-                      void edit({ priority: event.target.value as (typeof PRIORITIES)[number] });
+                    display={<span className="dd-value">{task.priority.toUpperCase()}</span>}
+                    options={PRIORITIES.map((p) => ({
+                      value: p,
+                      label: p.toUpperCase(),
+                      icon: <PriorityIcon priority={p} />,
+                    }))}
+                    onChange={(value) => {
+                      void edit({ priority: value });
                     }}
-                  >
-                    {PRIORITIES.map((p) => (
-                      <option key={p} value={p}>
-                        {p.toUpperCase()}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
               </div>
             </div>
@@ -360,27 +387,33 @@ export function TaskMeta({
               <p className="meta-label">Sprint</p>
               <div className="meta-value">
                 <label className="meta-select">
-                  <span className="visually-hidden">Sprint</span>
-                  <select
+                  <span className="visually-hidden" id={sprintId}>
+                    Sprint
+                  </span>
+                  {/*
+                    **`No sprint` is a real option, not an absence** (LAI-619).
+                    Backlog work genuinely belongs to no sprint, and without
+                    this the only way out of one was the Sprints screen.
+                  */}
+                  <Dropdown
+                    variant="bare"
+                    aria-labelledby={sprintId}
+                    noun="sprints"
                     value={task.sprint_id ?? ''}
                     disabled={sprintBusy || !maySetSprint}
-                    onChange={(event) => {
-                      const to = event.target.value === '' ? null : event.target.value;
+                    options={[
+                      { value: '', label: 'No sprint', pinned: true },
+                      ...sprints.map((s) => ({
+                        value: s.id,
+                        label: s.name,
+                        badge: s.status === 'active' ? 'Active' : undefined,
+                      })),
+                    ]}
+                    onChange={(value) => {
+                      const to = value === '' ? null : value;
                       if (to !== (task.sprint_id ?? null)) onSprintChange(to);
                     }}
-                  >
-                    {/*
-                      **`No sprint` is a real option, not an absence** (LAI-619).
-                      Backlog work genuinely belongs to no sprint, and without
-                      this the only way out of one was the Sprints screen.
-                    */}
-                    <option value="">No sprint</option>
-                    {sprints.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </label>
               </div>
               {sprintError !== undefined && (
@@ -630,21 +663,18 @@ function ParentRow({ task, parent, candidates, mayEdit, onOpen, onChange }: Pare
           <label className="visually-hidden" htmlFor="parent-pick">
             Parent task
           </label>
-          <select
+          <Dropdown
             id="parent-pick"
+            variant="bare"
+            noun="tasks"
             value={picked}
             disabled={busy}
-            onChange={(event) => {
-              setPicked(event.target.value);
-            }}
-          >
-            <option value="">Choose a task…</option>
-            {candidates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.key} — {t.title}
-              </option>
-            ))}
-          </select>
+            options={[
+              { value: '', label: 'Choose a task…', pinned: true },
+              ...candidates.map((t) => ({ value: t.id, label: `${t.key} — ${t.title}` })),
+            ]}
+            onChange={setPicked}
+          />
           <button
             type="button"
             className="dep-confirm"

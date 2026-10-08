@@ -293,6 +293,12 @@
   color: var(--text-muted);
 }
 
+/* A `Dropdown` trigger since LAI-726: the value, then its chevron. */
+.org-role-select .dd-chevron {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
 .org-deactivate,
 .org-reactivate {
   font: inherit;

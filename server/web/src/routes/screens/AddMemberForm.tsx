@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../components/ApiErrorState.tsx';
 import { Button } from '../../components/forms/Button.tsx';
+import { Dropdown } from '../../components/Dropdown.tsx';
 import { LoadingState } from '../../components/LoadingState.tsx';
 import { listAllUsers, type OrgUser } from '../../api/users.ts';
 import { PROJECT_ROLES, ROLE_SUMMARY, type ProjectRole } from '../../api/members.ts';
@@ -184,19 +185,16 @@ export function AddMemberForm({ existingIds, busy, onAdd, onCancel }: AddMemberF
       <div className="member-add-actions">
         <label className="member-role">
           <span className="visually-hidden">Role for the person being added</span>
-          <select
+          <Dropdown
+            variant="bare"
+            noun="roles"
             value={role}
             disabled={busy}
-            onChange={(event) => {
-              setRole(event.target.value as ProjectRole);
+            onChange={(value) => {
+              setRole(value);
             }}
-          >
-            {PROJECT_ROLES.map((r) => (
-              <option key={r} value={r} title={ROLE_SUMMARY[r]}>
-                {r}
-              </option>
-            ))}
-          </select>
+            options={PROJECT_ROLES.map((r) => ({ value: r, label: r, title: ROLE_SUMMARY[r] }))}
+          />
         </label>
 
         {/* Disabled until someone is chosen — the server would 422 on an empty

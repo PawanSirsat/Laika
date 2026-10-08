@@ -1,6 +1,7 @@
 import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useState } from 'react';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { Dropdown } from '../../../components/Dropdown.tsx';
 import { ApiError } from '../../../api/errors.ts';
 import { childrenOf, subtaskProgress } from '../../../api/subtask-derive.ts';
 import {
@@ -194,27 +195,35 @@ export function SubtasksSection({
                 </button>
                 {/*
                   **Status and assignee change in place** (LAI-700), as Jira's
-                  rows do. Both are native selects — keyboard and screen reader
-                  for free — dressed as the pill and the avatar they replace.
-                  Neither sits inside `.sub-open`, so neither opens the child.
+                  rows do. Both are the app's dropdown (LAI-726) dressed as the
+                  pill and the avatar they replace, each named by its label's
+                  words. Neither sits inside `.sub-open`, so neither opens the
+                  child, and the dropdown's panel stops its own clicks.
                 */}
                 {mayEdit ? (
                   <label className={`dep-status dep-status-${child.status} sub-status`}>
-                    <span className="visually-hidden">Status of {child.key}</span>
-                    <select
+                    <span className="visually-hidden" id={`sub-status-${child.id}`}>
+                      Status of {child.key}
+                    </span>
+                    <Dropdown
+                      variant="bare"
+                      chevron={false}
+                      aria-labelledby={`sub-status-${child.id}`}
+                      noun="statuses"
                       value={child.status}
                       disabled={busy}
-                      onChange={(event) => {
-                        const to = event.target.value as TaskStatus;
+                      display={
+                        <span className="dd-value">{boardStatusLabel(child.status, columns)}</span>
+                      }
+                      options={ALL_STATUSES.map((status) => ({
+                        value: status,
+                        label: boardStatusLabel(status, columns),
+                        icon: <span className={`dd-dot dd-dot-${status}`} />,
+                      }))}
+                      onChange={(to: TaskStatus) => {
                         if (to !== child.status) void act(() => changeStatus(child.id, to));
                       }}
-                    >
-                      {ALL_STATUSES.map((status) => (
-                        <option key={status} value={status}>
-                          {boardStatusLabel(status, columns)}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </label>
                 ) : (
                   <span className={`dep-status dep-status-${child.status}`}>
@@ -234,30 +243,47 @@ export function SubtasksSection({
                       : { style: { background: ink.background, color: ink.foreground } })}
                   >
                     <span aria-hidden="true">{who === undefined ? '—' : initials(who.name)}</span>
-                    <span className="visually-hidden">Assignee of {child.key}</span>
+                    <span className="visually-hidden" id={`sub-assign-${child.id}`}>
+                      Assignee of {child.key}
+                    </span>
                     {/*
                       The project's members, not the org's — the list
                       `AssignControl` offers, for its reason: an assignee
                       outside the project cannot open their own work.
                     */}
-                    <select
+                    <Dropdown
+                      variant="bare"
+                      chevron={false}
+                      aria-labelledby={`sub-assign-${child.id}`}
+                      noun="people"
                       value={child.assignee_id ?? ''}
                       disabled={busy}
-                      onChange={(event) => {
-                        const next = event.target.value === '' ? null : event.target.value;
+                      options={[
+                        { value: '', label: 'Unassigned', pinned: true },
+                        ...[...members.values()].map((member) => ({
+                          value: member.user_id,
+                          label: `${member.name}${member.user_id === meId ? ' (you)' : ''}`,
+                          keywords: member.email,
+                          icon: (
+                            <span
+                              className="dd-avatar"
+                              style={{
+                                background: avatarColor(member.user_id, theme).background,
+                                color: avatarColor(member.user_id, theme).foreground,
+                              }}
+                            >
+                              {initials(member.name)}
+                            </span>
+                          ),
+                        })),
+                      ]}
+                      onChange={(value) => {
+                        const next = value === '' ? null : value;
                         if (next !== child.assignee_id) {
                           void act(() => assignTask(child.id, next));
                         }
                       }}
-                    >
-                      <option value="">Unassigned</option>
-                      {[...members.values()].map((member) => (
-                        <option key={member.user_id} value={member.user_id}>
-                          {member.name}
-                          {member.user_id === meId ? ' (you)' : ''}
-                        </option>
-                      ))}
-                    </select>
+                    />
                   </label>
                 ) : (
                   <span

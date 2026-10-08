@@ -21,6 +21,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator, Page } from 'playwright';
 import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { valueOf } from './dropdown.ts';
 
 const NOW = Date.now();
 const CORE = {
@@ -358,7 +359,12 @@ void describe('the task view draws the icon beside the priority control (LAI-705
           await h.page.goto(`${h.origin}/board?project=laika-core&task=${l.id}`);
           await h.page.locator('.panel-meta').waitFor({ timeout: 20_000 });
           const value = h.page.locator('.meta-value-prio');
-          assert.equal(await value.locator('select').inputValue(), l.level, `${at}: wrong value`);
+          // The control is the app's dropdown since LAI-726.
+          assert.equal(
+            await valueOf(value.locator('[role="combobox"]')),
+            l.level,
+            `${at}: wrong value`,
+          );
 
           const icon = await drawn(value.locator('.priority-icon'));
           assert.equal(icon.level, l.level, `${at}: wrong level`);
@@ -386,7 +392,7 @@ void describe('the task view draws the icon beside the priority control (LAI-705
           // here once clipped `P2` to `P` and every other check stayed green.
           const { before, gap, width, natural } = await value.evaluate((el) => {
             const i = el.querySelector('.priority-icon')?.getBoundingClientRect();
-            const s = el.querySelector('select')?.getBoundingClientRect();
+            const s = el.querySelector('[role="combobox"]')?.getBoundingClientRect();
             const label = el.querySelector('label');
             if (i === undefined || s === undefined || label === null)
               throw new Error('not laid out');
@@ -394,7 +400,8 @@ void describe('the task view draws the icon beside the priority control (LAI-705
             probe.className = 'meta-value';
             probe.append(label.cloneNode(true));
             el.after(probe);
-            const alone = probe.querySelector('select')?.getBoundingClientRect().width ?? -1;
+            const alone =
+              probe.querySelector('[role="combobox"]')?.getBoundingClientRect().width ?? -1;
             probe.remove();
             return {
               before: i.right <= s.left + 1,

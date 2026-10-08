@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { offered, pick, valueOf } from './dropdown.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -377,20 +378,24 @@ void describe('a subtask row changes status and assignee in place (LAI-700)', ()
     const h = await open('/board?project=laika-core&task=t1', STUB);
     try {
       await drawer(h);
-      const menu = row(h, 'LC-3').locator('.sub-status select');
+      // The app's dropdown since LAI-726: its options are read from its panel.
+      const menu = row(h, 'LC-3').locator('.sub-status [role="combobox"]');
       await menu.waitFor({ timeout: 10_000 });
       assert.equal(
         await menu.getAttribute('aria-label'),
         null,
         'named by its label, not a stray attribute',
       );
-      const values = await menu
-        .locator('option')
-        .evaluateAll((els: Element[]) => els.map((el) => (el as HTMLOptionElement).value));
+      await menu.click();
+      const listId = await menu.getAttribute('aria-controls');
+      const values = await h.page
+        .locator(`[id="${String(listId)}"] [role="option"]`)
+        .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('data-value')));
+      await h.page.keyboard.press('Escape');
       assert.deepEqual(values, ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled']);
-      assert.equal(await menu.inputValue(), 'in_progress');
+      assert.equal(await valueOf(menu), 'in_progress');
 
-      await menu.selectOption('done');
+      await pick(menu, 'done');
       await h.page.waitForTimeout(400);
 
       const post = h.calls.find((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/status');
@@ -406,18 +411,18 @@ void describe('a subtask row changes status and assignee in place (LAI-700)', ()
     const h = await open('/board?project=laika-core&task=t1', STUB);
     try {
       await drawer(h);
-      const picker = row(h, 'LC-3').locator('.sub-assign select');
+      const picker = row(h, 'LC-3').locator('.sub-assign [role="combobox"]');
       await picker.waitFor({ timeout: 10_000, state: 'attached' });
-      const labels = await picker.locator('option').allInnerTexts();
+      const labels = await offered(picker);
       assert.deepEqual(labels, ['Unassigned', 'Ada Lovelace (you)', 'Grace Hopper']);
-      assert.equal(await picker.inputValue(), 'u1');
+      assert.equal(await valueOf(picker), 'u1');
 
-      await picker.selectOption('u2');
+      await pick(picker, 'u2');
       await h.page.waitForTimeout(400);
       const assign = h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.deepEqual(assign[0]?.body, { assignee_id: 'u2' });
 
-      await picker.selectOption('');
+      await pick(picker, '');
       await h.page.waitForTimeout(400);
       const again = h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.deepEqual(again[1]?.body, { assignee_id: null });
@@ -457,7 +462,7 @@ void describe('a subtask row changes status and assignee in place (LAI-700)', ()
       await row(h, 'LC-3').waitFor({ timeout: 10_000 });
       assert.equal(await row(h, 'LC-3').locator('.dep-status').count(), 1);
       assert.equal(await row(h, 'LC-3').locator('.dep-avatar').count(), 1);
-      assert.equal(await h.page.locator('.sub-row select').count(), 0);
+      assert.equal(await h.page.locator('.sub-row [role="combobox"]').count(), 0);
     } finally {
       await h.close();
     }
