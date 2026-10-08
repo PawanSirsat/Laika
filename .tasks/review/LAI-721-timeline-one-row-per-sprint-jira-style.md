@@ -6,8 +6,9 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: in-progress
+status: review
 started: 2026-10-08T11:18:42Z
+finished: 2026-10-08T12:32:37Z
 ---
 
 ## Goal
@@ -44,34 +45,34 @@ tasks. Tasks have no bars of their own" — which D-049 had overridden.
 
 ## Acceptance criteria
 
-- [ ] One row per sprint, in date order. No row per task on the axis.
-- [ ] Each sprint row's left column names it (`S4` and its name), its dates
+- [x] One row per sprint, in date order. No row per task on the axis.
+- [x] Each sprint row's left column names it (`S4` and its name), its dates
       and its state (active, ended, planned); its bar spans `starts_on` to
       `ends_on` on the axis. Once a sprint is opened and its tasks are loaded,
       its row and bar show progress (`done/total`) and a blocked count.
-- [ ] **No whole-project walk** (owner's orchestrator, 2026-10-08): only the
+- [x] **No whole-project walk** (owner's orchestrator, 2026-10-08): only the
       sprint list loads up front; an opened sprint's tasks are fetched with
       `?sprint=<id>`, and the Unscheduled tray's with `?sprint=none` when it is
       opened. Asserted on the requests the page makes.
-- [ ] The axis scrolls left and right inside the card; the sprint column stays
+- [x] The axis scrolls left and right inside the card; the sprint column stays
       put while it does; the header (months, then weeks or months) stays put
       while rows scroll.
-- [ ] Zoom: Weeks, Months, Quarters. A **Today** button brings today into view;
+- [x] Zoom: Weeks, Months, Quarters. A **Today** button brings today into view;
       on open the chart is scrolled so today is in view.
-- [ ] Today is one vertical line with a label, across the header and rows.
-- [ ] A sprint opens and closes by its chevron (keyboard reachable,
+- [x] Today is one vertical line with a label, across the header and rows.
+- [x] A sprint opens and closes by its chevron (keyboard reachable,
       `aria-expanded`); opened, it lists its tasks — key, title, status,
       assignee — with no bar per task. A task opens in the task drawer.
-- [ ] Sprints are collapsed on open, except one named by `?sprint=`.
-- [ ] Past sprints are dimmed, not hidden (§11.4.3); the unscheduled tray
+- [x] Sprints are collapsed on open, except one named by `?sprint=`.
+- [x] Past sprints are dimmed, not hidden (§11.4.3); the unscheduled tray
       stays below the chart.
-- [ ] Design tokens only; both themes verified by screenshot; fits 1366 wide
+- [x] Design tokens only; both themes verified by screenshot; fits 1366 wide
       with no page-level horizontal scroll.
-- [ ] Browser tests for: one row per sprint and none per task, bar geometry
+- [x] Browser tests for: one row per sprint and none per task, bar geometry
       against the dates, horizontal scrolling with the sprint column fixed,
       zoom changing the scale, expand/collapse, and Today — each shown to fail
       against the old screen.
-- [ ] The repo-root gate is green: `pnpm test`, `pnpm lint`, `pnpm format` each
+- [x] The repo-root gate is green: `pnpm test`, `pnpm lint`, `pnpm format` each
       exit 0, run after the last edit.
 
 ## Notes / context
@@ -98,4 +99,25 @@ the repo and is re-claimed as soon as LAI-717 is back in review.
 On the go-ahead after LAI-717 went to review. If LAI-717 comes back with
 changes, those take priority: this task pauses at a clean commit, and having
 two tasks in progress for that reason is recorded in both files.
+
+## Builder's notes (2026-10-08T12:32:37Z)
+
+- **Data, on demand** (`use-timeline.ts`): sprints only up front; a sprint's
+  tasks via `?sprint=<id>` when opened; the tray via `?sprint=none` when
+  opened. The stub in `timeline-sprints.test.ts` refuses any task request that
+  names no sprint, so a walk would fail the run. Why not more: sprints carry
+  no counts and the tasks endpoint has no count or field projection, so a
+  sprint's progress shows once it is opened (D-074 §4).
+- **D-074** recorded; it was the next free number on every branch at writing.
+- **Tests:** `timeline-sprints.test.ts` (11) and `timeline-derive.test.ts`
+  (26). All 11 browser tests fail on the old screen, though uniformly at its
+  first wait (the old screen has no sprint rows). The behaviours are proven by
+  mutation instead: tasks walked up front, a non-sticky sprint column, zoom
+  ignored, no scroll to today — each fails its test.
+- `timeline-bars.test.ts` and `timeline-blocked-and-tabs.test.ts` removed:
+  they asserted task bars and the sprint-chip strip this replaces.
+- The today pill sits in the header's lower row, so it never hides a month's
+  or quarter's name.
+- Discovered, not done: LAI-725 (the space bar's filters show on the Timeline
+  and filter nothing — true before this task too).
 
