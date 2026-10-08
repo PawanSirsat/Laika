@@ -33,6 +33,12 @@ MutationObserver saw the List go from 0 to 50 rows once and stay, four runs out
 of four. So it is not the List blanking. It is a race in how the test reads the
 page on a slower machine.
 
+**The suite, not the app.** "a row opens the task drawer" failed on CI attempt 2
+of run 37769873902, yet passed 8 of 8 locally alone under an 8× CPU throttle.
+The difference is concurrency: `node --test` runs every browser test file at once,
+each launching Chromium, on a 4-vCPU runner. A likely lever is
+`--test-concurrency` for `test/browser/` in CI. Measure it rather than assume.
+
 ## Acceptance criteria
 
 - [ ] Sweep `server/web/test/browser/` for the shape all three share — an
