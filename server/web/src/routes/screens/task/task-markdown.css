@@ -194,6 +194,22 @@
   margin-bottom: 0;
 }
 
+/* A heading in a comment is a bold line a touch larger than the text, with
+   the thread's spacing — not the description's section-sized gap. */
+.md-comment h1,
+.md-comment h2,
+.md-comment h3,
+.md-comment h4,
+.md-comment h5,
+.md-comment h6 {
+  margin: 0.625rem 0 0.25rem;
+  font-size: 0.875rem;
+}
+
+.md-comment h1 {
+  font-size: 0.90625rem;
+}
+
 .md-comment li + li {
   margin-top: 0.125rem;
 }

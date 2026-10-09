@@ -1,4 +1,4 @@
-import Markdown, { type Components } from 'react-markdown';
+import Markdown, { type Components, type Options } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './task-markdown.css';
 
@@ -47,13 +47,16 @@ export interface TaskMarkdownProps {
   readonly className?: string;
   /** Extra element renderers. `a`, `img` and `table` above always win. */
   readonly components?: Components;
+  /** Tree transforms run after the safety rules above, for one surface. */
+  readonly rehypePlugins?: Options['rehypePlugins'];
 }
 
-export function TaskMarkdown({ source, className, components }: TaskMarkdownProps) {
+export function TaskMarkdown({ source, className, components, rehypePlugins }: TaskMarkdownProps) {
   return (
     <div className={className === undefined ? 'md' : `md ${className}`}>
       <Markdown
         remarkPlugins={[remarkGfm]}
+        rehypePlugins={rehypePlugins}
         components={components === undefined ? COMPONENTS : { ...components, ...COMPONENTS }}
       >
         {source}

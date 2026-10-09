@@ -70,6 +70,9 @@ const COMMENTS = [
   comment('c1', PROGRESS, 300_000),
   comment('c2', HOSTILE_LINK, 200_000),
   comment('c3', HOSTILE_HTML, 100_000),
+  // Hard breaks, both spellings: two trailing spaces, and a backslash.
+  comment('c4', 'a  \nb', 60_000),
+  comment('c5', 'a\\\nb', 50_000),
 ];
 
 const SUBJECT = {
@@ -159,7 +162,7 @@ async function openSubject(h: H): Promise<void> {
     .waitFor({ timeout: 20_000 });
   await h.page.locator('.card', { hasText: 'Import the backlog' }).first().click();
   await h.page.locator('.drawer').waitFor({ timeout: 10_000 });
-  await h.page.locator('.cmt').nth(2).waitFor({ timeout: 10_000 });
+  await h.page.locator('.cmt').nth(4).waitFor({ timeout: 10_000 });
 }
 
 /** The body of the `n`th comment in the thread. */
@@ -256,6 +259,21 @@ void describe('a comment renders as markdown', () => {
         await h.page.evaluate(() => (window as unknown as { __pwned?: boolean }).__pwned),
         undefined,
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a hard break is one line break, as in the description', async () => {
+    const h = await open('/board?project=laika-core', STUB);
+    try {
+      await openSubject(h);
+      for (const n of [3, 4]) {
+        const p = body(h, n).locator('p');
+        assert.equal(await p.locator('br').count(), 1, `comment ${String(n)} has no hard break`);
+        // A blank line between `a` and `b` reads `a\n\nb`.
+        assert.equal(await p.innerText(), 'a\nb', `comment ${String(n)} breaks twice`);
+      }
     } finally {
       await h.close();
     }
