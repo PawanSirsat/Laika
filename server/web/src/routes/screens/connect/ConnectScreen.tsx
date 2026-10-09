@@ -282,7 +282,9 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
 
             <div className="conn-block conn-block-main">
               <div className="conn-block-bar">
-                <span className="conn-block-label">Paste into Claude Code</span>
+                <span className="conn-block-label" id="conn-prompt-label">
+                  Paste into Claude Code
+                </span>
                 <CopyButton
                   text={prompt}
                   selects={promptRef}
@@ -292,7 +294,12 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
                   disabledReason="Mint a token first — the prompt carries it"
                 />
               </div>
-              <pre className="conn-pre conn-prompt" ref={promptRef} tabIndex={0}>
+              <pre
+                className="conn-pre conn-prompt"
+                ref={promptRef}
+                tabIndex={0}
+                aria-labelledby="conn-prompt-label"
+              >
                 {prompt}
               </pre>
             </div>
@@ -305,10 +312,12 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
               </p>
               <div className="conn-block">
                 <div className="conn-block-bar">
-                  <span className="conn-block-label">Terminal</span>
+                  <span className="conn-block-label" id="conn-manual-label">
+                    Terminal
+                  </span>
                   <CopyButton text={manualCommands()} what="the install commands" />
                 </div>
-                <pre className="conn-pre" tabIndex={0}>
+                <pre className="conn-pre" tabIndex={0} aria-labelledby="conn-manual-label">
                   {manualCommands()}
                 </pre>
               </div>
@@ -389,10 +398,17 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
 
               <div className="conn-block">
                 <div className="conn-block-bar">
-                  <span className="conn-block-label">CLAUDE.md — carries no token</span>
+                  <span className="conn-block-label" id="conn-claude-md-label">
+                    CLAUDE.md — carries no token
+                  </span>
                   <CopyButton text={block} selects={blockRef} what="the CLAUDE.md block" />
                 </div>
-                <pre className="conn-pre conn-claude-md" ref={blockRef} tabIndex={0}>
+                <pre
+                  className="conn-pre conn-claude-md"
+                  ref={blockRef}
+                  tabIndex={0}
+                  aria-labelledby="conn-claude-md-label"
+                >
                   {block}
                 </pre>
               </div>

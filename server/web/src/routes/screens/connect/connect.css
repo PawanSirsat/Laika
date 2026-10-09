@@ -61,6 +61,12 @@
   border-radius: var(--radius-pill);
 }
 
+/* The cards after the stepper share its left edge: the marker column plus
+   the gap beside it. */
+.conn-extra {
+  margin-left: calc(2rem + var(--space-3));
+}
+
 /* --------------------------------------------------------------- text */
 
 .conn-lede {
@@ -575,6 +581,10 @@
 
   .conn-card {
     padding: var(--space-3);
+  }
+
+  .conn-extra {
+    margin-left: calc(1.75rem + var(--space-2));
   }
 
   .conn-mint-button.bar-control {

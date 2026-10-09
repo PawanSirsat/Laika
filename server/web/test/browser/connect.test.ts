@@ -334,7 +334,10 @@ void describe('the page as a stepper (LAI-733)', () => {
         page: document.querySelector('.conn-page')?.getBoundingClientRect().width ?? 0,
       }));
       assert.ok(Math.abs(widths.bar - widths.main) <= 1, `header ${String(widths.bar)}px wide`);
-      assert.ok(widths.page < widths.main, 'the content is no longer a centred column');
+      assert.ok(
+        widths.page < widths.main,
+        'the content fills the full width instead of a centred column',
+      );
     } finally {
       await h.close();
     }

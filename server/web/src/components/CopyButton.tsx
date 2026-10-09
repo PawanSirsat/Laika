@@ -107,7 +107,7 @@ export function CopyButton({
     }, 4_000);
   };
 
-  const shown = outcome === 'copied' ? 'Copied ✓' : outcome === 'select' ? 'Press ⌘C' : label;
+  const shown = outcome === 'copied' ? 'Copied' : outcome === 'select' ? 'Press ⌘C' : label;
   // "Press ⌘C" keeps its own longer instruction below rather than a name.
   const named =
     what === undefined || outcome === 'select'
@@ -130,6 +130,7 @@ export function CopyButton({
       }}
     >
       {shown}
+      {outcome === 'copied' && <span aria-hidden="true"> ✓</span>}
       {outcome === 'select' && (
         <span className="visually-hidden"> — the text is selected, press Command or Control C</span>
       )}
