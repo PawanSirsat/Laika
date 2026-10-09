@@ -560,14 +560,6 @@
   color: var(--text-muted);
 }
 
-.comment-para {
-  margin: 0 0 0.4375rem;
-}
-
-.comment-para:last-child {
-  margin-bottom: 0;
-}
-
 /* The design's quoted request line: bordered, monospace, and scrolling rather
    than wrapping — a wrapped `POST` line is harder to read than a scrolled one. */
 .comment-code {
@@ -1577,17 +1569,16 @@
   color: var(--text-muted);
 }
 
-.cmt-body .panel-comment-body,
-.cmt-body .comment-para {
+.cmt-body .panel-comment-body {
   margin-left: 0;
   font-size: 0.875rem;
   line-height: 1.55;
   color: var(--text-primary);
 }
 
-/* The code block, roomier and unlabelled — see the note in `CommentBody`. */
+/* The code block, roomier and unlabelled — see the note in `CommentBody`.
+   Its margins are the comment's markdown spacing (`.md-comment`). */
 .cmt-body .comment-code {
-  margin: 0.5rem 0 0;
   padding: 0.6875rem 0.875rem;
   border-radius: 9px;
 }
