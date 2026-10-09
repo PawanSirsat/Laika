@@ -73,5 +73,8 @@ nothing is added.
 2026-10-09, by polly (orchestrator), for release 4. Review: APPROVED by
 independent review. Integrated on `build-release-4`; the only conflict was
 `logs/chief-2026-10-09.md`, resolved by keeping every entry in timestamp
-order. The last fix round (4444430, hard breaks and
-thread-sized headings) is under a quick security re-check at accept time.
+order. The security re-check of the last fix round (4444430, hard breaks and
+thread-sized headings) found an open `rehypePlugins` prop on `TaskMarkdown`
+that ran caller transforms before raw-HTML escaping. It was not reachable from
+untrusted input. Fixed in 6d6ff1b, which removes the prop and adds a props
+test. Fix confirmation by the reviewer is pending at merge time.
