@@ -1,83 +1,97 @@
 /*
- * Connect (LAI-622). Tokens only — no colour literal lives outside
- * styles/theme.css, and theme-single-source.test.ts enforces it.
+ * Connect (LAI-622, laid out as a stepper in LAI-733). Tokens only — no colour
+ * literal lives outside styles/theme.css, and theme-single-source.test.ts
+ * enforces it.
  */
 
+/* The screen fills the content area so its header spans it like every other
+   screen's; only the page below the header is a centred column. With the cap
+   on the whole screen, the header was a white strip the column's width,
+   floating over an empty canvas. */
 .connect {
   display: flex;
   flex-direction: column;
-  gap: var(--space-5);
-  padding-bottom: var(--space-6);
+  min-width: 0;
+}
 
-  /* Centred as one column rather than hugging the left edge. Every child is
-     capped at 46rem for line length, so on a wide screen the page was a narrow
-     strip against the left with the rest of the viewport empty.
-
-     The cap lives on the container, not here in a second place: the width is
-     the children's 46rem plus the gutter they already carry, so centring
-     changes where the column sits and nothing about how wide it is. */
+.conn-page {
+  box-sizing: border-box;
   width: 100%;
-  max-width: calc(46rem + 2 * var(--space-4));
+  max-width: 50rem;
   margin-inline: auto;
-}
-
-.conn-lede {
-  margin: 0 var(--space-4);
-  max-width: 46rem;
-  font-size: var(--text-base);
-  line-height: 1.55;
-  color: var(--text-secondary);
-}
-
-.conn-step {
-  margin: 0 var(--space-4);
-  max-width: 46rem;
+  padding: var(--space-5) var(--space-4) var(--space-6);
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-5);
 }
 
-.conn-step-title {
-  display: flex;
+/* ------------------------------------------------------------- header */
+
+.conn-url {
+  display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0;
-  font-size: var(--text-base);
-  font-weight: var(--weight-bold);
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.125rem 0.125rem 0.125rem var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+}
+
+.conn-url-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.conn-url-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
   color: var(--text-primary);
 }
 
-/* The step badge, lifted from the first-boot rail: `color-mix` on
-   `currentColor` means it needs no colour of its own in either theme. */
-.conn-step-n {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.375rem;
-  height: 1.375rem;
-  flex: none;
+.conn-url .copy-button {
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, currentColor 14%, transparent);
-  font-size: var(--text-xs);
-  font-weight: var(--weight-heavy);
+}
+
+/* The cards after the stepper share its left edge: the marker column plus
+   the gap beside it. */
+.conn-extra {
+  margin-left: calc(2rem + var(--space-3));
+}
+
+/* --------------------------------------------------------------- text */
+
+.conn-lede {
+  margin: 0;
+  font-size: var(--text-ui);
+  line-height: 1.6;
+  color: var(--text-secondary);
 }
 
 .conn-body {
   margin: 0;
-  font-size: var(--text-sm);
-  line-height: 1.55;
+  font-size: var(--text-ui);
+  line-height: 1.6;
   color: var(--text-secondary);
 }
 
 .conn-note {
   margin: 0;
-  font-size: var(--text-xs);
-  line-height: 1.5;
+  font-size: var(--text-base);
+  line-height: 1.55;
   color: var(--text-muted);
 }
 
 .conn-note-warn {
-  padding: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   border-left: 2px solid var(--chip-orange);
   background: var(--chip-orange-bg);
   border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
@@ -86,38 +100,194 @@
 
 .conn-error {
   margin: 0;
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
   color: var(--overdue);
+}
+
+/* ------------------------------------------------------------ stepper */
+
+.conn-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.conn-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2rem minmax(0, 1fr);
+  column-gap: var(--space-3);
+  align-items: start;
+}
+
+/* The connector, from under this marker to the top of the next one. */
+.conn-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: calc(1rem - 1px);
+  top: 2.625rem;
+  bottom: calc(-1 * var(--space-4) + 0.625rem);
+  width: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--border-subtle);
+}
+
+.conn-step[data-state='done']:not(:last-child)::before {
+  background: var(--chip-green-border);
+}
+
+.conn-step-n {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 2rem;
+  height: 2rem;
+  margin-top: 0.625rem;
+  border: 2px solid var(--border-default);
+  border-radius: var(--radius-pill);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--text-ui);
+  font-weight: var(--weight-heavy);
+}
+
+.conn-step[data-state='done'] .conn-step-n {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.conn-step[data-state='current'] .conn-step-n {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.conn-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-column);
+  box-shadow: var(--shadow-card);
+}
+
+.conn-step[data-state='current'] .conn-card {
+  border-color: var(--accent-border);
+  box-shadow:
+    0 0 0 3px var(--accent-bg),
+    var(--shadow-card);
+}
+
+.conn-step-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-heavy);
+  line-height: 1.3;
+  color: var(--text-primary);
+}
+
+/* "Done" / "Up next" — the state in words, so it never rests on colour. */
+.conn-step-state {
+  margin-left: auto;
+  padding: 0.125rem var(--space-2);
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-pill);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+}
+
+.conn-step[data-state='done'] .conn-step-state {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.conn-step[data-state='current'] .conn-step-state {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
 }
 
 /* ------------------------------------------------------------------ mint */
 
-.conn-mint {
+.conn-mint,
+.conn-field {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.conn-mint {
+  align-items: stretch;
+}
+
+.conn-mint-row {
+  display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
 
 .conn-label {
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
 }
 
-.conn-input,
+.conn-input {
+  box-sizing: border-box;
+  flex: 1 1 14rem;
+  min-width: 0;
+  height: 2.25rem;
+  padding: 0 var(--space-3);
+  font: inherit;
+  font-size: var(--text-ui);
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  transition: var(--transition);
+}
+
+.conn-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.conn-mint-button.bar-control {
+  height: 2.25rem;
+  padding: 0 var(--space-4);
+  justify-content: center;
+}
+
 .conn-select {
   font: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-ui);
   color: var(--text-primary);
-  background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-chip);
+  background: var(--bg-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
   padding: var(--space-1) var(--space-2);
   min-width: 14rem;
 }
 
-.conn-input:focus-visible,
 .conn-select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -128,7 +298,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3);
+  padding: var(--space-4);
   background: var(--chip-orange-bg);
   border: 1px solid var(--chip-orange-border);
   border-radius: var(--radius-card);
@@ -136,38 +306,49 @@
 
 .conn-secret-title {
   margin: 0;
-  font-size: var(--text-sm);
+  font-size: var(--text-ui);
   font-weight: var(--weight-heavy);
   color: var(--chip-orange);
 }
 
 .conn-secret-row {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: var(--space-2);
   flex-wrap: wrap;
 }
 
 .conn-secret-value {
+  flex: 1 1 16rem;
+  min-width: 0;
+  display: flex;
+  align-items: center;
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
+  font-size: var(--text-mono);
+  line-height: 1.5;
   color: var(--text-primary);
   background: var(--bg-canvas);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-chip);
-  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
   word-break: break-all;
+}
+
+.conn-secret-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .conn-hide {
   font: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-base);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
-  background: none;
+  background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-chip);
-  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-control);
+  padding: var(--space-2) var(--space-3);
   cursor: pointer;
 }
 
@@ -181,13 +362,48 @@
   outline-offset: 2px;
 }
 
+/* The copy that matters on each block: accent-filled, and green once it has
+   copied. The compound selectors outrank copy-button.css whatever order the
+   two stylesheets land in. */
+.copy-button.conn-copy-primary {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+  border-radius: var(--radius-control);
+}
+
+.copy-button.conn-copy-primary:hover:not(:disabled) {
+  color: var(--on-accent);
+  border-color: var(--accent);
+  filter: brightness(1.06);
+}
+
+.copy-button.conn-copy-primary[data-outcome='copied'] {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+.copy-button.conn-copy-primary[data-outcome='select'] {
+  color: var(--chip-orange);
+  background: var(--chip-orange-bg);
+  border-color: var(--chip-orange-border);
+}
+
 /* --------------------------------------------------------------- blocks */
 
 .conn-block {
+  min-width: 0;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  background: var(--bg-card);
+  background: var(--bg-canvas);
   overflow: hidden;
+}
+
+.conn-block-main {
+  border-color: var(--border-default);
 }
 
 .conn-block-bar {
@@ -195,7 +411,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-2);
-  padding: var(--space-1) var(--space-2);
+  min-height: 2.25rem;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-column);
 }
@@ -210,16 +427,20 @@
 
 .conn-pre {
   margin: 0;
-  padding: var(--space-3);
-  overflow-x: auto;
+  padding: var(--space-3) var(--space-4);
+  overflow: auto;
   font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  line-height: 1.6;
+  font-size: var(--text-mono);
+  line-height: 1.7;
   color: var(--text-primary);
   white-space: pre;
   /* Long enough to read, short enough that the page is still scannable. */
-  max-height: 24rem;
-  overflow-y: auto;
+  max-height: 22rem;
+}
+
+.conn-pre:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .conn-alt {
@@ -229,10 +450,15 @@
 }
 
 .conn-alt > summary {
-  font-size: var(--text-sm);
+  width: fit-content;
+  font-size: var(--text-ui);
   font-weight: var(--weight-semibold);
   color: var(--text-secondary);
   cursor: pointer;
+}
+
+.conn-alt > summary:hover {
+  color: var(--text-primary);
 }
 
 .conn-alt > summary:focus-visible {
@@ -250,7 +476,7 @@
   padding: var(--space-3);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-card);
-  background: var(--bg-card);
+  background: var(--bg-canvas);
 }
 
 .conn-live-watching {
@@ -290,6 +516,7 @@
 .conn-tool-row dt {
   flex: none;
   width: 7rem;
+  padding-top: 0.125rem;
   font-size: var(--text-xs);
   font-weight: var(--weight-heavy);
   letter-spacing: 0.04em;
@@ -309,10 +536,63 @@
 .conn-body code,
 .conn-note code {
   font-family: var(--font-mono);
-  font-size: var(--text-base);
+  font-size: var(--text-mono);
   color: var(--accent);
   background: var(--accent-bg);
   border: 1px solid var(--accent-border);
   border-radius: var(--radius-chip);
   padding: 0 var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.conn-body a {
+  color: var(--accent);
+  font-weight: var(--weight-semibold);
+}
+
+.conn-body a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+/* ---------------------------------------------------------------- narrow */
+
+@media (max-width: 600px) {
+  .conn-page {
+    padding: var(--space-4) var(--space-4) var(--space-6);
+    gap: var(--space-4);
+  }
+
+  .conn-step {
+    grid-template-columns: 1.75rem minmax(0, 1fr);
+    column-gap: var(--space-2);
+  }
+
+  .conn-step:not(:last-child)::before {
+    left: calc(0.875rem - 1px);
+    top: 2.375rem;
+  }
+
+  .conn-step-n {
+    width: 1.75rem;
+    height: 1.75rem;
+  }
+
+  .conn-card {
+    padding: var(--space-3);
+  }
+
+  .conn-extra {
+    margin-left: calc(1.75rem + var(--space-2));
+  }
+
+  .conn-mint-button.bar-control {
+    flex: 1 1 auto;
+  }
+
+  .conn-select {
+    min-width: 0;
+    width: 100%;
+  }
 }

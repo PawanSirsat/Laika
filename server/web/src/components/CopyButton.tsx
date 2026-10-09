@@ -74,6 +74,13 @@ export interface CopyButtonProps {
    */
   readonly selects?: React.RefObject<HTMLElement | null> | undefined;
   readonly label?: string | undefined;
+  /**
+   * What lands on the clipboard, in words — `the setup prompt`. Gives the
+   * button an accessible name that says which of several identical "Copy"
+   * buttons this is (LAI-733). The visible label is kept inside the name, so
+   * a voice user saying "click Copy" still reaches it.
+   */
+  readonly what?: string | undefined;
   readonly disabled?: boolean | undefined;
   /** Why it is disabled — rendered as the title, so the reason is reachable. */
   readonly disabledReason?: string | undefined;
@@ -84,6 +91,7 @@ export function CopyButton({
   text,
   selects,
   label = 'Copy',
+  what,
   disabled = false,
   disabledReason,
   className,
@@ -100,6 +108,11 @@ export function CopyButton({
   };
 
   const shown = outcome === 'copied' ? 'Copied' : outcome === 'select' ? 'Press ⌘C' : label;
+  // "Press ⌘C" keeps its own longer instruction below rather than a name.
+  const named =
+    what === undefined || outcome === 'select'
+      ? undefined
+      : `${outcome === 'copied' ? 'Copied' : label} ${what}`;
 
   return (
     <button
@@ -107,6 +120,7 @@ export function CopyButton({
       className={className === undefined ? 'copy-button' : `copy-button ${className}`}
       data-outcome={outcome ?? 'idle'}
       disabled={disabled}
+      {...(named !== undefined ? { 'aria-label': named } : {})}
       {...(disabled && disabledReason !== undefined ? { title: disabledReason } : {})}
       onClick={() => {
         void copyText(text).then((result) => {
@@ -116,6 +130,7 @@ export function CopyButton({
       }}
     >
       {shown}
+      {outcome === 'copied' && <span aria-hidden="true"> ✓</span>}
       {outcome === 'select' && (
         <span className="visually-hidden"> — the text is selected, press Command or Control C</span>
       )}

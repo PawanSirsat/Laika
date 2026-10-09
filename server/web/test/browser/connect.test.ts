@@ -321,3 +321,113 @@ void describe('the live check', () => {
     }
   });
 });
+
+void describe('the page as a stepper (LAI-733)', () => {
+  void test('the header spans the content area, not the centred column', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.setViewportSize({ width: 1366, height: 900 });
+      await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
+      const widths = await h.page.evaluate(() => ({
+        bar: document.querySelector('.connect .screen-bar')?.getBoundingClientRect().width ?? 0,
+        main: document.querySelector('.shell-main')?.clientWidth ?? -1,
+        page: document.querySelector('.conn-page')?.getBoundingClientRect().width ?? 0,
+      }));
+      assert.ok(Math.abs(widths.bar - widths.main) <= 1, `header ${String(widths.bar)}px wide`);
+      assert.ok(
+        widths.page < widths.main,
+        'the content fills the full width instead of a centred column',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('minting ticks step 1 and moves "up next" to step 2', async () => {
+    const h = await open('/connect', stub(MINTS));
+    try {
+      const steps = h.page.locator('.conn-steps > .conn-step');
+      await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
+      assert.equal(await steps.count(), 4);
+      assert.equal(await steps.nth(0).getAttribute('aria-current'), 'step');
+      assert.equal(await steps.nth(1).getAttribute('aria-current'), null);
+      assert.match(await steps.nth(0).locator('.conn-step-n').innerText(), /^1$/);
+
+      await mint(h);
+      assert.equal(await steps.nth(0).getAttribute('data-state'), 'done');
+      assert.match(await steps.nth(0).locator('.conn-step-n').innerText(), /✓/);
+      assert.match(await steps.nth(0).locator('.conn-step-state').innerText(), /Done/);
+      assert.equal(await steps.nth(1).getAttribute('aria-current'), 'step');
+      // Steps 2 and 3 happen where the page cannot see; nothing ticks them.
+      assert.equal(await steps.nth(2).getAttribute('data-state'), 'todo');
+
+      // Hiding the token does not un-mint it.
+      await h.page.locator('.conn-hide').click();
+      await h.page.locator('.conn-forgotten').waitFor({ timeout: 10_000 });
+      assert.equal(await steps.nth(0).getAttribute('data-state'), 'done');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('every copy button names what it copies', async () => {
+    const h = await open('/connect', stub(MINTS));
+    try {
+      await mint(h);
+      for (const name of [
+        'Copy the board URL',
+        'Copy the token',
+        'Copy the setup prompt',
+        'Copy the install commands',
+        'Copy the laika-claude command',
+        'Copy the CLAUDE.md block',
+      ]) {
+        assert.equal(
+          await h.page.getByRole('button', { name, exact: true }).count(),
+          1,
+          `no button named "${name}"`,
+        );
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('copying the prompt confirms it, and copies the prompt with the token', async () => {
+    const h = await open('/connect', stub(MINTS), {
+      before: async (page) => {
+        await page.addInitScript(() => {
+          const copied: string[] = [];
+          Object.defineProperty(window, '__copied', { value: copied });
+          Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: {
+              writeText: (text: string) => {
+                copied.push(text);
+                return Promise.resolve();
+              },
+            },
+          });
+        });
+      },
+    });
+    try {
+      await mint(h);
+      const copy = h.page.getByRole('button', { name: 'Copy the setup prompt', exact: true });
+      await copy.click();
+      const done = h.page.getByRole('button', { name: 'Copied the setup prompt', exact: true });
+      await done.waitFor({ timeout: 10_000 });
+      assert.equal(await done.getAttribute('data-outcome'), 'copied');
+      assert.match(await done.innerText(), /Copied ✓/);
+
+      const copied = await h.page.evaluate(
+        () => (window as unknown as { __copied: string[] }).__copied,
+      );
+      assert.equal(copied.length, 1);
+      assert.equal(copied[0], await h.page.locator('.conn-prompt').innerText());
+      assert.ok(copied[0]?.includes(SECRET), 'the copied prompt lost the token');
+    } finally {
+      await h.close();
+    }
+  });
+});
