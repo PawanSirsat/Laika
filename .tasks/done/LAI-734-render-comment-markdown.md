@@ -77,4 +77,4 @@ order. The security re-check of the last fix round (4444430, hard breaks and
 thread-sized headings) found an open `rehypePlugins` prop on `TaskMarkdown`
 that ran caller transforms before raw-HTML escaping. It was not reachable from
 untrusted input. Fixed in 6d6ff1b, which removes the prop and adds a props
-test. Fix confirmation by the reviewer is pending at merge time.
+test. The reviewer confirmed the fix (APPROVE) on 6d6ff1b before the push.
