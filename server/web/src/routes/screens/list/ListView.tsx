@@ -248,9 +248,9 @@ export function ListView({
 
   /*
    * **The design closes the table with its own create row**, and since
-   * LAI-717 it is pinned to the card's foot: under a short list the blank
-   * space sits *above* it, and under a long one it stays in view as the rows
-   * scroll (`list.css`). One element for both cases below, so the empty List
+   * LAI-717 it is pinned to the card's foot: under a short list it sits
+   * directly under the last row, the card no taller than its rows (LAI-735),
+   * and under a long one it stays in view as the rows scroll (`list.css`). One element for both cases below, so the empty List
    * offers the same way to add work as the full one.
    */
   const createRow = canAdd && (

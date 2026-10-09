@@ -21,8 +21,10 @@
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  /* The pane's own air, matching the board's. */
-  padding: 0.875rem 1.125rem 1.125rem;
+  /* No air of its own: `.board-main` already gives the board's, and a second
+     helping inset the card 18px from the toolbar's edges and doubled the gap
+     above it (LAI-735). */
+  padding: 0;
   background: var(--bg-canvas);
   /* The Create row's height, fixed so the bulk bar can sit just above it. */
   --list-create-h: 2.125rem;
@@ -38,12 +40,17 @@
  * The card and what floats over it (LAI-717 review). A box of its own, so the
  * bulk bar is positioned from the card's foot rather than the pane's, which is
  * a pager's height lower and put the bar over the pinned Create row.
+ *
+ * **As tall as its rows, never taller** (LAI-735, owner). Stretched to the pane,
+ * a short list left a band of blank card between its last row and the Create
+ * row. It grows with the rows and shrinks to the pane once they overflow, so a
+ * long list still scrolls inside it.
  */
 .list-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-height: 0;
   min-width: 0;
 }
@@ -66,10 +73,7 @@
  * it the box grows to the table and there is nothing to scroll.
  */
 .list-scroll {
-  /*
-   * A column, so the Create row can be pushed to the card's foot
-   * (`margin-top: auto` on `.list-create`) when the rows do not fill it.
-   */
+  /* A column, so the empty state can take the space above the Create row. */
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
@@ -79,15 +83,16 @@
   overflow-x: auto;
   overscroll-behavior-x: contain;
   min-width: 0;
-  border: 1px solid var(--border-subtle);
+  /* `--border-default`, not `-subtle`: over the canvas, `-subtle` measured
+     within 6 of the page's own colour and the card had no edge (LAI-735). */
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-card);
   background: var(--bg-card);
   box-shadow: var(--shadow-card);
 }
 
 .list {
-  /* Its own height, always: the free space is the Create row's to push. And no
-     bottom margin — `board.css` once gave it 32px from when the List scrolled
+  /* Its own height, always. And no bottom margin — `board.css` once gave it 32px from when the List scrolled
      the page; inside its own card that was blank space under the last row. */
   flex: none;
   /* The design's 64rem plus the Due column (D-066), so Summary keeps its room,
@@ -478,11 +483,11 @@
 /*
  * **Pinned to the card's foot** (LAI-717, owner).
  *
- * Few rows: `margin-top: auto` takes the column's free space, so the blank
- * sits between the last row and this one rather than under it. Many rows: there
- * is no free space, and `sticky` holds it at the bottom of the scrollport while
- * the rows pass beneath — at the end of the scroll it is back in its own place
- * after the last row, so it never hides that row. `left: 0` keeps it in view
+ * Few rows: the card is as tall as its rows (LAI-735), so this sits directly
+ * under the last one and is the card's foot. Many rows: `sticky` holds it at
+ * the bottom of the scrollport while the rows pass beneath — at the end of the
+ * scroll it is back in its own place after the last row, so it never hides
+ * that row. `left: 0` keeps it in view
  * when the table is scrolled sideways. The background is an opaque token and
  * the stacking sits above the sticky header's, or rows would show through.
  */
@@ -492,7 +497,6 @@
   left: 0;
   z-index: 2;
   flex: none;
-  margin-top: auto;
   display: flex;
   align-items: center;
   gap: 0.4375rem;
