@@ -6,7 +6,7 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-08T19:48:24Z
 finished: 2026-10-08T19:52:14Z
 ---
@@ -92,3 +92,10 @@ task/log text, exited 1. Its only failures were the four tests in
 which is the known boot timeout under load. Re-run alone
 (`vitest run test/tooling/build.test.ts`) it exited 0 with 15/15. On that
 final tree `pnpm lint` exited 0 and `pnpm format` exited 0.
+
+## Accepted
+
+2026-10-09, by polly (orchestrator), for release 4. Review: APPROVED by
+independent review. Integrated on `build-release-4`; the only conflict was
+`logs/chief-2026-10-09.md`, resolved by keeping every entry in timestamp
+order.

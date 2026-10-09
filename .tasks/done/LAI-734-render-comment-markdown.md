@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-709]
 finished: 2026-10-08T20:01:08Z
 started: 2026-10-08T19:45:37Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -67,3 +67,11 @@ nothing is added.
   by design: it guards that the fence is still `.comment-code` with
   `data-language`, and that a long code line scrolls inside the drawer.
 - Screenshots: `/tmp/laika-ui-comment-md-shots/{before,after}-{light,dark}.png`.
+
+## Accepted
+
+2026-10-09, by polly (orchestrator), for release 4. Review: APPROVED by
+independent review. Integrated on `build-release-4`; the only conflict was
+`logs/chief-2026-10-09.md`, resolved by keeping every entry in timestamp
+order. The last fix round (4444430, hard breaks and
+thread-sized headings) is under a quick security re-check at accept time.

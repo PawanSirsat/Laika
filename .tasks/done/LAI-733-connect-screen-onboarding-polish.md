@@ -6,7 +6,7 @@ assignee: chief
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-08T19:44:54Z
 finished: 2026-10-08T20:01:11Z
 ---
@@ -80,3 +80,10 @@ they were.
 - Gate: `pnpm test` 0, `pnpm lint` 0, `pnpm format` 0. No horizontal page
   overflow measured at 1366, 1024 and 390.
 - Screenshots: `/tmp/laika-ui-connect-shots/` (`before-*`, `after-*`).
+
+## Accepted
+
+2026-10-09, by polly (orchestrator), for release 4. Review: APPROVED by
+independent review. Integrated on `build-release-4`; the only conflict was
+`logs/chief-2026-10-09.md`, resolved by keeping every entry in timestamp
+order.
