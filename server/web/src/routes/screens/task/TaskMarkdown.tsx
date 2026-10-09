@@ -1,4 +1,4 @@
-import Markdown, { type Components, type Options } from 'react-markdown';
+import Markdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './task-markdown.css';
 
@@ -25,6 +25,12 @@ import './task-markdown.css';
  * Comments use it too (LAI-734), through `CommentBody`, which adds a class
  * and a `pre` of its own. A caller can add elements but never replace the
  * three above: they are merged last, so the safety rules hold on every surface.
+ *
+ * **A caller cannot pass a tree transform.** A rehype plugin runs before
+ * react-markdown escapes raw HTML and before the components map, so an
+ * open-ended plugin prop could turn raw HTML back into elements or retag an
+ * `img` past the rule above. The one transform a surface needs is owned here
+ * and switched on by a boolean.
  */
 
 const COMPONENTS: Components = {
@@ -41,22 +47,65 @@ const COMPONENTS: Components = {
   ),
 };
 
+interface HastNode {
+  readonly type: string;
+  readonly tagName?: string;
+  value?: string;
+  children?: HastNode[];
+}
+
+/**
+ * A hard break is one line break, not two.
+ *
+ * The renderer writes a hard break (`a··⏎b` or `a\⏎b`) as `<br>` **and** a
+ * `"\n"` text after it. Under the description's `white-space: normal` that
+ * newline collapses; under a comment's `pre-line` it is a second break, so
+ * the reader saw a blank line. This drops that one newline and nothing else:
+ * it only edits the text after a `br`, and creates or retags no element.
+ */
+function oneBreakPerHardBreak() {
+  const walk = (node: HastNode): void => {
+    const kids = node.children;
+    if (kids === undefined) return;
+    for (let i = 0; i < kids.length; i++) {
+      const next = kids[i + 1];
+      if (kids[i]?.tagName === 'br' && next?.type === 'text' && next.value?.startsWith('\n')) {
+        next.value = next.value.slice(1);
+      }
+      const kid = kids[i];
+      if (kid !== undefined) walk(kid);
+    }
+  };
+  return walk;
+}
+
+const SINGLE_HARD_BREAKS = [oneBreakPerHardBreak];
+
 export interface TaskMarkdownProps {
   readonly source: string;
   /** Added beside `md`, for a surface that sizes it differently. */
   readonly className?: string;
   /** Extra element renderers. `a`, `img` and `table` above always win. */
   readonly components?: Components;
-  /** Tree transforms run after the safety rules above, for one surface. */
-  readonly rehypePlugins?: Options['rehypePlugins'];
+  /**
+   * A hard break is one line break. For a surface whose paragraphs are
+   * `white-space: pre-line`, where the newline after a `<br>` would show as a
+   * second break. See {@link oneBreakPerHardBreak}.
+   */
+  readonly singleHardBreaks?: boolean;
 }
 
-export function TaskMarkdown({ source, className, components, rehypePlugins }: TaskMarkdownProps) {
+export function TaskMarkdown({
+  source,
+  className,
+  components,
+  singleHardBreaks = false,
+}: TaskMarkdownProps) {
   return (
     <div className={className === undefined ? 'md' : `md ${className}`}>
       <Markdown
         remarkPlugins={[remarkGfm]}
-        rehypePlugins={rehypePlugins}
+        rehypePlugins={singleHardBreaks ? SINGLE_HARD_BREAKS : undefined}
         components={components === undefined ? COMPONENTS : { ...components, ...COMPONENTS }}
       >
         {source}
