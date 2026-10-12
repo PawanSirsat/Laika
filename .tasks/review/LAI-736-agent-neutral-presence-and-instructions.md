@@ -42,7 +42,9 @@ gets the working rules from the server itself.
 - [x] `presenceNow` / `capacityNow` count a token with `last_mcp_at` inside the
       five-minute window as a live agent session with no heartbeat; one entry
       per user (newest wins); a heartbeat still supplies repo/branch/task, an
-      MCP-only session has repo/branch `null`; each entry carries `client` and
+      MCP-only session has repo/branch **absent** (not `null`: the web's
+      `hasLocation` is `repo !== undefined`, and absent already means "working,
+      location not told", LAI-438); each entry carries `client` and
       `clients`; `active_sessions` counts distinct token ids across heartbeats
       ∪ MCP activity; `presence_enabled` and every existing hiding rule hold.
 - [x] `GET /api/v1/tokens` (own) returns `last_mcp_at`, `last_client`,
@@ -114,3 +116,38 @@ fields.
   test pins it.
 - **No index on `tokens.last_mcp_at`.** The brief allowed only `ADD COLUMN`;
   the tokens table is a handful of rows per person.
+
+## Review round 1 fixes
+
+Against the reviewer's notes on b733198. Each new test was red before its fix,
+or, where it pins behaviour that already held, red under a named mutation.
+
+- **B1** — a heartbeat on a revoked or expired token is no longer presence and
+  no longer counts in Capacity (`liveHeartbeat` in `services/presence.ts`, a
+  left join to `tokens`); a cookie heartbeat is unchanged. The heartbeat
+  index-range test (LAI-722) still passes. D-076 item 1 says so.
+- **B2** — expired-token test; red under `gt(tokens.expiresAt, now * 0)`.
+- **N1** — `last_mcp_at` is not stamped while `presence_enabled` is off; the
+  client name and slug still are. SPEC §4.9 and §9.3, D-076 item 5. Consequence
+  recorded there: with presence off, Connect cannot detect a new token by
+  `last_mcp_at`.
+- **N2** — D-076 item 4 says why MCP presence needs no per-user opt-in.
+- **N3** — a throwing recorder is caught and logged as `mcp.record_failed`;
+  the tool result still returns (test injects `recordUse`).
+- **N4** — pinned: a newer cookie heartbeat does not hide the agent's
+  `client` (red under `sessions[0]`); merged entries are ordered by newest
+  session (red with the sort removed); an unknown stored slug reaches the wire
+  as `null` (red with `asAgentClient` bypassed).
+- **N5** — `cleanClientName` strips `\p{C}`, U+2028 and U+2029.
+- **N6** — `MCP_INSTRUCTIONS` comment names D-076's clients and says the
+  instruction-blind ones are reached through `laika_whoami`'s description.
+- **N7** — SPEC §4.9: "from the last `initialize` that named an agent".
+- **N9** — bare `copilot` is `other`; `Code - OSS` is `vscode`.
+- **N10** — the criterion above now says repo/branch are absent, with why.
+
+Gate after the last code edit: `server/` alone `pnpm test` exits 0 (2283/2283
+test cases); root `pnpm lint` 0, `pnpm format` 0; root `pnpm test` exits 1. The
+web suite alone shows 1633 pass and 2 fail, the two drift checks quoted above,
+unchanged. In the root run `test/tooling/build.test.ts` also timed out under
+load ("built server never became healthy"), 2 cases on the first run and 4 on
+the second; alone it passes 15/15.
