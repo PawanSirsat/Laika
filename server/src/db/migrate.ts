@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type Database from 'better-sqlite3';
 import { sql } from 'drizzle-orm';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { backfillBoardColumns, backfillTaskPositions, backfillTaskTimestamps } from './backfill.ts';
+import { backfillTaskPositions, backfillTaskTimestamps } from './backfill.ts';
 import { type Db } from './client.ts';
 
 /**
@@ -312,17 +312,15 @@ export function runMigrations(db: Db, options: RunMigrationsOptions = {}): void 
     // today's implementation rather than of the step.
     backfillTaskTimestamps(db);
 
-    // Gives a project that predates `board_columns` the five lanes it was
-    // already showing (LAI-266). Same reasoning as the line above for being
-    // here rather than in a `.sql` migration — it needs ULIDs, and the column
-    // names have to be the ones the client renders rather than a third copy —
-    // and idempotent in the same sense: it acts only on a project with no
-    // columns at all.
-    backfillBoardColumns(db);
+    // There is no status backfill here, and its absence is deliberate
+    // (LAI-738). LAI-266's columns were seeded by a boot step because their
+    // ids needed ULIDs; 0028 builds its ULIDs in SQL, so copying the old board
+    // into `project_statuses` happens inside the migration that drops it —
+    // never a window where a project has neither.
 
     // Gives every task a place in its project's manual order (LAI-472, D-070),
     // in the order the board already shows. Here for the same reason as the
-    // two above — the keys are computed — and idempotent the same way: it only
+    // timestamp backfill — the keys are computed — and idempotent the same way: it only
     // fills a null.
     backfillTaskPositions(db);
   } catch (cause) {

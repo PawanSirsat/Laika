@@ -4033,3 +4033,162 @@ build-ui-polish; this takes the next number.)
   JSON, and code-splitting. These are later performance phases.
 - The server change that would retire Capacity's last per-task reads (for
   tasks outside the open project). It is filed from LAI-724.
+
+## D-076 — An MCP call is presence, and the server records which agent connected.
+
+**2026-10-12, the owner, directly** (LAI-736, "Laika works with any coding
+agent"). Presence came only from `POST /api/v1/heartbeats`, and only Claude
+Code's plugin hook sends one. An agent in Codex, Cursor, OpenCode, Gemini CLI or
+Omnigent could claim, comment and finish tasks over `/mcp` all day and never
+appear on Presence or Capacity, and the Connect screen could not tell whether
+the token it had just minted had connected. `/mcp` also told a connecting agent
+nothing about how to work the board, so every harness needed its own copy of the
+rules.
+
+### Decided
+
+1. **Every authenticated `/mcp` request stamps its token's `last_mcp_at`**,
+   throttled to once a minute, as `last_used_at` is. A token stamped inside
+   §9.3's five-minute window is a live agent session with or without a
+   heartbeat. Presence stays one entry per person, newest wins. A heartbeat
+   still supplies `repo`, `branch` and the matched task. An MCP-only session
+   has **no location**: those keys are absent, which already means *"working,
+   somewhere this reader is not told"*. Capacity's `active_sessions` counts
+   distinct tokens across heartbeats and MCP calls. A revoked or expired token
+   is not present. **This applies to heartbeats as well:** a heartbeat on a
+   revoked or expired token no longer shows or counts toward Capacity, which it
+   did before this decision; a signed-in session's heartbeat (no token) is
+   unchanged.
+2. **On `initialize` the server keeps the client's own `clientInfo.name`** on
+   the token, with Unicode `Other` characters (control, format and bidi,
+   surrogates, private use) and line/paragraph separators stripped, at most 64
+   characters, and a slug from a fixed list (`AGENT_CLIENTS` in
+   `server/src/auth/agent-clients.ts`, ending in `other`). A name that
+   identifies nothing, such as the Python SDK's `mcp` (sent by Omnigent and
+   Hermes), falls back to the first word of the token's name, which the
+   Connect screen sets to the agent. Both are written only when they change,
+   and a weak name (`mcp`, `hermes-probe`, empty) never replaces a client the
+   token already has. **Neither is ever an authorisation input**: a client can
+   call itself anything.
+3. **Nothing else is collected.** No repo, branch, path, prompt, tool argument
+   or transcript arrives through this path. The server records *when* a token
+   last spoke MCP and *what the client calls itself*.
+4. **D-005 is unchanged.** `POST /api/v1/heartbeats` keeps its strict
+   `{ repo, branch }` body. D-005 requires a new decision and an opt-in for
+   *"richer session data"*. A client's name is not data about the session's
+   work. It describes the tool, at the same level as a `User-Agent` header, and
+   it is shown only where the person is already shown. That is this decision's
+   reading, and the reason it adds no opt-in.
+
+   **MCP presence applies to every token's user, without a per-user opt-in**,
+   for three reasons. It says less than a heartbeat already does: a time and a
+   client name, never a location. An agent's writes over `/mcp` already appear
+   in the activity log under that person (§4.8), so being seen as working adds
+   nothing a reader of the board could not infer. And the org can switch
+   presence off for everyone (item 5).
+5. **`presence_enabled` governs MCP presence as it governs heartbeats.** With
+   it off, Presence and Capacity show no MCP sessions, and **`last_mcp_at` is
+   not stamped**, just as LAI-150 stores no heartbeats. So turning presence
+   back on shows nothing from the time it was off. The client's name and slug
+   are still written, because they are token metadata like `last_used_at`.
+   Only the token's owner, and an admin listing that person's tokens, can see
+   them. One consequence: with presence off, `last_mcp_at` cannot tell the
+   Connect screen that a new token has connected.
+6. **The server tells every agent how to work the board.** `/mcp` returns
+   `instructions` on `initialize`: call `laika_whoami`, read
+   `get_project_context`, claim with `start_working` before coding,
+   `create_task` when there is none, `add_comment` as you go, `finish_task`
+   into review (a person marks done), and `log_unlisted_work` for stray
+   findings. The text stays under Claude Code's 2,048-character cap, and its
+   first 512 characters carry the must-follow rules on their own, as Codex
+   asks. Some clients drop server instructions (Zed, Cline, Continue, Hermes,
+   Omnigent), so `laika_whoami` returns the same text as `how_to_work`, and
+   the rules are repeated in the descriptions of `start_working`, `create_task`
+   and `finish_task`. Tool names are unchanged.
+7. **`/mcp` answers only `POST`.** `GET`, `HEAD` and `DELETE` get `405` with
+   `Allow: POST`, the Streamable HTTP answer for a stateless server, never a
+   `2xx` stream and never the SPA. A `2xx` probe is what made Hermes open
+   throwaway `hermes-probe` sessions. Antigravity's `server/discover`, sent
+   before `initialize`, gets JSON-RPC `-32601`, so it falls back.
+8. **A `401` on `/mcp` says what was wrong with the header**: none sent,
+   `Bearer` with nothing after it, or an unexpanded placeholder such as
+   `${LAIKA_TOKEN}` or `{env:LAIKA_TOKEN}`. These are facts about what the
+   caller sent, so they reveal nothing about anyone's token, and the message
+   never echoes the value. Unknown, expired and revoked tokens still share one
+   message (§6.1).
+
+### Why
+
+Laika's promise is one source of truth for people *and coding agents*, not
+Claude Code alone. The heartbeat hook is a Claude Code plugin feature, and
+asking every other harness to grow one would leave presence as wide as the
+plugin ecosystem. An MCP call is something every connected agent already makes,
+on a credential the server already checks. Counting it costs one throttled write
+and collects nothing new about the work.
+
+## D-077 — Projects have their own statuses, each in one of six fixed categories.
+
+**2026-10-12, the owner, directly** ("Option B", LAI-738 server, LAI-739 web).
+A board column was a status, and LAI-266 made columns configurable by letting a
+column hold a *set* of the six statuses. That model cost four bugs that could
+not be fixed inside it: unticking a status always failed (*"Give X a column
+before taking Y"*), a donor column lost its primary, deleting a column merged
+its statuses into another, and an empty column vanished. A consumer also wanted
+a `testing` column between `in_progress` and `review` (LAI-613), which a set of
+fixed statuses cannot give. The owner chose Jira's team-managed model: each
+project owns its statuses, and each status belongs to a fixed category.
+
+### Decided
+
+1. **`project_statuses` is a table, and one status is one board column**
+   (§4.20): a name (1–40, unique per project case-insensitively), a category,
+   a position, a hidden flag. `board_columns` and `board_column_statuses` are
+   retired.
+2. **The six values stay, as categories.** `backlog`, `todo`, `in_progress`,
+   `review`, `done`, `cancelled` are what a status *is*; a project chooses what
+   its statuses are *called* and how many it has. `tasks.status` keeps holding
+   the category and `tasks.status_id` names the status, so §5's lifecycle,
+   policy, readiness, metrics, the stale cron, activity, filters and every MCP
+   tool kept their meaning without change.
+3. **What stays fixed:** the six categories; §5's transition tables, which are
+   between categories; the rule that agents do not self-certify; a status's
+   category for its whole life.
+4. **Invariants.** Every project keeps at least one status in each category —
+   deleting the last is refused. A task's status belongs to its own project and
+   agrees with its category, enforced in SQL by the composite foreign key
+   `(project_id, status_id, status)` → `project_statuses(project_id, id,
+   category)`, so a write that moved one without the other fails in the
+   database rather than drifting. New projects get Backlog, To do, In progress,
+   Review, Done and Cancelled (hidden).
+5. **Moves.** Within a category a move is a column change: `task.write` and
+   nothing more, no §5 check, no dates. Across categories a move is the §5
+   transition it always was, whichever status it names. A bare category
+   resolves to the project's first visible status of it. Deleting a status
+   moves its work to a named status first, all or nothing.
+6. **No new activity verb.** A move writes `task.status_changed` as before, with
+   `from` and `to` still the categories — equal for a same-category move — and
+   the status ids and names beside them. Status configuration writes
+   `project.updated` with `entity: 'project_status'`, as columns did. A verb
+   added to `ACTIVITY_TYPES` is three owners (CLAUDE.md §4.4), and none was
+   needed: §4.8's test — *could a reader answer "when did this happen?" without
+   a payload?* — is answered by the verb that already exists.
+7. **Migration rule** (`0028`, one migration, copy then drop): a one-status
+   column becomes a status with its name, position and hidden flag; a
+   several-status column gives its primary the column's name and each other
+   status its own default-labelled status straight after it; a category no
+   column held becomes a hidden, default-labelled status at the end; a project
+   with no columns at all gets the six defaults; a clashing name takes a
+   ` (2)` suffix; an empty column becomes nothing, because it held no category.
+   Every task keeps its category and lands in that category's first status.
+
+### Why
+
+Jira parity is what the owner asked for, and it is the shape that makes the
+four bugs impossible rather than fixed: a status cannot be "unticked" from a
+column or orphaned by a delete, because it *is* the column. Keeping the six
+values as categories is what made the change safe — every rule that reasons
+about work reads a category, and none of them had to learn about names.
+
+**This supersedes LAI-264, LAI-289, LAI-613 and LAI-618**, each written
+against the columns model. LAI-613 asked for this decision; the other three
+describe documentation and a bug of a model that no longer exists.

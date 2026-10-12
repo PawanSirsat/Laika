@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { and, desc, eq, lt, or, type SQL } from 'drizzle-orm';
+import { AGENT_CLIENTS, type AgentClient } from '../auth/agent-clients.ts';
 import { hashToken, newTokenSecret, tokenDisplayPrefix } from '../auth/tokens.ts';
 import { activityActor, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { appendActivity } from '../db/activity.ts';
@@ -55,6 +56,15 @@ export interface TokenView {
   /** `null` = every project the user can reach. Otherwise a whitelist (§4.9). */
   project_ids: string[] | null;
   last_used_at: number | null;
+  /**
+   * The last `/mcp` request on this token, throttled to a minute (D-076). The
+   * Connect screen polls it to see the token it just minted come alive.
+   */
+  last_mcp_at: number | null;
+  /** The `AGENT_CLIENTS` slug of the client that last connected, or null. */
+  last_client: AgentClient | null;
+  /** That client's own name, cleaned, at most 64 characters. Display only. */
+  last_client_name: string | null;
   expires_at: number | null;
   revoked_at: number | null;
   created_at: number;
@@ -89,10 +99,18 @@ function toView(row: TokenRow): TokenView {
     scope: row.scope,
     project_ids: parseProjectIds(row.projectIdsJson),
     last_used_at: row.lastUsedAt,
+    last_mcp_at: row.lastMcpAt,
+    last_client: asAgentClient(row.lastClient),
+    last_client_name: row.lastClientName,
     expires_at: row.expiresAt,
     revoked_at: row.revokedAt,
     created_at: row.createdAt,
   };
+}
+
+/** The column is plain text; only a known slug reaches the wire. */
+function asAgentClient(raw: string | null): AgentClient | null {
+  return AGENT_CLIENTS.find((slug) => slug === raw) ?? null;
 }
 
 function parseProjectIds(raw: string | null): string[] | null {
@@ -166,6 +184,9 @@ export function createToken(
     scope,
     projectIdsJson: projectIds === null ? null : JSON.stringify(projectIds),
     lastUsedAt: null,
+    lastMcpAt: null,
+    lastClient: null,
+    lastClientName: null,
     expiresAt,
     revokedAt: null,
     createdAt: now,

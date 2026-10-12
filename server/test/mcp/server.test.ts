@@ -3,7 +3,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { MCP_SERVER_NAME } from '../../src/mcp/server.ts';
+import { resolveTokenActor } from '../../src/auth/resolve-actor.ts';
+import { handleMcpRequest, MCP_SERVER_NAME } from '../../src/mcp/server.ts';
 import { tokens, users } from '../../src/db/schema.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
 
@@ -42,19 +43,19 @@ async function setUp(): Promise<string> {
   return cookieFrom(res);
 }
 
-async function mint(scope: 'full' | 'read_only' = 'full'): Promise<string> {
+async function mint(scope: 'full' | 'read_only' = 'full', name = 'agent'): Promise<string> {
   const res = await h.app.request('/api/v1/tokens', {
     method: 'POST',
     headers: jsonHeaders({ Cookie: ownerCookie }),
-    body: JSON.stringify({ name: 'agent', scope }),
+    body: JSON.stringify({ name, scope }),
   });
   expect(res.status, await res.clone().text()).toBe(201);
   return ((await res.json()) as { secret: string }).secret;
 }
 
 /** A real client, connected over a real socket. Caller closes it. */
-async function connect(secret: string | undefined): Promise<Client> {
-  const client = new Client({ name: 'test-agent', version: '0.0.0' });
+async function connect(secret: string | undefined, clientName = 'test-agent'): Promise<Client> {
+  const client = new Client({ name: clientName, version: '0.0.0' });
   const transport = new StreamableHTTPClientTransport(new URL('/mcp', baseUrl), {
     requestInit: secret === undefined ? {} : { headers: { Authorization: `Bearer ${secret}` } },
   });
@@ -270,5 +271,288 @@ describe('shutdown is not blocked by MCP traffic (AC7)', () => {
         resolve(new URL(`http://127.0.0.1:${String(info.port)}`));
       });
     });
+  });
+});
+
+describe('the server tells any agent how to work the board (D-076)', () => {
+  /** The rules an agent must not miss, each by the tool that carries it. */
+  const RULE_TOOLS = [
+    'laika_whoami',
+    'get_project_context',
+    'list_ready_tasks',
+    'start_working',
+    'create_task',
+    'add_comment',
+    'finish_task',
+    'log_unlisted_work',
+  ];
+
+  it('returns instructions on initialize that name every rule’s tool', async () => {
+    const client = await connect(await mint());
+
+    const instructions = client.getInstructions() ?? '';
+    for (const tool of RULE_TOOLS) expect(instructions).toContain(`\`${tool}\``);
+    expect(instructions).toMatch(/never .*done/i);
+    expect(instructions.split('\n').length).toBeLessThanOrEqual(25);
+    // Claude Code truncates server instructions at 2,048 characters.
+    expect(instructions.length).toBeLessThanOrEqual(2048);
+
+    await client.close();
+  });
+
+  it('puts the must-follow rules in the first 512 characters', async () => {
+    // Codex: "Keep the first 512 characters self-contained."
+    const client = await connect(await mint());
+
+    const head = (client.getInstructions() ?? '').slice(0, 512);
+    for (const tool of ['start_working', 'create_task', 'finish_task']) {
+      expect(head).toContain(`\`${tool}\``);
+    }
+    expect(head).toMatch(/before .*code/i);
+    expect(head).toMatch(/never .*done/i);
+
+    await client.close();
+  });
+
+  it('names only tools the server actually serves', async () => {
+    // Names from both sides (CLAUDE.md §2), not a count: a renamed tool turns
+    // this red instead of leaving the instructions pointing at nothing.
+    const client = await connect(await mint());
+
+    const served = new Set((await client.listTools()).tools.map((t) => t.name));
+    const named = [...(client.getInstructions() ?? '').matchAll(/`([a-z_]+)`/g)].map((m) => m[1]);
+    expect(named.length).toBeGreaterThan(0);
+    expect(named.filter((name) => name !== undefined && !served.has(name))).toEqual([]);
+
+    await client.close();
+  });
+
+  it('repeats them in laika_whoami for clients that drop server instructions', async () => {
+    const client = await connect(await mint());
+
+    const result = await client.callTool({ name: 'laika_whoami', arguments: {} });
+    const content = result.content as { type: string; text: string }[];
+    const identity = JSON.parse(content[0]?.text ?? '{}') as { how_to_work?: string };
+
+    expect(identity.how_to_work).toBe(client.getInstructions());
+
+    await client.close();
+  });
+
+  it('carries the must-follow rules in the tool descriptions too', async () => {
+    // Zed, Cline, Continue, Hermes and Omnigent never show `instructions` to
+    // the model. They do show tool descriptions.
+    const client = await connect(await mint());
+
+    const described = new Map(
+      (await client.listTools()).tools.map((t) => [t.name, t.description ?? '']),
+    );
+    expect(described.get('start_working')).toMatch(/before .*code/i);
+    expect(described.get('create_task')).toMatch(/no task/i);
+    expect(described.get('finish_task')).toMatch(/never .*done/i);
+    expect(described.get('laika_whoami')).toContain('how_to_work');
+
+    await client.close();
+  });
+});
+
+describe('what a non-MCP probe gets back', () => {
+  async function raw(method: string, headers: Record<string, string>, body?: unknown) {
+    return fetch(new URL('/mcp', baseUrl), {
+      method,
+      headers: { Accept: 'application/json, text/event-stream', ...headers },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+  }
+
+  it.each(['GET', 'HEAD', 'DELETE'])(
+    'answers %s with 405 and Allow: POST, never the SPA',
+    async (method) => {
+      // Stateless: there is no SSE stream to open and no session to delete.
+      // A 2xx here is what makes Hermes send a throwaway `hermes-probe` session.
+      for (const headers of [{ Authorization: `Bearer ${await mint()}` }, {}]) {
+        const res = await raw(method, headers);
+
+        expect(res.status, method).toBe(405);
+        expect(res.headers.get('allow')).toBe('POST');
+        expect(res.headers.get('content-type')).toContain('application/json');
+        if (method !== 'HEAD') {
+          expect(((await res.json()) as { error?: { code?: number } }).error?.code).toBe(-32000);
+        }
+      }
+    },
+  );
+
+  it('answers Antigravity’s server/discover with -32601, and initialize still works', async () => {
+    const secret = await mint();
+    const res = await raw(
+      'POST',
+      { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json' },
+      { jsonrpc: '2.0', id: 1, method: 'server/discover', params: {} },
+    );
+
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { error?: { code?: number } }).error?.code).toBe(-32601);
+
+    const client = await connect(secret, 'antigravity-client');
+    expect(client.getServerVersion()?.name).toBe(MCP_SERVER_NAME);
+    await client.close();
+  });
+});
+
+describe('a 401 says what was wrong with the header', () => {
+  async function refused(authorization: string | undefined): Promise<string> {
+    const res = await fetch(new URL('/mcp', baseUrl), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json, text/event-stream',
+        ...(authorization === undefined ? {} : { Authorization: authorization }),
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }),
+    });
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('unauthorized');
+    return body.error.message;
+  }
+
+  it('says when there was no Authorization header', async () => {
+    expect(await refused(undefined)).toMatch(/no Authorization header/i);
+  });
+
+  it.each(['Bearer ', 'Bearer', 'bearer   '])('says when it was empty: %j', async (header) => {
+    expect(await refused(header)).toMatch(/empty/i);
+  });
+
+  it.each(['Bearer ${LAIKA_TOKEN}', 'Bearer {env:LAIKA_TOKEN}', 'Bearer $LAIKA_TOKEN'])(
+    'says when it was an unexpanded placeholder: %s',
+    async (header) => {
+      const message = await refused(header);
+
+      expect(message).toMatch(/placeholder/i);
+      expect(message).not.toContain('LAIKA_TOKEN}');
+    },
+  );
+
+  it('never echoes a token that was presented', async () => {
+    const wrong = `lai_${'Q'.repeat(40)}`;
+    const message = await refused(`Bearer ${wrong}`);
+
+    expect(message).toBe('That access token is not valid');
+    expect(message).not.toContain('QQQQ');
+  });
+});
+
+describe('the connecting client is recorded on the token (D-076)', () => {
+  interface OwnToken {
+    name: string;
+    last_mcp_at: number | null;
+    last_client: string | null;
+    last_client_name: string | null;
+  }
+
+  async function ownTokens(): Promise<OwnToken[]> {
+    const res = await h.app.request('/api/v1/tokens', { headers: { Cookie: ownerCookie } });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { data: OwnToken[] }).data;
+  }
+
+  it('shows the client and the time on the owner’s token list', async () => {
+    const before = Date.now();
+    const client = await connect(await mint('full', 'laika on macOS'), 'claude-code');
+    await client.close();
+
+    const [token] = await ownTokens();
+    expect(token).toMatchObject({ last_client: 'claude-code', last_client_name: 'claude-code' });
+    expect(token?.last_mcp_at).toBeGreaterThanOrEqual(before);
+  });
+
+  it('reads the token name when the client calls itself mcp', async () => {
+    const client = await connect(await mint('full', 'omnigent on macOS'), 'mcp');
+    await client.close();
+
+    const [token] = await ownTokens();
+    expect(token).toMatchObject({ last_client: 'omnigent', last_client_name: 'mcp' });
+  });
+
+  it('leaves a token that never spoke MCP blank', async () => {
+    await mint('full', 'unused');
+
+    const [token] = await ownTokens();
+    expect(token).toMatchObject({ last_mcp_at: null, last_client: null, last_client_name: null });
+  });
+
+  it('makes an agent with no heartbeat hook present', async () => {
+    // The point of D-076: Cursor, Codex, OpenCode… never POST /heartbeats.
+    const client = await connect(await mint(), 'Cursor');
+    await client.close();
+
+    const res = await h.app.request('/api/v1/presence', { headers: { Cookie: ownerCookie } });
+    expect(res.status).toBe(200);
+    const view = (await res.json()) as {
+      present: { name: string; is_agent: boolean; client: string | null; clients: string[] }[];
+    };
+
+    expect(view.present).toEqual([
+      expect.objectContaining({
+        name: 'Ada',
+        is_agent: true,
+        client: 'cursor',
+        clients: ['cursor'],
+      }),
+    ]);
+  });
+});
+
+describe('recording the call never fails it', () => {
+  it('returns the tool result when the recorder throws, and logs why', async () => {
+    const secret = await mint();
+    const actor = resolveTokenActor(h.db, secret, Date.now());
+    const warnings: { event: string; fields?: Record<string, unknown> }[] = [];
+
+    const res = await handleMcpRequest(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 7,
+          method: 'tools/call',
+          params: { name: 'laika_whoami', arguments: {} },
+        }),
+      }),
+      {
+        actor,
+        version: 'test',
+        db: h.db,
+        sqlite: h.t.sqlite,
+        recordUse: () => {
+          throw new Error('disk on fire');
+        },
+        log: {
+          debug: () => undefined,
+          info: () => undefined,
+          warn: (event, fields) => {
+            warnings.push(fields === undefined ? { event } : { event, fields });
+          },
+          error: (event, fields) => {
+            warnings.push(fields === undefined ? { event } : { event, fields });
+          },
+        },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: number; result?: { content: { text: string }[] } };
+    expect(body.id).toBe(7);
+    expect(JSON.parse(body.result?.content[0]?.text ?? '{}')).toMatchObject({
+      email: 'ada@example.test',
+    });
+    expect(warnings).toEqual([{ event: 'mcp.record_failed', fields: { message: 'disk on fire' } }]);
   });
 });

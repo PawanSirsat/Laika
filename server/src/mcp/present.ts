@@ -1,4 +1,6 @@
 import { ApiError } from '../errors.ts';
+import { CATEGORY_LABELS } from '../services/project-statuses.ts';
+import { type TaskView } from '../services/tasks.ts';
 
 /**
  * How a tool answers (SPEC §7.2, LAI-407).
@@ -24,6 +26,18 @@ export interface ToolAnswer {
   [key: string]: unknown;
   content: { type: 'text'; text: string }[];
   structuredContent: Record<string, unknown>;
+}
+
+/**
+ * A task's status as a tool says it (LAI-738): the category an agent reasons
+ * with, and the project's own name for the column when it is not just that
+ * category's label — `review (QA)`, but plain `review` on a default board.
+ * The category comes first because it is what `update_status` and §5 speak.
+ */
+export function statusText(task: Pick<TaskView, 'status' | 'status_name'>): string {
+  return task.status_name === CATEGORY_LABELS[task.status]
+    ? task.status
+    : `${task.status} (${task.status_name})`;
 }
 
 export function answer(markdown: string, payload: Record<string, unknown>): ToolAnswer {

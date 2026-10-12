@@ -21,7 +21,8 @@ import { newId } from '../db/ids.ts';
 import { immediateTransaction, nextTaskNumber } from '../db/numbering.ts';
 import { backfillTaskPositions, lastPosition } from '../db/backfill.ts';
 import { keyAfter, keyBetween } from '../db/order-key.ts';
-import { projects, taskDependencies, tasks } from '../db/schema.ts';
+import { CATEGORY_LABELS, statusForCategory, type StatusRef } from '../db/project-statuses.ts';
+import { projects, projectStatuses, taskDependencies, tasks } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
 import { addComment, commentCounts } from './comments.ts';
@@ -58,7 +59,15 @@ export interface TaskView {
   description_md: string | null;
   /** What "done" means here — prose, nullable (§4.5, LAI-092). */
   acceptance_md: string | null;
+  /**
+   * The **category** of the task's status (LAI-738, D-077) — one of the six
+   * §5 values, what the lifecycle, readiness and every filter reason about.
+   */
   status: TaskStatus;
+  /** The project status the task is in: the column it draws in (§4.20). */
+  status_id: string;
+  /** That status's name, as the project calls it — `QA`, not `review`. */
+  status_name: string;
   priority: TaskPriority;
   assignee_id: string | null;
   /** Null is the ordinary state: not in a sprint, never "no sprint yet" (§4.5). */
@@ -183,6 +192,8 @@ interface ViewContext {
   readonly tags: ReadonlyMap<string, string[]>;
   /** Named client per task, joined from `activity` → `tokens` (LAI-093). */
   readonly clients: ReadonlyMap<string, string>;
+  /** Status name per status id, for every status on the page (LAI-738). */
+  readonly statusNames: ReadonlyMap<string, string>;
 }
 
 function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
@@ -208,6 +219,7 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
   );
 
   const ids = rows.map((row) => row.id);
+  const statusIds = [...new Set(rows.map((row) => row.statusId))];
 
   return {
     edges,
@@ -215,6 +227,17 @@ function loadViewContext(db: Db, rows: readonly TaskRow[]): ViewContext {
     comments: commentCounts(db, ids),
     tags: tagsForTasks(db, ids),
     clients: creatingClientNames(db, ids),
+    // One query whatever the page size, as LAI-091 keeps everything else.
+    statusNames: new Map(
+      statusIds.length === 0
+        ? []
+        : db
+            .select({ id: projectStatuses.id, name: projectStatuses.name })
+            .from(projectStatuses)
+            .where(inArray(projectStatuses.id, statusIds))
+            .all()
+            .map((r) => [r.id, r.name] as const),
+    ),
   };
 }
 
@@ -234,6 +257,10 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     description_md: row.descriptionMd,
     acceptance_md: row.acceptanceMd,
     status: row.status,
+    status_id: row.statusId,
+    // `tasks_status_fk` guarantees the row exists, so the fallback is not
+    // reached; it is there only so the type is a string and never undefined.
+    status_name: context.statusNames.get(row.statusId) ?? CATEGORY_LABELS[row.status],
     priority: row.priority,
     assignee_id: row.assigneeId,
     sprint_id: row.sprintId,
@@ -397,6 +424,87 @@ export function resolveTaskRef(db: Db, ref: string): string {
   return row?.id ?? ref;
 }
 
+/**
+ * Where a status write wants the task to go (LAI-738, D-077).
+ *
+ * - a **category** (`'review'`) — what every caller spoke before statuses were
+ *   the project's own: MCP, the webhook, meeting reviews, `finish_task`. It
+ *   means the project's first visible status of that category;
+ * - `{ status_id }` — one exact status, which is what a board drag sends;
+ * - `{ status_name }` — a status by its name, case-insensitively, which is
+ *   what an agent types when the project calls its column `QA`.
+ */
+export type StatusTarget = TaskStatus | { status_id: string } | { status_name: string };
+
+function statusRow(db: Db, projectId: string, id: string): StatusRef | undefined {
+  const row = db
+    .select({
+      id: projectStatuses.id,
+      name: projectStatuses.name,
+      category: projectStatuses.category,
+      hidden: projectStatuses.hidden,
+    })
+    .from(projectStatuses)
+    .where(and(eq(projectStatuses.id, id), eq(projectStatuses.projectId, projectId)))
+    .get();
+  return row === undefined ? undefined : { ...row, hidden: row.hidden === 1 };
+}
+
+/** The names a project's statuses go by, in board order — for an error to list. */
+function statusNames(db: Db, projectId: string): string[] {
+  return db
+    .select({ name: projectStatuses.name })
+    .from(projectStatuses)
+    .where(eq(projectStatuses.projectId, projectId))
+    .orderBy(asc(projectStatuses.position))
+    .all()
+    .map((r) => r.name);
+}
+
+/**
+ * The status a target names in this project, or a `422` that says what the
+ * project does have. Missing and another project's are one answer, as
+ * `reorderTask`'s neighbours are, so the error does not confirm that a status
+ * the caller cannot see exists.
+ */
+function resolveStatus(db: Db, projectId: string, target: StatusTarget): StatusRef {
+  if (typeof target === 'string') return statusForCategory(db, projectId, target);
+
+  if ('status_id' in target) {
+    const row = statusRow(db, projectId, target.status_id);
+    if (row === undefined) {
+      throw new ApiError('unprocessable', 'That status is not one of this project’s', {
+        field: 'status_id',
+        status_id: target.status_id,
+      });
+    }
+    return row;
+  }
+
+  const wanted = target.status_name.trim().toLowerCase();
+  const match = db
+    .select({
+      id: projectStatuses.id,
+      name: projectStatuses.name,
+      category: projectStatuses.category,
+      hidden: projectStatuses.hidden,
+    })
+    .from(projectStatuses)
+    .where(eq(projectStatuses.projectId, projectId))
+    .all()
+    .find((r) => r.name.toLowerCase() === wanted);
+
+  if (match === undefined) {
+    const names = statusNames(db, projectId);
+    throw new ApiError(
+      'unprocessable',
+      `This project has no status called "${target.status_name.trim()}". It has: ${names.join(', ')}`,
+      { field: 'status', status: target.status_name, statuses: names },
+    );
+  }
+  return { ...match, hidden: match.hidden === 1 };
+}
+
 export function getTask(db: Db, actor: ResolvedActor, taskId: string): TaskView {
   const { task, project } = requireTask(db, taskId);
   assertCan(withProject(actor, project.id), 'project.read', { projectId: project.id });
@@ -410,7 +518,10 @@ export interface CreateTaskInput {
   acceptance_md?: string | undefined;
   tags?: readonly string[] | undefined;
   priority?: TaskPriority | undefined;
+  /** A category: the project's first visible status of it (LAI-738). */
   status?: TaskStatus | undefined;
+  /** One exact status of this project. Wins over `status`, which must agree. */
+  status_id?: string | undefined;
   assignee_id?: string | undefined;
   discovered_from?: string | undefined;
   /** Makes this a subtask of that task — one level, same project (D-066). */
@@ -446,6 +557,18 @@ export function createTask(
     // transaction would let two creates read the same value (LAI-003).
     const number = nextTaskNumber(db, project.id);
     const id = newId();
+    const initial = resolveStatus(
+      db,
+      project.id,
+      input.status_id === undefined ? (input.status ?? 'backlog') : { status_id: input.status_id },
+    );
+    if (input.status !== undefined && input.status !== initial.category) {
+      throw new ApiError(
+        'unprocessable',
+        `${initial.name} is a ${CATEGORY_LABELS[initial.category]} status, not ${CATEGORY_LABELS[input.status]} — send one of status or status_id`,
+        { field: 'status', status: input.status, status_id: initial.id },
+      );
+    }
 
     db.insert(tasks)
       .values({
@@ -459,7 +582,8 @@ export function createTask(
         title: input.title,
         descriptionMd: input.description_md ?? null,
         acceptanceMd: input.acceptance_md ?? null,
-        status: input.status ?? 'backlog',
+        status: initial.category,
+        statusId: initial.id,
         priority: input.priority ?? 'p2',
         assigneeId: input.assignee_id ?? null,
         createdBy: actor.userId,
@@ -507,7 +631,10 @@ export function createTask(
 }
 
 export interface ListTasksFilter {
+  /** A category — every status of it (LAI-738). */
   status?: TaskStatus | undefined;
+  /** One project status. */
+  status_id?: string | undefined;
   /** §4.16's `?tag=` — a tag name, normalised before it is looked up. */
   tag?: string | undefined;
   assignee?: string | undefined;
@@ -535,6 +662,7 @@ export function listTasks(
   const conditions = [eq(tasks.projectId, project.id)];
 
   if (filter.status !== undefined) conditions.push(eq(tasks.status, filter.status));
+  if (filter.status_id !== undefined) conditions.push(eq(tasks.statusId, filter.status_id));
   if (filter.priority !== undefined) conditions.push(eq(tasks.priority, filter.priority));
   if (filter.assignee !== undefined) {
     // `assignee=none` is the only way to ask for unassigned work over a query
@@ -772,9 +900,22 @@ export function claimTask(
   assertCan(withProject(actor, project.id), 'task.claim', { projectId: project.id });
 
   return immediateTransaction(sqlite, () => {
+    const before = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
+    const from = statusRow(db, project.id, before.statusId)!;
+    // A task already in some in-progress status stays in it; anything else
+    // lands in the project's first visible one (LAI-738).
+    const to =
+      before.status === 'in_progress' ? from : statusForCategory(db, project.id, 'in_progress');
+
     const changed = db
       .update(tasks)
-      .set({ assigneeId: actor.userId, status: 'in_progress', startedAt: now, updatedAt: now })
+      .set({
+        assigneeId: actor.userId,
+        status: 'in_progress',
+        statusId: to.id,
+        startedAt: now,
+        updatedAt: now,
+      })
       .where(and(eq(tasks.id, taskId), isNull(tasks.assigneeId)))
       .run();
 
@@ -795,7 +936,16 @@ export function claimTask(
       taskId,
       ...activityActor(actor),
       type: 'task.status_changed',
-      payload: { from: 'todo', to: 'in_progress', assignee_id: actor.userId, via: 'claim' },
+      // `from` was the literal `'todo'` until LAI-738, whatever the task was
+      // in; with the status names beside it, a wrong category would contradict
+      // the row it sits in.
+      payload: {
+        from: before.status,
+        to: 'in_progress',
+        ...statusPayload(from, to),
+        assignee_id: actor.userId,
+        via: 'claim',
+      },
       now,
     });
 
@@ -807,7 +957,7 @@ export function changeStatus(
   db: Db,
   actor: ServiceCaller,
   taskId: string,
-  to: TaskStatus,
+  target: StatusTarget,
   now: number = Date.now(),
   /**
    * Which §5 table applies. Defaults to asking the principal, which is what
@@ -819,12 +969,56 @@ export function changeStatus(
   const scoped = withProject(actor, project.id);
   assertCan(scoped, 'task.write', { projectId: project.id });
 
+  const from = statusRow(db, project.id, task.statusId)!;
+  // A bare category the task is already in is a no-op, as it always was — not
+  // a hop to that category's first status. An agent saying `review` about a
+  // task in `QA` means "it is in review", and moving it would undo a person's
+  // choice of column (LAI-738).
+  if (typeof target === 'string' && target === task.status) {
+    throw new ApiError('conflict', `That task is already in ${from.name}`, {
+      from: task.status,
+      to: target,
+    });
+  }
+  const dest = resolveStatus(db, project.id, target);
+  const to = dest.category;
+
+  if (dest.id === from.id) {
+    throw new ApiError('conflict', `That task is already in ${from.name}`, {
+      from: task.status,
+      to,
+    });
+  }
+
+  // ## A move inside one category is not a §5 transition (LAI-738, D-077)
+  //
+  // `In progress` → `Code review` when both are `in_progress` changes the
+  // column and nothing §5 reasons about: not readiness, not the dates, not who
+  // may send work to review. So it needs `task.write` and nothing more, and it
+  // is written as the same verb with the same `from`/`to` — equal, which is
+  // what tells a reader the category did not move.
+  if (to === task.status) {
+    db.update(tasks).set({ statusId: dest.id, updatedAt: now }).where(eq(tasks.id, taskId)).run();
+
+    appendActivity(db, {
+      orgId: project.orgId,
+      projectId: project.id,
+      taskId,
+      ...activityActor(actor),
+      type: 'task.status_changed',
+      payload: { from: task.status, to, ...statusPayload(from, dest) },
+      now,
+    });
+
+    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+  }
+
   // §5's table, widened for a person and unchanged for a program (LAI-266).
   // `isAgentPrincipal` reads `actor.token`, **not** `isSystemPrincipal` — a
   // token-bearing agent is an ordinary actor, so the obvious predicate would
   // have handed MCP the human rule. The branch below is a different question
   // and keeps its own test.
-  assertTransition(task.status, to, rule);
+  assertTransition(task.status, to, rule, { from: from.name, to: dest.name });
 
   // §5: moving to `review` requires the assignee, a project lead, or org
   // Admin/Owner. The task text said "assignee, Admin or Owner" and omitted lead;
@@ -861,6 +1055,7 @@ export function changeStatus(
   db.update(tasks)
     .set({
       status: to,
+      statusId: dest.id,
       updatedAt: now,
       // `claimTask` already stamps this, but claiming is not the only way into
       // `in_progress` — a lead moving somebody else's task gets here instead,
@@ -898,11 +1093,25 @@ export function changeStatus(
     taskId,
     ...activityActor(actor),
     type: 'task.status_changed',
-    payload: { from: task.status, to },
+    payload: { from: task.status, to, ...statusPayload(from, dest) },
     now,
   });
 
   return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+}
+
+/**
+ * The two statuses a `task.status_changed` row names besides the categories
+ * (LAI-738). `from`/`to` stay the categories — append-only history has always
+ * had them, and every reader keys on them — and these say which columns.
+ */
+function statusPayload(from: StatusRef, to: StatusRef) {
+  return {
+    from_status_id: from.id,
+    from_status_name: from.name,
+    to_status_id: to.id,
+    to_status_name: to.name,
+  };
 }
 
 export interface FinishTaskInput {

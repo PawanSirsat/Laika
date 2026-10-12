@@ -20,6 +20,7 @@ import {
   type Seed,
   type TestDb,
 } from '../helpers/db.ts';
+import { statusForCategory } from '../../src/db/project-statuses.ts';
 
 let t: TestDb;
 let s: Seed;
@@ -51,6 +52,7 @@ describe('an activity row cannot lose its subject (LAI-135)', () => {
       .values({
         id: taskId,
         projectId: s.projectId,
+        statusId: statusForCategory(t.db, s.projectId, 'backlog').id,
         number: 1,
         title: 'A task with a history',
         createdBy: s.userId,

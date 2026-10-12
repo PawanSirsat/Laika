@@ -7,7 +7,7 @@ import { ApiError } from '../../src/errors.ts';
 import { projectMetrics } from '../../src/services/metrics.ts';
 import { createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
-import { freshDb, type TestDb } from '../helpers/db.ts';
+import { atCategory, freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
  * Throughput and cycle time (LAI-124).
@@ -57,7 +57,7 @@ function task(opts: {
   t.db
     .update(tasks)
     .set({
-      status: opts.status ?? 'done',
+      ...atCategory(t.db, created.project_id, opts.status ?? 'done'),
       startedAt: opts.startedAt === undefined ? T0 : opts.startedAt,
       completedAt: opts.completedAt === undefined ? T0 + DAY : opts.completedAt,
     })

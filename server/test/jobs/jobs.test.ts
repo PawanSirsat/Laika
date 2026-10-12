@@ -13,7 +13,8 @@ import {
   STALE_AFTER_MS,
   vacuum,
 } from '../../src/jobs/jobs.ts';
-import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import { atCategory, freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import { statusForCategory } from '../../src/db/project-statuses.ts';
 
 /**
  * §11.6's jobs (LAI-431).
@@ -222,6 +223,7 @@ describe('stale-task flagging (§11.6, 3 days, both signals)', () => {
         number: Math.floor(Math.random() * 1_000_000) + 1,
         title: 'Under way',
         status: 'in_progress',
+        statusId: statusForCategory(t.db, s.projectId, 'in_progress').id,
         priority: 'p2',
         createdBy: s.userId,
         createdVia: 'web',
@@ -258,7 +260,11 @@ describe('stale-task flagging (§11.6, 3 days, both signals)', () => {
 
   it('does not flag a task that is not in_progress', () => {
     const id = inProgressTask(NOW - 30 * 24 * 60 * 60 * 1000);
-    t.db.update(tasks).set({ status: 'todo' }).where(eq(tasks.id, id)).run();
+    t.db
+      .update(tasks)
+      .set(atCategory(t.db, s.projectId, 'todo'))
+      .where(eq(tasks.id, id))
+      .run();
 
     expect(flagStaleTasks(t.db, NOW).changed).toBe(0);
   });
@@ -285,7 +291,11 @@ describe('stale-task flagging (§11.6, 3 days, both signals)', () => {
 
     it('clears it once the task moves out of in_progress', () => {
       const id = flaggedTask(NOW - 10 * 24 * 60 * 60 * 1000);
-      t.db.update(tasks).set({ status: 'done' }).where(eq(tasks.id, id)).run();
+      t.db
+        .update(tasks)
+        .set(atCategory(t.db, s.projectId, 'done'))
+        .where(eq(tasks.id, id))
+        .run();
 
       expect(flagStaleTasks(t.db, NOW).changed).toBe(1);
       expect(t.db.select().from(tasks).where(eq(tasks.id, id)).get()?.staleFlaggedAt).toBeNull();

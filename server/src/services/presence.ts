@@ -1,8 +1,9 @@
-import { and, desc, eq, gt, inArray } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { AGENT_CLIENTS, agentClientSlug, type AgentClient } from '../auth/agent-clients.ts';
 import { loadActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { presenceEnabled } from '../db/orgs.ts';
-import { heartbeats, tasks, unlistedWork, users } from '../db/schema.ts';
+import { heartbeats, tasks, tokens, unlistedWork, users } from '../db/schema.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { resolveRepoProjects } from './heartbeats.ts';
 
@@ -39,6 +40,16 @@ import { resolveRepoProjects } from './heartbeats.ts';
  * — an empty array would say "this person has logged nothing", which is a
  * different fact and one a Member would act on. Same shape as the org's `ai`
  * block (LAI-222).
+ *
+ * ## An MCP call is presence too (D-076)
+ *
+ * Only Claude Code's plugin hook sends heartbeats, so an agent in Codex,
+ * Cursor, OpenCode or Gemini CLI never appeared. Every `/mcp` request now
+ * stamps its token's `last_mcp_at`, and a token stamped inside the window is a
+ * live agent session with or without a heartbeat. It carries **no location**:
+ * `repo` and `branch` stay absent, which is how a client already reads "working,
+ * somewhere it cannot be told". A heartbeat still supplies the location when
+ * there is one. Nothing more is collected than the time and the client's name.
  */
 
 /** §9.3: "a heartbeat in the last 5 minutes". */
@@ -70,8 +81,18 @@ export interface PresenceEntry {
   matched_task_id: string | null;
   /** Every project the repo attributes to (§9.1) — legitimately more than one. */
   project_ids: string[];
-  /** An agent session, per §4.8's `actor_kind`: a heartbeat on a token. */
+  /**
+   * An agent session, per §4.8's `actor_kind`: a heartbeat on a token, or a
+   * token's `/mcp` call (D-076).
+   */
   is_agent: boolean;
+  /**
+   * The coding agent of the newest live agent session, as an `AGENT_CLIENTS`
+   * slug, or null when no agent session is live (D-076).
+   */
+  client: AgentClient | null;
+  /** Every distinct agent among this person's live sessions, newest first. */
+  clients: AgentClient[];
   last_seen: number;
 }
 
@@ -84,6 +105,7 @@ export interface PresenceView {
 export interface CapacityEntry {
   user_id: string;
   name: string;
+  /** Distinct tokens seen in the window, by heartbeat or `/mcp` call (D-076). */
   active_sessions: number;
   in_progress_tasks: string[];
   /** Milliseconds since the oldest in-progress task started, or null. */
@@ -116,6 +138,66 @@ function maySeeLocation(actor: ResolvedActor, projectIds: readonly string[]): bo
   return projectIds.some((id) => can(withProject(actor, id), 'project.read', { projectId: id }));
 }
 
+/** One live session: a heartbeat, or a token's latest `/mcp` call. */
+interface Session {
+  tokenId: string | null;
+  at: number;
+  client: AgentClient | null;
+}
+
+/**
+ * A token's agent: what it last said in `initialize`, or what its name says.
+ *
+ * The fallback covers a token that only ever sent heartbeats, which is a
+ * Claude Code plugin that has not called `/mcp` since D-076 shipped.
+ */
+function clientOf(lastClient: string | null, tokenName: string | null): AgentClient {
+  return AGENT_CLIENTS.find((slug) => slug === lastClient) ?? agentClientSlug(null, tokenName);
+}
+
+/**
+ * A token that can still make a request: not revoked, not expired (D-076).
+ *
+ * A token that can make no further call has no live session, however recently
+ * it was seen, by heartbeat or by `/mcp`.
+ */
+function tokenStillUsable(now: number) {
+  return and(isNull(tokens.revokedAt), or(isNull(tokens.expiresAt), gt(tokens.expiresAt, now)));
+}
+
+/**
+ * A heartbeat that still counts: a signed-in session's (no token), or one on a
+ * token that is still usable. Used with a left join to `tokens`.
+ */
+function liveHeartbeat(now: number) {
+  return or(isNull(heartbeats.tokenId), tokenStillUsable(now));
+}
+
+/** Tokens that called `/mcp` inside the window (D-076). */
+function mcpSessionsSince(db: Db, since: number, now: number) {
+  return db
+    .select({
+      tokenId: tokens.id,
+      userId: tokens.userId,
+      lastMcpAt: tokens.lastMcpAt,
+      lastClient: tokens.lastClient,
+      tokenName: tokens.name,
+      name: users.name,
+    })
+    .from(tokens)
+    .innerJoin(users, eq(users.id, tokens.userId))
+    .where(and(gt(tokens.lastMcpAt, since), tokenStillUsable(now)))
+    .all()
+    .map((row) => ({
+      tokenId: row.tokenId,
+      userId: row.userId,
+      name: row.name,
+      // Never null here: the `gt` above excludes it. The column type cannot say so.
+      at: row.lastMcpAt ?? 0,
+      client: clientOf(row.lastClient, row.tokenName),
+    }));
+}
+
 export function presenceNow(db: Db, actor: ResolvedActor, now: number = Date.now()): PresenceView {
   assertCan(actor, 'presence.read');
 
@@ -132,37 +214,90 @@ export function presenceNow(db: Db, actor: ResolvedActor, now: number = Date.now
       tokenId: heartbeats.tokenId,
       createdAt: heartbeats.createdAt,
       name: users.name,
+      tokenName: tokens.name,
+      lastClient: tokens.lastClient,
     })
     .from(heartbeats)
     .innerJoin(users, eq(users.id, heartbeats.userId))
-    .where(gt(heartbeats.createdAt, since))
+    .leftJoin(tokens, eq(tokens.id, heartbeats.tokenId))
+    .where(and(gt(heartbeats.createdAt, since), liveHeartbeat(now)))
     .orderBy(desc(heartbeats.createdAt))
     .all();
 
-  const present: PresenceEntry[] = [];
-  const seen = new Set<string>();
+  const calls = mcpSessionsSince(db, since, now);
+
+  // Per person: their newest heartbeat (it alone says *where*), and every live
+  // session from either source.
+  const people = new Map<
+    string,
+    { name: string; beat: (typeof rows)[number] | undefined; sessions: Session[] }
+  >();
+  const personFor = (userId: string, name: string) => {
+    let person = people.get(userId);
+    if (person === undefined) {
+      person = { name, beat: undefined, sessions: [] };
+      people.set(userId, person);
+    }
+    return person;
+  };
 
   for (const row of rows) {
+    const person = personFor(row.userId, row.name);
     // Newest first, so the first row for a person is their current one.
-    if (seen.has(row.userId)) continue;
-    seen.add(row.userId);
+    person.beat ??= row;
+    person.sessions.push({
+      tokenId: row.tokenId,
+      at: row.createdAt,
+      client: row.tokenId === null ? null : clientOf(row.lastClient, row.tokenName),
+    });
+  }
+  for (const call of calls) {
+    personFor(call.userId, call.name).sessions.push(call);
+  }
 
-    const { projectIds } = resolveRepoProjects(db, row.repo, row.branch);
-    const located = maySeeLocation(actor, projectIds);
+  const present: PresenceEntry[] = [];
 
-    present.push({
-      user_id: row.userId,
-      name: row.name,
+  for (const [userId, person] of people) {
+    const sessions = person.sessions.sort((a, b) => b.at - a.at);
+    const agents = sessions.filter((session) => session.tokenId !== null);
+    const clients = [
+      ...new Set(agents.map((s) => s.client).filter((c): c is AgentClient => c !== null)),
+    ];
+    const { beat } = person;
+
+    let location: Pick<PresenceEntry, 'repo' | 'branch' | 'matched_task_id' | 'project_ids'> = {
+      matched_task_id: null,
+      project_ids: [],
+    };
+    if (beat !== undefined) {
+      const { projectIds } = resolveRepoProjects(db, beat.repo, beat.branch);
       // The task and the project list follow the same gate: all three name
       // *where* the work is, and one of them leaking would make the others'
       // absence decorative.
-      ...(located ? { repo: row.repo, branch: row.branch } : {}),
-      matched_task_id: located ? row.matchedTaskId : null,
-      project_ids: located ? projectIds : [],
-      is_agent: row.tokenId !== null,
-      last_seen: row.createdAt,
+      if (maySeeLocation(actor, projectIds)) {
+        location = {
+          repo: beat.repo,
+          branch: beat.branch,
+          matched_task_id: beat.matchedTaskId,
+          project_ids: projectIds,
+        };
+      }
+    }
+
+    present.push({
+      user_id: userId,
+      name: person.name,
+      ...location,
+      // A heartbeat on a token, as before, or any live `/mcp` call (D-076).
+      is_agent:
+        (beat !== undefined && beat.tokenId !== null) || calls.some((c) => c.userId === userId),
+      client: agents[0]?.client ?? null,
+      clients,
+      last_seen: sessions[0]?.at ?? 0,
     });
   }
+
+  present.sort((a, b) => b.last_seen - a.last_seen);
 
   return { enabled: true, present };
 }
@@ -178,7 +313,7 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
   const mayReadUnlisted = can(actor, 'audit_log.export');
 
   // Batched, not per person (`creatingClientNames` and `commentCounts` are the
-  // existing patterns). Four queries whatever the headcount.
+  // existing patterns). Five queries whatever the headcount.
   const openTasks = db
     .select({
       id: tasks.id,
@@ -199,9 +334,12 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
           tokenId: heartbeats.tokenId,
         })
         .from(heartbeats)
-        .where(gt(heartbeats.createdAt, now - PRESENCE_WINDOW_MS))
+        .leftJoin(tokens, eq(tokens.id, heartbeats.tokenId))
+        .where(and(gt(heartbeats.createdAt, now - PRESENCE_WINDOW_MS), liveHeartbeat(now)))
         .all()
     : [];
+
+  const calls = enabled ? mcpSessionsSince(db, now - PRESENCE_WINDOW_MS, now) : [];
 
   const notes = mayReadUnlisted
     ? db
@@ -220,20 +358,26 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
     const started = inProgress.map((t) => t.startedAt).filter((v): v is number => v !== null);
 
     const theirBeats = beats.filter((b) => b.userId === person.id);
+    const theirCalls = calls.filter((c) => c.userId === person.id);
+    const seen = [...theirBeats.map((b) => b.createdAt), ...theirCalls.map((c) => c.at)];
 
     const entry: CapacityEntry = {
       user_id: person.id,
       name: person.name,
-      // Distinct agent sessions, per §11.4.2: an agent is a heartbeat on a
-      // token, and two tokens beating is two sessions.
-      active_sessions: new Set(theirBeats.map((b) => b.tokenId ?? 'web')).size,
+      // Distinct agent sessions, per §11.4.2: an agent is a token, and two
+      // tokens is two sessions. One token that both beats and calls `/mcp` is
+      // one session (D-076).
+      active_sessions: new Set([
+        ...theirBeats.map((b) => b.tokenId ?? 'web'),
+        ...theirCalls.map((c) => c.tokenId),
+      ]).size,
       in_progress_tasks: inProgress.map((t) => t.id).sort(),
       oldest_in_progress_ms: started.length === 0 ? null : now - Math.min(...started),
       tasks_in_review: theirs
         .filter((t) => t.status === 'review')
         .map((t) => t.id)
         .sort(),
-      last_seen: theirBeats.length === 0 ? null : Math.max(...theirBeats.map((b) => b.createdAt)),
+      last_seen: seen.length === 0 ? null : Math.max(...seen),
     };
 
     if (mayReadUnlisted) {

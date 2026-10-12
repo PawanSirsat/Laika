@@ -5,6 +5,7 @@ import { backfillTaskPositions, backfillTaskTimestamps } from '../../src/db/back
 import { newId } from '../../src/db/ids.ts';
 import { activity, projects, tasks } from '../../src/db/schema.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import { createDefaultProjectStatuses, statusForCategory } from '../../src/db/project-statuses.ts';
 
 /**
  * Recovering `started_at` / `completed_at` from the audit trail (LAI-435).
@@ -37,6 +38,7 @@ function task(status: string, dates: { startedAt?: number; completedAt?: number 
       number: nextNumber,
       title: 'A task',
       status: status as 'todo',
+      statusId: statusForCategory(t.db, s.projectId, status as 'todo').id,
       priority: 'p2',
       createdBy: s.userId,
       createdVia: 'web',
@@ -159,6 +161,23 @@ describe('what it refuses to invent', () => {
     expect(row(id)?.completedAt).toBeNull();
     expect(row(id)?.startedAt).toBe(5000);
   });
+
+  // LAI-738. A move between two statuses of one category writes
+  // `task.status_changed` with equal `from` and `to` — a column change, not an
+  // arrival. Counting it would date a completion to when somebody dragged a
+  // done card from Done to Shipped.
+  it('ignores a same-category move — it is not an arrival at done or in_progress', () => {
+    const done = task('done');
+    moved(done, 'done', 8000, 'review');
+    moved(done, 'done', 9000, 'done');
+    const doing = task('in_progress');
+    moved(doing, 'in_progress', 7000, 'in_progress');
+
+    backfillTaskTimestamps(t.db);
+
+    expect(row(done)?.completedAt).toBe(8000);
+    expect(row(doing)?.startedAt).toBeNull();
+  });
 });
 
 describe('it reads the audit trail and never writes to it', () => {
@@ -259,6 +278,7 @@ describe('backfillTaskPositions (LAI-472, D-070)', () => {
         number,
         title: `Task ${String(number)}`,
         status: 'todo',
+        statusId: statusForCategory(t.db, projectId, 'todo').id,
         priority,
         createdBy: s.userId,
         createdVia: 'web',
@@ -349,6 +369,7 @@ describe('backfillTaskPositions (LAI-472, D-070)', () => {
         updatedAt: 1,
       })
       .run();
+    createDefaultProjectStatuses(t.db, otherProject, 1);
     raw(1, 'p2');
     const elsewhere = raw(1, 'p2', otherProject);
 

@@ -6,6 +6,7 @@ import { newId } from '../../src/db/ids.ts';
 import { createTaskWithNumber, nextTaskNumber } from '../../src/db/numbering.ts';
 import { projects } from '../../src/db/schema.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import { createDefaultProjectStatuses } from '../../src/db/project-statuses.ts';
 
 let t: TestDb;
 let s: Seed;
@@ -83,6 +84,7 @@ describe('per-project task numbering (SPEC §4.5)', () => {
         updatedAt: now,
       })
       .run();
+    createDefaultProjectStatuses(t.db, other, now);
 
     createTaskWithNumber(t.sqlite, t.db, {
       projectId: s.projectId,

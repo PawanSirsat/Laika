@@ -10,6 +10,7 @@ import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts'
 import { eq } from 'drizzle-orm';
 import { newId } from '../../src/db/ids.ts';
 import { tasks } from '../../src/db/schema.ts';
+import { statusForCategory } from '../../src/db/project-statuses.ts';
 
 /**
  * The append-only guarantee survives a table rebuild (SPEC §4.8, LAI-118).
@@ -211,6 +212,7 @@ describe('the backfill is wired into boot too (LAI-435)', () => {
         number: 4242,
         title: 'Finished long ago',
         status: 'done',
+        statusId: statusForCategory(t.db, s.projectId, 'done').id,
         priority: 'p2',
         createdBy: s.userId,
         createdVia: 'web',

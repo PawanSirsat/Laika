@@ -11,6 +11,7 @@ import {
   seedInvite,
   signUp,
 } from '../../helpers/auth.ts';
+import { statusForCategory } from '../../../src/db/project-statuses.ts';
 
 /**
  * `POST /api/v1/meeting-reviews/:id/apply` over HTTP (§6.4, §10.2, LAI-451).
@@ -52,6 +53,7 @@ function addTask(number: number, title: string): void {
       number,
       title,
       status: 'todo',
+      statusId: statusForCategory(h.db, projectId, 'todo').id,
       priority: 'p2',
       createdBy: ownerId,
       createdVia: 'web',

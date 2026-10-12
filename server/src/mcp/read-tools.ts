@@ -19,7 +19,7 @@ import {
   subtaskProgress,
   type TaskView,
 } from '../services/tasks.ts';
-import { ago, answer, bullets, isoDate, nameLookup, toolError } from './present.ts';
+import { ago, answer, bullets, isoDate, nameLookup, statusText, toolError } from './present.ts';
 
 /**
  * The four tools an agent calls before it does anything (SPEC §7.1, LAI-407).
@@ -217,7 +217,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           bullets(
             ordered.map(
               (t) =>
-                `\`${t.key}\` **${t.title}** — ${t.priority}, ${t.status}, opened ${ago(t.created_at, now)}`,
+                `\`${t.key}\` **${t.title}** — ${t.priority}, ${statusText(t)}, opened ${ago(t.created_at, now)}`,
             ),
             'Nothing is ready. Everything is either assigned, blocked, or already moving.',
           ),
@@ -296,6 +296,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           key: t.key,
           title: t.title,
           status: t.status,
+          status_name: t.status_name,
           assignee_id: t.assignee_id,
         }));
         const { done: subtasksDone, total: subtasksTotal } = subtaskProgress(subtasks);
@@ -303,7 +304,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         const markdown = [
           `## \`${view.key}\` ${view.title}`,
           '',
-          `${view.priority} · ${view.status} · assigned to ${nameOf(view.assignee_id)} · ${view.ready ? 'ready' : 'not ready'}`,
+          `${view.priority} · ${statusText(view)} · assigned to ${nameOf(view.assignee_id)} · ${view.ready ? 'ready' : 'not ready'}`,
           '',
           '### Description',
           view.description_md ?? '_None._',
@@ -333,13 +334,13 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           parent === null
             ? '_Not a subtask._'
             : parent.visible
-              ? `\`${parent.key}\` ${parent.title} — **${parent.status}**`
+              ? `\`${parent.key}\` ${parent.title} — **${statusText(parent)}**`
               : `\`${parent.id}\` _(not visible to you)_`,
           '',
           `### Subtasks (${String(subtasksDone)}/${String(subtasksTotal)} done)`,
           bullets(
             subtasks.map(
-              (t) => `\`${t.key}\` ${t.title} — **${t.status}**, ${nameOf(t.assignee_id)}`,
+              (t) => `\`${t.key}\` ${t.title} — **${statusText(t)}**, ${nameOf(t.assignee_id)}`,
             ),
             'None.',
           ),
@@ -546,13 +547,20 @@ function byPriorityThenAge(a: TaskView, b: TaskView): number {
 function describeRelated(task: TaskView | undefined, id: string): string {
   return task === undefined
     ? `\`${id}\` _(not visible to you)_`
-    : `\`${task.key}\` ${task.title} — **${task.status}**`;
+    : `\`${task.key}\` ${task.title} — **${statusText(task)}**`;
 }
 
 function summarise(task: TaskView | undefined, id: string) {
   return task === undefined
-    ? { id, visible: false }
-    : { id: task.id, key: task.key, title: task.title, status: task.status, visible: true };
+    ? { id, visible: false as const }
+    : {
+        id: task.id,
+        key: task.key,
+        title: task.title,
+        status: task.status,
+        status_name: task.status_name,
+        visible: true as const,
+      };
 }
 
 /**
