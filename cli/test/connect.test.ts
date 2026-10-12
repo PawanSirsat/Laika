@@ -30,7 +30,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
 import { AGENTS, resolveAgent } from '../src/agents.ts';
-import { connect, rcFileFor, type ConnectIo } from '../src/connect.ts';
+import { connect, planConnect, rcFileFor, type ConnectIo } from '../src/connect.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 
@@ -346,7 +346,12 @@ void describe('each written format has the shape its client reads', () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, 'laika.yaml'), 'name: laika\nold: true\n');
     assert.equal(await connect(['omnigent', '--project'], h.io), 0, h.printed());
-    assert.equal(readFileSync(join(dir, 'laika.yaml.bak'), 'utf8'), 'name: laika\nold: true\n');
+    // Review round 1: a project-side file is backed up under ~/.laika/backups,
+    // never beside itself — a .bak in a repository is one `git add .` from a commit.
+    assert.ok(!existsSync(join(dir, 'laika.yaml.bak')), 'a .bak was left in the agent folder');
+    const backups = filesUnder(join(h.home, '.laika', 'backups'));
+    assert.equal(backups.length, 1);
+    assert.equal(readFileSync(backups[0] ?? '', 'utf8'), 'name: laika\nold: true\n');
     assert.match(readFileSync(join(dir, 'laika.yaml'), 'utf8'), /^transport: http$/m);
   });
 
@@ -678,3 +683,240 @@ void describe('the real entry point', () => {
     assert.ok(!after.out.includes(TOKEN), 'whoami printed the token');
   });
 });
+
+/* -------------------------------------------------------------------------- */
+/* Review round 1                                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The fully-qualified keys a TOML document defines: table headers and the
+ * dotted/inline keys under them. A *minimal* duplicate check — enough to see
+ * `mcp_servers.laika` defined twice, which every TOML parser rejects — not a
+ * parser. No dependency (CLAUDE.md §5).
+ */
+function tomlDefinitions(text: string): string[] {
+  const defs: string[] = [];
+  let table: string[] = [];
+  const clean = (part: string): string => part.trim().replace(/^["']|["']$/g, '');
+  for (const raw of text.split('\n')) {
+    const line = raw.replace(/#.*$/, '').trim();
+    if (line === '') continue;
+    const header = /^\[([^\]]+)\]$/.exec(line);
+    if (header !== null) {
+      table = (header[1] ?? '').split('.').map(clean);
+      defs.push(table.join('.'));
+      continue;
+    }
+    const kv = /^([A-Za-z0-9_."' -]+?)\s*=\s*(.*)$/.exec(line);
+    if (kv === null) continue;
+    const key = [...table, ...(kv[1] ?? '').split('.').map(clean)];
+    // An inline table (`laika = { … }`) or a dotted key both define the table they name.
+    if ((kv[2] ?? '').startsWith('{')) defs.push(key.join('.'));
+    else if (key.length > table.length + 1) defs.push(key.slice(0, -1).join('.'));
+  }
+  return defs;
+}
+
+const definedTwice = (text: string, table: string): boolean =>
+  new Set(tomlDefinitions(text).filter((d) => d === table)).size > 0 &&
+  tomlDefinitions(text).filter((d) => d === table).length > 1;
+
+void describe('codex never gets a second laika table (review round 1)', () => {
+  void test('CONTROL: the duplicate checker sees the corruption it guards against', () => {
+    assert.ok(
+      definedTwice(
+        '[mcp_servers]\nlaika = { url = "a" }\n\n[mcp_servers.laika]\nurl = "b"\n',
+        'mcp_servers.laika',
+      ),
+    );
+    assert.ok(!definedTwice('[mcp_servers.laika]\nurl = "b"\n', 'mcp_servers.laika'));
+  });
+
+  const forms: readonly (readonly [string, string])[] = [
+    [
+      'an inline table under [mcp_servers]',
+      'model = "o4"\n\n[mcp_servers]\nlaika = { url = "http://elsewhere/mcp" }\n',
+    ],
+    ['a dotted key at the top level', 'mcp_servers.laika.url = "http://elsewhere/mcp"\n'],
+    ['a dotted key under [mcp_servers]', '[mcp_servers]\nlaika.url = "http://elsewhere/mcp"\n'],
+    ['a quoted dotted key', '"mcp_servers"."laika".url = "http://elsewhere/mcp"\n'],
+  ];
+  for (const [label, original] of forms) {
+    void test(`${label} is left byte-identical, and the result still has one laika table`, async () => {
+      const h = harness();
+      const path = join(h.home, '.codex', 'config.toml');
+      mkdirSync(join(h.home, '.codex'));
+      writeFileSync(path, original);
+      assert.equal(await connect(['codex'], h.io), 0, h.printed());
+      const after = readFileSync(path, 'utf8');
+      assert.equal(after, original, h.printed());
+      assert.ok(!definedTwice(after, 'mcp_servers.laika'));
+      assert.ok(!existsSync(`${path}.bak`));
+    });
+  }
+
+  void test('a mention of laika it cannot place leaves the file alone and prints the block', async () => {
+    const h = harness();
+    const path = join(h.home, '.codex', 'config.toml');
+    mkdirSync(join(h.home, '.codex'));
+    const original = '[profiles.laika]\nmodel = "o4"\n';
+    writeFileSync(path, original);
+    assert.equal(await connect(['codex'], h.io), 0, h.printed());
+    assert.equal(readFileSync(path, 'utf8'), original);
+    assert.match(h.printed(), /left as it is/);
+    assert.match(h.printed(), /^\s*bearer_token_env_var = "LAIKA_TOKEN"$/m);
+  });
+
+  void test('an append to a file with other servers leaves exactly one laika table', async () => {
+    const h = harness();
+    const path = join(h.home, '.codex', 'config.toml');
+    mkdirSync(join(h.home, '.codex'));
+    writeFileSync(path, '[mcp_servers]\nother = { url = "http://x" }\n');
+    assert.equal(await connect(['codex'], h.io), 0, h.printed());
+    const after = readFileSync(path, 'utf8');
+    assert.equal(tomlDefinitions(after).filter((d) => d === 'mcp_servers.laika').length, 1, after);
+  });
+});
+
+/** Run one printed shell line in bash with `npx`/`code` stubbed, returning what they saw. */
+function runPrinted(line: string, env: Record<string, string>): string {
+  execFileSync('bash', ['-n', '-c', line]);
+  const stub =
+    'npx(){ printf "ARG:%s\\n" "$@"; printf "AUTH:%s\\n" "${LAIKA_AUTH-unset}"; }; ' +
+    'code(){ printf "ARG:%s\\n" "$@"; }; ';
+  return execFileSync('bash', ['-c', stub + line], {
+    encoding: 'utf8',
+    env: { PATH: process.env.PATH ?? '', ...env },
+  });
+}
+
+void describe('printed commands survive a real shell (review round 1)', () => {
+  void test('the bridge one-liner hands mcp-remote a literal ${LAIKA_AUTH} and the bearer in its env', async () => {
+    const h = harness();
+    assert.equal(await connect(['kiro'], h.io), 0, h.printed());
+    const line = h.lines.find(
+      (l) => l.includes('npx -y mcp-remote@0.14.3') && l.includes('LAIKA_AUTH='),
+    );
+    assert.ok(line !== undefined, `no runnable one-liner printed:\n${h.printed()}`);
+    const seen = runPrinted(line.trim(), { LAIKA_TOKEN: 'lai_shellcheck' });
+    assert.match(seen, /^ARG:Authorization:\$\{LAIKA_AUTH\}$/m, seen);
+    assert.match(seen, /^AUTH:Bearer lai_shellcheck$/m, seen);
+    assert.match(seen, /^ARG:--allow-http$/m);
+  });
+
+  void test('code --add-mcp is quoted for any URL, and VS Code gets valid JSON', () => {
+    const odd = "http://board.test:3000/it's";
+    const plan = planConnect('vscode', {
+      url: odd,
+      token: TOKEN,
+      home: '/h',
+      cwd: '/c',
+      project: false,
+    });
+    const line = plan.notes.find((n) => n.trim().startsWith('code --add-mcp'));
+    assert.ok(line !== undefined);
+    const seen = runPrinted(line.trim(), {});
+    const json = /^ARG:(\{.*\})$/m.exec(seen)?.[1];
+    assert.ok(json !== undefined, seen);
+    assert.equal((JSON.parse(json) as { url: string }).url, `${odd}/mcp`);
+  });
+});
+
+void describe('no project file holds a token, and no repo gets a .bak (review round 1)', () => {
+  void test('kiro and junie offer user scope only', async () => {
+    for (const slug of ['kiro', 'junie']) {
+      const h = harness();
+      assert.equal(await connect([slug], h.io), 0);
+      assert.doesNotMatch(h.printed(), /\(or \.(kiro|junie)\//, `${slug} offers a project path`);
+      assert.match(h.printed(), /user scope only/i, slug);
+    }
+  });
+
+  void test('junie prints the same direct config the Connect page shows, plus the AI Assistant bridge', async () => {
+    const h = harness();
+    assert.equal(await connect(['junie'], h.io), 0);
+    assert.match(h.printed(), /~\/\.junie\/mcp\/mcp\.json/);
+    assert.match(h.printed(), /"url": "http:\/\/board\.test:3000\/mcp"/);
+    assert.match(h.printed(), /AI Assistant/);
+  });
+
+  void test('zed does not claim the bridge keeps the token out of settings.json', async () => {
+    const h = harness();
+    assert.equal(await connect(['zed'], h.io), 0);
+    assert.doesNotMatch(h.printed(), /keep the token out of settings\.json, use the bridge/i);
+    assert.match(h.printed(), /Authorization:Bearer \$\{LAIKA_TOKEN\}/);
+  });
+
+  void test('--project backs up under ~/.laika/backups, never beside the repo file', async () => {
+    const h = harness();
+    const path = join(h.cwd, '.cursor', 'mcp.json');
+    mkdirSync(join(h.cwd, '.cursor'));
+    writeFileSync(path, '{"mcpServers":{"other":{"url":"http://x"}}}');
+    assert.equal(await connect(['cursor', '--project'], h.io), 0, h.printed());
+    assert.deepEqual(
+      filesUnder(h.cwd).filter((f) => f.endsWith('.bak')),
+      [],
+      'a .bak was left in the repository',
+    );
+    const backups = filesUnder(join(h.home, '.laika', 'backups'));
+    assert.equal(backups.length, 1, `backups: ${backups.join(', ')}`);
+    assert.equal(
+      readFileSync(backups[0] ?? '', 'utf8'),
+      '{"mcpServers":{"other":{"url":"http://x"}}}',
+    );
+  });
+});
+
+void describe('credentials, again (review round 1)', () => {
+  void test('LAIKA_URL and LAIKA_TOKEN in the environment win over ~/.laika/env, and update it', async () => {
+    const h = harness();
+    mkdirSync(join(h.home, '.laika'), { mode: 0o700 });
+    writeFileSync(
+      join(h.home, '.laika', 'env'),
+      'LAIKA_URL="http://old.test"\nLAIKA_TOKEN="lai_OldTokenOldTokenOld"\n',
+      { mode: 0o600 },
+    );
+    assert.equal(await connect(['cursor'], h.io), 0, h.printed());
+    const saved = readFileSync(join(h.home, '.laika', 'env'), 'utf8');
+    assert.match(saved, new RegExp(`LAIKA_TOKEN="${TOKEN}"`));
+    assert.match(saved, new RegExp(`LAIKA_URL="${URL_}"`));
+    const cursor = readJson(join(h.home, '.cursor', 'mcp.json')) as {
+      mcpServers: { laika: { url: string } };
+    };
+    assert.equal(cursor.mcpServers.laika.url, `${URL_}/mcp`);
+  });
+
+  void test('a token-bearing file is replaced, never rewritten in place under a wider mode', async () => {
+    // `writeFileSync` on an existing 0644 file writes the token first and narrows
+    // the mode after. A write through a 0600 temp file and a rename never does:
+    // the old inode, with its old mode, never holds the new bytes.
+    const h = harness();
+    const env = join(h.home, '.laika', 'env');
+    mkdirSync(join(h.home, '.laika'), { mode: 0o700 });
+    writeFileSync(env, 'LAIKA_URL="http://old.test"\nLAIKA_TOKEN="lai_OldTokenOldTokenOld"\n', {
+      mode: 0o644,
+    });
+    const ag = join(h.home, '.gemini', 'config', 'mcp_config.json');
+    mkdirSync(dirnameOf(ag), { recursive: true });
+    writeFileSync(ag, '{"mcpServers":{}}', { mode: 0o644 });
+    const before = { env: statSync(env).ino, ag: statSync(ag).ino };
+
+    assert.equal(await connect(['antigravity'], h.io), 0, h.printed());
+    assert.notEqual(statSync(env).ino, before.env, '~/.laika/env was rewritten in place');
+    assert.notEqual(statSync(ag).ino, before.ag, 'mcp_config.json was rewritten in place');
+    assert.equal(mode(env), 0o600);
+    assert.equal(mode(ag), 0o600);
+  });
+
+  void test('the rc sources ~/.laika/env and never holds the token itself', async () => {
+    const h = harness();
+    assert.equal(await connect(['codex'], h.io), 0);
+    const rc = readFileSync(join(h.home, '.zshrc'), 'utf8');
+    assert.ok(!rc.includes(TOKEN), 'the token is in the shell rc');
+    assert.match(rc, /\. "\$HOME\/\.laika\/env"/);
+  });
+});
+
+function dirnameOf(path: string): string {
+  return path.slice(0, path.lastIndexOf('/'));
+}

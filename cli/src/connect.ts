@@ -5,6 +5,8 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs';
 import { homedir } from 'node:os';
@@ -22,10 +24,11 @@ import {
   codexBlock,
   cursorEntry,
   geminiEntry,
-  hasCodexLaikaTable,
+  codexLaikaState,
   opencodeEntry,
   printedSnippet,
   resolveAgent,
+  shellQuote,
   vscodeEntry,
   type Agent,
   type AgentSlug,
@@ -253,7 +256,7 @@ export function planConnect(slug: AgentSlug, o: ConnectOptions): Plan {
         actions: [],
         notes: [
           'Add it to your VS Code user profile with:',
-          `  code --add-mcp '${json}'`,
+          `  code --add-mcp ${shellQuote(json)}`,
           'VS Code documents --add-mcp with a stdio example only; this HTTP shape is',
           'inferred [UNVERIFIED]. Or, for one repository: laika connect vscode --project',
         ],
@@ -277,8 +280,9 @@ export function planConnect(slug: AgentSlug, o: ConnectOptions): Plan {
           '  The file is readable only by you. Never copy it into a repository, and',
           '  re-run this after you change the token.',
           '! Beta, and [UNVERIFIED] against Laika: agy sends server/discover before',
-          '  initialize, and open issues report failures with some HTTP servers. Test',
-          '  it before relying on it.',
+          '  initialize, open issues report failures with some HTTP servers, and',
+          '  antigravity-cli issue 233 reports remote headers answered Unauthorized.',
+          '  Test it before relying on it.',
         ],
         exportsEnv: false,
       };
@@ -351,7 +355,7 @@ type Prepared =
   | {
       readonly ok: true;
       readonly path: string;
-      readonly status: 'created' | 'added' | 'replaced' | 'unchanged' | 'kept';
+      readonly status: 'created' | 'added' | 'replaced' | 'unchanged' | 'kept' | 'unsure';
       readonly content?: string;
       readonly existed: boolean;
       readonly secret: boolean;
@@ -390,8 +394,15 @@ export function prepare(action: FileAction): Prepared {
   }
 
   if (action.kind === 'toml') {
-    if (raw !== undefined && hasCodexLaikaTable(raw)) {
-      return { ok: true, path: action.path, status: 'kept', existed, secret: false };
+    const state = raw === undefined ? 'absent' : codexLaikaState(raw);
+    if (state !== 'absent') {
+      return {
+        ok: true,
+        path: action.path,
+        status: state === 'present' ? 'kept' : 'unsure',
+        existed,
+        secret: false,
+      };
     }
     const content =
       raw === undefined || raw === ''
@@ -456,23 +467,57 @@ export function prepare(action: FileAction): Prepared {
   };
 }
 
-/** Write a prepared action. Returns the backup path when this run made one. */
-export function apply(p: Prepared & { ok: true }): string | undefined {
+/**
+ * Write `content` so the file never exists, even for a moment, with the new
+ * bytes under a wider mode (review round 1).
+ *
+ * `writeFileSync` on an existing file writes into the old inode, keeping its
+ * old mode, and a `chmod` after it narrows the mode only once the token is
+ * already there. A temp file created `0600` beside the target, then renamed
+ * over it, replaces the inode instead: the old one, with the old mode, never
+ * holds the new bytes. `wx` refuses to follow a planted file or symlink.
+ */
+export function writePrivately(path: string, content: string | Buffer): void {
+  const temp = `${path}.laika-${String(process.pid)}-${String(Date.now())}.tmp`;
+  try {
+    writeFileSync(temp, content, { mode: 0o600, flag: 'wx' });
+    renameSync(temp, path);
+  } catch (cause) {
+    rmSync(temp, { force: true });
+    throw cause;
+  }
+}
+
+/**
+ * Write a prepared action. Returns the backup path when this run made one.
+ *
+ * `backup` is where the original goes, once: beside a user-scope file, and
+ * under `~/.laika/backups/` for anything in a project (review round 1) — a
+ * `.bak` inside a repository is one `git add .` away from being committed.
+ */
+export function apply(p: Prepared & { ok: true }, backup = `${p.path}.bak`): string | undefined {
   if (p.content === undefined) return undefined;
   mkdirSync(dirname(p.path), { recursive: true });
 
-  let backup: string | undefined;
-  const bak = `${p.path}.bak`;
-  if (p.existed && !existsSync(bak)) {
-    copyFileSync(p.path, bak);
-    if (p.secret) chmodSync(bak, 0o600);
-    backup = bak;
+  let made: string | undefined;
+  if (p.existed && !existsSync(backup)) {
+    mkdirSync(dirname(backup), { recursive: true });
+    if (p.secret) writePrivately(backup, readFileSync(p.path));
+    else copyFileSync(p.path, backup);
+    made = backup;
   }
 
-  writeFileSync(p.path, p.content, p.secret ? { mode: 0o600 } : {});
-  // `mode` applies only when the file is created, so an existing one is narrowed here.
-  if (p.secret) chmodSync(p.path, 0o600);
-  return backup;
+  if (p.secret) writePrivately(p.path, p.content);
+  else writeFileSync(p.path, p.content);
+  return made;
+}
+
+/** Where a project-side file's original goes: `~/.laika/backups/<path with / as %>.bak`. */
+export function projectBackupPath(home: string, path: string): string {
+  const flat = resolve(path)
+    .replace(/^\//, '')
+    .replace(/[/\\:]/g, '%');
+  return join(home, '.laika', 'backups', `${flat}.bak`);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -490,14 +535,12 @@ export function writeEnvFile(home: string, url: string, token: string): void {
   const path = envFilePath(home);
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   chmodSync(dirname(path), 0o700);
-  writeFileSync(
+  writePrivately(
     path,
     '# Laika settings for laika-claude and laika connect. Personal — do not share or commit.\n' +
       `LAIKA_URL="${url}"\n` +
       `LAIKA_TOKEN="${token}"\n`,
-    { mode: 0o600 },
   );
-  chmodSync(path, 0o600);
 }
 
 /** The rc file `install.sh` picks from `$SHELL`. */
@@ -533,16 +576,25 @@ type Credentials =
   | { readonly ok: false; readonly message: string };
 
 async function credentials(io: ConnectIo): Promise<Credentials> {
+  /*
+   * **The environment wins over the saved file** (review round 1). Somebody who
+   * exports a new token and re-runs connect means the new one; reusing the old
+   * file would quietly keep a revoked token in every config. The file is then
+   * updated, so the two cannot disagree after this run.
+   */
   const saved = readEnvFile(envFilePath(io.home));
-  if (saved.LAIKA_URL !== undefined && saved.LAIKA_TOKEN !== undefined) {
-    io.out('Using the board and token saved in ~/.laika/env.');
-    return { ok: true, url: normaliseUrl(saved.LAIKA_URL), token: saved.LAIKA_TOKEN, saved: true };
-  }
-
   let url = normaliseUrl(io.env.LAIKA_URL ?? '');
   let token = (io.env.LAIKA_TOKEN ?? '').trim();
   if (url !== '' && token !== '') {
+    const same = normaliseUrl(saved.LAIKA_URL ?? '') === url && saved.LAIKA_TOKEN === token;
+    if (same) {
+      io.out('Using LAIKA_URL and LAIKA_TOKEN from the environment (already in ~/.laika/env).');
+      return { ok: true, url, token, saved: true };
+    }
     io.out('Using LAIKA_URL and LAIKA_TOKEN from the environment.');
+  } else if (saved.LAIKA_URL !== undefined && saved.LAIKA_TOKEN !== undefined) {
+    io.out('Using the board and token saved in ~/.laika/env.');
+    return { ok: true, url: normaliseUrl(saved.LAIKA_URL), token: saved.LAIKA_TOKEN, saved: true };
   } else {
     url = normaliseUrl(await io.ask('Board URL'));
     if (url === '') return { ok: false, message: 'No board URL given — nothing was written.' };
@@ -738,7 +790,8 @@ async function run(argv: readonly string[], io: ConnectIo): Promise<number> {
   for (const p of prepared) {
     if (!p.ok) continue;
     const shown = tilde(p.path, io.home);
-    const backup = apply(p);
+    const inProject = args.project || args.dir !== undefined || !p.path.startsWith(`${io.home}/`);
+    const backup = apply(p, inProject ? projectBackupPath(io.home, p.path) : `${p.path}.bak`);
     const saved = backup === undefined ? '' : ` (backup: ${tilde(backup, io.home)})`;
     if (p.status === 'created') done.push(`  ✓ created ${shown}`);
     else if (p.status === 'added') done.push(`  ✓ added laika to ${shown}${saved}`);
@@ -746,9 +799,14 @@ async function run(argv: readonly string[], io: ConnectIo): Promise<number> {
       done.push(`  ✓ replaced the existing laika entry in ${shown}${saved}`);
     else if (p.status === 'unchanged')
       done.push(`  ✓ already configured: ${shown} — nothing written`);
-    else {
+    else if (p.status === 'kept') {
       done.push(`  ! ${shown} already has a [mcp_servers.laika] table — left as it is.`);
       done.push(`    Check that its url is ${creds.url}/mcp.`);
+    } else {
+      done.push(`  ! ${shown} mentions laika in a way connect cannot place — left as it is.`);
+      done.push('    If it does not already define the server, add this yourself:');
+      done.push('');
+      for (const line of codexBlockFor(creds.url)) done.push(`      ${line}`);
     }
   }
 
@@ -765,4 +823,8 @@ async function run(argv: readonly string[], io: ConnectIo): Promise<number> {
     }
   }
   return 0;
+}
+
+function codexBlockFor(url: string): string[] {
+  return codexBlock(url).trimEnd().split('\n');
 }

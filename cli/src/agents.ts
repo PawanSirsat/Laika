@@ -197,19 +197,78 @@ export function antigravityEntry(url: string, token: string): JsonObject {
   return { serverUrl: mcp(url), headers: { Authorization: `Bearer ${token}` } };
 }
 
-/** Codex takes the variable's **name**; it does not interpolate. */
+/**
+ * Codex takes the variable's **name**; it does not interpolate.
+ *
+ * The URL goes through `JSON.stringify`: a JSON string is a valid TOML basic
+ * string for anything a URL can hold — the escapes the two share are the only
+ * ones a URL can need.
+ */
 export function codexBlock(url: string): string {
-  // JSON string syntax is a valid TOML basic string for anything a URL holds.
   return `[mcp_servers.laika]\nurl = ${JSON.stringify(mcp(url))}\nbearer_token_env_var = "LAIKA_TOKEN"\n`;
 }
 
+/** One TOML key path, split on dots, quotes and spaces stripped. */
+function keyPath(raw: string): string[] {
+  return raw.split('.').map((part) => part.trim().replace(/^["']|["']$/g, ''));
+}
+
 /**
- * Is there already a `[mcp_servers.laika]` table — or a sub-table of it, which
- * defines it implicitly? Either way appending a second header would be a
- * duplicate-key error the next time Codex starts.
+ * Does `~/.codex/config.toml` already define the `laika` server — in any of
+ * the forms TOML allows (review round 1)?
+ *
+ * - a `[mcp_servers.laika]` header, or a sub-table of it;
+ * - an inline table: `laika = { … }` under `[mcp_servers]`, or
+ *   `mcp_servers = { laika = … }` at the top level;
+ * - a dotted key: `laika.url = …` under `[mcp_servers]`, or
+ *   `mcp_servers.laika.url = …` anywhere above the first table.
+ *
+ * Appending a `[mcp_servers.laika]` block beside any of them defines the table
+ * twice, which every TOML parser — Codex's included — rejects, so the agent
+ * would not start at all.
+ *
+ * **`unsure` is the third answer, and it means hands off.** A line that says
+ * `laika` in a way this cannot place (`[profiles.laika]`, a multi-line string)
+ * is not proof of a duplicate, but it is not proof of its absence either, and
+ * this is a line scanner, not a parser. `connect` then leaves the file alone
+ * and prints the block for the reader to add.
  */
+export function codexLaikaState(toml: string): 'present' | 'absent' | 'unsure' {
+  let table: string[] = [];
+  let mentioned = false;
+  for (const raw of toml.split('\n')) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#')) continue;
+
+    const header = /^\[\[?([^\]]+)\]\]?/.exec(line);
+    if (header !== null) {
+      table = keyPath(header[1] ?? '');
+      if (table[0] === 'mcp_servers' && table[1] === 'laika') return 'present';
+      if (/laika/i.test(line)) mentioned = true;
+      continue;
+    }
+
+    const kv = /^((?:"[^"]*"|'[^']*'|[^=])+?)\s*=\s*(.*)$/.exec(line);
+    if (kv !== null) {
+      const key = [...table, ...keyPath(kv[1] ?? '')];
+      if (key[0] === 'mcp_servers' && key[1] === 'laika') return 'present';
+      if (key.length === 1 && key[0] === 'mcp_servers' && /\blaika\b/.test(kv[2] ?? '')) {
+        return 'present';
+      }
+    }
+    if (/laika/i.test(line)) mentioned = true;
+  }
+  return mentioned ? 'unsure' : 'absent';
+}
+
+/** For `laika whoami`: is the server defined, in any form? */
 export function hasCodexLaikaTable(toml: string): boolean {
-  return /^[ \t]*\[[ \t]*mcp_servers[ \t]*\.[ \t]*(?:laika|"laika"|'laika')[ \t]*[\].]/m.test(toml);
+  return codexLaikaState(toml) === 'present';
+}
+
+/** A single-quoted shell word that survives any character, `'` included. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 /** Omnigent's sidecar spec. Omnigent expands both variables itself. */
@@ -275,9 +334,9 @@ function bridge(url: string, where: string, key = 'mcpServers'): string[] {
     'expands ${LAIKA_AUTH} itself from that env block, so this works in clients that',
     'expand nothing. Needs Node 18 or newer.',
     '',
-    'As one command line:',
-    `  npx -y mcp-remote@0.14.3 ${mcp(url)} --allow-http --transport http-only --header Authorization:\${LAIKA_AUTH}`,
-    `  with LAIKA_AUTH="Bearer ${PLACEHOLDER}" in its environment.`,
+    'As one command line — it reads LAIKA_TOKEN from your environment, and the single',
+    'quotes hand ${LAIKA_AUTH} to mcp-remote unexpanded, which expands it itself:',
+    `  LAIKA_AUTH="Bearer $LAIKA_TOKEN" npx -y mcp-remote@0.14.3 ${shellQuote(mcp(url))} --allow-http --transport http-only --header 'Authorization:\${LAIKA_AUTH}'`,
   ];
 }
 
@@ -432,7 +491,7 @@ export function printedSnippet(slug: AgentSlug, url: string): string[] | undefin
     case 'kiro':
       return [
         'Kiro accepts http:// only for localhost, so a plain-http board needs the bridge.',
-        ...bridge(url, '~/.kiro/settings/mcp.json (or .kiro/settings/mcp.json)'),
+        ...bridge(url, '~/.kiro/settings/mcp.json — user scope only, because it holds your token'),
         '',
         'With an https:// board the native form works instead — and Kiro expands only',
         'environment variables you have explicitly approved:',
@@ -454,8 +513,8 @@ export function printedSnippet(slug: AgentSlug, url: string): string[] | undefin
 
     case 'zed':
       return [
-        'Zed expands no environment variables. Its native form needs the token inline, in',
-        '~/.config/zed/settings.json:',
+        'Zed expands no environment variables, so both forms below hold the token in',
+        '~/.config/zed/settings.json — user scope only; never .zed/ in a project.',
         '',
         ...pretty({
           context_servers: {
@@ -463,18 +522,49 @@ export function printedSnippet(slug: AgentSlug, url: string): string[] | undefin
           },
         }),
         '',
-        'To keep the token out of settings.json, use the bridge instead. It goes under',
-        'context_servers; the exact keys Zed takes for a command entry are [UNVERIFIED] here.',
+        'Or through the bridge, which also keeps the token in settings.json (its env block).',
+        'The exact keys Zed takes for a command entry are [UNVERIFIED] here.',
         ...bridge(url, 'Zed settings.json', 'context_servers'),
+        '',
+        'To keep the token out of settings.json, start Zed from a terminal that has',
+        'LAIKA_TOKEN exported and let mcp-remote expand it from the environment it',
+        'inherits — [UNVERIFIED] that Zed passes its environment to the bridge:',
+        '',
+        ...pretty({
+          context_servers: {
+            laika: {
+              command: 'npx',
+              args: [
+                '-y',
+                'mcp-remote@0.14.3',
+                mcp(url),
+                '--allow-http',
+                '--transport',
+                'http-only',
+                '--header',
+                'Authorization:Bearer ${LAIKA_TOKEN}',
+              ],
+            },
+          },
+        }),
       ];
 
     case 'junie':
       return [
-        ...bridge(url, '~/.junie/mcp/mcp.json (or .junie/mcp/mcp.json)'),
+        'Junie — ~/.junie/mcp/mcp.json, user scope only, because it holds your token:',
         '',
-        'Whether Junie expands environment variables is [UNVERIFIED], hence the bridge.',
-        'JetBrains AI Assistant documents no header field at all, so it takes the same',
-        'bridge (Settings → Tools → AI Assistant → Model Context Protocol).',
+        ...pretty({
+          mcpServers: {
+            laika: { url: mcp(url), headers: { Authorization: `Bearer ${PLACEHOLDER}` } },
+          },
+        }),
+        '',
+        `Replace ${PLACEHOLDER} with the LAIKA_TOKEN value in ~/.laika/env. Junie's docs show`,
+        'the token written out; whether it expands a variable is [UNVERIFIED].',
+        '',
+        'JetBrains AI Assistant documents no header field at all, so it takes the bridge',
+        '(Settings → Tools → AI Assistant → Model Context Protocol — user scope only):',
+        ...bridge(url, 'AI Assistant'),
       ];
 
     case 'other':

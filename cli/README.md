@@ -40,9 +40,19 @@ Antigravity, because a project file can be committed.
 **Other people's files.** Connect only touches the `laika` entry. A file that
 is not valid JSON (including JSONC with comments) is refused, and nothing at
 all is written. The first time connect changes an existing file, it saves the
-original as `<file>.bak` and never overwrites that backup. If the entry is
-already the same, connect writes nothing. If a Codex config already has a
-`[mcp_servers.laika]` table, connect leaves the file alone.
+original once and never overwrites that backup: beside a user-scope file as
+`<file>.bak`, and under `~/.laika/backups/` for a project file, so no backup
+lands in a repository. If the entry is already the same, connect writes
+nothing. If a Codex config already defines the `laika` server in any form (a
+`[mcp_servers.laika]` table, an inline table or a dotted key), connect leaves
+the file alone; if it mentions `laika` in a way connect cannot place, it also
+leaves it alone and prints the block for you to add.
+
+**Credentials.** `LAIKA_URL` and `LAIKA_TOKEN` in the environment win over
+`~/.laika/env` and update it. A file holding the token (`~/.laika/env`,
+Antigravity's config) is written through a 0600 temp file and a rename, so it
+never holds the token under a wider mode. The shell rc only *sources*
+`~/.laika/env`; it never contains the token.
 
 `laika whoami` prints an `Agents` line naming which agents have a `laika` entry
 at user scope. It only checks that the entry exists, not that it works.
