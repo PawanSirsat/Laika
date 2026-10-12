@@ -58,15 +58,14 @@ interface Pair {
 
 const PAIRS: readonly Pair[] = [
   {
-    // LAI-266. Paired the moment the client type existed, rather than taking
-    // `UNPAIRED` — the exemption is for a type with no mirror, and this one has
-    // one. Without the pair, the next field hung off a column (LAI-267's
-    // `wip_limit`, LAI-268's `reviewer_id`) could be served and never seen,
-    // which is the exact failure this file has caught six times.
-    server: 'BoardColumnView',
-    serverFile: 'services/board-columns.ts',
-    client: 'BoardColumn',
-    clientFile: 'columns.ts',
+    // LAI-739, replacing LAI-266's BoardColumn pair: one board column is one
+    // project status now. Paired the moment the client type existed, for the
+    // reason the old pair gave — the next field hung off a status could be
+    // served and never seen.
+    server: 'ProjectStatusView',
+    serverFile: 'services/project-statuses.ts',
+    client: 'ProjectStatus',
+    clientFile: 'statuses.ts',
   },
   {
     // Only the `*View`. `ApplyReviewResult` and `ProposalView` are the shapes

@@ -10,7 +10,7 @@ import { PRIORITIES, type Task, type TaskFilter, type TaskPriority } from './tas
  *
  * **It must mean exactly what `listTasks`'s `WHERE` means**
  * (`server/src/services/tasks.ts`), and `task-filter.test.ts` pins each clause:
- * equality on status, priority, assignee and sprint, with `none` for null as
+ * equality on status, status id, priority, assignee and sprint, with `none` for null as
  * over a query string; `ready` as the server served it, never recomputed
  * (§4.5); a tag by its normalised name (`normaliseTagName` trims and
  * lower-cases); `updated_at` at or after `updated_since`; children of `parent`.
@@ -21,6 +21,7 @@ import { PRIORITIES, type Task, type TaskFilter, type TaskPriority } from './tas
  */
 export function matchesTaskFilter(task: Task, filter: TaskFilter): boolean {
   if (filter.status !== undefined && task.status !== filter.status) return false;
+  if (filter.status_id !== undefined && task.status_id !== filter.status_id) return false;
   if (filter.priority !== undefined && task.priority !== filter.priority) return false;
   if (filter.assignee !== undefined) {
     const want = filter.assignee === 'none' ? null : filter.assignee;
@@ -41,6 +42,7 @@ export function matchesTaskFilter(task: Task, filter: TaskFilter): boolean {
 /** Fields that narrow the set, as opposed to paging it. */
 const NARROWING = [
   'status',
+  'status_id',
   'priority',
   'assignee',
   'sprint',

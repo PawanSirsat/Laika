@@ -13,6 +13,7 @@ import {
   isReorder,
   listProjectActivityPage,
   shownInFeed,
+  statusMoveNames,
   statusTransition,
   type ActivityEvent,
 } from '../../src/api/activity.ts';
@@ -77,6 +78,36 @@ void describe('statusTransition', () => {
         `payload ${JSON.stringify(payload)} should not produce a transition`,
       );
     }
+  });
+});
+
+void describe('statusMoveNames — what a feed prints for a move (LAI-739)', () => {
+  void test('the status names the payload carries, when it carries them', () => {
+    // Two columns of one kind — QA and Code review — are one category; only
+    // the names say which way the card went.
+    const move = statusMoveNames(
+      event({
+        type: 'task.status_changed',
+        payload: {
+          from: 'review',
+          to: 'review',
+          from_status_name: 'QA',
+          to_status_name: 'Code review',
+        },
+      }),
+    );
+    assert.deepEqual(move, { from: 'QA', to: 'Code review' });
+  });
+
+  void test('an older event without names reads as its kinds, in words', () => {
+    const move = statusMoveNames(
+      event({ type: 'task.status_changed', payload: { from: 'todo', to: 'in_progress' } }),
+    );
+    assert.deepEqual(move, { from: 'To do', to: 'In progress' });
+  });
+
+  void test('nothing for an event that is not a move', () => {
+    assert.equal(statusMoveNames(event({ type: 'comment.added', payload: {} })), undefined);
   });
 });
 

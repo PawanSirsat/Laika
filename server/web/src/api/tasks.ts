@@ -24,7 +24,16 @@ export interface Task {
   readonly number: number;
   readonly title: string;
   readonly description_md: string | null;
+  /**
+   * The **kind** of work the task's status is (LAI-738) — one of the six
+   * categories the lifecycle rules, `ready` and the MCP tools read. It colours
+   * the status; it is not what the status is called.
+   */
   readonly status: TaskStatus;
+  /** The project status the task is in — one board column (LAI-738, LAI-739). */
+  readonly status_id: string;
+  /** That status's name, as the project calls it. What the UI prints. */
+  readonly status_name: string;
   readonly priority: TaskPriority;
   readonly assignee_id: string | null;
   /**
@@ -161,6 +170,8 @@ export interface Page<T> {
 
 export interface TaskFilter {
   readonly status?: TaskStatus | undefined;
+  /** One project status, where `status` is its whole category (LAI-738). */
+  readonly status_id?: string | undefined;
   readonly priority?: TaskPriority | undefined;
   /** A user id, or the literal `none` for unassigned. */
   readonly assignee?: string | undefined;
@@ -195,6 +206,7 @@ export interface TaskFilter {
 function toQuery(filter: TaskFilter): string {
   const params = new URLSearchParams();
   if (filter.status !== undefined) params.set('status', filter.status);
+  if (filter.status_id !== undefined) params.set('status_id', filter.status_id);
   if (filter.priority !== undefined) params.set('priority', filter.priority);
   if (filter.assignee !== undefined) params.set('assignee', filter.assignee);
   if (filter.ready !== undefined) params.set('ready', String(filter.ready));
@@ -224,6 +236,8 @@ export interface CreateTaskInput {
   readonly title: string;
   readonly priority?: TaskPriority | undefined;
   readonly status?: TaskStatus | undefined;
+  /** A specific project status — a column — rather than a category. */
+  readonly status_id?: string | undefined;
   /** Files it as a subtask of that task (D-066). */
   readonly parent_task_id?: string | undefined;
 }
@@ -246,6 +260,7 @@ export function createTask(slug: string, input: CreateTaskInput): Promise<Task> 
       created_via: 'web',
       ...(input.priority === undefined ? {} : { priority: input.priority }),
       ...(input.status === undefined ? {} : { status: input.status }),
+      ...(input.status_id === undefined ? {} : { status_id: input.status_id }),
       ...(input.parent_task_id === undefined ? {} : { parent_task_id: input.parent_task_id }),
     },
   });
@@ -400,10 +415,18 @@ export function reorderTask(
   });
 }
 
-export function changeStatus(taskId: string, status: TaskStatus): Promise<Task> {
+/**
+ * Where a status change sends a task (LAI-738): a **specific** project status
+ * — a board column — or a whole category, which the server files under that
+ * category's first status. The board and every picker send `status_id`; the
+ * category form is for callers that only know the kind.
+ */
+export type StatusTarget = { readonly status_id: string } | { readonly status: TaskStatus };
+
+export function changeStatus(taskId: string, to: StatusTarget): Promise<Task> {
   return request<Task>(`/tasks/${encodeURIComponent(taskId)}/status`, {
     method: 'POST',
-    body: { status },
+    body: to,
   });
 }
 

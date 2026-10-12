@@ -40,7 +40,7 @@ void describe('which answers may be reused (client.ts)', () => {
   void test('small, slow-changing lists for 30s; presence for a moment; everything else never', () => {
     assert.equal(freshFor('/projects?limit=200'), 30_000);
     assert.equal(freshFor('/projects/laika-core'), 30_000);
-    for (const list of ['members', 'mentionable', 'sprints', 'tags', 'board-columns']) {
+    for (const list of ['members', 'mentionable', 'sprints', 'tags', 'statuses']) {
       assert.equal(freshFor(`/projects/laika-core/${list}`), 30_000, list);
     }
     assert.equal(freshFor('/projects/laika-core/meeting-reviews?limit=200'), 30_000);

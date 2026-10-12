@@ -12,6 +12,8 @@ function task(over: Partial<Task> & { id: string }): Task {
     description_md: null,
     acceptance_md: null,
     status: 'todo',
+    status_id: 'st-todo',
+    status_name: 'To do',
     priority: 'p2',
     assignee_id: null,
     sprint_id: null,
