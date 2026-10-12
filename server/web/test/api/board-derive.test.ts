@@ -10,17 +10,15 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  ALL_STATUSES,
   blockedState,
   blockers,
-  boardStatusLabel,
   byIdIndex,
   dropNeighbours,
   groupByColumn,
   hideOldDone,
   staleFor,
 } from '../../src/api/board-derive.ts';
-import type { BoardColumn } from '../../src/api/columns.ts';
+import type { ProjectStatus } from '../../src/api/statuses.ts';
 import type { Task, TaskStatus } from '../../src/api/tasks.ts';
 
 function task(over: Partial<Task> & { id: string }): Task {
@@ -31,6 +29,9 @@ function task(over: Partial<Task> & { id: string }): Task {
     title: 'A task',
     description_md: null,
     status: 'todo',
+    // Filed under the status named for its kind unless a test says otherwise.
+    status_id: over.status ?? 'todo',
+    status_name: over.status ?? 'todo',
     priority: 'p2',
     assignee_id: null,
     sprint_id: null,
@@ -102,29 +103,36 @@ void describe('blockedState', () => {
   });
 });
 
-void describe('groupByColumn (LAI-266)', () => {
-  const col = (over: Partial<BoardColumn> & { id: string; statuses: string[] }): BoardColumn => ({
+void describe('groupByColumn (LAI-266, LAI-739)', () => {
+  const col = (
+    id: string,
+    category: TaskStatus,
+    position: number,
+    over: Partial<ProjectStatus> = {},
+  ): ProjectStatus => ({
+    id,
     project_id: 'p',
-    name: over.id,
-    position: 0,
+    name: id,
+    category,
+    position,
     hidden: false,
-    primary_status: over.statuses[0] ?? null,
+    created_at: 0,
+    task_count: 0,
     ...over,
-    statuses: over.statuses,
   });
 
-  const DEFAULT: BoardColumn[] = [
-    col({ id: 'todo', statuses: ['todo', 'backlog'], position: 0 }),
-    col({ id: 'wip', statuses: ['in_progress'], position: 1 }),
-    col({ id: 'review', statuses: ['review'], position: 2 }),
-    col({ id: 'done', statuses: ['done'], position: 3 }),
+  const DEFAULT: ProjectStatus[] = [
+    col('todo', 'todo', 0),
+    col('in_progress', 'in_progress', 1),
+    col('review', 'review', 2),
+    col('done', 'done', 3),
   ];
 
   void test('draws one lane per column, even when empty', () => {
     const lanes = groupByColumn([], DEFAULT);
     assert.deepEqual(
       lanes.map((l) => l.column.id),
-      ['todo', 'wip', 'review', 'done'],
+      ['todo', 'in_progress', 'review', 'done'],
     );
   });
 
@@ -134,53 +142,56 @@ void describe('groupByColumn (LAI-266)', () => {
     const lanes = groupByColumn([], [DEFAULT[3]!, DEFAULT[0]!, DEFAULT[2]!, DEFAULT[1]!]);
     assert.deepEqual(
       lanes.map((l) => l.column.id),
-      ['todo', 'wip', 'review', 'done'],
+      ['todo', 'in_progress', 'review', 'done'],
     );
   });
 
-  void test('a multi-status column collects every status it lists', () => {
+  void test('two columns of one kind each hold their own cards — by status, not by kind', () => {
+    // The whole point of LAI-739: QA and Code review are both `review`, and a
+    // card in one must not appear in the other. Grouping by `task.status`
+    // would put both cards in the first.
+    const columns = [col('qa', 'review', 0), col('code-review', 'review', 1)];
     const lanes = groupByColumn(
-      [task({ id: '1', status: 'backlog' }), task({ id: '2', status: 'todo' })],
+      [
+        task({ id: '1', status: 'review', status_id: 'code-review' }),
+        task({ id: '2', status: 'review', status_id: 'qa' }),
+      ],
+      columns,
+    );
+    assert.deepEqual(
+      lanes.map((l) => l.tasks.map((t) => t.id)),
+      [['2'], ['1']],
+    );
+  });
+
+  void test('a card in a hidden column is drawn nowhere, and showing the column draws it', () => {
+    // Cancelled starts hidden: its cards disappear as they always did. The
+    // fixture contains one, or the assertion would be vacuous.
+    const bin = col('cancelled', 'cancelled', 4, { hidden: true });
+    const all = [...DEFAULT, bin];
+    const tasks = [task({ id: '1', status: 'cancelled' }), task({ id: '2', status: 'todo' })];
+
+    const hidden = groupByColumn(tasks, DEFAULT, all);
+    assert.equal(hidden.flatMap((l) => l.tasks).length, 1);
+
+    const shown = groupByColumn(tasks, [...DEFAULT, { ...bin, hidden: false }], all);
+    assert.deepEqual(
+      shown[4]?.tasks.map((t) => t.id),
+      ['1'],
+    );
+  });
+
+  void test('a status the board has not heard of yet sits in the first column of its kind', () => {
+    // Made in another tab a moment ago; the statuses frame has not arrived.
+    // Dropping the card from the board until it does would read as data loss.
+    const lanes = groupByColumn(
+      [task({ id: '1', status: 'review', status_id: 'new-one' })],
       DEFAULT,
     );
     assert.deepEqual(
-      lanes[0]?.tasks.map((t) => t.id),
-      ['1', '2'],
+      lanes[2]?.tasks.map((t) => t.id),
+      ['1'],
     );
-  });
-
-  void test('a status no column lists is drawn nowhere', () => {
-    // `cancelled` is in the hidden column, so it reaches the board as unlisted —
-    // which is how it disappeared before columns existed. The fixture contains
-    // one, or the assertion would be vacuous.
-    const lanes = groupByColumn(
-      [task({ id: '1', status: 'cancelled' }), task({ id: '2', status: 'todo' })],
-      DEFAULT,
-    );
-    assert.equal(lanes.flatMap((l) => l.tasks).length, 1);
-  });
-
-  void test('a status a column does list is drawn, cancelled included', () => {
-    // The other value of the same property: it disappears because nobody claims
-    // it, not because it is special-cased.
-    const lanes = groupByColumn(
-      [task({ id: '1', status: 'cancelled' })],
-      [col({ id: 'bin', statuses: ['cancelled'] })],
-    );
-    assert.equal(lanes[0]?.tasks.length, 1);
-  });
-
-  void test('a status two columns claim files once, into the earlier lane', () => {
-    const lanes = groupByColumn(
-      [task({ id: '1', status: 'review' })],
-      [
-        col({ id: 'first', statuses: ['review'], position: 0 }),
-        col({ id: 'second', statuses: ['review'], position: 1 }),
-      ],
-    );
-    assert.equal(lanes.flatMap((l) => l.tasks).length, 1, 'never drawn twice');
-    assert.equal(lanes[0]?.tasks.length, 1);
-    assert.equal(lanes[1]?.tasks.length, 0);
   });
 
   void test('draws each lane in the project’s manual order, not by priority (LAI-473, D-070)', () => {
@@ -239,21 +250,21 @@ void describe('groupByColumn (LAI-266)', () => {
       task({ id: '3', status: 'todo', position: 'a2' }),
       task({ id: '4', status: 'todo', position: 'a3' }),
     ];
-    const below = groupByColumn(tasks, DEFAULT, { taskId: '4', afterId: '1' });
+    const below = groupByColumn(tasks, DEFAULT, DEFAULT, { taskId: '4', afterId: '1' });
     assert.deepEqual(
       below[0]?.tasks.map((t) => t.id),
       ['1', '4', '2', '3'],
     );
 
     // With only the card it sits above — the top of a lane.
-    const above = groupByColumn(tasks, DEFAULT, { taskId: '3', beforeId: '1' });
+    const above = groupByColumn(tasks, DEFAULT, DEFAULT, { taskId: '3', beforeId: '1' });
     assert.deepEqual(
       above[0]?.tasks.map((t) => t.id),
       ['3', '1', '2', '4'],
     );
 
     // An anchor that is not on the board leaves the card where it stands.
-    const lost = groupByColumn(tasks, DEFAULT, { taskId: '3', afterId: 'gone' });
+    const lost = groupByColumn(tasks, DEFAULT, DEFAULT, { taskId: '3', afterId: 'gone' });
     assert.deepEqual(
       lost[0]?.tasks.map((t) => t.id),
       ['1', '2', '3', '4'],
@@ -411,50 +422,6 @@ void describe('staleFor — how long, in the fewest characters (LAI-157)', () =>
     // says which one it can actually see.
     assert.equal(staleFor(10_000, 0), 'now');
     assert.equal(staleFor(9 * DAY, 0), 'now');
-  });
-});
-
-void describe('boardStatusLabel — the column names the status (LAI-617)', () => {
-  const col = (name: string, statuses: readonly TaskStatus[]) => ({ name, statuses });
-
-  void test('a column owning one status lends it its name', () => {
-    /*
-     * A board whose `Review` column is renamed `Testing` showed cards reading
-     * "Review" under a header reading "TESTING". The column is renameable; the
-     * status is a fixed enum the REST API, the policy layer and the MCP tools
-     * depend on by literal value — `laika_finish_task` moves a task to
-     * `review`. So the name is the label and the enum stays the value.
-     */
-    const columns = [col('Testing', ['review']), col('Done', ['done'])];
-    assert.equal(boardStatusLabel('review', columns), 'Testing');
-    assert.equal(boardStatusLabel('done', columns), 'Done');
-  });
-
-  void test('a column owning several keeps their own names', () => {
-    /*
-     * The shipped default merges `todo` and `backlog` into one `To do`
-     * column. Substituting the column name there would render two different
-     * statuses identically and hide a real difference — so only the lossless
-     * case substitutes.
-     */
-    const columns = [col('To do', ['todo', 'backlog'])];
-    assert.equal(boardStatusLabel('backlog', columns), 'Backlog');
-    assert.equal(boardStatusLabel('todo', columns), 'To do');
-  });
-
-  void test('an unowned status falls back to its own name', () => {
-    // Nothing owns `cancelled` here — the label must still be a word, not
-    // `undefined`, because a hidden column may be outside the list passed in.
-    assert.equal(boardStatusLabel('cancelled', [col('To do', ['todo'])]), 'Cancelled');
-    assert.equal(boardStatusLabel('review', []), 'Review');
-  });
-
-  void test('the substitution never invents a status value', () => {
-    // The label changes; the enum does not. Renaming a column must not make
-    // `review` unreachable, or an agent handing work back would fail.
-    const columns = [col('Testing', ['review'])];
-    assert.equal(boardStatusLabel('review', columns), 'Testing');
-    assert.ok((ALL_STATUSES as readonly string[]).includes('review'), 'review left the enum');
   });
 });
 

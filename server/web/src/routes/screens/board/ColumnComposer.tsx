@@ -3,15 +3,13 @@ import { Dropdown } from '../../../components/Dropdown.tsx';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../api/errors.ts';
 import { createTask, PRIORITIES } from '../../../api/tasks.ts';
-import { statusLabel, type MovableStatus } from '../../../api/board-derive.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
 import './column-composer.css';
 
 export interface ColumnComposerProps {
   readonly slug: string;
-  /** The column's primary status — what this composer creates into. */
-  readonly status: MovableStatus;
-  /** The column's name, so the box can say where the card will land. */
-  readonly columnName: string;
+  /** The column it opened in: the task is created in this status (LAI-739). */
+  readonly status: ProjectStatus;
   readonly onCreated: () => void;
   readonly onClose: () => void;
 }
@@ -42,13 +40,7 @@ export interface ColumnComposerProps {
  * something people do in runs. Escape closes it. A failed create keeps the text
  * — the one outcome a composer must never have is losing what somebody typed.
  */
-export function ColumnComposer({
-  slug,
-  status,
-  columnName,
-  onCreated,
-  onClose,
-}: ColumnComposerProps) {
+export function ColumnComposer({ slug, status, onCreated, onClose }: ColumnComposerProps) {
   const [title, setTitle] = useState('');
   const [priority, setPriority] = useState<(typeof PRIORITIES)[number]>('p2');
   const [busy, setBusy] = useState(false);
@@ -67,7 +59,7 @@ export function ColumnComposer({
     setError(undefined);
 
     try {
-      await createTask(slug, { title: trimmed, priority, status });
+      await createTask(slug, { title: trimmed, priority, status_id: status.id });
       setTitle('');
       onCreated();
       field.current?.focus();
@@ -88,7 +80,7 @@ export function ColumnComposer({
         maxLength={300}
         disabled={busy}
         placeholder="What needs to be done?"
-        aria-label={`New task in ${columnName}`}
+        aria-label={`New task in ${status.name}`}
         onChange={(event) => {
           setTitle(event.target.value);
         }}
@@ -129,7 +121,7 @@ export function ColumnComposer({
 
         {/* Where it will land, said rather than implied — the whole defect this
             component exists to fix was a card landing somewhere else. */}
-        <span className="composer-target">{statusLabel(status)}</span>
+        <span className="composer-target">{status.name}</span>
 
         <button
           type="button"

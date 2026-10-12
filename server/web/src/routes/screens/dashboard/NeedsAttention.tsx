@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { statusLabel, updatedAge } from '../../../api/board-derive.ts';
+import { updatedAge } from '../../../api/board-derive.ts';
 import type { Task } from '../../../api/tasks.ts';
 import type { BlockedTask } from './dashboard-derive.ts';
 import { DashLink, boardHref } from './DashLink.tsx';
@@ -100,7 +100,7 @@ export function NeedsAttention({
                   <span className="dash-att-title">{task.title}</span>
                   <span className="dash-att-meta">
                     <span className="dash-att-quiet">{updatedAge(task.updated_at, now)} quiet</span>{' '}
-                    · {statusLabel(task.status)}
+                    · {task.status_name}
                   </span>
                 </DashLink>
               </li>

@@ -10,7 +10,15 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, type StubCall } from './harness.ts';
+import {
+  applyStatusWrite,
+  asServed,
+  closeBrowser,
+  open,
+  refuse,
+  type ApiStub,
+  type StubCall,
+} from './harness.ts';
 
 const CORE = {
   id: 'laika-core',
@@ -31,7 +39,7 @@ const STATUSES = ['backlog', 'done', 'in_progress', 'todo', 'review'] as const;
 /** Sixty tasks: one page of fifty and ten more, so *Select all* has work to do. */
 const TASKS = Array.from({ length: 60 }, (_, i) => {
   const n = i + 1;
-  return {
+  return asServed({
     id: `t${String(n)}`,
     key: `LC-${String(n)}`,
     number: n,
@@ -63,7 +71,7 @@ const TASKS = Array.from({ length: 60 }, (_, i) => {
     updated_at: Date.now() - n * 60_000,
     started_at: null,
     completed_at: null,
-  };
+  });
 });
 
 const ME = {
@@ -82,7 +90,11 @@ const STATUS_ROUTES: Record<string, unknown> = Object.fromEntries(
     (call: StubCall) =>
       task.key === 'LC-2'
         ? refuse(422, 'unprocessable', 'Cannot move a task from done to in_progress')
-        : { ...task, status: (call.body as { status: string }).status },
+        : (() => {
+            const moved = { ...task };
+            applyStatusWrite(moved, call.body);
+            return moved;
+          })(),
   ]),
 );
 
@@ -216,8 +228,8 @@ void describe('selecting rows in the List', () => {
         .filter((c) => c.method === 'POST')
         .map((c) => [c.path, c.body]);
       assert.deepEqual(posts, [
-        ['/api/v1/tasks/t1/status', { status: 'in_progress' }],
-        ['/api/v1/tasks/t2/status', { status: 'in_progress' }],
+        ['/api/v1/tasks/t1/status', { status_id: 'st-in_progress' }],
+        ['/api/v1/tasks/t2/status', { status_id: 'st-in_progress' }],
       ]);
 
       // The board refetched afterwards, so every row is the server's again.
@@ -253,7 +265,7 @@ void describe('selecting rows in the List', () => {
 
       await row.locator('.list-status', { hasText: 'To do' }).waitFor({ timeout: 10_000 });
       const posts = h.calls.filter((c) => c.method === 'POST').map((c) => [c.path, c.body]);
-      assert.deepEqual(posts, [['/api/v1/tasks/t1/status', { status: 'todo' }]]);
+      assert.deepEqual(posts, [['/api/v1/tasks/t1/status', { status_id: 'st-todo' }]]);
       assert.equal(
         await h.page.locator('.list-bulk').count(),
         0,

@@ -1,3 +1,4 @@
+import { STATUS_LABELS } from './board-derive.ts';
 import { withPage, type PageQuery } from './every-page.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
@@ -174,6 +175,27 @@ export function statusTransition(event: ActivityEvent): { from: string; to: stri
   if (typeof payload?.from !== 'string' || typeof payload.to !== 'string') return undefined;
 
   return { from: payload.from, to: payload.to };
+}
+
+/**
+ * A status change as a feed prints it (LAI-739): the **names** of the
+ * statuses, from the payload when the server put them there, and the kinds in
+ * words for an older event that carries only categories. Two columns of one
+ * kind — *QA* and *Code review* — are the same category, so without the names
+ * a move between them reads as `review → review`.
+ */
+export function statusMoveNames(event: ActivityEvent): { from: string; to: string } | undefined {
+  const move = statusTransition(event);
+  if (move === undefined) return undefined;
+  const payload = event.payload as { from_status_name?: unknown; to_status_name?: unknown };
+  const name = (given: unknown, category: string): string =>
+    typeof given === 'string' && given !== ''
+      ? given
+      : ((STATUS_LABELS as Readonly<Record<string, string>>)[category] ?? category);
+  return {
+    from: name(payload.from_status_name, move.from),
+    to: name(payload.to_status_name, move.to),
+  };
 }
 
 /**

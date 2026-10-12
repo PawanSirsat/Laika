@@ -12,7 +12,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { asServed, closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
 import { offered, pick } from './dropdown.ts';
 
 const CORE = {
@@ -29,7 +29,7 @@ const CORE = {
   updated_at: 1,
 };
 
-const task = (over: Record<string, unknown>) => ({
+const bare = (over: Record<string, unknown>) => ({
   id: 'x',
   key: 'LC-9',
   number: 9,
@@ -61,6 +61,9 @@ const task = (over: Record<string, unknown>) => ({
   completed_at: null,
   ...over,
 });
+
+/** In its kind's default status, by id and name, as the server sends it (LAI-739). */
+const task = (over: Record<string, unknown>) => asServed(bare(over));
 
 const LOGIN = task({
   id: 't1',
@@ -266,7 +269,7 @@ void describe('the Filter popover (LAI-717)', () => {
       assert.equal(await clearAll.isDisabled(), true, 'Clear all is live with nothing to clear');
 
       // The field is the app's dropdown now (LAI-726): chosen as a person does.
-      await pick(dialog.getByRole('combobox', { name: 'Status', exact: true }), 'in_progress');
+      await pick(dialog.getByRole('combobox', { name: 'Status', exact: true }), 'st-in_progress');
       await waitForRows(h, 1);
       assert.equal(await clearAll.isDisabled(), false, 'Clear all stayed disabled');
 

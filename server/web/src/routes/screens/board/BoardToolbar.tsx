@@ -8,9 +8,11 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import type { Member, TaskPriority, TaskStatus } from '../../../api/tasks.ts';
-import { ALL_STATUSES } from '../../../api/board-derive.ts';
+import type { Member, TaskPriority } from '../../../api/tasks.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
+import { statusOptions as projectStatusOptions } from './status-options.ts';
 import {
+  isCategory,
   UPDATED_LABELS,
   UPDATED_WINDOWS,
   type FilterKey,
@@ -37,10 +39,13 @@ export interface BoardToolbarProps {
    * and so missed `sprint` and `ready=false`.
    */
   readonly activeCount: number;
-  readonly status: TaskStatus | undefined;
-  /** A status as this board names it — a renamed column's name (LAI-617). */
-  readonly statusName: (status: TaskStatus) => string;
-  readonly onStatus: (value: TaskStatus | undefined) => void;
+  /** `?status=`: a project status's id, or — from an older link — a whole category. */
+  readonly status: string | undefined;
+  /** A `?status=` value as the board says it. */
+  readonly statusName: (value: string) => string;
+  /** The project's statuses, by position — what the Status field offers (LAI-739). */
+  readonly statuses: readonly ProjectStatus[];
+  readonly onStatus: (value: string | undefined) => void;
   /** A sprint id, `none`, or undefined. The same `?sprint=` the strip writes. */
   readonly sprint: string | undefined;
   readonly sprints: readonly FilterSprint[];
@@ -104,6 +109,9 @@ export interface BoardToolbarProps {
   readonly onViewSettings: (anchor: { top: number; right: number }) => void;
   readonly onRefresh: () => void;
   readonly onOverflow: (anchor: { top: number; right: number }) => void;
+  /** Hidden columns on this board; the entry is drawn only when there are any (LAI-739). */
+  readonly hiddenColumns?: number | undefined;
+  readonly onHiddenColumns?: (() => void) | undefined;
 }
 
 /**
@@ -238,6 +246,7 @@ export function BoardToolbar({
   activeCount,
   status,
   statusName,
+  statuses,
   onStatus,
   sprint,
   sprints,
@@ -277,6 +286,8 @@ export function BoardToolbar({
   onViewSettings,
   onRefresh,
   onOverflow,
+  hiddenColumns,
+  onHiddenColumns,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | undefined>(undefined);
   const filterButton = filterButtonRef;
@@ -341,16 +352,27 @@ export function BoardToolbar({
    * Assignee's "Unassigned", Sprint's "No sprint") pinned at the top. Only
    * what each option *looks like* is new.
    */
+  /*
+   * **The project's statuses, by position** (LAI-739) — the columns, hidden
+   * ones marked. A link naming a whole category (the Dashboard's overview, or
+   * any link from before) keeps working, and the field shows it as such.
+   */
   const statusOptions = useMemo<DropdownOption[]>(
     () => [
       { value: '', label: 'Any', pinned: true },
-      ...ALL_STATUSES.map((s) => ({
-        value: s,
-        label: statusName(s),
-        icon: <span className={`dd-dot dd-dot-${s}`} />,
-      })),
+      ...(status !== undefined && isCategory(status)
+        ? [
+            {
+              value: status,
+              label: `${statusName(status)} (any column)`,
+              icon: <span className={`dd-dot dd-dot-${status}`} />,
+            },
+          ]
+        : []),
+      // The one builder every status picker uses: hidden ones wear a badge.
+      ...projectStatusOptions(statuses),
     ],
-    [statusName],
+    [status, statusName, statuses],
   );
   const priorityOptions = useMemo<DropdownOption[]>(
     () => [
@@ -619,7 +641,7 @@ export function BoardToolbar({
                       value={status ?? ''}
                       options={statusOptions}
                       onChange={(value) => {
-                        onStatus(value === '' ? undefined : (value as TaskStatus));
+                        onStatus(value === '' ? undefined : value);
                       }}
                     />
                   )}
@@ -828,6 +850,33 @@ export function BoardToolbar({
               </div>
             )}
           </span>
+        )}
+
+        {/* **Hidden columns (N)**, where it can be seen (review round 1) —
+            not only in the ⋯ menu. An icon and the count: Cancelled starts
+            hidden, so this is on most boards and must cost little width. */}
+        {hiddenColumns !== undefined && hiddenColumns > 0 && onHiddenColumns !== undefined && (
+          <button
+            type="button"
+            className="bt-icon bt-hidden-columns"
+            data-hidden-columns=""
+            aria-label={`Hidden columns (${String(hiddenColumns)})`}
+            title={`Hidden columns (${String(hiddenColumns)})`}
+            onClick={onHiddenColumns}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3 4.2M6.6 6.6C4.4 8 2.8 10.1 2 12c1 2.5 5 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
+            </svg>
+            <span className="bt-hidden-count" aria-hidden="true">
+              {hiddenColumns}
+            </span>
+          </button>
         )}
 
         <span className="bt-spacer" />

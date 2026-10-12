@@ -2,6 +2,8 @@ import { createActivityStore } from './activity-store.ts';
 import { listProjectActivityPage } from './activity.ts';
 import { observeStreams } from './event-stream.ts';
 import { sharedCache } from './query-cache.ts';
+import { createStatusStore } from './status-store.ts';
+import { listStatuses } from './statuses.ts';
 import { createTaskStore } from './task-store.ts';
 import { listTasks } from './tasks.ts';
 
@@ -45,6 +47,15 @@ export const taskStore = createTaskStore({
   },
 });
 
+/**
+ * The project's statuses — the board's columns and every status picker's
+ * choices (LAI-739). Re-read on a live frame like the task set, so a column
+ * renamed in one tab is renamed in the other.
+ */
+export const statusStore = createStatusStore({
+  fetch: async (slug, signal) => (await listStatuses(slug, signal)).data,
+});
+
 export const activityStore = createActivityStore({
   fetchPage: (slug, query, signal) => listProjectActivityPage(slug, query, signal),
 });
@@ -77,11 +88,13 @@ observeStreams({
       sharedCache.invalidate(PRESENCE);
       if (frame.type.startsWith('org.')) sharedCache.invalidate((key) => key === '/org');
       taskStore.frame(slug, 'activity');
+      statusStore.frame(slug);
       activityStore.frame(slug, 'activity');
     } else if (frame.kind === 'gap') {
       sharedCache.invalidate(aboutProject(slug));
       sharedCache.invalidate(PRESENCE);
       taskStore.frame(slug, 'gap');
+      statusStore.frame(slug);
       activityStore.frame(slug, 'gap');
     }
   },
@@ -90,6 +103,7 @@ observeStreams({
     // revalidated on the next visit rather than trusted.
     sharedCache.invalidate(aboutProject(slug));
     taskStore.frame(slug, 'closed');
+    statusStore.frame(slug);
     activityStore.frame(slug, 'closed');
   },
 });
@@ -107,5 +121,6 @@ export function setStoreUser(userId: string | undefined): void {
   if (userId !== undefined && userId === sharedCache.user) return;
   sharedCache.setUser(userId);
   taskStore.reset();
+  statusStore.reset();
   activityStore.reset();
 }

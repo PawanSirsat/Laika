@@ -4,7 +4,9 @@ import { ApiError } from './errors.ts';
 import { taskStore } from './store.ts';
 import { applyTaskFilter } from './task-filter.ts';
 import type { TaskSetChange, TaskSetSnapshot } from './task-store.ts';
-import { changeStatus, reorderTask, type Task, type TaskFilter, type TaskStatus } from './tasks.ts';
+import { withStatus } from './status-derive.ts';
+import type { ProjectStatus } from './statuses.ts';
+import { changeStatus, reorderTask, type Task, type TaskFilter } from './tasks.ts';
 
 export interface BoardState {
   /**
@@ -89,7 +91,8 @@ export interface UseBoard {
   readonly movingId: string | undefined;
   /** The server's reason for refusing the last move. Cleared on the next one. */
   readonly moveError: string | undefined;
-  readonly move: (taskId: string, to: TaskStatus) => Promise<void>;
+  /** Into a project status — a column — by id (LAI-739). */
+  readonly move: (taskId: string, toStatusId: string) => Promise<void>;
   /**
    * Put a card **at a place** — below `afterId`, above `beforeId` — and, when
    * it was dropped in another lane, into that lane's status (LAI-473).
@@ -98,7 +101,7 @@ export interface UseBoard {
   readonly place: (
     taskId: string,
     to: { readonly afterId?: string | undefined; readonly beforeId?: string | undefined },
-    status?: TaskStatus,
+    status?: ProjectStatus,
   ) => Promise<void>;
   /** The placement in flight, for the lane order to draw (`groupByColumn`). */
   readonly placing: PendingMove | undefined;
@@ -282,14 +285,14 @@ export function useBoard(
   }, [filterKey, deferred]);
 
   const move = useCallback(
-    async (taskId: string, to: TaskStatus): Promise<void> => {
+    async (taskId: string, toStatusId: string): Promise<void> => {
       if (slug === undefined) return;
       setMoveError(undefined);
       setMovingId(taskId);
       taskStore.beginWrite(slug, taskId);
 
       try {
-        const updated = await changeStatus(taskId, to);
+        const updated = await changeStatus(taskId, { status_id: toStatusId });
         // Replace with the server's version rather than patching the status:
         // the move also changes `updated_at`, and may change `ready` if this
         // task was some other task's last blocker. `record` keeps a refresh
@@ -352,12 +355,12 @@ export function useBoard(
     async (
       taskId: string,
       to: { readonly afterId?: string | undefined; readonly beforeId?: string | undefined },
-      status?: TaskStatus,
+      status?: ProjectStatus,
     ): Promise<void> => {
       if (slug === undefined) return;
       const before = stateRef.current.tasks.find((t) => t.id === taskId);
       if (before === undefined) return;
-      const target = status !== undefined && status !== before.status ? status : undefined;
+      const target = status !== undefined && status.id !== before.status_id ? status : undefined;
       const reorders = to.afterId !== undefined || to.beforeId !== undefined;
       if (target === undefined && !reorders) return;
 
@@ -386,7 +389,7 @@ export function useBoard(
         (tasks) =>
           target === undefined
             ? tasks
-            : tasks.map((t) => (t.id === taskId ? { ...before, status: target } : t)),
+            : tasks.map((t) => (t.id === taskId ? withStatus(before, target) : t)),
         {
           changed: new Set([taskId]),
           settled: taskId,
@@ -414,7 +417,7 @@ export function useBoard(
       try {
         let answer: Task | undefined;
         if (target !== undefined) {
-          answer = await changeStatus(taskId, target);
+          answer = await changeStatus(taskId, { status_id: target.id });
           statusLanded = true;
         }
         if (reorders) {
@@ -434,7 +437,7 @@ export function useBoard(
         handed = true;
         if (statusLanded) {
           try {
-            await changeStatus(taskId, before.status);
+            await changeStatus(taskId, { status_id: before.status_id });
           } catch {
             // The reload below shows whatever the server now holds.
           }

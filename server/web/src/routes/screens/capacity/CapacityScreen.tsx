@@ -426,6 +426,9 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
                                 type="button"
                                 className="cap-chip"
                                 disabled={task === undefined}
+                                // Which in-progress column, when a project has
+                                // several (LAI-739).
+                                title={task === undefined ? undefined : task.status_name}
                                 onClick={() => {
                                   if (task !== undefined) onOpenTask(task.key);
                                 }}

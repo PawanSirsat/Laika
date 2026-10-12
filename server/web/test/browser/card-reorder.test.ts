@@ -32,7 +32,15 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, setTheme, type ApiStub, type Harness } from './harness.ts';
+import {
+  applyStatusWrite,
+  closeBrowser,
+  open,
+  refuse,
+  setTheme,
+  type ApiStub,
+  type Harness,
+} from './harness.ts';
 
 const PROJECT = {
   id: 'p1',
@@ -54,24 +62,28 @@ const PROJECT = {
   last_activity_at: 2,
 };
 
-function column(id: string, name: string, position: number, statuses: string[]) {
-  return {
-    id,
-    project_id: 'p1',
-    name,
-    position,
-    hidden: false,
-    statuses,
-    primary_status: statuses[0] ?? null,
-  };
-}
-
-const COLUMNS = [
-  column('c1', 'To do', 0, ['todo']),
-  column('c2', 'In progress', 1, ['in_progress']),
-  column('c3', 'Review', 2, ['review']),
-  column('c4', 'Done', 3, ['done']),
-];
+/**
+ * The four columns this file was written against, as project statuses
+ * (LAI-739). Backlog and Cancelled exist, as every kind keeps one, and are
+ * hidden so the lanes are the ones the drops below are aimed at.
+ */
+const STATUSES = [
+  ['todo', 'To do', false],
+  ['in_progress', 'In progress', false],
+  ['review', 'Review', false],
+  ['done', 'Done', false],
+  ['backlog', 'Backlog', true],
+  ['cancelled', 'Cancelled', true],
+].map(([category, name, hidden], position) => ({
+  id: `st-${String(category)}`,
+  project_id: 'p1',
+  name: String(name),
+  category: String(category),
+  position,
+  hidden: hidden === true,
+  created_at: 1,
+  task_count: 0,
+}));
 
 interface StubTask {
   id: string;
@@ -178,6 +190,8 @@ function lane(tasks: readonly StubTask[], status: string): StubTask[] {
 /** Answers what the real server would, from state it keeps. */
 function world(fail: Failures = {}): World {
   const tasks = seed();
+  // Every task carries its status's id and name, as the server sends them.
+  for (const t of tasks) applyStatusWrite(t, { status: t.status }, STATUSES);
   const find = (id: string): StubTask => {
     const found = tasks.find((t) => t.id === id);
     if (found === undefined) throw new Error(`no task ${id}`);
@@ -187,11 +201,10 @@ function world(fail: Failures = {}): World {
   const routes: Record<string, unknown> = {};
   for (const t of tasks) {
     routes[`/api/v1/tasks/${t.id}/status`] = (call: { body: unknown }) => {
-      if (fail.status !== undefined && (call.body as { status: string }).status !== 'todo') {
-        return fail.status;
-      }
+      const to = STATUSES.find((s) => s.id === (call.body as { status_id?: string }).status_id);
+      if (fail.status !== undefined && to?.category !== 'todo') return fail.status;
       const target = find(t.id);
-      target.status = (call.body as { status: string }).status;
+      applyStatusWrite(target, call.body, STATUSES);
       return { ...target };
     };
     routes[`/api/v1/tasks/${t.id}/reorder`] = (call: { body: unknown }) => {
@@ -226,7 +239,7 @@ function world(fail: Failures = {}): World {
       '/api/v1/me': fail.me ?? EDITOR,
       '/api/v1/projects': { data: [PROJECT], next_cursor: null },
       '/api/v1/projects/laika-core': PROJECT,
-      '/api/v1/projects/laika-core/board-columns': { columns: COLUMNS },
+      '/api/v1/projects/laika-core/statuses': { data: STATUSES },
       // Number order, not position order, so the client's sort is what draws
       // the lane and not the order the rows happened to arrive in.
       '/api/v1/projects/laika-core/tasks': () => ({
@@ -425,7 +438,7 @@ void describe('a cross-lane drop (LAI-473, D-060.3)', () => {
       assert.deepEqual(await order(h, LANE.doing), ['t4', 't1', 't5'], 'not where it was dropped');
       assert.deepEqual(await order(h, LANE.todo), ['t2', 't3']);
       assert.deepEqual(writes(h), [
-        { path: '/api/v1/tasks/t1/status', body: { status: 'in_progress' } },
+        { path: '/api/v1/tasks/t1/status', body: { status_id: 'st-in_progress' } },
         { path: '/api/v1/tasks/t1/reorder', body: { after_task_id: 't4', before_task_id: 't5' } },
       ]);
 
@@ -451,7 +464,7 @@ void describe('a cross-lane drop (LAI-473, D-060.3)', () => {
       assert.deepEqual(await order(h, LANE.todo), ['t1', 't2', 't3'], 'the card did not come back');
       assert.deepEqual(await order(h, LANE.doing), ['t4', 't5']);
       assert.deepEqual(writes(h), [
-        { path: '/api/v1/tasks/t1/status', body: { status: 'in_progress' } },
+        { path: '/api/v1/tasks/t1/status', body: { status_id: 'st-in_progress' } },
       ]);
       await h.page.getByText('Only the assignee may start this task').waitFor({ timeout: 2000 });
     } finally {
@@ -471,10 +484,10 @@ void describe('a cross-lane drop (LAI-473, D-060.3)', () => {
       await settled(h, 3);
 
       assert.deepEqual(writes(h), [
-        { path: '/api/v1/tasks/t1/status', body: { status: 'in_progress' } },
+        { path: '/api/v1/tasks/t1/status', body: { status_id: 'st-in_progress' } },
         { path: '/api/v1/tasks/t1/reorder', body: { after_task_id: 't4', before_task_id: 't5' } },
         // The compensating move: the status had landed, so it is undone.
-        { path: '/api/v1/tasks/t1/status', body: { status: 'todo' } },
+        { path: '/api/v1/tasks/t1/status', body: { status_id: 'st-todo' } },
       ]);
       assert.equal(w.tasks.find((t) => t.id === 't1')?.status, 'todo', 'the server kept the move');
       await h.page.waitForTimeout(300);
@@ -523,7 +536,7 @@ void describe('the keyboard path (LAI-473, D-060.6)', () => {
       assert.deepEqual(writes(h), [
         { path: '/api/v1/tasks/t1/reorder', body: { after_task_id: 't2', before_task_id: 't3' } },
         { path: '/api/v1/tasks/t1/reorder', body: { before_task_id: 't2' } },
-        { path: '/api/v1/tasks/t1/status', body: { status: 'in_progress' } },
+        { path: '/api/v1/tasks/t1/status', body: { status_id: 'st-in_progress' } },
         { path: '/api/v1/tasks/t1/reorder', body: { before_task_id: 't4' } },
       ]);
     } finally {

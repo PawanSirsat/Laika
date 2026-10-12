@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
+import { asServed, closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
 import { pick } from './dropdown.ts';
 
 const CORE = {
@@ -27,7 +27,7 @@ const CORE = {
   updated_at: 1,
 };
 
-const task = (over: Record<string, unknown>) => ({
+const bare = (over: Record<string, unknown>) => ({
   id: 'x',
   key: 'LC-9',
   number: 9,
@@ -59,6 +59,9 @@ const task = (over: Record<string, unknown>) => ({
   completed_at: null,
   ...over,
 });
+
+/** In its kind's default status, by id and name, as the server sends it (LAI-739). */
+const task = (over: Record<string, unknown>) => asServed(bare(over));
 
 const BLOCKER = task({ id: 't1', key: 'LC-1', number: 1, title: 'The blocker' });
 const BLOCKED = task({
@@ -871,8 +874,9 @@ void describe('the Filter popover on the List (LAI-487)', () => {
 
       // Status — the rows change, and nothing is asked.
       await openFilter(h);
-      await pick(field(h, 'Status'), 'done');
-      await h.page.waitForURL(/status=done/, { timeout: 10_000 });
+      // A column now — a status by id (LAI-739).
+      await pick(field(h, 'Status'), 'st-done');
+      await h.page.waitForURL(/status=st-done/, { timeout: 10_000 });
       await h.page.waitForFunction(() => document.querySelectorAll('.list tbody tr').length === 1);
       assert.deepEqual(await keysOnScreen(h), ['LC-9']);
       assert.equal(await badge(h), '1');
@@ -1090,8 +1094,9 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         'sprint',
         'updated within',
       ]);
-      await pick(field(h, 'Status'), 'done');
-      await h.page.waitForURL(/status=done/, { timeout: 10_000 });
+      // A column now — a status by id (LAI-739).
+      await pick(field(h, 'Status'), 'st-done');
+      await h.page.waitForURL(/status=st-done/, { timeout: 10_000 });
       assert.equal(await badge(h), '1');
     } finally {
       await h.close();

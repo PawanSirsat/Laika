@@ -64,7 +64,7 @@ export function setSetupRequiredHandler(handler: (() => void) | undefined): void
  *
  * **Small, slow-changing lists only**, for {@link FRESH_MS}: the projects list,
  * one project, its members, mentionable people, sprints, tags, meeting reviews
- * and columns, and the org. Every one of them was asked for twice on a cold
+ * and statuses, and the org. Every one of them was asked for twice on a cold
  * load, by the space frame and by the screen. Presence is polled, so it is
  * reused only for a moment — enough for the frame and a screen asking at once.
  *
@@ -82,7 +82,7 @@ const PRESENCE_MS = 2_000;
 const CACHED: readonly RegExp[] = [
   /^\/projects(\?|$)/,
   /^\/projects\/[^/?]+$/,
-  /^\/projects\/[^/?]+\/(members|mentionable|sprints|tags|meeting-reviews|board-columns)(\?|$)/,
+  /^\/projects\/[^/?]+\/(members|mentionable|sprints|tags|meeting-reviews|statuses)(\?|$)/,
   /^\/org$/,
 ];
 

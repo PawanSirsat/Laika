@@ -402,34 +402,48 @@ void describe('the sort in the URL (LAI-485, D-065)', () => {
   });
 });
 
-void describe('the STATUS cell speaks the board’s column names (LAI-490)', () => {
+void describe('the STATUS cell speaks the project’s status names (LAI-739)', () => {
   const tasks = [
-    task({ id: 'r', key: 'LC-1', status: 'review' }),
-    task({ id: 'b', key: 'LC-2', status: 'backlog' }),
-    task({ id: 't', key: 'LC-3', status: 'todo' }),
+    task({ id: 'r', key: 'LC-1', status: 'review', status_id: 's-qa', status_name: 'QA' }),
+    task({ id: 'b', key: 'LC-2', status: 'backlog', status_id: 's-ideas', status_name: 'Ideas' }),
+    task({ id: 't', key: 'LC-3', status: 'review', status_id: 's-cr', status_name: 'Code review' }),
+    task({ id: 'x', key: 'LC-4', status: 'todo', status_id: 's-new', status_name: 'Brand new' }),
   ];
   const byId = new Map(tasks.map((t) => [t.id, t]));
-  const columns = [
-    { name: 'To do', statuses: ['todo', 'backlog'] as const },
-    { name: 'Testing', statuses: ['review'] as const },
+  const status = (s: string, name: string, category: Task['status'], position: number) => ({
+    id: s,
+    project_id: 'p',
+    name,
+    category,
+    position,
+    hidden: false,
+    created_at: 0,
+    task_count: 0,
+  });
+  const statuses = [
+    status('s-ideas', 'Ideas', 'backlog', 0),
+    // Renamed since the tasks were read: the List says the new name.
+    status('s-cr', 'Peer review', 'review', 1),
+    status('s-qa', 'QA', 'review', 2),
   ];
-  const rows = listRows({ tasks, byId, members, sprintLabels, now: NOW, columns });
-  const status = (key: string) => rows.find((r) => r.key === key)?.status;
+  const rows = listRows({ tasks, byId, members, sprintLabels, now: NOW, statuses });
+  const cell = (key: string) => rows.find((r) => r.key === key)?.status;
 
-  void test('a renamed single-status column lends its name', () => {
-    assert.equal(status('LC-1'), 'Testing', 'the List says Review under a board that says Testing');
+  void test('names the status as the project calls it now', () => {
+    assert.equal(cell('LC-1'), 'QA');
+    assert.equal(cell('LC-3'), 'Peer review', 'a renamed column still reads its old name');
   });
 
-  void test('a two-status column keeps each status its own name — the lossless rule', () => {
-    assert.equal(status('LC-2'), 'Backlog');
-    assert.equal(status('LC-3'), 'To do');
+  void test('a status the List has not loaded reads as the task says', () => {
+    assert.equal(cell('LC-4'), 'Brand new');
   });
 
-  void test('sorting by status follows the value, never the label', () => {
-    // Renamed to "Testing", `review` still sorts between in_progress and done;
-    // alphabetically by label it would come after "To do".
+  void test('sorting by status follows the board’s column order, never the label or the kind', () => {
+    // Alphabetically: Brand new, Ideas, Peer review, QA. By kind: Ideas,
+    // Brand new, then the two reviews tied. By the board: Ideas, Peer review,
+    // QA, and the unknown one last.
     const order = sortRows(rows, byId, 'status', true).map((r) => r.key);
-    assert.deepEqual(order, ['LC-2', 'LC-3', 'LC-1']);
+    assert.deepEqual(order, ['LC-2', 'LC-3', 'LC-1', 'LC-4']);
   });
 });
 

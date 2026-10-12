@@ -95,7 +95,7 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
   ['api/use-session.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-setup-status.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-board.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
-  ['api/use-columns.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  ['api/use-statuses.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   [
     'routes/screens/board/use-view-preferences.ts',
     'a React hook — no renderer in this package (CONVENTIONS §4). The pure half it wraps, view-preferences.ts, is mirrored.',

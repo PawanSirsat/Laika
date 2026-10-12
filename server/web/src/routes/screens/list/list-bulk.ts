@@ -1,5 +1,6 @@
 import { ALL_STATUSES } from '../../../api/board-derive.ts';
 import { ApiError } from '../../../api/errors.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
 import type { Task, TaskPriority, TaskStatus } from '../../../api/tasks.ts';
 
 /**
@@ -27,6 +28,22 @@ export function statusTargets(from: TaskStatus): readonly TaskStatus[] {
   if (from === 'cancelled') return ['backlog'];
   const open = ALL_STATUSES.filter((s) => s !== 'cancelled' && s !== from);
   return from === 'done' ? open : [...open, 'cancelled'];
+}
+
+/**
+ * The statuses a task's status menu offers (LAI-739): the project's statuses
+ * in board order, without the one it is in — **another of the same kind
+ * always** (QA → Code review is never a lifecycle question), and of other
+ * kinds only those {@link statusTargets} allows.
+ */
+export function statusChoices(
+  task: Pick<Task, 'status' | 'status_id'>,
+  statuses: readonly ProjectStatus[],
+): ProjectStatus[] {
+  const kinds = new Set<TaskStatus>([task.status, ...statusTargets(task.status)]);
+  return [...statuses]
+    .sort((a, b) => a.position - b.position)
+    .filter((s) => s.id !== task.status_id && kinds.has(s.category));
 }
 
 export interface BulkFailure {
@@ -102,7 +119,8 @@ export function bulkSummary(outcome: BulkOutcome, skipped: number): string {
 
 /** What the bar can do to every selected task. */
 export type BulkAction =
-  | { readonly kind: 'status'; readonly status: TaskStatus }
+  /** Into one project status — a column — by id (LAI-739). */
+  | { readonly kind: 'status'; readonly statusId: string }
   | { readonly kind: 'priority'; readonly priority: TaskPriority }
   | { readonly kind: 'assignee'; readonly assigneeId: string | null }
   | { readonly kind: 'sprint'; readonly sprintId: string | null }
@@ -124,7 +142,7 @@ export interface BulkPlan {
 function alreadyThere(action: BulkAction, task: Task): boolean {
   switch (action.kind) {
     case 'status':
-      return task.status === action.status;
+      return task.status_id === action.statusId;
     case 'cancel':
       return task.status === 'cancelled';
     case 'priority':

@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, DEFAULT_STATUSES, open, type ApiStub } from './harness.ts';
 import { offered, pick, valueOf } from './dropdown.ts';
 
 const CORE = {
@@ -29,7 +29,7 @@ const CORE = {
 const NOW = Date.now();
 const JUL_12 = Date.UTC(2026, 6, 12);
 
-const task = (over: Record<string, unknown>) => ({
+const bare = (over: Record<string, unknown>) => ({
   id: 'x',
   key: 'LC-9',
   number: 9,
@@ -62,6 +62,13 @@ const task = (over: Record<string, unknown>) => ({
   completed_at: null,
   ...over,
 });
+
+/** As the server sends it: in its kind's default status, by id and name (LAI-739). */
+const task = (over: Record<string, unknown>) => {
+  const t = bare(over);
+  const status = DEFAULT_STATUSES.find((s) => s.category === t.status);
+  return { status_id: status?.id, status_name: status?.name, ...t };
+};
 
 /** Past due and still open: the red chip on the card and the List. */
 const PARENT = task({
@@ -392,15 +399,23 @@ void describe('a subtask row changes status and assignee in place (LAI-700)', ()
         .locator(`[id="${String(listId)}"] [role="option"]`)
         .evaluateAll((els: Element[]) => els.map((el) => el.getAttribute('data-value')));
       await h.page.keyboard.press('Escape');
-      assert.deepEqual(values, ['backlog', 'todo', 'in_progress', 'review', 'done', 'cancelled']);
-      assert.equal(await valueOf(menu), 'in_progress');
+      // The project's statuses by id, in board order (LAI-739).
+      assert.deepEqual(values, [
+        'st-backlog',
+        'st-todo',
+        'st-in_progress',
+        'st-review',
+        'st-done',
+        'st-cancelled',
+      ]);
+      assert.equal(await valueOf(menu), 'st-in_progress');
 
-      await pick(menu, 'done');
+      await pick(menu, 'st-done');
       await h.page.waitForTimeout(400);
 
       const post = h.calls.find((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/status');
       assert.ok(post !== undefined, 'no status POST went out');
-      assert.deepEqual(post.body, { status: 'done' });
+      assert.deepEqual(post.body, { status_id: 'st-done' });
       assert.match(h.page.url(), /task=t1/, 'changing the status opened the child');
     } finally {
       await h.close();

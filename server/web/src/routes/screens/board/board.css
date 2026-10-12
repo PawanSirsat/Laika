@@ -618,6 +618,10 @@
 .lane-dot-done {
   background: var(--chip-green);
 }
+/* Cancelled starts hidden, but a person can show it (LAI-739). */
+.lane-dot-cancelled {
+  background: var(--border-default);
+}
 
 /*
  * **The column's own name, as written** (LAI-602).

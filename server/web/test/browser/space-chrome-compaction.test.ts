@@ -61,7 +61,6 @@ const STUB: ApiStub = {
   '/api/v1/projects/laika-core/sprints': { data: [], next_cursor: null },
   '/api/v1/projects/laika-core/activity': { data: [], next_cursor: null },
   '/api/v1/projects/laika-core/tags': { tags: [] },
-  '/api/v1/projects/laika-core/board-columns': { columns: [] },
 };
 
 const geometry = (page: Awaited<ReturnType<typeof open>>['page']) =>

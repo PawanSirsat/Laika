@@ -98,22 +98,29 @@ void describe('listTasks query string', () => {
 });
 
 void describe('changeStatus', () => {
-  void test('posts the status to the task', async () => {
+  void test('posts a specific status — a column — by id (LAI-739)', async () => {
     const calls = stub({ id: 't1' });
-    await changeStatus('t1', 'review');
+    await changeStatus('t1', { status_id: 's-qa' });
 
     assert.equal(calls[0]?.url, '/api/v1/tasks/t1/status');
     assert.equal(calls[0]?.init.method, 'POST');
     const body = calls[0]?.init.body;
     assert.equal(typeof body, 'string');
-    assert.deepEqual(JSON.parse(body as string), { status: 'review' });
+    assert.deepEqual(JSON.parse(body as string), { status_id: 's-qa' });
+  });
+
+  void test('or a whole kind, for a caller that knows only that', async () => {
+    const calls = stub({ id: 't1' });
+    await changeStatus('t1', { status: 'cancelled' });
+
+    assert.deepEqual(JSON.parse(calls[0]?.init.body as string), { status: 'cancelled' });
   });
 
   void test('rejects when the server refuses the transition', async () => {
     // The board depends on this throwing: it is what keeps the card where it
     // was instead of moving it and snapping back.
     stub({ error: { code: 'unprocessable', message: 'done cannot return to backlog' } }, 422);
-    await assert.rejects(changeStatus('t1', 'backlog'));
+    await assert.rejects(changeStatus('t1', { status: 'backlog' }));
   });
 });
 

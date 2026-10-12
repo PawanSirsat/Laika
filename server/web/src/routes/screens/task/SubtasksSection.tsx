@@ -12,10 +12,10 @@ import {
   updateTask,
   type Member,
   type Task,
-  type TaskStatus,
 } from '../../../api/tasks.ts';
-import { ALL_STATUSES, boardStatusLabel } from '../../../api/board-derive.ts';
-import type { BoardColumn } from '../../../api/columns.ts';
+import { statusNameOf } from '../../../api/status-derive.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
+import { statusOptions } from '../board/status-options.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -35,7 +35,7 @@ export interface SubtasksSectionProps {
   /** For *(you)* in the assignee picker. */
   readonly meId: string | undefined;
   /** So a status reads as the board's column name, as on the rail (LAI-617). */
-  readonly columns: readonly BoardColumn[];
+  readonly statuses: readonly ProjectStatus[];
   /** Open a child in this drawer. */
   readonly onOpen: (taskId: string) => void;
   /** The board reloads so a new child gets its card. */
@@ -65,10 +65,11 @@ export function SubtasksSection({
   mayEdit,
   mayAssign,
   meId,
-  columns,
+  statuses,
   onOpen,
   onChanged,
 }: SubtasksSectionProps) {
+  const byStatusId = new Map(statuses.map((s) => [s.id, s]));
   const [children, setChildren] = useState<readonly Task[]>(() => childrenOf(task.id, byId));
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
@@ -210,24 +211,20 @@ export function SubtasksSection({
                       chevron={false}
                       aria-labelledby={`sub-status-${child.id}`}
                       noun="statuses"
-                      value={child.status}
+                      value={child.status_id}
                       disabled={busy}
-                      display={
-                        <span className="dd-value">{boardStatusLabel(child.status, columns)}</span>
-                      }
-                      options={ALL_STATUSES.map((status) => ({
-                        value: status,
-                        label: boardStatusLabel(status, columns),
-                        icon: <span className={`dd-dot dd-dot-${status}`} />,
-                      }))}
-                      onChange={(to: TaskStatus) => {
-                        if (to !== child.status) void act(() => changeStatus(child.id, to));
+                      display={<span className="dd-value">{statusNameOf(child, byStatusId)}</span>}
+                      options={statusOptions(statuses)}
+                      onChange={(to) => {
+                        if (to !== child.status_id) {
+                          void act(() => changeStatus(child.id, { status_id: to }));
+                        }
                       }}
                     />
                   </label>
                 ) : (
                   <span className={`dep-status dep-status-${child.status}`}>
-                    {boardStatusLabel(child.status, columns)}
+                    {statusNameOf(child, byStatusId)}
                   </span>
                 )}
                 {mayAssign ? (

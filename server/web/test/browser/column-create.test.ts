@@ -44,6 +44,8 @@ const TASK = {
   description_md: null,
   acceptance_md: null,
   status: 'todo',
+  status_id: 's-todo',
+  status_name: 'To do',
   priority: 'p2',
   assignee_id: null,
   sprint_id: null,
@@ -68,22 +70,30 @@ const TASK = {
   updated_at: 1,
 };
 
-function column(id: string, name: string, position: number, statuses: string[]) {
+/** One column is one project status (LAI-739). */
+function status(id: string, name: string, category: string, position: number) {
   return {
     id,
     project_id: 'p1',
     name,
+    category,
     position,
     hidden: false,
-    statuses,
-    primary_status: statuses[0] ?? null,
+    created_at: 1,
+    task_count: 0,
   };
 }
 
-const COLUMNS = [
-  column('c1', 'To do', 0, ['todo', 'backlog']),
-  column('c2', 'In progress', 1, ['in_progress']),
-  column('c3', 'Done', 2, ['done']),
+/*
+ * Two columns of one kind on purpose: a composer that sent the kind rather
+ * than the column would put a card made in Code review into QA.
+ */
+const STATUSES = [
+  status('s-todo', 'To do', 'todo', 0),
+  status('s-doing', 'In progress', 'in_progress', 1),
+  status('s-qa', 'QA', 'review', 2),
+  status('s-cr', 'Code review', 'review', 3),
+  status('s-done', 'Done', 'done', 4),
 ];
 
 function stub(over: Partial<ApiStub> = {}): ApiStub {
@@ -98,7 +108,7 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
     },
     '/api/v1/projects': { data: [FULL_PROJECT], next_cursor: null },
     '/api/v1/projects/laika-core': FULL_PROJECT,
-    '/api/v1/projects/laika-core/board-columns': { columns: COLUMNS },
+    '/api/v1/projects/laika-core/statuses': { data: STATUSES },
     '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
     '/api/v1/projects/laika-core/members': {
       members: [
@@ -133,7 +143,7 @@ after(async () => {
 });
 
 void describe('the column decides the status', () => {
-  void test('creating from Done posts status done, not backlog', async () => {
+  void test('creating from Done posts Done’s status id, not backlog', async () => {
     // The bug, stated as an assertion. Before LAI-290 this posted no status at
     // all and the server defaulted it to `backlog`.
     const h = await open('/board?project=laika-core', stub());
@@ -148,8 +158,8 @@ void describe('the column decides the status', () => {
       const sent = creates(h);
       assert.equal(sent.length, 1, 'no create was sent');
       assert.equal(
-        (sent[0]?.body as { status?: string }).status,
-        'done',
+        (sent[0]?.body as { status_id?: string }).status_id,
+        's-done',
         'the card was created in the wrong column',
       );
     } finally {
@@ -157,22 +167,24 @@ void describe('the column decides the status', () => {
     }
   });
 
-  void test('creating from To do posts its primary status, not the first listed', async () => {
+  void test('two columns of one kind each create into themselves (LAI-739)', async () => {
     /*
-     * "To do" holds `todo` **and** `backlog`, in that order, and the primary is
-     * `todo`. A composer that reached for the column's first *enum* status, or
-     * for `backlog` because it is the default, lands here.
+     * QA and Code review are both `review`. A composer that sent the kind
+     * would let the server file both under the first of them — so the body
+     * must name the column, and must not also name a category.
      */
     const h = await open('/board?project=laika-core', stub());
 
     try {
       await board(h);
-      await addIn(h, 'To do').click();
-      await h.page.locator('.composer-title').fill('Something to pick up');
+      await addIn(h, 'Code review').click();
+      await h.page.locator('.composer-title').fill('Needs a second pair of eyes');
       await h.page.locator('.composer-submit').click();
       await h.page.waitForTimeout(250);
 
-      assert.equal((creates(h)[0]?.body as { status?: string }).status, 'todo');
+      const body = creates(h)[0]?.body as { status?: string; status_id?: string };
+      assert.equal(body.status_id, 's-cr');
+      assert.equal(body.status, undefined, 'a kind alongside the id is ambiguous');
     } finally {
       await h.close();
     }
@@ -184,9 +196,9 @@ void describe('the column decides the status', () => {
 
     try {
       await board(h);
-      await addIn(h, 'Done').click();
+      await addIn(h, 'Code review').click();
 
-      assert.match((await h.page.locator('.composer-target').innerText()) ?? '', /done/i);
+      assert.equal(await h.page.locator('.composer-target').innerText(), 'Code review');
     } finally {
       await h.close();
     }

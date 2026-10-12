@@ -1,4 +1,5 @@
-import type { BoardColumn } from './columns.ts';
+import { laneStatusId } from './status-derive.ts';
+import type { ProjectStatus } from './statuses.ts';
 import { STATUSES, type Task, type TaskStatus } from './tasks.ts';
 
 /**
@@ -45,63 +46,20 @@ export const STATUS_LABELS: Readonly<Record<TaskStatus, string>> = {
 };
 
 /**
- * Every status, including `cancelled`.
- *
- * Distinct from `MOVABLE_STATUSES` on purpose. A **drag** can never produce
- * `cancelled` — a mis-drag must not cancel somebody's work — so the board's
- * types say `MovableStatus`. The drawer's status control is the deliberate act
- * that can, and it needs all six. Before LAI-266 it listed five, which meant
- * cancelling a task was unreachable from the whole UI.
+ * Every category, including `cancelled` — the six kinds of work a status can
+ * be (LAI-738). Pickers list the project's *statuses* (LAI-739); this is for
+ * the places that still speak in kinds: the Dashboard's overview, a filter
+ * link that names a category, and the URL's `?status=`.
  */
 export const ALL_STATUSES = [...MOVABLE_STATUSES, 'cancelled'] as const;
 
-/** What to call a status on screen, ignoring how the board is arranged. */
+/**
+ * What to call a **category** on screen. A task's own status has a name of its
+ * own — `task.status_name`, or `statusNameOf` for the live one — and that is
+ * what a card or a pill prints; this is for the kind.
+ */
 export function statusLabel(status: TaskStatus): string {
   return STATUS_LABELS[status];
-}
-
-/**
- * What to call a status **on this board** (LAI-617).
- *
- * A column can be renamed. A status cannot — `TASK_STATUSES` is a fixed enum
- * that the REST API, the policy layer and the MCP tools all depend on by
- * literal value: `laika_finish_task` moves a task to `review` and tells the
- * agent a person takes it from here. Renaming a column must not rewrite that.
- *
- * So the column name is the **label** and the status stays the **value**. A
- * board with its `Review` column renamed to `Testing` showed cards reading
- * "Review" under a header reading "TESTING", which is what made people ask
- * whether renaming was broken.
- *
- * **Only when the column owns exactly one status.** Then the name identifies
- * it exactly and the substitution is lossless. A column holding several —
- * the shipped default merges `todo` and `backlog` — cannot stand in for any
- * one of them, so those keep their own names and stay distinguishable.
- */
-export function boardStatusLabel(
-  status: TaskStatus,
-  columns: readonly { readonly name: string; readonly statuses: readonly TaskStatus[] }[],
-): string {
-  const owner = columns.find((c) => c.statuses.includes(status));
-  if (owner?.statuses.length !== 1) return STATUS_LABELS[status];
-  return owner.name;
-}
-
-/**
- * What a drop on this column sets — its first status, or `undefined` if it has
- * none.
- *
- * **The order of a column's statuses is configuration, not a heuristic.** A lead
- * who puts `todo` above `backlog` in "To do" has decided that dropping there
- * means *to do*; deriving the answer from the canonical status order instead
- * would take that decision away and hard-code it here.
- *
- * `cancelled` is skipped whatever its position. A lane that resolved to it would
- * cancel work on a mis-drag, silently, and the drawer's status control is the
- * place where cancelling should take a deliberate act.
- */
-export function primaryStatus(column: BoardColumn): MovableStatus | undefined {
-  return column.statuses.find((s): s is MovableStatus => s !== 'cancelled');
 }
 
 /**
@@ -257,30 +215,27 @@ export function hideOldDone(
   return { kept, hidden: tasks.length - kept.length };
 }
 
-/** A column and the cards in it. */
+/** A column — one project status — and the cards in it. */
 export interface Lane {
-  readonly column: BoardColumn;
+  readonly column: ProjectStatus;
   readonly tasks: Task[];
 }
 
 /**
- * Cards into lanes, in the order the board draws them.
+ * Cards into lanes, in the order the board draws them (LAI-266, LAI-739).
  *
- * **An array, not a record keyed by column id.** Order is data now — it lives in
+ * **An array, not a record keyed by column id.** Order is data — it lives in
  * `position` — and in an array the order *is* the value, rather than something
  * every consumer has to remember to re-sort.
  *
- * Three rules, each of which has a test with a fixture that can violate it:
+ * Rules, each with a test whose fixture can violate it:
  *
  *  - **Lanes come out in `position` order**, whatever order the columns arrived
- *    in.
- *  - **A status no column lists is not drawn.** This is the general form of the
- *    old `if (task.status === 'cancelled') continue`: with `cancelled` in a
- *    hidden column, it disappears exactly as it always did — and if a project
- *    puts it in a visible one, it appears, which is now a choice somebody made.
- *  - **A status listed by two columns files into the earlier one, once.** The
- *    server forbids it with a primary key; this is what stops the board drawing
- *    the same card twice if it ever happened anyway.
+ *    in, and **an empty column is still a lane**.
+ *  - **A card in a hidden column is not drawn.** Cancelled starts hidden, so it
+ *    disappears exactly as it always did; showing the column shows its cards.
+ *  - **A card whose status the board has not heard of yet** sits in the first
+ *    column of its kind until the statuses refresh, rather than vanishing.
  */
 /**
  * A card move the server has not answered yet (LAI-473): where the reader
@@ -353,27 +308,21 @@ export function dropNeighbours(
 
 export function groupByColumn(
   tasks: readonly Task[],
-  columns: readonly BoardColumn[],
+  columns: readonly ProjectStatus[],
+  all: readonly ProjectStatus[] = columns,
   pending?: PendingMove,
 ): Lane[] {
   const ordered = [...columns].sort((a, b) => a.position - b.position);
-
-  // First column claiming a status wins, so a duplicate cannot draw twice.
-  const home = new Map<TaskStatus, string>();
-  for (const column of ordered) {
-    for (const status of column.statuses) {
-      if (!home.has(status)) home.set(status, column.id);
-    }
-  }
-
   const lanes: Lane[] = ordered.map((column) => ({ column, tasks: [] }));
   const byId = new Map(lanes.map((lane) => [lane.column.id, lane]));
 
   for (const task of tasks) {
-    const columnId = home.get(task.status);
-    // A status no column claims is drawn nowhere.
-    if (columnId === undefined) continue;
-    byId.get(columnId)?.tasks.push(task);
+    // Filed under its own status — or, for one the board has not heard of
+    // yet, the first column of its kind. A status not drawn (hidden) is drawn
+    // nowhere.
+    const id = laneStatusId(task, all);
+    if (id === undefined) continue;
+    byId.get(id)?.tasks.push(task);
   }
 
   // **The reader's order, not priority's** (LAI-473, D-070). This sorted by

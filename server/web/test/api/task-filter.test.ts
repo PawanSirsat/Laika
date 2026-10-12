@@ -32,6 +32,8 @@ function task(over: Partial<Task> & { id: string }): Task {
     description_md: null,
     acceptance_md: null,
     status: 'todo',
+    status_id: 'st-todo',
+    status_name: 'To do',
     priority: 'p2',
     assignee_id: null,
     sprint_id: null,
@@ -63,6 +65,8 @@ const SET = [
   task({
     id: '1',
     status: 'done',
+    status_id: 'st-done',
+    status_name: 'Done',
     priority: 'p1',
     assignee_id: 'ada',
     sprint_id: 's1',
@@ -81,6 +85,8 @@ const SET = [
   task({
     id: '3',
     status: 'review',
+    status_id: 'st-qa',
+    status_name: 'QA',
     priority: 'p3',
     assignee_id: 'bob',
     sprint_id: 's2',
@@ -103,6 +109,12 @@ void describe('applyTaskFilter means what the server’s WHERE means', () => {
     assert.deepEqual(ids({ assignee: 'ada' }), ['1']);
     assert.deepEqual(ids({ sprint: 's2' }), ['3']);
     assert.deepEqual(ids({ parent: '1' }), ['3']);
+  });
+
+  void test('a status id narrows to that one column, not its whole kind (LAI-739)', () => {
+    assert.deepEqual(ids({ status_id: 'st-qa' }), ['3']);
+    assert.deepEqual(ids({ status_id: 'st-todo' }), ['2']);
+    assert.deepEqual(ids({ status_id: 'nobody' }), []);
   });
 
   void test('`none` means null for assignee and sprint, as over a query string', () => {
