@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 finished: 2026-10-12T06:53:27Z
 started: 2026-10-12T06:18:47Z
 ---
@@ -182,3 +182,14 @@ and 39c55fa.
     CLI, and tested with a URL containing `'`.
 
 **Re-review follow-ups (approved at 7d69539):** the step 4 note now reads "calling this board" for No MCP and mentions presence off only when the org has it off (40307f5, 5ceab9f); codex detection is tested directly with six mutations killed, is quote-aware, skips multi-line strings and ignores laika outside `mcp_servers`; `~/.laika/env` is made 0600 before the token is written; Capacity's summary strip wraps at 390 (e54b243); the 17 screenshots are retaken from this build.
+
+## Accepted
+
+2026-10-12, by polly (orchestrator), for release 5. reviewed: LAI-736 approved
+round 2 on 1b98195; LAI-737 approved round 2 on 7d69539 + follow-ups 19dff2f;
+owner's direct instruction. Integrated on `build-release-5` by §4.4:
+`build-agent-server` merged first, then `build-agent-connect`; the only
+conflict was `logs/chief-2026-10-12.md`, resolved by keeping every entry from
+both sides in timestamp order. The two review nits are fixed in the same
+integration: D-076 item 5 now names Connect's fallback, and the LAI-736 log
+entry's presence-off cost claim carries an appended correction.
