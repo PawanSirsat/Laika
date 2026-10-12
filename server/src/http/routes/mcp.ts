@@ -91,6 +91,7 @@ export function mcpRoutes(options: McpRouteOptions): Hono<AppEnv> {
       version: options.version,
       db: options.db,
       sqlite: options.sqlite,
+      log: c.get('log'),
     });
   });
 

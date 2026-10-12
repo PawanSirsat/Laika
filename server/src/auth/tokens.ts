@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
+import { presenceEnabled } from '../db/orgs.ts';
 import { tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { agentClientSlug, cleanClientName, isWeakClientName } from './agent-clients.ts';
@@ -285,6 +286,10 @@ export interface McpUseWrite {
  *   for the same reason `last_used_at` is: a busy agent's thousand calls are
  *   one write, not a thousand. §9.3's five-minute window is far wider than the
  *   throttle, so presence never misses a live agent because of it.
+ * - **Not while the org has presence off** (§4.2). It is a presence signal, and
+ *   LAI-150 stores no heartbeats while presence is off, so that turning it back
+ *   on shows nothing from the time it was off. The org flag is read only when
+ *   the throttle would otherwise write.
  * - `clientName` is `clientInfo.name` from an `initialize` request, and
  *   `undefined` on every other request. It is cleaned, turned into a slug, and
  *   written **only when it changed**.
@@ -317,7 +322,8 @@ export function recordMcpUse(
 
   const set: Partial<typeof tokens.$inferInsert> = {};
 
-  const mcp = row.lastMcpAt === null || now - row.lastMcpAt >= LAST_USED_THROTTLE_MS;
+  const mcp =
+    (row.lastMcpAt === null || now - row.lastMcpAt >= LAST_USED_THROTTLE_MS) && presenceEnabled(db);
   if (mcp) set.lastMcpAt = now;
 
   let client = false;

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { recordMcpUse } from '../auth/tokens.ts';
+import { type Logger } from '../log.ts';
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { registerReadTools } from './read-tools.ts';
@@ -47,10 +48,11 @@ export const MCP_SERVER_NAME = 'laika';
 /**
  * How to work the board, for **any** agent (D-076).
  *
- * Sent as the server's `instructions` on `initialize`, which Claude Code,
- * Codex, Cursor and Gemini CLI put in front of the model. Some clients drop
- * server instructions (Omnigent, OpenCode), so `laika_whoami` carries the same
- * text as `how_to_work`, and the first rule tells an agent to call it.
+ * Sent as the server's `instructions` on `initialize`. Claude Code, Codex and
+ * Gemini CLI put it in front of the model; Zed, Cline, Continue, Hermes and
+ * Omnigent do not (D-076). Those are told by `laika_whoami`'s **description**,
+ * which every client shows the model, to call it first; its result carries this
+ * text as `how_to_work`.
  *
  * The rules are the Connect screen's `claudeMdBlock` without the per-project
  * lines: claim before coding, and finishing means review, never done. Two
@@ -83,6 +85,10 @@ export interface McpRequestContext {
   sqlite: Database.Database;
   /** Injectable so "3 days ago" in a response is not at the mercy of the clock. */
   now?: () => number;
+  /** Where a failed activity record is reported. The request still succeeds. */
+  log?: Logger;
+  /** Injectable so a test can prove a failing record never fails the call. */
+  recordUse?: (db: Db, tokenId: string, now: number, clientName: unknown) => unknown;
 }
 
 /**
@@ -184,14 +190,24 @@ export async function handleMcpRequest(
     // and on `initialize` keep the name the client gave. The SDK records
     // `clientInfo` only while handling `initialize`, and this server is new
     // per request, so it is `undefined` on every other call.
+    //
+    // **Never fails the call.** The tool has already run and may have written;
+    // answering an error now would tell the agent it did not, and a retry
+    // would do the work twice. A lost stamp costs one presence update.
     const tokenId = context.actor.token?.id;
     if (tokenId !== undefined) {
-      recordMcpUse(
-        context.db,
-        tokenId,
-        context.now?.() ?? Date.now(),
-        server.server.getClientVersion()?.name,
-      );
+      try {
+        (context.recordUse ?? recordMcpUse)(
+          context.db,
+          tokenId,
+          context.now?.() ?? Date.now(),
+          server.server.getClientVersion()?.name,
+        );
+      } catch (err) {
+        context.log?.warn('mcp.record_failed', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     return response;

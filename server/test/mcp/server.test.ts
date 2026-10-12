@@ -3,7 +3,8 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { MCP_SERVER_NAME } from '../../src/mcp/server.ts';
+import { resolveTokenActor } from '../../src/auth/resolve-actor.ts';
+import { handleMcpRequest, MCP_SERVER_NAME } from '../../src/mcp/server.ts';
 import { tokens, users } from '../../src/db/schema.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
 
@@ -501,5 +502,57 @@ describe('the connecting client is recorded on the token (D-076)', () => {
         clients: ['cursor'],
       }),
     ]);
+  });
+});
+
+describe('recording the call never fails it', () => {
+  it('returns the tool result when the recorder throws, and logs why', async () => {
+    const secret = await mint();
+    const actor = resolveTokenActor(h.db, secret, Date.now());
+    const warnings: { event: string; fields?: Record<string, unknown> }[] = [];
+
+    const res = await handleMcpRequest(
+      new Request('http://localhost/mcp', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${secret}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/event-stream',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 7,
+          method: 'tools/call',
+          params: { name: 'laika_whoami', arguments: {} },
+        }),
+      }),
+      {
+        actor,
+        version: 'test',
+        db: h.db,
+        sqlite: h.t.sqlite,
+        recordUse: () => {
+          throw new Error('disk on fire');
+        },
+        log: {
+          debug: () => undefined,
+          info: () => undefined,
+          warn: (event, fields) => {
+            warnings.push(fields === undefined ? { event } : { event, fields });
+          },
+          error: (event, fields) => {
+            warnings.push(fields === undefined ? { event } : { event, fields });
+          },
+        },
+      },
+    );
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: number; result?: { content: { text: string }[] } };
+    expect(body.id).toBe(7);
+    expect(JSON.parse(body.result?.content[0]?.text ?? '{}')).toMatchObject({
+      email: 'ada@example.test',
+    });
+    expect(warnings).toEqual([{ event: 'mcp.record_failed', fields: { message: 'disk on fire' } }]);
   });
 });
