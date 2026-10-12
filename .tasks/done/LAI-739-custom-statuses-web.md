@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-738]
 finished: 2026-10-12T08:10:24Z
 started: 2026-10-12T07:08:16Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -155,3 +155,19 @@ Mutation runs: all 6 new browser behaviours and the kind-detail unit test go
 red with their fix removed (`# pass 0 / # fail 1` per filtered run).
 
 **Round 2 (N1):** `status-store.test.ts` now covers a read begun before a write that answers after the write has ended — it must be re-run (red with `else load(slug, entry)` removed, green restored).
+
+## Accepted
+
+2026-10-12, by polly (orchestrator), for release 5.
+
+reviewed: LAI-738 approved round 2 on f940a87 + follow-ups f7f1397; LAI-739 approved round 2 on 6fca333 + N1 test 068495a; same-vendor reviews; owner's direct instruction
+
+Integrated on `build-release-5`: `build-statuses-server` merged at 12a56d4,
+then `build-statuses-web` at ab2f547 and again at 6fb6efa for 068495a. The
+only conflicts were in `logs/chief-2026-10-12.md`, resolved by keeping every
+entry in heading-time order. Migrations 0027 and 0028 were checked in order on
+a fresh database and on databases seeded with boards at 0026 and at 0027.
+
+**D-077 supersedes LAI-264, LAI-289, LAI-613 and LAI-618**, each written
+against the board-columns model. All four are closed into `.tasks/done/` with
+this release, unbuilt, each carrying a note that says so.
