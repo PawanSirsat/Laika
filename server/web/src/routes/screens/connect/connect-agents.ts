@@ -451,7 +451,7 @@ bearer_token_env_var = "LAIKA_TOKEN"`,
               laika: { serverUrl: url, headers: { Authorization: `Bearer ${token}` } },
             },
           }),
-          warn: `Antigravity has no environment-variable expansion (antigravity-cli issue #233), so the token is in this file. ${inlineWarn('your home directory, not .agents/ inside a project')}`,
+          warn: `Antigravity has no environment-variable expansion (antigravity-cli issue 233), so the token is in this file. ${inlineWarn('your home directory, not .agents/ inside a project')}`,
           note: 'The key is serverUrl — Antigravity ignores url and httpUrl.',
         },
       ];
