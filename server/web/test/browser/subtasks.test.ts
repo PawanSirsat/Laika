@@ -9,7 +9,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, DEFAULT_STATUSES, open, type ApiStub } from './harness.ts';
+import { closeBrowser, DEFAULT_STATUSES, open, until, type ApiStub } from './harness.ts';
 import { offered, pick, valueOf } from './dropdown.ts';
 
 const CORE = {
@@ -210,7 +210,7 @@ void describe('the Subtasks section', () => {
     try {
       await drawer(h);
       await h.page.locator('.sub-row', { hasText: 'LC-3' }).locator('.sub-open').click();
-      await h.page.waitForTimeout(300);
+      await h.page.waitForURL(/task=t3/, { timeout: 10_000 }).catch(() => undefined);
       assert.match(h.page.url(), /task=t3/);
       await h.page.locator('.panel-crumb-parent').waitFor({ timeout: 10_000 });
       assert.match(await h.page.locator('.panel-crumbs').innerText(), /LC-1\s*\/\s*LC-3/);
@@ -228,7 +228,9 @@ void describe('the Subtasks section', () => {
       await h.page.locator('.sub-link').click();
       await h.page.locator('#sub-title').fill('Refund policy');
       await h.page.locator('#sub-title').press('Enter');
-      await h.page.waitForTimeout(400);
+      await until(() =>
+        h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/projects/laika-core/tasks'),
+      );
 
       const post = h.calls.find(
         (c) => c.method === 'POST' && c.path === '/api/v1/projects/laika-core/tasks',
@@ -241,7 +243,7 @@ void describe('the Subtasks section', () => {
       });
 
       await h.page.locator('.sub-row', { hasText: 'LC-3' }).locator('.dep-remove').click();
-      await h.page.waitForTimeout(400);
+      await until(() => h.calls.some((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3'));
       const patch = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.ok(patch !== undefined, 'no PATCH went out');
       assert.deepEqual(patch.body, { parent_task_id: null });
@@ -324,7 +326,9 @@ void describe('subtasks and due dates on the cards', () => {
       await h.page.locator('.bt-icon[title="View settings"]').click();
       await h.page.locator('.vs-remove[data-field="subtasks"]').click();
       await h.page.locator('.vs-remove[data-field="due"]').click();
-      await h.page.waitForTimeout(200);
+      await until(
+        async () => (await h.page.locator('.card-subtasks, .card-parent, .card-due').count()) === 0,
+      );
 
       assert.equal(await h.page.locator('.card-subtasks').count(), 0);
       assert.equal(await h.page.locator('.card-parent').count(), 0);
@@ -362,7 +366,13 @@ void describe('subtasks and due dates on the List', () => {
       assert.ok(await due.evaluate((el) => el.classList.contains('list-tone-bad')));
 
       await h.page.locator('th', { hasText: 'Due' }).locator('button').click();
-      await h.page.waitForTimeout(300);
+      await until(
+        async () =>
+          h.page.url().includes('sort=due') &&
+          (await h.page.locator('.list-row').first().locator('.list-key').innerText()).includes(
+            'LC-1',
+          ),
+      );
       const first = await h.page.locator('.list-row').first().locator('.list-key').innerText();
       assert.match(first, /LC-1/, 'soonest due first');
       assert.match(h.page.url(), /sort=due/);
@@ -411,7 +421,9 @@ void describe('a subtask row changes status and assignee in place (LAI-700)', ()
       assert.equal(await valueOf(menu), 'st-in_progress');
 
       await pick(menu, 'st-done');
-      await h.page.waitForTimeout(400);
+      await until(() =>
+        h.calls.some((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/status'),
+      );
 
       const post = h.calls.find((c) => c.method === 'POST' && c.path === '/api/v1/tasks/t3/status');
       assert.ok(post !== undefined, 'no status POST went out');
@@ -433,12 +445,18 @@ void describe('a subtask row changes status and assignee in place (LAI-700)', ()
       assert.equal(await valueOf(picker), 'u1');
 
       await pick(picker, 'u2');
-      await h.page.waitForTimeout(400);
+      await until(
+        () =>
+          h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3').length > 0,
+      );
       const assign = h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.deepEqual(assign[0]?.body, { assignee_id: 'u2' });
 
       await pick(picker, '');
-      await h.page.waitForTimeout(400);
+      await until(
+        () =>
+          h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3').length > 1,
+      );
       const again = h.calls.filter((c) => c.method === 'PATCH' && c.path === '/api/v1/tasks/t3');
       assert.deepEqual(again[1]?.body, { assignee_id: null });
       assert.match(h.page.url(), /task=t1/, 'assigning opened the child');

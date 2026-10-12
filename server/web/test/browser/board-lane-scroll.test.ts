@@ -22,7 +22,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, DEFAULT_STATUSES, open, setTheme, type ApiStub } from './harness.ts';
+import { closeBrowser, DEFAULT_STATUSES, open, setTheme, until, type ApiStub } from './harness.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -672,7 +672,8 @@ void describe('scrolling the board (LAI-290)', () => {
 
       await h.page.mouse.move(card.x + card.width / 2, card.y + 10);
       await h.page.mouse.wheel(300, 0);
-      await h.page.waitForTimeout(300);
+      // A wheel scrolls asynchronously: wait for it to move, not for a clock.
+      await until(async () => (await scroller()).left > 0);
 
       assert.ok(
         (await scroller()).left > 0,
@@ -724,7 +725,11 @@ void describe('scrolling the board (LAI-290)', () => {
 
       await h.page.mouse.move(card.x + card.width / 2, card.y + 10);
       await h.page.mouse.wheel(0, 200);
-      await h.page.waitForTimeout(300);
+      await until(
+        async () =>
+          (await h.page.evaluate((sel) => document.querySelector(sel)?.scrollTop ?? 0, crowded)) >
+          0,
+      );
 
       const lane = await h.page.evaluate(
         (sel) => document.querySelector(sel)?.scrollTop ?? 0,
@@ -921,7 +926,10 @@ void describe('a grouped board can reach its last row (LAI-296)', () => {
       assert.ok(box !== null, 'no row to aim at');
       await h.page.mouse.move(box.x + box.width / 2, box.y + 40);
       await h.page.mouse.wheel(0, 400);
-      await h.page.waitForTimeout(350);
+      await until(
+        async () =>
+          (await h.page.evaluate(() => document.querySelector('.board-main')?.scrollTop ?? 0)) > 0,
+      );
 
       const top = await h.page.evaluate(
         () => document.querySelector('.board-main')?.scrollTop ?? 0,

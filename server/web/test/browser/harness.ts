@@ -168,6 +168,23 @@ export function refuse(status: number, code: string, message: string): StubReply
 }
 
 /**
+ * Wait until `done` holds, at most `ms`, rather than pausing a fixed time and
+ * then reading. A pause long enough on a laptop is too short on a loaded CI
+ * runner (2026-10-12): the read sees the page before the answer, the effect or
+ * the render it is about. **It asserts nothing**, and times out quietly, so the
+ * assertion after it reports what was actually on screen.
+ *
+ * Only for something that *will* happen. That something does **not** happen
+ * is still a fixed window, because no condition can end it early.
+ */
+export async function until(done: () => boolean | Promise<boolean>, ms = 5_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!(await done()) && Date.now() < end) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+}
+
+/**
  * What a route answers with: a JSON fixture, a {@link reply}, or a function of
  * the request returning either.
  *

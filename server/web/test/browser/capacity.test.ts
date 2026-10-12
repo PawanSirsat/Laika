@@ -335,7 +335,10 @@ void describe('the capacity screen', () => {
       await promote.waitFor({ timeout: 20_000 });
       const before = h.page.url();
       await promote.click();
-      await h.page.waitForTimeout(200);
+      await h.page
+        .locator('.unl-form')
+        .waitFor({ timeout: 5_000 })
+        .catch(() => undefined);
 
       // AC5: the click may open a form; it must not navigate.
       assert.equal(h.page.url(), before, 'promoting navigated away');

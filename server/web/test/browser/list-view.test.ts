@@ -10,7 +10,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { asServed, closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
+import { asServed, closeBrowser, open, until, type ApiStub, type Harness } from './harness.ts';
 import { pick } from './dropdown.ts';
 
 const CORE = {
@@ -341,8 +341,10 @@ async function wheel(h: Harness, by: number): Promise<number> {
   if (box === null) return 0;
   await h.page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await h.page.mouse.wheel(0, by);
-  await h.page.waitForTimeout(300);
-  return h.page.locator('.list-scroll').evaluate((el) => el.scrollTop);
+  const top = () => h.page.locator('.list-scroll').evaluate((el) => el.scrollTop);
+  // The wheel scrolls asynchronously: wait for it to move, not for a clock.
+  await until(async () => (await top()) > 0);
+  return top();
 }
 
 void describe('a board larger than one page', () => {
@@ -489,10 +491,13 @@ void describe('a board larger than one page', () => {
     const h = await open('/board?project=laika-core', PAGED);
     try {
       await h.page.locator('.lane-count').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(300);
-      const counts = (await h.page.locator('.lane-count').allInnerTexts()).map((t) =>
-        Number(t.replace(/\D/g, '') || '0'),
-      );
+      const lanes = async () =>
+        (await h.page.locator('.lane-count').allInnerTexts()).map((t) =>
+          Number(t.replace(/\D/g, '') || '0'),
+        );
+      // The second page arrives after the first is drawn.
+      await until(async () => (await lanes()).reduce((a, b) => a + b, 0) === 65);
+      const counts = await lanes();
       const total = counts.reduce((a, b) => a + b, 0);
       assert.equal(total, 65, `the lanes count ${String(total)} (${counts.join(' + ')}), not 65`);
     } finally {
@@ -757,7 +762,9 @@ void describe('timestamps read as moments (LAI-486)', () => {
     try {
       assert.equal((await cell(h, 'LC-1', 'updated').innerText()).trim(), 'just now');
       await h.page.clock.fastForward('02:00');
-      await h.page.waitForTimeout(200);
+      await until(
+        async () => (await cell(h, 'LC-1', 'updated').innerText()).trim() === '2 min ago',
+      );
       assert.equal(
         (await cell(h, 'LC-1', 'updated').innerText()).trim(),
         '2 min ago',
@@ -857,10 +864,12 @@ async function openFilter(h: Harness): Promise<void> {
 void describe('the Filter popover on the List (LAI-487)', () => {
   void test('status, sprint, blocked and updated each write the URL, filter the held set, and count', async () => {
     const h = await open('/list?project=laika-core', FILTERABLE);
-    const asked: string[] = [];
-    h.page.on('request', (r) => {
-      if (r.url().includes('/tasks?')) asked.push(r.url());
-    });
+    // From the stub's record, not a page listener: `open` has navigated by the
+    // time a listener could be attached, and on a loaded machine the first
+    // read has already gone out — the control below then saw none.
+    const asked = (): number =>
+      h.calls.filter((c) => c.method === 'GET' && c.path === '/api/v1/projects/laika-core/tasks')
+        .length;
     try {
       await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
       assert.deepEqual(
@@ -869,7 +878,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
         'positive control: all three',
       );
       // The set was read once; every filter below is answered from it.
-      const loaded = asked.length;
+      const loaded = asked();
       assert.ok(loaded > 0, 'the positive control saw no task request — the listener is blind');
 
       // Status — the rows change, and nothing is asked.
@@ -917,7 +926,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
       // Every task here was touched an hour ago, so all inside seven days stay.
       assert.ok(Date.now() - before < 60_000);
       assert.deepEqual(await keysOnScreen(h), ['LC-6'], 'the window hid work inside it');
-      assert.equal(asked.length, loaded, `a filter change asked the server: ${asked.join(', ')}`);
+      assert.equal(asked(), loaded, 'a filter change asked the server');
       assert.doesNotMatch(
         h.page.url(),
         /updated_since/,
@@ -1049,7 +1058,7 @@ void describe('the Filter popover on the List (LAI-487)', () => {
     });
     try {
       await h.page.locator('.list tbody tr').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(300);
+      await until(async () => JSON.stringify(await keysOnScreen(h)) === JSON.stringify(['LC-6']));
       assert.deepEqual(
         await keysOnScreen(h),
         ['LC-6'],
