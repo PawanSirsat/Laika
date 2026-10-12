@@ -259,7 +259,9 @@ void describe('dragging a column', () => {
     try {
       await board(h);
       await drag(h, '.lane:nth-of-type(4) .lane-head-drag', '.lane:nth-of-type(1)');
-      await h.page.waitForTimeout(250);
+      // The alert is the refusal handled; then the order it put back.
+      await h.page.locator('.board-alert').first().waitFor({ timeout: 5_000 });
+      await movedTo(h, ['To do', 'In progress', 'Review', 'Done']);
 
       assert.deepEqual(
         await titles(h),

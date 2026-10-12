@@ -23,6 +23,7 @@ import {
   refuse,
   reply,
   setTheme,
+  until,
   type ApiStub,
   type Harness,
 } from './harness.ts';
@@ -208,6 +209,9 @@ function sent(h: Harness, method: string, suffix: string) {
   return h.calls.filter((c) => c.method === method && c.path.endsWith(suffix));
 }
 
+const sameList = async (h: Harness, want: readonly string[]): Promise<boolean> =>
+  JSON.stringify(await titles(h)) === JSON.stringify(want);
+
 async function columnMenu(h: Harness, name: string, item: string): Promise<void> {
   await h.page.getByRole('button', { name: `Column menu for ${name}` }).click();
   await h.page.getByRole('menuitem', { name: item }).click();
@@ -264,7 +268,10 @@ void describe('renaming a column in place', () => {
       const input = h.page.locator('.lane-rename-input');
       await input.fill('Testing');
       await input.press('Enter');
-      await h.page.waitForTimeout(200);
+      await until(
+        async () =>
+          sent(h, 'PATCH', '/statuses/s-qa').length > 0 && (await titles(h)).includes('Testing'),
+      );
 
       const patch = sent(h, 'PATCH', '/statuses/s-qa');
       assert.equal(patch.length, 1, 'no rename was sent');
@@ -339,7 +346,12 @@ void describe('adding a column', () => {
       await dialog.getByLabel('Name').fill('Blocked');
       await dialog.getByRole('radio', { name: /^In progress/ }).check();
       await dialog.getByRole('button', { name: 'Add column' }).click();
-      await h.page.waitForTimeout(250);
+      await until(
+        async () =>
+          sent(h, 'POST', '/projects/laika-core/statuses').length > 0 &&
+          (await dialog.count()) === 0 &&
+          (await titles(h)).includes('Blocked'),
+      );
 
       const post = sent(h, 'POST', '/projects/laika-core/statuses');
       assert.equal(post.length, 1);
@@ -366,7 +378,10 @@ void describe('hiding a column and showing it again', () => {
     try {
       await board(h);
       await columnMenu(h, 'QA', 'Hide column');
-      await h.page.waitForTimeout(200);
+      await until(
+        async () =>
+          sent(h, 'PATCH', '/statuses/s-qa').length > 0 && !(await titles(h)).includes('QA'),
+      );
 
       assert.deepEqual(sent(h, 'PATCH', '/statuses/s-qa')[0]?.body, { hidden: true });
       assert.ok(!(await titles(h)).includes('QA'), 'the hidden column is still drawn');
@@ -376,7 +391,11 @@ void describe('hiding a column and showing it again', () => {
       await h.page.getByRole('menuitem', { name: 'Hidden columns (2)' }).click();
       const dialog = h.page.getByRole('dialog', { name: /Hidden columns/ });
       await dialog.getByRole('button', { name: 'Show QA' }).click();
-      await h.page.waitForTimeout(200);
+      await until(
+        async () =>
+          sent(h, 'PATCH', '/statuses/s-qa').length > 1 &&
+          (await sameList(h, ['To do', 'In progress', 'QA', 'Code review', 'Done'])),
+      );
 
       assert.deepEqual(sent(h, 'PATCH', '/statuses/s-qa')[1]?.body, { hidden: false });
       assert.deepEqual(await titles(h), ['To do', 'In progress', 'QA', 'Code review', 'Done']);
@@ -402,7 +421,11 @@ void describe('deleting a column', () => {
       assert.match(words, /No task is deleted/);
 
       await dialog.getByRole('button', { name: 'Delete column' }).click();
-      await h.page.waitForTimeout(300);
+      await until(
+        async () =>
+          sent(h, 'DELETE', '/statuses/s-qa').length > 0 &&
+          (await sameList(h, ['To do', 'In progress', 'Code review', 'Done'])),
+      );
 
       const del = sent(h, 'DELETE', '/statuses/s-qa');
       assert.equal(del.length, 1);
@@ -452,7 +475,10 @@ void describe('dropping a card on a column', () => {
       // Into the *empty* review column — the second of its kind, which a drop
       // that sent the kind would never reach.
       await drag(h, '.lane-item[data-task-id="t1"] .card', '.lane:nth-of-type(4)');
-      await h.page.waitForTimeout(200);
+      await until(
+        async () =>
+          (await lane(h, 'Code review').locator('.lane-item[data-task-id="t1"]').count()) === 1,
+      );
       assert.equal(
         await lane(h, 'Code review').locator('.lane-item[data-task-id="t1"]').count(),
         1,
@@ -460,6 +486,8 @@ void describe('dropping a card on a column', () => {
       );
 
       release();
+      await until(() => sent(h, 'POST', '/tasks/t1/status').length > 0);
+      // And a beat more, so an answer that undid the move would be on screen.
       await h.page.waitForTimeout(300);
       const move = sent(h, 'POST', '/tasks/t1/status');
       assert.equal(move.length, 1);
@@ -489,7 +517,11 @@ void describe('dropping a card on a column', () => {
     try {
       await board(h);
       await drag(h, '.lane-item[data-task-id="t1"] .card', '.lane:nth-of-type(5)');
-      await h.page.waitForTimeout(400);
+      await until(
+        async () =>
+          (await h.page.locator('.board-alert').count()) > 0 &&
+          (await lane(h, 'To do').locator('.lane-item[data-task-id="t1"]').count()) === 1,
+      );
 
       assert.equal(await lane(h, 'To do').locator('.lane-item[data-task-id="t1"]').count(), 1);
       assert.equal(await lane(h, 'Done').locator('.lane-item[data-task-id="t1"]').count(), 0);
@@ -565,7 +597,7 @@ void describe('focus in the column dialogs (review round 1)', () => {
       await board(h);
       await columnMenu(h, 'QA', 'Delete column');
       await h.page.getByRole('dialog', { name: 'Delete “QA”?' }).waitFor();
-      await h.page.waitForTimeout(100);
+      await until(async () => (await focused(h)).role === 'combobox');
 
       const first = await focused(h);
       assert.equal(first.role, 'combobox', `focus opened on ${JSON.stringify(first)}`);
@@ -579,7 +611,7 @@ void describe('focus in the column dialogs (review round 1)', () => {
 
       await h.page.keyboard.press('Escape');
       await h.page.getByRole('dialog').waitFor({ state: 'detached' });
-      await h.page.waitForTimeout(100);
+      await until(async () => (await focused(h)).name === 'Column menu for QA');
       assert.equal((await focused(h)).name, 'Column menu for QA');
     } finally {
       await h.close();
@@ -592,7 +624,7 @@ void describe('focus in the column dialogs (review round 1)', () => {
       await board(h);
       await columnMenu(h, 'In progress', 'Delete column');
       await h.page.getByRole('dialog', { name: 'Delete “In progress”?' }).waitFor();
-      await h.page.waitForTimeout(100);
+      await until(async () => (await focused(h)).name === 'Cancel');
       assert.equal((await focused(h)).name, 'Cancel');
     } finally {
       await h.close();
@@ -607,7 +639,7 @@ void describe('focus in the column dialogs (review round 1)', () => {
       const entry = h.page.getByRole('button', { name: 'Hidden columns (1)' });
       await entry.click();
       await h.page.getByRole('dialog', { name: /Hidden columns/ }).waitFor();
-      await h.page.waitForTimeout(100);
+      await until(async () => (await focused(h)).name === 'Show Cancelled');
       assert.equal((await focused(h)).name, 'Show Cancelled');
 
       await h.page.keyboard.press('Tab');
@@ -617,7 +649,7 @@ void describe('focus in the column dialogs (review round 1)', () => {
 
       await h.page.keyboard.press('Escape');
       await h.page.getByRole('dialog').waitFor({ state: 'detached' });
-      await h.page.waitForTimeout(100);
+      await until(async () => (await focused(h)).name === 'Hidden columns (1)');
       assert.equal((await focused(h)).name, 'Hidden columns (1)');
     } finally {
       await h.close();
@@ -629,7 +661,7 @@ void describe('focus in the column dialogs (review round 1)', () => {
     try {
       await board(h);
       await columnMenu(h, 'QA', 'Hide column');
-      await h.page.waitForTimeout(250);
+      await until(async () => (await focused(h)).name === 'Code review');
       assert.equal((await focused(h)).name, 'Code review', 'focus was left on nothing');
     } finally {
       await h.close();
@@ -698,7 +730,7 @@ void describe('hiding and deleting, said plainly (review round 1)', () => {
       await dialog.getByText(/“Code review” is no longer on this board/).waitFor({ timeout: 5000 });
 
       await dialog.getByRole('button', { name: 'Delete column' }).click();
-      await h.page.waitForTimeout(300);
+      await until(() => sent(h, 'DELETE', '/statuses/s-qa').length > 0);
       const del = sent(h, 'DELETE', '/statuses/s-qa');
       assert.equal(del.length, 1);
       // The default again: the other review column that is left.

@@ -14,7 +14,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, open, refuse, until, type ApiStub, type Harness } from './harness.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -153,7 +153,7 @@ void describe('the column decides the status', () => {
       await addIn(h, 'Done').click();
       await h.page.locator('.composer-title').fill('A finished thing');
       await h.page.locator('.composer-submit').click();
-      await h.page.waitForTimeout(250);
+      await until(() => creates(h).length > 0);
 
       const sent = creates(h);
       assert.equal(sent.length, 1, 'no create was sent');
@@ -180,7 +180,7 @@ void describe('the column decides the status', () => {
       await addIn(h, 'Code review').click();
       await h.page.locator('.composer-title').fill('Needs a second pair of eyes');
       await h.page.locator('.composer-submit').click();
-      await h.page.waitForTimeout(250);
+      await until(() => creates(h).length > 0);
 
       const body = creates(h)[0]?.body as { status?: string; status_id?: string };
       assert.equal(body.status_id, 's-cr');
@@ -235,7 +235,7 @@ void describe('the composer opens where it was clicked', () => {
       await board(h);
       await addIn(h, 'Done').click();
       await h.page.locator('.composer-title').press('Escape');
-      await h.page.waitForTimeout(120);
+      await until(async () => (await h.page.locator('.composer').count()) === 0);
 
       assert.equal(await h.page.locator('.composer').count(), 0);
       assert.equal(await addIn(h, 'Done').count(), 1);
@@ -263,7 +263,8 @@ void describe('when the server refuses', () => {
       await addIn(h, 'Done').click();
       await h.page.locator('.composer-title').fill('Do not lose me');
       await h.page.locator('.composer-submit').click();
-      await h.page.waitForTimeout(250);
+      // The refusal answered, or "the text stays" is read before anything happened.
+      await h.page.locator('.composer-error').waitFor({ timeout: 5_000 });
 
       assert.equal(await h.page.locator('.composer-title').inputValue(), 'Do not lose me');
       assert.match(

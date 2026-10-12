@@ -14,7 +14,14 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, DEFAULT_STATUSES, open, type ApiStub, type Harness } from './harness.ts';
+import {
+  closeBrowser,
+  DEFAULT_STATUSES,
+  open,
+  until,
+  type ApiStub,
+  type Harness,
+} from './harness.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -130,7 +137,7 @@ void describe('toggling a card field', () => {
       const titlesBefore = await h.page.locator('.card-title').count();
 
       await h.page.locator('.vs-remove[data-field="priority"]').click();
-      await h.page.waitForTimeout(120);
+      await until(async () => (await h.page.locator('.card .priority-icon').count()) === 0);
 
       assert.equal(
         await h.page.locator('.card .priority-icon').count(),
@@ -147,7 +154,7 @@ void describe('toggling a card field', () => {
       // Back on through the search, which is how the reference adds a field.
       await h.page.locator('.vs-search').fill('Priority');
       await h.page.locator('.vs-add').first().click();
-      await h.page.waitForTimeout(120);
+      await until(async () => (await h.page.locator('.card .priority-icon').count()) === 1);
       assert.equal(await h.page.locator('.card .priority-icon').count(), 1);
     } finally {
       await h.close();
@@ -160,7 +167,8 @@ void describe('toggling a card field', () => {
     try {
       await openPanel(h);
       await h.page.locator('.vs-remove[data-field="tags"]').click();
-      await h.page.waitForTimeout(120);
+      // Hidden on screen first, or the reload can race the preference's write.
+      await until(async () => (await h.page.locator('.card-tag').count()) === 0);
 
       const url = h.page.url();
       assert.ok(!url.includes('tags'), 'a display preference must not be in a link you send');
@@ -215,7 +223,7 @@ void describe('grouping', () => {
     try {
       await openPanel(h);
       await h.page.locator('input[name="vs-group"]').nth(1).check();
-      await h.page.waitForTimeout(150);
+      await h.page.waitForURL(/group=assignee/, { timeout: 5_000 }).catch(() => undefined);
 
       assert.match(h.page.url(), /group=assignee/);
     } finally {
