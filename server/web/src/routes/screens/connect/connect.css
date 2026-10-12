@@ -677,13 +677,17 @@
 
 .conn-agent-name {
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   font-weight: var(--weight-semibold);
   line-height: 1.25;
 }
 
 .conn-agent-beta {
-  margin-left: auto;
+  /* On the tile's corner, so a long name keeps the whole line and never
+     breaks mid-word to make room for it. */
+  position: absolute;
+  top: calc(var(--space-1) * -1);
+  right: var(--space-2);
   padding: 0 var(--space-1);
   border: 1px solid var(--chip-orange-border);
   border-radius: var(--radius-chip);
