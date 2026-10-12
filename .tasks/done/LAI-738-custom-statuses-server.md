@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-12T07:08:01Z
 finished: 2026-10-12T07:49:33Z
 ---
@@ -263,3 +263,19 @@ Approved at f940a87; two follow-ups, test-first:
   `server/` `pnpm test` → 1: 2306 test cases collected, 2304 pass; the 2
   failures are the `response-type-coverage` PAIRS checks the web half
   retires.
+
+## Accepted
+
+2026-10-12, by polly (orchestrator), for release 5.
+
+reviewed: LAI-738 approved round 2 on f940a87 + follow-ups f7f1397; LAI-739 approved round 2 on 6fca333 + N1 test 068495a; same-vendor reviews; owner's direct instruction
+
+Integrated on `build-release-5`: `build-statuses-server` merged at 12a56d4,
+then `build-statuses-web` at ab2f547 and again at 6fb6efa for 068495a. The
+only conflicts were in `logs/chief-2026-10-12.md`, resolved by keeping every
+entry in heading-time order. Migrations 0027 and 0028 were checked in order on
+a fresh database and on databases seeded with boards at 0026 and at 0027.
+
+**D-077 supersedes LAI-264, LAI-289, LAI-613 and LAI-618**, each written
+against the board-columns model. All four are closed into `.tasks/done/` with
+this release, unbuilt, each carrying a note that says so.
