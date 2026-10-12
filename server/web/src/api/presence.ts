@@ -1,3 +1,9 @@
+import {
+  agentClientName,
+  asAgentClient,
+  asAgentClients,
+  type AgentClient,
+} from './agent-clients.ts';
 import { request } from './client.ts';
 
 /**
@@ -48,8 +54,21 @@ export interface PresenceEntry {
   readonly matched_task_id: string | null;
   /** Empty both when the repo matches no project **and** when the reader may not be told. */
   readonly project_ids: readonly string[];
-  /** A heartbeat sent with a token, per §4.8's `actor_kind`. */
+  /** A heartbeat sent with a token, or a token's `/mcp` call (§4.8, D-076). */
   readonly is_agent: boolean;
+  /**
+   * The coding agent of the newest live agent session, or `null` when none is
+   * live (LAI-736). **Read it through `asAgentClient`**, never directly: a
+   * server ahead of this client's slug list sends a value the client does not
+   * know, and a fixture from before LAI-736 sends none.
+   *
+   * An MCP-only session has no heartbeat, so it carries a `client` and **no
+   * `repo`** — which is why "connected via Codex" is said where a repo would
+   * otherwise be.
+   */
+  readonly client: AgentClient | null;
+  /** Every distinct agent among this person's live sessions, newest first. */
+  readonly clients: readonly AgentClient[];
   readonly last_seen: number;
 }
 
@@ -119,4 +138,33 @@ export function getCapacity(signal?: AbortSignal): Promise<CapacityView> {
  */
 export function hasLocation(entry: PresenceEntry): boolean {
   return entry.repo !== undefined;
+}
+
+/**
+ * The agents behind a session, newest first — empty for a person in the
+ * browser (LAI-737).
+ *
+ * Read through `asAgentClients`, so a slug this client does not know is
+ * dropped rather than drawn, and a fixture from before LAI-736 reads as none.
+ */
+export function agentsOf(entry: PresenceEntry): AgentClient[] {
+  if (!entry.is_agent) return [];
+  const all = asAgentClients(entry.clients);
+  const newest = asAgentClient(entry.client);
+  return newest === null || all.includes(newest) ? all : [newest, ...all];
+}
+
+/**
+ * `connected via Codex` — what a row says where a repo would be, when the
+ * session's agent is known (LAI-737).
+ *
+ * An MCP-only session has no heartbeat and so no `repo` (LAI-736), the same
+ * shape as a location that is withheld. Both are true of it: the person is
+ * working somewhere this reader is not told about, *through Codex*. Saying the
+ * agent is the more useful half; `undefined` leaves the caller's own
+ * *working elsewhere*.
+ */
+export function connectedVia(entry: PresenceEntry): string | undefined {
+  const client = entry.is_agent ? asAgentClient(entry.client) : null;
+  return client === null ? undefined : `connected via ${agentClientName(client)}`;
 }

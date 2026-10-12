@@ -1,5 +1,6 @@
 import { PRIORITIES, type TaskPriority } from '../../api/tasks.ts';
-import type { PresenceEntry } from '../../api/presence.ts';
+import type { AgentClient } from '../../api/agent-clients.ts';
+import { agentsOf, type PresenceEntry } from '../../api/presence.ts';
 
 /**
  * The pure parts of the space top bar (LAI-251).
@@ -62,4 +63,16 @@ export function priorityLabel(current: TaskPriority | undefined): string {
  */
 export function agentCount(present: readonly PresenceEntry[] | undefined): number {
   return present === undefined ? 0 : present.filter((entry) => entry.is_agent).length;
+}
+
+/**
+ * Every distinct coding agent live in this space, for the `Agents` chip's
+ * marks and its title (LAI-737). Unknown slugs are dropped by `agentsOf`.
+ */
+export function agentsLive(present: readonly PresenceEntry[] | undefined): AgentClient[] {
+  const out: AgentClient[] = [];
+  for (const entry of present ?? []) {
+    for (const client of agentsOf(entry)) if (!out.includes(client)) out.push(client);
+  }
+  return out;
 }

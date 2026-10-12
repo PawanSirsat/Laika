@@ -14,7 +14,7 @@ Your board stops going stale. Your team stops re-explaining the project to their
 [![Node 22+](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](.nvmrc)
 [![GitHub stars](https://img.shields.io/github/stars/PawanSirsat/Laika?style=social)](https://github.com/PawanSirsat/Laika/stargazers)
 
-[Quick start](#-quick-start-5-minutes) · [Connect Claude Code](#-connect-claude-code) · [How it works](#-how-it-works) · [Why Laika](#-why-laika) · [Roadmap](#-roadmap)
+[Quick start](#-quick-start-5-minutes) · [Connect your agent](#-connect-your-coding-agent) · [How it works](#-how-it-works) · [Why Laika](#-why-laika) · [Roadmap](#-roadmap)
 
 <!-- 🎥 REPLACE WITH A 15–30s GIF: Claude Code claims a task in the terminal, the card moves live on the board -->
 ![Laika demo](docs/assets/demo.gif)
@@ -66,16 +66,41 @@ Open **http://localhost:3000** and finish the first-run setup wizard.
 
 On the board: **Settings → Tokens → New token**. Copy it (it starts with `lai_` and is shown once).
 
-## 🔌 Connect Claude Code
+## 🔌 Connect your coding agent
 
-**Recommended — plugin + live presence (one command):**
+Laika serves its tools over MCP (Streamable HTTP at `<board>/mcp`, bearer token),
+so any MCP client can work the board. **The easiest path is the board itself:
+open `/connect`, pick your agent, and it shows the exact config — file, scope and
+one-line command — filled in for your board, then watches for your token to
+connect.**
+
+| Agent | How it connects |
+|---|---|
+| **Claude Code** | the plugin + `laika-claude` (recommended: commands and live presence), or `claude mcp add` |
+| **Codex** | `~/.codex/config.toml`, token from `LAIKA_TOKEN` via `bearer_token_env_var` |
+| **Cursor** | `~/.cursor/mcp.json` with `${env:LAIKA_TOKEN}` |
+| **Gemini CLI** | `~/.gemini/settings.json` with `${LAIKA_TOKEN}` |
+| **OpenCode** | `opencode.json` with `{env:LAIKA_TOKEN}` |
+| **VS Code / Copilot** | `.vscode/mcp.json` with a password input |
+| **Omnigent** | an agent spec's `tools/mcp/laika.yaml` |
+| **Antigravity** | `~/.gemini/config/mcp_config.json` (beta — not yet verified) |
+| Windsurf, Hermes, Zed, Cline / Roo, Continue, Claude Desktop, Kiro, Goose, Amp, JetBrains / Junie, Warp | shown on `/connect`; clients that cannot reach plain http or send a header use the `mcp-remote` bridge |
+| No MCP | the REST API with `Authorization: Bearer $LAIKA_TOKEN`, or the `laika` CLI |
+
+**From a terminal — store the token once, then let the CLI write the config:**
 
 ```bash
-~/path/to/Laika/plugin/scripts/install.sh
-# asks for your board URL and YOUR token, saves them to ~/.laika/env (chmod 600)
+git clone https://github.com/PawanSirsat/Laika.git ~/laika
+~/laika/plugin/scripts/install.sh      # asks for your board URL and YOUR token → ~/.laika/env (chmod 600)
+laika connect codex                    # or cursor, gemini-cli, opencode, … — `laika connect --list`
 ```
 
-Then start Claude Code through Laika from any project folder:
+`laika connect` merges into the agent's existing config (backing it up to
+`<file>.bak` once), refuses a file it cannot parse, and references
+`LAIKA_TOKEN` wherever the agent can read an environment variable.
+
+**Claude Code** — after the installer, start sessions through Laika from any
+project folder:
 
 ```bash
 laika-claude
@@ -85,14 +110,14 @@ laika-claude
 
 ```bash
 claude mcp add --transport http laika https://your-board.example.com/mcp \
-  --header "Authorization: Bearer lai_xxxxxxxx"
+  --header "Authorization: Bearer $LAIKA_TOKEN"
 ```
 
-**Try it — say this to Claude:**
+**Try it — say this to your agent:**
 
 > "Show me my ready tasks in Laika, pick the top one, start working on it, and move it to review when you're done."
 
-### Slash commands
+### Slash commands (Claude Code plugin)
 
 | Command | What it does |
 |---|---|

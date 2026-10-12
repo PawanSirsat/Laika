@@ -93,6 +93,8 @@ const STUB: ApiStub = {
         matched_task_id: 't1',
         project_ids: ['p1'],
         is_agent: true,
+        client: 'claude-code',
+        clients: ['claude-code', 'cursor'],
         last_seen: now,
       },
       // LAI-438: present, location withheld. repo/branch absent; the other two null/[].
@@ -102,7 +104,20 @@ const STUB: ApiStub = {
         matched_task_id: null,
         project_ids: [],
         is_agent: false,
+        client: null,
+        clients: [],
         last_seen: now - 60000,
+      },
+      // LAI-736: an MCP-only agent session — no heartbeat, so no repo at all.
+      {
+        user_id: 'u3',
+        name: 'Priya Raman',
+        matched_task_id: null,
+        project_ids: [],
+        is_agent: true,
+        client: 'codex',
+        clients: ['codex'],
+        last_seen: now - 30000,
       },
     ],
   },
@@ -221,6 +236,76 @@ void describe('the capacity screen', () => {
         0,
         'a human is badged as an agent',
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an agent session names its agent; an MCP-only one says which, not a repo (LAI-737)', async () => {
+    const h = await open('/capacity', STUB);
+    try {
+      const ada = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
+      await ada.waitFor({ timeout: 20_000 });
+      const clients = await ada.locator('.cap-client').allInnerTexts();
+      assert.deepEqual(
+        clients.map((c) => c.trim()),
+        ['Claude Code', 'Cursor'],
+      );
+      assert.equal(await ada.locator('.agent-mark').count(), 2);
+
+      const priya = h.page.locator('.cap-card', { hasText: 'Priya Raman' });
+      const text = await priya.innerText();
+      assert.match(text, /connected via Codex/, 'the MCP-only session does not say which agent');
+      assert.doesNotMatch(text, /undefined|null/i);
+
+      // CONTROL: the person in the browser is still just a person.
+      const tomas = h.page.locator('.cap-card', { hasText: 'Tomas Nel' });
+      assert.equal(await tomas.locator('.cap-client').count(), 0);
+      assert.match(await tomas.innerText(), /working elsewhere/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the Agents chip says what its number counts, and which agents (LAI-737)', async () => {
+    const h = await open('/capacity', STUB);
+    try {
+      const chip = h.page.locator('.space-agents-start');
+      await chip.locator('.agent-mark').first().waitFor({ timeout: 20_000 });
+      const text = (await chip.textContent()) ?? '';
+      // Two people have agent sessions (Ada, Priya); three agents are live.
+      assert.match(text, /2 people with agent sessions/, text);
+      assert.match(text, /Claude Code, Cursor, Codex/, text);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('at 390px nothing is clipped or pushes the page sideways (LAI-737)', async () => {
+    const h = await open('/capacity', STUB);
+    try {
+      await h.page.setViewportSize({ width: 390, height: 900 });
+      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const wide = await h.page.evaluate(() => ({
+        page: document.documentElement.scrollWidth > window.innerWidth,
+        cut: [...document.querySelectorAll('.cap-card, .cap-card *')]
+          .filter(
+            (el) =>
+              el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX !== 'visible',
+          )
+          .map((el) => el.className),
+      }));
+      const strip = await h.page.evaluate(() => {
+        const box = document.querySelector('.cap-summary')?.getBoundingClientRect();
+        if (box === undefined) return ['no .cap-summary'];
+        return [...document.querySelectorAll('.cap-summary > *')]
+          .filter((el) => el.getBoundingClientRect().right > box.right + 1)
+          .map((el) => el.className);
+      });
+      assert.deepEqual(strip, [], `the summary strip spills: ${strip.join(', ')}`);
+      assert.equal(wide.page, false, 'the page scrolls sideways');
+      assert.deepEqual(wide.cut, [], `clipped: ${wide.cut.join(', ')}`);
     } finally {
       await h.close();
     }

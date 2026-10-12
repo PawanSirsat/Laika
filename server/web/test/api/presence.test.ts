@@ -35,7 +35,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
-import { hasLocation, type PresenceEntry } from '../../src/api/presence.ts';
+import { agentsOf, connectedVia, hasLocation, type PresenceEntry } from '../../src/api/presence.ts';
 
 const SERVER = fileURLToPath(new URL('../../../src/services/presence.ts', import.meta.url));
 const CLIENT = fileURLToPath(new URL('../../src/api/presence.ts', import.meta.url));
@@ -140,6 +140,8 @@ function present(over: Partial<PresenceEntry> & { user_id: string }): PresenceEn
     matched_task_id: null,
     project_ids: [],
     is_agent: false,
+    client: null,
+    clients: [],
     last_seen: 0,
     ...over,
   };
@@ -172,5 +174,49 @@ void describe('hasLocation — the LAI-438 predicate, and it lives beside the ty
     // the branch — an ordinary state, and nothing to do with permission.
     const located = present({ user_id: 'u', repo: 'o/n', branch: 'main', matched_task_id: null });
     assert.equal(hasLocation(located), true);
+  });
+});
+
+void describe('which agent a session is (LAI-737)', () => {
+  void test('an agent session names its client', () => {
+    const entry = present({
+      user_id: 'u',
+      is_agent: true,
+      client: 'codex',
+      clients: ['codex', 'cursor'],
+    });
+    assert.deepEqual(agentsOf(entry), ['codex', 'cursor']);
+    assert.equal(connectedVia(entry), 'connected via Codex');
+  });
+
+  void test('an MCP-only session has no repo, and says which agent instead', () => {
+    // LAI-736: no heartbeat, so `repo` is absent — the same shape as a
+    // withheld location, which is why the client is what tells them apart.
+    const entry = present({
+      user_id: 'u',
+      is_agent: true,
+      client: 'gemini-cli',
+      clients: ['gemini-cli'],
+    });
+    assert.equal(hasLocation(entry), false);
+    assert.equal(connectedVia(entry), 'connected via Gemini CLI');
+  });
+
+  void test('CONTROL: a person in the browser, or an unknown client, names no agent', () => {
+    assert.equal(
+      connectedVia(present({ user_id: 'u', client: 'codex', clients: ['codex'] })),
+      undefined,
+    );
+    assert.deepEqual(agentsOf(present({ user_id: 'u', client: 'codex', clients: ['codex'] })), []);
+    const odd = {
+      ...present({ user_id: 'u', is_agent: true }),
+      client: 'teleporter',
+    } as unknown as PresenceEntry;
+    assert.equal(connectedVia(odd), undefined);
+  });
+
+  void test('`other` is a real agent the server could not place', () => {
+    const entry = present({ user_id: 'u', is_agent: true, client: 'other', clients: ['other'] });
+    assert.equal(connectedVia(entry), 'connected via another agent');
   });
 });

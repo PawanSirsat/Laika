@@ -232,6 +232,39 @@ void describe('the agent-sessions panel', () => {
     }
   });
 
+  void test('an agent chip names its agent to a screen reader, not only in a title (LAI-737)', async () => {
+    const withClient = {
+      ...STUB,
+      '/api/v1/presence': {
+        enabled: true,
+        present: [
+          {
+            user_id: 'u1',
+            name: 'Ada Lovelace',
+            matched_task_id: null,
+            project_ids: [],
+            is_agent: true,
+            client: 'codex',
+            clients: ['codex'],
+            last_seen: Date.now(),
+          },
+        ],
+      },
+    };
+    const h = await open('/activity?project=laika-core', withClient);
+    try {
+      const chip = h.page.locator('.rail-sessions .pp-chip').first();
+      await chip.waitFor({ timeout: 20_000 });
+      const hidden = await chip.locator('.visually-hidden').allTextContents();
+      assert.ok(
+        hidden.some((t) => t.includes('Codex')),
+        `no visually-hidden agent name: ${JSON.stringify(hidden)}`,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('a session stays inside its card', async () => {
     // The panel is a third of the row. The chip put the repo and the branch
     // side by side and ran off the right edge — found by looking, and fixed with

@@ -185,3 +185,6 @@ printf '    laika-claude                              # like `claude`\n'
 printf '    laika-claude --dangerously-skip-permissions\n\n'
 printf 'Inside the session, /laika:status confirms the connection.\n'
 printf 'From a plain terminal, laika whoami says who this machine is.\n\n'
+# LAI-737: the same stored board and token serve every other coding agent.
+printf 'Another coding agent (Codex, Cursor, Gemini CLI, OpenCode, ...)? Run:\n\n'
+printf '    laika connect <agent>                     # laika connect --list for names\n\n'

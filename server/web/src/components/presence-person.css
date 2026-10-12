@@ -131,3 +131,17 @@
 .pp-dot-agent {
   background: var(--chip-pink);
 }
+
+/* The agent's mark and, on a row, its name (LAI-737). */
+.pp-agent {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.pp-agent-name {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}

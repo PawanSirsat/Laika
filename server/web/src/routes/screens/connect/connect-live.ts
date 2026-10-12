@@ -1,7 +1,21 @@
+import { agentClientName, asAgentClient } from '../../../api/agent-clients.ts';
 import { type PresenceEntry, type PresenceView } from '../../../api/presence.ts';
+import type { TokenView } from '../../../api/tokens.ts';
 
 /**
- * Proof that a session actually connected (LAI-622).
+ * Proof that a session actually connected (LAI-622, LAI-737).
+ *
+ * ## Two watches, and the stronger one wins whenever it can
+ *
+ * **By token** ({@link tokenLiveStateFrom}), when this page minted one: the
+ * token's own `last_mcp_at` (LAI-736) moving is proof that *this* token
+ * reached the board over MCP, from whichever agent the reader configured. It
+ * fixes the false positive the presence watch has — any agent session of the
+ * reader's turned it green, including one started yesterday on another token.
+ *
+ * **By presence** ({@link liveStateFrom}), when nothing was minted here — the
+ * reader brought a token from Tokens — and the page says that it is the weaker
+ * check.
  *
  * Pure, so the rules below are asserted without a browser or a clock.
  *
@@ -39,6 +53,18 @@ export type LiveState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'watching'; readonly ticks: number }
   | { readonly kind: 'found'; readonly entry: PresenceEntry }
+  /**
+   * `by` is what proved it: `mcp` is the token's own MCP stamp; `client` (an
+   * `initialize` recorded on it) and `use` (any request, accepted only while
+   * presence is off) are weaker, and the page says so.
+   */
+  | {
+      readonly kind: 'connected';
+      readonly token: TokenView;
+      readonly by: 'mcp' | 'client' | 'use';
+      /** Whether the org had presence off when it was proved — said only then. */
+      readonly presenceOff: boolean;
+    }
   | { readonly kind: 'spent' }
   | { readonly kind: 'disabled' }
   | { readonly kind: 'error'; readonly error: unknown };
@@ -62,4 +88,94 @@ export function liveStateFrom(
   if (mine !== undefined) return { kind: 'found', entry: mine };
 
   return ticksSoFar >= LIVE_TICKS ? { kind: 'spent' } : { kind: 'watching', ticks: ticksSoFar };
+}
+
+/**
+ * What one answer from `GET /tokens` means for the token this page minted.
+ *
+ * `via: 'mcp'` wants proof the token reached `/mcp`, strongest first:
+ *
+ * 1. `last_mcp_at` moved after the mint.
+ * 2. The token has a recorded client (`last_client` / `last_client_name`).
+ *    The server writes those on an MCP `initialize` only, so a `curl` cannot
+ *    produce them, and they are written whether presence is on or off.
+ * 3. **Only while the org has presence off**, `last_used_at` moved after the
+ *    mint. Since LAI-736's first review the server stops stamping
+ *    `last_mcp_at` with presence off (it is a presence signal), so without
+ *    this fallback a working agent would read as broken. With presence on, a
+ *    bare use stays insufficient: a `curl` that tests the token by hand must
+ *    not be reported as the agent connecting.
+ *
+ * `via: 'api'` is for the reader who chose *No MCP*, for whom a REST call is
+ * the whole point.
+ *
+ * A use stamped before the token was created is ignored — it cannot be this
+ * token's, and a check that can be satisfied by a row it did not cause is the
+ * failure this replaced.
+ */
+export function tokenLiveStateFrom(
+  tokens: readonly TokenView[],
+  mintedId: string,
+  via: 'mcp' | 'api',
+  ticksSoFar: number,
+  presenceOn = true,
+): LiveState {
+  const mine = tokens.find((token) => token.id === mintedId);
+  if (mine !== undefined) {
+    const after = (at: number | null): boolean => at !== null && at >= mine.created_at;
+    if (via === 'api') {
+      if (after(mine.last_used_at))
+        return { kind: 'connected', token: mine, by: 'use', presenceOff: !presenceOn };
+    } else if (after(mine.last_mcp_at)) {
+      return { kind: 'connected', token: mine, by: 'mcp', presenceOff: !presenceOn };
+    } else if (mine.last_client !== null || mine.last_client_name !== null) {
+      return { kind: 'connected', token: mine, by: 'client', presenceOff: !presenceOn };
+    } else if (!presenceOn && after(mine.last_used_at)) {
+      return { kind: 'connected', token: mine, by: 'use', presenceOff: !presenceOn };
+    }
+  }
+  return ticksSoFar >= LIVE_TICKS ? { kind: 'spent' } : { kind: 'watching', ticks: ticksSoFar };
+}
+
+/**
+ * `Connected — Codex (codex-mcp-client)`.
+ *
+ * The agent is the server's reading of the client when it has one, because a
+ * reader who picked Cursor and then connected Codex should be told what
+ * actually connected. When the server could not place it (`other`, or nothing
+ * yet), the agent the reader chose here is the honest fallback. The client's
+ * own name is shown as it introduced itself — cleaned by the server, rendered
+ * by React as text.
+ */
+export function connectedLabel(token: TokenView, chosenName: string): string {
+  const known = asAgentClient(token.last_client);
+  const agent = known === null || known === 'other' ? chosenName : agentClientName(known);
+  return token.last_client_name === null
+    ? `Connected — ${agent}`
+    : `Connected — ${agent} (${token.last_client_name})`;
+}
+
+/**
+ * The sentence under "Connected — …", saying how the page knows (re-review).
+ *
+ * Three readers, three different truths: somebody who chose *No MCP* proved it
+ * with any call, which is exactly what they set up; an MCP agent proved by the
+ * board's own MCP stamp is the strong case; and anything weaker says so. The
+ * presence-off reason is given **only when presence is off** — a recorded
+ * client can prove a connection in an org with presence on too, and blaming
+ * a setting the org does not have would send somebody to look for it.
+ */
+export function connectedNote(
+  by: 'mcp' | 'client' | 'use',
+  via: 'mcp' | 'api',
+  presenceOff: boolean,
+): string {
+  if (via === 'api') return 'That is the token you minted here, calling this board.';
+  if (by === 'mcp') return 'That is the token you minted here, calling this board over MCP.';
+  const off =
+    ' This organisation has presence off, so the board does not record MCP calls, and Capacity will not show the session.';
+  if (by === 'client') {
+    return `That is the token you minted here: it introduced itself to this board as an MCP client — a weaker signal than the board’s own MCP stamp.${presenceOff ? off : ''}`;
+  }
+  return `That is the token you minted here, used against this board — the weaker signal, accepted because this organisation has presence off.${off}`;
 }

@@ -20,21 +20,31 @@ const AGENTS = {
 } as const;
 
 void describe('the default name for a minted token', () => {
-  void test('it names the platform the browser is running on', () => {
-    assert.equal(suggestTokenName(AGENTS.mac), 'laika-claude on macOS');
-    assert.equal(suggestTokenName(AGENTS.windows), 'laika-claude on Windows');
-    assert.equal(suggestTokenName(AGENTS.linux), 'laika-claude on Linux');
+  void test('it names the agent, then the platform the browser is running on', () => {
+    /*
+     * LAI-737 re-aimed this from `laika-claude on …`: the first word is now
+     * the agent's slug, because LAI-736 identifies a client that introduces
+     * itself generically (Omnigent and Hermes both send `mcp`) by the first
+     * word of its token's name.
+     */
+    assert.equal(suggestTokenName(AGENTS.mac, 'codex'), 'codex on macOS');
+    assert.equal(suggestTokenName(AGENTS.windows, 'omnigent'), 'omnigent on Windows');
+    assert.equal(suggestTokenName(AGENTS.linux, 'gemini-cli'), 'gemini-cli on Linux');
+  });
+
+  void test('with no agent named it is Claude Code’s, as the page was before', () => {
+    assert.equal(suggestTokenName(AGENTS.mac), 'claude-code on macOS');
   });
 
   void test('an unrecognised agent still gets a usable name, never "undefined"', () => {
     /*
      * The failure worth guarding: a template that interpolates an absent
-     * platform produces `laika-claude on undefined`, which is a row nobody can
+     * platform produces `cursor on undefined`, which is a row nobody can
      * act on — and it is minted into a real token name, where it is permanent.
      */
     for (const agent of ['', 'curl/8.4.0', 'Mozilla/5.0 (PlayStation; 5)']) {
-      const name = suggestTokenName(agent);
-      assert.equal(name, 'laika-claude', `unexpected name for ${JSON.stringify(agent)}`);
+      const name = suggestTokenName(agent, 'cursor');
+      assert.equal(name, 'cursor', `unexpected name for ${JSON.stringify(agent)}`);
       assert.doesNotMatch(name, /undefined/, 'the platform leaked as the word undefined');
     }
   });
@@ -42,7 +52,7 @@ void describe('the default name for a minted token', () => {
   void test('CONTROL: the three platforms are told apart, not collapsed', () => {
     // If the branches ever fall through to one answer, the first test would
     // still pass on whichever platform that answer happened to be.
-    const names = new Set(Object.values(AGENTS).map(suggestTokenName));
+    const names = new Set(Object.values(AGENTS).map((ua) => suggestTokenName(ua, 'codex')));
     assert.equal(names.size, 3, `platforms collapsed: ${[...names].join(', ')}`);
   });
 });

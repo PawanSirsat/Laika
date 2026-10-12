@@ -14,7 +14,7 @@
  *  - {@link setupPrompt} **carries the token.** It is pasted into a session, so
  *    the secret lands in that transcript. The owner chose that trade for a
  *    single paste; the page says so plainly and names the revoke path.
- *  - {@link claudeMdBlock} **must not.** It is committed to a git repository.
+ *  - {@link projectBlock} **must not.** It is committed to a git repository.
  *    A token in it is a leak, not a bug, and `connect-copy.test.ts` asserts its
  *    absence rather than trusting this paragraph.
  */
@@ -41,8 +41,15 @@ export interface ProjectRef {
  * It teaches the board's rules rather than its endpoints: an agent that has the
  * tools still needs to know that claiming comes before coding, and that
  * finishing means *review*, never *done*.
+ *
+ * **Agent-neutral** (LAI-737). It was `claudeMdBlock` and said nothing
+ * Claude-specific even then; what changes per agent is the *file* it goes in,
+ * which `instructionsTarget` in `connect-agents.ts` decides. The rules are the
+ * ones the server hands every agent as `instructions` and `laika_whoami`'s
+ * `how_to_work` (LAI-736) — this adds the per-project lines the server cannot
+ * know.
  */
-export function claudeMdBlock(origin: string, project: ProjectRef): string {
+export function projectBlock(origin: string, project: ProjectRef): string {
   return `## Laika
 
 This project is tracked on a Laika board. Mirror work onto it as you go — the
@@ -54,8 +61,9 @@ board is the source of truth, not this transcript.
 
 Every session working in this repo:
 
-1. **Read first.** \`get_project_context\` for \`${project.slug}\` carries the brief,
-   the open work, and who is on it.
+1. **Read first.** \`laika_whoami\` confirms who you are acting as;
+   \`get_project_context\` for \`${project.slug}\` carries the brief, the open work,
+   and who is on it.
 2. **Claim before code.** \`list_ready_tasks\`, then \`start_working\`. One task at a
    time. A refusal means somebody already holds it — take another rather than
    forcing it.
@@ -90,7 +98,7 @@ export interface PromptInput {
  */
 export function setupPrompt({ origin, secret, project }: PromptInput): string {
   const token = secret ?? PLACEHOLDER_TOKEN;
-  const block = project === undefined ? undefined : claudeMdBlock(origin, project);
+  const block = project === undefined ? undefined : projectBlock(origin, project);
 
   const claudeMdStep =
     block === undefined

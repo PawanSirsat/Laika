@@ -3,7 +3,9 @@ import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useLive } from './SpaceLive.tsx';
-import { agentCount, cluster } from './top-bar-derive.ts';
+import { agentCount, agentsLive, cluster } from './top-bar-derive.ts';
+import { agentClientName, type AgentClient } from '../../api/agent-clients.ts';
+import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
 import { useSpaceFiltersClaimed } from './SpaceSlot.tsx';
 import { useShell } from '../shell/shell-context.ts';
@@ -109,6 +111,8 @@ export function SpaceTopBar({
    * changed it. §5.1: every number in the shipped UI comes from a response.
    */
   const agents = presence === undefined ? undefined : agentCount(presence.present);
+  /** Which coding agents those are (LAI-737) — marks on the chip, names in its title. */
+  const live = agentsLive(presence?.present);
 
   /*
    * **Four of these move out when a view supplies its own filtering** (LAI-290).
@@ -370,7 +374,7 @@ export function SpaceTopBar({
               : 'space-chip space-agents-start'
           }
           aria-pressed={agentOnly}
-          title="Show only agent-authored work"
+          title={`Show only agent-authored work${agentSummary(agents, live)}`}
           onClick={() => {
             onAgentOnly(!agentOnly);
           }}
@@ -395,6 +399,20 @@ export function SpaceTopBar({
             number arrives when it arrives.
           */}
           Agents {agents}
+          {/*
+            **The number counts people, the marks count agents** (review round
+            1) — "Agents 2" beside three marks read as a contradiction. The
+            visible label stays the design's; what the number means, and which
+            agents the marks are, is said in words for a screen reader and in
+            the title for a pointer.
+          */}
+          {agents !== undefined && (
+            <span className="visually-hidden">{agentSummary(agents, live)}</span>
+          )}
+          {live.length > 0 && <span className="space-agents-sep" aria-hidden="true" />}
+          {live.slice(0, 3).map((client) => (
+            <AgentMark key={client} client={client} size="sm" />
+          ))}
         </button>
 
         <button type="button" className="space-create" onClick={onCreate}>
@@ -414,4 +432,13 @@ export function SpaceTopBar({
       </div>
     </>
   );
+}
+
+/** ` — 2 people with agent sessions, using Claude Code, Codex`, or nothing before presence lands. */
+function agentSummary(people: number | undefined, live: readonly AgentClient[]): string {
+  if (people === undefined) return '';
+  const who = `${String(people)} ${people === 1 ? 'person' : 'people'} with agent sessions`;
+  return live.length === 0
+    ? ` — ${who}`
+    : ` — ${who}, using ${live.map(agentClientName).join(', ')}`;
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { connect } from './connect.ts';
 import { init } from './init.ts';
 import { whoami } from './whoami.ts';
 
@@ -16,11 +17,14 @@ const USAGE = [
   'laika — connect this machine to a Laika board.',
   '',
   'Usage:',
-  '  laika init       authenticate, create a token, and save it',
-  '  laika whoami     who this machine is, and to which board',
+  '  laika init               authenticate, create a token, and save it',
+  '  laika whoami             who this machine is, and to which board',
+  '  laika connect <agent>    point a coding agent at the board (--project: this folder)',
+  '  laika connect --list     the agents connect knows, and what it does for each',
   '',
-  'Configuration is written to your Claude Code user settings, outside any',
-  'repository, so a token cannot be committed by accident.',
+  '`init` writes your Claude Code user settings; `connect` keeps the token in',
+  '~/.laika/env. Both are outside any repository, so a token cannot be committed',
+  'by accident.',
   '',
   '`laika` is installed by plugin/scripts/install.sh from a Laika checkout.',
 ].join('\n');
@@ -35,6 +39,7 @@ async function main(argv: readonly string[]): Promise<number> {
 
   if (command === 'init') return init();
   if (command === 'whoami') return whoami();
+  if (command === 'connect') return connect(argv.slice(1));
 
   process.stderr.write(`laika: unknown command "${command}"\n\n${USAGE}\n`);
   return 1;

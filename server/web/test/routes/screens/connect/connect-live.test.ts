@@ -8,13 +8,17 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  connectedLabel,
+  connectedNote,
   findMySession,
   liveStateFrom,
+  tokenLiveStateFrom,
   LIVE_BUDGET_MS,
   LIVE_POLL_MS,
   LIVE_TICKS,
 } from '../../../../src/routes/screens/connect/connect-live.ts';
 import type { PresenceEntry, PresenceView } from '../../../../src/api/presence.ts';
+import type { TokenView } from '../../../../src/api/tokens.ts';
 
 const ME = 'u1';
 
@@ -25,6 +29,8 @@ function entry(over: Partial<PresenceEntry>): PresenceEntry {
     matched_task_id: null,
     project_ids: [],
     is_agent: true,
+    client: null,
+    clients: [],
     last_seen: 1_788_272_050_095,
     ...over,
   };
@@ -93,5 +99,165 @@ void describe('the watch is bounded', () => {
     assert.equal(LIVE_BUDGET_MS / LIVE_POLL_MS, LIVE_TICKS);
     assert.ok(LIVE_BUDGET_MS <= 5 * 60_000, 'the watch outlives presence’s own window');
     assert.ok(LIVE_POLL_MS >= 2_000, 'this would hammer the board');
+  });
+});
+
+const MINTED = 't-new';
+
+function token(over: Partial<TokenView>): TokenView {
+  return {
+    id: MINTED,
+    name: 'codex on macOS',
+    prefix: 'lai_AbCd',
+    scope: 'full',
+    project_ids: null,
+    last_used_at: null,
+    last_mcp_at: null,
+    last_client: null,
+    last_client_name: null,
+    expires_at: null,
+    revoked_at: null,
+    created_at: 1_788_272_000_000,
+    ...over,
+  };
+}
+
+void describe('watching the token this page minted (LAI-737)', () => {
+  void test('nothing yet while the minted token has made no MCP call', () => {
+    assert.deepEqual(tokenLiveStateFrom([token({})], MINTED, 'mcp', 2), {
+      kind: 'watching',
+      ticks: 2,
+    });
+  });
+
+  void test('an MCP call on it is the connection', () => {
+    const used = token({ last_mcp_at: 1_788_272_010_000, last_client: 'codex' });
+    const state = tokenLiveStateFrom([used], MINTED, 'mcp', 1);
+    assert.equal(state.kind, 'connected');
+    assert.equal(state.kind === 'connected' ? state.token.id : '', MINTED);
+  });
+
+  void test('CONTROL: another token of mine connecting is not this one', () => {
+    /*
+     * **The false positive LAI-622's presence check had.** Any agent session
+     * of the reader's turned it green — including one that was running before
+     * they minted anything here, holding a different token entirely.
+     */
+    const other = token({ id: 't-old', last_mcp_at: 1_788_272_010_000, last_client: 'cursor' });
+    assert.equal(tokenLiveStateFrom([other, token({})], MINTED, 'mcp', 1).kind, 'watching');
+  });
+
+  void test('CONTROL: a REST call is not an agent connecting over MCP', () => {
+    const curled = token({ last_used_at: 1_788_272_010_000 });
+    assert.equal(tokenLiveStateFrom([curled], MINTED, 'mcp', 1).kind, 'watching');
+  });
+
+  void test('…but it is the proof for somebody who chose no MCP', () => {
+    const curled = token({ last_used_at: 1_788_272_010_000 });
+    assert.equal(tokenLiveStateFrom([curled], MINTED, 'api', 1).kind, 'connected');
+  });
+
+  void test('a use from before the mint does not count', () => {
+    // Defensive: a clock-skewed or recycled row must not report a connection
+    // that happened before the token existed.
+    const stale = token({ last_mcp_at: 1_788_271_000_000 });
+    assert.equal(tokenLiveStateFrom([stale], MINTED, 'mcp', 1).kind, 'watching');
+  });
+
+  void test('the budget ends this watch too', () => {
+    assert.deepEqual(tokenLiveStateFrom([token({})], MINTED, 'mcp', LIVE_TICKS), { kind: 'spent' });
+  });
+});
+
+void describe('watching the token while the org has presence off (LAI-736 round 1)', () => {
+  /*
+   * With presence off the server stops writing `last_mcp_at` — it is a
+   * presence signal — but still records the client on `initialize` and still
+   * moves `last_used_at`. Without these the check would spin for three
+   * minutes and report a working agent as broken.
+   */
+  void test('the client recorded on initialize proves the MCP connection, presence on or off', () => {
+    const named = token({ last_client: 'codex', last_client_name: 'codex-mcp-client' });
+    assert.equal(tokenLiveStateFrom([named], MINTED, 'mcp', 1, false).kind, 'connected');
+    assert.equal(tokenLiveStateFrom([named], MINTED, 'mcp', 1, true).kind, 'connected');
+  });
+
+  void test('with presence off, a use of the token after the mint is the fallback', () => {
+    const used = token({ last_used_at: 1_788_272_010_000 });
+    assert.equal(tokenLiveStateFrom([used], MINTED, 'mcp', 1, false).kind, 'connected');
+  });
+
+  void test('CONTROL: with presence on, a bare use is still not an MCP connection', () => {
+    const used = token({ last_used_at: 1_788_272_010_000 });
+    assert.equal(tokenLiveStateFrom([used], MINTED, 'mcp', 1, true).kind, 'watching');
+  });
+
+  void test('CONTROL: with presence off, a use from before the mint still does not count', () => {
+    const stale = token({ last_used_at: 1_788_271_000_000 });
+    assert.equal(tokenLiveStateFrom([stale], MINTED, 'mcp', 1, false).kind, 'watching');
+  });
+});
+
+void describe('what the page says once it connected', () => {
+  void test('the agent the server recognised, and the name it gave', () => {
+    const used = token({
+      last_mcp_at: 1,
+      last_client: 'codex',
+      last_client_name: 'codex-mcp-client',
+    });
+    assert.equal(connectedLabel(used, 'Cursor'), 'Connected — Codex (codex-mcp-client)');
+  });
+
+  void test('a client the server could not place falls back to the agent chosen here', () => {
+    const used = token({ last_mcp_at: 1, last_client: 'other', last_client_name: 'mcp' });
+    assert.equal(connectedLabel(used, 'Omnigent'), 'Connected — Omnigent (mcp)');
+    const bare = token({ last_mcp_at: 1 });
+    assert.equal(connectedLabel(bare, 'Omnigent'), 'Connected — Omnigent');
+  });
+});
+
+void describe('which signal proved it (review round 1)', () => {
+  void test('an MCP stamp is the strong signal', () => {
+    const state = tokenLiveStateFrom([token({ last_mcp_at: 1_788_272_010_000 })], MINTED, 'mcp', 1);
+    assert.equal(state.kind === 'connected' ? state.by : '', 'mcp');
+  });
+
+  void test('a recorded client, or a bare use with presence off, is reported as weaker', () => {
+    const named = tokenLiveStateFrom([token({ last_client: 'codex' })], MINTED, 'mcp', 1, false);
+    assert.equal(named.kind === 'connected' ? named.by : '', 'client');
+    const used = tokenLiveStateFrom(
+      [token({ last_used_at: 1_788_272_010_000 })],
+      MINTED,
+      'mcp',
+      1,
+      false,
+    );
+    assert.equal(used.kind === 'connected' ? used.by : '', 'use');
+  });
+});
+
+void describe('what the page says about how it knows (re-review)', () => {
+  void test('No MCP: the token calling the board, and nothing about presence', () => {
+    const note = connectedNote('use', 'api', false);
+    assert.match(note, /That is the token you minted here, calling this board/);
+    assert.doesNotMatch(note, /presence/i);
+  });
+
+  void test('a recorded client with presence on is weaker, and says nothing about presence off', () => {
+    const note = connectedNote('client', 'mcp', false);
+    assert.match(note, /weaker/);
+    assert.doesNotMatch(note, /presence off/i);
+  });
+
+  void test('a recorded client with presence off says so', () => {
+    assert.match(connectedNote('client', 'mcp', true), /presence off/i);
+  });
+
+  void test('a bare use for an MCP agent names presence off as the reason it was accepted', () => {
+    assert.match(connectedNote('use', 'mcp', true), /presence off/i);
+  });
+
+  void test('the MCP stamp says MCP', () => {
+    assert.match(connectedNote('mcp', 'mcp', false), /over MCP/);
   });
 });

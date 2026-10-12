@@ -1,4 +1,5 @@
 import { pageSuffix, type PageQuery } from './every-page.ts';
+import type { AgentClient } from './agent-clients.ts';
 import { request } from './client.ts';
 import type { Page } from './tasks.ts';
 
@@ -35,6 +36,16 @@ export interface TokenView {
   /** `null` = every project the holder can reach; otherwise a whitelist. */
   readonly project_ids: readonly string[] | null;
   readonly last_used_at: number | null;
+  /**
+   * The last `/mcp` request on this token, throttled to a minute (LAI-736).
+   * Connect's step 4 watches it on the token it just minted — the proof that
+   * *this* token connected, not merely that some session of the reader's did.
+   */
+  readonly last_mcp_at: number | null;
+  /** The slug of the client that last connected with it. Read through `asAgentClient`. */
+  readonly last_client: AgentClient | null;
+  /** That client's own name for itself, cleaned by the server. Display only. */
+  readonly last_client_name: string | null;
   readonly expires_at: number | null;
   readonly revoked_at: number | null;
   readonly created_at: number;

@@ -134,8 +134,15 @@ function UnlistedRoute() {
 }
 
 function ConnectRoute() {
-  const { me } = useShell();
-  return <ConnectScreen me={me} origin={window.location.origin} />;
+  const {
+    me,
+    route: { params, setParams },
+  } = useShell();
+  // `?agent=` carries the chosen coding agent (LAI-737), so a link can open
+  // the page already set to the team's agent.
+  return (
+    <ConnectScreen me={me} origin={window.location.origin} params={params} setParams={setParams} />
+  );
 }
 
 function TokensRoute() {

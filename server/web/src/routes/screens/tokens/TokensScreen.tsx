@@ -165,8 +165,9 @@ export function TokensScreen({ me }: TokensScreenProps) {
       </ScreenHeader>
 
       <p className="tokens-sub">
-        A token lets a tool act as you — point Claude Code at this board, or call the API. It
-        carries your permissions, so treat it like your password.
+        A token lets a tool act as you — point your coding agent at this board, or call the API. It
+        carries your permissions, so treat it like your password. <a href="/connect">Connect</a>{' '}
+        sets one up for your agent, step by step.
       </p>
 
       {/*
@@ -291,7 +292,7 @@ export function TokensScreen({ me }: TokensScreenProps) {
       ) : tokens.length === 0 ? (
         <EmptyState
           headline="No tokens yet"
-          body="Create one to point Claude Code or another tool at this board as you."
+          body="Create one to point your coding agent or another tool at this board as you."
         />
       ) : (
         <>
