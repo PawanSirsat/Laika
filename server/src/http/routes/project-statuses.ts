@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { type Db } from '../../db/client.ts';
 import { ApiError } from '../../errors.ts';
 import {
+  assertCanEditStatuses,
   createProjectStatus,
   deleteProjectStatus,
   listProjectStatuses,
@@ -69,6 +70,8 @@ export function projectStatusRoutes(options: ProjectStatusRouteOptions): Hono<Ap
 
   app.post('/:slug/statuses', async (c) => {
     const actor = requireActor(c);
+    // Permission before the body: a caller who may not write is told so.
+    assertCanEditStatuses(db, actor, c.req.param('slug'));
     const input = parseBody(CreateBody, await body(c));
 
     return c.json(
@@ -84,6 +87,8 @@ export function projectStatusRoutes(options: ProjectStatusRouteOptions): Hono<Ap
    */
   app.put('/:slug/statuses/order', async (c) => {
     const actor = requireActor(c);
+    // Permission before the body: a caller who may not write is told so.
+    assertCanEditStatuses(db, actor, c.req.param('slug'));
     const input = parseBody(OrderBody, await body(c));
 
     return c.json({
@@ -93,6 +98,8 @@ export function projectStatusRoutes(options: ProjectStatusRouteOptions): Hono<Ap
 
   app.patch('/:slug/statuses/:id', async (c) => {
     const actor = requireActor(c);
+    // Permission before the body: a caller who may not write is told so.
+    assertCanEditStatuses(db, actor, c.req.param('slug'));
     const input = parseBody(UpdateBody, await body(c));
 
     if (input.category !== undefined) {
@@ -120,6 +127,8 @@ export function projectStatusRoutes(options: ProjectStatusRouteOptions): Hono<Ap
    */
   app.delete('/:slug/statuses/:id', async (c) => {
     const actor = requireActor(c);
+    // Permission before the body: a caller who may not write is told so.
+    assertCanEditStatuses(db, actor, c.req.param('slug'));
     const input = parseBody(DeleteBody, await body(c));
 
     return c.json(

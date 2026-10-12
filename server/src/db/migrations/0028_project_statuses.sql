@@ -52,15 +52,22 @@ WITH RECURSIVE
     VALUES ('backlog', 'Backlog', 0), ('todo', 'To do', 1), ('in_progress', 'In progress', 2),
            ('review', 'Review', 3), ('done', 'Done', 4), ('cancelled', 'Cancelled', 5)
   ),
-  -- Every mapped status, ranked inside its column: the primary first, then the
-  -- canonical order. A column whose primary flag was lost (LAI-618's donor
-  -- bug) ranks by canonical order alone, which is what the board drew. Only
+  -- Every mapped status, ranked inside its column: the primary first. A column
+  -- whose primary flag was lost (LAI-618's donor bug) ranks first the status
+  -- whose label *is* the column's name — OnRoute's "TO DO" = [todo, backlog]
+  -- keeps "TO DO" on `todo` and gives `backlog` "Backlog" — then canonical
+  -- order. Only
   -- rows of projects that exist: a dangling column must not mint a dangling
   -- status. The inner join on `labels` drops any value outside the six.
   mapped AS (
     SELECT c.project_id, c.name AS column_name, c.position AS major,
            CASE WHEN c.hidden = 1 THEN 1 ELSE 0 END AS hidden, s.status AS category,
-           ROW_NUMBER() OVER (PARTITION BY c.id ORDER BY s.is_primary DESC, l.ord) AS minor
+           ROW_NUMBER() OVER (
+             PARTITION BY c.id
+             ORDER BY s.is_primary DESC,
+                      CASE WHEN lower(l.label) = lower(trim(CAST(c.name AS TEXT))) THEN 0 ELSE 1 END,
+                      l.ord
+           ) AS minor
     FROM `board_columns` c
     JOIN `projects` p ON p.id = c.project_id
     JOIN `board_column_statuses` s ON s.column_id = c.id AND s.project_id = c.project_id

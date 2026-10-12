@@ -846,8 +846,11 @@ cron, MCP — reads anything but the category.
   one task, nothing moves and nothing is deleted.
 - **A bare category means the project's first visible status of it** by
   position, or the first of any visibility when every one is hidden. That is
-  where `status` on a create or `POST /tasks/:id/status`, `claim`, the webhook
-  (§10.1) and MCP's `update_status` land a task.
+  where `status` on a create or `POST /tasks/:id/status`, the webhook (§10.1)
+  and MCP's `update_status` land a task. **`claim` is the exception for a task
+  already in progress:** it leaves the task in its current status — a claimed
+  card in `Coding`, an `in_progress` status, stays there — and only a task coming from another
+  category lands in the first visible `in_progress` status.
 
 **This replaces LAI-266's `board_columns` and `board_column_statuses`**, which
 modelled a column as a set of categories. Migration `0028` copied every board

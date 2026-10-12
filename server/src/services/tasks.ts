@@ -258,8 +258,8 @@ function toView(row: TaskRow, prefix: string, context: ViewContext): TaskView {
     acceptance_md: row.acceptanceMd,
     status: row.status,
     status_id: row.statusId,
-    // The FK guarantees the row exists; the fallback is the category's label
-    // rather than an empty string, should a reader ever race a rename.
+    // `tasks_status_fk` guarantees the row exists, so the fallback is not
+    // reached; it is there only so the type is a string and never undefined.
     status_name: context.statusNames.get(row.statusId) ?? CATEGORY_LABELS[row.status],
     priority: row.priority,
     assignee_id: row.assigneeId,

@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../../helpers/auth.ts';
+import { eq, sql } from 'drizzle-orm';
+import { users } from '../../../src/db/schema.ts';
+import {
+  type AuthHarness,
+  authHarness,
+  cookieFrom,
+  jsonHeaders,
+  seedInvite,
+  signUp,
+} from '../../helpers/auth.ts';
 
 /**
  * Project status endpoints, and the task endpoints that take a status
@@ -235,6 +244,41 @@ describe('writing statuses', () => {
     expect((await errorOf(last)).message).toBe(
       'Review is this project’s only Review status, and every project keeps at least one',
     );
+  });
+});
+
+describe('permission is asked before the body is read', () => {
+  /**
+   * A caller who may not edit statuses learns that, whatever they sent — not
+   * a validation error that describes the endpoint to them first (§5: every
+   * endpoint calls `can()` before it reads or writes).
+   */
+  it('answers 403 to a project member, even for a body that would be 422', async () => {
+    const owner = h.db.select().from(users).get()!;
+    const orgId = h.db.all<{ id: string }>(sql`SELECT id FROM orgs`)[0]!.id;
+    const email = 'member@example.test';
+    const token = seedInvite(h.db, { orgId, createdBy: owner.id, email, orgRole: 'member' });
+    const joined = await signUp(h.app, { email, password: PASSWORD, inviteToken: token });
+    expect(joined.status, await joined.clone().text()).toBe(200);
+    const memberId = h.db.select().from(users).where(eq(users.email, email)).get()!.id;
+    await ok('POST', '/api/v1/projects/laika/members', { user_id: memberId, role: 'member' }, 201);
+    const memberCookie = cookieFrom(joined);
+
+    const review = await named('Review');
+    for (const [method, path, body] of [
+      ['POST', '/api/v1/projects/laika/statuses', { category: 'nope' }],
+      ['PATCH', `/api/v1/projects/laika/statuses/${review.id}`, {}],
+      ['PATCH', `/api/v1/projects/laika/statuses/${review.id}`, { category: 'done' }],
+      ['PUT', '/api/v1/projects/laika/statuses/order', { ids: [] }],
+      ['DELETE', `/api/v1/projects/laika/statuses/${review.id}`, {}],
+    ] as const) {
+      const res = await h.app.request(path, {
+        method,
+        headers: jsonHeaders({ Cookie: memberCookie }),
+        body: JSON.stringify(body),
+      });
+      expect(res.status, `${method} ${path} ${JSON.stringify(body)}`).toBe(403);
+    }
   });
 });
 

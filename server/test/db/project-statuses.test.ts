@@ -433,6 +433,102 @@ describe('migration 0028 turns board columns into project statuses', () => {
     expectTasksPlaced(p, made);
   });
 
+  it('passes the reviewer’s repro: a generated "Backlog" behind a lead’s "Backlog" and "Backlog (2)"', () => {
+    const p = project('repro');
+    column(p, 'X', 0, ['in_progress', 'backlog']);
+    column(p, 'Backlog', 1, ['review']);
+    column(p, 'Backlog (2)', 2, ['done']);
+    const made = tasksIn(p, TASK_STATUSES);
+
+    runMigrations(db);
+
+    expect(board(db, p)).toEqual([
+      ['X', 'in_progress', 0],
+      ['Backlog (3)', 'backlog', 0],
+      ['Backlog', 'review', 0],
+      ['Backlog (2)', 'done', 0],
+      ['To do', 'todo', 1],
+      ['Cancelled', 'cancelled', 1],
+    ]);
+    expectTasksPlaced(p, made);
+  });
+
+  it('suffixes two long names that share their first 34 characters without colliding, and moves on when the cut ones meet', () => {
+    // 40 characters each; the second of each pair differs only in case.
+    const a1 = `${'A'.repeat(34)}bbbbbb`;
+    const a2 = `${'A'.repeat(34)}cccccc`;
+    const pa = project('shared34');
+    column(pa, a1, 0, ['todo']);
+    column(pa, a1.toUpperCase(), 1, ['backlog']);
+    column(pa, a2, 2, ['review']);
+    column(pa, a2.toUpperCase(), 3, ['done']);
+    // Sharing 36: both cut to the same 36 characters, so the second suffix
+    // must move on to (3).
+    const z1 = `${'Z'.repeat(36)}abcd`;
+    const z2 = `${'Z'.repeat(36)}efgh`;
+    const pz = project('shared36');
+    column(pz, z1, 0, ['todo']);
+    column(pz, z1.toUpperCase(), 1, ['backlog']);
+    column(pz, z2, 2, ['review']);
+    column(pz, z2.toUpperCase(), 3, ['done']);
+
+    runMigrations(db);
+
+    expect(
+      board(db, pa)
+        .slice(0, 4)
+        .map(([name]) => name),
+    ).toEqual([a1, `${'A'.repeat(34)}BB (2)`, a2, `${'A'.repeat(34)}CC (2)`]);
+    expect(
+      board(db, pz)
+        .slice(0, 4)
+        .map(([name]) => name),
+    ).toEqual([z1, `${'Z'.repeat(36)} (2)`, z2, `${'Z'.repeat(36)} (3)`]);
+    for (const p of [pa, pz]) {
+      expect(board(db, p).every(([name]) => name.length <= 40)).toBe(true);
+    }
+  });
+
+  it('names a no-primary column after the status whose label it is — OnRoute’s "TO DO" = [todo, backlog]', () => {
+    const p = project('onroute');
+    column(p, 'TO DO', 0, ['todo', 'backlog'], { primary: null });
+    column(p, 'Doing', 1, ['in_progress']);
+    column(p, 'Review', 2, ['review']);
+    column(p, 'Done', 3, ['done']);
+    column(p, 'Cancelled', 4, ['cancelled'], { hidden: true });
+    const made = tasksIn(p, ['todo', 'backlog']);
+
+    runMigrations(db);
+
+    expect(board(db, p).slice(0, 2)).toEqual([
+      ['TO DO', 'todo', 0],
+      ['Backlog', 'backlog', 0],
+    ]);
+    expectTasksPlaced(p, made);
+  });
+
+  it('hides the generated status of any category no column held, not only Cancelled', () => {
+    const p = project('noreview');
+    column(p, 'Backlog', 0, ['backlog']);
+    column(p, 'To do', 1, ['todo']);
+    column(p, 'Doing', 2, ['in_progress']);
+    column(p, 'Done', 3, ['done']);
+    column(p, 'Cancelled', 4, ['cancelled'], { hidden: true });
+    const made = tasksIn(p, ['review']);
+
+    runMigrations(db);
+
+    expect(board(db, p)).toEqual([
+      ['Backlog', 'backlog', 0],
+      ['To do', 'todo', 0],
+      ['Doing', 'in_progress', 0],
+      ['Done', 'done', 0],
+      ['Cancelled', 'cancelled', 1],
+      ['Review', 'review', 1],
+    ]);
+    expectTasksPlaced(p, made);
+  });
+
   it('gives an archived project and a project with no tasks their statuses like any other', () => {
     const archived = project('old');
     db.run(sql`UPDATE projects SET archived_at = ${now} WHERE id = ${archived}`);

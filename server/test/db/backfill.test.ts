@@ -161,6 +161,23 @@ describe('what it refuses to invent', () => {
     expect(row(id)?.completedAt).toBeNull();
     expect(row(id)?.startedAt).toBe(5000);
   });
+
+  // LAI-738. A move between two statuses of one category writes
+  // `task.status_changed` with equal `from` and `to` — a column change, not an
+  // arrival. Counting it would date a completion to when somebody dragged a
+  // done card from Done to Shipped.
+  it('ignores a same-category move — it is not an arrival at done or in_progress', () => {
+    const done = task('done');
+    moved(done, 'done', 8000, 'review');
+    moved(done, 'done', 9000, 'done');
+    const doing = task('in_progress');
+    moved(doing, 'in_progress', 7000, 'in_progress');
+
+    backfillTaskTimestamps(t.db);
+
+    expect(row(done)?.completedAt).toBe(8000);
+    expect(row(doing)?.startedAt).toBeNull();
+  });
 });
 
 describe('it reads the audit trail and never writes to it', () => {

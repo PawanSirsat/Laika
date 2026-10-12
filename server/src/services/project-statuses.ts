@@ -216,6 +216,19 @@ export function listProjectStatuses(
 
 // ----------------------------------------------------------------- writing
 
+/**
+ * Ask `project.settings.edit` before anything else is looked at.
+ *
+ * Every write below asks it too; this exists so the **route** can ask first,
+ * before validating a body. A caller who may not edit statuses should learn
+ * that — `403` — rather than receive a `422` describing what a valid request
+ * would have looked like (CLAUDE.md §5: `can()` before reading or writing).
+ */
+export function assertCanEditStatuses(db: Db, actor: ResolvedActor, slug: string): void {
+  const project = requireProjectBySlug(db, slug);
+  assertCan(withProject(actor, project.id), 'project.settings.edit', { projectId: project.id });
+}
+
 export interface CreateProjectStatusInput {
   name: string;
   category: TaskStatus;

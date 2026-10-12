@@ -92,6 +92,11 @@ function transitionsByTask(db: Db): Map<string, Recovered> {
     const to = (payload as { to?: unknown }).to;
     if (typeof to !== 'string') continue;
 
+    // A same-category move (LAI-738, D-077) writes equal `from` and `to`: the
+    // task changed column, it did not arrive anywhere. Reading it as an
+    // arrival would date a completion to a drag from Done to Shipped.
+    if ((payload as { from?: unknown }).from === to) continue;
+
     const current = found.get(row.taskId) ?? { startedAt: null, completedAt: null };
 
     // **First** entry to `in_progress` — rework does not restart the clock, the
