@@ -1433,7 +1433,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
       await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
       const hangs = await h.page.locator('.conn-prompt').evaluate((pre) => {
         const node = pre.firstChild;
-        if (node === null || node.nodeType !== Node.TEXT_NODE || pre.childNodes.length !== 1)
+        if (node?.nodeType !== Node.TEXT_NODE || pre.childNodes.length !== 1)
           return { wrapped: 0, flush: -1 };
         const text = node.textContent ?? '';
         let wrapped = 0;
