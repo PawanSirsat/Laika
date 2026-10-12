@@ -272,6 +272,28 @@ void describe('local writes', () => {
     assert.equal(store.peek('lc')?.statuses[0]?.name, 'Mine');
   });
 
+  void test('a read begun before a write that has already finished is re-run (round 2, N1)', async () => {
+    // It lost to the write, so it is not applied — but it may carry someone
+    // else's change, so it is asked again at once rather than forgotten.
+    const time = fakeTime();
+    const io = manualFetch();
+    const store = createStatusStore({ fetch: io.fetch, ...time });
+    store.subscribe('lc', () => undefined);
+    io.calls[0]?.resolve([status({ id: 'a', position: 0 })]);
+    await tick();
+
+    store.reload('lc');
+    const end = store.begin('lc');
+    store.write('lc', (list) => list.map((s) => ({ ...s, name: 'Mine' })));
+    end();
+    assert.equal(io.calls.length, 2, 'nothing was owed yet');
+
+    io.calls[1]?.resolve([status({ id: 'a', position: 0, name: 'Old' })]);
+    await tick();
+    assert.equal(store.peek('lc')?.statuses[0]?.name, 'Mine', 'the stale read was applied');
+    assert.equal(io.calls.length, 3, 'the stale read was dropped and never asked again');
+  });
+
   void test('a failed write still releases the hold (review round 1, M6)', async () => {
     const time = fakeTime();
     const io = manualFetch();
