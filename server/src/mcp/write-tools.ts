@@ -155,7 +155,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Create a task',
       description:
-        'File a task on a project. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight.',
+        'File a task on a project. If no task covers the work you are about to do, create one before starting it. Use `discovered_from` when you found this while working on something else — that chain is what stops incidental work being lost. Use `parent` to file it as a subtask of a task (one level only); `due_on` and `planned_start` are unix-ms at a UTC midnight.',
       inputSchema: z.strictObject({
         project: PROJECT_REF,
         title: TASK_FIELDS.title,
@@ -251,7 +251,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Start working on a task',
       description:
-        'Claim a task and move it to in_progress. Fails with `conflict` if somebody already holds it — check the error before assuming you have it.',
+        'Claim a task and move it to in_progress. Claim before you write any code for it. Fails with `conflict` if somebody already holds it — check the error before assuming you have it.',
       inputSchema: z.strictObject({ task: TASK_REF, branch: z.string().max(200).optional() }),
     },
     ({ task }) => {
@@ -326,7 +326,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Hand a task back for review',
       description:
-        "Move a task to review and post your summary as a comment. This is as far as an agent takes a task — closing it is a person's decision.",
+        "Move a task to review and post your summary as a comment. This is as far as an agent takes a task: an agent never marks work done — closing it is a person's decision.",
       inputSchema: z.strictObject({
         task: TASK_REF,
         summary: z.string().trim().min(1).max(50_000),

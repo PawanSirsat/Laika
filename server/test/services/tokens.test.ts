@@ -394,6 +394,45 @@ describe('listing', () => {
     expect(listOwnTokens(t.db, actor(ownerId), LIST)).toHaveLength(1);
   });
 
+  it('carries what the token last connected with over MCP (D-076)', () => {
+    // Connect polls this to see *the* token it just minted come alive, rather
+    // than any session by the same person.
+    const { token } = createToken(t.sqlite, t.db, actor(ownerId), { name: 'n', scope: 'full' });
+    expect(listOwnTokens(t.db, actor(ownerId), LIST)[0]).toMatchObject({
+      last_mcp_at: null,
+      last_client: null,
+      last_client_name: null,
+    });
+
+    t.db
+      .update(tokens)
+      .set({ lastMcpAt: 5_000, lastClient: 'cursor', lastClientName: 'Cursor' })
+      .where(eq(tokens.id, token.id))
+      .run();
+
+    expect(listOwnTokens(t.db, actor(ownerId), LIST)[0]).toMatchObject({
+      last_mcp_at: 5_000,
+      last_client: 'cursor',
+      last_client_name: 'Cursor',
+    });
+  });
+
+  it('sends no slug the client does not know', () => {
+    // `last_client` is plain text in the database; only an `AGENT_CLIENTS`
+    // value reaches the wire.
+    const { token } = createToken(t.sqlite, t.db, actor(ownerId), { name: 'n', scope: 'full' });
+    t.db
+      .update(tokens)
+      .set({ lastClient: 'not-a-slug', lastClientName: 'x' })
+      .where(eq(tokens.id, token.id))
+      .run();
+
+    expect(listOwnTokens(t.db, actor(ownerId), LIST)[0]).toMatchObject({
+      last_client: null,
+      last_client_name: 'x',
+    });
+  });
+
   it('404s for a user who does not exist, rather than an empty list', () => {
     const adminId = makeUser('admin', 'admin');
     try {

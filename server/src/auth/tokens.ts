@@ -2,8 +2,10 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
+import { presenceEnabled } from '../db/orgs.ts';
 import { tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { agentClientSlug, cleanClientName, isWeakClientName } from './agent-clients.ts';
 
 /**
  * Personal access token secrets (SPEC §4.9, §13.1).
@@ -101,6 +103,30 @@ export function tokenDisplayPrefix(secret: string): string {
  */
 export const LAST_USED_THROTTLE_MS = 60_000;
 
+/**
+ * Does the presented "token" look like a variable that was never expanded?
+ *
+ * Every agent client has its own syntax for reading the token from the
+ * environment (`${LAIKA_TOKEN}`, `{env:LAIKA_TOKEN}`, `$LAIKA_TOKEN`,
+ * `${{ secrets.X }}`), and several send the text unchanged when the variable is
+ * unset. Saying so turns a mystery 401 into a fix. It reveals nothing about any
+ * stored token: it is a fact about the text the caller sent.
+ */
+export function looksLikePlaceholder(presented: string): boolean {
+  return (
+    /^\$\{.*\}$/.test(presented) ||
+    /^\{\{?\s*env[:.].*\}\}?$/i.test(presented) ||
+    /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(presented) ||
+    /^%[A-Za-z_][A-Za-z0-9_]*%$/.test(presented) ||
+    /^<.*>$/.test(presented) ||
+    /^lai_(\.\.\.|…)$/.test(presented)
+  );
+}
+
+/** What a placeholder is told instead of "not valid". It never echoes the text. */
+export const PLACEHOLDER_MESSAGE =
+  'The Authorization header carries an unexpanded variable placeholder, not a token. Set the variable in the agent’s environment, or check how this client writes environment variables.';
+
 /** Why a presented token was refused. Logged, never returned (§6.1). */
 export type TokenRejection = 'malformed' | 'unknown' | 'expired' | 'revoked' | 'inactive_user';
 
@@ -117,8 +143,8 @@ export type TokenRejection = 'malformed' | 'unknown' | 'expired' | 'revoked' | '
 export class TokenAuthError extends ApiError {
   readonly reason: TokenRejection;
 
-  constructor(reason: TokenRejection) {
-    super('unauthorized', 'That access token is not valid');
+  constructor(reason: TokenRejection, message = 'That access token is not valid') {
+    super('unauthorized', message);
     this.name = 'TokenAuthError';
     this.reason = reason;
   }
@@ -243,6 +269,88 @@ export function touchTokenUsage(
 
   readOnlyReported = false;
   return true;
+}
+
+/** What {@link recordMcpUse} wrote, so a test can assert the throttle directly. */
+export interface McpUseWrite {
+  /** `last_mcp_at` was stamped. */
+  mcp: boolean;
+  /** `last_client` / `last_client_name` changed. */
+  client: boolean;
+}
+
+/**
+ * Record one authenticated `/mcp` request on its token (D-076).
+ *
+ * - `last_mcp_at` is stamped at most once per {@link LAST_USED_THROTTLE_MS},
+ *   for the same reason `last_used_at` is: a busy agent's thousand calls are
+ *   one write, not a thousand. §9.3's five-minute window is far wider than the
+ *   throttle, so presence never misses a live agent because of it.
+ * - **Not while the org has presence off** (§4.2). It is a presence signal, and
+ *   LAI-150 stores no heartbeats while presence is off, so that turning it back
+ *   on shows nothing from the time it was off. The org flag is read only when
+ *   the throttle would otherwise write.
+ * - `clientName` is `clientInfo.name` from an `initialize` request, and
+ *   `undefined` on every other request. It is cleaned, turned into a slug, and
+ *   written **only when it changed**.
+ *
+ * Bookkeeping on the credential that was just presented, the same as
+ * `touchTokenUsage`, which is why it lives here and asks `can()` nothing. It
+ * decides nothing about access.
+ *
+ * A read-only database skips the write and lets the request through, as
+ * `touchTokenUsage` does (LAI-156). That function logs the condition once per
+ * spell; this one stays quiet rather than report it a second time.
+ */
+export function recordMcpUse(
+  db: Db,
+  tokenId: string,
+  now: number,
+  clientName: unknown,
+): McpUseWrite {
+  const row = db
+    .select({
+      name: tokens.name,
+      lastMcpAt: tokens.lastMcpAt,
+      lastClient: tokens.lastClient,
+      lastClientName: tokens.lastClientName,
+    })
+    .from(tokens)
+    .where(eq(tokens.id, tokenId))
+    .get();
+  if (row === undefined) return { mcp: false, client: false };
+
+  const set: Partial<typeof tokens.$inferInsert> = {};
+
+  const mcp =
+    (row.lastMcpAt === null || now - row.lastMcpAt >= LAST_USED_THROTTLE_MS) && presenceEnabled(db);
+  if (mcp) set.lastMcpAt = now;
+
+  let client = false;
+  if (clientName !== undefined) {
+    const name = cleanClientName(clientName);
+    const slug = agentClientSlug(name, row.name);
+    // A weak name (`mcp`, `hermes-probe`) never replaces a client the token
+    // already knows; it only fills a blank or an `other`.
+    const known = row.lastClient !== null && row.lastClient !== 'other';
+    const keep = isWeakClientName(name) && known;
+    if (!keep && (name !== row.lastClientName || slug !== row.lastClient)) {
+      set.lastClientName = name;
+      set.lastClient = slug;
+      client = true;
+    }
+  }
+
+  if (!mcp && !client) return { mcp, client };
+
+  try {
+    db.update(tokens).set(set).where(eq(tokens.id, tokenId)).run();
+  } catch (err) {
+    if (!isReadOnly(err)) throw err;
+    return { mcp: false, client: false };
+  }
+
+  return { mcp, client };
 }
 
 /** better-sqlite3 reports the reason in `code`; the message is prose. */

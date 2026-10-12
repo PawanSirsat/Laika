@@ -4033,3 +4033,95 @@ build-ui-polish; this takes the next number.)
   JSON, and code-splitting. These are later performance phases.
 - The server change that would retire Capacity's last per-task reads (for
   tasks outside the open project). It is filed from LAI-724.
+
+## D-076 — An MCP call is presence, and the server records which agent connected.
+
+**2026-10-12, the owner, directly** (LAI-736, "Laika works with any coding
+agent"). Presence came only from `POST /api/v1/heartbeats`, and only Claude
+Code's plugin hook sends one. An agent in Codex, Cursor, OpenCode, Gemini CLI or
+Omnigent could claim, comment and finish tasks over `/mcp` all day and never
+appear on Presence or Capacity, and the Connect screen could not tell whether
+the token it had just minted had connected. `/mcp` also told a connecting agent
+nothing about how to work the board, so every harness needed its own copy of the
+rules.
+
+### Decided
+
+1. **Every authenticated `/mcp` request stamps its token's `last_mcp_at`**,
+   throttled to once a minute, as `last_used_at` is. A token stamped inside
+   §9.3's five-minute window is a live agent session with or without a
+   heartbeat. Presence stays one entry per person, newest wins. A heartbeat
+   still supplies `repo`, `branch` and the matched task. An MCP-only session
+   has **no location**: those keys are absent, which already means *"working,
+   somewhere this reader is not told"*. Capacity's `active_sessions` counts
+   distinct tokens across heartbeats and MCP calls. A revoked or expired token
+   is not present. **This applies to heartbeats as well:** a heartbeat on a
+   revoked or expired token no longer shows or counts toward Capacity, which it
+   did before this decision; a signed-in session's heartbeat (no token) is
+   unchanged.
+2. **On `initialize` the server keeps the client's own `clientInfo.name`** on
+   the token, with Unicode `Other` characters (control, format and bidi,
+   surrogates, private use) and line/paragraph separators stripped, at most 64
+   characters, and a slug from a fixed list (`AGENT_CLIENTS` in
+   `server/src/auth/agent-clients.ts`, ending in `other`). A name that
+   identifies nothing, such as the Python SDK's `mcp` (sent by Omnigent and
+   Hermes), falls back to the first word of the token's name, which the
+   Connect screen sets to the agent. Both are written only when they change,
+   and a weak name (`mcp`, `hermes-probe`, empty) never replaces a client the
+   token already has. **Neither is ever an authorisation input**: a client can
+   call itself anything.
+3. **Nothing else is collected.** No repo, branch, path, prompt, tool argument
+   or transcript arrives through this path. The server records *when* a token
+   last spoke MCP and *what the client calls itself*.
+4. **D-005 is unchanged.** `POST /api/v1/heartbeats` keeps its strict
+   `{ repo, branch }` body. D-005 requires a new decision and an opt-in for
+   *"richer session data"*. A client's name is not data about the session's
+   work. It describes the tool, at the same level as a `User-Agent` header, and
+   it is shown only where the person is already shown. That is this decision's
+   reading, and the reason it adds no opt-in.
+
+   **MCP presence applies to every token's user, without a per-user opt-in**,
+   for three reasons. It says less than a heartbeat already does: a time and a
+   client name, never a location. An agent's writes over `/mcp` already appear
+   in the activity log under that person (§4.8), so being seen as working adds
+   nothing a reader of the board could not infer. And the org can switch
+   presence off for everyone (item 5).
+5. **`presence_enabled` governs MCP presence as it governs heartbeats.** With
+   it off, Presence and Capacity show no MCP sessions, and **`last_mcp_at` is
+   not stamped**, just as LAI-150 stores no heartbeats. So turning presence
+   back on shows nothing from the time it was off. The client's name and slug
+   are still written, because they are token metadata like `last_used_at`.
+   Only the token's owner, and an admin listing that person's tokens, can see
+   them. One consequence: with presence off, `last_mcp_at` cannot tell the
+   Connect screen that a new token has connected.
+6. **The server tells every agent how to work the board.** `/mcp` returns
+   `instructions` on `initialize`: call `laika_whoami`, read
+   `get_project_context`, claim with `start_working` before coding,
+   `create_task` when there is none, `add_comment` as you go, `finish_task`
+   into review (a person marks done), and `log_unlisted_work` for stray
+   findings. The text stays under Claude Code's 2,048-character cap, and its
+   first 512 characters carry the must-follow rules on their own, as Codex
+   asks. Some clients drop server instructions (Zed, Cline, Continue, Hermes,
+   Omnigent), so `laika_whoami` returns the same text as `how_to_work`, and
+   the rules are repeated in the descriptions of `start_working`, `create_task`
+   and `finish_task`. Tool names are unchanged.
+7. **`/mcp` answers only `POST`.** `GET`, `HEAD` and `DELETE` get `405` with
+   `Allow: POST`, the Streamable HTTP answer for a stateless server, never a
+   `2xx` stream and never the SPA. A `2xx` probe is what made Hermes open
+   throwaway `hermes-probe` sessions. Antigravity's `server/discover`, sent
+   before `initialize`, gets JSON-RPC `-32601`, so it falls back.
+8. **A `401` on `/mcp` says what was wrong with the header**: none sent,
+   `Bearer` with nothing after it, or an unexpanded placeholder such as
+   `${LAIKA_TOKEN}` or `{env:LAIKA_TOKEN}`. These are facts about what the
+   caller sent, so they reveal nothing about anyone's token, and the message
+   never echoes the value. Unknown, expired and revoked tokens still share one
+   message (§6.1).
+
+### Why
+
+Laika's promise is one source of truth for people *and coding agents*, not
+Claude Code alone. The heartbeat hook is a Claude Code plugin feature, and
+asking every other harness to grow one would leave presence as wide as the
+plugin ecosystem. An MCP call is something every connected agent already makes,
+on a credential the server already checks. Counting it costs one throttled write
+and collects nothing new about the work.

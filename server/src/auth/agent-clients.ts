@@ -1,0 +1,168 @@
+/**
+ * Which coding agent is on the other end of a token (D-076, LAI-736).
+ *
+ * Every MCP client names itself in `initialize` (`clientInfo.name`). Laika
+ * keeps that name and a normalised slug on the token, so presence can say
+ * *Codex* rather than just *agent*, and the Connect screen can tell that the
+ * token it just minted is the one that connected.
+ *
+ * **Never an authorisation input.** A client can call itself anything. The name
+ * is a label the client chose, the same trust level as a `User-Agent` header.
+ *
+ * ## The names, as measured
+ *
+ * | agent | `clientInfo.name` |
+ * | --- | --- |
+ * | Claude Code | `claude-code` |
+ * | Codex | `codex-mcp-client` |
+ * | Gemini CLI | `gemini-cli-mcp-client` |
+ * | cursor-agent | `Cursor` (the editor may send `cursor-vscode`) |
+ * | VS Code | `Visual Studio Code` |
+ * | OpenCode | `opencode` |
+ * | Zed, Cline, Roo Code | `Zed`, `Cline`, `Roo Code` |
+ * | Continue | `continue-client` |
+ * | Antigravity | `antigravity-client`, from a third-party capture |
+ * | Omnigent, Hermes | `mcp`, the Python SDK default, which says nothing |
+ *
+ * Kiro, Goose, Amp, Junie, Warp, Windsurf and Claude Desktop are not yet
+ * observed, so they are matched on their product name.
+ *
+ * A client that says nothing useful falls back to the first word of the
+ * **token's** name, because the Connect screen names a token after its agent:
+ * `omnigent on macOS`, `codex on Linux`. Tokens minted before that are mostly
+ * `laika-claude on macOS`, which reads as Claude Code.
+ */
+
+/**
+ * Every slug the normaliser can return. `other` is last and always possible.
+ *
+ * Exported so the web client can mirror the list and a drift check can compare
+ * the two by name.
+ */
+export const AGENT_CLIENTS = [
+  'claude-code',
+  'codex',
+  'cursor',
+  'opencode',
+  'gemini-cli',
+  'vscode',
+  'windsurf',
+  'antigravity',
+  'hermes',
+  'omnigent',
+  'zed',
+  'cline',
+  'roo',
+  'continue',
+  'kiro',
+  'goose',
+  'amp',
+  'junie',
+  'warp',
+  'claude-desktop',
+  'other',
+] as const;
+
+export type AgentClient = (typeof AGENT_CLIENTS)[number];
+
+/**
+ * First match wins, tested against the lower-cased name.
+ *
+ * Order matters twice: Claude Desktop before Claude Code, which would otherwise
+ * take every name with `claude` in it, and Cursor before VS Code, because
+ * Cursor's editor calls itself `cursor-vscode`. Short names carry word
+ * boundaries: `zed`, `amp` or `agy` turn up inside unrelated words.
+ */
+const PATTERNS: readonly (readonly [RegExp, AgentClient])[] = [
+  // `claude-ai` is what Claude Desktop is reported to send; not yet observed.
+  [/claude-ai|claude.?desktop/, 'claude-desktop'],
+  [/claude/, 'claude-code'],
+  [/codex/, 'codex'],
+  [/cursor/, 'cursor'],
+  [/opencode/, 'opencode'],
+  [/gemini/, 'gemini-cli'],
+  // Not bare `copilot`: Copilot also runs as a CLI and inside JetBrains.
+  [/visual studio code|vscode|code - oss/, 'vscode'],
+  [/windsurf|codeium/, 'windsurf'],
+  [/antigravity|\bagy\b/, 'antigravity'],
+  [/hermes/, 'hermes'],
+  [/omnigent/, 'omnigent'],
+  [/\bzed\b/, 'zed'],
+  [/\bcline\b/, 'cline'],
+  [/\broo\b/, 'roo'],
+  [/\bcontinue\b/, 'continue'],
+  [/\bkiro\b/, 'kiro'],
+  [/\bgoose\b/, 'goose'],
+  [/\bamp\b/, 'amp'],
+  [/\bjunie\b/, 'junie'],
+  [/\bwarp\b/, 'warp'],
+];
+
+function match(name: string | null | undefined): AgentClient | null {
+  if (name === null || name === undefined) return null;
+
+  const lower = name.toLowerCase();
+  for (const [pattern, slug] of PATTERNS) if (pattern.test(lower)) return slug;
+  return null;
+}
+
+/**
+ * `clientInfo.name` → slug, falling back to the token name's first word, then
+ * `other`.
+ *
+ * Only the first word of the token name counts. "agent for codex" is a person
+ * describing a token, not the agent naming itself.
+ */
+export function agentClientSlug(
+  clientName: string | null | undefined,
+  tokenName: string | null | undefined,
+): AgentClient {
+  const firstWord = tokenName?.trim().split(/\s+/)[0];
+  return match(clientName) ?? match(firstWord) ?? 'other';
+}
+
+/**
+ * Names that identify no agent: the Python SDK's default `mcp`, sent by both
+ * Omnigent and Hermes, and `hermes-probe`, the throwaway session Hermes opens
+ * before its real one. Compared lower-cased.
+ */
+const WEAK_CLIENT_NAMES: ReadonlySet<string> = new Set(['mcp', 'hermes-probe']);
+
+/**
+ * Does this name say nothing about which agent connected?
+ *
+ * A weak name may fill a blank or `other`, but it never replaces a client the
+ * token already has: a stored `cursor` is worth more than a later `mcp`.
+ */
+export function isWeakClientName(name: string | null | undefined): boolean {
+  if (name === null || name === undefined) return true;
+  const lower = name.trim().toLowerCase();
+  return lower === '' || WEAK_CLIENT_NAMES.has(lower);
+}
+
+/** The stored name is capped here, counted in characters rather than UTF-16 units. */
+export const CLIENT_NAME_MAX_LENGTH = 64;
+
+/**
+ * Every `Other` character — control, format, lone surrogate, private use,
+ * unassigned — and the line and paragraph separators. `Cf` covers the bidi
+ * overrides (U+202A–U+202E, U+2066–U+2069) and the zero-width ones; U+2028 and
+ * U+2029 break a line where no newline was typed. Any of them would let a
+ * client's name rearrange, hide or split text on the Tokens screen.
+ */
+const UNPRINTABLE = /[\p{C}\p{Zl}\p{Zp}]/gu;
+
+/**
+ * A client-supplied name, made safe to store and show, or `null` if nothing is
+ * left. Takes `unknown` because it arrives from the wire.
+ */
+export function cleanClientName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+
+  const cleaned = raw.replace(UNPRINTABLE, '').trim();
+  if (cleaned === '') return null;
+
+  // `Array.from` splits by code point, so the cap never leaves half a
+  // surrogate pair at the end.
+  return Array.from(cleaned).slice(0, CLIENT_NAME_MAX_LENGTH).join('').trimEnd();
+}

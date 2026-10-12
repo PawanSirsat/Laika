@@ -568,6 +568,19 @@ export const tokens = sqliteTable(
     /** Null = all the user's projects (§4.9). */
     projectIdsJson: text('project_ids_json'),
     lastUsedAt: integer('last_used_at'),
+    /**
+     * The last authenticated `/mcp` request on this token, throttled like
+     * `last_used_at` (D-076). §9.3 counts it as a live agent session, so an
+     * agent with no heartbeat hook still shows as present.
+     */
+    lastMcpAt: integer('last_mcp_at'),
+    /** The `AGENT_CLIENTS` slug of the client that last sent `initialize` (D-076). */
+    lastClient: text('last_client'),
+    /**
+     * That client's own `clientInfo.name`, control and bidi characters stripped,
+     * at most 64 characters. For display only; never used to authorise (D-076).
+     */
+    lastClientName: text('last_client_name'),
     expiresAt: integer('expires_at'),
     revokedAt: integer('revoked_at'),
     createdAt,

@@ -1,6 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
+import { recordMcpUse } from '../auth/tokens.ts';
+import { type Logger } from '../log.ts';
 import type Database from 'better-sqlite3';
 import { type Db } from '../db/client.ts';
 import { registerReadTools } from './read-tools.ts';
@@ -43,6 +45,38 @@ import { registerWriteTools } from './write-tools.ts';
 /** Advertised to clients on `initialize`. */
 export const MCP_SERVER_NAME = 'laika';
 
+/**
+ * How to work the board, for **any** agent (D-076).
+ *
+ * Sent as the server's `instructions` on `initialize`. Claude Code, Codex and
+ * Gemini CLI put it in front of the model; Zed, Cline, Continue, Hermes and
+ * Omnigent do not (D-076). Those are told by `laika_whoami`'s **description**,
+ * which every client shows the model, to call it first; its result carries this
+ * text as `how_to_work`.
+ *
+ * The rules are the Connect screen's `claudeMdBlock` without the per-project
+ * lines: claim before coding, and finishing means review, never done. Two
+ * limits shape it: Claude Code truncates at 2,048 characters, and Codex asks
+ * for the first 512 to stand alone, so the must-follow rules come first. They
+ * are repeated in the tool descriptions, which every client shows the model.
+ * Every backticked name must be a served tool; `test/mcp/server.test.ts`
+ * checks the names against `tools/list`.
+ */
+export const MCP_INSTRUCTIONS = `Laika is this team's project board, shared by people and coding agents. Rules:
+claim a task with \`start_working\` before you write code; if no task fits the
+work, \`create_task\` first. One task at a time. \`finish_task\` moves it to
+review: an agent never marks work done, a person does. Comment with
+\`add_comment\` as you go. Refer to tasks by key, such as LAI-42.
+
+How to work:
+1. Call \`laika_whoami\` to confirm who this token acts as.
+2. Find the project with \`list_projects\`, then read \`get_project_context\`:
+   the brief, the open work, and who is on it.
+3. Pick from \`list_ready_tasks\` and claim it with \`start_working\`. A refusal
+   means someone else holds it: take another rather than forcing it.
+4. Stray findings outside any task, such as a broken script, go to
+   \`log_unlisted_work\` so they are triaged rather than lost.`;
+
 export interface McpRequestContext {
   /** The token's user, with roles and token narrowing already applied (§6.1). */
   actor: ResolvedActor;
@@ -51,6 +85,10 @@ export interface McpRequestContext {
   sqlite: Database.Database;
   /** Injectable so "3 days ago" in a response is not at the mercy of the clock. */
   now?: () => number;
+  /** Where a failed activity record is reported. The request still succeeds. */
+  log?: Logger;
+  /** Injectable so a test can prove a failing record never fails the call. */
+  recordUse?: (db: Db, tokenId: string, now: number, clientName: unknown) => unknown;
 }
 
 /**
@@ -68,7 +106,7 @@ export interface McpRequestContext {
 export function createMcpServer(context: McpRequestContext): McpServer {
   const server = new McpServer(
     { name: MCP_SERVER_NAME, version: context.version },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {} }, instructions: MCP_INSTRUCTIONS },
   );
 
   // `laika_whoami` stays: it is the cheapest way for an operator to confirm a
@@ -78,7 +116,7 @@ export function createMcpServer(context: McpRequestContext): McpServer {
     {
       title: 'Who am I',
       description:
-        'The identity this token is acting as. Reads nothing and changes nothing — it exists to confirm the connection is authenticated as the person you expect.',
+        'The identity this token is acting as, and `how_to_work`: the rules for working this board. Call it first. Reads nothing and changes nothing — it exists to confirm the connection is authenticated as the person you expect.',
       inputSchema: {},
     },
     () => {
@@ -94,6 +132,7 @@ export function createMcpServer(context: McpRequestContext): McpServer {
               email: actor.email,
               org_role: actor.orgRole,
               token_scope: actor.token?.scope ?? null,
+              how_to_work: MCP_INSTRUCTIONS,
             }),
           },
         ],
@@ -145,7 +184,33 @@ export async function handleMcpRequest(
 
   try {
     await server.connect(transport);
-    return await transport.handleRequest(request);
+    const response = await transport.handleRequest(request);
+
+    // MCP activity is presence (D-076). The token is the session: stamp it,
+    // and on `initialize` keep the name the client gave. The SDK records
+    // `clientInfo` only while handling `initialize`, and this server is new
+    // per request, so it is `undefined` on every other call.
+    //
+    // **Never fails the call.** The tool has already run and may have written;
+    // answering an error now would tell the agent it did not, and a retry
+    // would do the work twice. A lost stamp costs one presence update.
+    const tokenId = context.actor.token?.id;
+    if (tokenId !== undefined) {
+      try {
+        (context.recordUse ?? recordMcpUse)(
+          context.db,
+          tokenId,
+          context.now?.() ?? Date.now(),
+          server.server.getClientVersion()?.name,
+        );
+      } catch (err) {
+        context.log?.warn('mcp.record_failed', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    return response;
   } finally {
     await transport.close();
     await server.close();
