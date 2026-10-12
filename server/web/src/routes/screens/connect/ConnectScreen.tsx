@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
@@ -45,7 +45,7 @@ import {
 import { suggestTokenName } from './connect-token-name.ts';
 import {
   canContinue,
-  commandRuns,
+  commandLines,
   extrasFor,
   footerHint,
   groupedAgents,
@@ -171,6 +171,9 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const [setupMode, setSetupMode] = useState<SetupMode>('auto');
   const moved = useRef(false);
   const titleRef = useRef<HTMLHeadingElement | null>(null);
+  /** The card's scroller and its head: a step change starts both at the top (LAI-742). */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const headRef = useRef<HTMLElement | null>(null);
   /** An optional entry open in the card (LAI-741); `step` is where *Back to steps* returns. */
   const [extra, setExtra] = useState<ExtraId | undefined>(undefined);
   /*
@@ -403,11 +406,19 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
    * screen-reader user lands on what just appeared rather than on a button
    * that may now be disabled. Not on first render: arriving on the page is
    * not a step change.
+   *
+   * The new card starts at its top (LAI-742): the scroller is reset first and
+   * focus does not scroll, so the eyebrow is in view rather than wherever
+   * focusing the title would leave it. Stacked, the page is the scroller, so
+   * the head is brought into view there — a no-op on a desktop, where the
+   * reset already shows it.
    */
   useEffect(() => {
     if (!moved.current) return;
     moved.current = false;
-    titleRef.current?.focus();
+    if (scrollRef.current !== null) scrollRef.current.scrollTop = 0;
+    titleRef.current?.focus({ preventScroll: true });
+    headRef.current?.scrollIntoView({ block: 'nearest' });
   }, [step, extra]);
 
   /*
@@ -523,41 +534,6 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                 );
               })}
             </ol>
-
-            <div className="conn-optional">
-              <p className="conn-optional-label" id="conn-optional-label">
-                Optional
-              </p>
-              <ul className="conn-optional-list" aria-labelledby="conn-optional-label">
-                {extras.map((e) => {
-                  const here = e.id === openedExtra?.id;
-                  return (
-                    <li
-                      key={e.id}
-                      className="conn-step conn-optional-row"
-                      data-state={here ? 'current' : 'todo'}
-                    >
-                      <button
-                        type="button"
-                        className="conn-rail-step conn-rail-extra"
-                        data-extra={e.id}
-                        {...(here ? { 'aria-current': 'page' as const } : {})}
-                        onClick={() => {
-                          openExtra(e.id);
-                        }}
-                      >
-                        <span className="conn-optional-icon" aria-hidden="true">
-                          <ExtraIcon id={e.id} />
-                        </span>
-                        <span className="conn-rail-text">
-                          <span className="conn-rail-name">{e.name}</span>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
           </nav>
 
           {/* ------------------------------------------------------ the card */}
@@ -569,8 +545,8 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
               : { 'data-extra': openedExtra.id })}
           >
             {/* The one scroller on a desktop (LAI-741); the footer stays below it. */}
-            <div className="conn-card-scroll">
-              <header className="conn-card-head">
+            <div className="conn-card-scroll" ref={scrollRef}>
+              <header className="conn-card-head" ref={headRef}>
                 <p className="conn-eyebrow">
                   {openedExtra === undefined ? `Step ${String(step)} of 4` : 'Optional'}
                 </p>
@@ -805,7 +781,9 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                               className="conn-copy-primary"
                             />
                           </div>
-                          <pre className="conn-pre">{start.command}</pre>
+                          <pre className="conn-pre">
+                            <CommandText text={start.command} />
+                          </pre>
                         </div>
                       )}
                     </div>
@@ -925,7 +903,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                             tabIndex={0}
                             aria-labelledby="conn-project-block-label"
                           >
-                            {block}
+                            <CommandText text={block} />
                           </pre>
                         </div>
                       </>
@@ -1043,6 +1021,47 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
               )}
             </footer>
           </section>
+
+          {/*
+            The optional entries (LAI-741) follow the card in the document
+            (LAI-742): stacked on a phone they come after it, in reading and
+            focus order alike. On a desktop the grid puts them back in the
+            rail's column, under the steps.
+          */}
+          <nav className="conn-optional" aria-labelledby="conn-optional-label">
+            <p className="conn-optional-label" id="conn-optional-label">
+              Optional
+            </p>
+            <ul className="conn-optional-list" aria-labelledby="conn-optional-label">
+              {extras.map((e) => {
+                const here = e.id === openedExtra?.id;
+                return (
+                  <li
+                    key={e.id}
+                    className="conn-step conn-optional-row"
+                    data-state={here ? 'current' : 'todo'}
+                  >
+                    <button
+                      type="button"
+                      className="conn-rail-step conn-rail-extra"
+                      data-extra={e.id}
+                      {...(here ? { 'aria-current': 'page' as const } : {})}
+                      onClick={() => {
+                        openExtra(e.id);
+                      }}
+                    >
+                      <span className="conn-optional-icon" aria-hidden="true">
+                        <ExtraIcon id={e.id} />
+                      </span>
+                      <span className="conn-rail-text">
+                        <span className="conn-rail-name">{e.name}</span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </nav>
         </div>
       </div>
     </div>
@@ -1240,21 +1259,39 @@ function SetupBlockView({
           tabIndex={0}
           aria-labelledby={labelId}
         >
-          {commandRuns(block.text, secret).map((run, i) =>
-            run.token ? (
-              <mark key={i} className="conn-token-line">
-                {run.text}
-              </mark>
-            ) : (
-              run.text
-            ),
-          )}
+          <CommandText text={block.text} secret={secret} />
         </pre>
       </div>
       {block.warn !== undefined && <p className="conn-note conn-note-warn">{block.warn}</p>}
       {block.note !== undefined && !above && <p className="conn-note conn-info">{block.note}</p>}
     </div>
   );
+}
+
+/**
+ * A block's text, one span per line so each wraps under its own text
+ * (LAI-742). `--lead` is the line's leading spaces; `connect.css` hangs its
+ * continuation two columns in from there. The newlines stay text nodes between
+ * the spans, so the block's text — selected, or read as `innerText` — is the
+ * input to the byte. An empty line is only its newline.
+ */
+function CommandText({
+  text,
+  secret,
+}: {
+  readonly text: string;
+  readonly secret?: string | undefined;
+}) {
+  return commandLines(text, secret).map((line, i) => (
+    <Fragment key={i}>
+      {i > 0 && '\n'}
+      {line.text !== '' && (
+        <span className="conn-line" style={{ '--lead': line.lead } as CSSProperties}>
+          {line.token ? <mark className="conn-token-line">{line.text}</mark> : line.text}
+        </span>
+      )}
+    </Fragment>
+  ));
 }
 
 /**

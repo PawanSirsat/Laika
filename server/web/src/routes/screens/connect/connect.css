@@ -321,11 +321,25 @@
   line-height: 1.7;
   color: var(--text-primary);
   white-space: pre-wrap;
-  /* LAI-741: a wrapped line hangs under its own start, so its continuation can
-     never be read as the next command. Layout only — the text is untouched. */
-  text-indent: 2ch hanging each-line;
   /* Long enough to read, short enough that the page is still scannable. */
   max-height: 22rem;
+}
+
+/* LAI-742 (LAI-741's hanging indent, made to work in every engine): each line
+   of a block is its own box, padded in by its leading spaces plus 2ch, with
+   its first row pulled back out by the same amount. The first row starts where
+   the line does; every wrapped row starts 2ch right of where the line's own
+   text starts, so a continuation never reads as the next command. Padding and
+   a negative text-indent only — no `hanging` or `each-line` — and the text is
+   untouched. `--lead` is set per line by `CommandText`; 0 is its default. */
+.conn-line {
+  --lead: 0;
+  display: inline-block;
+  box-sizing: border-box;
+  width: 100%;
+  vertical-align: top;
+  padding-inline-start: calc((var(--lead) + 2) * 1ch);
+  text-indent: calc((var(--lead) + 2) * -1ch);
 }
 
 .conn-pre:focus-visible {
@@ -644,9 +658,11 @@
 .conn-wizard {
   display: grid;
   grid-template-columns: 17.5rem minmax(0, 1fr);
-  /* LAI-741: one row exactly the page's height; the rail and the card fill it. */
-  grid-template-rows: minmax(0, 1fr);
-  gap: var(--space-5);
+  /* LAI-741: exactly the page's height. The card spans both rows; the rail's
+     steps take what they need, scrolling only on a screen too short for them,
+     and its Optional group sits under them (LAI-742). */
+  grid-template-rows: minmax(0, auto) minmax(0, 1fr);
+  gap: var(--space-3) var(--space-5);
   align-items: stretch;
   flex: 1 1 auto;
   min-height: 0;
@@ -660,8 +676,19 @@
   gap: var(--space-3);
   min-width: 0;
   min-height: 0;
+  grid-column: 1;
+  grid-row: 1;
   /* Only on a screen too short for the rail itself; otherwise it never moves. */
   overflow-y: auto;
+}
+
+/* LAI-742: a scroller clips at its padding box, and a step draws outside its
+   own — a 2px focus ring at a 2px offset, and the current step's 3px halo. The
+   padding is that room; the negative margin puts the contents back where they
+   were. */
+.conn-rail {
+  padding: var(--space-1);
+  margin: calc(-1 * var(--space-1));
 }
 
 .conn-rail-intro {
@@ -771,11 +798,16 @@
   color: var(--text-muted);
 }
 
-/* The optional entries (LAI-741): set apart from the steps, never numbered. */
+/* The optional entries (LAI-741): set apart from the steps, never numbered.
+   After the card in the document (LAI-742); on a desktop, back in the rail's
+   column under the steps. */
 .conn-optional {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  grid-column: 1;
+  grid-row: 2;
+  align-self: start;
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
 }
@@ -822,6 +854,8 @@
 /* ------------------------------------------------------------------ card */
 
 .conn-wizard-card {
+  grid-column: 2;
+  grid-row: 1 / span 2;
   gap: 0;
   padding: 0;
   border-radius: var(--radius-column);
@@ -1301,6 +1335,15 @@
     flex: none;
   }
 
+  /* In document order (LAI-742): the steps, the card, then Optional — so the
+     current step starts near the top of a phone. */
+  .conn-rail,
+  .conn-wizard-card,
+  .conn-optional {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
   .conn-rail,
   .conn-card-scroll {
     overflow: visible;
@@ -1319,6 +1362,12 @@
 
   .conn-wizard-card {
     padding: 0;
+  }
+
+  /* LAI-742: the steps a little tighter, so the card starts in the top half of
+     a phone. Each is still 44px tall — a whole touch target. */
+  .conn-rail-step {
+    padding-block: var(--space-1);
   }
 
   .conn-card-head {

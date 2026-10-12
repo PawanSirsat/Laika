@@ -951,6 +951,13 @@ void describe('the wizard (LAI-740)', () => {
       await h.page
         .getByRole('button', { name: 'Copied the setup prompt', exact: true })
         .waitFor({ timeout: 10_000 });
+      // The rail hears the copy through an observer, a render after the button
+      // does: wait for its text rather than read it once (LAI-742).
+      await h.page.waitForFunction(
+        () => document.querySelectorAll('.conn-rail-sub')[2]?.textContent === 'Command copied',
+        undefined,
+        { timeout: 10_000 },
+      );
       assert.equal(await sub.innerText(), 'Command copied');
       assert.match(await h.page.locator('.conn-steps .conn-step-n').nth(2).innerText(), /✓/);
     } finally {
@@ -1234,7 +1241,13 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
         wizard: [...document.querySelectorAll('.conn-wizard > *')].map((el) => el.className),
       }));
       assert.deepEqual(outside.page, ['conn-wizard']);
-      assert.deepEqual(outside.wizard, ['conn-rail', 'conn-card conn-wizard-card']);
+      // The rail is the steps and its Optional group, which follows the card in
+      // the document so that it follows it on a phone too (LAI-742).
+      assert.deepEqual(outside.wizard, [
+        'conn-rail',
+        'conn-card conn-wizard-card',
+        'conn-optional',
+      ]);
       const body = await h.page.locator('.connect').innerText();
       assert.doesNotMatch(body, /Eighteen tools|You can add people/, 'an optional section is out');
     } finally {
@@ -1424,7 +1437,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
     }
   });
 
-  void test('C6: a wrapped line hangs under its start, and the text is untouched', async () => {
+  void test('C6: a wrapped line hangs under its own text, and the text is untouched', async () => {
     const h = await open('/connect', stub());
     try {
       await h.page.setViewportSize({ width: 390, height: 844 });
@@ -1432,29 +1445,53 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
       await goTo(h, 3);
       await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
       const hangs = await h.page.locator('.conn-prompt').evaluate((pre) => {
-        const node = pre.firstChild;
-        if (node?.nodeType !== Node.TEXT_NODE || pre.childNodes.length !== 1)
-          return { wrapped: 0, flush: -1 };
-        const text = node.textContent ?? '';
-        let wrapped = 0;
-        let flush = 0;
+        // Every text node in order, with where it starts in the block's text,
+        // so a logical line can be measured whatever elements carry it.
+        const nodes: { node: Text; at: number }[] = [];
+        const walk = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+        let at = 0;
+        for (let n = walk.nextNode(); n !== null; n = walk.nextNode()) {
+          nodes.push({ node: n as Text, at });
+          at += (n as Text).length;
+        }
+        const point = (offset: number): [Text, number] => {
+          const hit = [...nodes].reverse().find((p) => p.at <= offset) ?? nodes[0];
+          if (hit === undefined) throw new Error('no text in the block');
+          return [hit.node, Math.min(offset - hit.at, hit.node.length)];
+        };
+        const rects = (from: number, to: number) => {
+          const range = document.createRange();
+          range.setStart(...point(from));
+          range.setEnd(...point(to));
+          return [...range.getClientRects()].filter((r) => r.width > 0);
+        };
+        const text = nodes.map((p) => p.node.data).join('');
+        const out = { wrapped: 0, indented: 0, under: [] as string[] };
         let start = 0;
         for (const line of text.split('\n')) {
-          const range = document.createRange();
-          range.setStart(node, start);
-          range.setEnd(node, start + line.length);
+          const from = start;
           start += line.length + 1;
-          // One rect per visual row of this logical line.
-          const rows = [...range.getClientRects()].filter((r) => r.width > 0);
-          if (rows.length < 2) continue;
-          wrapped += 1;
-          const first = rows[0]?.left ?? 0;
-          if (rows.slice(1).some((r) => r.left <= first + 1)) flush += 1;
+          const lead = line.length - line.trimStart().length;
+          if (lead === line.length) continue;
+          // One rect per visual row of this logical line, top to bottom.
+          const rows = rects(from, from + line.length);
+          const tops = [...new Set(rows.map((r) => Math.round(r.top)))];
+          if (tops.length < 2) continue;
+          out.wrapped += 1;
+          if (lead > 0) out.indented += 1;
+          // Where this line's own text starts: its first non-space character.
+          const own = rects(from + lead, from + lead + 1)[0]?.left ?? 0;
+          const later = rows.filter((r) => Math.round(r.top) !== tops[0]);
+          if (later.some((r) => r.left <= own + 1)) out.under.push(line.trim().slice(0, 40));
         }
-        return { wrapped, flush };
+        return out;
       });
       assert.ok(hangs.wrapped > 0, 'no line wrapped at 390px — the test proves nothing');
-      assert.equal(hangs.flush, 0, 'a wrapped continuation starts where a new line would');
+      assert.ok(
+        hangs.indented > 0,
+        'no indented line wrapped at 390px — half the claim is untested',
+      );
+      assert.deepEqual(hangs.under, [], 'a continuation starts at or left of its own line’s text');
       assert.equal(
         await h.page.locator('.conn-prompt').innerText(),
         promptText(h.origin, undefined),
@@ -1477,6 +1514,137 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
         assert.equal(m.doc, m.viewport, `${theme}: the document scrolls`);
         assert.equal(m.mainOver, 0, `${theme}: the shell scrolls`);
       }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the LAI-741 review notes (LAI-742)', () => {
+  void test('1: the rail clips neither the current step’s halo nor its focus ring', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.setViewportSize({ width: 1366, height: 768 });
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      const current = h.page.locator('.conn-rail-step[aria-current="step"]');
+      await current.focus();
+      const m = await current.evaluate((button) => {
+        const rail = button.closest('.conn-rail');
+        if (rail === null) throw new Error('the current step is not in the rail');
+        const box = rail.getBoundingClientRect();
+        // The padding box: what an `overflow` other than visible clips to.
+        const left = box.left + rail.clientLeft;
+        const right = left + rail.clientWidth;
+        const style = getComputedStyle(button);
+        const ring = parseFloat(style.outlineOffset) + parseFloat(style.outlineWidth);
+        const halo = Number(/0px 0px 0px ([\d.]+)px/.exec(style.boxShadow)?.[1] ?? 0);
+        const b = button.getBoundingClientRect();
+        return {
+          focusVisible: button.matches(':focus-visible'),
+          sideways: rail.scrollWidth - rail.clientWidth,
+          ring,
+          halo,
+          left: b.left - Math.max(ring, halo) - left,
+          right: right - (b.right + Math.max(ring, halo)),
+        };
+      });
+      // Check the instrument: a ring and a halo to measure, or this proves nothing.
+      assert.ok(m.focusVisible, 'the step is not :focus-visible — no ring to measure');
+      assert.equal(m.ring, 4, 'the focus ring is not 2px at a 2px offset');
+      assert.equal(m.halo, 3, 'the current step has no 3px halo');
+      assert.equal(m.sideways, 0, 'the rail scrolls sideways');
+      assert.ok(m.left >= 0, `the ring and halo are cut ${String(-m.left)}px on the left`);
+      assert.ok(m.right >= 0, `the ring and halo are cut ${String(-m.right)}px on the right`);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('2: a step or entry change starts the card at its top', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.setViewportSize({ width: 1366, height: 768 });
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      const scroller = h.page.locator('.conn-card-scroll');
+      const toBottom = async (where: string): Promise<void> => {
+        await scroller.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+        await h.page.waitForTimeout(150);
+        const top = await scroller.evaluate((el) => el.scrollTop);
+        assert.ok(top > 0, `${where}: the card has nothing to scroll — the test proves nothing`);
+      };
+      const atTop = async (what: string): Promise<void> => {
+        await h.page.waitForFunction(() => document.activeElement?.id === 'conn-step-title');
+        await h.page.waitForTimeout(150);
+        const m = await scroller.evaluate((el) => ({
+          top: el.scrollTop,
+          eyebrow:
+            (el.querySelector('.conn-eyebrow')?.getBoundingClientRect().top ?? -1) -
+            el.getBoundingClientRect().top,
+        }));
+        assert.equal(m.top, 0, `${what}: the card kept the last card's scroll`);
+        assert.ok(m.eyebrow >= 0, `${what}: the eyebrow is above the card's top`);
+      };
+
+      // Two tall cards, so the old scroll survives the change unless it is reset.
+      await bring(h);
+      await goTo(h, 3);
+      await toBottom('step 3');
+      await goTo(h, 1);
+      await atTop('step 3 → step 1');
+
+      // An optional entry is the same change. Every entry fits the card at this
+      // size, so this half holds by clamping too; the step change above is the
+      // half that can fail.
+      await toBottom('step 1');
+      await openExtra(h, 'What agents can do');
+      await atTop('step 1 → What agents can do');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('6: on a phone the card follows the steps, and Optional follows the card', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(200);
+      const at = await h.page.evaluate(() => {
+        const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
+        return {
+          steps: rect('.conn-steps')?.bottom ?? -1,
+          card: rect('.conn-wizard-card')?.top ?? -1,
+          cardBottom: rect('.conn-wizard-card')?.bottom ?? -1,
+          optional: rect('.conn-optional')?.top ?? -1,
+          viewport: window.innerHeight,
+        };
+      });
+      assert.ok(at.steps > 0 && at.steps <= at.card, 'the four steps are not above the card');
+      assert.ok(at.cardBottom <= at.optional, 'Optional is not after the card');
+      assert.ok(
+        at.card <= at.viewport / 2,
+        `the card starts ${String(Math.round(at.card))}px down a ${String(at.viewport)}px screen`,
+      );
+
+      // The desktop is unchanged: Optional sits in the rail's column, under the steps.
+      await h.page.setViewportSize({ width: 1366, height: 768 });
+      await h.page.waitForTimeout(200);
+      const desk = await h.page.evaluate(() => {
+        const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect();
+        return {
+          steps: rect('.conn-steps'),
+          step: rect('.conn-steps .conn-rail-step'),
+          optional: rect('.conn-optional'),
+          extra: rect('.conn-rail-extra'),
+          card: rect('.conn-wizard-card'),
+        };
+      });
+      const { steps, step, optional, extra, card } = desk;
+      assert.ok(steps && step && optional && extra && card, 'a part of the wizard is missing');
+      assert.ok(optional.top >= steps.bottom, 'Optional is not under the steps');
+      assert.ok(optional.right <= card.left, 'Optional left the rail’s column');
+      assert.equal(Math.round(optional.left), Math.round(steps.left), 'Optional is out of line');
+      assert.equal(Math.round(extra.width), Math.round(step.width), 'its rows are not the steps’');
     } finally {
       await h.close();
     }

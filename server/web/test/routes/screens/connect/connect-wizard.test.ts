@@ -16,7 +16,7 @@ import {
 import {
   AGENT_GROUPS,
   canContinue,
-  commandRuns,
+  commandLines,
   EXTRAS,
   extrasFor,
   footerHint,
@@ -122,22 +122,20 @@ void describe('locking', () => {
   });
 });
 
-void describe('the token highlight', () => {
-  const join = (runs: readonly { readonly text: string }[]): string =>
-    runs.map((r) => r.text).join('');
+void describe('the token highlight and the hanging lines', () => {
+  const join = (lines: readonly { readonly text: string }[]): string =>
+    lines.map((l) => l.text).join('\n');
 
   void test('marks exactly the lines holding the real token, and changes no character', () => {
     for (const id of AGENT_GUIDES.map((g) => g.id)) {
       for (const block of setupBlocks(id, { origin: ORIGIN, secret: SECRET, project: undefined })) {
-        const runs = commandRuns(block.text, SECRET);
-        assert.equal(join(runs), block.text, `${id}/${block.key}: the text changed`);
-        const marked = runs.filter((r) => r.token);
-        for (const run of marked) {
-          assert.ok(run.text.includes(SECRET), `${id}/${block.key}: marked a line without it`);
-          assert.ok(!run.text.includes('\n'), `${id}/${block.key}: marked across lines`);
-        }
-        const lines = block.text.split('\n').filter((l) => l.includes(SECRET)).length;
-        assert.equal(marked.length, lines, `${id}/${block.key}: missed a token line`);
+        const lines = commandLines(block.text, SECRET);
+        assert.equal(join(lines), block.text, `${id}/${block.key}: the text changed`);
+        const marked = lines.filter((l) => l.token);
+        for (const line of marked)
+          assert.ok(line.text.includes(SECRET), `${id}/${block.key}: marked a line without it`);
+        const holding = block.text.split('\n').filter((l) => l.includes(SECRET)).length;
+        assert.equal(marked.length, holding, `${id}/${block.key}: missed a token line`);
       }
     }
   });
@@ -149,9 +147,9 @@ void describe('the token highlight', () => {
       project: undefined,
     })[0];
     assert.ok(prompt !== undefined);
-    const marked = commandRuns(prompt.text, SECRET).filter((r) => r.token);
+    const marked = commandLines(prompt.text, SECRET).filter((l) => l.token);
     assert.ok(
-      marked.some((r) => r.text.startsWith('Token:')),
+      marked.some((l) => l.text.startsWith('Token:')),
       'the Token: line is not marked',
     );
   });
@@ -163,9 +161,23 @@ void describe('the token highlight', () => {
       project: undefined,
     });
     for (const block of blocks) {
-      assert.deepEqual(commandRuns(block.text, undefined), [{ text: block.text, token: false }]);
+      assert.deepEqual(
+        commandLines(block.text, undefined).filter((l) => l.token),
+        [],
+        block.key,
+      );
     }
-    assert.deepEqual(commandRuns('a\nb', ''), [{ text: 'a\nb', token: false }]);
+    assert.deepEqual(
+      commandLines('a\nb', '').map((l) => l.token),
+      [false, false],
+    );
+  });
+
+  void test('each line knows where its own text starts (LAI-742)', () => {
+    assert.deepEqual(
+      commandLines('cd x\n   git clone \\\n\n      --flag', undefined).map((l) => l.lead),
+      [0, 3, 0, 6],
+    );
   });
 });
 
@@ -219,20 +231,52 @@ void describe('the optional entries and the notes (LAI-741)', () => {
   });
 
   void test('a recommended block’s note introduces it; every other note follows', () => {
-    const blocks = setupBlocks('claude-code', {
-      origin: ORIGIN,
-      secret: undefined,
-      project: undefined,
-    });
-    const above = blocks.filter((b) => noteAbove(b)).map((b) => b.key);
-    assert.deepEqual(above, ['claude-prompt']);
+    /*
+     * Written out per block rather than derived (LAI-742): a loop comparing
+     * `noteAbove(b)` with `b.group === 'recommended'` restates the function,
+     * so a block regrouped in `connect-agents.ts` moved its note unnoticed.
+     * Only blocks that carry a note are listed.
+     */
+    const expected: Readonly<Record<string, Readonly<Record<string, 'above' | 'below'>>>> = {
+      'claude-code': {
+        'claude-prompt': 'above',
+        'claude-manual': 'below',
+        'claude-mcp-add': 'below',
+        'claude-mcp-json': 'below',
+      },
+      codex: { cli: 'above', env: 'below', 'codex-toml': 'below' },
+      cursor: { cli: 'above', env: 'below', 'cursor-json': 'below' },
+      antigravity: { cli: 'above', 'antigravity-json': 'below' },
+      opencode: { cli: 'above', env: 'below', 'opencode-json': 'below', 'opencode-add': 'below' },
+      'gemini-cli': { cli: 'above', env: 'below', 'gemini-add': 'below' },
+      vscode: { env: 'below', 'vscode-json': 'below', 'vscode-input-json': 'below' },
+      omnigent: { env: 'below', 'omnigent-sidecar': 'below', 'omnigent-inline': 'below' },
+      any: { env: 'below', 'any-json': 'below', 'any-bridge': 'below' },
+      rest: { env: 'below', 'rest-curl': 'below', 'rest-cli': 'below' },
+      windsurf: { env: 'below' },
+      hermes: { 'hermes-add': 'above', env: 'below', 'hermes-yaml': 'below' },
+      zed: { 'zed-bridge': 'above', 'zed-env': 'below' },
+      cline: { env: 'below', 'cline-json': 'below', 'roo-json': 'below' },
+      continue: { 'continue-yaml': 'below' },
+      'claude-desktop': { 'claude-desktop-bridge': 'above' },
+      kiro: { 'kiro-bridge': 'above' },
+      goose: { env: 'below', 'goose-yaml': 'below' },
+      amp: { env: 'below' },
+      junie: { 'jetbrains-bridge': 'below' },
+      warp: {},
+    };
+    assert.deepEqual(
+      Object.keys(expected).sort(),
+      AGENT_GUIDES.map((g) => g.id).sort(),
+      'an agent is missing from the table',
+    );
     for (const guide of AGENT_GUIDES) {
-      for (const b of setupBlocks(guide.id, {
-        origin: ORIGIN,
-        secret: undefined,
-        project: undefined,
-      }))
-        assert.equal(noteAbove(b), b.group === 'recommended', `${guide.id}/${b.key}`);
+      const actual = Object.fromEntries(
+        setupBlocks(guide.id, { origin: ORIGIN, secret: undefined, project: undefined })
+          .filter((b) => b.note !== undefined)
+          .map((b) => [b.key, noteAbove(b) ? 'above' : 'below']),
+      );
+      assert.deepEqual(actual, expected[guide.id], guide.id);
     }
   });
 });

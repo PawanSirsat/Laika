@@ -133,45 +133,29 @@ export function footerHint(step: WizardStep, s: FooterState): string {
   }
 }
 
-/** One run of a block's text, and whether it is the line carrying the real token. */
-export interface CommandRun {
+/** One line of a block's text: how far it is indented, and whether it carries the real token. */
+export interface CommandLine {
   readonly text: string;
+  /** Its leading spaces — where its own text starts, for the hanging indent. */
+  readonly lead: number;
   readonly token: boolean;
 }
 
 /**
- * A block's text cut into runs, so the line holding the real token can be
- * highlighted **without changing the text at all** — the runs concatenate
- * back to the input exactly, which is what the copy button copies and what a
- * selection picks up. Before a mint there is no secret, and nothing is marked:
- * a placeholder is not a token.
+ * A block's text cut into its lines (LAI-742; runs since LAI-740), so each can
+ * hang under its own start and the lines holding the real token can be
+ * highlighted **without changing the text at all** — joined with `\n` they are
+ * the input exactly, which is what the copy button copies and what a selection
+ * picks up. Before a mint there is no secret, and nothing is marked: a
+ * placeholder is not a token.
  */
-export function commandRuns(text: string, secret: string | undefined): readonly CommandRun[] {
-  if (secret === undefined || secret === '' || !text.includes(secret)) {
-    return [{ text, token: false }];
-  }
-  const runs: CommandRun[] = [];
-  const push = (part: string, token: boolean): void => {
-    if (part === '') return;
-    const last = runs[runs.length - 1];
-    // Untokened text merges into the run before it; each token line stands alone.
-    if (!token && last?.token === false) {
-      runs[runs.length - 1] = { text: last.text + part, token };
-    } else {
-      runs.push({ text: part, token });
-    }
-  };
-  const lines = text.split('\n');
-  lines.forEach((line, i) => {
-    const newline = i < lines.length - 1 ? '\n' : '';
-    if (line.includes(secret)) {
-      push(line, true);
-      push(newline, false);
-    } else {
-      push(line + newline, false);
-    }
-  });
-  return runs;
+export function commandLines(text: string, secret: string | undefined): readonly CommandLine[] {
+  const marks = secret !== undefined && secret !== '';
+  return text.split('\n').map((line) => ({
+    text: line,
+    lead: line.length - line.replace(/^ +/, '').length,
+    token: marks && line.includes(secret),
+  }));
 }
 
 const LANG_CHIPS: Readonly<Record<SetupBlock['lang'], string | undefined>> = {
