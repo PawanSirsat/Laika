@@ -1,4 +1,5 @@
 import { type TaskStatus } from '../db/enums.ts';
+import { CATEGORY_LABELS } from '../db/project-statuses.ts';
 import { ApiError } from '../errors.ts';
 
 /**
@@ -99,13 +100,26 @@ export function canTransition(from: TaskStatus, to: TaskStatus, rule: Transition
  * compiler ask each one is worth the noise. Same posture as `withProject`'s
  * overloads: *"Three signatures say it and the compiler checks it."*
  */
-export function assertTransition(from: TaskStatus, to: TaskStatus, rule: TransitionRule): void {
+export function assertTransition(
+  from: TaskStatus,
+  to: TaskStatus,
+  rule: TransitionRule,
+  /**
+   * What to call the two ends in the message — the project's status names
+   * (LAI-738). A person reads this sentence; `in_progress` is a value, not a
+   * word. `details` keeps the categories, which is what a program branches on.
+   */
+  labels: { from: string; to: string } = {
+    from: CATEGORY_LABELS[from],
+    to: CATEGORY_LABELS[to],
+  },
+): void {
   if (from === to) {
-    throw new ApiError('conflict', `That task is already ${to}`, { from, to });
+    throw new ApiError('conflict', `That task is already in ${labels.to}`, { from, to });
   }
 
   if (!canTransition(from, to, rule)) {
-    throw new ApiError('unprocessable', `Cannot move a task from ${from} to ${to}`, {
+    throw new ApiError('unprocessable', `Cannot move a task from ${labels.from} to ${labels.to}`, {
       from,
       to,
       // The list must come from the table that produced the refusal, or the

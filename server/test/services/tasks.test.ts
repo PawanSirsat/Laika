@@ -936,6 +936,8 @@ describe('started_at and completed_at', () => {
         'stale_flagged_at',
         'started_at',
         'status',
+        'status_id',
+        'status_name',
         'tags',
         'title',
         'updated_at',

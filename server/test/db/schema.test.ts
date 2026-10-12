@@ -4,6 +4,7 @@ import { readPragmas } from '../../src/db/client.ts';
 import { newId } from '../../src/db/ids.ts';
 import { tasks, users } from '../../src/db/schema.ts';
 import { expectSqliteError, freshDb, seed, type TestDb } from '../helpers/db.ts';
+import { statusForCategory } from '../../src/db/project-statuses.ts';
 
 let t: TestDb;
 
@@ -35,6 +36,7 @@ describe('connection PRAGMAs (SPEC §11.3)', () => {
         .values({
           id: newId(),
           projectId: 'no-such-project',
+          statusId: 'no-such-status',
           number: 1,
           title: 'orphan',
           createdBy: userId,
@@ -53,6 +55,7 @@ describe('connection PRAGMAs (SPEC §11.3)', () => {
         .values({
           id: newId(),
           projectId,
+          statusId: statusForCategory(t.db, projectId, 'backlog').id,
           number: 1,
           title: 'fine',
           createdBy: userId,
@@ -69,8 +72,6 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
-    'board_column_statuses',
-    'board_columns',
     'comment_mentions',
     'comments',
     'heartbeats',
@@ -79,6 +80,7 @@ describe('migrations', () => {
     'meeting_reviews',
     'orgs',
     'project_memberships',
+    'project_statuses',
     'projects',
     'sessions',
     'sprints',
@@ -190,8 +192,8 @@ describe('closed vocabularies are enforced by CHECK, not only by types', () => {
 
     expectSqliteError(() => {
       t.db.run(sql`
-        INSERT INTO tasks (id, project_id, number, title, status, priority, created_by, created_via, created_at, updated_at)
-        VALUES (${newId()}, ${projectId}, 1, 'x', 'shipped', 'p2', ${userId}, 'api', ${now}, ${now})
+        INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+        VALUES (${newId()}, ${projectId}, 1, 'x', 'shipped', ${statusForCategory(t.db, projectId, 'backlog').id}, 'p2', ${userId}, 'api', ${now}, ${now})
       `);
     }, /CHECK constraint failed/i);
   });
@@ -247,8 +249,8 @@ describe('subtasks — parent_task_id (SPEC §4.5, D-066)', () => {
 
     expectSqliteError(() => {
       t.db.run(sql`
-        INSERT INTO tasks (id, project_id, number, title, status, priority, created_by, created_via, parent_task_id, created_at, updated_at)
-        VALUES (${id}, ${projectId}, 1, 'x', 'backlog', 'p2', ${userId}, 'api', ${id}, ${now}, ${now})
+        INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, parent_task_id, created_at, updated_at)
+        VALUES (${id}, ${projectId}, 1, 'x', 'backlog', ${statusForCategory(t.db, projectId, 'backlog').id}, 'p2', ${userId}, 'api', ${id}, ${now}, ${now})
       `);
     }, /CHECK constraint failed/i);
   });
@@ -261,6 +263,7 @@ describe('subtasks — parent_task_id (SPEC §4.5, D-066)', () => {
     const base = {
       projectId,
       status: 'backlog' as const,
+      statusId: statusForCategory(t.db, projectId, 'backlog').id,
       priority: 'p2' as const,
       createdBy: userId,
       createdVia: 'api' as const,

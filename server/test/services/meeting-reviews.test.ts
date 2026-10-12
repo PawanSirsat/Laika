@@ -18,6 +18,7 @@ import {
 } from '../../src/services/meeting-reviews.ts';
 import { addMember } from '../../src/services/projects.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import { createDefaultProjectStatuses, statusForCategory } from '../../src/db/project-statuses.ts';
 
 /**
  * §10.2 — a transcript becomes a reviewable proposal set (LAI-450).
@@ -56,6 +57,7 @@ function addTask(title: string, status: 'todo' | 'done', number: number): string
       number,
       title,
       status,
+      statusId: statusForCategory(t.db, s.projectId, status).id,
       priority: 'p2',
       createdBy: s.userId,
       createdVia: 'web',
@@ -259,6 +261,7 @@ describe('the prompt contains only what §10.2 lists', () => {
         updatedAt: 1000,
       })
       .run();
+    createDefaultProjectStatuses(t.db, other, 1000);
     t.db
       .insert(tasks)
       .values({
@@ -267,6 +270,7 @@ describe('the prompt contains only what §10.2 lists', () => {
         number: 1,
         title: 'ANOTHER-PROJECTS-TASK',
         status: 'todo',
+        statusId: statusForCategory(t.db, other, 'todo').id,
         priority: 'p2',
         createdBy: s.userId,
         createdVia: 'web',

@@ -5,6 +5,7 @@ import { backfillTaskPositions, backfillTaskTimestamps } from '../../src/db/back
 import { newId } from '../../src/db/ids.ts';
 import { activity, projects, tasks } from '../../src/db/schema.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import { createDefaultProjectStatuses, statusForCategory } from '../../src/db/project-statuses.ts';
 
 /**
  * Recovering `started_at` / `completed_at` from the audit trail (LAI-435).
@@ -37,6 +38,7 @@ function task(status: string, dates: { startedAt?: number; completedAt?: number 
       number: nextNumber,
       title: 'A task',
       status: status as 'todo',
+      statusId: statusForCategory(t.db, s.projectId, status as 'todo').id,
       priority: 'p2',
       createdBy: s.userId,
       createdVia: 'web',
@@ -259,6 +261,7 @@ describe('backfillTaskPositions (LAI-472, D-070)', () => {
         number,
         title: `Task ${String(number)}`,
         status: 'todo',
+        statusId: statusForCategory(t.db, projectId, 'todo').id,
         priority,
         createdBy: s.userId,
         createdVia: 'web',
@@ -349,6 +352,7 @@ describe('backfillTaskPositions (LAI-472, D-070)', () => {
         updatedAt: 1,
       })
       .run();
+    createDefaultProjectStatuses(t.db, otherProject, 1);
     raw(1, 'p2');
     const elsewhere = raw(1, 'p2', otherProject);
 

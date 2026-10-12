@@ -4,6 +4,7 @@ import { newId } from '../../src/db/ids.ts';
 import { tasks } from '../../src/db/schema.ts';
 import { buildPage, type Cursor, decodeCursor } from '../../src/http/pagination.ts';
 import { freshDb, seed, type Seed, type TestDb } from '../helpers/db.ts';
+import { statusForCategory } from '../../src/db/project-statuses.ts';
 
 let t: TestDb;
 let s: Seed;
@@ -25,6 +26,7 @@ function insertTask(title: string, updatedAt: number): string {
     .values({
       id,
       projectId: s.projectId,
+      statusId: statusForCategory(t.db, s.projectId, 'backlog').id,
       number: nextNumber++,
       title,
       createdBy: s.userId,
