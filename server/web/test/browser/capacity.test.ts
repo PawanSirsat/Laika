@@ -296,6 +296,14 @@ void describe('the capacity screen', () => {
           )
           .map((el) => el.className),
       }));
+      const strip = await h.page.evaluate(() => {
+        const box = document.querySelector('.cap-summary')?.getBoundingClientRect();
+        if (box === undefined) return ['no .cap-summary'];
+        return [...document.querySelectorAll('.cap-summary > *')]
+          .filter((el) => el.getBoundingClientRect().right > box.right + 1)
+          .map((el) => el.className);
+      });
+      assert.deepEqual(strip, [], `the summary strip spills: ${strip.join(', ')}`);
       assert.equal(wide.page, false, 'the page scrolls sideways');
       assert.deepEqual(wide.cut, [], `clipped: ${wide.cut.join(', ')}`);
     } finally {

@@ -625,4 +625,16 @@
     overflow: visible;
     overflow-wrap: anywhere;
   }
+
+  /* The figures wrap, and the scope note takes its own line under them. */
+  .cap-summary {
+    flex-wrap: wrap;
+  }
+
+  .cap-summary-note {
+    flex-basis: 100%;
+    margin-left: 0;
+    padding: 0.375rem 0.9375rem;
+    line-height: 1.3;
+  }
 }
