@@ -19,6 +19,8 @@ import {
   readOverdue,
   readSprintScope,
   readStatus,
+  isCategory,
+  statusFilter,
   readTop,
   readUpdated,
   updatedSince,
@@ -48,23 +50,18 @@ import {
   runBoardTransition,
   useRemoteTouches,
 } from './board/board-motion.ts';
-import {
-  blockedState,
-  boardStatusLabel,
-  groupByColumn,
-  hideOldDone,
-  statusLabel,
-} from '../../api/board-derive.ts';
-import { isFallbackColumn, useColumns } from '../../api/use-columns.ts';
+import { blockedState, groupByColumn, hideOldDone, statusLabel } from '../../api/board-derive.ts';
+import { useProjectStatuses, useStatusEditor } from '../../api/use-statuses.ts';
+import type { ProjectStatus } from '../../api/statuses.ts';
 import { setHideDoneAfter } from '../../api/projects.ts';
 import { BoardInsights } from './board/BoardInsights.tsx';
 import { BoardToolbar } from './board/BoardToolbar.tsx';
-import { ColumnDialog } from './board/ColumnDialog.tsx';
+import { DeleteColumnDialog } from './board/DeleteColumnDialog.tsx';
+import { HiddenColumnsDialog } from './board/HiddenColumnsDialog.tsx';
 import { NewColumnDialog } from './board/NewColumnDialog.tsx';
 import { ViewSettings } from './board/ViewSettings.tsx';
 import { useViewPreferences } from './board/use-view-preferences.ts';
 import { groupNotice, groupSwimlanes, isGroupBy } from './board/group-lanes.ts';
-import type { BoardColumn } from '../../api/columns.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import {
   listMembers,
@@ -74,7 +71,6 @@ import {
   type Task,
   type TaskFilter,
   type TaskPriority,
-  type TaskStatus,
 } from '../../api/tasks.ts';
 import { getProject, listProjects, type Project } from '../../api/projects.ts';
 import type { MeProfile } from '../../api/me.ts';
@@ -227,7 +223,14 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * validator, because the URL is untrusted and the server refuses a status it
    * does not know with a `400` that would blank the board.
    */
-  const statusScope = readStatus(params);
+  /**
+   * The project's statuses — the board's columns, and every status the filter
+   * and the pickers offer (LAI-739). Read this early because `?status=` may
+   * name one by id, and only a known id is applied.
+   */
+  const statuses = useProjectStatuses(slug);
+  const statusIds = useMemo(() => new Set(statuses.all.map((s) => s.id)), [statuses.all]);
+  const statusScope = readStatus(params, statusIds);
   const updatedWindow = readUpdated(params);
   const blockedOnly = readBlocked(params);
   const topOnly = readTop(params);
@@ -244,7 +247,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
   const filter: TaskFilter = useMemo(
     () => ({
-      ...(statusScope === undefined ? {} : { status: statusScope }),
+      ...(statusScope === undefined ? {} : statusFilter(statusScope)),
       ...(since === undefined ? {} : { updated_since: since }),
       ...(priority === undefined ? {} : { priority }),
       ...(assignee === undefined ? {} : { assignee }),
@@ -260,7 +263,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
   // Every filter the URL applies, from the one list (LAI-487). This read four
   // of them and so called a tag- or sprint-scoped board unfiltered.
-  const filtered = filterCount(params, { status: statusLabel }) > 0 || query.trim() !== '';
+  const filtered =
+    filterCount(params, { status: (value) => value, statusIds }) > 0 || query.trim() !== '';
 
   /** `mcp` is what an agent writes through — see `created_via` on every task. */
   const AGENT_VIA = 'mcp';
@@ -500,13 +504,15 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     flashNext.current = [];
     flashTasks(ids);
   }, [board.state.tasks]);
-  const columns = useColumns(slug);
+  const columnEdits = useStatusEditor(slug);
   const [creatingColumn, setCreatingColumn] = useState(false);
+  /** The column whose Delete dialog is open (LAI-739). */
+  const [deletingColumn, setDeletingColumn] = useState<string | undefined>(undefined);
+  const [hiddenOpen, setHiddenOpen] = useState(false);
   const prefs = useViewPreferences(slug);
   const [settingsAt, setSettingsAt] = useState<{ top: number; right: number } | undefined>(
     undefined,
   );
-  const [editing, setEditing] = useState<string | undefined>(undefined);
   /** Which column's inline composer is open (LAI-290). */
   const [composingIn, setComposingIn] = useState<string | undefined>(undefined);
   const [insightsOpen, setInsightsOpen] = useState(false);
@@ -616,12 +622,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
    * available early. `project?.id` still wins once it arrives, which keeps a
    * mid-switch board from being judged against the previous project's columns.
    */
-  const boardProjectId = project?.id ?? columns.state.columns[0]?.project_id;
+  const boardProjectId = project?.id ?? statuses.all[0]?.project_id;
   const mayAddColumn =
     me !== undefined &&
     boardProjectId !== undefined &&
-    canConfigureProject(me.org_role, boardProjectId, me.memberships) &&
-    !columns.visible.some(isFallbackColumn);
+    canConfigureProject(me.org_role, boardProjectId, me.memberships);
 
   /** `Column 5`, skipping any name already taken. */
 
@@ -721,8 +726,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const shownLanes = useMemo(
     // `placing` keeps a dropped card where it was dropped while the server
     // answers (LAI-473).
-    () => groupByColumn(shownTasks, columns.visible, board.placing),
-    [shownTasks, columns.visible, board.placing],
+    () => groupByColumn(shownTasks, statuses.visible, statuses.all, board.placing),
+    [shownTasks, statuses.visible, statuses.all, board.placing],
   );
 
   /**
@@ -732,13 +737,23 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   const swimlanes = useMemo(
     () =>
       grouped
-        ? groupSwimlanes(shownTasks, group, columns.visible, {
+        ? groupSwimlanes(shownTasks, group, statuses.visible, {
+            all: statuses.all,
             members,
             sprintLabels,
             placing: board.placing,
           })
         : undefined,
-    [grouped, group, shownTasks, columns.visible, members, sprintLabels, board.placing],
+    [
+      grouped,
+      group,
+      shownTasks,
+      statuses.visible,
+      statuses.all,
+      members,
+      sprintLabels,
+      board.placing,
+    ],
   );
 
   /**
@@ -754,11 +769,16 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
   /** What the panel shows as removable chips — the same params the bar writes. */
   /*
    * The chips, the badge and *Clear all* all read the one list (LAI-487), and
-   * a status is named the way this board names it (a renamed column, LAI-617).
+   * a status is named by its column's name (LAI-739) — or, for a link naming
+   * a whole category, by the kind.
    */
   const filterNames = useMemo(
-    () => ({ status: (s: TaskStatus) => boardStatusLabel(s, columns.state.columns) }),
-    [columns.state.columns],
+    () => ({
+      status: (value: string) =>
+        isCategory(value) ? statusLabel(value) : (statuses.byId.get(value)?.name ?? value),
+      statusIds,
+    }),
+    [statuses.byId, statusIds],
   );
   const applied = useMemo(() => activeFilters(params, filterNames), [params, filterNames]);
   const activeCount = applied.filter((f) => f.key !== 'q').length;
@@ -772,6 +792,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
     () =>
       filterChips(params, {
         status: filterNames.status,
+        statusIds,
         membersKnown: slug !== undefined && membersFor === slug,
         sprintsKnown,
         member: (id) => members.get(id)?.name,
@@ -782,11 +803,21 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             : `${sprintLabels.get(found.id)?.label ?? ''} · ${found.name}`;
         },
       }),
-    [params, filterNames, members, membersFor, slug, sprintsKnown, sprints, sprintLabels],
+    [
+      params,
+      filterNames,
+      statusIds,
+      members,
+      membersFor,
+      slug,
+      sprintsKnown,
+      sprints,
+      sprintLabels,
+    ],
   );
 
-  const editingColumn =
-    editing === undefined ? undefined : columns.visible.find((c) => c.id === editing);
+  const columnToDelete =
+    deletingColumn === undefined ? undefined : statuses.byId.get(deletingColumn);
 
   const shownCount = shownTasks.length;
 
@@ -950,6 +981,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           activeCount={activeCount}
           status={statusScope}
           statusName={filterNames.status}
+          statuses={statuses.all}
           onStatus={(value) => {
             setParam('status', value);
           }}
@@ -1029,7 +1061,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           }}
           onRefresh={() => {
             refresh();
-            columns.reload();
+            statuses.reload();
           }}
           onOverflow={(anchor) => {
             setOverflowAt((at) => (at === undefined ? anchor : undefined));
@@ -1097,6 +1129,24 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             role="menu"
             style={{ top: `${String(overflowAt.top)}px`, right: `${String(overflowAt.right)}px` }}
           >
+            {/*
+              **Hidden columns (N)** (LAI-739): the way back for a column
+              somebody hid. Only for a reader who may configure the board, and
+              only when there is one — an overflow lists actions that exist.
+            */}
+            {mayAddColumn && statuses.hidden.length > 0 && (
+              <button
+                type="button"
+                role="menuitem"
+                className="bt-menu-item"
+                onClick={() => {
+                  setOverflowAt(undefined);
+                  setHiddenOpen(true);
+                }}
+              >
+                Hidden columns ({statuses.hidden.length})
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -1144,51 +1194,56 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
 
       {creatingColumn && (
         <NewColumnDialog
-          // Every column, visible and hidden, so the picker can say which one a
-          // status would move away from.
-          all={columns.state.columns}
-          busy={columns.busy}
-          error={columns.error}
-          onCreate={(name, status) => {
-            void columns.create(name, status).then(() => {
-              setCreatingColumn(false);
+          busy={columnEdits.busy}
+          error={columnEdits.error}
+          onCreate={(name, category) => {
+            void columnEdits.create(name, category).then((made) => {
+              if (made !== undefined) setCreatingColumn(false);
             });
           }}
           onClose={() => {
             setCreatingColumn(false);
+            columnEdits.dismissError();
           }}
         />
       )}
 
-      {editingColumn !== undefined && (
-        <ColumnDialog
-          column={editingColumn}
+      {columnToDelete !== undefined && (
+        <DeleteColumnDialog
+          column={columnToDelete}
+          all={statuses.all}
           /*
-           * **Every column, not just the drawn ones** (LAI-617). This dialog
-           * is configuration: it has to see who currently owns each status in
-           * order to say what taking one would cost. `visible` excludes the
-           * hidden `Cancelled` column — so taking `cancelled` warned nothing
-           * and would have emptied it silently — and now also excludes any
-           * column already holding nothing.
+           * From the project's task set when it holds every task — current to
+           * the last frame — and the server's count when it does not.
            */
-          all={columns.state.columns}
-          taskCount={shownTasks.filter((t) => editingColumn.statuses.includes(t.status)).length}
-          busy={columns.busy}
-          error={columns.error}
-          onRename={(name) => {
-            void columns.rename(editingColumn.id, name);
-          }}
-          onSetStatuses={(statuses) => {
-            void columns.setStatuses(editingColumn.id, statuses);
-          }}
-          onDelete={(reassignTo) => {
-            void columns.remove(editingColumn.id, reassignTo).then(() => {
-              setEditing(undefined);
+          taskCount={
+            board.state.truncated
+              ? columnToDelete.task_count
+              : board.state.all.filter((t) => t.status_id === columnToDelete.id).length
+          }
+          busy={columnEdits.busy}
+          error={columnEdits.error}
+          onDelete={(moveTo) => {
+            void columnEdits.remove(columnToDelete.id, moveTo).then((gone) => {
+              if (gone) setDeletingColumn(undefined);
             });
           }}
           onClose={() => {
-            setEditing(undefined);
-            columns.dismissError();
+            setDeletingColumn(undefined);
+            columnEdits.dismissError();
+          }}
+        />
+      )}
+
+      {hiddenOpen && (
+        <HiddenColumnsDialog
+          hidden={statuses.hidden}
+          busy={columnEdits.busy}
+          onShow={(id) => {
+            void columnEdits.setHidden(id, false);
+          }}
+          onClose={() => {
+            setHiddenOpen(false);
           }}
         />
       )}
@@ -1328,10 +1383,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
         </p>
       )}
 
-      {columns.error !== undefined && (
+      {columnEdits.error !== undefined && !creatingColumn && columnToDelete === undefined && (
         <p className="board-alert" role="alert">
-          {columns.error}
-          <button type="button" className="board-alert-close" onClick={columns.dismissError}>
+          {columnEdits.error}
+          <button type="button" className="board-alert-close" onClick={columnEdits.dismissError}>
             Dismiss
           </button>
         </p>
@@ -1366,7 +1421,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             ) : (
               <LoadingState
                 shape="board"
-                columns={columns.visible.length > 0 ? columns.visible.length : 4}
+                columns={statuses.visible.length > 0 ? statuses.visible.length : 4}
                 count={2}
                 // The same condition that gives `LaneRow` its `onAddColumn`.
                 addTile={mayAddColumn}
@@ -1475,7 +1530,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               byId={board.byId}
               members={members}
               sprintLabels={sprintLabels}
-              columns={columns.state.columns}
+              statuses={statuses.all}
               sprints={sprints}
               theme={theme}
               filtered={filtered}
@@ -1541,9 +1596,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                     onPlace: (
                       id: string,
                       to: { readonly afterId?: string; readonly beforeId?: string },
-                      status?: TaskStatus,
+                      statusId?: string,
                     ) => {
-                      void board.place(id, to, status);
+                      void board.place(
+                        id,
+                        to,
+                        statusId === undefined ? undefined : statuses.byId.get(statusId),
+                      );
                     },
                   }
                 : {})}
@@ -1558,12 +1617,12 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               canAdd={mayCreate}
               {...(slug === undefined ? {} : { slug })}
               {...(composingIn === undefined ? {} : { composingIn })}
-              onAdd={(status) => {
-                // The lane hands back its own primary status; find the column
-                // that owns it so the composer can name where it will land.
-                const column = columns.visible.find((c) => c.primary_status === status);
-                setComposingIn(column?.id);
+              onAdd={(statusId) => {
+                // A column is one status: the composer opens in it, and the
+                // task is created in that status.
+                setComposingIn(statusId);
               }}
+              statuses={statuses.all}
               onCreated={refresh}
               onCloseComposer={() => {
                 setComposingIn(undefined);
@@ -1571,35 +1630,10 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               {...(mayAddColumn
                 ? {
                     onReorder: (ids: readonly string[]) => {
-                      /*
-                       * **Put back everything the board did not draw.**
-                       *
-                       * The board draws `columns.visible`, so a drag can only
-                       * ever produce the visible order — but `reorderColumns`
-                       * requires *every* column of the project exactly once,
-                       * and refuses anything else so a stale client cannot
-                       * silently drop a lane. The check is right; the caller
-                       * was sending a subset.
-                       *
-                       * **The complement, not a list of the reasons.** This
-                       * read `filter((c) => c.hidden)`, which was complete when
-                       * hidden was the only way out of `visible`. LAI-617 added
-                       * a second — a column owning no statuses — and a caller
-                       * enumerating the exclusions cannot grow with them. The
-                       * owner's board has two such columns, so **every** drag
-                       * on it was refused `expected 7, received 5`, exactly as
-                       * `Cancelled` once broke every drag on every board.
-                       *
-                       * Asking "what did I not send?" is stable under a third
-                       * reason nobody has thought of yet.
-                       */
-                      const sent = new Set(ids);
-                      const rest = columns.state.columns
-                        .filter((c) => !sent.has(c.id))
-                        .sort((a, b) => a.position - b.position)
-                        .map((c) => c.id);
-
-                      void columns.reorder([...ids, ...rest]);
+                      // The visible order; hidden columns keep their slots and
+                      // the whole list is sent (`fullOrder`), because the server
+                      // refuses a subset so a stale client cannot drop a column.
+                      void columnEdits.reorder(ids);
                     },
                     onAddColumn: () => {
                       // **Ask, then create** (LAI-291). This used to call
@@ -1607,11 +1641,13 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                       // called "New column" appeared and you renamed it after.
                       setCreatingColumn(true);
                     },
-                    onRenameColumn: (columnId: string, name: string) => {
-                      void columns.rename(columnId, name);
+                    onRenameColumn: (columnId: string, name: string) =>
+                      columnEdits.rename(columnId, name),
+                    onHideColumn: (columnId: string) => {
+                      void columnEdits.setHidden(columnId, true);
                     },
-                    onEditColumn: (column: BoardColumn) => {
-                      setEditing(column.id);
+                    onDeleteColumn: (column: ProjectStatus) => {
+                      setDeletingColumn(column.id);
                     },
                   }
                 : {})}
@@ -1668,7 +1704,7 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
               boardProjectId !== undefined &&
               canAssignToSprints(me.org_role, boardProjectId, me.memberships)
             }
-            columns={columns.state.columns}
+            statuses={statuses.all}
             meId={me?.id}
             mayAssign={mayCreate}
             mayEdit={mayCreate}

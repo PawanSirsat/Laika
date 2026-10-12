@@ -21,6 +21,7 @@ import {
   readBlocked,
   readOverdue,
   readStatus,
+  statusFilter,
   readTop,
   readUpdated,
   updatedSince,
@@ -84,6 +85,17 @@ void describe('the four new filters read the URL as untrusted (LAI-487)', () => 
     assert.equal(readStatus(q('status=cancelled')), 'cancelled');
     assert.equal(readStatus(q('status=bogus')), undefined, 'the server would 400 on this');
     assert.equal(readStatus(q('')), undefined);
+  });
+
+  void test('status: a project status by id once the project holds it (LAI-739)', () => {
+    const ids = new Set(['01QA']);
+    assert.equal(readStatus(q('status=01QA'), ids), '01QA');
+    assert.equal(readStatus(q('status=01QA')), undefined, 'not applied before statuses load');
+    assert.equal(readStatus(q('status=01GONE'), ids), undefined, 'a stale id is junk');
+    // A category link still means the whole kind.
+    assert.equal(readStatus(q('status=review'), ids), 'review');
+    assert.deepEqual(statusFilter('review'), { status: 'review' });
+    assert.deepEqual(statusFilter('01QA'), { status_id: '01QA' });
   });
 
   void test('updated: a window name, never a timestamp', () => {

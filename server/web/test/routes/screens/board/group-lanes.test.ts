@@ -14,7 +14,7 @@ import {
   groupSwimlanes,
   isGroupBy,
 } from '../../../../src/routes/screens/board/group-lanes.ts';
-import type { BoardColumn } from '../../../../src/api/columns.ts';
+import type { ProjectStatus } from '../../../../src/api/statuses.ts';
 import type { Member, Task } from '../../../../src/api/tasks.ts';
 
 function task(over: Partial<Task> & { id: string }): Task {
@@ -26,6 +26,8 @@ function task(over: Partial<Task> & { id: string }): Task {
     description_md: null,
     acceptance_md: null,
     status: 'todo',
+    status_id: 'st-todo',
+    status_name: 'To do',
     priority: 'p2',
     assignee_id: null,
     sprint_id: null,
@@ -53,23 +55,30 @@ function task(over: Partial<Task> & { id: string }): Task {
   };
 }
 
-function col(id: string, statuses: string[], position: number): BoardColumn {
+/** One column is one project status (LAI-739). */
+function col(id: string, category: ProjectStatus['category'], position: number): ProjectStatus {
   return {
     id,
     project_id: 'p',
     name: id,
+    category,
     position,
     hidden: false,
-    statuses: statuses as BoardColumn['statuses'],
-    primary_status: (statuses[0] ?? null) as BoardColumn['primary_status'],
+    created_at: 0,
+    task_count: 0,
   };
 }
 
-const COLUMNS: BoardColumn[] = [
-  col('todo', ['todo', 'backlog'], 0),
-  col('wip', ['in_progress'], 1),
-  col('review', ['review'], 2),
-  col('done', ['done'], 3),
+/*
+ * The fixture's tasks carry a `status_id` no column has, so each files under
+ * the first column of its kind — `laneStatusId`'s fallback, which keeps this
+ * file about swimlanes rather than about ids.
+ */
+const COLUMNS: ProjectStatus[] = [
+  col('todo', 'todo', 0),
+  col('wip', 'in_progress', 1),
+  col('review', 'review', 2),
+  col('done', 'done', 3),
 ];
 
 const members = new Map<string, Member>([

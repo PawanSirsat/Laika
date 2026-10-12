@@ -8,9 +8,10 @@ import {
   type ReactNode,
   type RefObject,
 } from 'react';
-import type { Member, TaskPriority, TaskStatus } from '../../../api/tasks.ts';
-import { ALL_STATUSES } from '../../../api/board-derive.ts';
+import type { Member, TaskPriority } from '../../../api/tasks.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
 import {
+  isCategory,
   UPDATED_LABELS,
   UPDATED_WINDOWS,
   type FilterKey,
@@ -37,10 +38,13 @@ export interface BoardToolbarProps {
    * and so missed `sprint` and `ready=false`.
    */
   readonly activeCount: number;
-  readonly status: TaskStatus | undefined;
-  /** A status as this board names it — a renamed column's name (LAI-617). */
-  readonly statusName: (status: TaskStatus) => string;
-  readonly onStatus: (value: TaskStatus | undefined) => void;
+  /** `?status=`: a project status's id, or — from an older link — a whole category. */
+  readonly status: string | undefined;
+  /** A `?status=` value as the board says it. */
+  readonly statusName: (value: string) => string;
+  /** The project's statuses, by position — what the Status field offers (LAI-739). */
+  readonly statuses: readonly ProjectStatus[];
+  readonly onStatus: (value: string | undefined) => void;
   /** A sprint id, `none`, or undefined. The same `?sprint=` the strip writes. */
   readonly sprint: string | undefined;
   readonly sprints: readonly FilterSprint[];
@@ -238,6 +242,7 @@ export function BoardToolbar({
   activeCount,
   status,
   statusName,
+  statuses,
   onStatus,
   sprint,
   sprints,
@@ -341,16 +346,30 @@ export function BoardToolbar({
    * Assignee's "Unassigned", Sprint's "No sprint") pinned at the top. Only
    * what each option *looks like* is new.
    */
+  /*
+   * **The project's statuses, by position** (LAI-739) — the columns, hidden
+   * ones marked. A link naming a whole category (the Dashboard's overview, or
+   * any link from before) keeps working, and the field shows it as such.
+   */
   const statusOptions = useMemo<DropdownOption[]>(
     () => [
       { value: '', label: 'Any', pinned: true },
-      ...ALL_STATUSES.map((s) => ({
-        value: s,
-        label: statusName(s),
-        icon: <span className={`dd-dot dd-dot-${s}`} />,
+      ...(status !== undefined && isCategory(status)
+        ? [
+            {
+              value: status,
+              label: `${statusName(status)} (any column)`,
+              icon: <span className={`dd-dot dd-dot-${status}`} />,
+            },
+          ]
+        : []),
+      ...statuses.map((s) => ({
+        value: s.id,
+        label: s.hidden ? `${s.name} (hidden)` : s.name,
+        icon: <span className={`dd-dot dd-dot-${s.category}`} />,
       })),
     ],
-    [statusName],
+    [status, statusName, statuses],
   );
   const priorityOptions = useMemo<DropdownOption[]>(
     () => [
@@ -619,7 +638,7 @@ export function BoardToolbar({
                       value={status ?? ''}
                       options={statusOptions}
                       onChange={(value) => {
-                        onStatus(value === '' ? undefined : (value as TaskStatus));
+                        onStatus(value === '' ? undefined : value);
                       }}
                     />
                   )}

@@ -2,17 +2,10 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { TaskCard, type KeyMove } from './TaskCard.tsx';
-import {
-  dropNeighbours,
-  MOVABLE_STATUSES,
-  primaryStatus,
-  boardStatusLabel,
-  statusLabel,
-  type Lane,
-  type MovableStatus,
-} from '../../../api/board-derive.ts';
-import type { BoardColumn } from '../../../api/columns.ts';
+import { dropNeighbours, type Lane } from '../../../api/board-derive.ts';
+import { CATEGORY_COPY, type ProjectStatus } from '../../../api/statuses.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
+import { anchorOf, ListMenu, type MenuAnchor } from '../list/ListMenu.tsx';
 import { ColumnComposer } from './ColumnComposer.tsx';
 import type { CardFields } from './card-fields.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -23,19 +16,26 @@ export interface LaneRowProps {
   readonly members: ReadonlyMap<string, Member>;
   readonly theme: Theme;
   readonly movingId: string | undefined;
-  readonly onMove: (taskId: string, to: MovableStatus) => void;
+  /** Move a card into a column — a project status, by id (LAI-739). */
+  readonly onMove: (taskId: string, statusId: string) => void;
   /**
    * Put a card at a place in a lane (LAI-473): below `afterId`, above
-   * `beforeId`, and into `status` when it came from another lane. Absent for a
-   * reader who may not move cards — then a drop only changes status, as before.
+   * `beforeId`, and into the column `statusId` when it came from another lane.
+   * Absent for a reader who may not move cards — then a drop only changes
+   * status, as before.
    */
   readonly onPlace?:
     | ((
         taskId: string,
         to: { readonly afterId?: string; readonly beforeId?: string },
-        status?: MovableStatus,
+        statusId?: string,
       ) => void)
     | undefined;
+  /**
+   * Every status of the project, hidden ones included, for the card's move
+   * picker. The lanes when absent.
+   */
+  readonly statuses?: readonly ProjectStatus[] | undefined;
   readonly filtered: boolean;
   readonly onOpen: (taskId: string) => void;
   readonly fields: CardFields;
@@ -52,13 +52,11 @@ export interface LaneRowProps {
   readonly density?: 'standard' | 'compact' | undefined;
   readonly columnWidth?: 'narrow' | 'standard' | 'wide' | undefined;
   /**
-   * Opens the composer **in a column** (LAI-290).
-   *
-   * It used to take no arguments, so `+` on *Done* created a task in
-   * `backlog` — the top banner posted no status at all. The status is the
-   * column's primary, and a column with none cannot offer the button.
+   * Opens the composer **in a column** (LAI-290): the new task is created in
+   * that column's status. It used to take no arguments, so `+` on *Done*
+   * created a task in `backlog`.
    */
-  readonly onAdd?: ((status: MovableStatus) => void) | undefined;
+  readonly onAdd?: ((statusId: string) => void) | undefined;
   /** The column whose composer is open, if any. */
   readonly composingIn?: string | undefined;
   readonly slug?: string | undefined;
@@ -78,10 +76,17 @@ export interface LaneRowProps {
    * Columns are project-level, so N copies of one control is noise.
    */
   readonly showColumnConfig?: boolean | undefined;
-  /** Rename from the header itself — the reference renames in place (LAI-602). */
-  readonly onRenameColumn?: ((columnId: string, name: string) => void) | undefined;
+  /**
+   * Rename from the header itself — the reference renames in place (LAI-602).
+   * Resolves to the server's refusal, shown under the header, or `undefined`.
+   */
+  readonly onRenameColumn?:
+    ((columnId: string, name: string) => Promise<string | undefined>) | undefined;
   readonly onAddColumn?: (() => void) | undefined;
-  readonly onEditColumn?: ((column: BoardColumn) => void) | undefined;
+  /** The column menu's *Hide column* (LAI-739). */
+  readonly onHideColumn?: ((columnId: string) => void) | undefined;
+  /** The column menu's *Delete column*: opens the dialog that asks where its tasks go. */
+  readonly onDeleteColumn?: ((column: ProjectStatus) => void) | undefined;
   readonly sprintLabels?:
     ReadonlyMap<string, { readonly label: string; readonly active: boolean }> | undefined;
 }
@@ -136,10 +141,9 @@ function withDropLine(
 }
 
 /** Empty-lane copy — per lane, not one generic sentence. */
-function emptyCopy(column: BoardColumn, filtered: boolean): string {
+function emptyCopy(column: ProjectStatus, filtered: boolean): string {
   if (filtered) return 'Nothing here for this filter';
-  if (column.statuses.length === 0) return 'No statuses yet — edit this column to fill it';
-  return column.statuses.includes('review') ? 'Nothing waiting on review' : 'Nothing in this lane';
+  return column.category === 'review' ? 'Nothing waiting on review' : 'Nothing in this lane';
 }
 
 export function LaneRow({
@@ -165,12 +169,20 @@ export function LaneRow({
   onReorder,
   showColumnConfig = true,
   onAddColumn,
-  onEditColumn,
+  onHideColumn,
+  onDeleteColumn,
   onRenameColumn,
+  statuses,
   sprintLabels,
 }: LaneRowProps) {
   /** The column being renamed in place, and the draft text. */
   const [renaming, setRenaming] = useState<{ id: string; draft: string } | undefined>(undefined);
+  /** The server's refusal of the last rename, under the header it came from. */
+  const [renameError, setRenameError] = useState<{ id: string; message: string } | undefined>(
+    undefined,
+  );
+  /** The open column menu (⋯), and where to draw it. */
+  const [menuFor, setMenuFor] = useState<{ id: string; at: MenuAnchor } | undefined>(undefined);
 
   const [dragging, setDragging] = useState<string | undefined>(undefined);
   const [over, setOver] = useState<string | undefined>(undefined);
@@ -230,20 +242,15 @@ export function LaneRow({
       return;
     }
 
-    const step = direction === 'left' ? -1 : 1;
-    let next = from + step;
-    while (next >= 0 && next < lanes.length && primaryStatus(lanes[next]!.column) === undefined) {
-      next += step;
-    }
-    const target = lanes[next];
-    const status = target === undefined ? undefined : primaryStatus(target.column);
-    if (target === undefined || status === undefined) {
+    // Every column takes cards now — one column is one status (LAI-739).
+    const target = lanes[from + (direction === 'left' ? -1 : 1)];
+    if (target === undefined) {
       setAnnouncement(`${key} is already in the ${direction === 'left' ? 'first' : 'last'} column`);
       return;
     }
     const others = target.tasks.map((t) => t.id);
     const index = Math.min(at, others.length);
-    onPlace(taskId, dropNeighbours(others, taskId, index) ?? {}, status);
+    onPlace(taskId, dropNeighbours(others, taskId, index) ?? {}, target.column.id);
     setRefocus(taskId);
     setAnnouncement(
       `Moved ${key} to ${target.column.name}, position ${String(index + 1)} of ${String(others.length + 1)}`,
@@ -293,7 +300,9 @@ export function LaneRow({
     >
       {lanes.map((lane, index) => {
         const { column, tasks } = lane;
-        const dot = primaryStatus(column);
+        // The colour is the column's kind — never its name — so the dot and
+        // what the lifecycle rules see cannot disagree (D-027).
+        const dot = column.category;
 
         return (
           <section
@@ -306,7 +315,7 @@ export function LaneRow({
               .filter((c) => c !== '')
               .join(' ')}
             aria-labelledby={`lane-${column.id}`}
-            aria-label={`${column.name} — holds ${column.statuses.map(statusLabel).join(', ')}`}
+            aria-label={`${column.name} — ${CATEGORY_COPY[column.category].label}`}
             onDragOver={(event) => {
               // Without preventDefault the drop never fires — the browser's
               // default is "this is not a drop target".
@@ -315,13 +324,6 @@ export function LaneRow({
               if (isColumnDrag(event.dataTransfer)) {
                 event.dataTransfer.dropEffect = 'move';
                 setColumnOver(column.id);
-                return;
-              }
-
-              // A lane with no status has no answer to "what does dropping
-              // here mean", so it refuses rather than guessing.
-              if (dot === undefined) {
-                event.dataTransfer.dropEffect = 'none';
                 return;
               }
 
@@ -373,17 +375,15 @@ export function LaneRow({
               const task = id === '' ? undefined : byId.get(id);
               const slot = dropAt?.columnId === column.id ? dropAt.index : tasks.length;
               setDropAt(undefined);
-              if (task === undefined || dot === undefined) return;
+              if (task === undefined) return;
 
               /*
-               * **A drop inside the lane the card is already in is not a move.**
-               * With multi-status columns this is load-bearing rather than an
-               * optimisation: nudging a `backlog` card two pixels inside its own
-               * "To do" lane would otherwise promote it to `todo`, silently. And
-               * a same-status drop would be answered `409 "That task is already
-               * todo"` in the alert bar on an ordinary mis-drag.
+               * **A drop inside the lane the card is already in is not a move**
+               * — a same-status drop would be answered `409 "That task is
+               * already …"` in the alert bar on an ordinary mis-drag. Otherwise
+               * the drop sets **this column's status** (LAI-739).
                */
-              const status = column.statuses.includes(task.status) ? undefined : dot;
+              const status = tasks.some((t) => t.id === task.id) ? undefined : column.id;
               if (onPlace === undefined) {
                 if (status !== undefined) onMove(task.id, status);
                 return;
@@ -429,13 +429,8 @@ export function LaneRow({
               }}
             >
               {/* The prototype leads each column with a dot in the lane's own
-                  colour. It comes from the column's primary status — never its
-                  name — so the colour and what a drop does cannot disagree, and
-                  nobody has to pick one (D-027). */}
-              <span
-                className={dot === undefined ? 'lane-dot' : `lane-dot lane-dot-${dot}`}
-                aria-hidden="true"
-              />
+                  colour — its kind's (D-027). */}
+              <span className={`lane-dot lane-dot-${dot}`} aria-hidden="true" />
               {renaming?.id === column.id ? (
                 <form
                   className="lane-rename"
@@ -454,9 +449,18 @@ export function LaneRow({
                   onSubmit={(event) => {
                     event.preventDefault();
                     const next = renaming.draft.trim();
-                    // An empty name is a delete nobody asked for.
-                    if (next !== '' && next !== column.name) onRenameColumn?.(column.id, next);
                     setRenaming(undefined);
+                    setRenameError(undefined);
+                    // An empty name is a delete nobody asked for.
+                    if (next === '' || next === column.name || onRenameColumn === undefined) return;
+                    // Optimistic: the new name is on the header at once. A
+                    // refusal reopens the field with what was typed, and says
+                    // why under it — not in the board's alert bar.
+                    void onRenameColumn(column.id, next).then((refused) => {
+                      if (refused === undefined) return;
+                      setRenaming({ id: column.id, draft: next });
+                      setRenameError({ id: column.id, message: refused });
+                    });
                   }}
                 >
                   <input
@@ -467,8 +471,15 @@ export function LaneRow({
                     onChange={(event) => {
                       setRenaming({ id: column.id, draft: event.target.value });
                     }}
+                    aria-invalid={renameError?.id === column.id || undefined}
+                    aria-describedby={
+                      renameError?.id === column.id ? `lane-rename-error-${column.id}` : undefined
+                    }
                     onKeyDown={(event) => {
-                      if (event.key === 'Escape') setRenaming(undefined);
+                      if (event.key === 'Escape') {
+                        setRenaming(undefined);
+                        setRenameError(undefined);
+                      }
                     }}
                   />
                   <span className="lane-rename-actions">
@@ -497,7 +508,7 @@ export function LaneRow({
                   type="button"
                   className="lane-title lane-title-editable t-heading"
                   id={`lane-${column.id}`}
-                  title={`Rename — holds ${column.statuses.map(statusLabel).join(', ')}`}
+                  title="Rename"
                   onClick={() => {
                     setRenaming({ id: column.id, draft: column.name });
                   }}
@@ -508,29 +519,25 @@ export function LaneRow({
                 <h3
                   className="lane-title t-heading"
                   id={`lane-${column.id}`}
-                  title={column.statuses.map(statusLabel).join(', ')}
+                  title={CATEGORY_COPY[column.category].label}
                 >
                   {column.name}
                 </h3>
               )}
-              <span className={dot === undefined ? 'lane-count' : `lane-count lane-count-${dot}`}>
-                {tasks.length}
-              </span>
+              <span className={`lane-count lane-count-${dot}`}>{tasks.length}</span>
 
-              {/* Only while a card is over a column whose answer is not obvious
-                  from its name. A permanent second line would cost geometry on
-                  every lane for ever to answer a question asked during a drag. */}
-              {over === column.id && column.statuses.length > 1 && dot !== undefined && (
-                <span className="lane-target">→ {statusLabel(dot)}</span>
-              )}
-
-              {onEditColumn !== undefined && showColumnConfig && (
+              {/* The column menu (LAI-739): Rename, Hide, Delete — and nothing
+                  else. LAI-266's settings dialog, with its status ticks, is
+                  gone with the multi-status column it configured. */}
+              {(onHideColumn !== undefined || onDeleteColumn !== undefined) && showColumnConfig && (
                 <button
                   type="button"
                   className="lane-menu"
-                  aria-label={`Configure ${column.name}`}
-                  onClick={() => {
-                    onEditColumn(column);
+                  aria-label={`Column menu for ${column.name}`}
+                  aria-haspopup="menu"
+                  aria-expanded={menuFor?.id === column.id}
+                  onClick={(event) => {
+                    setMenuFor({ id: column.id, at: anchorOf(event.currentTarget) });
                   }}
                 >
                   <span aria-hidden="true">⋯</span>
@@ -564,6 +571,12 @@ export function LaneRow({
                 </label>
               )}
             </header>
+
+            {renameError?.id === column.id && (
+              <p className="lane-rename-error" id={`lane-rename-error-${column.id}`} role="alert">
+                {renameError.message}
+              </p>
+            )}
 
             <div className="lane-body">
               {tasks.length === 0 ? (
@@ -612,39 +625,25 @@ export function LaneRow({
                       {/*
                       Keyboard equivalent of the card drag. A board operable only
                       by mouse locks people out of the product's main screen, and
-                      HTML drag-and-drop has no keyboard story of its own.
-
-                      **It lists statuses, never column names**, and that is now
-                      a feature rather than an accident: a column holding two
-                      statuses can only be dropped into one of them, so this is
-                      the only way to ask for the other.
+                      HTML drag-and-drop has no keyboard story of its own. It
+                      lists every status of the project, hidden ones marked — a
+                      column is a status, so this is the drag in list form.
                     */}
                       <label className="lane-move">
                         <span className="visually-hidden">Move {task.key} to</span>
-                        {/*
-                          The card's status control reads in **this board's**
-                          names too (LAI-617) — picking "Testing" still stores
-                          `review`. `lanes` carries every drawn column, which
-                          is every column a movable status can live in; a
-                          status with no owner falls back to its own name.
-                        */}
                         <Dropdown
                           variant="bare"
                           className="lane-move-select"
                           noun="statuses"
-                          value={task.status}
+                          value={task.status_id}
                           disabled={movingId === task.id}
                           onChange={(value) => {
-                            const to = value as MovableStatus;
-                            if (to !== task.status) onMove(task.id, to);
+                            if (value !== task.status_id) onMove(task.id, value);
                           }}
-                          options={MOVABLE_STATUSES.map((c) => ({
-                            value: c,
-                            label: boardStatusLabel(
-                              c,
-                              lanes.map((l) => l.column),
-                            ),
-                            icon: <span className={`dd-dot dd-dot-${c}`} />,
+                          options={(statuses ?? lanes.map((l) => l.column)).map((s) => ({
+                            value: s.id,
+                            label: s.hidden ? `${s.name} (hidden)` : s.name,
+                            icon: <span className={`dd-dot dd-dot-${s.category}`} />,
                           }))}
                         />
                       </label>
@@ -654,11 +653,10 @@ export function LaneRow({
               )}
             </div>
 
-            {composingIn === column.id && dot !== undefined && slug !== undefined ? (
+            {composingIn === column.id && slug !== undefined ? (
               <ColumnComposer
                 slug={slug}
-                status={dot}
-                columnName={column.name}
+                status={column}
                 onCreated={() => {
                   onCreated?.();
                 }}
@@ -668,13 +666,12 @@ export function LaneRow({
               />
             ) : (
               canAdd &&
-              onAdd !== undefined &&
-              dot !== undefined && (
+              onAdd !== undefined && (
                 <button
                   type="button"
                   className="lane-add t-control"
                   onClick={() => {
-                    onAdd(dot);
+                    onAdd(column.id);
                   }}
                 >
                   {/*
@@ -718,6 +715,34 @@ export function LaneRow({
           the next column.
         </span>
       )}
+
+      {menuFor !== undefined &&
+        (() => {
+          const column = lanes.find((l) => l.column.id === menuFor.id)?.column;
+          if (column === undefined) return null;
+          return (
+            <ListMenu
+              label={`Column menu for ${column.name}`}
+              anchor={menuFor.at}
+              items={[
+                ...(onRenameColumn === undefined ? [] : [{ value: 'rename', label: 'Rename' }]),
+                ...(onHideColumn === undefined ? [] : [{ value: 'hide', label: 'Hide column' }]),
+                ...(onDeleteColumn === undefined
+                  ? []
+                  : [{ value: 'delete', label: 'Delete column', danger: true }]),
+              ]}
+              onPick={(value) => {
+                setMenuFor(undefined);
+                if (value === 'rename') setRenaming({ id: column.id, draft: column.name });
+                if (value === 'hide') onHideColumn?.(column.id);
+                if (value === 'delete') onDeleteColumn?.(column);
+              }}
+              onClose={() => {
+                setMenuFor(undefined);
+              }}
+            />
+          );
+        })()}
 
       <span className="visually-hidden" aria-live="polite">
         {draggingColumn !== undefined

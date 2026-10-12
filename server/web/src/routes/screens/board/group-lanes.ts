@@ -1,5 +1,5 @@
 import { groupByColumn, type Lane, type PendingMove } from '../../../api/board-derive.ts';
-import type { BoardColumn } from '../../../api/columns.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 
 /**
@@ -47,6 +47,8 @@ export interface Swimlane {
 }
 
 export interface GroupOptions {
+  /** Every status, hidden included, so a card of an unknown status finds its kind's column. */
+  readonly all?: readonly ProjectStatus[] | undefined;
   readonly members: ReadonlyMap<string, Member>;
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string; readonly active: boolean }>;
   /** A drop the server has not answered yet, drawn where it was dropped (LAI-473). */
@@ -98,7 +100,7 @@ function bucketFor(
 export function groupSwimlanes(
   tasks: readonly Task[],
   by: GroupBy,
-  columns: readonly BoardColumn[],
+  columns: readonly ProjectStatus[],
   options: GroupOptions,
 ): Swimlane[] {
   const buckets = new Map<string, Bucket>();
@@ -146,7 +148,7 @@ export function groupSwimlanes(
     avatarId: bucket.avatarId,
     count: bucket.tasks.length,
     // The same function the ungrouped board uses, against the same columns.
-    lanes: groupByColumn(bucket.tasks, columns, options.placing),
+    lanes: groupByColumn(bucket.tasks, columns, options.all ?? columns, options.placing),
   }));
 }
 

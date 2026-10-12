@@ -1,6 +1,6 @@
 import { ALL_STATUSES } from '../../../api/board-derive.ts';
 import { isPriority, isTagName } from '../../../api/task-filter.ts';
-import type { TaskStatus } from '../../../api/tasks.ts';
+import type { TaskFilter, TaskStatus } from '../../../api/tasks.ts';
 
 /**
  * Every URL key that narrows which tasks the board and the List show.
@@ -38,25 +38,38 @@ export function filterSignature(params: URLSearchParams): string {
 /* ----------------------------------------------------- reading, untrusted */
 
 /**
- * `?status=` — one status, or nothing.
+ * `?status=` — one of the project's statuses by id, a whole category, or
+ * nothing (LAI-739).
  *
- * **Validated before it is sent** (LAI-487): the server answers `400` to a
- * status it does not know, and a hand-edited or stale link would otherwise
- * turn the whole board into an error screen.
+ * The Filter picks a status — a column — by id. A link that names a
+ * **category** (`?status=review`, as the Dashboard's overview writes and as
+ * every link from before LAI-739 did) still works and means every status of
+ * that kind.
+ *
+ * **Validated before it is applied** (LAI-487): an id this project does not
+ * hold is not applied and not counted, exactly like a junk value, so a stale
+ * link never turns the board into one that matches nothing. Until the
+ * statuses load, `statusIds` is empty and an id waits.
  */
-export function readStatus(params: URLSearchParams): TaskStatus | undefined {
-  const raw = params.get('status');
-  return (ALL_STATUSES as readonly string[]).includes(raw ?? '') ? (raw as TaskStatus) : undefined;
+export function readStatus(
+  params: URLSearchParams,
+  statusIds: ReadonlySet<string> = NO_IDS,
+): string | undefined {
+  const raw = params.get('status') ?? '';
+  return isCategory(raw) || statusIds.has(raw) ? raw : undefined;
 }
 
-/**
- * `?sprint=all` — every sprint, **chosen** (LAI-713).
- *
- * The board opens on the active sprint when the URL names none, so "no
- * `?sprint=`" can no longer mean "all sprints": the default would take it
- * straight back. A reader who picks *All sprints* gets this value instead,
- * which a reload keeps and the default leaves alone.
- */
+const NO_IDS: ReadonlySet<string> = new Set();
+
+export function isCategory(value: string): value is TaskStatus {
+  return (ALL_STATUSES as readonly string[]).includes(value);
+}
+
+/** What a `?status=` value asks of the task set. */
+export function statusFilter(value: string): Pick<TaskFilter, 'status' | 'status_id'> {
+  return isCategory(value) ? { status: value } : { status_id: value };
+}
+
 export const ALL_SPRINTS = 'all';
 
 /**
@@ -136,8 +149,10 @@ export interface ActiveFilter {
 }
 
 export interface FilterNames {
-  /** A status as the board calls it (a renamed column's name, LAI-617). */
-  readonly status: (status: TaskStatus) => string;
+  /** A `?status=` value as the board says it: the status's name, or the kind's. */
+  readonly status: (value: string) => string;
+  /** The project's status ids, so a link naming one is applied (LAI-739). */
+  readonly statusIds?: ReadonlySet<string> | undefined;
 }
 
 /**
@@ -156,7 +171,7 @@ export function activeFilters(
   const query = (params.get('q') ?? '').trim();
   if (query !== '') found.push({ key: 'q', label: `“${query}”` });
 
-  const status = readStatus(params);
+  const status = readStatus(params, names.statusIds);
   if (status !== undefined) found.push({ key: 'status', label: `Status ${names.status(status)}` });
 
   // Priority and tag by the server's rules (LAI-724): a refused value is

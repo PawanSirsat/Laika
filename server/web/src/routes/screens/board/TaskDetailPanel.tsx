@@ -5,11 +5,11 @@ import { copyText } from '../../../components/CopyButton.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { Button } from '../../../components/forms/Button.tsx';
-import { describeEvent, statusTransition, type ActivityEvent } from '../../../api/activity.ts';
+import { describeEvent, statusMoveNames, type ActivityEvent } from '../../../api/activity.ts';
 import { timeLabel } from '../../../api/time-label.ts';
 import { isAgentComment, type Comment } from '../../../api/comments.ts';
 import { useTaskDetail } from '../../../api/use-task-detail.ts';
-import type { BoardColumn } from '../../../api/columns.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
 import { describeActor } from './actor-presentation.ts';
 import {
   getTask,
@@ -19,7 +19,6 @@ import {
   watchTask,
   type Member,
   type Task,
-  type TaskStatus,
 } from '../../../api/tasks.ts';
 import { TaskMeta } from '../task/TaskMeta.tsx';
 import { InlineEdit } from '../task/InlineEdit.tsx';
@@ -48,15 +47,14 @@ export interface TaskDetailPanelProps {
   readonly moving: boolean;
   readonly moveError: string | undefined;
   /** The same call the board uses — not a second implementation (LAI-056). */
-  readonly onMove: (taskId: string, to: TaskStatus) => void;
+  /** Into a project status, by id (LAI-739). */
+  readonly onMove: (taskId: string, toStatusId: string) => void;
   readonly onClose: () => void;
   /**
-   * The board's columns, so a status reads as the column that owns it.
-   *
-   * A renamed column is what people expect to see on the task (LAI-617); the
-   * stored status stays the enum the API and the agent tools depend on.
+   * The project's statuses — the board's columns — so the panel names and
+   * picks a status as the board does (LAI-739).
    */
-  readonly columns: readonly BoardColumn[];
+  readonly statuses: readonly ProjectStatus[];
   /** Every sprint on the project, for the panel's sprint control. */
   readonly sprints: readonly Sprint[];
   /** False for a Viewer — assigning to a sprint is member+ (§3.2). */
@@ -119,7 +117,7 @@ export function TaskDetailPanel({
   moveError,
   onMove,
   onClose,
-  columns,
+  statuses,
   sprints,
   maySetSprint,
   meId,
@@ -393,7 +391,9 @@ export function TaskDetailPanel({
 
   /** One activity row — the History tab's shape, reused inside All. */
   const renderEvent = (event: ActivityEvent) => {
-    const move = statusTransition(event);
+    // The status **names** — two columns of one kind would otherwise read
+    // `review → review` (LAI-739).
+    const move = statusMoveNames(event);
     // Not `personName`: on an activity row a null actor is the system by
     // CHECK constraint, and "someone edited this task" reads as an
     // unidentified human (LAI-411).
@@ -738,7 +738,7 @@ export function TaskDetailPanel({
               theme={theme}
               mayAssign={mayAssign === true}
               meId={meId}
-              columns={columns}
+              statuses={statuses}
               mayEdit={mayEdit === true}
               onOpen={onOpen}
               onChanged={onTaskEdited}
@@ -907,7 +907,7 @@ export function TaskDetailPanel({
           <TaskMeta
             slug={slug}
             byId={byId}
-            columns={columns}
+            statuses={statuses}
             sprints={sprints}
             maySetSprint={maySetSprint}
             sprintBusy={sprintBusy}

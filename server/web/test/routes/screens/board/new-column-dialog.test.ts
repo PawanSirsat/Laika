@@ -1,15 +1,16 @@
 /**
- * The add-column tile asks before it creates (LAI-291).
+ * The add-column tile asks before it creates (LAI-291, LAI-739).
  *
- * Asked for by the owner with a reference screenshot: *Name* (required),
- * *Status category*, Cancel / Submit. Before this, the `+` tile called
- * `columns.create(nextColumnName(...))` and a column called `Column 5` appeared
- * for you to rename afterwards.
+ * The owner first asked for *Name* and *Status category*; LAI-739 made a
+ * column one project status and asked the second question in plain words —
+ * *What kind of work is this?* — with the six kinds and a line each. Before
+ * LAI-291 the `+` tile called `columns.create(nextColumnName(...))` and a
+ * column called `Column 5` appeared for you to rename afterwards.
  *
  * Source assertions, because the properties worth pinning here are structural —
- * *nothing is created until Submit*, *the name gates Submit*, *no status is
- * filtered out of the picker*. The rendered dialog is exercised in
- * `test/browser/`.
+ * *nothing is created until Submit*, *the name gates Submit*, *every kind is
+ * offered and none of them in jargon*. The rendered dialog is exercised in
+ * `test/browser/column-create.test.ts`.
  */
 
 import assert from 'node:assert/strict';
@@ -61,28 +62,18 @@ void describe('the dialog', () => {
     assert.match(dialog, /if \(trimmed === '' \|\| busy\) return;/);
   });
 
-  /**
-   * The first version filtered out statuses another column held, on the correct
-   * reasoning that a status lives in one column. On any backfilled board that
-   * left the picker showing **"Nothing yet"** and nothing else — a right rule
-   * and a useless control. Every status is offered; picking a held one moves it.
-   */
-  void test('every status is offered, not only unclaimed ones', () => {
-    // The picker is a `Dropdown` since LAI-726, so the statuses are mapped
-    // into its `options`, not into `<option>` children — `...STATUSES.map(`.
-    assert.match(dialog, /\.\.\.STATUSES\.map\(/, 'the picker iterates something narrower');
-    assert.doesNotMatch(
-      dialog,
-      /\.\.\.free\.map\(|\{free\.map\(/,
-      'the picker is back to offering only unclaimed statuses',
-    );
+  void test('every kind of work is offered, each with its one line', () => {
+    // All six, never a subset: a kind left out is a column nobody can make.
+    assert.match(dialog, /STATUS_CATEGORIES\.map\(/, 'the choices iterate something narrower');
+    assert.match(dialog, /CATEGORY_COPY\[kind\]\.description/, 'a choice without its description');
+    assert.match(dialog, /What kind of work is this\?/);
   });
 
-  void test('a moved status names the column it leaves', () => {
-    assert.match(dialog, /moves out of/i);
-    // Quoted, because a status and its column usually share a name and
-    // "Moves here from Review" reads as one thing moving from itself.
-    assert.match(dialog, /“\$\{holder\.get\(status\)\?\.name/);
+  void test('no "status" or "category" jargon on screen (LAI-739)', () => {
+    // The owner's instruction: Jira team-managed simplicity. The retired
+    // dialog said *Create status* and *Status category*.
+    assert.doesNotMatch(dialog, />\s*Create status\s*</);
+    assert.doesNotMatch(dialog, /Status category/);
   });
 
   void test('Escape and the scrim both close it', () => {

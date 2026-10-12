@@ -14,8 +14,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { describe, test } from 'node:test';
-import { MOVABLE_STATUSES, primaryStatus } from '../../../../src/api/board-derive.ts';
-import type { BoardColumn } from '../../../../src/api/columns.ts';
+import { STATUS_CATEGORIES } from '../../../../src/api/statuses.ts';
 
 const EXPECTED: Readonly<Record<string, string>> = {
   /*
@@ -31,6 +30,9 @@ const EXPECTED: Readonly<Record<string, string>> = {
   in_progress: '--chip-blue',
   review: '--chip-orange',
   done: '--chip-green',
+  // A hidden-by-default kind, but a column a person can show (LAI-739): its
+  // dot is the dropdown's cancelled grey, not the backlog default.
+  cancelled: '--border-default',
 };
 
 async function css(): Promise<string> {
@@ -59,36 +61,24 @@ void describe('every column carries the right status colour', () => {
     assert.match(sheet, /\.lane-dot\s*\{[^}]*background:\s*var\(--text-muted\)/);
   });
 
-  void test('every movable status is accounted for', () => {
-    // If a sixth status is ever added, this fails rather than letting it render
+  void test('every kind of status is accounted for', () => {
+    // If a seventh kind is ever added, this fails rather than letting it render
     // with the default dot and look deliberate.
     const named = new Set(Object.keys(EXPECTED));
-    const unhandled = MOVABLE_STATUSES.filter((c) => c !== 'backlog' && !named.has(c));
-    assert.deepEqual(unhandled, [], 'these statuses have no colour mapping');
+    const unhandled = STATUS_CATEGORIES.filter((c) => c !== 'backlog' && !named.has(c));
+    assert.deepEqual(unhandled, [], 'these kinds have no colour mapping');
   });
 
-  void test("a lane's dot comes from its primary status, never its name", () => {
-    const column = (statuses: string[]): BoardColumn => ({
-      id: 'c',
-      project_id: 'p',
-      name: 'Whatever it is called',
-      position: 0,
-      hidden: false,
-      statuses: statuses as BoardColumn['statuses'],
-      primary_status: (statuses[0] ?? null) as BoardColumn['primary_status'],
-    });
-
-    // Order is configuration, so these two differ — an implementation that
-    // sorted by the canonical status order would return `todo` for both.
-    assert.equal(primaryStatus(column(['todo', 'backlog'])), 'todo');
-    assert.equal(primaryStatus(column(['backlog', 'todo'])), 'backlog');
-
-    assert.equal(primaryStatus(column(['review'])), 'review');
-    assert.equal(primaryStatus(column([])), undefined, 'an empty lane has no drop target');
-
-    // The safety rail: a lane can hold `cancelled`, and dropping must never
-    // resolve to it. An implementation taking `statuses[0]` fails here.
-    assert.equal(primaryStatus(column(['cancelled', 'done'])), 'done');
-    assert.equal(primaryStatus(column(['cancelled'])), undefined);
+  void test("a lane's dot comes from its kind, never its name (LAI-739)", async () => {
+    // One column is one status: the colour is the status's category, so two
+    // review columns called QA and Code review are both orange, and renaming
+    // a column can never recolour it.
+    const lane = await readFile(
+      new URL('../../../../src/routes/screens/board/LaneRow.tsx', import.meta.url),
+      'utf8',
+    );
+    assert.match(lane, /const dot = column\.category;/);
+    assert.match(lane, /lane-dot lane-dot-\$\{dot\}/);
+    assert.doesNotMatch(lane, /lane-dot-\$\{column\.name/);
   });
 });

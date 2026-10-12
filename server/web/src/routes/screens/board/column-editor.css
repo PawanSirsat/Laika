@@ -131,85 +131,16 @@
   outline-offset: 1px;
 }
 
-.cd-statuses {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3125rem;
-}
-
-.cd-status {
-  display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.cd-check {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.84375rem;
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-.cd-check input {
-  accent-color: var(--accent);
-}
-
-.cd-status-name {
-  font-weight: var(--weight-medium);
-}
-
-.cd-primary {
-  font-family: var(--font-mono);
-  font-size: 0.71875rem;
-  font-weight: var(--weight-semibold);
-  color: var(--accent);
-  background: var(--accent-bg);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-chip);
-  padding: 0 0.1875rem;
-}
-
-.cd-from {
-  font-size: 0.78125rem;
-  color: var(--text-muted);
-}
-
-.cd-from-warn {
-  color: var(--chip-orange);
-}
-
-.cd-danger {
-  border-top: 1px solid var(--overdue-border);
-}
-
-.cd-delete,
 .cd-cancel,
 .cd-submit,
-.cd-confirm {
+.cd-confirm,
+.cd-show {
   font: inherit;
   font-size: 0.8125rem;
   font-weight: var(--weight-semibold);
   border-radius: var(--radius-card);
   padding: 0.3125rem 0.625rem;
   cursor: pointer;
-}
-
-.cd-delete {
-  color: var(--overdue);
-  background: none;
-  border: 1px solid var(--overdue-border);
-}
-
-.cd-delete:disabled {
-  color: var(--text-muted);
-  border-color: var(--border-subtle);
-  cursor: not-allowed;
 }
 
 .cd-actions {
@@ -264,5 +195,96 @@
   color: var(--text-muted);
   background: var(--bg-column);
   border-color: var(--border-subtle);
+  cursor: default;
+}
+
+/* --- one column is one status (LAI-739) ----------------------------------- */
+
+/* "What kind of work is this?" — six plain choices, each with its one line.
+   A fieldset so the radios are one group to a screen reader. */
+.cd-kinds {
+  border: 0;
+  margin: 0;
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.cd-kinds > legend {
+  padding: 0.625rem 0 0.25rem;
+  float: left;
+  width: 100%;
+}
+
+.cd-kind,
+.cd-hidden-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3125rem 0.375rem;
+  border-radius: var(--radius-card);
+  cursor: pointer;
+}
+
+.cd-kind:hover,
+.cd-kind:has(input:checked) {
+  background: var(--bg-column);
+}
+
+.cd-kind input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.cd-kind-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.cd-kind-label {
+  font-size: 0.84375rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.cd-kind-hint {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.cd-blocked {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.cd-consequence {
+  margin-top: 0.5rem;
+}
+
+.cd-hidden-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.cd-hidden-row {
+  cursor: default;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.cd-show {
+  margin-left: auto;
+  color: var(--accent);
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+}
+
+.cd-show:disabled {
+  opacity: 0.6;
   cursor: default;
 }

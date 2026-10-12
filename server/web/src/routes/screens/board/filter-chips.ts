@@ -1,4 +1,3 @@
-import type { TaskStatus } from '../../../api/tasks.ts';
 import {
   activeFilters,
   readStatus,
@@ -14,8 +13,10 @@ export interface FilterChip {
 }
 
 export interface ChipNames {
-  /** A status as the board calls it (a renamed column's name, LAI-617). */
-  readonly status: (status: TaskStatus) => string;
+  /** A `?status=` value as the board says it: a status's name, or a kind's. */
+  readonly status: (value: string) => string;
+  /** The project's status ids, so a chip exists for one (LAI-739). */
+  readonly statusIds?: ReadonlySet<string> | undefined;
   /** A member's name, or `undefined` for an id this project does not know. */
   readonly member: (userId: string) => string | undefined;
   /** A sprint as the popover lists it (`S1 · Name`), or `undefined`. */
@@ -48,7 +49,7 @@ export const PENDING_NAME = '…';
  * shows what it holds.
  */
 export function filterChips(params: URLSearchParams, names: ChipNames): readonly FilterChip[] {
-  return activeFilters(params, { status: names.status })
+  return activeFilters(params, { status: names.status, statusIds: names.statusIds })
     .filter((filter) => filter.key !== 'q')
     .map((filter) => ({ key: filter.key, label: chipLabel(filter.key, params, names) }));
 }
@@ -57,7 +58,7 @@ function chipLabel(key: FilterKey, params: URLSearchParams, names: ChipNames): s
   const raw = params.get(key) ?? '';
   switch (key) {
     case 'status': {
-      const status = readStatus(params);
+      const status = readStatus(params, names.statusIds);
       return `Status: ${status === undefined ? raw : names.status(status)}`;
     }
     case 'priority':
