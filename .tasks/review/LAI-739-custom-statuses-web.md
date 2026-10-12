@@ -99,3 +99,15 @@ none (the one route it answers unasked).
 reports `TokenView.last_client` / `last_client_name` and the presence fields
 (`client`, `clients`) — LAI-736's web half, which arrives with
 `build-agent-connect` and was not merged here, by instruction.
+
+**Found by the gate, fixed before review.** (1) A status re-read that *began*
+during a column edit, and answered with the pre-edit list, reverted the edit —
+`column-reorder` went red under load. The store now holds reads back while an
+edit is in flight and re-reads when it ends (unit test, shown red by
+neutralising the hold). (2) `structure.test.ts`: `status-options.tsx` was not a
+component — now `status-options.ts` with a mirrored test; and
+`WEB_NO_MIRROR_REQUIRED` exempted the deleted `use-columns.ts` — the one entry
+now names `use-statuses.ts`. That map is the web owner's (D-026) but the file
+is under `server/test/`: a one-line, named edit, flagged for the reviewer.
+(3) The Filter's Status field used a `(hidden)` label suffix; it now uses the
+shared builder's *Hidden* badge like every other picker.
