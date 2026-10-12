@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+import { detectAgents } from './agents.ts';
 import { normaliseUrl, whoAmI } from './api.ts';
 import { readSettings, SETTINGS_PATH } from './config.ts';
 
@@ -49,8 +50,10 @@ export interface WhoamiIo {
   readonly out: (line: string) => void;
   readonly err: (line: string) => void;
   readonly settingsPath: string;
-  /** `~/.laika/env`, written by `plugin/scripts/install.sh`. */
+  /** `~/.laika/env`, written by `plugin/scripts/install.sh` and `laika connect`. */
   readonly envPath: string;
+  /** Where to look for agent configs. Defaults to the real home directory. */
+  readonly home?: string;
 }
 
 export const ENV_PATH = join(homedir(), '.laika', 'env');
@@ -63,8 +66,11 @@ export const ENV_PATH = join(homedir(), '.laika', 'env');
  *
  * Anything unparseable is skipped rather than thrown — a malformed line should
  * not stop whoami reporting the half it could read.
+ *
+ * Exported for `laika connect`, which reuses what is already saved there — one
+ * parser, so the two commands cannot disagree about what the file says.
  */
-function readEnvFile(path: string): Record<string, string> {
+export function readEnvFile(path: string): Record<string, string> {
   let raw: string;
   try {
     raw = readFileSync(path, 'utf8');
@@ -150,6 +156,16 @@ export async function whoami(io: WhoamiIo = CONSOLE): Promise<number> {
   io.out(`Board   ${base}`);
   io.out(`Token   ${tokenState(token)}`);
   io.out(`Config  ${board.from}`);
+
+  // Local and read-only, so it prints before the network call can fail. It says
+  // an entry exists, not that it works. Slugs, because they are what
+  // `laika connect` takes.
+  const agents = detectAgents(io.home ?? homedir());
+  io.out(
+    agents.length === 0
+      ? 'Agents  none configured at user scope — see: laika connect --list'
+      : `Agents  ${agents.join(', ')}`,
+  );
 
   if (token === undefined || token === '') {
     io.err('');
