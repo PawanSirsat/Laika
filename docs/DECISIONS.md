@@ -4093,7 +4093,13 @@ rules.
    are still written, because they are token metadata like `last_used_at`.
    Only the token's owner, and an admin listing that person's tokens, can see
    them. One consequence: with presence off, `last_mcp_at` cannot tell the
-   Connect screen that a new token has connected.
+   Connect screen that a new token has connected. **Connect falls back**
+   (LAI-737): the minted token having a recorded client (`last_client` /
+   `last_client_name`, which only an MCP `initialize` writes, so on a token
+   minted on that page it was set after the mint) counts as connected whether
+   presence is on or off, and **only while presence is off** does
+   `last_used_at` moving after the mint count too, which the screen calls the
+   weaker signal.
 6. **The server tells every agent how to work the board.** `/mcp` returns
    `instructions` on `initialize`: call `laika_whoami`, read
    `get_project_context`, claim with `start_working` before coding,
