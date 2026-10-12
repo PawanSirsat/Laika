@@ -6,7 +6,7 @@ assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: review
+status: done
 started: 2026-10-12T06:04:37Z
 finished: 2026-10-12T06:25:03Z
 ---
@@ -151,3 +151,14 @@ web suite alone shows 1633 pass and 2 fail, the two drift checks quoted above,
 unchanged. In the root run `test/tooling/build.test.ts` also timed out under
 load ("built server never became healthy"), 2 cases on the first run and 4 on
 the second; alone it passes 15/15.
+
+## Accepted
+
+2026-10-12, by polly (orchestrator), for release 5. reviewed: LAI-736 approved
+round 2 on 1b98195; LAI-737 approved round 2 on 7d69539 + follow-ups 19dff2f;
+owner's direct instruction. Integrated on `build-release-5` by §4.4:
+`build-agent-server` merged first, then `build-agent-connect`; the only
+conflict was `logs/chief-2026-10-12.md`, resolved by keeping every entry from
+both sides in timestamp order. The two review nits are fixed in the same
+integration: D-076 item 5 now names Connect's fallback, and the LAI-736 log
+entry's presence-off cost claim carries an appended correction.
