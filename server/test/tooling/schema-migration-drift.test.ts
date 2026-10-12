@@ -153,6 +153,40 @@ function liveForeignKeys(sqlite: Database.Database, table: string): LiveForeignK
   return [...byId.values()];
 }
 
+/**
+ * The key parts of `CREATE INDEX … ON t (a, lower(b))`, in order, as written.
+ *
+ * `PRAGMA index_info` names a plain column and reports an **expression** part
+ * as a null name, so an index on `lower(name)` (LAI-738) read as
+ * `<expression>` here and could not be compared with anything — a check that
+ * cannot see the expression would pass whichever expression the migration
+ * holds. The DDL is the only place SQLite keeps it, so it is read from there:
+ * the parenthesised list after `ON`, split on top-level commas.
+ */
+function indexKeyParts(ddl: string): string[] {
+  const on = /\sON\s+\S+\s*\(/i.exec(ddl);
+  if (on === null) return [];
+
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of ddl.slice(on.index + on[0].length)) {
+    if (ch === '(') depth += 1;
+    if (ch === ')') {
+      if (depth === 0) break;
+      depth -= 1;
+    }
+    if (ch === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts.map((part) => normaliseSql(part));
+}
+
 function liveIndexes(sqlite: Database.Database, table: string): LiveIndex[] {
   const list = sqlite.prepare(`PRAGMA index_list(${JSON.stringify(table)})`).all() as {
     name: string;
@@ -176,6 +210,8 @@ function liveIndexes(sqlite: Database.Database, table: string): LiveIndex[] {
       // compared through the column and constraint checks.
       .filter((row) => row.origin === 'c')
       .map((row) => {
+        const sql = ddl.get(row.name) ?? '';
+        const keyParts = indexKeyParts(sql);
         const columns = (
           sqlite.prepare(`PRAGMA index_info(${JSON.stringify(row.name)})`).all() as {
             seqno: number;
@@ -183,9 +219,8 @@ function liveIndexes(sqlite: Database.Database, table: string): LiveIndex[] {
           }[]
         )
           .sort((a, b) => a.seqno - b.seqno)
-          .map((c) => c.name ?? '<expression>');
+          .map((c, i) => c.name ?? keyParts[i] ?? '<expression>');
 
-        const sql = ddl.get(row.name) ?? '';
         const where = /\sWHERE\s+(.+)$/i.exec(sql);
 
         return {
@@ -470,7 +505,12 @@ describe('indexes agree, including unique and partial ones (AC2)', () => {
           );
         }
 
-        if (actual.columns.join(',') !== index.columns.join(',')) {
+        // drizzle renders an expression's column table-qualified —
+        // `lower(project_statuses.name)` — where the DDL it generates does not,
+        // so the qualifier is dropped before comparing. Only the qualifier: the
+        // expression itself still has to match.
+        const declared = index.columns.map((c) => c.split(`${name}.`).join(''));
+        if (actual.columns.join(',') !== declared.join(',')) {
           problems.push(
             `index "${index.name}": schema.ts says (${index.columns.join(', ')}), migrations say (${actual.columns.join(', ')})`,
           );
