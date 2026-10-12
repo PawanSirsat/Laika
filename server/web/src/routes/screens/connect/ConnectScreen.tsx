@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
@@ -43,6 +43,19 @@ import {
   type LiveState,
 } from './connect-live.ts';
 import { suggestTokenName } from './connect-token-name.ts';
+import {
+  canContinue,
+  commandRuns,
+  footerHint,
+  groupedAgents,
+  railLabel,
+  requirementChips,
+  setupModes,
+  stepOpen,
+  WIZARD_STEPS,
+  type SetupMode,
+  type WizardStep,
+} from './connect-wizard.ts';
 import './connect.css';
 
 /**
@@ -64,6 +77,15 @@ import './connect.css';
  * team's agent, and in `localStorage` so a person who comes back is not asked
  * again. The URL wins; storage is a convenience and may be unavailable, so
  * every read and write of it is allowed to fail.
+ *
+ * ## One step at a time (LAI-740)
+ *
+ * Laid out as a wizard on the owner's direct instruction: a rail of four steps
+ * and one card showing the current one. Nothing the page *says* or *does*
+ * changed with it — the blocks, the mint and the watch are the same calls —
+ * only where they sit. Steps 3 and 4 open once a token exists, or once the
+ * reader says they brought one from Tokens, which keeps the presence watch
+ * for that reader reachable.
  */
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -98,6 +120,8 @@ export interface ConnectScreenProps {
 interface MintedRef {
   readonly id: string;
   readonly created_at: number;
+  /** The name it was minted under — what the rail and the status row show. */
+  readonly name: string;
 }
 
 export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenProps) {
@@ -127,6 +151,15 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const [forgotten, setForgotten] = useState(false);
   const ticks = useRef(0);
   const blockRef = useRef<HTMLPreElement | null>(null);
+
+  /* The wizard's own state (LAI-740). None of it holds the secret. */
+  const [step, setStep] = useState<WizardStep>(1);
+  const [brought, setBrought] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [query, setQuery] = useState('');
+  const [setupMode, setSetupMode] = useState<SetupMode>('auto');
+  const moved = useRef(false);
+  const titleRef = useRef<HTMLHeadingElement | null>(null);
 
   /*
    * Remembered whichever way it was chosen — a click, the keyboard, or a link
@@ -209,7 +242,11 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     })
       .then((created) => {
         setRevealed(created);
-        setMinted({ id: created.token.id, created_at: created.token.created_at });
+        setMinted({
+          id: created.token.id,
+          created_at: created.token.created_at,
+          name: created.token.name,
+        });
         setForgotten(false);
         // Minting is the moment the reader is about to go and do it, so the
         // watch arms itself rather than waiting to be asked.
@@ -298,21 +335,86 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const viewerOnly = me !== undefined && !mayChooseScope(me.org_role);
 
   /*
-   * Step state, from what this page already knows and nothing else (LAI-733).
-   * A token minted here — still shown, or hidden since — finishes step 1; a
-   * connection the live check found finishes step 4. Steps 2 and 3 happen on
-   * the reader's machine, where the page cannot see, so they are never ticked.
+   * What the page already knows, and nothing else (LAI-733). A token minted
+   * here — still shown, or hidden since — is a token; so is one the reader
+   * says they brought (LAI-740), which is what opens steps 3 and 4 to them.
+   * Step 3 counts as done once something there was copied; step 4 once the
+   * live check found the connection.
    */
   const mintedHere = revealed !== undefined || forgotten;
+  const ready = mintedHere || brought;
   const connected = live.kind === 'found' || live.kind === 'connected';
-  const current = connected ? undefined : mintedHere ? 2 : 1;
-  const stepState = (n: number, done: boolean): StepState =>
-    done ? 'done' : n === current ? 'current' : 'todo';
 
-  const recommended = blocks.filter((b) => b.group === 'recommended');
-  const manual = blocks.filter((b) => b.group === 'manual');
+  const modes = setupModes(blocks);
+  const mode: SetupMode = modes.includes(setupMode) ? setupMode : (modes[0] ?? 'auto');
+  const shown = blocks.filter((b) => b.group === (mode === 'auto' ? 'recommended' : 'manual'));
   const alternative = blocks.filter((b) => b.group === 'alternative');
   const carriesToken = blocks.some((b) => b.token !== 'none');
+
+  const go = (next: number): void => {
+    if (next < 1 || next > 4) return;
+    const target = next as WizardStep;
+    if (!stepOpen(target, ready)) return;
+    moved.current = true;
+    setStep(target);
+  };
+
+  /*
+   * A step change moves focus to the new card's title, so a keyboard or
+   * screen-reader user lands on what just appeared rather than on a button
+   * that may now be disabled. Not on first render: arriving on the page is
+   * not a step change.
+   */
+  useEffect(() => {
+    if (!moved.current) return;
+    moved.current = false;
+    titleRef.current?.focus();
+  }, [step]);
+
+  /** *Connect another agent*: back to step 1, with a fresh token to mint. */
+  const again = (): void => {
+    if (revealed !== undefined) forget();
+    setMinted(undefined);
+    setForgotten(false);
+    setBrought(false);
+    setCopied(false);
+    ticks.current = 0;
+    setLive({ kind: 'idle' });
+    moved.current = true;
+    setStep(1);
+  };
+
+  const done: Readonly<Record<WizardStep, boolean>> = {
+    1: step > 1,
+    2: ready,
+    3: copied,
+    4: connected,
+  };
+
+  const rail = {
+    agentName: guide.name,
+    tokenName: minted?.name,
+    brought,
+    copied,
+    connected,
+    watching: live.kind === 'watching',
+  };
+
+  const stepName = (n: WizardStep): string =>
+    n === 1
+      ? 'Choose your agent'
+      : n === 2
+        ? 'Mint a token'
+        : n === 3
+          ? `Add Laika to ${guide.name}`
+          : 'Check it connected';
+
+  const stepLine: Readonly<Record<WizardStep, string>> = {
+    1: 'Pick the coding agent on this machine — everything after this is filled in for it.',
+    2: 'A token is how a tool acts as you. Treat it like a password.',
+    3: 'Filled in for this board. Put it where the bar above it says, then continue.',
+    4: `Start ${guide.name}, and this page watches for it to reach the board.`,
+  };
 
   return (
     <div className="connect">
@@ -325,165 +427,332 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
       </ScreenHeader>
 
       <div className="conn-page">
-        <p className="conn-lede">
-          Pick your agent, then four steps, about five minutes. At the end, an agent on your machine
-          reads this board, claims tasks, and appears on Capacity while it works. Everything below
-          is filled in for <strong>this</strong> board — you should not need another document.
-        </p>
-
-        <AgentPicker value={guide.id} onChange={choose} />
-
-        <ol className="conn-steps">
-          {/* -------------------------------------------------------- step 1 */}
-          <Step n={1} state={stepState(1, mintedHere)} title="Mint a token for this machine">
-            <p className="conn-body">
-              A token is how a tool acts as you. It carries your permissions, so treat it like a
-              password — and give it a name you will recognise on the Tokens screen a year from now.
-              The name starts with your agent, which is how the board recognises an agent that does
-              not introduce itself.
+        <div className="conn-wizard">
+          {/* ------------------------------------------------------ the rail */}
+          <nav className="conn-rail" aria-label="Setup steps">
+            <p className="conn-rail-intro">
+              Four steps, about five minutes. At the end, an agent on your machine reads this board,
+              claims tasks, and appears on Capacity while it works.
             </p>
-
-            {viewerOnly && (
-              <p className="conn-note conn-note-warn">
-                Your organisation role reads the board and writes nothing, so this token will too.
-                An agent holding it can see tasks but cannot claim or finish them.
-              </p>
-            )}
-
-            <div className="conn-mint">
-              <label className="conn-label" htmlFor="conn-token-name">
-                Token name
-              </label>
-              <div className="conn-mint-row">
-                <input
-                  id="conn-token-name"
-                  className="conn-input"
-                  value={name}
-                  onChange={(event) => {
-                    nameTouched.current = true;
-                    setName(event.target.value);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="bar-control bar-control-primary conn-mint-button"
-                  disabled={pending || me === undefined}
-                  aria-busy={pending}
-                  onClick={mint}
-                >
-                  {pending && <Spinner size="sm" />}
-                  Mint a token
-                </button>
-              </div>
-            </div>
-
-            {mintError !== undefined && (
-              <p className="conn-error" role="alert">
-                {mintError}
-              </p>
-            )}
-
-            {secret !== undefined && (
-              <div className="conn-secret" role="alert">
-                <h3 className="conn-secret-title">Secret — copy it now, it is not shown again</h3>
-                <p className="conn-body">
-                  Laika keeps a hash, not the secret, so nobody — including an administrator — can
-                  show it to you again. It expires in 90 days. If you lose it, revoke it on Tokens
-                  and mint another.
-                </p>
-                <div className="conn-secret-row">
-                  <code className="conn-secret-value">{secret}</code>
-                  <div className="conn-secret-actions">
-                    <CopyButton text={secret} what="the token" className="conn-copy-primary" />
+            <ol className="conn-steps">
+              {WIZARD_STEPS.map((n) => {
+                const open = stepOpen(n, ready);
+                const state = n === step ? 'current' : done[n] ? 'done' : 'todo';
+                return (
+                  <li key={n} className="conn-step" data-state={state} data-locked={!open}>
                     <button
                       type="button"
-                      className="conn-hide"
+                      className="conn-rail-step"
+                      disabled={!open}
+                      {...(n === step ? { 'aria-current': 'step' as const } : {})}
+                      {...(!open ? { title: 'Mint a token first' } : {})}
                       onClick={() => {
-                        forget();
+                        go(n);
                       }}
                     >
-                      Hide the token
+                      <span className="conn-step-n" aria-hidden="true">
+                        {done[n] ? '✓' : n}
+                      </span>
+                      <span className="conn-rail-text">
+                        <span className="conn-rail-name">
+                          <span className="visually-hidden">Step {n}: </span>
+                          {stepName(n)}
+                        </span>
+                        <span className="conn-rail-sub">{railLabel(n, rail)}</span>
+                      </span>
                     </button>
+                  </li>
+                );
+              })}
+            </ol>
+          </nav>
+
+          {/* ------------------------------------------------------ the card */}
+          <section
+            className="conn-card conn-wizard-card"
+            aria-labelledby="conn-step-title"
+            data-step={step}
+          >
+            <header className="conn-card-head">
+              <p className="conn-eyebrow">Step {step} of 4</p>
+              <h2 className="conn-card-title" id="conn-step-title" tabIndex={-1} ref={titleRef}>
+                {stepName(step)}
+              </h2>
+              <p className="conn-card-line">{stepLine[step]}</p>
+            </header>
+
+            <div className="conn-card-body">
+              {step === 1 && (
+                <AgentPicker value={guide.id} onChange={choose} query={query} onQuery={setQuery} />
+              )}
+
+              {step === 2 && (
+                <>
+                  {viewerOnly && (
+                    <p className="conn-note conn-note-warn">
+                      Your organisation role reads the board and writes nothing, so this token will
+                      too. An agent holding it can see tasks but cannot claim or finish them.
+                    </p>
+                  )}
+
+                  <div className="conn-mint">
+                    <label className="conn-label" htmlFor="conn-token-name">
+                      Token name
+                    </label>
+                    <div className="conn-mint-row">
+                      <input
+                        id="conn-token-name"
+                        className="conn-input"
+                        value={name}
+                        onChange={(event) => {
+                          nameTouched.current = true;
+                          setName(event.target.value);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="bar-control bar-control-primary conn-mint-button"
+                        disabled={pending || me === undefined}
+                        aria-busy={pending}
+                        onClick={mint}
+                      >
+                        {pending && <Spinner size="sm" />}
+                        Mint a token
+                      </button>
+                    </div>
+                    <p className="conn-note">
+                      It carries your permissions, so give it a name you will recognise on the
+                      Tokens screen a year from now. The name starts with your agent, which is how
+                      the board recognises an agent that does not introduce itself.
+                    </p>
                   </div>
+
+                  {mintError !== undefined && (
+                    <p className="conn-error" role="alert">
+                      {mintError}
+                    </p>
+                  )}
+
+                  {secret !== undefined && (
+                    <div className="conn-secret" role="alert">
+                      <h3 className="conn-secret-title">
+                        <CheckIcon />
+                        Token minted
+                      </h3>
+                      <div className="conn-secret-row">
+                        <code className="conn-secret-value">{secret}</code>
+                        <div className="conn-secret-actions">
+                          <CopyButton
+                            text={secret}
+                            what="the token"
+                            className="conn-copy-primary"
+                          />
+                          <button
+                            type="button"
+                            className="conn-hide"
+                            onClick={() => {
+                              forget();
+                            }}
+                          >
+                            Hide the token
+                          </button>
+                        </div>
+                      </div>
+                      <p className="conn-note">
+                        <strong>Copy it now — it is not shown again.</strong> Laika keeps a hash,
+                        not the secret, so nobody — including an administrator — can show it to you
+                        again. It expires in 90 days. If you lose it, revoke it on Tokens and mint
+                        another.
+                      </p>
+                      <p className="conn-note">
+                        The blocks in step 3 marked <em>carries your token</em> now include it —
+                        paste them only into your own terminal, shell profile or agent. Every config
+                        that can read it from <code>LAIKA_TOKEN</code> does, and carries no token at
+                        all. Revoking it on Tokens stops it working immediately.
+                      </p>
+                    </div>
+                  )}
+
+                  {forgotten && secret === undefined && (
+                    <p className="conn-note conn-forgotten">
+                      The token is gone from this page. Mint another, or revoke the old one on
+                      Tokens.
+                    </p>
+                  )}
+
+                  {!ready && (
+                    <p className="conn-note conn-brought">
+                      Brought a token from Tokens?{' '}
+                      <button
+                        type="button"
+                        className="conn-link-button"
+                        onClick={() => {
+                          setBrought(true);
+                        }}
+                      >
+                        Use a token I already have
+                      </button>
+                    </p>
+                  )}
+                </>
+              )}
+
+              {step === 3 && (
+                <div
+                  className="conn-setup-step"
+                  onClickCapture={(event) => {
+                    const target = event.target as HTMLElement;
+                    if (target.closest('.copy-button') !== null) setCopied(true);
+                  }}
+                >
+                  {guide.beta !== undefined && (
+                    <p className="conn-note conn-note-warn conn-beta">{guide.beta}</p>
+                  )}
+
+                  <div className="conn-setup-bar">
+                    {modes.length > 1 ? (
+                      <div className="conn-segmented" role="group" aria-label="How to add it">
+                        {modes.map((m) => (
+                          <button
+                            key={m}
+                            type="button"
+                            className="conn-segment"
+                            aria-pressed={m === mode}
+                            onClick={() => {
+                              setSetupMode(m);
+                            }}
+                          >
+                            {m === 'auto' ? 'Automatic' : 'By hand'}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="conn-setup-mode">
+                        {mode === 'auto' ? 'Automatic' : 'By hand'}
+                      </span>
+                    )}
+                    <ul className="conn-chips" aria-label="What this needs">
+                      {requirementChips(shown, guide.via).map((chip) => (
+                        <li key={chip} className="conn-chip">
+                          {chip}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {shown.map((b) => (
+                    <SetupBlockView key={b.key} block={b} secret={secret} main />
+                  ))}
+
+                  {alternative.length > 0 && (
+                    <details className="conn-alt">
+                      <summary>Other ways</summary>
+                      {alternative.map((b) => (
+                        <SetupBlockView key={b.key} block={b} secret={secret} />
+                      ))}
+                    </details>
+                  )}
+
+                  {carriesToken && secret === undefined && (
+                    <p className="conn-note conn-info">
+                      Blocks that carry your token show a placeholder until you mint one in step 2.
+                    </p>
+                  )}
                 </div>
-                <p className="conn-note">
-                  The blocks below marked <em>carries your token</em> now include it — paste them
-                  only into your own terminal, shell profile or agent. Every config that can read it
-                  from <code>LAIKA_TOKEN</code> does, and carries no token at all. Revoking it on
-                  Tokens stops it working immediately.
-                </p>
-              </div>
-            )}
+              )}
 
-            {forgotten && secret === undefined && (
-              <p className="conn-note conn-forgotten">
-                The token is gone from this page. Mint another, or revoke the old one on Tokens.
+              {step === 4 && (
+                <>
+                  <div className="conn-start">
+                    <h3 className="conn-sub-title">Start {guide.name}</h3>
+                    <p className="conn-body">{start.body}</p>
+                    {start.command !== undefined && (
+                      <div className="conn-block">
+                        <div className="conn-block-bar">
+                          <span className="conn-block-label">Terminal</span>
+                          <CopyButton
+                            text={start.command}
+                            what={start.commandWhat ?? 'the command'}
+                            className="conn-copy-primary"
+                          />
+                        </div>
+                        <pre className="conn-pre">{start.command}</pre>
+                      </div>
+                    )}
+                  </div>
+
+                  <StatusRow live={live} tokenName={minted?.name} />
+
+                  <LiveCheck
+                    live={live}
+                    guide={guide}
+                    byToken={minted !== undefined}
+                    onWatch={() => {
+                      ticks.current = 0;
+                      setLive({ kind: 'watching', ticks: 0 });
+                    }}
+                  />
+
+                  {!connected && live.kind !== 'spent' && (
+                    <details className="conn-alt conn-help">
+                      <summary>Nothing after a minute?</summary>
+                      <ul className="conn-causes">
+                        {likelyCauses(guide.id).map((cause) => (
+                          <li key={cause}>{cause}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+
+                  {connected && (
+                    <div className="conn-done-actions">
+                      <a className="conn-primary-link" href="/board">
+                        Open the board
+                      </a>
+                      <button type="button" className="conn-outline" onClick={again}>
+                        Connect another agent
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <footer className="conn-card-foot">
+              <button
+                type="button"
+                className="conn-outline conn-back"
+                disabled={step === 1}
+                onClick={() => {
+                  go(step - 1);
+                }}
+              >
+                Back
+              </button>
+              <p className="conn-foot-hint">
+                {footerHint(step, {
+                  ready,
+                  mintedHere,
+                  copied,
+                  connected,
+                  agentName: guide.name,
+                })}
               </p>
-            )}
-          </Step>
-
-          {/* -------------------------------------------------------- step 2 */}
-          <Step n={2} state={stepState(2, false)} title={`Add Laika to ${guide.name}`}>
-            {guide.beta !== undefined && (
-              <p className="conn-note conn-note-warn conn-beta">{guide.beta}</p>
-            )}
-
-            {recommended.map((b) => (
-              <SetupBlockView key={b.key} block={b} minted={secret !== undefined} main />
-            ))}
-
-            {manual.length > 0 && (
-              <details className="conn-alt" open>
-                <summary>{recommended.length > 0 ? 'Or by hand' : 'By hand'}</summary>
-                {manual.map((b) => (
-                  <SetupBlockView key={b.key} block={b} minted={secret !== undefined} />
-                ))}
-              </details>
-            )}
-
-            {alternative.length > 0 && (
-              <details className="conn-alt">
-                <summary>Other ways</summary>
-                {alternative.map((b) => (
-                  <SetupBlockView key={b.key} block={b} minted={secret !== undefined} />
-                ))}
-              </details>
-            )}
-
-            {carriesToken && secret === undefined && (
-              <p className="conn-note">
-                Blocks that carry your token show a placeholder until you mint one in step 1.
-              </p>
-            )}
-          </Step>
-
-          {/* -------------------------------------------------------- step 3 */}
-          <Step n={3} state={stepState(3, false)} title={`Start ${guide.name}`}>
-            <p className="conn-body">{start.body}</p>
-            {start.command !== undefined && (
-              <div className="conn-block">
-                <div className="conn-block-bar">
-                  <span className="conn-block-label">Terminal</span>
-                  <CopyButton text={start.command} what={start.commandWhat ?? 'the command'} />
-                </div>
-                <pre className="conn-pre">{start.command}</pre>
-              </div>
-            )}
-          </Step>
-
-          {/* -------------------------------------------------------- step 4 */}
-          <Step n={4} state={stepState(4, connected)} title="Did it work?">
-            <LiveCheck
-              live={live}
-              guide={guide}
-              byToken={minted !== undefined}
-              onWatch={() => {
-                ticks.current = 0;
-                setLive({ kind: 'watching', ticks: 0 });
-              }}
-            />
-          </Step>
-        </ol>
+              {step < 4 && (
+                <button
+                  type="button"
+                  className="conn-continue"
+                  disabled={!canContinue(step, ready)}
+                  onClick={() => {
+                    go(step + 1);
+                  }}
+                >
+                  Continue <span aria-hidden="true">→</span>
+                </button>
+              )}
+            </footer>
+          </section>
+        </div>
 
         {/* ----------------------------------------------- the lead's block */}
         <section className="conn-card conn-extra">
@@ -612,89 +881,144 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
 }
 
 /**
- * The agent picker: one radio group, drawn as tiles (LAI-737).
+ * The agent picker: one radio group, drawn as tiles under headings (LAI-737,
+ * grouped and searchable since LAI-740).
  *
  * **Native radios**, visually hidden inside their labels, so arrow keys,
- * `Tab` into the group and a screen reader's "radio button, 3 of 10" all come
- * from the browser rather than a re-implementation. The *More* agents are the
- * same group; while collapsed they are `hidden`, so the arrows skip them.
+ * `Tab` into the group and a screen reader's "radio button, 3 of 21" all come
+ * from the browser rather than a re-implementation. The search removes tiles
+ * rather than hiding them, so the arrows only walk what is on show.
  */
 function AgentPicker({
   value,
   onChange,
+  query,
+  onQuery,
 }: {
   readonly value: AgentChoice;
   readonly onChange: (id: AgentChoice) => void;
+  readonly query: string;
+  readonly onQuery: (query: string) => void;
 }) {
-  const primary = AGENT_GUIDES.filter((g) => g.primary);
-  const more = AGENT_GUIDES.filter((g) => !g.primary);
-  const [open, setOpen] = useState(() => more.some((g) => g.id === value));
-  /*
-   * Collapsing More never hides the choice (review round 1): with it closed,
-   * the chosen agent — if it lives under More — stays as the one tile shown.
-   */
-  const shownMore = open ? more : more.filter((g) => g.id === value);
+  const groups = groupedAgents(query);
+  const any = guideFor('any');
+  const rest = guideFor('rest');
 
-  const tile = (g: AgentGuide) => (
-    <label key={g.id} className="conn-agent" data-checked={g.id === value}>
+  return (
+    <div className="conn-picker-wrap">
+      <div className="conn-search">
+        <SearchIcon />
+        <input
+          type="search"
+          className="conn-search-input"
+          aria-label="Search agents"
+          placeholder={`Search ${String(AGENT_GUIDES.length)} agents`}
+          value={query}
+          onChange={(event) => {
+            onQuery(event.target.value);
+          }}
+        />
+      </div>
+
+      {/* `radiogroup` on the fieldset, named by its legend: a screen reader then
+          says "Your coding agent, radio group" and counts the tiles. */}
+      <fieldset className="conn-picker" role="radiogroup" aria-labelledby="conn-picker-legend">
+        <legend className="visually-hidden" id="conn-picker-legend">
+          Your coding agent
+        </legend>
+        {groups.map((group) => (
+          <div key={group.id} className="conn-group">
+            <h3 className="conn-group-title">
+              {group.title}
+              <span className="conn-group-count">{group.guides.length}</span>
+            </h3>
+            <div className="conn-agents">
+              {group.guides.map((g) => (
+                <AgentTile key={g.id} guide={g} checked={g.id === value} onChange={onChange} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </fieldset>
+
+      {groups.length === 0 && (
+        <div className="conn-agents-empty" role="status">
+          <p className="conn-body">
+            No agent matches “{query.trim()}”. If yours is not here, it can still connect: choose{' '}
+            <button
+              type="button"
+              className="conn-link-button"
+              onClick={() => {
+                onChange(any.id);
+                onQuery('');
+              }}
+            >
+              {any.name}
+            </button>{' '}
+            if it speaks MCP, or{' '}
+            <button
+              type="button"
+              className="conn-link-button"
+              onClick={() => {
+                onChange(rest.id);
+                onQuery('');
+              }}
+            >
+              {rest.name}
+            </button>{' '}
+            if it does not.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentTile({
+  guide,
+  checked,
+  onChange,
+}: {
+  readonly guide: AgentGuide;
+  readonly checked: boolean;
+  readonly onChange: (id: AgentChoice) => void;
+}) {
+  return (
+    <label className="conn-agent" data-checked={checked}>
       <input
         type="radio"
         name="conn-agent"
         className="conn-agent-input"
-        value={g.id}
-        checked={g.id === value}
+        value={guide.id}
+        checked={checked}
         onChange={() => {
-          onChange(g.id);
+          onChange(guide.id);
         }}
       />
-      <AgentMark client={g.client} size="lg" />
-      <span className="conn-agent-name">{g.name}</span>
-      {g.beta !== undefined && <span className="conn-agent-beta">beta</span>}
+      <AgentMark client={guide.client} size="xl" />
+      <span className="conn-agent-name">{guide.name}</span>
+      {guide.beta !== undefined && <span className="conn-agent-beta">beta</span>}
+      {checked && (
+        <span className="conn-agent-check" aria-hidden="true">
+          <CheckIcon />
+        </span>
+      )}
     </label>
-  );
-
-  return (
-    /* `radiogroup` on the fieldset, named by its legend: a screen reader then
-       says "Your coding agent, radio group" and counts the tiles. */
-    <fieldset
-      className="conn-card conn-picker"
-      role="radiogroup"
-      aria-labelledby="conn-picker-legend"
-    >
-      <legend className="conn-picker-legend" id="conn-picker-legend">
-        Your coding agent
-      </legend>
-      <div className="conn-agents">{primary.map(tile)}</div>
-      <button
-        type="button"
-        className="conn-more"
-        aria-expanded={open}
-        aria-controls="conn-agents-more"
-        onClick={() => {
-          setOpen(!open);
-        }}
-      >
-        {open ? 'Fewer agents' : `More agents (${String(more.length)})`}
-      </button>
-      <div
-        className="conn-agents conn-agents-more"
-        id="conn-agents-more"
-        hidden={shownMore.length === 0}
-      >
-        {shownMore.map(tile)}
-      </div>
-    </fieldset>
   );
 }
 
-/** One copyable block, with its file, its warning and its note. */
+/**
+ * One copyable block, with its file, its warning and its note. The line that
+ * holds the real token is highlighted; the text itself is untouched, so what
+ * the reader sees, selects and copies are the same characters.
+ */
 function SetupBlockView({
   block,
-  minted,
+  secret,
   main = false,
 }: {
   readonly block: SetupBlock;
-  readonly minted: boolean;
+  readonly secret: string | undefined;
   readonly main?: boolean;
 }) {
   const ref = useRef<HTMLPreElement | null>(null);
@@ -702,7 +1026,6 @@ function SetupBlockView({
   const holdsToken = block.token !== 'none';
   return (
     <div className="conn-setup" data-token={block.token}>
-      {block.note !== undefined && main && <p className="conn-body">{block.note}</p>}
       <div className={main ? 'conn-block conn-block-main' : 'conn-block'}>
         <div className="conn-block-bar">
           <span className="conn-block-label" id={labelId}>
@@ -713,8 +1036,8 @@ function SetupBlockView({
             text={block.text}
             selects={ref}
             what={block.what}
-            className={main ? 'conn-copy-primary' : undefined}
-            disabled={holdsToken && !minted}
+            className="conn-copy-primary"
+            disabled={holdsToken && secret === undefined}
             disabledReason="Mint a token first — this carries it"
           />
         </div>
@@ -724,11 +1047,19 @@ function SetupBlockView({
           tabIndex={0}
           aria-labelledby={labelId}
         >
-          {block.text}
+          {commandRuns(block.text, secret).map((run, i) =>
+            run.token ? (
+              <mark key={i} className="conn-token-line">
+                {run.text}
+              </mark>
+            ) : (
+              run.text
+            ),
+          )}
         </pre>
       </div>
       {block.warn !== undefined && <p className="conn-note conn-note-warn">{block.warn}</p>}
-      {block.note !== undefined && !main && <p className="conn-note">{block.note}</p>}
+      {block.note !== undefined && <p className="conn-note conn-info">{block.note}</p>}
     </div>
   );
 }
@@ -755,49 +1086,66 @@ function PathLabel({ text }: { readonly text: string }) {
   );
 }
 
-type StepState = 'done' | 'current' | 'todo';
-
-const STEP_STATE_WORDS: Readonly<Record<StepState, string | undefined>> = {
-  done: 'Done',
-  current: 'Up next',
-  todo: undefined,
-};
-
 /**
- * One rung of the stepper. The marker and the connector line are decoration;
- * the state is said in words beside the title, so it reads without colour and
- * to a screen reader, and the current step carries `aria-current="step"`.
+ * The one-line answer above the live check: a dot, which token, and where the
+ * watch has got to. Colour is never the only signal — the words say it too.
  */
-function Step({
-  n,
-  state,
-  title,
-  children,
+function StatusRow({
+  live,
+  tokenName,
 }: {
-  readonly n: number;
-  readonly state: StepState;
-  readonly title: string;
-  readonly children: ReactNode;
+  readonly live: LiveState;
+  readonly tokenName: string | undefined;
 }) {
-  const words = STEP_STATE_WORDS[state];
+  const ok = live.kind === 'found' || live.kind === 'connected';
+  const dot = ok ? 'ok' : live.kind === 'watching' ? 'waiting' : 'idle';
+  const words = ok
+    ? 'Connected'
+    : live.kind === 'watching'
+      ? 'Waiting for check-in'
+      : live.kind === 'spent'
+        ? 'Not seen yet'
+        : live.kind === 'disabled'
+          ? 'Presence is off'
+          : live.kind === 'error'
+            ? 'Could not check'
+            : 'Not run yet';
   return (
-    <li
-      className="conn-step"
-      data-state={state}
-      {...(state === 'current' ? { 'aria-current': 'step' as const } : {})}
+    <div className="conn-status" data-dot={dot}>
+      <span className="conn-dot" aria-hidden="true" />
+      <span className="conn-status-name">{tokenName ?? 'Any agent session of yours'}</span>
+      <span className="conn-status-words">{words}</span>
+      {ok && <span className="conn-live-pill">Live</span>}
+    </div>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg className="conn-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path
+        d="M3.5 8.5l3 3 6-7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function SearchIcon() {
+  return (
+    <svg
+      className="conn-icon conn-search-icon"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+      focusable="false"
     >
-      <span className="conn-step-n" aria-hidden="true">
-        {state === 'done' ? '✓' : n}
-      </span>
-      <section className="conn-card" aria-labelledby={`conn-step-${String(n)}`}>
-        <h2 className="conn-step-title" id={`conn-step-${String(n)}`}>
-          <span className="visually-hidden">Step {n}: </span>
-          {title}
-          {words !== undefined && <span className="conn-step-state">{words}</span>}
-        </h2>
-        {children}
-      </section>
-    </li>
+      <circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10.5 10.5L14 14" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -818,7 +1166,7 @@ function LiveCheck({
     return (
       <div className="conn-live conn-live-idle">
         <p className="conn-body">
-          Mint a token in step 1 and this watches that exact token reach the board. Brought a token
+          Mint a token in step 2 and this watches that exact token reach the board. Brought a token
           from elsewhere? Watch for any agent session of yours instead.
         </p>
         <button type="button" className="bar-control" onClick={onWatch}>
@@ -840,8 +1188,8 @@ function LiveCheck({
         </p>
         {!byToken && (
           <p className="conn-note">
-            This is the weaker check: an agent you already had running satisfies it. Mint a token
-            above to check that exact one.
+            This is the weaker check: an agent you already had running satisfies it. Mint a token in
+            step 2 to check that exact one.
           </p>
         )}
       </div>

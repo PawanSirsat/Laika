@@ -6,6 +6,11 @@
  * carry the token only once one exists, the committed block never carries it,
  * hiding it takes it off the page, and copy tells the truth on a board with no
  * clipboard API — which is the board Laika is actually deployed on.
+ *
+ * Laid out as a four-step wizard since LAI-740, so a test reaches a step the
+ * way a person does — by the rail, or by Continue — before asserting what is
+ * on it. The assertions about *content* are LAI-622's and LAI-737's,
+ * unchanged.
  */
 
 import assert from 'node:assert/strict';
@@ -116,9 +121,38 @@ const agentSession = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-async function mint(h: Awaited<ReturnType<typeof open>>): Promise<void> {
+type H = Awaited<ReturnType<typeof open>>;
+
+/** Go to a step by its rail button, and wait for its card (LAI-740). */
+async function goTo(h: H, n: 1 | 2 | 3 | 4): Promise<void> {
+  await h.page
+    .locator('.conn-rail-step')
+    .nth(n - 1)
+    .click();
+  await h.page.locator(`.conn-wizard-card[data-step="${String(n)}"]`).waitFor({ timeout: 20_000 });
+}
+
+async function mint(h: H): Promise<void> {
+  await goTo(h, 2);
   await h.page.locator('.conn-mint button').click();
   await h.page.locator('.conn-secret-value').waitFor({ timeout: 20_000 });
+}
+
+/**
+ * The reader who brought a token from Tokens: steps 3 and 4 open without a
+ * mint, and the blocks show the placeholder — the page LAI-622 showed before
+ * anything was minted.
+ */
+async function bring(h: H): Promise<void> {
+  await goTo(h, 2);
+  await h.page.getByRole('button', { name: 'Use a token I already have' }).click();
+}
+
+/** Open step 3's *Other ways*, if this agent has any, so every block is in view. */
+async function everyBlock(h: H): Promise<void> {
+  const other = h.page.locator('details.conn-alt', { hasText: 'Other ways' });
+  if ((await other.count()) === 0) return;
+  if ((await other.getAttribute('open')) === null) await other.locator('summary').click();
 }
 
 after(async () => {
@@ -129,6 +163,8 @@ void describe('before a token exists', () => {
   void test('the page reads, and shows a placeholder rather than a hole', async () => {
     const h = await open('/connect', stub());
     try {
+      await bring(h);
+      await goTo(h, 3);
       await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
 
       const prompt = await h.page.locator('.conn-prompt').innerText();
@@ -145,6 +181,8 @@ void describe('before a token exists', () => {
   void test('the prompt cannot be copied yet, and says why', async () => {
     const h = await open('/connect', stub());
     try {
+      await bring(h);
+      await goTo(h, 3);
       await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
       const copy = h.page.locator('.conn-block').first().locator('.copy-button');
       assert.equal(await copy.isDisabled(), true, 'the prompt offers a copy with no token in it');
@@ -166,6 +204,7 @@ void describe('minting fills the page in', () => {
       await mint(h);
 
       assert.equal(await h.page.locator('.conn-secret-value').innerText(), SECRET);
+      await goTo(h, 3);
       const prompt = await h.page.locator('.conn-prompt').innerText();
       assert.ok(prompt.includes(SECRET), 'the prompt did not take the token');
       assert.match(prompt, /install\.sh/, 'the prompt lost the installer');
@@ -274,6 +313,8 @@ void describe('the live check', () => {
       stub({ '/api/v1/presence': { enabled: true, present: [agentSession({ is_agent: false })] } }),
     );
     try {
+      await bring(h);
+      await goTo(h, 4);
       await h.page.getByRole('button', { name: 'Watch for my session' }).click();
       await h.page.locator('.conn-live-watching').waitFor({ timeout: 20_000 });
       assert.equal(
@@ -292,6 +333,8 @@ void describe('the live check', () => {
       stub({ '/api/v1/presence': { enabled: true, present: [agentSession()] } }),
     );
     try {
+      await bring(h);
+      await goTo(h, 4);
       await h.page.getByRole('button', { name: 'Watch for my session' }).click();
       await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
       const text = await h.page.locator('.conn-live-ok').innerText();
@@ -318,6 +361,7 @@ void describe('the live check', () => {
     );
     try {
       await mint(h);
+      await goTo(h, 4);
       await h.page.locator('.conn-live-watching').waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(6_000);
       assert.equal(
@@ -348,6 +392,7 @@ void describe('the live check', () => {
     );
     try {
       await mint(h);
+      await goTo(h, 4);
       await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
       assert.match(
         await h.page.locator('.conn-live-ok').innerText(),
@@ -385,6 +430,7 @@ void describe('the live check', () => {
     );
     try {
       await mint(h);
+      await goTo(h, 4);
       await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
       assert.match(await h.page.locator('.conn-live-ok').innerText(), /Connected — Omnigent/);
       assert.match(
@@ -401,6 +447,7 @@ void describe('the live check', () => {
     const h = await open('/connect?agent=rest', stub(mints({ last_used_at: MINTED_AT + 5_000 })));
     try {
       await mint(h);
+      await goTo(h, 4);
       await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
       const text = await h.page.locator('.conn-live-ok').innerText();
       assert.match(text, /That is the token you minted here, calling this board\./);
@@ -417,6 +464,7 @@ void describe('the live check', () => {
     );
     try {
       await mint(h);
+      await goTo(h, 4);
       await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
       const text = await h.page.locator('.conn-live-ok').innerText();
       assert.match(text, /weaker/);
@@ -433,6 +481,7 @@ void describe('the live check', () => {
     );
     try {
       await mint(h);
+      await goTo(h, 4);
       await h.page.locator('.conn-live-watching').waitFor({ timeout: 20_000 });
       await h.page.waitForTimeout(6_000);
       assert.equal(await h.page.locator('.conn-live-ok').count(), 0, 'a curl passed for the agent');
@@ -444,6 +493,8 @@ void describe('the live check', () => {
   void test('presence switched off is said, not guessed at', async () => {
     const h = await open('/connect', stub({ '/api/v1/presence': { enabled: false, present: [] } }));
     try {
+      await bring(h);
+      await goTo(h, 4);
       await h.page.getByRole('button', { name: 'Watch for my session' }).click();
       await h.page.locator('.conn-live-disabled').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.conn-live-spent').count(), 0);
@@ -472,22 +523,19 @@ void describe('the agent picker (LAI-737)', () => {
     }
   });
 
-  void test('More reveals the rest, and they are radios of the same group', async () => {
+  void test('every agent is a radio of the one group, and search narrows it (LAI-740)', async () => {
     const h = await open('/connect', stub());
     try {
       await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
-      assert.equal(
-        await h.page.getByRole('radio', { name: 'Kiro', exact: true }).count(),
-        0,
-        'Kiro is not under More',
-      );
-      const more = h.page.locator('.conn-more');
-      assert.equal(await more.getAttribute('aria-expanded'), 'false');
-      await more.click();
-      assert.equal(await more.getAttribute('aria-expanded'), 'true');
+      // No More button any more: all of them are there, under headings.
+      assert.equal(await radios(h).count(), 21);
+      await h.page.getByRole('searchbox', { name: 'Search agents' }).fill('kiro');
+      assert.equal(await radios(h).count(), 1);
       await h.page.getByRole('radio', { name: 'Kiro', exact: true }).check();
       assert.match(await h.page.locator('.conn-steps').innerText(), /Add Laika to Kiro/);
-      assert.match(await h.page.locator('.conn-steps').innerText(), /--allow-http/);
+      await bring(h);
+      await goTo(h, 3);
+      assert.match(await h.page.locator('.conn-wizard-card').innerText(), /--allow-http/);
     } finally {
       await h.close();
     }
@@ -510,9 +558,13 @@ void describe('the agent picker (LAI-737)', () => {
         await h.page.getByRole('radio', { name: 'Codex', exact: true }).isChecked(),
         true,
       );
+      await goTo(h, 2);
       assert.match(await h.page.locator('#conn-token-name').inputValue(), /^codex( on |$)/);
+      await bring(h);
+      await goTo(h, 3);
+      await h.page.getByRole('button', { name: 'By hand', exact: true }).click();
       assert.match(
-        await h.page.locator('.conn-steps').innerText(),
+        await h.page.locator('.conn-wizard-card').innerText(),
         /bearer_token_env_var = "LAIKA_TOKEN"/,
       );
     } finally {
@@ -558,17 +610,25 @@ void describe('the agent picker (LAI-737)', () => {
     const h = await open('/connect?agent=cursor', stub(MINTS));
     try {
       await mint(h);
-      const setups = h.page.locator('.conn-setup');
-      const count = await setups.count();
-      assert.ok(count >= 3, `only ${String(count)} setup blocks rendered`);
-      for (let i = 0; i < count; i += 1) {
-        const one = setups.nth(i);
-        const kind = await one.getAttribute('data-token');
-        const text = await one.locator('pre').innerText();
-        if (kind === 'none')
-          assert.ok(!text.includes(SECRET), `a tokenless block carries it: ${text}`);
-        else assert.match(await one.innerText(), /carries your token/);
+      await goTo(h, 3);
+      let seen = 0;
+      // Both ways of adding it, each with the other ways open beneath (LAI-740).
+      for (const way of ['Automatic', 'By hand']) {
+        await h.page.getByRole('button', { name: way, exact: true }).click();
+        await everyBlock(h);
+        const setups = h.page.locator('.conn-setup');
+        const count = await setups.count();
+        seen += count;
+        for (let i = 0; i < count; i += 1) {
+          const one = setups.nth(i);
+          const kind = await one.getAttribute('data-token');
+          const text = await one.locator('pre').innerText();
+          if (kind === 'none')
+            assert.ok(!text.includes(SECRET), `a tokenless block carries it: ${text}`);
+          else assert.match(await one.innerText(), /carries your token/);
+        }
       }
+      assert.ok(seen >= 3, `only ${String(seen)} setup blocks rendered`);
     } finally {
       await h.close();
     }
@@ -592,14 +652,15 @@ void describe('review round 1', () => {
     }
   });
 
-  void test('the chosen agent stays in view when More is collapsed', async () => {
+  void test('a search that hides the chosen agent does not change the choice (LAI-740)', async () => {
     const h = await open('/connect?agent=kiro', stub());
     try {
       const kiro = h.page.getByRole('radio', { name: 'Kiro', exact: true });
       await kiro.waitFor({ state: 'attached', timeout: 20_000 });
-      await h.page.locator('.conn-more').click();
-      assert.equal(await h.page.locator('.conn-more').getAttribute('aria-expanded'), 'false');
-      assert.equal(await kiro.isVisible(), true, 'collapsing More hid the selected agent');
+      await h.page.getByRole('searchbox', { name: 'Search agents' }).fill('codex');
+      assert.equal(await kiro.count(), 0);
+      assert.match(await h.page.locator('.conn-steps').innerText(), /Add Laika to Kiro/);
+      await h.page.getByRole('searchbox', { name: 'Search agents' }).fill('');
       assert.equal(await kiro.isChecked(), true);
     } finally {
       await h.close();
@@ -609,6 +670,8 @@ void describe('review round 1', () => {
   void test('file paths are shown as typed, not upper-cased', async () => {
     const h = await open('/connect?agent=codex', stub());
     try {
+      await bring(h);
+      await goTo(h, 3);
       const label = h.page.locator('.conn-setup .conn-block-label').first();
       await label.waitFor({ timeout: 20_000 });
       assert.equal(await label.evaluate((el) => getComputedStyle(el).textTransform), 'none');
@@ -631,12 +694,12 @@ void describe('review round 1', () => {
   });
 });
 
-void describe('the page as a stepper (LAI-733)', () => {
+void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
   void test('the header spans the content area, not the centred column', async () => {
     const h = await open('/connect', stub());
     try {
       await h.page.setViewportSize({ width: 1366, height: 900 });
-      await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
+      await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
       const widths = await h.page.evaluate(() => ({
         bar: document.querySelector('.connect .screen-bar')?.getBoundingClientRect().width ?? 0,
         main: document.querySelector('.shell-main')?.clientWidth ?? -1,
@@ -652,28 +715,26 @@ void describe('the page as a stepper (LAI-733)', () => {
     }
   });
 
-  void test('minting ticks step 1 and moves "up next" to step 2', async () => {
+  void test('minting ticks the mint step, and hiding the token does not un-tick it', async () => {
     const h = await open('/connect', stub(MINTS));
     try {
       const steps = h.page.locator('.conn-steps > .conn-step');
-      await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
+      await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
       assert.equal(await steps.count(), 4);
-      assert.equal(await steps.nth(0).getAttribute('aria-current'), 'step');
-      assert.equal(await steps.nth(1).getAttribute('aria-current'), null);
-      assert.match(await steps.nth(0).locator('.conn-step-n').innerText(), /^1$/);
+      assert.equal(await steps.nth(0).locator('button').getAttribute('aria-current'), 'step');
+      assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /^2$/);
 
       await mint(h);
-      assert.equal(await steps.nth(0).getAttribute('data-state'), 'done');
-      assert.match(await steps.nth(0).locator('.conn-step-n').innerText(), /✓/);
-      assert.match(await steps.nth(0).locator('.conn-step-state').innerText(), /Done/);
-      assert.equal(await steps.nth(1).getAttribute('aria-current'), 'step');
-      // Steps 2 and 3 happen where the page cannot see; nothing ticks them.
+      assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /✓/);
+      assert.equal(await steps.nth(1).locator('button').getAttribute('aria-current'), 'step');
+      assert.match(await steps.nth(1).locator('.conn-rail-sub').innerText(), /claude-code/);
+      // Step 3 happens on the reader's machine; minting does not tick it.
       assert.equal(await steps.nth(2).getAttribute('data-state'), 'todo');
 
-      // Hiding the token does not un-mint it.
       await h.page.locator('.conn-hide').click();
       await h.page.locator('.conn-forgotten').waitFor({ timeout: 10_000 });
-      assert.equal(await steps.nth(0).getAttribute('data-state'), 'done');
+      assert.match(await steps.nth(1).locator('.conn-step-n').innerText(), /✓/);
+      assert.equal(await steps.nth(2).locator('button').isDisabled(), false);
     } finally {
       await h.close();
     }
@@ -683,14 +744,19 @@ void describe('the page as a stepper (LAI-733)', () => {
     const h = await open('/connect', stub(MINTS));
     try {
       await mint(h);
-      for (const name of [
-        'Copy the board URL',
-        'Copy the token',
-        'Copy the setup prompt',
-        'Copy the install commands',
-        'Copy the laika-claude command',
-        'Copy the CLAUDE.md block',
-      ]) {
+      // Each where it now lives (LAI-740): the header and the lead's block on
+      // every step, the token on step 2, the setup on step 3, the start on 4.
+      const where: readonly [1 | 2 | 3 | 4, string, string?][] = [
+        [2, 'Copy the board URL'],
+        [2, 'Copy the token'],
+        [2, 'Copy the CLAUDE.md block'],
+        [3, 'Copy the setup prompt', 'Automatic'],
+        [3, 'Copy the install commands', 'By hand'],
+        [4, 'Copy the laika-claude command'],
+      ];
+      for (const [n, name, way] of where) {
+        await goTo(h, n);
+        if (way !== undefined) await h.page.getByRole('button', { name: way, exact: true }).click();
         assert.equal(
           await h.page.getByRole('button', { name, exact: true }).count(),
           1,
@@ -722,6 +788,7 @@ void describe('the page as a stepper (LAI-733)', () => {
     });
     try {
       await mint(h);
+      await goTo(h, 3);
       const copy = h.page.getByRole('button', { name: 'Copy the setup prompt', exact: true });
       await copy.click();
       const done = h.page.getByRole('button', { name: 'Copied the setup prompt', exact: true });
@@ -735,6 +802,255 @@ void describe('the page as a stepper (LAI-733)', () => {
       assert.equal(copied.length, 1);
       assert.equal(copied[0], await h.page.locator('.conn-prompt').innerText());
       assert.ok(copied[0]?.includes(SECRET), 'the copied prompt lost the token');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the wizard (LAI-740)', () => {
+  void test('Continue and Back walk the steps, and focus lands on the new step', async () => {
+    const h = await open('/connect?agent=codex', stub(MINTS));
+    try {
+      const card = h.page.locator('.conn-wizard-card');
+      await card.waitFor({ timeout: 20_000 });
+      assert.equal(await card.getAttribute('data-step'), '1');
+      assert.match(await h.page.locator('.conn-eyebrow').innerText(), /step 1 of 4/i);
+      assert.equal(await h.page.locator('.conn-back').isDisabled(), true);
+      assert.match(await h.page.locator('.conn-foot-hint').innerText(), /Continue with Codex/);
+
+      await h.page.locator('.conn-continue').click();
+      assert.equal(await card.getAttribute('data-step'), '2');
+      assert.equal(
+        await h.page.evaluate(() => document.activeElement?.id),
+        'conn-step-title',
+        'focus stayed on a button that may no longer mean anything',
+      );
+      assert.equal(await h.page.locator('#conn-step-title').innerText(), 'Mint a token');
+
+      await h.page.locator('.conn-back').click();
+      assert.equal(await card.getAttribute('data-step'), '1');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('CONTROL: steps 3 and 4 stay locked until a token is minted', async () => {
+    const h = await open('/connect', stub(MINTS));
+    try {
+      const rail = h.page.locator('.conn-rail-step');
+      await rail.first().waitFor({ timeout: 20_000 });
+      assert.deepEqual(await Promise.all([0, 1, 2, 3].map((i) => rail.nth(i).isDisabled())), [
+        false,
+        false,
+        true,
+        true,
+      ]);
+
+      await goTo(h, 2);
+      const next = h.page.locator('.conn-continue');
+      assert.equal(await next.isDisabled(), true, 'Continue went past an unminted token');
+      assert.match(await h.page.locator('.conn-foot-hint').innerText(), /Mint a token to continue/);
+
+      await h.page.locator('.conn-mint button').click();
+      await h.page.locator('.conn-secret-value').waitFor({ timeout: 20_000 });
+      assert.equal(await next.isDisabled(), false);
+      assert.equal(await rail.nth(2).isDisabled(), false);
+      assert.equal(await rail.nth(3).isDisabled(), false);
+      await next.click();
+      assert.equal(await h.page.locator('.conn-wizard-card').getAttribute('data-step'), '3');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the line carrying the real token is highlighted, and only after a mint', async () => {
+    const h = await open('/connect', stub(MINTS));
+    try {
+      await bring(h);
+      await goTo(h, 3);
+      await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.locator('.conn-token-line').count(),
+        0,
+        'a placeholder was highlighted as a token',
+      );
+
+      await mint(h);
+      await goTo(h, 3);
+      // Every line that carries it, and no other: the prompt names it on its
+      // Token: line, feeds it to the installer, and curls with it.
+      const prompt = await h.page.locator('.conn-prompt').innerText();
+      const lines = prompt.split('\n').filter((line) => line.includes(SECRET)).length;
+      const marked = await h.page.locator('.conn-prompt .conn-token-line').allInnerTexts();
+      assert.equal(marked.length, lines);
+      assert.ok(lines >= 1);
+      for (const text of marked)
+        assert.ok(text.includes(SECRET), `marked without the token: ${text}`);
+      assert.match(marked[0] ?? '', /^Token:/);
+      // The highlight is decoration: the block's text is what it was.
+      assert.doesNotMatch(await h.page.locator('.conn-prompt').innerText(), /undefined/);
+      // Lines wrap rather than scroll sideways.
+      const pre = await h.page.locator('.conn-prompt').evaluate((el) => ({
+        ws: getComputedStyle(el).whiteSpace,
+        ox: getComputedStyle(el).overflowX,
+      }));
+      assert.equal(pre.ws, 'pre-wrap');
+      assert.equal(pre.ox, 'hidden');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('copying a block says so on the rail', async () => {
+    const h = await open('/connect', stub(MINTS), {
+      before: async (page) => {
+        await page.addInitScript(() => {
+          Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: () => Promise.resolve() },
+          });
+        });
+      },
+    });
+    try {
+      await mint(h);
+      await goTo(h, 3);
+      const sub = h.page.locator('.conn-rail-sub').nth(2);
+      assert.equal(await sub.innerText(), 'Not copied yet');
+      await h.page.getByRole('button', { name: 'Copy the setup prompt', exact: true }).click();
+      await h.page
+        .getByRole('button', { name: 'Copied the setup prompt', exact: true })
+        .waitFor({ timeout: 10_000 });
+      assert.equal(await sub.innerText(), 'Command copied');
+      assert.match(await h.page.locator('.conn-steps .conn-step-n').nth(2).innerText(), /✓/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('connected: the status row goes live and offers the board or another agent', async () => {
+    const h = await open(
+      '/connect?agent=codex',
+      stub(
+        mints({
+          last_mcp_at: MINTED_AT + 5_000,
+          last_client: 'codex',
+          last_client_name: 'codex-mcp-client',
+        }),
+      ),
+    );
+    try {
+      await mint(h);
+      await goTo(h, 4);
+      await h.page.locator('.conn-live-pill').waitFor({ timeout: 20_000 });
+      const row = h.page.locator('.conn-status');
+      assert.equal(await row.getAttribute('data-dot'), 'ok');
+      assert.match(await row.innerText(), /claude-code on macOS/);
+      assert.equal(
+        await h.page.getByRole('link', { name: 'Open the board' }).getAttribute('href'),
+        '/board',
+      );
+
+      await h.page.getByRole('button', { name: 'Connect another agent' }).click();
+      assert.equal(await h.page.locator('.conn-wizard-card').getAttribute('data-step'), '1');
+      assert.equal(await h.page.locator('.conn-rail-step').nth(2).isDisabled(), true);
+      assert.ok(!(await h.page.locator('body').innerText()).includes(SECRET));
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an empty search points at Any MCP client and No MCP, and they choose', async () => {
+    const h = await open('/connect', stub());
+    try {
+      const search = h.page.getByRole('searchbox', { name: 'Search agents' });
+      await search.waitFor({ timeout: 20_000 });
+      assert.equal(await search.getAttribute('placeholder'), 'Search 21 agents');
+      await search.fill('teleporter');
+      const empty = h.page.locator('.conn-agents-empty');
+      assert.match(await empty.innerText(), /Any MCP client/);
+      assert.match(await empty.innerText(), /No MCP \(REST \/ CLI\)/);
+      await empty.getByRole('button', { name: 'Any MCP client' }).click();
+      assert.equal(
+        await h.page.getByRole('radio', { name: 'Any MCP client', exact: true }).isChecked(),
+        true,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('every agent is drawn with its real mark, as inline SVG, and nothing is fetched', async () => {
+    const elsewhere: string[] = [];
+    const h = await open('/connect', stub(), {
+      before: (page) => {
+        page.on('request', (request) => {
+          if (!request.url().startsWith('http://127.0.0.1') && !request.url().startsWith('data:'))
+            elsewhere.push(request.url());
+        });
+        return Promise.resolve();
+      },
+    });
+    try {
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      const tiles = h.page.locator('.conn-agent');
+      const count = await tiles.count();
+      assert.equal(count, 21);
+      const monograms: string[] = [];
+      for (let i = 0; i < count; i += 1) {
+        const tile = tiles.nth(i);
+        const value = (await tile.locator('input').getAttribute('value')) ?? '';
+        const mark = tile.locator('.agent-mark');
+        assert.equal(
+          await mark.getAttribute('aria-hidden'),
+          'true',
+          `${value}'s mark is announced`,
+        );
+        const svgs = await mark.locator('svg path').count();
+        if (svgs === 0) monograms.push(value);
+        else
+          assert.equal(
+            await mark.locator('img, image, use').count(),
+            0,
+            `${value} references a file`,
+          );
+      }
+      // `any` and `rest` are not brands: they are drawn as *another agent*.
+      assert.deepEqual(monograms.sort(), ['any', 'rest']);
+      // The name is the text; the mark adds none.
+      assert.equal(
+        await h.page.getByRole('radio', { name: 'Claude Code', exact: true }).count(),
+        1,
+      );
+      assert.deepEqual(elsewhere, [], 'the page asked another origin for something');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('at 390px the rail sits above the card and nothing scrolls sideways', async () => {
+    const h = await open('/connect', stub(MINTS));
+    try {
+      await h.page.setViewportSize({ width: 390, height: 900 });
+      await mint(h);
+      await goTo(h, 3);
+      await h.page.waitForTimeout(300);
+      const layout = await h.page.evaluate(() => ({
+        over: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        rail: document.querySelector('.conn-rail')?.getBoundingClientRect().bottom ?? 0,
+        card: document.querySelector('.conn-wizard-card')?.getBoundingClientRect().top ?? 0,
+        pre: [...document.querySelectorAll('.conn-pre')].map(
+          (el) => el.scrollWidth - el.clientWidth,
+        ),
+      }));
+      assert.equal(layout.over, 0, `the page scrolls ${String(layout.over)}px sideways`);
+      assert.ok(layout.rail <= layout.card, 'the rail is not above the card');
+      assert.deepEqual(
+        layout.pre.filter((d) => d > 0),
+        [],
+        'a command block scrolls sideways',
+      );
     } finally {
       await h.close();
     }

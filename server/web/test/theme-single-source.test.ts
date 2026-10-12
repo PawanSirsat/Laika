@@ -24,7 +24,16 @@ const THEME = 'styles/theme.css';
  * theme: it takes the light/dark branch, and its text colour is
  * `var(--on-accent)`.
  */
-const EXEMPT = ['theme/avatar-color.ts'];
+const EXEMPT = [
+  'theme/avatar-color.ts',
+  /*
+   * LAI-740. Vendored brand marks: each colour is the vendor's, copied with
+   * its path data, and a theme has no business changing it — a recoloured
+   * logo is not the logo. The tile behind them is a token (`--logo-tile`),
+   * so the theme still decides everything around the mark.
+   */
+  'components/agent-mark/agent-logos.ts',
+];
 
 const COLOUR = /#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(/;
 

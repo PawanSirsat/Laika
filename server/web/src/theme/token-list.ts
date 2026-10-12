@@ -80,6 +80,11 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
     tokens: ['--chip-neutral', '--chip-neutral-bg', '--chip-neutral-border'],
   },
   {
+    title: 'Brand-mark tile',
+    note: 'The light tile an agent’s real logo sits on, in both themes, and the ink for single-colour marks (LAI-740).',
+    tokens: ['--logo-tile', '--logo-tile-border', '--logo-ink'],
+  },
+  {
     title: 'Priority',
     note: 'The three dot colours.',
     tokens: ['--priority-high', '--priority-medium', '--priority-low'],

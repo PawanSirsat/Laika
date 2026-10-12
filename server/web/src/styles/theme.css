@@ -98,6 +98,12 @@
   --chip-neutral-bg: #141418;
   --chip-neutral-border: rgba(255, 255, 255, 0.08);
 
+  /* ---- brand-mark tile (LAI-740): light in both themes, so every vendor's
+     own colours keep their contrast; ink draws the single-colour marks ---- */
+  --logo-tile: #eef0f6;
+  --logo-tile-border: rgba(255, 255, 255, 0.2);
+  --logo-ink: #171a21;
+
   /* ---- priority: filled high and medium, muted low ---- */
   --priority-high: #f4636d;
   --priority-medium: #f0ac47;
@@ -160,6 +166,10 @@
   --chip-neutral: #5a6070;
   --chip-neutral-bg: #e7e9f1;
   --chip-neutral-border: rgba(15, 23, 42, 0.09);
+
+  --logo-tile: #ffffff;
+  --logo-tile-border: rgba(15, 23, 42, 0.09);
+  --logo-ink: #171a21;
 
   --priority-high: #c42630;
   --priority-medium: #8f5a08;

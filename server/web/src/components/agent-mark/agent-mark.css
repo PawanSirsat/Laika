@@ -76,3 +76,27 @@
   background: var(--chip-purple-bg);
   color: var(--chip-purple);
 }
+
+/* ---------------------------------------------------- real marks (LAI-740) */
+/* The vendor's own colours on a light tile in both themes; single-colour marks
+   draw in --logo-ink. Tokens only, like the monograms above. */
+
+.agent-mark-logo {
+  border-color: var(--logo-tile-border);
+  background: var(--logo-tile);
+  color: var(--logo-ink);
+  overflow: hidden;
+}
+
+.agent-mark-svg {
+  display: block;
+  width: 70%;
+  height: 70%;
+}
+
+.agent-mark-xl {
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+}
