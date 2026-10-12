@@ -171,3 +171,39 @@ branch to `git mv`.
 
 LAI-264, LAI-289, LAI-613 and LAI-618 describe the board-columns model this
 retires (D-077). For CHIEF to close at review.
+
+## Fix before review completes — 2026-10-12 (549aecf)
+
+Requested: 0028 must never fail on production data.
+
+- **Was:** a fixed ` (2)` suffix. Run against the previous 0028, a project
+  with a column already called `Review (2)` aborts the migration with
+  `UNIQUE constraint failed: index 'project_statuses_project_name_unique'`.
+- **Now:** a recursive CTE gives names per project one row at a time,
+  carrying the lower-cased names already taken (JSON, so any character is
+  safe). A row keeps its name if it is free, else takes the first free of
+  `name (2)`, `name (3)`, … `name (n+1)`, cut so the result is at most 40.
+  One is always free (pigeonhole: n candidates, at most n-1 taken).
+  Uniqueness is checked with `lower()`, the function the index uses.
+- **Changed outcome:** names a person chose are given before generated
+  labels, so on a clash the **generated** label moves. The earlier test
+  expected the lead's `review` column to become `review (2)`; it now keeps
+  `review` and the generated `Review` becomes `Review (2)`.
+- **Every other constraint met by construction:** positions from ROW_NUMBER
+  (dense, unique); `hidden` clamped to 0/1; a blank column name falls back to
+  the category label; only columns of existing projects are read; every
+  project, archived or not and with tasks or without, gets all six
+  categories, so every task finds a status.
+- **Tests added** (`server/test/db/project-statuses.test.ts`): an existing
+  `Review (2)` pushes the generated label to `Review (3)`; two 39-character
+  names that differ only in case give `q×36 (2)`, exactly 40; an archived
+  project and a project with no tasks; two projects with the same clashes,
+  named independently, with `foreign_key_check` empty. Against the old 0028,
+  three tests fail on the UNIQUE constraint. Capping the suffix search at
+  `(2)` makes two fail on `NOT NULL constraint failed: project_statuses.name`.
+- **Gate:** `pnpm lint` → 0 and `pnpm format` → 0 (root, after the last
+  edit). `server/` `pnpm test` → 1: 2298 test cases collected, 2294 pass. The
+  failures are the same two `response-type-coverage` PAIRS checks as before
+  (web half) and two `build.test.ts` *built server never became healthy*
+  load timeouts. `build.test.ts` alone passes 15/15, and the full run before
+  prettier's whitespace-only change had no build failures (2296 pass, 2 fail).
