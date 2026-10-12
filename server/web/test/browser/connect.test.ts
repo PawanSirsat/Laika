@@ -16,7 +16,8 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import { pick } from './dropdown.ts';
-import { closeBrowser, open, type ApiStub } from './harness.ts';
+import { closeBrowser, open, setTheme, type ApiStub } from './harness.ts';
+import { setupBlocks } from '../../src/routes/screens/connect/connect-agents.ts';
 
 const SECRET = 'lai_ThisIsTheWholeSecretAndMustNotRenderTwice';
 
@@ -148,6 +149,23 @@ async function bring(h: H): Promise<void> {
   await h.page.getByRole('button', { name: 'Use a token I already have' }).click();
 }
 
+/** Open one of the rail's optional entries in the card (LAI-741). */
+async function openExtra(h: H, name: string): Promise<void> {
+  await h.page.locator('.conn-rail-extra', { hasText: name }).click();
+  await h.page.locator('.conn-wizard-card[data-extra]').waitFor({ timeout: 20_000 });
+}
+
+/** The setup prompt exactly as `connect-agents.ts` builds it for this page. */
+function promptText(origin: string, secret: string | undefined): string {
+  const block = setupBlocks('claude-code', {
+    origin,
+    secret,
+    project: { slug: ONROUTE.slug, prefix: ONROUTE.prefix, name: ONROUTE.name },
+  }).find((b) => b.key === 'claude-prompt');
+  assert.ok(block !== undefined, 'no claude-prompt block');
+  return block.text;
+}
+
 /** Open step 3's *Other ways*, if this agent has any, so every block is in view. */
 async function everyBlock(h: H): Promise<void> {
   const other = h.page.locator('details.conn-alt', { hasText: 'Other ways' });
@@ -231,6 +249,7 @@ void describe('minting fills the page in', () => {
     const h = await open('/connect', stub(MINTS));
     try {
       await mint(h);
+      await openExtra(h, 'Share with your project');
       const block = await h.page.locator('.conn-project-block').innerText();
       assert.ok(!block.includes(SECRET), 'the secret reached the committed block');
       assert.doesNotMatch(block, /lai_/, 'a token shape reached the committed block');
@@ -258,6 +277,7 @@ void describe('minting fills the page in', () => {
   void test('the block follows the project picker', async () => {
     const h = await open('/connect', stub(MINTS));
     try {
+      await openExtra(h, 'Share with your project');
       await h.page.locator('.conn-project-block').waitFor({ timeout: 20_000 });
       await pick(h.page.locator('#conn-project'), 'skynet');
       await h.page.waitForFunction(
@@ -580,6 +600,7 @@ void describe('the agent picker (LAI-737)', () => {
         await h.page.getByRole('radio', { name: 'Gemini CLI', exact: true }).isChecked(),
         true,
       );
+      await openExtra(h, 'Share with your project');
       assert.match(await h.page.locator('.conn-project-block').innerText(), /Laika/);
       assert.match(await h.page.locator('.conn-extra').first().innerText(), /GEMINI\.md/);
 
@@ -683,6 +704,7 @@ void describe('review round 1', () => {
   void test('Claude Desktop is told to paste the block into its UI, not to commit a file', async () => {
     const h = await open('/connect?agent=claude-desktop', stub());
     try {
+      await openExtra(h, 'Share with your project');
       const lead = h.page.locator('.conn-extra').first();
       await lead.locator('.conn-project-block').waitFor({ timeout: 20_000 });
       const text = await lead.innerText();
@@ -744,12 +766,18 @@ void describe('the page as a stepper (LAI-733, a wizard since LAI-740)', () => {
     const h = await open('/connect', stub(MINTS));
     try {
       await mint(h);
-      // Each where it now lives (LAI-740): the header and the lead's block on
-      // every step, the token on step 2, the setup on step 3, the start on 4.
+      // Each where it now lives (LAI-740): the header on every step, the token
+      // on step 2, the setup on step 3, the start on 4 — and the lead's block
+      // behind *Share with your project* since LAI-741.
+      await openExtra(h, 'Share with your project');
+      assert.equal(
+        await h.page.getByRole('button', { name: 'Copy the CLAUDE.md block', exact: true }).count(),
+        1,
+        'no button named "Copy the CLAUDE.md block"',
+      );
       const where: readonly [1 | 2 | 3 | 4, string, string?][] = [
         [2, 'Copy the board URL'],
         [2, 'Copy the token'],
-        [2, 'Copy the CLAUDE.md block'],
         [3, 'Copy the setup prompt', 'Automatic'],
         [3, 'Copy the install commands', 'By hand'],
         [4, 'Copy the laika-claude command'],
@@ -888,8 +916,9 @@ void describe('the wizard (LAI-740)', () => {
       for (const text of marked)
         assert.ok(text.includes(SECRET), `marked without the token: ${text}`);
       assert.match(marked[0] ?? '', /^Token:/);
-      // The highlight is decoration: the block's text is what it was.
-      assert.doesNotMatch(await h.page.locator('.conn-prompt').innerText(), /undefined/);
+      // The highlight is decoration: the block's text is what it was, to the
+      // byte (LAI-741 — "no undefined" was a sample of that, not the claim).
+      assert.equal(prompt, promptText(h.origin, SECRET));
       // Lines wrap rather than scroll sideways.
       const pre = await h.page.locator('.conn-prompt').evaluate((el) => ({
         ws: getComputedStyle(el).whiteSpace,
@@ -1057,6 +1086,397 @@ void describe('the wizard (LAI-740)', () => {
         [],
         'a command block scrolls sideways',
       );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a fixed rail, the optional entries, and the review follow-ups (LAI-741)', () => {
+  /** Where the things that must not move are, and what the scrollers hold. */
+  const measure = (h: H) =>
+    h.page.evaluate(() => {
+      const top = (sel: string) => document.querySelector(sel)?.getBoundingClientRect().top ?? -1;
+      const main = document.querySelector('.shell-main');
+      const scroller = document.querySelector('.conn-card-scroll');
+      return {
+        doc: document.documentElement.scrollHeight,
+        viewport: window.innerHeight,
+        mainOver: main === null ? -1 : main.scrollHeight - main.clientHeight,
+        bar: top('.connect .screen-bar'),
+        rail: top('.conn-rail'),
+        foot: document.querySelector('.conn-card-foot')?.getBoundingClientRect().bottom ?? -1,
+        cardOver: scroller === null ? -1 : scroller.scrollHeight - scroller.clientHeight,
+        scrolled: scroller?.scrollTop ?? -1,
+      };
+    });
+
+  void test('on a desktop only the card scrolls: the rail and header stay, the footer is pinned', async () => {
+    const h = await open('/connect', stub());
+    try {
+      for (const [width, height] of [
+        [1366, 768],
+        [1920, 1080],
+      ] as const) {
+        await h.page.setViewportSize({ width, height });
+        await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+        await h.page.waitForTimeout(200);
+        const size = `${String(width)}x${String(height)}`;
+        // The sidebar is open at this width: the shell's rail is on screen.
+        assert.ok(
+          ((await h.page.locator('#sidebar').boundingBox())?.width ?? 0) > 100,
+          `${size}: no open sidebar`,
+        );
+        const before = await measure(h);
+        assert.equal(before.doc, before.viewport, `${size}: the document scrolls`);
+        assert.equal(before.mainOver, 0, `${size}: the shell's scroller has something to scroll`);
+        assert.ok(before.foot <= before.viewport, `${size}: the footer is below the fold`);
+        if (width === 1366) {
+          // Step 1's list is taller than the card here: the card scrolls, nothing else.
+          assert.ok(before.cardOver > 0, 'the agent list fits — the test proves nothing');
+          await h.page
+            .locator('.conn-card-scroll')
+            .evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+          await h.page.waitForTimeout(200);
+          const after = await measure(h);
+          assert.ok(after.scrolled > 0, 'the card did not scroll');
+          assert.equal(after.rail, before.rail, 'the rail moved');
+          assert.equal(after.bar, before.bar, 'the header moved');
+          assert.equal(after.foot, before.foot, 'the footer moved');
+          assert.ok(
+            await h.page.locator('.conn-card-foot .conn-continue').isVisible(),
+            'Continue scrolled away',
+          );
+        }
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('at 390px nothing is pinned: the page scrolls, the card does not', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(200);
+      const m = await measure(h);
+      assert.ok(m.mainOver > 0, 'the page does not scroll on a phone');
+      assert.equal(m.cardOver, 0, 'the card is a scroller inside the scrolling page');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the optional entries open in the card, uncounted, and Back to steps returns', async () => {
+    const h = await open('/connect', stub(MINTS));
+    try {
+      await mint(h);
+      await goTo(h, 3);
+      const rows = h.page.locator('.conn-rail-extra');
+      assert.deepEqual(await rows.allInnerTexts(), [
+        'Share with your project',
+        'What agents can do',
+        'Invite a teammate',
+      ]);
+      // Never numbered, never locked, and the four steps are still four.
+      assert.equal(await h.page.locator('.conn-optional .conn-step-n').count(), 0);
+      assert.equal(await h.page.locator('.conn-steps > .conn-step').count(), 4);
+
+      const card = h.page.locator('.conn-wizard-card');
+      const expect: readonly [string, RegExp][] = [
+        ['Share with your project', /For the project lead|Commit this to CLAUDE\.md/],
+        [
+          'What agents can do',
+          /Eighteen tools[\s\S]*Find work[\s\S]*Three rules the board enforces/i,
+        ],
+        ['Invite a teammate', /Organisation issues an invite link/],
+      ];
+      for (const [name, body] of expect) {
+        await openExtra(h, name);
+        assert.equal((await card.getAttribute('data-extra')) !== null, true);
+        assert.equal(await h.page.locator('.conn-eyebrow').innerText(), 'OPTIONAL');
+        assert.equal(await h.page.locator('#conn-step-title').innerText(), name);
+        assert.match(await h.page.locator('.conn-card-body').innerText(), body);
+        assert.equal(
+          await h.page.locator('.conn-rail-extra[aria-current]').innerText(),
+          name,
+          'the open entry is not marked current',
+        );
+        assert.equal(
+          await h.page.locator('.conn-rail-step[aria-current="step"]').count(),
+          0,
+          'a step still claims to be current',
+        );
+        assert.equal(await h.page.locator('.conn-continue').count(), 0);
+        assert.equal(
+          await h.page.evaluate(() => document.activeElement?.id),
+          'conn-step-title',
+          'focus did not follow to the opened entry',
+        );
+      }
+
+      await h.page.getByRole('button', { name: 'Back to steps' }).click();
+      assert.equal(await card.getAttribute('data-step'), '3', 'Back to steps lost the step');
+      assert.match(await h.page.locator('.conn-eyebrow').innerText(), /step 3 of 4/i);
+      assert.equal(await card.getAttribute('data-extra'), null);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('nothing sits on the page outside the rail and the card', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.locator('.conn-wizard-card').waitFor({ timeout: 20_000 });
+      const outside = await h.page.evaluate(() => ({
+        page: [...document.querySelectorAll('.conn-page > *')].map((el) => el.className),
+        wizard: [...document.querySelectorAll('.conn-wizard > *')].map((el) => el.className),
+      }));
+      assert.deepEqual(outside.page, ['conn-wizard']);
+      assert.deepEqual(outside.wizard, ['conn-rail', 'conn-card conn-wizard-card']);
+      const body = await h.page.locator('.connect').innerText();
+      assert.doesNotMatch(body, /Eighteen tools|You can add people/, 'an optional section is out');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a viewer who cannot invite sees no Invite entry', async () => {
+    const h = await open('/connect', stub({ '/api/v1/me': { ...ME, org_role: 'member' } }));
+    try {
+      await h.page.locator('.conn-rail-extra').first().waitFor({ timeout: 20_000 });
+      assert.deepEqual(await h.page.locator('.conn-rail-extra').allInnerTexts(), [
+        'Share with your project',
+        'What agents can do',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('connected, step 4 offers Share with your project as the next thing', async () => {
+    const h = await open(
+      '/connect?agent=codex',
+      stub(mints({ last_mcp_at: MINTED_AT + 5_000, last_client: 'codex' })),
+    );
+    try {
+      await mint(h);
+      await goTo(h, 4);
+      await h.page.locator('.conn-live-pill').waitFor({ timeout: 20_000 });
+      await h.page
+        .locator('.conn-done-actions')
+        .getByRole('button', { name: 'Share with your project' })
+        .click();
+      assert.equal(await h.page.locator('.conn-wizard-card').getAttribute('data-extra'), 'share');
+      await h.page.getByRole('button', { name: 'Back to steps' }).click();
+      assert.equal(await h.page.locator('.conn-wizard-card').getAttribute('data-step'), '4');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('C1: Use a token I already have hands focus to Continue, not to the page', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await bring(h);
+      await h.page.waitForFunction(
+        () => document.activeElement?.classList.contains('conn-continue') === true,
+        undefined,
+        { timeout: 5_000 },
+      );
+      assert.equal(await h.page.locator('.conn-continue').isDisabled(), false);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('C2: the minted token is an alert once, on the mint, not on every return', async () => {
+    const h = await open('/connect', stub(MINTS));
+    try {
+      await mint(h);
+      assert.equal(await h.page.locator('.conn-secret').getAttribute('role'), 'alert');
+      await goTo(h, 3);
+      await goTo(h, 2);
+      await h.page.locator('.conn-secret').waitFor({ timeout: 10_000 });
+      assert.equal(
+        await h.page.locator('.conn-secret').getAttribute('role'),
+        null,
+        'the token box announced itself again',
+      );
+      assert.equal(await h.page.locator('[role="alert"]').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('C3: a refused clipboard does not count as copied', async () => {
+    const h = await open('/connect', stub(MINTS), {
+      before: async (page) => {
+        await page.addInitScript(() => {
+          Object.defineProperty(navigator, 'clipboard', { value: undefined, configurable: true });
+        });
+      },
+    });
+    try {
+      await mint(h);
+      await goTo(h, 3);
+      await h.page.getByRole('button', { name: 'Copy the setup prompt', exact: true }).click();
+      await h.page.locator('.conn-block-main .copy-button[data-outcome="select"]').waitFor({
+        timeout: 10_000,
+      });
+      assert.equal(await h.page.locator('.conn-rail-sub').nth(2).innerText(), 'Not copied yet');
+      assert.match(await h.page.locator('.conn-steps .conn-step-n').nth(2).innerText(), /^3$/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('C3: a copy from Other ways is not the command', async () => {
+    const h = await open('/connect', stub(MINTS), {
+      before: async (page) => {
+        await page.addInitScript(() => {
+          Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: { writeText: () => Promise.resolve() },
+          });
+        });
+      },
+    });
+    try {
+      await mint(h);
+      await goTo(h, 3);
+      await everyBlock(h);
+      const other = h.page.locator('details.conn-alt .copy-button').first();
+      await other.click();
+      await h.page
+        .locator('details.conn-alt .copy-button[data-outcome="copied"]')
+        .waitFor({ timeout: 10_000 });
+      assert.equal(await h.page.locator('.conn-rail-sub').nth(2).innerText(), 'Not copied yet');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('C4: under the automatic block, a link switches to By hand', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await bring(h);
+      await goTo(h, 3);
+      const link = h.page.getByRole('button', { name: 'Switch to By hand', exact: true });
+      assert.match(
+        await h.page.locator('.conn-switch').innerText(),
+        /^Prefer to do it by hand\? Switch to By hand$/,
+      );
+      // It sits below the automatic block, not above it.
+      assert.ok(
+        await h.page.evaluate(() => {
+          const block = document.querySelector('.conn-block-main');
+          const line = document.querySelector('.conn-switch');
+          return (
+            block !== null &&
+            line !== null &&
+            (block.compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+          );
+        }),
+      );
+      await link.click();
+      const hand = h.page.getByRole('button', { name: 'By hand', exact: true });
+      assert.equal(await hand.getAttribute('aria-pressed'), 'true');
+      assert.equal(await h.page.locator('.conn-switch').count(), 0);
+      assert.equal(
+        await h.page.evaluate(() => document.activeElement?.textContent),
+        'By hand',
+        'focus fell to the page when the link went',
+      );
+      assert.match(await h.page.locator('.conn-wizard-card').innerText(), /install\.sh/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('C5: a note that introduces its block sits above it; a follow-up stays below', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await bring(h);
+      await goTo(h, 3);
+      const order = (key: string) =>
+        h.page.evaluate((k) => {
+          const pre = document.querySelector(`.conn-block-${k}`);
+          const setup = pre?.closest('.conn-setup');
+          const block = setup?.querySelector('.conn-block');
+          const note = setup?.querySelector('.conn-intro, .conn-info');
+          if (block === null || block === undefined || note === null || note === undefined)
+            return 'missing';
+          return (block.compareDocumentPosition(note) & Node.DOCUMENT_POSITION_PRECEDING) !== 0
+            ? 'above'
+            : 'below';
+        }, key);
+      assert.equal(await order('claude-prompt'), 'above');
+      assert.match(
+        await h.page.locator('.conn-intro').first().innerText(),
+        /^Open Claude Code in your project folder/,
+      );
+      await h.page.getByRole('button', { name: 'By hand', exact: true }).click();
+      assert.equal(await order('claude-manual'), 'below');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('C6: a wrapped line hangs under its start, and the text is untouched', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.setViewportSize({ width: 390, height: 844 });
+      await bring(h);
+      await goTo(h, 3);
+      await h.page.locator('.conn-prompt').waitFor({ timeout: 20_000 });
+      const hangs = await h.page.locator('.conn-prompt').evaluate((pre) => {
+        const node = pre.firstChild;
+        if (node === null || node.nodeType !== Node.TEXT_NODE || pre.childNodes.length !== 1)
+          return { wrapped: 0, flush: -1 };
+        const text = node.textContent ?? '';
+        let wrapped = 0;
+        let flush = 0;
+        let start = 0;
+        for (const line of text.split('\n')) {
+          const range = document.createRange();
+          range.setStart(node, start);
+          range.setEnd(node, start + line.length);
+          start += line.length + 1;
+          // One rect per visual row of this logical line.
+          const rows = [...range.getClientRects()].filter((r) => r.width > 0);
+          if (rows.length < 2) continue;
+          wrapped += 1;
+          const first = rows[0]?.left ?? 0;
+          if (rows.slice(1).some((r) => r.left <= first + 1)) flush += 1;
+        }
+        return { wrapped, flush };
+      });
+      assert.ok(hangs.wrapped > 0, 'no line wrapped at 390px — the test proves nothing');
+      assert.equal(hangs.flush, 0, 'a wrapped continuation starts where a new line would');
+      assert.equal(
+        await h.page.locator('.conn-prompt').innerText(),
+        promptText(h.origin, undefined),
+        'the indent changed the text',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('in light and in dark, the screen fits 1366x768 without scrolling', async () => {
+    // Both themes at the size the owner named; the layout must not depend on one.
+    const h = await open('/connect', stub());
+    try {
+      await h.page.setViewportSize({ width: 1366, height: 768 });
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      for (const theme of ['Light', 'Dark']) {
+        await setTheme(h.page, theme);
+        const m = await measure(h);
+        assert.equal(m.doc, m.viewport, `${theme}: the document scrolls`);
+        assert.equal(m.mainOver, 0, `${theme}: the shell scrolls`);
+      }
     } finally {
       await h.close();
     }

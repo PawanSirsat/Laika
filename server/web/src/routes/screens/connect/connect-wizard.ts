@@ -233,3 +233,51 @@ export function railLabel(step: WizardStep, s: RailState): string {
       return s.connected ? 'Connected' : s.watching ? 'Waiting for check-in' : 'Not checked yet';
   }
 }
+
+/**
+ * Where a block's note sits (LAI-741). A recommended block's note *introduces*
+ * it — Claude Code's "Open Claude Code in your project folder… and paste
+ * this" is the instruction for the block, not a remark about it — so it reads
+ * above, as it did before LAI-740. Every other note follows up and stays below.
+ */
+export function noteAbove(block: SetupBlock): boolean {
+  return block.group === 'recommended';
+}
+
+/**
+ * The rail's second group (LAI-741): what used to sit below the wizard, folded
+ * into it. Never locked and never counted in *Step n of 4* — none of it is
+ * needed to connect.
+ */
+export type ExtraId = 'share' | 'tools' | 'invite';
+
+export interface Extra {
+  readonly id: ExtraId;
+  /** The rail row's name, and the card's title. */
+  readonly name: string;
+  /** The card's one-line description. */
+  readonly line: string;
+}
+
+export const EXTRAS: readonly Extra[] = [
+  {
+    id: 'share',
+    name: 'Share with your project',
+    line: 'For the project lead: one block that puts every session in this project.',
+  },
+  {
+    id: 'tools',
+    name: 'What agents can do',
+    line: 'The tools a connected agent gets, and the rules the board holds it to.',
+  },
+  {
+    id: 'invite',
+    name: 'Invite a teammate',
+    line: 'Everyone connects with a token of their own.',
+  },
+];
+
+/** The extras this reader sees: *Invite a teammate* only for someone who can invite. */
+export function extrasFor(canInvite: boolean): readonly Extra[] {
+  return EXTRAS.filter((extra) => extra.id !== 'invite' || canInvite);
+}

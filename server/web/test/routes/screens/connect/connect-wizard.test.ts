@@ -17,8 +17,11 @@ import {
   AGENT_GROUPS,
   canContinue,
   commandRuns,
+  EXTRAS,
+  extrasFor,
   footerHint,
   groupedAgents,
+  noteAbove,
   railLabel,
   requirementChips,
   setupModes,
@@ -196,5 +199,40 @@ void describe('step 3’s toggle and chips', () => {
       );
     }
     assert.equal(requirementChips([], 'api')[0], 'REST API');
+  });
+});
+
+void describe('the optional entries and the notes (LAI-741)', () => {
+  void test('three extras, Invite only for someone who can invite', () => {
+    assert.deepEqual(
+      EXTRAS.map((e) => e.name),
+      ['Share with your project', 'What agents can do', 'Invite a teammate'],
+    );
+    assert.deepEqual(
+      extrasFor(false).map((e) => e.id),
+      ['share', 'tools'],
+    );
+    assert.deepEqual(
+      extrasFor(true).map((e) => e.id),
+      ['share', 'tools', 'invite'],
+    );
+  });
+
+  void test('a recommended block’s note introduces it; every other note follows', () => {
+    const blocks = setupBlocks('claude-code', {
+      origin: ORIGIN,
+      secret: undefined,
+      project: undefined,
+    });
+    const above = blocks.filter((b) => noteAbove(b)).map((b) => b.key);
+    assert.deepEqual(above, ['claude-prompt']);
+    for (const guide of AGENT_GUIDES) {
+      for (const b of setupBlocks(guide.id, {
+        origin: ORIGIN,
+        secret: undefined,
+        project: undefined,
+      }))
+        assert.equal(noteAbove(b), b.group === 'recommended', `${guide.id}/${b.key}`);
+    }
   });
 });

@@ -12,6 +12,10 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* LAI-741: exactly the height of `.shell-main`, so the shell's scroller never
+     has anything to scroll — the card body is the one that does. */
+  height: 100%;
+  min-height: 0;
 }
 
 .conn-page {
@@ -19,10 +23,12 @@
   width: 100%;
   max-width: 68rem;
   margin-inline: auto;
-  padding: var(--space-5) var(--space-4) var(--space-6);
+  padding: var(--space-5) var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ------------------------------------------------------------- header */
@@ -315,6 +321,9 @@
   line-height: 1.7;
   color: var(--text-primary);
   white-space: pre-wrap;
+  /* LAI-741: a wrapped line hangs under its own start, so its continuation can
+     never be read as the next command. Layout only — the text is untouched. */
+  text-indent: 2ch hanging each-line;
   /* Long enough to read, short enough that the page is still scannable. */
   max-height: 22rem;
 }
@@ -635,8 +644,12 @@
 .conn-wizard {
   display: grid;
   grid-template-columns: 17.5rem minmax(0, 1fr);
+  /* LAI-741: one row exactly the page's height; the rail and the card fill it. */
+  grid-template-rows: minmax(0, 1fr);
   gap: var(--space-5);
-  align-items: start;
+  align-items: stretch;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 /* ------------------------------------------------------------------ rail */
@@ -646,6 +659,9 @@
   flex-direction: column;
   gap: var(--space-3);
   min-width: 0;
+  min-height: 0;
+  /* Only on a screen too short for the rail itself; otherwise it never moves. */
+  overflow-y: auto;
 }
 
 .conn-rail-intro {
@@ -755,6 +771,54 @@
   color: var(--text-muted);
 }
 
+/* The optional entries (LAI-741): set apart from the steps, never numbered. */
+.conn-optional {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.conn-optional-label {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-heavy);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.conn-optional-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.conn-optional-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-pill);
+  background: var(--bg-column);
+  color: var(--text-secondary);
+}
+
+.conn-optional-row[data-state='current'] .conn-optional-icon {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
 /* ------------------------------------------------------------------ card */
 
 .conn-wizard-card {
@@ -762,6 +826,19 @@
   padding: 0;
   border-radius: var(--radius-column);
   overflow: hidden;
+  min-height: 0;
+}
+
+/* The card's one scroller (LAI-741): the head scrolls with the body, and the
+   footer — a sibling, not a child — stays pinned beneath it. */
+.conn-card-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.conn-card-foot {
+  flex: none;
 }
 
 .conn-card-head {
@@ -1181,7 +1258,21 @@
 .conn-done-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: var(--space-2);
+}
+
+.conn-next-share {
+  margin-left: var(--space-2);
+}
+
+/* ------------------------------------------------- the optional entries */
+
+.conn-extra {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
 }
 
 /* ---------------------------------------------------------------- narrow */
@@ -1193,9 +1284,26 @@
 }
 
 @media (max-width: 56rem) {
+  /* Stacked, the page scrolls as any other does (LAI-741): nothing is pinned. */
+  .connect {
+    height: auto;
+  }
+
+  .conn-page {
+    flex: none;
+    padding-bottom: var(--space-6);
+  }
+
   .conn-wizard {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: none;
     gap: var(--space-4);
+    flex: none;
+  }
+
+  .conn-rail,
+  .conn-card-scroll {
+    overflow: visible;
   }
 }
 

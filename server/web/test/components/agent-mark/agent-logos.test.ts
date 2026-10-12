@@ -80,16 +80,17 @@ void describe('provenance', () => {
     for (const source of sources) {
       assert.ok(NOTICE.includes(source), `NOTICE.md does not record ${source}`);
     }
-    const listed = [...NOTICE.matchAll(/`([a-z-]+)`\s*\|/g)].map((m) => m[1]);
-    for (const slug of listed) {
-      assert.ok(
-        slug !== undefined && (slug === 'other' || slug in AGENT_LOGOS),
-        `NOTICE.md lists ${String(slug)}, which has no mark`,
-      );
-    }
-    assert.ok(
-      listed.length >= Object.keys(AGENT_LOGOS).length,
-      'NOTICE.md lists fewer marks than ship',
+    // As sets, not counts (LAI-741): a count is satisfied by one slug listed
+    // twice and another missing. `other` is the monogram, listed and not drawn.
+    const listed = new Set(
+      [...NOTICE.matchAll(/`([a-z-]+)`\s*\|/g)]
+        .map((m) => m[1] ?? '')
+        .filter((slug) => slug !== 'other'),
+    );
+    assert.deepEqual(
+      [...listed].sort(),
+      Object.keys(AGENT_LOGOS).sort(),
+      'NOTICE.md and the shipped marks name different slugs',
     );
   });
 });

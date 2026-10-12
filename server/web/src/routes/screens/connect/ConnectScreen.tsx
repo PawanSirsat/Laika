@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { CopyButton } from '../../../components/CopyButton.tsx';
@@ -46,13 +46,16 @@ import { suggestTokenName } from './connect-token-name.ts';
 import {
   canContinue,
   commandRuns,
+  extrasFor,
   footerHint,
   groupedAgents,
+  noteAbove,
   railLabel,
   requirementChips,
   setupModes,
   stepOpen,
   WIZARD_STEPS,
+  type ExtraId,
   type SetupMode,
   type WizardStep,
 } from './connect-wizard.ts';
@@ -86,6 +89,14 @@ import './connect.css';
  * only where they sit. Steps 3 and 4 open once a token exists, or once the
  * reader says they brought one from Tokens, which keeps the presence watch
  * for that reader reachable.
+ *
+ * ## Only the card scrolls (LAI-741)
+ *
+ * On a desktop the screen is exactly as tall as the space under the app
+ * shell: the header and the rail never move, and the card's body is the one
+ * scroller, with its *Back / Continue* footer pinned below it. What used to
+ * sit under the wizard — the lead's block, the tool reference, the invite —
+ * is a second group on the rail, opened in the same card.
  */
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
@@ -160,6 +171,20 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
   const [setupMode, setSetupMode] = useState<SetupMode>('auto');
   const moved = useRef(false);
   const titleRef = useRef<HTMLHeadingElement | null>(null);
+  /** An optional entry open in the card (LAI-741); `step` is where *Back to steps* returns. */
+  const [extra, setExtra] = useState<ExtraId | undefined>(undefined);
+  /*
+   * The minted-token box is an alert once, on the mint (LAI-741). As a
+   * standing `role="alert"` it was announced again on every return to step 2.
+   */
+  const [freshMint, setFreshMint] = useState(false);
+  const continueRef = useRef<HTMLButtonElement | null>(null);
+  const focusContinue = useRef(false);
+  const segmentsRef = useRef<HTMLDivElement | null>(null);
+  const focusMode = useRef(false);
+  const markCopied = useCallback(() => {
+    setCopied(true);
+  }, []);
 
   /*
    * Remembered whichever way it was chosen — a click, the keyboard, or a link
@@ -242,6 +267,7 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     })
       .then((created) => {
         setRevealed(created);
+        setFreshMint(true);
         setMinted({
           id: created.token.id,
           created_at: created.token.created_at,
@@ -356,8 +382,21 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     const target = next as WizardStep;
     if (!stepOpen(target, ready)) return;
     moved.current = true;
+    setFreshMint(false);
+    setExtra(undefined);
     setStep(target);
   };
+
+  /** Open an optional entry in the card; *Back to steps* closes it. */
+  const openExtra = (id: ExtraId | undefined): void => {
+    moved.current = true;
+    setFreshMint(false);
+    setExtra(id);
+  };
+
+  const canInvite = me !== undefined && canManageOrg(me.org_role);
+  const extras = extrasFor(canInvite);
+  const openedExtra = extras.find((e) => e.id === extra);
 
   /*
    * A step change moves focus to the new card's title, so a keyboard or
@@ -369,7 +408,25 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     if (!moved.current) return;
     moved.current = false;
     titleRef.current?.focus();
-  }, [step]);
+  }, [step, extra]);
+
+  /*
+   * *Use a token I already have* removes itself, and focus would fall to
+   * `body` with it (LAI-741). It goes to *Continue*, which that click just
+   * opened — the next thing the reader does.
+   */
+  useEffect(() => {
+    if (!focusContinue.current) return;
+    focusContinue.current = false;
+    continueRef.current?.focus();
+  }, [brought]);
+
+  /* The same for *Switch to By hand*: focus follows to the toggle it flipped. */
+  useEffect(() => {
+    if (!focusMode.current) return;
+    focusMode.current = false;
+    segmentsRef.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+  }, [setupMode]);
 
   /** *Connect another agent*: back to step 1, with a fresh token to mint. */
   const again = (): void => {
@@ -437,14 +494,15 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
             <ol className="conn-steps">
               {WIZARD_STEPS.map((n) => {
                 const open = stepOpen(n, ready);
-                const state = n === step ? 'current' : done[n] ? 'done' : 'todo';
+                const here = n === step && openedExtra === undefined;
+                const state = here ? 'current' : done[n] ? 'done' : 'todo';
                 return (
                   <li key={n} className="conn-step" data-state={state} data-locked={!open}>
                     <button
                       type="button"
                       className="conn-rail-step"
                       disabled={!open}
-                      {...(n === step ? { 'aria-current': 'step' as const } : {})}
+                      {...(here ? { 'aria-current': 'step' as const } : {})}
                       {...(!open ? { title: 'Mint a token first' } : {})}
                       onClick={() => {
                         go(n);
@@ -465,416 +523,527 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                 );
               })}
             </ol>
+
+            <div className="conn-optional">
+              <p className="conn-optional-label" id="conn-optional-label">
+                Optional
+              </p>
+              <ul className="conn-optional-list" aria-labelledby="conn-optional-label">
+                {extras.map((e) => {
+                  const here = e.id === openedExtra?.id;
+                  return (
+                    <li
+                      key={e.id}
+                      className="conn-step conn-optional-row"
+                      data-state={here ? 'current' : 'todo'}
+                    >
+                      <button
+                        type="button"
+                        className="conn-rail-step conn-rail-extra"
+                        data-extra={e.id}
+                        {...(here ? { 'aria-current': 'page' as const } : {})}
+                        onClick={() => {
+                          openExtra(e.id);
+                        }}
+                      >
+                        <span className="conn-optional-icon" aria-hidden="true">
+                          <ExtraIcon id={e.id} />
+                        </span>
+                        <span className="conn-rail-text">
+                          <span className="conn-rail-name">{e.name}</span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </nav>
 
           {/* ------------------------------------------------------ the card */}
           <section
             className="conn-card conn-wizard-card"
             aria-labelledby="conn-step-title"
-            data-step={step}
+            {...(openedExtra === undefined
+              ? { 'data-step': step }
+              : { 'data-extra': openedExtra.id })}
           >
-            <header className="conn-card-head">
-              <p className="conn-eyebrow">Step {step} of 4</p>
-              <h2 className="conn-card-title" id="conn-step-title" tabIndex={-1} ref={titleRef}>
-                {stepName(step)}
-              </h2>
-              <p className="conn-card-line">{stepLine[step]}</p>
-            </header>
+            {/* The one scroller on a desktop (LAI-741); the footer stays below it. */}
+            <div className="conn-card-scroll">
+              <header className="conn-card-head">
+                <p className="conn-eyebrow">
+                  {openedExtra === undefined ? `Step ${String(step)} of 4` : 'Optional'}
+                </p>
+                <h2 className="conn-card-title" id="conn-step-title" tabIndex={-1} ref={titleRef}>
+                  {openedExtra === undefined ? stepName(step) : openedExtra.name}
+                </h2>
+                <p className="conn-card-line">
+                  {openedExtra === undefined ? stepLine[step] : openedExtra.line}
+                </p>
+              </header>
 
-            <div className="conn-card-body">
-              {step === 1 && (
-                <AgentPicker value={guide.id} onChange={choose} query={query} onQuery={setQuery} />
-              )}
-
-              {step === 2 && (
-                <>
-                  {viewerOnly && (
-                    <p className="conn-note conn-note-warn">
-                      Your organisation role reads the board and writes nothing, so this token will
-                      too. An agent holding it can see tasks but cannot claim or finish them.
-                    </p>
-                  )}
-
-                  <div className="conn-mint">
-                    <label className="conn-label" htmlFor="conn-token-name">
-                      Token name
-                    </label>
-                    <div className="conn-mint-row">
-                      <input
-                        id="conn-token-name"
-                        className="conn-input"
-                        value={name}
-                        onChange={(event) => {
-                          nameTouched.current = true;
-                          setName(event.target.value);
-                        }}
-                      />
-                      <button
-                        type="button"
-                        className="bar-control bar-control-primary conn-mint-button"
-                        disabled={pending || me === undefined}
-                        aria-busy={pending}
-                        onClick={mint}
-                      >
-                        {pending && <Spinner size="sm" />}
-                        Mint a token
-                      </button>
-                    </div>
-                    <p className="conn-note">
-                      It carries your permissions, so give it a name you will recognise on the
-                      Tokens screen a year from now. The name starts with your agent, which is how
-                      the board recognises an agent that does not introduce itself.
-                    </p>
-                  </div>
-
-                  {mintError !== undefined && (
-                    <p className="conn-error" role="alert">
-                      {mintError}
-                    </p>
-                  )}
-
-                  {secret !== undefined && (
-                    <div className="conn-secret" role="alert">
-                      <h3 className="conn-secret-title">
-                        <CheckIcon />
-                        Token minted
-                      </h3>
-                      <div className="conn-secret-row">
-                        <code className="conn-secret-value">{secret}</code>
-                        <div className="conn-secret-actions">
-                          <CopyButton
-                            text={secret}
-                            what="the token"
-                            className="conn-copy-primary"
-                          />
-                          <button
-                            type="button"
-                            className="conn-hide"
-                            onClick={() => {
-                              forget();
-                            }}
-                          >
-                            Hide the token
-                          </button>
-                        </div>
-                      </div>
-                      <p className="conn-note">
-                        <strong>Copy it now — it is not shown again.</strong> Laika keeps a hash,
-                        not the secret, so nobody — including an administrator — can show it to you
-                        again. It expires in 90 days. If you lose it, revoke it on Tokens and mint
-                        another.
-                      </p>
-                      <p className="conn-note">
-                        The blocks in step 3 marked <em>carries your token</em> now include it —
-                        paste them only into your own terminal, shell profile or agent. Every config
-                        that can read it from <code>LAIKA_TOKEN</code> does, and carries no token at
-                        all. Revoking it on Tokens stops it working immediately.
-                      </p>
-                    </div>
-                  )}
-
-                  {forgotten && secret === undefined && (
-                    <p className="conn-note conn-forgotten">
-                      The token is gone from this page. Mint another, or revoke the old one on
-                      Tokens.
-                    </p>
-                  )}
-
-                  {!ready && (
-                    <p className="conn-note conn-brought">
-                      Brought a token from Tokens?{' '}
-                      <button
-                        type="button"
-                        className="conn-link-button"
-                        onClick={() => {
-                          setBrought(true);
-                        }}
-                      >
-                        Use a token I already have
-                      </button>
-                    </p>
-                  )}
-                </>
-              )}
-
-              {step === 3 && (
-                <div
-                  className="conn-setup-step"
-                  onClickCapture={(event) => {
-                    const target = event.target as HTMLElement;
-                    if (target.closest('.copy-button') !== null) setCopied(true);
-                  }}
-                >
-                  {guide.beta !== undefined && (
-                    <p className="conn-note conn-note-warn conn-beta">{guide.beta}</p>
-                  )}
-
-                  <div className="conn-setup-bar">
-                    {modes.length > 1 ? (
-                      <div className="conn-segmented" role="group" aria-label="How to add it">
-                        {modes.map((m) => (
-                          <button
-                            key={m}
-                            type="button"
-                            className="conn-segment"
-                            aria-pressed={m === mode}
-                            onClick={() => {
-                              setSetupMode(m);
-                            }}
-                          >
-                            {m === 'auto' ? 'Automatic' : 'By hand'}
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <span className="conn-setup-mode">
-                        {mode === 'auto' ? 'Automatic' : 'By hand'}
-                      </span>
-                    )}
-                    <ul className="conn-chips" aria-label="What this needs">
-                      {requirementChips(shown, guide.via).map((chip) => (
-                        <li key={chip} className="conn-chip">
-                          {chip}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  {shown.map((b) => (
-                    <SetupBlockView key={b.key} block={b} secret={secret} main />
-                  ))}
-
-                  {alternative.length > 0 && (
-                    <details className="conn-alt">
-                      <summary>Other ways</summary>
-                      {alternative.map((b) => (
-                        <SetupBlockView key={b.key} block={b} secret={secret} />
-                      ))}
-                    </details>
-                  )}
-
-                  {carriesToken && secret === undefined && (
-                    <p className="conn-note conn-info">
-                      Blocks that carry your token show a placeholder until you mint one in step 2.
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {step === 4 && (
-                <>
-                  <div className="conn-start">
-                    <h3 className="conn-sub-title">Start {guide.name}</h3>
-                    <p className="conn-body">{start.body}</p>
-                    {start.command !== undefined && (
-                      <div className="conn-block">
-                        <div className="conn-block-bar">
-                          <span className="conn-block-label">Terminal</span>
-                          <CopyButton
-                            text={start.command}
-                            what={start.commandWhat ?? 'the command'}
-                            className="conn-copy-primary"
-                          />
-                        </div>
-                        <pre className="conn-pre">{start.command}</pre>
-                      </div>
-                    )}
-                  </div>
-
-                  <StatusRow live={live} tokenName={minted?.name} />
-
-                  <LiveCheck
-                    live={live}
-                    guide={guide}
-                    byToken={minted !== undefined}
-                    onWatch={() => {
-                      ticks.current = 0;
-                      setLive({ kind: 'watching', ticks: 0 });
-                    }}
+              <div className="conn-card-body">
+                {openedExtra === undefined && step === 1 && (
+                  <AgentPicker
+                    value={guide.id}
+                    onChange={choose}
+                    query={query}
+                    onQuery={setQuery}
                   />
+                )}
 
-                  {!connected && live.kind !== 'spent' && (
-                    <details className="conn-alt conn-help">
-                      <summary>Nothing after a minute?</summary>
-                      <ul className="conn-causes">
-                        {likelyCauses(guide.id).map((cause) => (
-                          <li key={cause}>{cause}</li>
+                {openedExtra === undefined && step === 2 && (
+                  <>
+                    {viewerOnly && (
+                      <p className="conn-note conn-note-warn">
+                        Your organisation role reads the board and writes nothing, so this token
+                        will too. An agent holding it can see tasks but cannot claim or finish them.
+                      </p>
+                    )}
+
+                    <div className="conn-mint">
+                      <label className="conn-label" htmlFor="conn-token-name">
+                        Token name
+                      </label>
+                      <div className="conn-mint-row">
+                        <input
+                          id="conn-token-name"
+                          className="conn-input"
+                          value={name}
+                          onChange={(event) => {
+                            nameTouched.current = true;
+                            setName(event.target.value);
+                          }}
+                        />
+                        <button
+                          type="button"
+                          className="bar-control bar-control-primary conn-mint-button"
+                          disabled={pending || me === undefined}
+                          aria-busy={pending}
+                          onClick={mint}
+                        >
+                          {pending && <Spinner size="sm" />}
+                          Mint a token
+                        </button>
+                      </div>
+                      <p className="conn-note">
+                        It carries your permissions, so give it a name you will recognise on the
+                        Tokens screen a year from now. The name starts with your agent, which is how
+                        the board recognises an agent that does not introduce itself.
+                      </p>
+                    </div>
+
+                    {mintError !== undefined && (
+                      <p className="conn-error" role="alert">
+                        {mintError}
+                      </p>
+                    )}
+
+                    {secret !== undefined && (
+                      <div className="conn-secret" {...(freshMint ? { role: 'alert' } : {})}>
+                        <h3 className="conn-secret-title">
+                          <CheckIcon />
+                          Token minted
+                        </h3>
+                        <div className="conn-secret-row">
+                          <code className="conn-secret-value">{secret}</code>
+                          <div className="conn-secret-actions">
+                            <CopyButton
+                              text={secret}
+                              what="the token"
+                              className="conn-copy-primary"
+                            />
+                            <button
+                              type="button"
+                              className="conn-hide"
+                              onClick={() => {
+                                forget();
+                              }}
+                            >
+                              Hide the token
+                            </button>
+                          </div>
+                        </div>
+                        <p className="conn-note">
+                          <strong>Copy it now — it is not shown again.</strong> Laika keeps a hash,
+                          not the secret, so nobody — including an administrator — can show it to
+                          you again. It expires in 90 days. If you lose it, revoke it on Tokens and
+                          mint another.
+                        </p>
+                        <p className="conn-note">
+                          The blocks in step 3 marked <em>carries your token</em> now include it —
+                          paste them only into your own terminal, shell profile or agent. Every
+                          config that can read it from <code>LAIKA_TOKEN</code> does, and carries no
+                          token at all. Revoking it on Tokens stops it working immediately.
+                        </p>
+                      </div>
+                    )}
+
+                    {forgotten && secret === undefined && (
+                      <p className="conn-note conn-forgotten">
+                        The token is gone from this page. Mint another, or revoke the old one on
+                        Tokens.
+                      </p>
+                    )}
+
+                    {!ready && (
+                      <p className="conn-note conn-brought">
+                        Brought a token from Tokens?{' '}
+                        <button
+                          type="button"
+                          className="conn-link-button"
+                          onClick={() => {
+                            focusContinue.current = true;
+                            setBrought(true);
+                          }}
+                        >
+                          Use a token I already have
+                        </button>
+                      </p>
+                    )}
+                  </>
+                )}
+
+                {openedExtra === undefined && step === 3 && (
+                  <div className="conn-setup-step">
+                    {guide.beta !== undefined && (
+                      <p className="conn-note conn-note-warn conn-beta">{guide.beta}</p>
+                    )}
+
+                    <div className="conn-setup-bar">
+                      {modes.length > 1 ? (
+                        <div
+                          className="conn-segmented"
+                          role="group"
+                          aria-label="How to add it"
+                          ref={segmentsRef}
+                        >
+                          {modes.map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              className="conn-segment"
+                              aria-pressed={m === mode}
+                              onClick={() => {
+                                setSetupMode(m);
+                              }}
+                            >
+                              {m === 'auto' ? 'Automatic' : 'By hand'}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="conn-setup-mode">
+                          {mode === 'auto' ? 'Automatic' : 'By hand'}
+                        </span>
+                      )}
+                      <ul className="conn-chips" aria-label="What this needs">
+                        {requirementChips(shown, guide.via).map((chip) => (
+                          <li key={chip} className="conn-chip">
+                            {chip}
+                          </li>
                         ))}
                       </ul>
-                    </details>
-                  )}
-
-                  {connected && (
-                    <div className="conn-done-actions">
-                      <a className="conn-primary-link" href="/board">
-                        Open the board
-                      </a>
-                      <button type="button" className="conn-outline" onClick={again}>
-                        Connect another agent
-                      </button>
                     </div>
-                  )}
-                </>
-              )}
+
+                    {shown.map((b) => (
+                      <SetupBlockView
+                        key={b.key}
+                        block={b}
+                        secret={secret}
+                        main
+                        onCopied={markCopied}
+                      />
+                    ))}
+
+                    {mode === 'auto' && modes.includes('hand') && (
+                      <p className="conn-note conn-switch">
+                        Prefer to do it by hand?{' '}
+                        <button
+                          type="button"
+                          className="conn-link-button"
+                          onClick={() => {
+                            focusMode.current = true;
+                            setSetupMode('hand');
+                          }}
+                        >
+                          Switch to By hand
+                        </button>
+                      </p>
+                    )}
+
+                    {alternative.length > 0 && (
+                      <details className="conn-alt">
+                        <summary>Other ways</summary>
+                        {alternative.map((b) => (
+                          <SetupBlockView key={b.key} block={b} secret={secret} />
+                        ))}
+                      </details>
+                    )}
+
+                    {carriesToken && secret === undefined && (
+                      <p className="conn-note conn-info">
+                        Blocks that carry your token show a placeholder until you mint one in step
+                        2.
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                {openedExtra === undefined && step === 4 && (
+                  <>
+                    <div className="conn-start">
+                      <h3 className="conn-sub-title">Start {guide.name}</h3>
+                      <p className="conn-body">{start.body}</p>
+                      {start.command !== undefined && (
+                        <div className="conn-block">
+                          <div className="conn-block-bar">
+                            <span className="conn-block-label">Terminal</span>
+                            <CopyButton
+                              text={start.command}
+                              what={start.commandWhat ?? 'the command'}
+                              className="conn-copy-primary"
+                            />
+                          </div>
+                          <pre className="conn-pre">{start.command}</pre>
+                        </div>
+                      )}
+                    </div>
+
+                    <StatusRow live={live} tokenName={minted?.name} />
+
+                    <LiveCheck
+                      live={live}
+                      guide={guide}
+                      byToken={minted !== undefined}
+                      onWatch={() => {
+                        ticks.current = 0;
+                        setLive({ kind: 'watching', ticks: 0 });
+                      }}
+                    />
+
+                    {!connected && live.kind !== 'spent' && (
+                      <details className="conn-alt conn-help">
+                        <summary>Nothing after a minute?</summary>
+                        <ul className="conn-causes">
+                          {likelyCauses(guide.id).map((cause) => (
+                            <li key={cause}>{cause}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+
+                    {connected && (
+                      <div className="conn-done-actions">
+                        <a className="conn-primary-link" href="/board">
+                          Open the board
+                        </a>
+                        <button type="button" className="conn-outline" onClick={again}>
+                          Connect another agent
+                        </button>
+                        <button
+                          type="button"
+                          className="conn-link-button conn-next-share"
+                          onClick={() => {
+                            openExtra('share');
+                          }}
+                        >
+                          Share with your project
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {openedExtra?.id === 'share' && (
+                  <div className="conn-extra" data-extra="share">
+                    {target.committable ? (
+                      <p className="conn-body">
+                        Commit this to <code>{target.path}</code> in the project, and every{' '}
+                        {guide.name} session that opens the repo works the board without being told
+                        how. It carries no token. The same rules reach every agent from the board
+                        itself when it connects; this adds the project they belong to.
+                      </p>
+                    ) : (
+                      <p className="conn-body">
+                        {guide.name} has no instructions file. Paste this into the Project
+                        instructions of the project you work in, and every chat there works the
+                        board without being told how. It carries no token.
+                      </p>
+                    )}
+                    {target.note !== undefined && <p className="conn-note">{target.note}</p>}
+
+                    {projects.status === 'loading' ? (
+                      <LoadingState shape="row" count={1} label="Loading your projects" />
+                    ) : projects.status === 'error' ? (
+                      <ApiErrorState
+                        error={projects.error}
+                        resource="your projects"
+                        scope="organisation"
+                      />
+                    ) : block === undefined || project === undefined ? (
+                      <EmptyState
+                        headline="No project to mirror work into"
+                        body="Setup still works without one — a session can connect and report in. Create a project and this block fills in with its slug."
+                      />
+                    ) : (
+                      <>
+                        <div className="conn-field">
+                          <label className="conn-label" htmlFor="conn-project">
+                            Project
+                          </label>
+                          {/* The product's own picker, not a native <select> (LAI-726). */}
+                          <Dropdown
+                            id="conn-project"
+                            variant="bare"
+                            className="conn-select"
+                            noun="projects"
+                            value={project.slug}
+                            options={projects.projects
+                              .filter((row): row is typeof row & { slug: string } => 'slug' in row)
+                              .map((row) => ({ value: row.slug, label: row.name }))}
+                            onChange={(next) => {
+                              setSlug(next);
+                            }}
+                          />
+                        </div>
+
+                        <div className="conn-block">
+                          <div className="conn-block-bar">
+                            <span className="conn-block-label" id="conn-project-block-label">
+                              {target.path} — carries no token
+                            </span>
+                            <CopyButton
+                              text={block}
+                              selects={blockRef}
+                              what={`the ${target.path} block`}
+                            />
+                          </div>
+                          <pre
+                            className="conn-pre conn-project-block"
+                            ref={blockRef}
+                            tabIndex={0}
+                            aria-labelledby="conn-project-block-label"
+                          >
+                            {block}
+                          </pre>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {openedExtra?.id === 'tools' && (
+                  <div className="conn-extra conn-reference" data-extra="tools">
+                    <p className="conn-body">
+                      Eighteen tools, served by this board at <code>{origin}/mcp</code> over
+                      Streamable HTTP with a bearer token, under the same permissions you have in
+                      the browser.
+                    </p>
+                    <dl className="conn-tools">
+                      <div className="conn-tool-row">
+                        <dt>Find work</dt>
+                        <dd>
+                          <code>laika_whoami</code> <code>list_projects</code>{' '}
+                          <code>get_project_context</code> <code>list_ready_tasks</code>{' '}
+                          <code>get_task_context</code> <code>list_sprints</code>{' '}
+                          <code>list_members</code>
+                        </dd>
+                      </div>
+                      <div className="conn-tool-row">
+                        <dt>Do work</dt>
+                        <dd>
+                          <code>create_task</code> <code>start_working</code>{' '}
+                          <code>update_status</code> <code>update_task</code>{' '}
+                          <code>set_task_sprint</code> <code>add_comment</code>{' '}
+                          <code>finish_task</code>
+                        </dd>
+                      </div>
+                      <div className="conn-tool-row">
+                        <dt>Run the board</dt>
+                        <dd>
+                          <code>create_sprint</code> <code>update_sprint</code>{' '}
+                          <code>update_project_context</code> <code>log_unlisted_work</code>
+                        </dd>
+                      </div>
+                    </dl>
+                    <p className="conn-note">
+                      Three rules the board enforces rather than suggests: claiming a task is
+                      first-come, so a refusal means somebody already has it;{' '}
+                      <code>finish_task</code> moves work to <strong>review</strong>, never to done,
+                      because a human closes it; and a read-only token reads every one of these
+                      tools and writes none.
+                    </p>
+                  </div>
+                )}
+
+                {openedExtra?.id === 'invite' && (
+                  <div className="conn-extra" data-extra="invite">
+                    <p className="conn-body">
+                      You can add people. <a href="/organisation">Organisation</a> issues an invite
+                      link; they accept it, mint their own token on this page, and appear on
+                      Capacity beside you. Tokens are personal — the board attributes every action
+                      and every live session to whoever owns the token, so a shared one makes the
+                      board lie about who did what.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <footer className="conn-card-foot">
-              <button
-                type="button"
-                className="conn-outline conn-back"
-                disabled={step === 1}
-                onClick={() => {
-                  go(step - 1);
-                }}
-              >
-                Back
-              </button>
-              <p className="conn-foot-hint">
-                {footerHint(step, {
-                  ready,
-                  mintedHere,
-                  copied,
-                  connected,
-                  agentName: guide.name,
-                })}
-              </p>
-              {step < 4 && (
-                <button
-                  type="button"
-                  className="conn-continue"
-                  disabled={!canContinue(step, ready)}
-                  onClick={() => {
-                    go(step + 1);
-                  }}
-                >
-                  Continue <span aria-hidden="true">→</span>
-                </button>
+              {openedExtra !== undefined ? (
+                <>
+                  <button
+                    type="button"
+                    className="conn-outline conn-back-steps"
+                    onClick={() => {
+                      openExtra(undefined);
+                    }}
+                  >
+                    <span aria-hidden="true">←</span> Back to steps
+                  </button>
+                  <p className="conn-foot-hint">Optional — you were on step {step} of 4</p>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="conn-outline conn-back"
+                    disabled={step === 1}
+                    onClick={() => {
+                      go(step - 1);
+                    }}
+                  >
+                    Back
+                  </button>
+                  <p className="conn-foot-hint">
+                    {footerHint(step, {
+                      ready,
+                      mintedHere,
+                      copied,
+                      connected,
+                      agentName: guide.name,
+                    })}
+                  </p>
+                  {step < 4 && (
+                    <button
+                      type="button"
+                      className="conn-continue"
+                      ref={continueRef}
+                      disabled={!canContinue(step, ready)}
+                      onClick={() => {
+                        go(step + 1);
+                      }}
+                    >
+                      Continue <span aria-hidden="true">→</span>
+                    </button>
+                  )}
+                </>
               )}
             </footer>
           </section>
         </div>
-
-        {/* ----------------------------------------------- the lead's block */}
-        <section className="conn-card conn-extra">
-          <h2 className="conn-step-title">For the project lead</h2>
-          {target.committable ? (
-            <p className="conn-body">
-              Commit this to <code>{target.path}</code> in the project, and every {guide.name}{' '}
-              session that opens the repo works the board without being told how. It carries no
-              token. The same rules reach every agent from the board itself when it connects; this
-              adds the project they belong to.
-            </p>
-          ) : (
-            <p className="conn-body">
-              {guide.name} has no instructions file. Paste this into the Project instructions of the
-              project you work in, and every chat there works the board without being told how. It
-              carries no token.
-            </p>
-          )}
-          {target.note !== undefined && <p className="conn-note">{target.note}</p>}
-
-          {projects.status === 'loading' ? (
-            <LoadingState shape="row" count={1} label="Loading your projects" />
-          ) : projects.status === 'error' ? (
-            <ApiErrorState error={projects.error} resource="your projects" scope="organisation" />
-          ) : block === undefined || project === undefined ? (
-            <EmptyState
-              headline="No project to mirror work into"
-              body="Setup still works without one — a session can connect and report in. Create a project and this block fills in with its slug."
-            />
-          ) : (
-            <>
-              <div className="conn-field">
-                <label className="conn-label" htmlFor="conn-project">
-                  Project
-                </label>
-                {/* The product's own picker, not a native <select> (LAI-726). */}
-                <Dropdown
-                  id="conn-project"
-                  variant="bare"
-                  className="conn-select"
-                  noun="projects"
-                  value={project.slug}
-                  options={projects.projects
-                    .filter((row): row is typeof row & { slug: string } => 'slug' in row)
-                    .map((row) => ({ value: row.slug, label: row.name }))}
-                  onChange={(next) => {
-                    setSlug(next);
-                  }}
-                />
-              </div>
-
-              <div className="conn-block">
-                <div className="conn-block-bar">
-                  <span className="conn-block-label" id="conn-project-block-label">
-                    {target.path} — carries no token
-                  </span>
-                  <CopyButton text={block} selects={blockRef} what={`the ${target.path} block`} />
-                </div>
-                <pre
-                  className="conn-pre conn-project-block"
-                  ref={blockRef}
-                  tabIndex={0}
-                  aria-labelledby="conn-project-block-label"
-                >
-                  {block}
-                </pre>
-              </div>
-            </>
-          )}
-        </section>
-
-        {/* ------------------------------------------------------ reference */}
-        <section className="conn-card conn-extra conn-reference">
-          <h2 className="conn-step-title">What an agent can do here</h2>
-          <p className="conn-body">
-            Eighteen tools, served by this board at <code>{origin}/mcp</code> over Streamable HTTP
-            with a bearer token, under the same permissions you have in the browser.
-          </p>
-          <dl className="conn-tools">
-            <div className="conn-tool-row">
-              <dt>Find work</dt>
-              <dd>
-                <code>laika_whoami</code> <code>list_projects</code>{' '}
-                <code>get_project_context</code> <code>list_ready_tasks</code>{' '}
-                <code>get_task_context</code> <code>list_sprints</code> <code>list_members</code>
-              </dd>
-            </div>
-            <div className="conn-tool-row">
-              <dt>Do work</dt>
-              <dd>
-                <code>create_task</code> <code>start_working</code> <code>update_status</code>{' '}
-                <code>update_task</code> <code>set_task_sprint</code> <code>add_comment</code>{' '}
-                <code>finish_task</code>
-              </dd>
-            </div>
-            <div className="conn-tool-row">
-              <dt>Run the board</dt>
-              <dd>
-                <code>create_sprint</code> <code>update_sprint</code>{' '}
-                <code>update_project_context</code> <code>log_unlisted_work</code>
-              </dd>
-            </div>
-          </dl>
-          <p className="conn-note">
-            Three rules the board enforces rather than suggests: claiming a task is first-come, so a
-            refusal means somebody already has it; <code>finish_task</code> moves work to{' '}
-            <strong>review</strong>, never to done, because a human closes it; and a read-only token
-            reads every one of these tools and writes none.
-          </p>
-        </section>
-
-        {me !== undefined && canManageOrg(me.org_role) && (
-          <section className="conn-card conn-extra">
-            <h2 className="conn-step-title">Invite a teammate</h2>
-            <p className="conn-body">
-              You can add people. <a href="/organisation">Organisation</a> issues an invite link;
-              they accept it, mint their own token on this page, and appear on Capacity beside you.
-              Tokens are personal — the board attributes every action and every live session to
-              whoever owns the token, so a shared one makes the board lie about who did what.
-            </p>
-          </section>
-        )}
       </div>
     </div>
   );
@@ -1016,18 +1185,42 @@ function SetupBlockView({
   block,
   secret,
   main = false,
+  onCopied,
 }: {
   readonly block: SetupBlock;
   readonly secret: string | undefined;
   readonly main?: boolean;
+  /** Called when this block's copy *succeeded* — not on a click, not on *Press ⌘C*. */
+  readonly onCopied?: (() => void) | undefined;
 }) {
   const ref = useRef<HTMLPreElement | null>(null);
+  const barRef = useRef<HTMLDivElement | null>(null);
   const labelId = `conn-block-${block.key}-label`;
   const holdsToken = block.token !== 'none';
+  const above = noteAbove(block);
+
+  /*
+   * The copy's outcome is the button's own `data-outcome` (LAI-741). Counting
+   * clicks marked a refused clipboard as copied, and so did any copy in
+   * *Other ways*; this hears only `copied`, and only from a main block.
+   */
+  useEffect(() => {
+    const button = barRef.current?.querySelector('.copy-button');
+    if (onCopied === undefined || button === null || button === undefined) return;
+    const watch = new MutationObserver(() => {
+      if (button.getAttribute('data-outcome') === 'copied') onCopied();
+    });
+    watch.observe(button, { attributes: true, attributeFilter: ['data-outcome'] });
+    return () => {
+      watch.disconnect();
+    };
+  }, [onCopied]);
+
   return (
     <div className="conn-setup" data-token={block.token}>
+      {block.note !== undefined && above && <p className="conn-body conn-intro">{block.note}</p>}
       <div className={main ? 'conn-block conn-block-main' : 'conn-block'}>
-        <div className="conn-block-bar">
+        <div className="conn-block-bar" ref={barRef}>
           <span className="conn-block-label" id={labelId}>
             <PathLabel text={block.label} />
           </span>
@@ -1059,7 +1252,7 @@ function SetupBlockView({
         </pre>
       </div>
       {block.warn !== undefined && <p className="conn-note conn-note-warn">{block.warn}</p>}
-      {block.note !== undefined && <p className="conn-note conn-info">{block.note}</p>}
+      {block.note !== undefined && !above && <p className="conn-note conn-info">{block.note}</p>}
     </div>
   );
 }
@@ -1131,6 +1324,42 @@ function CheckIcon() {
         strokeLinecap="round"
         strokeLinejoin="round"
       />
+    </svg>
+  );
+}
+
+/** The rail's optional entries carry an icon where a step carries its number. */
+function ExtraIcon({ id }: { readonly id: ExtraId }) {
+  return (
+    <svg className="conn-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      {id === 'share' ? (
+        <path
+          d="M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 013.6 3.6L10.5 8M9 11.5l-1.2 1.2a2.6 2.6 0 01-3.6-3.6L5.5 8"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      ) : id === 'tools' ? (
+        <path
+          d="M2.5 4h11M2.5 8h11M2.5 12h7"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      ) : (
+        <>
+          <circle cx="6.5" cy="5.5" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />
+          <path
+            d="M2 13.5c.6-2.3 2.4-3.5 4.5-3.5s3.9 1.2 4.5 3.5M12.5 5v4M10.5 7h4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+          />
+        </>
+      )}
     </svg>
   );
 }
