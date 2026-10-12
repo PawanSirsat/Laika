@@ -29,7 +29,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, test } from 'node:test';
 
-import { AGENTS, resolveAgent } from '../src/agents.ts';
+import { AGENTS, codexLaikaState, resolveAgent } from '../src/agents.ts';
 import { connect, planConnect, rcFileFor, type ConnectIo } from '../src/connect.ts';
 
 const ENTRY = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -740,8 +740,17 @@ void describe('codex never gets a second laika table (review round 1)', () => {
     ['a dotted key at the top level', 'mcp_servers.laika.url = "http://elsewhere/mcp"\n'],
     ['a dotted key under [mcp_servers]', '[mcp_servers]\nlaika.url = "http://elsewhere/mcp"\n'],
     ['a quoted dotted key', '"mcp_servers"."laika".url = "http://elsewhere/mcp"\n'],
+    ['a top-level inline table', 'mcp_servers = { laika = { url = "http://elsewhere/mcp" } }\n'],
+    ['a sub-table header', '[mcp_servers.laika.env]\nX = "1"\n'],
+    ['an empty header with nothing under it', '[mcp_servers.laika]\n'],
   ];
   for (const [label, original] of forms) {
+    void test(`${label} is detected as present`, () => {
+      // Re-review: the connect test below passes for "present" and "unsure"
+      // alike, so it cannot see the detection itself. This can.
+      assert.equal(codexLaikaState(original), 'present');
+    });
+
     void test(`${label} is left byte-identical, and the result still has one laika table`, async () => {
       const h = harness();
       const path = join(h.home, '.codex', 'config.toml');
@@ -755,16 +764,41 @@ void describe('codex never gets a second laika table (review round 1)', () => {
     });
   }
 
-  void test('a mention of laika it cannot place leaves the file alone and prints the block', async () => {
+  void test('a server it cannot place leaves the file alone and prints the block', async () => {
+    // A multi-line inline table (TOML 1.1) under mcp_servers: a line scanner
+    // cannot prove what it defines, so connect keeps its hands off.
     const h = harness();
     const path = join(h.home, '.codex', 'config.toml');
     mkdirSync(join(h.home, '.codex'));
-    const original = '[profiles.laika]\nmodel = "o4"\n';
+    const original = 'mcp_servers = {\n  laika = { url = "http://elsewhere/mcp" }\n}\n';
     writeFileSync(path, original);
+    assert.equal(codexLaikaState(original), 'unsure');
     assert.equal(await connect(['codex'], h.io), 0, h.printed());
     assert.equal(readFileSync(path, 'utf8'), original);
     assert.match(h.printed(), /left as it is/);
     assert.match(h.printed(), /^\s*bearer_token_env_var = "LAIKA_TOKEN"$/m);
+  });
+
+  void test('laika outside the mcp_servers tables does not stop the write', async () => {
+    // Re-review: a trusted folder named laika is a project path, not a server.
+    const original = '[projects."/Users/me/laika"]\ntrust_level = "trusted"\n';
+    assert.equal(codexLaikaState(original), 'absent');
+    const h = harness();
+    const path = join(h.home, '.codex', 'config.toml');
+    mkdirSync(join(h.home, '.codex'));
+    writeFileSync(path, original);
+    assert.equal(await connect(['codex'], h.io), 0, h.printed());
+    assert.match(readFileSync(path, 'utf8'), /^\[mcp_servers\.laika\]$/m);
+  });
+
+  void test('a quoted key with a dot in it is one name, not laika', () => {
+    assert.equal(codexLaikaState('[mcp_servers."laika.v2"]\nurl = "http://x/mcp"\n'), 'absent');
+    assert.equal(codexLaikaState("[mcp_servers.'laika.v2']\nurl = 'http://x/mcp'\n"), 'absent');
+  });
+
+  void test('a [mcp_servers.laika] line inside a multi-line string is text, not a table', () => {
+    assert.equal(codexLaikaState('notes = """\n[mcp_servers.laika]\nurl = "x"\n"""\n'), 'absent');
+    assert.equal(codexLaikaState("notes = '''\n[mcp_servers.laika]\n'''\n"), 'absent');
   });
 
   void test('an append to a file with other servers leaves exactly one laika table', async () => {

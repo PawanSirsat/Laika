@@ -208,10 +208,48 @@ export function codexBlock(url: string): string {
   return `[mcp_servers.laika]\nurl = ${JSON.stringify(mcp(url))}\nbearer_token_env_var = "LAIKA_TOKEN"\n`;
 }
 
-/** One TOML key path, split on dots, quotes and spaces stripped. */
+/**
+ * One TOML key path. Dots split it **only outside quotes**, so
+ * `"laika.v2"` stays one name (re-review).
+ */
 function keyPath(raw: string): string[] {
-  return raw.split('.').map((part) => part.trim().replace(/^["']|["']$/g, ''));
+  const parts: string[] = [];
+  let part = '';
+  let quote: string | undefined;
+  for (const ch of raw) {
+    if (quote !== undefined) {
+      if (ch === quote) quote = undefined;
+      else part += ch;
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '.') {
+      parts.push(part.trim());
+      part = '';
+    } else part += ch;
+  }
+  parts.push(part.trim());
+  return parts;
 }
+
+/** Index of the first `=` outside quotes, or -1. */
+function equalsAt(line: string): number {
+  let quote: string | undefined;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quote !== undefined) {
+      if (ch === quote) quote = undefined;
+    } else if (ch === '"' || ch === "'") quote = ch;
+    else if (ch === '=') return i;
+  }
+  return -1;
+}
+
+/** `{`/`[` minus `}`/`]` outside quoted strings — how far a value is left open. */
+function openBrackets(value: string): number {
+  const bare = value.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '');
+  return (bare.match(/[[{]/g)?.length ?? 0) - (bare.match(/[\]}]/g)?.length ?? 0);
+}
+
+const FENCES = ['"""', "'''"] as const;
 
 /**
  * Does `~/.codex/config.toml` already define the `laika` server — in any of
@@ -221,44 +259,71 @@ function keyPath(raw: string): string[] {
  * - an inline table: `laika = { … }` under `[mcp_servers]`, or
  *   `mcp_servers = { laika = … }` at the top level;
  * - a dotted key: `laika.url = …` under `[mcp_servers]`, or
- *   `mcp_servers.laika.url = …` anywhere above the first table.
+ *   `mcp_servers.laika.url = …` above the first table; quoted or not.
  *
  * Appending a `[mcp_servers.laika]` block beside any of them defines the table
  * twice, which every TOML parser — Codex's included — rejects, so the agent
  * would not start at all.
  *
- * **`unsure` is the third answer, and it means hands off.** A line that says
- * `laika` in a way this cannot place (`[profiles.laika]`, a multi-line string)
- * is not proof of a duplicate, but it is not proof of its absence either, and
- * this is a line scanner, not a parser. `connect` then leaves the file alone
- * and prints the block for the reader to add.
+ * **What it does not count** (re-review): `laika` anywhere outside the
+ * `mcp_servers` tables (a trusted project folder called laika is not a
+ * server); a quoted name that merely contains it (`"laika.v2"`); and anything
+ * inside a multi-line string.
+ *
+ * **`unsure` means hands off.** A value under `mcp_servers` left open across
+ * lines (a multi-line inline table) that mentions `laika` cannot be placed by
+ * a line scanner. `connect` then leaves the file alone and prints the block.
  */
 export function codexLaikaState(toml: string): 'present' | 'absent' | 'unsure' {
   let table: string[] = [];
-  let mentioned = false;
+  let inString: (typeof FENCES)[number] | undefined;
+  let open = 0;
+  let openInServers = false;
+  let unsure = false;
+
   for (const raw of toml.split('\n')) {
+    if (inString !== undefined) {
+      if (raw.includes(inString)) inString = undefined;
+      continue;
+    }
     const line = raw.trim();
     if (line === '' || line.startsWith('#')) continue;
 
-    const header = /^\[\[?([^\]]+)\]\]?/.exec(line);
-    if (header !== null) {
-      table = keyPath(header[1] ?? '');
-      if (table[0] === 'mcp_servers' && table[1] === 'laika') return 'present';
-      if (/laika/i.test(line)) mentioned = true;
+    if (open > 0) {
+      if (openInServers && /\blaika\b/.test(line)) unsure = true;
+      open += openBrackets(line);
       continue;
     }
 
-    const kv = /^((?:"[^"]*"|'[^']*'|[^=])+?)\s*=\s*(.*)$/.exec(line);
-    if (kv !== null) {
-      const key = [...table, ...keyPath(kv[1] ?? '')];
-      if (key[0] === 'mcp_servers' && key[1] === 'laika') return 'present';
-      if (key.length === 1 && key[0] === 'mcp_servers' && /\blaika\b/.test(kv[2] ?? '')) {
-        return 'present';
-      }
+    const header = /^\[\[?(.+?)\]\]?\s*(?:#.*)?$/.exec(line);
+    if (header !== null) {
+      table = keyPath(header[1] ?? '');
+      if (table[0] === 'mcp_servers' && table[1] === 'laika') return 'present';
+      continue;
     }
-    if (/laika/i.test(line)) mentioned = true;
+
+    const eq = equalsAt(line);
+    if (eq < 0) continue;
+    const key = [...table, ...keyPath(line.slice(0, eq))];
+    const value = line.slice(eq + 1).trim();
+    if (key[0] === 'mcp_servers' && key[1] === 'laika') return 'present';
+    if (
+      key.length === 1 &&
+      key[0] === 'mcp_servers' &&
+      /(?:^|[{,\s])(?:laika|"laika"|'laika')\s*[=.]/.test(value)
+    ) {
+      return 'present';
+    }
+
+    for (const fence of FENCES) {
+      if (value.startsWith(fence) && !value.slice(3).includes(fence)) inString = fence;
+    }
+    if (inString === undefined) {
+      open = Math.max(0, openBrackets(value));
+      openInServers = key[0] === 'mcp_servers';
+    }
   }
-  return mentioned ? 'unsure' : 'absent';
+  return unsure ? 'unsure' : 'absent';
 }
 
 /** For `laika whoami`: is the server defined, in any form? */
