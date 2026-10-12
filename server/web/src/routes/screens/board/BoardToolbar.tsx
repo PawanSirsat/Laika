@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { Member, TaskPriority } from '../../../api/tasks.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
+import { statusOptions as projectStatusOptions } from './status-options.tsx';
 import {
   isCategory,
   UPDATED_LABELS,
@@ -363,11 +364,8 @@ export function BoardToolbar({
             },
           ]
         : []),
-      ...statuses.map((s) => ({
-        value: s.id,
-        label: s.hidden ? `${s.name} (hidden)` : s.name,
-        icon: <span className={`dd-dot dd-dot-${s.category}`} />,
-      })),
+      // The one builder every status picker uses: hidden ones wear a badge.
+      ...projectStatusOptions(statuses),
     ],
     [status, statusName, statuses],
   );

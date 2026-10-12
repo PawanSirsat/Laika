@@ -15,7 +15,7 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Locator } from 'playwright';
-import { closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
+import { asServed, closeBrowser, open, setTheme, type ApiStub, type Harness } from './harness.ts';
 import { pick, valueOf } from './dropdown.ts';
 
 const DAY = 86_400_000;
@@ -108,14 +108,17 @@ const task = (over: Record<string, unknown>) => ({
 
 // Seven tasks carrying five tags each: the labels the popover offers are the
 // ones in use, so this is how the list reaches 35.
+// As the server sends them, by status id and name too (LAI-739).
 const TASK_LIST = Array.from({ length: 7 }, (_, i) =>
-  task({
-    id: `t${String(i + 1)}`,
-    key: `LC-${String(i + 1)}`,
-    number: i + 1,
-    title: `Task ${String(i + 1)}`,
-    status: ['backlog', 'todo', 'in_progress', 'review', 'done', 'todo', 'backlog'][i],
-    tags: TAGS.slice(i * 5, i * 5 + 5),
+  asServed({
+    ...task({
+      id: `t${String(i + 1)}`,
+      key: `LC-${String(i + 1)}`,
+      number: i + 1,
+      title: `Task ${String(i + 1)}`,
+      status: ['backlog', 'todo', 'in_progress', 'review', 'done', 'todo', 'backlog'][i],
+      tags: TAGS.slice(i * 5, i * 5 + 5),
+    }),
   }),
 );
 
@@ -385,7 +388,8 @@ for (const screen of SCREENS) {
         await ready(h, screen.ready);
         await openFilter(h);
         const writes: [string, string, string, string][] = [
-          ['Status', 'in_progress', 'status', 'in_progress'],
+          // A column by id since LAI-739; a category link still reads.
+          ['Status', 'st-in_progress', 'status', 'st-in_progress'],
           ['Priority', 'p2', 'priority', 'p2'],
           ['Assignee', 'u3', 'assignee', 'u3'],
           ['Assignee', 'none', 'assignee', 'none'],
@@ -588,7 +592,7 @@ void describe('the dropdown keyboard model (LAI-726)', () => {
         /dd-option-active/,
       );
       await h.page.keyboard.press('Enter');
-      await waitParam(h, 'status', 'review');
+      await waitParam(h, 'status', 'st-review');
       assert.equal(await status.getAttribute('aria-expanded'), 'false');
       assert.equal(await isFocused(status), true, `Enter left focus on ${await focused(h)}`);
 
@@ -598,7 +602,7 @@ void describe('the dropdown keyboard model (LAI-726)', () => {
       await h.page.keyboard.press('ArrowUp');
       assert.equal(await activeLabel(), 'In progress');
       await h.page.keyboard.press('Space');
-      await waitParam(h, 'status', 'in_progress');
+      await waitParam(h, 'status', 'st-in_progress');
       assert.equal(await status.getAttribute('aria-expanded'), 'false', 'Space reopened it');
     } finally {
       await h.close();
