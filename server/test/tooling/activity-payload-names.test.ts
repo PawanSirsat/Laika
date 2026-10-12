@@ -59,6 +59,7 @@ import { applyMeetingReview, discardMeetingReview } from '../../src/services/mee
 import { handlePush } from '../../src/services/webhooks.ts';
 import { requireOrgId } from '../../src/db/orgs.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
+import { statusForCategory } from '../../src/db/project-statuses.ts';
 
 /**
  * Activity payloads speak the API's names, not Drizzle's (LAI-045).
@@ -576,11 +577,13 @@ describe('no mutating path writes a Drizzle property into a payload', () => {
       // appending rows by hand — the payloads these produce are the thing under
       // test, and a hand-written one would test the fixture.
       const stale = newId();
+      const staleProject = t.db.select({ id: projects.id }).from(projects).get()!.id;
       t.db
         .insert(tasks)
         .values({
           id: stale,
-          projectId: t.db.select({ id: projects.id }).from(projects).get()!.id,
+          projectId: staleProject,
+          statusId: statusForCategory(t.db, staleProject, 'in_progress').id,
           number: 90_001,
           title: 'Left alone',
           status: 'in_progress',

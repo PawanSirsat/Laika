@@ -6,7 +6,9 @@ import { openDb, type Db } from '../../src/db/client.ts';
 import { runMigrations } from '../../src/db/migrate.ts';
 import { newId } from '../../src/db/ids.ts';
 import { orgs, projects, users } from '../../src/db/schema.ts';
-import { createDefaultBoardColumns } from '../../src/services/board-columns.ts';
+import { createDefaultProjectStatuses, statusForCategory } from '../../src/db/project-statuses.ts';
+import { type TaskStatus } from '../../src/db/enums.ts';
+import { sql } from 'drizzle-orm';
 
 export interface TestDb {
   db: Db;
@@ -83,13 +85,39 @@ export function seed(db: Db, now = Date.now()): Seed {
     .run();
 
   // This helper inserts the project row directly rather than going through
-  // `createProject`, so it has to seed the board itself (LAI-266). Without it
-  // every service test would be running against a project with no columns —
-  // which is a state the production code cannot produce, so the suite would be
-  // testing something that does not exist.
-  createDefaultBoardColumns(db, projectId, now);
+  // `createProject`, so it has to seed the statuses itself (LAI-738). Without
+  // them no task could be created — `tasks.status_id` is NOT NULL — and the
+  // suite would be testing a project the production code cannot produce.
+  //
+  // **Unless the table is not there yet.** `migrate.test.ts` seeds a database
+  // cut back to an older migration and then migrates it forward; at that point
+  // a project has no statuses because nothing had them, and 0028 gives it the
+  // defaults. Seeding here would be a table that does not exist.
+  if (hasTable(db, 'project_statuses')) createDefaultProjectStatuses(db, projectId, now);
 
   return { orgId, userId, projectId };
+}
+
+/**
+ * `{ status, statusId }` for a raw `UPDATE tasks` that puts a task in a
+ * category (LAI-738).
+ *
+ * A test that writes `status` alone is refused by `tasks_status_fk` — the
+ * category and the status must agree, which is the point of the key — so the
+ * two travel together. The status is the one the services would pick.
+ */
+export function atCategory<S extends TaskStatus>(
+  db: Db,
+  projectId: string,
+  category: S,
+): { status: S; statusId: string } {
+  return { status: category, statusId: statusForCategory(db, projectId, category).id };
+}
+
+function hasTable(db: Db, name: string): boolean {
+  return (
+    db.all(sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${name}`).length > 0
+  );
 }
 
 /**

@@ -4131,3 +4131,70 @@ asking every other harness to grow one would leave presence as wide as the
 plugin ecosystem. An MCP call is something every connected agent already makes,
 on a credential the server already checks. Counting it costs one throttled write
 and collects nothing new about the work.
+
+## D-077 — Projects have their own statuses, each in one of six fixed categories.
+
+**2026-10-12, the owner, directly** ("Option B", LAI-738 server, LAI-739 web).
+A board column was a status, and LAI-266 made columns configurable by letting a
+column hold a *set* of the six statuses. That model cost four bugs that could
+not be fixed inside it: unticking a status always failed (*"Give X a column
+before taking Y"*), a donor column lost its primary, deleting a column merged
+its statuses into another, and an empty column vanished. A consumer also wanted
+a `testing` column between `in_progress` and `review` (LAI-613), which a set of
+fixed statuses cannot give. The owner chose Jira's team-managed model: each
+project owns its statuses, and each status belongs to a fixed category.
+
+### Decided
+
+1. **`project_statuses` is a table, and one status is one board column**
+   (§4.20): a name (1–40, unique per project case-insensitively), a category,
+   a position, a hidden flag. `board_columns` and `board_column_statuses` are
+   retired.
+2. **The six values stay, as categories.** `backlog`, `todo`, `in_progress`,
+   `review`, `done`, `cancelled` are what a status *is*; a project chooses what
+   its statuses are *called* and how many it has. `tasks.status` keeps holding
+   the category and `tasks.status_id` names the status, so §5's lifecycle,
+   policy, readiness, metrics, the stale cron, activity, filters and every MCP
+   tool kept their meaning without change.
+3. **What stays fixed:** the six categories; §5's transition tables, which are
+   between categories; the rule that agents do not self-certify; a status's
+   category for its whole life.
+4. **Invariants.** Every project keeps at least one status in each category —
+   deleting the last is refused. A task's status belongs to its own project and
+   agrees with its category, enforced in SQL by the composite foreign key
+   `(project_id, status_id, status)` → `project_statuses(project_id, id,
+   category)`, so a write that moved one without the other fails in the
+   database rather than drifting. New projects get Backlog, To do, In progress,
+   Review, Done and Cancelled (hidden).
+5. **Moves.** Within a category a move is a column change: `task.write` and
+   nothing more, no §5 check, no dates. Across categories a move is the §5
+   transition it always was, whichever status it names. A bare category
+   resolves to the project's first visible status of it. Deleting a status
+   moves its work to a named status first, all or nothing.
+6. **No new activity verb.** A move writes `task.status_changed` as before, with
+   `from` and `to` still the categories — equal for a same-category move — and
+   the status ids and names beside them. Status configuration writes
+   `project.updated` with `entity: 'project_status'`, as columns did. A verb
+   added to `ACTIVITY_TYPES` is three owners (CLAUDE.md §4.4), and none was
+   needed: §4.8's test — *could a reader answer "when did this happen?" without
+   a payload?* — is answered by the verb that already exists.
+7. **Migration rule** (`0028`, one migration, copy then drop): a one-status
+   column becomes a status with its name, position and hidden flag; a
+   several-status column gives its primary the column's name and each other
+   status its own default-labelled status straight after it; a category no
+   column held becomes a hidden, default-labelled status at the end; a project
+   with no columns at all gets the six defaults; a clashing name takes a
+   ` (2)` suffix; an empty column becomes nothing, because it held no category.
+   Every task keeps its category and lands in that category's first status.
+
+### Why
+
+Jira parity is what the owner asked for, and it is the shape that makes the
+four bugs impossible rather than fixed: a status cannot be "unticked" from a
+column or orphaned by a delete, because it *is* the column. Keeping the six
+values as categories is what made the change safe — every rule that reasons
+about work reads a category, and none of them had to learn about names.
+
+**This supersedes LAI-264, LAI-289, LAI-613 and LAI-618**, each written
+against the columns model. LAI-613 asked for this decision; the other three
+describe documentation and a bug of a model that no longer exists.

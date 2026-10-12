@@ -4,6 +4,7 @@ import { type Db } from './client.ts';
 import { tasks } from './schema.ts';
 import { lastPosition } from './backfill.ts';
 import { keyAfter } from './order-key.ts';
+import { statusForCategory } from './project-statuses.ts';
 
 /**
  * Per-project task numbering — the `LAI-42` in every display key (SPEC §4.5).
@@ -95,6 +96,10 @@ export function createTaskWithNumber(
         position: keyAfter(lastPosition(db, input.projectId)),
         title: input.title,
         descriptionMd: input.descriptionMd ?? null,
+        // A new task is in its project's Backlog, as `createTask`'s default is
+        // (LAI-738): the category and the status that means it here.
+        status: 'backlog',
+        statusId: statusForCategory(db, input.projectId, 'backlog').id,
         priority: input.priority ?? 'p2',
         createdBy: input.createdBy,
         createdVia: input.createdVia,

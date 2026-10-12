@@ -16,7 +16,7 @@ import { ApiError } from '../../src/errors.ts';
 import { capacityNow, presenceNow, PRESENCE_WINDOW_MS } from '../../src/services/presence.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
-import { freshDb, queryPlansOf, type TestDb } from '../helpers/db.ts';
+import { atCategory, freshDb, queryPlansOf, type TestDb } from '../helpers/db.ts';
 
 /**
  * §9.3's derived views (LAI-432).
@@ -270,7 +270,11 @@ describe('capacity', () => {
     const task = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'Doing' });
     t.db
       .update(tasks)
-      .set({ assigneeId: ada, status: 'in_progress', startedAt: NOW - 3_600_000 })
+      .set({
+        assigneeId: ada,
+        ...atCategory(t.db, task.project_id, 'in_progress'),
+        startedAt: NOW - 3_600_000,
+      })
       .where(eq(tasks.id, task.id))
       .run();
 
@@ -286,7 +290,7 @@ describe('capacity', () => {
     const task = createTask(t.sqlite, t.db, actor(adminId), 'laika', { title: 'Doing' });
     t.db
       .update(tasks)
-      .set({ assigneeId: ada, status: 'in_progress' })
+      .set({ assigneeId: ada, ...atCategory(t.db, task.project_id, 'in_progress') })
       .where(eq(tasks.id, task.id))
       .run();
 

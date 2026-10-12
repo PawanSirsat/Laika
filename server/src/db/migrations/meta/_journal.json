@@ -197,6 +197,13 @@
       "when": 1791785365379,
       "tag": "0027_token_mcp_activity",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "6",
+      "when": 1791789027750,
+      "tag": "0028_project_statuses",
+      "breakpoints": true
     }
   ]
 }

@@ -32,7 +32,7 @@ import {
   updateTask,
   type TaskView,
 } from '../services/tasks.ts';
-import { ago, answer, isoDate, toolError } from './present.ts';
+import { ago, answer, isoDate, statusText, toolError } from './present.ts';
 
 /**
  * The tools that let an agent actually work the board (SPEC §7.1, LAI-408).
@@ -235,7 +235,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
           blockers.length === 0 && sprint === undefined ? task : getTask(db, actor, task.id);
 
         return answer(
-          `Created \`${after.key}\` **${after.title}** — ${after.priority}, ${after.status}.`,
+          `Created \`${after.key}\` **${after.title}** — ${after.priority}, ${statusText(after)}.`,
           { task: after },
         );
       } catch (error) {
@@ -261,7 +261,9 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         // because §7.2 wants an agent branching on the code, not parsing prose.
         const claimed = claimTask(sqlite, db, actor, resolveTaskRef(db, task), clock());
 
-        return answer(`Claimed \`${claimed.key}\` — now ${claimed.status}.`, { task: claimed });
+        return answer(`Claimed \`${claimed.key}\` — now ${statusText(claimed)}.`, {
+          task: claimed,
+        });
       } catch (error) {
         return toolError(error);
       }
@@ -275,10 +277,12 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
     {
       title: 'Move a task',
       description:
-        "Change a task's status. The transition is validated against §5 — not every move is legal, and an illegal one fails with `unprocessable` rather than being applied.",
+        "Change a task's status. `status` is one of the six categories (`backlog`, `todo`, `in_progress`, `review`, `done`, `cancelled`) — which lands in the project's first column of that kind — or the name of one of the project's own statuses, case-insensitively (`QA`, `Code review`). A move between categories is validated against §5 — not every move is legal, and an illegal one fails with `unprocessable` rather than being applied; a move between two statuses of the same category always is.",
       inputSchema: z.strictObject({
         task: TASK_REF,
-        status: z.enum(TASK_STATUSES),
+        // A category or a project status name (LAI-738). Still a string called
+        // `status`, so every caller written against the enum is unchanged.
+        status: z.string().trim().min(1).max(40),
         note: z.string().max(10_000).optional(),
       }),
     },
@@ -287,12 +291,13 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         const id = resolveTaskRef(db, task);
         const now = clock();
 
-        const moved = changeStatus(db, actor, id, status, now);
+        const category = TASK_STATUSES.find((s) => s === status);
+        const moved = changeStatus(db, actor, id, category ?? { status_name: status }, now);
         // The note is a comment, not a field: §4.5 has nowhere to put it, and a
         // status change with an explanation is exactly what a comment is for.
         if (note !== undefined && note.trim() !== '') addComment(db, actor, id, note, now);
 
-        return answer(`\`${moved.key}\` is now **${moved.status}**.`, { task: moved });
+        return answer(`\`${moved.key}\` is now **${statusText(moved)}**.`, { task: moved });
       } catch (error) {
         return toolError(error);
       }
@@ -463,7 +468,7 @@ export function registerWriteTools(server: McpServer, context: WriteToolContext)
         const after =
           sprint === undefined ? updated : moveTaskToSprint(sqlite, db, actor, id, sprint, now);
 
-        return answer(`Updated \`${after.key}\` — ${after.priority}, ${after.status}.`, {
+        return answer(`Updated \`${after.key}\` — ${after.priority}, ${statusText(after)}.`, {
           task: after,
         });
       } catch (error) {

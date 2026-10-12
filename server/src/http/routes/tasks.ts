@@ -50,7 +50,10 @@ const CreateBody = strictObject({
   acceptance_md: z.string().max(ACCEPTANCE_MAX).optional(),
   tags: z.array(z.string().trim().min(1).max(64)).optional(),
   priority: z.enum(TASK_PRIORITIES).optional(),
+  // A category, or one exact status of the project — or both, if they agree
+  // (LAI-738). The service resolves and checks; this only shapes.
   status: z.enum(TASK_STATUSES).optional(),
+  status_id: z.string().min(1).optional(),
   assignee_id: z.string().min(1).optional(),
   discovered_from: z.string().min(1).optional(),
   // A subtask of that task — one level, same project; the service refuses the
@@ -81,7 +84,13 @@ const UpdateBody = strictObject({
   planned_start: DateOnly.nullable().optional(),
 });
 
-const StatusBody = strictObject({ status: z.enum(TASK_STATUSES) });
+// `status` is a category — the project's first visible status of it — and
+// `status_id` one exact status, which is what a board drag sends (LAI-738).
+// Exactly one: two answers to "where does it go" would need a third rule.
+const StatusBody = strictObject({
+  status: z.enum(TASK_STATUSES).optional(),
+  status_id: z.string().min(1).optional(),
+});
 // `blocked_by_task_id`, matching `TaskView.blocked_by` (LAI-099). The **path**
 // keeps `/dependencies`: a path segment names a collection, not a direction, and
 // has no sibling to be confused with — `blocked_by` beside `blocks` was ambiguous,
@@ -147,6 +156,10 @@ export function projectTaskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
         ? {}
         : { parent: c.req.query('parent') }),
       status: parseEnum(c.req.query('status'), TASK_STATUSES, 'status'),
+      // One project status (LAI-738); `status` above is its category.
+      ...(c.req.query('status_id') === undefined || c.req.query('status_id') === ''
+        ? {}
+        : { status_id: c.req.query('status_id') }),
       priority: parseEnum(c.req.query('priority'), TASK_PRIORITIES, 'priority'),
       assignee: c.req.query('assignee'),
       sprint: c.req.query('sprint'),
@@ -191,7 +204,20 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     const actor = requireActor(c);
     const body = parseBody(StatusBody, await c.req.json().catch(() => null));
 
-    return c.json(changeStatus(db, actor, c.req.param('id'), body.status));
+    if ((body.status === undefined) === (body.status_id === undefined)) {
+      throw new ApiError('unprocessable', 'Send either status or status_id', {
+        field: 'status',
+      });
+    }
+
+    return c.json(
+      changeStatus(
+        db,
+        actor,
+        c.req.param('id'),
+        body.status_id === undefined ? body.status! : { status_id: body.status_id },
+      ),
+    );
   });
 
   /**

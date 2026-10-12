@@ -9,7 +9,9 @@ import { activity, projectMemberships, projects, tasks, users } from '../db/sche
 import { ApiError } from '../errors.ts';
 import { type ResolvedActor, withProject, activityActor } from '../auth/resolve-actor.ts';
 import { assertCan, can, projectRoleOnJoin } from '../policy/can.ts';
-import { createDefaultBoardColumns } from './board-columns.ts';
+// From `db/`, not `services/project-statuses.ts`: that module reads projects
+// through this one, and the seed is all this needs.
+import { createDefaultProjectStatuses } from '../db/project-statuses.ts';
 
 /**
  * Re-exported so `routes/projects.ts` can validate a role or a visibility
@@ -379,9 +381,9 @@ export function createProject(
       .values({ id: newId(), projectId: id, userId: actor.userId, role: 'lead', createdAt: now })
       .run();
 
-    // A project without columns has no board at all (LAI-266). In the same
-    // transaction, so a project can never exist in that state.
-    createDefaultBoardColumns(db, id, now);
+    // A project without statuses has no board and can hold no task (LAI-738).
+    // In the same transaction, so a project can never exist in that state.
+    createDefaultProjectStatuses(db, id, now);
 
     appendActivity(db, {
       orgId,
