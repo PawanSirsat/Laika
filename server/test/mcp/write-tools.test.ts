@@ -247,6 +247,75 @@ describe('update_status', () => {
 
     await client.close();
   });
+
+  /**
+   * LAI-738: a project's own statuses. The input is still a string called
+   * `status`, so every agent written against the six categories is unchanged;
+   * a name it does not recognise as a category is looked up in the project.
+   */
+  it('takes a project status by name, case-insensitively, and shows it', async () => {
+    await must('/api/v1/projects/core/statuses', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Code review', category: 'review' }),
+    });
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+    await client.callTool({
+      name: 'update_status',
+      arguments: { task: 'COR-1', status: 'in_progress' },
+    });
+
+    const moved = await client.callTool({
+      name: 'update_status',
+      arguments: { task: 'COR-1', status: 'CODE REVIEW' },
+    });
+    expect(moved.isError).not.toBe(true);
+    expect(payload(moved).task).toMatchObject({ status: 'review', status_name: 'Code review' });
+    expect(JSON.stringify(moved.content)).toContain('review (Code review)');
+
+    const context = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: 'COR-1' },
+    });
+    expect(JSON.stringify(context.content)).toContain('review (Code review)');
+
+    await client.close();
+  });
+
+  it('names what the project has when a status name matches nothing', async () => {
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+
+    const unknown = await client.callTool({
+      name: 'update_status',
+      arguments: { task: 'COR-1', status: 'Testing' },
+    });
+    expect(unknown.isError).toBe(true);
+    expect(JSON.stringify(unknown)).toContain('unprocessable');
+    expect(JSON.stringify(unknown)).toContain(
+      'This project has no status called \\"Testing\\". It has: Backlog, To do, In progress, Review, Done, Cancelled',
+    );
+
+    await client.close();
+  });
+
+  it('cannot reach done by naming a done status where §5 forbids the move', async () => {
+    await must('/api/v1/projects/core/statuses', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Shipped', category: 'done' }),
+    });
+    const client = await connect(await mint());
+    await client.callTool({ name: 'create_task', arguments: { project: 'core', title: 'Work' } });
+
+    const jump = await client.callTool({
+      name: 'update_status',
+      arguments: { task: 'COR-1', status: 'shipped' },
+    });
+    expect(jump.isError).toBe(true);
+    expect(JSON.stringify(jump)).toContain('Cannot move a task from Backlog to Shipped');
+
+    await client.close();
+  });
 });
 
 describe('finish_task', () => {
