@@ -470,3 +470,162 @@ describe('the window is an index range, not a scan (LAI-722)', () => {
     });
   }
 });
+
+describe('an MCP call is presence, with no heartbeat (D-076)', () => {
+  /**
+   * Codex, Cursor, OpenCode, Gemini CLI and Omnigent never POST /heartbeats —
+   * only Claude Code's plugin hook does. Their only trace is the token they
+   * call `/mcp` with.
+   */
+  function mcpToken(
+    userId: string,
+    lastMcpAt: number | null,
+    options: { client?: string | null; name?: string; revokedAt?: number | null } = {},
+  ): string {
+    const id = newId();
+    t.db
+      .insert(tokens)
+      .values({
+        id,
+        userId,
+        name: options.name ?? 'agent',
+        prefix: 'lai_test',
+        tokenHash: `${id}-hash`,
+        scope: 'full',
+        lastMcpAt,
+        lastClient: options.client === undefined ? 'cursor' : options.client,
+        revokedAt: options.revokedAt ?? null,
+        createdAt: NOW,
+      })
+      .run();
+    return id;
+  }
+
+  function entryFor(userId: string) {
+    return presenceNow(t.db, actor(adminId), NOW).present.find((p) => p.user_id === userId);
+  }
+
+  it('shows a token used inside the window and not one used before it', () => {
+    const recent = makeUser('member', 'Recent');
+    const stale = makeUser('member', 'Stale');
+    const edge = makeUser('member', 'Edge');
+    mcpToken(recent, NOW - (PRESENCE_WINDOW_MS - 1000));
+    mcpToken(stale, NOW - (PRESENCE_WINDOW_MS + 1000));
+    mcpToken(edge, NOW - PRESENCE_WINDOW_MS);
+    mcpToken(makeUser('member', 'Never'), null);
+
+    const names = presenceNow(t.db, actor(adminId), NOW).present.map((p) => p.name);
+
+    expect(names).toEqual(['Recent']);
+  });
+
+  it('is an agent, with the client, and no location at all', () => {
+    const ada = makeUser('member', 'Ada');
+    mcpToken(ada, NOW - 1000, { client: 'codex' });
+
+    const entry = entryFor(ada);
+
+    expect(entry).toEqual({
+      user_id: ada,
+      name: 'Ada',
+      matched_task_id: null,
+      project_ids: [],
+      is_agent: true,
+      client: 'codex',
+      clients: ['codex'],
+      last_seen: NOW - 1000,
+    });
+    // Absent, not null: `repo` is the client's "may I say where" discriminator.
+    expect(entry !== undefined && 'repo' in entry).toBe(false);
+    expect(entry !== undefined && 'branch' in entry).toBe(false);
+  });
+
+  it('merges with a heartbeat: the heartbeat keeps the location, the newest time wins', () => {
+    const ada = makeUser('member', 'Ada');
+    beat(ada, NOW - 60_000, 'kvell/laika', mcpToken(ada, null, { client: 'claude-code' }));
+    mcpToken(ada, NOW - 1000, { client: 'codex' });
+
+    const present = presenceNow(t.db, actor(adminId), NOW).present;
+
+    expect(present).toHaveLength(1);
+    expect(present[0]).toMatchObject({
+      repo: 'kvell/laika',
+      branch: 'main',
+      last_seen: NOW - 1000,
+      is_agent: true,
+      client: 'codex',
+      clients: ['codex', 'claude-code'],
+    });
+  });
+
+  it('keeps the heartbeat’s time when it is the newer', () => {
+    const ada = makeUser('member', 'Ada');
+    mcpToken(ada, NOW - 60_000, { client: 'codex' });
+    beat(ada, NOW - 1000, 'kvell/laika', mcpToken(ada, null, { client: 'claude-code' }));
+
+    expect(entryFor(ada)).toMatchObject({
+      last_seen: NOW - 1000,
+      client: 'claude-code',
+      clients: ['claude-code', 'codex'],
+    });
+  });
+
+  it('counts one token beating and calling MCP as one client, once', () => {
+    const ada = makeUser('member', 'Ada');
+    const token = mcpToken(ada, NOW - 2000, { client: 'claude-code' });
+    beat(ada, NOW - 1000, 'kvell/laika', token);
+
+    expect(entryFor(ada)).toMatchObject({ client: 'claude-code', clients: ['claude-code'] });
+    expect(
+      capacityNow(t.db, actor(adminId), NOW).people.find((p) => p.user_id === ada)?.active_sessions,
+    ).toBe(1);
+  });
+
+  it('names a heartbeat token that never spoke MCP from its token name', () => {
+    const ada = makeUser('member', 'Ada');
+    beat(
+      ada,
+      NOW - 1000,
+      'kvell/laika',
+      mcpToken(ada, null, { client: null, name: 'laika-claude on macOS' }),
+    );
+
+    expect(entryFor(ada)).toMatchObject({ client: 'claude-code', clients: ['claude-code'] });
+  });
+
+  it('gives a cookie heartbeat no client', () => {
+    const ada = makeUser('member', 'Ada');
+    beat(ada, NOW - 1000);
+
+    expect(entryFor(ada)).toMatchObject({ is_agent: false, client: null, clients: [] });
+  });
+
+  it('drops a revoked token', () => {
+    const ada = makeUser('member', 'Ada');
+    mcpToken(ada, NOW - 1000, { revokedAt: NOW - 500 });
+
+    expect(entryFor(ada)).toBeUndefined();
+  });
+
+  it('shows nothing when presence is off', () => {
+    const ada = makeUser('member', 'Ada');
+    mcpToken(ada, NOW - 1000);
+    t.db.update(orgs).set({ presenceEnabled: 0 }).run();
+
+    expect(presenceNow(t.db, actor(adminId), NOW)).toEqual({ enabled: false, present: [] });
+    expect(
+      capacityNow(t.db, actor(adminId), NOW).people.find((p) => p.user_id === ada),
+    ).toMatchObject({ active_sessions: 0, last_seen: null });
+  });
+
+  it('counts sessions across heartbeats and MCP calls by token, in capacity', () => {
+    const ada = makeUser('member', 'Ada');
+    beat(ada, NOW - 3000, 'kvell/laika', mcpToken(ada, NOW - 2000, { client: 'claude-code' }));
+    mcpToken(ada, NOW - 1000, { client: 'codex' });
+    mcpToken(ada, NOW - (PRESENCE_WINDOW_MS + 1), { client: 'cursor' });
+
+    const mine = capacityNow(t.db, actor(adminId), NOW).people.find((p) => p.user_id === ada);
+
+    expect(mine).toMatchObject({ active_sessions: 2, last_seen: NOW - 1000 });
+  });
+});
