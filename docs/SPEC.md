@@ -349,7 +349,8 @@ project role `viewer`.
 | `project_id` | |
 | `number` | integer, per-project sequence → display key `LAI-42` |
 | `title`, `description_md` | |
-| `status` | `backlog` \| `todo` \| `in_progress` \| `review` \| `done` \| `cancelled` |
+| `status` | the **category** of the task's status: `backlog` \| `todo` \| `in_progress` \| `review` \| `done` \| `cancelled`. What §5, readiness, policy, metrics and every filter read. Kept in step with `status_id` by the services, and in SQL by the composite FK `(project_id, status_id, status)` → `project_statuses(project_id, id, category)` (D-077) |
+| `status_id` | FK `project_statuses` (§4.20) — the project status the task is in, which is the board column it draws in. Served on `TaskView` with `status_name` beside it |
 | `priority` | `p1` \| `p2` \| `p3`, default `p2` |
 | `assignee_id` | nullable FK `users` |
 | `sprint_id` | nullable FK `sprints` (§4.15) — unassigned means backlog, not "no sprint yet" |
@@ -655,7 +656,8 @@ one.
 `project_memberships(project_id, user_id)` unique, `projects(slug)` unique,
 `unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`,
 `sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`,
-`tasks(parent_task_id)`.
+`tasks(parent_task_id)`, `tasks(status_id)`,
+`project_statuses(project_id, position)` unique.
 `tags(project_id, name)` unique and `task_tags(tag_id)` — the `?tag=` filter
 reads from the tag side, so the join needs an index from that end too.
 
@@ -810,6 +812,53 @@ Unique on (`comment_id`, `user_id`).
   re-derives them and deleting it cascades. A name that no longer appears in the
   body is not a mention.
 
+### 4.20 `project_statuses`
+
+A project's own statuses — **one per board column**, the way a Jira
+team-managed project has them (D-077, LAI-738). Each belongs to one of six fixed
+**categories**, which are §5's statuses; a task's `status` (§4.5) is the
+category of its `status_id`. A project names, orders and hides its statuses;
+nothing that reasons about work — §5, readiness, policy, metrics, the stale
+cron, MCP — reads anything but the category.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `project_id` | FK `projects` `ON DELETE cascade` |
+| `name` | 1–40 characters, trimmed; unique per project, case-insensitively |
+| `category` | `backlog` \| `todo` \| `in_progress` \| `review` \| `done` \| `cancelled` — fixed for the life of the row |
+| `position` | integer, 0-based and dense, unique per project — the board's left-to-right order |
+| `hidden` | 0/1 — holds work but draws no column; `cancelled`'s default |
+| `created_at` | |
+
+**Rules.**
+
+- **Every project has at least one status in every category, always.** A new
+  project gets Backlog, To do, In progress, Review, Done and Cancelled (hidden).
+  Deleting the last status of a category is refused `409`. The `tasks` foreign
+  key cannot express this; `deleteProjectStatus` is the only code that removes
+  a row, and it holds the rule.
+- **A category never changes.** `PATCH` refuses `category` with `422`; the move
+  is a new status in the wanted category, then a delete of the old one into it.
+- **Deleting a status moves its work first**, to `move_to` — another status of
+  the same project. Across categories each task makes a real §5 status change,
+  exactly as a drag would; within one it is a column change. If §5 refuses any
+  one task, nothing moves and nothing is deleted.
+- **A bare category means the project's first visible status of it** by
+  position, or the first of any visibility when every one is hidden. That is
+  where `status` on a create or `POST /tasks/:id/status`, `claim`, the webhook
+  (§10.1) and MCP's `update_status` land a task.
+
+**This replaces LAI-266's `board_columns` and `board_column_statuses`**, which
+modelled a column as a set of categories. Migration `0028` copied every board
+into statuses and dropped both tables in the same migration: a one-status column
+became a status with its name, place and hidden flag; a several-status column
+gave its primary status the column's name and each other status its own,
+default-labelled, straight after it; a category no column held became a hidden,
+default-labelled status at the end; a clashing name took a ` (2)` suffix; an
+empty column, which held no category, became nothing. Every task kept its
+category, in the first status of it.
+
 ## 5. Task lifecycle
 
 ```
@@ -838,6 +887,14 @@ backlog ──▶ todo ───────────────────
   this line is a verified webhook delivery on a resolved project and nothing
   else.
 - **`done` is never set by `finish_task`.** Agents do not self-certify.
+- **A move between two statuses of the same category is not a transition**
+  (§4.20, D-077). `In progress` → `Code review`, both `in_progress`, changes the
+  column and nothing the table above reasons about: no readiness, no dates, no
+  review rule. It needs `task.write` and nothing else, and it writes
+  `task.status_changed` with equal `from` and `to`. A move **between**
+  categories follows this section unchanged, whichever status it names — an
+  agent cannot reach a `done` status by its id or name where §5 refuses it
+  `done`.
 - A task may be reassigned while `in_progress` — that is `task.assigned`, not a
   status change.
 - Every transition writes exactly one `activity` row and emits one SSE event.
@@ -1010,7 +1067,12 @@ GET    /api/v1/projects/:slug                PATCH /api/v1/projects/:slug
 POST   /api/v1/projects/:slug/join           (public projects)
 GET    /api/v1/projects/:slug/members        POST/PATCH/DELETE .../members
 GET    /api/v1/projects/:slug/context        PATCH .../context       (lead+)
-GET    /api/v1/projects/:slug/tasks          ?status=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=
+GET    /api/v1/projects/:slug/tasks          ?status=&status_id=&assignee=&priority=&ready=&sprint=&tag=&parent=&updated_since=&cursor=
+                                             status is a category (§4.5), status_id one project status (§4.20)
+GET    /api/v1/projects/:slug/statuses       POST .../statuses  body { name, category, position? } → 201  (lead+)
+PATCH  /api/v1/projects/:slug/statuses/:id   body { name?, hidden? } — category is refused   (lead+)
+PUT    /api/v1/projects/:slug/statuses/order body { ids } — every status exactly once   (lead+)
+DELETE /api/v1/projects/:slug/statuses/:id   body { move_to } — moves the work, then deletes   (lead+)
 GET    /api/v1/projects/:slug/sprints        POST /api/v1/projects/:slug/sprints   (lead+)
        └ each entry adds `task_counts`, derived at read time — see below
 GET    /api/v1/sprints/:id                   PATCH /api/v1/sprints/:id   DELETE /api/v1/sprints/:id  (lead+)
@@ -1085,7 +1147,7 @@ plain §4.15 shape.
 
 **A task's read shape is §4.5's columns** — `branch` and `external_ref`
 included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
-adds six that are not stored there — **derived at read time, so a reader who looks for them in §4 will
+adds the fields below, which are not stored there — **derived at read time, so a reader who looks for them in §4 will
 not find them and should not**:
 
 | field | where it comes from |
@@ -1094,12 +1156,28 @@ not find them and should not**:
 | `tags` | `task_tags` (§4.16), the whole set |
 | `comment_count` | `comments`, excluding soft-deleted |
 | `created_by_client` | the token's name, when a token created it (LAI-093) |
+| `status_name` | the `project_statuses.name` of `status_id` (§4.20) |
 | `blocked_by`, `blocks` | **both directions of §4.6** — see §4.5. `ready` depends only on `blocked_by` |
 
 `created_at` and `updated_at` are on every view and are not listed per endpoint.
 
+**Project statuses (§4.20)** are served as
+`{ id, project_id, name, category, position, hidden, created_at, task_count }`,
+`task_count` derived at read time. `GET …/statuses` answers `{ data }` by
+position, unpaginated — a project has a handful. **Every write answers with the
+whole list** as `{ data }`, because adding, deleting or reordering one status
+moves others; `DELETE` adds `moved`, the number of tasks it moved. Reads need
+`project.read`, writes `project.settings.edit`. Errors name statuses by their
+names, never by enum values.
+
 **`status` is not on `PATCH`.** It moves through `POST /tasks/:id/status`, which
-writes `task.status_changed` with `{ from, to }`. The body is `strictObject`, so
+takes **exactly one** of `{ status }` — a category, landing in the project's
+first visible status of it — or `{ status_id }`, and writes
+`task.status_changed` with `{ from, to }` (the categories) plus
+`from_status_id`, `from_status_name`, `to_status_id` and `to_status_name`
+(D-077). A category the task is already in is `409`, not a hop to another
+column of it. `POST /projects/:slug/tasks` takes the same `status` or
+`status_id`; both together must agree. The body is `strictObject`, so
 a `PATCH` carrying `status` is refused `422` rather than quietly ignored — this
 paragraph named it as writable on `PATCH` until 2026-09-02 (LAI-130), which is a
 client built from the spec getting a `422` on its first status change.
@@ -1150,7 +1228,7 @@ read them.
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only |
 | `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start? }` | task. Every field optional; an omitted one is left alone; `null` on `parent` or a date clears it. **No `status`** |
 | `start_working` | `{ task, branch? }` | task, or `409` with the current assignee |
-| `update_status` | `{ task, status, note? }` | task; validated transition |
+| `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |
 | `finish_task` | `{ task, summary, checklist? }` | task → **`review`**, summary posted as a comment |
@@ -1224,6 +1302,15 @@ and each disagreed:
 - **`update_task` cannot change `status`.** Moving a task is `update_status`,
   because §5 validates transitions and a field edit would route around the
   table. An agent still finishes into `review` and never into `done`.
+- **`update_status` speaks the project's own status names** (D-077). Its input
+  is unchanged — a string called `status` — and a value that is not one of the
+  six categories is looked up among the project's statuses by name,
+  case-insensitively; one that matches nothing is `unprocessable`, and the
+  error lists the names the project has. A category lands in the project's
+  first visible status of it. Task lines and `get_task_context` show the
+  category with the project's name beside it when the two differ —
+  `review (Code review)` — so an agent keeps reasoning in categories and still
+  sees the column a person sees.
 - **`mode` on `update_project_context` is required**, deliberately: there is no
   safe default between adding a paragraph and discarding the document. `append`
   is a read-then-write and can lose a simultaneous addition — `context_md` is a
@@ -1553,12 +1640,17 @@ agent does — no private endpoints, which keeps the API honest.
 Two views over the same task list, same filters, same URL state — a view is a
 rendering choice, never a different query path.
 
-**Kanban** (default). Columns by status: `backlog`, `todo`, `in_progress`,
-`review`, `done`. `cancelled` is hidden behind a filter, not a column.
+**Kanban** (default). **One column per project status** (§4.20, D-077), in the
+project's order — by default Backlog, To do, In progress, Review and Done, with
+Cancelled hidden behind a filter rather than drawn. A lead adds, renames,
+reorders, hides and deletes statuses; a deleted one's cards move to the status
+the lead names. An empty status is still a column.
 
-- Dragging a card between columns issues `POST /api/v1/tasks/:id/status` and is
-  subject to the same transition validation as any other caller (§5) — an
-  illegal drag snaps back and surfaces the error, it does not optimistically lie.
+- Dragging a card between columns issues `POST /api/v1/tasks/:id/status` with
+  the target's `status_id`. Between two statuses of the same category it always
+  succeeds; between categories it is subject to the same transition validation
+  as any other caller (§5) — an illegal drag snaps back and surfaces the error,
+  it does not optimistically lie.
 - Cards show: display key (`LAI-42`), title, assignee, **priority as Jira draws
   it** — a red up chevron for P1, an orange equals sign for P2, a blue down
   chevron for P3, each with its name for a screen reader (D-070) — a **blocked**
@@ -1612,9 +1704,10 @@ Both views:
 - paginate through the same cursor API (§6.3) — the kanban board loads per
   column, and a column with more results says so rather than silently truncating.
 
-**Explicitly not in v1:** swimlanes, WIP limits, custom columns, saved views.
-Columns are the status enum; when that is not enough, use the list, which is
-where many tasks become one gesture (D-067).
+**Explicitly not in v1:** swimlanes, WIP limits, saved views. Columns are the
+project's own statuses (§4.20) since D-077; the six categories under them stay
+fixed. When columns are not enough, use the list, which is where many tasks
+become one gesture (D-067).
 
 #### 11.4.2 UI screens → API coverage
 

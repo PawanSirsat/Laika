@@ -126,6 +126,8 @@ describe('migrations', () => {
     ['meeting_reviews', ['project_id', 'status']],
     ['sprints', ['project_id', 'starts_on']],
     ['sprints', ['project_id', 'status']],
+    ['tasks', ['status_id']],
+    ['project_statuses', ['project_id', 'position']],
   ];
 
   it('creates every index SPEC §4.13 requires', () => {
@@ -152,6 +154,7 @@ describe('migrations', () => {
     ['tokens', ['token_hash']],
     ['project_memberships', ['project_id', 'user_id']],
     ['projects', ['slug']],
+    ['project_statuses', ['project_id', 'position']],
   ];
 
   it('makes the §4.13 unique indexes actually unique', () => {
