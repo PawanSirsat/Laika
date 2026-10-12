@@ -4058,13 +4058,14 @@ rules.
    is not present.
 2. **On `initialize` the server keeps the client's own `clientInfo.name`** on
    the token, with control and bidi characters stripped and at most 64
-   characters, and a slug from a fixed list (`AGENT_CLIENTS`:
-   `claude-code`, `codex`, `cursor`, `opencode`, `gemini-cli`, `vscode`,
-   `windsurf`, `antigravity`, `hermes`, `omnigent`, `other`). A generic name
-   such as Omnigent's `mcp` falls back to the first word of the token's name,
-   which the Connect screen sets to the agent. Both are written only when they
-   change. **Neither is ever an authorisation input**: a client can call itself
-   anything.
+   characters, and a slug from a fixed list (`AGENT_CLIENTS` in
+   `server/src/auth/agent-clients.ts`, ending in `other`). A name that
+   identifies nothing, such as the Python SDK's `mcp` (sent by Omnigent and
+   Hermes), falls back to the first word of the token's name, which the
+   Connect screen sets to the agent. Both are written only when they change,
+   and a weak name (`mcp`, `hermes-probe`, empty) never replaces a client the
+   token already has. **Neither is ever an authorisation input**: a client can
+   call itself anything.
 3. **Nothing else is collected.** No repo, branch, path, prompt, tool argument
    or transcript arrives through this path. The server records *when* a token
    last spoke MCP and *what the client calls itself*.
@@ -4084,8 +4085,23 @@ rules.
    `get_project_context`, claim with `start_working` before coding,
    `create_task` when there is none, `add_comment` as you go, `finish_task`
    into review (a person marks done), and `log_unlisted_work` for stray
-   findings. Some clients drop server instructions, so `laika_whoami` returns
-   the same text as `how_to_work`. The tool list is unchanged.
+   findings. The text stays under Claude Code's 2,048-character cap, and its
+   first 512 characters carry the must-follow rules on their own, as Codex
+   asks. Some clients drop server instructions (Zed, Cline, Continue, Hermes,
+   Omnigent), so `laika_whoami` returns the same text as `how_to_work`, and
+   the rules are repeated in the descriptions of `start_working`, `create_task`
+   and `finish_task`. Tool names are unchanged.
+7. **`/mcp` answers only `POST`.** `GET`, `HEAD` and `DELETE` get `405` with
+   `Allow: POST`, the Streamable HTTP answer for a stateless server, never a
+   `2xx` stream and never the SPA. A `2xx` probe is what made Hermes open
+   throwaway `hermes-probe` sessions. Antigravity's `server/discover`, sent
+   before `initialize`, gets JSON-RPC `-32601`, so it falls back.
+8. **A `401` on `/mcp` says what was wrong with the header**: none sent,
+   `Bearer` with nothing after it, or an unexpanded placeholder such as
+   `${LAIKA_TOKEN}` or `{env:LAIKA_TOKEN}`. These are facts about what the
+   caller sent, so they reveal nothing about anyone's token, and the message
+   never echoes the value. Unknown, expired and revoked tokens still share one
+   message (§6.1).
 
 ### Why
 

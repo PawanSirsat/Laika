@@ -1120,6 +1120,13 @@ authenticated request stamps the token's `last_mcp_at`, and `initialize` records
 the client's `clientInfo.name` and its slug on the token (§4.9). That is what
 makes an agent with no heartbeat hook present (§9.3).
 
+The instructions stay under 2,048 characters with the must-follow rules in the
+first 512, and those rules are repeated in the descriptions of `start_working`,
+`create_task` and `finish_task` for clients that never show `instructions`.
+`/mcp` answers only `POST`: any other method gets `405` with `Allow: POST`. A
+`401` says whether the `Authorization` header was missing, empty (`Bearer` and
+nothing else) or an unexpanded placeholder, without echoing what was sent.
+
 **Every tool acts as the token's user.** No service account, no elevated mode, no
 bypass. Each tool is a thin wrapper over the same service layer the REST routes
 use: same `assertCan`, same `activity` row (with `actor_kind: agent`, which is how
