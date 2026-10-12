@@ -387,6 +387,11 @@ void describe('the live check', () => {
       await mint(h);
       await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
       assert.match(await h.page.locator('.conn-live-ok').innerText(), /Connected — Omnigent/);
+      assert.match(
+        await h.page.locator('.conn-live-ok').innerText(),
+        /weaker/,
+        'the page does not say it used the weaker signal',
+      );
     } finally {
       await h.close();
     }
@@ -535,6 +540,62 @@ void describe('the agent picker (LAI-737)', () => {
           assert.ok(!text.includes(SECRET), `a tokenless block carries it: ${text}`);
         else assert.match(await one.innerText(), /carries your token/);
       }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('review round 1', () => {
+  void test('an unknown ?agent= is dropped from the URL, and Claude Code is shown', async () => {
+    const h = await open('/connect?agent=teleporter', stub());
+    try {
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      await h.page.waitForFunction(() => !window.location.search.includes('agent='), undefined, {
+        timeout: 10_000,
+      });
+      assert.equal(
+        await h.page.getByRole('radio', { name: 'Claude Code', exact: true }).isChecked(),
+        true,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the chosen agent stays in view when More is collapsed', async () => {
+    const h = await open('/connect?agent=kiro', stub());
+    try {
+      const kiro = h.page.getByRole('radio', { name: 'Kiro', exact: true });
+      await kiro.waitFor({ state: 'attached', timeout: 20_000 });
+      await h.page.locator('.conn-more').click();
+      assert.equal(await h.page.locator('.conn-more').getAttribute('aria-expanded'), 'false');
+      assert.equal(await kiro.isVisible(), true, 'collapsing More hid the selected agent');
+      assert.equal(await kiro.isChecked(), true);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('file paths are shown as typed, not upper-cased', async () => {
+    const h = await open('/connect?agent=codex', stub());
+    try {
+      const label = h.page.locator('.conn-setup .conn-block-label').first();
+      await label.waitFor({ timeout: 20_000 });
+      assert.equal(await label.evaluate((el) => getComputedStyle(el).textTransform), 'none');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Claude Desktop is told to paste the block into its UI, not to commit a file', async () => {
+    const h = await open('/connect?agent=claude-desktop', stub());
+    try {
+      const lead = h.page.locator('.conn-extra').first();
+      await lead.locator('.conn-project-block').waitFor({ timeout: 20_000 });
+      const text = await lead.innerText();
+      assert.doesNotMatch(text, /Commit this/);
+      assert.match(text, /Project instructions/);
     } finally {
       await h.close();
     }

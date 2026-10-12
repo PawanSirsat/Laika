@@ -610,3 +610,12 @@
   min-width: 0;
   order: 3;
 }
+
+/* LAI-737: a hairline between the people count and the agents' marks, so the
+   two numbers do not read as one. */
+.space-agents-sep {
+  align-self: stretch;
+  width: 1px;
+  margin: 0.125rem 0.125rem;
+  background: var(--border-default);
+}

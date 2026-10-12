@@ -136,6 +136,23 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
     storeAgent(agentId);
   }, [agentId]);
 
+  /*
+   * An `?agent=` naming nothing known is dropped from the URL (review round
+   * 1): the page shows Claude Code, and a link copied from the address bar
+   * should say so rather than carry a value the page ignored.
+   */
+  useEffect(() => {
+    const asked = params?.get('agent');
+    if (asked === null || asked === undefined || setParams === undefined || params === undefined) {
+      return;
+    }
+    if (guideFor(asked).id !== asked) {
+      const next = new URLSearchParams(params);
+      next.delete('agent');
+      setParams(next);
+    }
+  }, [params, setParams]);
+
   const choose = (id: AgentChoice): void => {
     setAgentId(id);
     if (!nameTouched.current) {
@@ -470,12 +487,21 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
         {/* ----------------------------------------------- the lead's block */}
         <section className="conn-card conn-extra">
           <h2 className="conn-step-title">For the project lead</h2>
-          <p className="conn-body">
-            Commit this to <code>{target.path}</code> in the project, and every {guide.name} session
-            that opens the repo works the board without being told how. It carries no token. The
-            same rules reach every agent from the board itself when it connects; this adds the
-            project they belong to.
-          </p>
+          {target.committable ? (
+            <p className="conn-body">
+              Commit this to <code>{target.path}</code> in the project, and every {guide.name}{' '}
+              session that opens the repo works the board without being told how. It carries no
+              token. The same rules reach every agent from the board itself when it connects; this
+              adds the project they belong to.
+            </p>
+          ) : (
+            <p className="conn-body">
+              {guide.name} has no instructions file. Paste this into the Project instructions of the
+              project you work in, and every chat there works the board without being told how. It
+              carries no token.
+            </p>
+          )}
+          {target.note !== undefined && <p className="conn-note">{target.note}</p>}
 
           {projects.status === 'loading' ? (
             <LoadingState shape="row" count={1} label="Loading your projects" />
@@ -602,6 +628,11 @@ function AgentPicker({
   const primary = AGENT_GUIDES.filter((g) => g.primary);
   const more = AGENT_GUIDES.filter((g) => !g.primary);
   const [open, setOpen] = useState(() => more.some((g) => g.id === value));
+  /*
+   * Collapsing More never hides the choice (review round 1): with it closed,
+   * the chosen agent — if it lives under More — stays as the one tile shown.
+   */
+  const shownMore = open ? more : more.filter((g) => g.id === value);
 
   const tile = (g: AgentGuide) => (
     <label key={g.id} className="conn-agent" data-checked={g.id === value}>
@@ -644,8 +675,12 @@ function AgentPicker({
       >
         {open ? 'Fewer agents' : `More agents (${String(more.length)})`}
       </button>
-      <div className="conn-agents conn-agents-more" id="conn-agents-more" hidden={!open}>
-        {more.map(tile)}
+      <div
+        className="conn-agents conn-agents-more"
+        id="conn-agents-more"
+        hidden={shownMore.length === 0}
+      >
+        {shownMore.map(tile)}
       </div>
     </fieldset>
   );
@@ -670,7 +705,7 @@ function SetupBlockView({
       <div className={main ? 'conn-block conn-block-main' : 'conn-block'}>
         <div className="conn-block-bar">
           <span className="conn-block-label" id={labelId}>
-            {block.label}
+            <PathLabel text={block.label} />
           </span>
           {holdsToken && <span className="conn-block-tag">carries your token</span>}
           <CopyButton
@@ -694,6 +729,28 @@ function SetupBlockView({
       {block.warn !== undefined && <p className="conn-note conn-note-warn">{block.warn}</p>}
       {block.note !== undefined && !main && <p className="conn-note">{block.note}</p>}
     </div>
+  );
+}
+
+/**
+ * A block's label with its file paths set as code: as typed, never
+ * upper-cased, and the only part allowed to break anywhere — a long path
+ * wraps mid-name; the words around it do not.
+ */
+function PathLabel({ text }: { readonly text: string }) {
+  const parts = text.split(/(\s+)/);
+  return (
+    <>
+      {parts.map((part, i) =>
+        /^[~.]?[\w.-]*\/[\w./<>-]*|^\.[\w-]+\/?/.test(part) ? (
+          <code key={i} className="conn-path">
+            {part}
+          </code>
+        ) : (
+          part
+        ),
+      )}
+    </>
   );
 }
 
@@ -796,10 +853,21 @@ function LiveCheck({
         <p className="conn-body">
           <strong>{connectedLabel(live.token, guide.name)}</strong>
         </p>
-        <p className="conn-note">
-          That is the token you minted here, calling this board. <a href="/capacity">Capacity</a>{' '}
-          shows the session beside everyone else’s while it works.
-        </p>
+        {live.by === 'mcp' ? (
+          <p className="conn-note">
+            That is the token you minted here, calling this board over MCP.{' '}
+            <a href="/capacity">Capacity</a> shows the session beside everyone else’s while it
+            works.
+          </p>
+        ) : (
+          <p className="conn-note">
+            {live.by === 'client'
+              ? 'Proved by the client the token introduced itself as, a weaker signal than the board’s MCP stamp'
+              : 'Proved by the token being used at all — the weaker signal, accepted because this organisation has presence off'}
+            . With presence off the board does not record MCP calls, so Capacity will not show the
+            session.
+          </p>
+        )}
       </div>
     );
   }

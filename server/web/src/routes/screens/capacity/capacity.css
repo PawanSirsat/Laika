@@ -594,3 +594,35 @@
   line-height: 1;
   color: var(--text-secondary);
 }
+
+/*
+ * A phone (LAI-737 review round 1). The panels' fixed widths add up to about
+ * 1000px, so at 390 the card scrolled sideways and every truncating line was
+ * cut. Below 40rem they stack, each the card's width, and the lines wrap.
+ */
+@media (max-width: 40rem) {
+  .cap-panels {
+    flex-direction: column;
+    overflow-x: visible;
+  }
+
+  .cap-who,
+  .cap-working,
+  .cap-agent,
+  .cap-wip {
+    width: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .cap-wip {
+    border-bottom: none;
+  }
+
+  .cap-now-repo,
+  .cap-chip-title {
+    white-space: normal;
+    overflow: visible;
+    overflow-wrap: anywhere;
+  }
+}

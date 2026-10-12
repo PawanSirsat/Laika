@@ -756,3 +756,18 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Review round 1: a setup block's label names a file, so it reads as typed —
+   no upper-casing — and only the path itself may break mid-name. */
+.conn-setup .conn-block-label {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--weight-semibold);
+  overflow-wrap: normal;
+}
+
+.conn-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  overflow-wrap: anywhere;
+}

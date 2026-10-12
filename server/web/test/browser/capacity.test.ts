@@ -267,6 +267,42 @@ void describe('the capacity screen', () => {
     }
   });
 
+  void test('the Agents chip says what its number counts, and which agents (LAI-737)', async () => {
+    const h = await open('/capacity', STUB);
+    try {
+      const chip = h.page.locator('.space-agents-start');
+      await chip.locator('.agent-mark').first().waitFor({ timeout: 20_000 });
+      const text = (await chip.textContent()) ?? '';
+      // Two people have agent sessions (Ada, Priya); three agents are live.
+      assert.match(text, /2 people with agent sessions/, text);
+      assert.match(text, /Claude Code, Cursor, Codex/, text);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('at 390px nothing is clipped or pushes the page sideways (LAI-737)', async () => {
+    const h = await open('/capacity', STUB);
+    try {
+      await h.page.setViewportSize({ width: 390, height: 900 });
+      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      const wide = await h.page.evaluate(() => ({
+        page: document.documentElement.scrollWidth > window.innerWidth,
+        cut: [...document.querySelectorAll('.cap-card, .cap-card *')]
+          .filter(
+            (el) =>
+              el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflowX !== 'visible',
+          )
+          .map((el) => el.className),
+      }));
+      assert.equal(wide.page, false, 'the page scrolls sideways');
+      assert.deepEqual(wide.cut, [], `clipped: ${wide.cut.join(', ')}`);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('task ids are resolved to keys and titles, never shown raw', async () => {
     const h = await open('/capacity', STUB);
     try {

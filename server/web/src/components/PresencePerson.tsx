@@ -121,7 +121,14 @@ export function PresencePerson({ entry, theme, variant, spaceSlug }: PresencePer
           {newest !== undefined && (
             <span className="pp-agent" title={agents.map(agentClientName).join(', ')}>
               <AgentMark client={newest} size="sm" />
-              {!chip && <span className="pp-agent-name">{agentClientName(newest)}</span>}
+              {chip ? (
+                /* A chip shows only the mark; the name is said, not just titled. */
+                <span className="visually-hidden">
+                  {`via ${agents.map(agentClientName).join(', ')}`}
+                </span>
+              ) : (
+                <span className="pp-agent-name">{agentClientName(newest)}</span>
+              )}
             </span>
           )}
           {chip ? (
