@@ -2,6 +2,8 @@ import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useMemo, useState } from 'react';
 import type { Task } from '../../../api/tasks.ts';
 import { useProjectTasks } from '../../../api/use-project-tasks.ts';
+import { statusNameOf } from '../../../api/status-derive.ts';
+import { useProjectStatuses } from '../../../api/use-statuses.ts';
 import { listSprints, type Sprint } from '../../../api/sprints.ts';
 import { DemoNotice } from '../../../components/DemoNotice.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
@@ -38,6 +40,8 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
    * A failure is an empty calendar, as it was.
    */
   const set = useProjectTasks(slug);
+  /** So a chip can say which column the task is in (LAI-739). */
+  const statuses = useProjectStatuses(slug);
   const tasks = useMemo(
     (): readonly Task[] | undefined =>
       set?.status === 'ready'
@@ -172,7 +176,8 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
                             onClick={() => {
                               onOpenTask(task.id);
                             }}
-                            title={`${task.key} — ${task.title}`}
+                            title={`${task.key} — ${task.title} · ${statusNameOf(task, statuses.byId)}`}
+                            data-status={task.status}
                           >
                             <span className="cal-task-key">{task.key}</span>
                             <span className="cal-task-title">{task.title}</span>

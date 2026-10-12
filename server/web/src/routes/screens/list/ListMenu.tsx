@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
 /** One choice in a {@link ListMenu}. */
@@ -9,6 +9,10 @@ export interface MenuItem {
   readonly current?: boolean | undefined;
   /** Drawn in the warning colour — cancelling. */
   readonly danger?: boolean | undefined;
+  /** Drawn before the label — a status's dot (LAI-739). Decorative. */
+  readonly icon?: ReactNode;
+  /** A small muted marker after the label — `Hidden`. */
+  readonly note?: string | undefined;
 }
 
 /** Where the trigger is, in viewport coordinates, so the menu opens from it. */
@@ -118,7 +122,9 @@ export function ListMenu({ label, anchor, items, onPick, onClose, above = false 
             <span className="list-menu-tick" aria-hidden="true">
               {item.current === true ? '✓' : ''}
             </span>
+            {item.icon}
             {item.label}
+            {item.note !== undefined && <span className="list-menu-note">{item.note}</span>}
           </button>
         ))}
       </div>

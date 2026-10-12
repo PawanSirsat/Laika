@@ -1,4 +1,6 @@
-import { ageDays, blockedState, boardStatusLabel, STALE_DAYS } from '../../../api/board-derive.ts';
+import { ageDays, blockedState, STALE_DAYS } from '../../../api/board-derive.ts';
+import { statusNameOf } from '../../../api/status-derive.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
 import { timeLabel, type TimeLabel } from '../../../api/time-label.ts';
 import { dateLabel, isOverdue } from '../../../api/date-only.ts';
 import { parentOf } from '../../../api/subtask-derive.ts';
@@ -23,6 +25,8 @@ export interface ListRow {
   readonly muted: boolean;
   readonly status: string;
   readonly statusTone: Tone;
+  /** Where the status sits on the board — the sort order for *Status* (LAI-739). */
+  readonly statusRank: number;
   /** `P1`, upper-case — the design's form, not the API's `p1`. */
   readonly priority: string;
   /** The API's `p1`, for the icon beside that text (LAI-705). */
@@ -112,13 +116,11 @@ export interface ListRowInput {
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
   readonly now: number;
   /**
-   * The board's columns, hidden ones included, so a status reads as the column
-   * that owns it (LAI-490) — the List said *Review* under a board whose column
-   * says *Testing*. Absent means "no board to ask", and every status falls back
-   * to its own name.
+   * The project's statuses, hidden ones included, so a status reads as the
+   * project calls it now (LAI-490, LAI-739) — a renamed column renames the
+   * List's cell at once. Absent, every task reads its own `status_name`.
    */
-  readonly columns?:
-    readonly { readonly name: string; readonly statuses: readonly Task['status'][] }[] | undefined;
+  readonly statuses?: readonly ProjectStatus[] | undefined;
 }
 
 export function listRows({
@@ -127,8 +129,9 @@ export function listRows({
   members,
   sprintLabels,
   now,
-  columns = [],
+  statuses = [],
 }: ListRowInput): readonly ListRow[] {
+  const byStatusId = new Map(statuses.map((s) => [s.id, s]));
   return tasks.map((task) => {
     const member = task.assignee_id === null ? undefined : members.get(task.assignee_id);
     const blocked = blockedState(task, byId) === true;
@@ -149,8 +152,11 @@ export function listRows({
       muted: task.status === 'done' || task.status === 'cancelled',
       // The label only — sorting reads the value (`compareBy`), so renaming a
       // column can never reorder the List.
-      status: boardStatusLabel(task.status, columns),
+      status: statusNameOf(task, byStatusId),
       statusTone: statusTone(task.status),
+      // Board order; a status not loaded sorts after every known one, by kind.
+      statusRank:
+        byStatusId.get(task.status_id)?.position ?? 1_000_000 + STATUS_ORDER.indexOf(task.status),
       priority: task.priority.toUpperCase(),
       priorityLevel: task.priority,
       priorityTone: priorityTone(task.priority),
@@ -202,7 +208,8 @@ export const LIST_COLUMNS: readonly { readonly key: SortKey; readonly label: str
 
 /**
  * The workflow order, which is how a person reads status — not the alphabet,
- * which put `cancelled` second and `todo` last (LAI-485).
+ * which put `cancelled` second and `todo` last (LAI-485). The board's own
+ * column order comes first (LAI-739); this orders only statuses not loaded.
  */
 const STATUS_ORDER: readonly Task['status'][] = [
   'backlog',
@@ -232,7 +239,7 @@ function compareBy(key: SortKey, a: Task, b: Task, ra: ListRow, rb: ListRow): nu
     case 'title':
       return a.title.toLowerCase().localeCompare(b.title.toLowerCase());
     case 'status':
-      return STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status);
+      return ra.statusRank - rb.statusRank;
     case 'priority':
       return a.priority.localeCompare(b.priority);
     case 'assignee':

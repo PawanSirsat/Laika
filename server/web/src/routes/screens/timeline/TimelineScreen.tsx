@@ -14,7 +14,9 @@ import { LoadingState } from '../../../components/LoadingState.tsx';
 import { listProjects } from '../../../api/projects.ts';
 import { useRoute } from '../../use-route.ts';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
-import { blockedState, byIdIndex, statusLabel } from '../../../api/board-derive.ts';
+import { blockedState, byIdIndex } from '../../../api/board-derive.ts';
+import { statusNameOf } from '../../../api/status-derive.ts';
+import { StatusesById, useProjectStatuses, useStatusesById } from '../../../api/use-statuses.ts';
 import { formatRange, progressFor } from '../sprints/sprint-derive.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import { listMembers, type Member, type Task } from '../../../api/tasks.ts';
@@ -190,6 +192,7 @@ export function TimelineScreen() {
     [open, trayOpen],
   );
   const timeline = useTimeline(slug, openKeys);
+  const statuses = useProjectStatuses(slug);
 
   const all: readonly Sprint[] = useMemo(
     () =>
@@ -415,203 +418,206 @@ export function TimelineScreen() {
   const last = rows[rows.length - 1];
 
   return (
-    <div className="timeline">
-      <SpaceSlot
-        context={
-          first === undefined || last === undefined
-            ? undefined
-            : `${formatRange(first.starts_on, last.ends_on)} · ${String(rows.length)} ${
-                rows.length === 1 ? 'sprint' : 'sprints'
-              }`
-        }
-      />
+    // Every task row names its status as the project calls it now (LAI-739).
+    <StatusesById.Provider value={statuses.byId}>
+      <div className="timeline">
+        <SpaceSlot
+          context={
+            first === undefined || last === undefined
+              ? undefined
+              : `${formatRange(first.starts_on, last.ends_on)} · ${String(rows.length)} ${
+                  rows.length === 1 ? 'sprint' : 'sprints'
+                }`
+          }
+        />
 
-      <div className="tlx-toolbar">
-        <button
-          type="button"
-          className="tlx-tool"
-          onClick={() => {
-            scrollToDay(todayIndex, 1 / 3);
-          }}
-        >
-          Today
-        </button>
-        <div className="tlx-zoom" role="group" aria-label="Zoom">
-          {ZOOMS.map((z) => (
-            <button
-              key={z}
-              type="button"
-              className={z === zoom ? 'tlx-zoom-option tlx-zoom-on' : 'tlx-zoom-option'}
-              aria-pressed={z === zoom}
-              onClick={() => {
-                setZoom(z);
-              }}
-            >
-              {ZOOM_LABELS[z]}
-            </button>
-          ))}
-        </div>
-        <span className="tlx-toolbar-spacer" />
-        <button
-          type="button"
-          className="tlx-tool"
-          onClick={() => {
-            setOpen(allOpen ? new Set() : new Set(rows.map((r) => r.id)));
-          }}
-        >
-          {allOpen ? 'Collapse all' : 'Expand all'}
-        </button>
-      </div>
-
-      {notices}
-
-      <div
-        ref={scroller}
-        className="tlx"
-        style={chartStyle}
-        data-window-from={range.from}
-        data-day-width={dayWidth}
-        tabIndex={0}
-        role="region"
-        aria-label="Sprint timeline — the arrow keys scroll it"
-        onKeyDown={onChartKey}
-        onScroll={(event) => {
-          const el = event.currentTarget;
-          centreDay.current = (el.scrollLeft + viewWidth(el) / 2) / dayWidth;
-          if (frame.current !== undefined) return;
-          frame.current = requestAnimationFrame(() => {
-            frame.current = undefined;
-            setScrollX(el.scrollLeft);
-            setViewW(viewWidth(el));
-          });
-        }}
-      >
-        <div className="tlx-inner">
-          {/* The header: sticky to the top, its corner sticky both ways. */}
-          <div className="tlx-row tlx-head">
-            <div className="tlx-side tlx-corner">Sprint</div>
-            <div className="tlx-track tlx-scale" aria-hidden="true">
-              <div className="tlx-scale-row">
-                {top.map((band) => {
-                  if (!inDraw(band.start * dayWidth, (band.start + band.days) * dayWidth)) {
-                    return null;
-                  }
-                  /*
-                   * **The month you are in stays named, and never half-named.**
-                   * The label rides at the left of the view while its band is
-                   * under it, and stops at the band's end; once less than the
-                   * label's width of the band is left, it is not drawn at all,
-                   * rather than a clipped tail ("326") beside the next month.
-                   */
-                  const from = band.start * dayWidth;
-                  const to = (band.start + band.days) * dayWidth;
-                  const labelWidth = charWidth(band.label, 10) + 20;
-                  const x = Math.min(Math.max(from, scrollX), to - labelWidth);
-                  // Whole, inside its band, and inside the view — not under the sprint column.
-                  const fits = x >= from && x >= scrollX && x + labelWidth <= to;
-                  return (
-                    <span
-                      key={band.key}
-                      className="tlx-scale-band"
-                      style={{ left: from, width: to - from }}
-                    >
-                      {fits && (
-                        <span className="tlx-scale-label" style={{ left: x - from }}>
-                          {band.label}
-                        </span>
-                      )}
-                    </span>
-                  );
-                })}
-              </div>
-              <div className="tlx-scale-row tlx-scale-lower">
-                {lower === undefined
-                  ? ticks.map((tick) => {
-                      const x = tick.index * dayWidth;
-                      if (!inDraw(x, x)) return null;
-                      const show =
-                        (zoom === 'weeks' || dayWidth * 7 >= 28) && clearOfPill(x, tick.label);
-                      return (
-                        <span key={tick.index} className="tlx-scale-tick" style={{ left: x }}>
-                          {show ? tick.label : ''}
-                        </span>
-                      );
-                    })
-                  : lower.map((band) => {
-                      const x = band.start * dayWidth;
-                      if (!inDraw(x, (band.start + band.days) * dayWidth)) return null;
-                      return (
-                        <span key={band.key} className="tlx-scale-tick" style={{ left: x }}>
-                          {clearOfPill(x, band.label) ? band.label : ''}
-                        </span>
-                      );
-                    })}
-              </div>
-              <span className="tlx-today-pill" style={{ left: todayX }}>
-                {pillText}
-              </span>
-            </div>
+        <div className="tlx-toolbar">
+          <button
+            type="button"
+            className="tlx-tool"
+            onClick={() => {
+              scrollToDay(todayIndex, 1 / 3);
+            }}
+          >
+            Today
+          </button>
+          <div className="tlx-zoom" role="group" aria-label="Zoom">
+            {ZOOMS.map((z) => (
+              <button
+                key={z}
+                type="button"
+                className={z === zoom ? 'tlx-zoom-option tlx-zoom-on' : 'tlx-zoom-option'}
+                aria-pressed={z === zoom}
+                onClick={() => {
+                  setZoom(z);
+                }}
+              >
+                {ZOOM_LABELS[z]}
+              </button>
+            ))}
           </div>
+          <span className="tlx-toolbar-spacer" />
+          <button
+            type="button"
+            className="tlx-tool"
+            onClick={() => {
+              setOpen(allOpen ? new Set() : new Set(rows.map((r) => r.id)));
+            }}
+          >
+            {allOpen ? 'Collapse all' : 'Expand all'}
+          </button>
+        </div>
 
-          {/* One line for today, under the header and the sprint column. */}
-          <div
-            className="tlx-today"
-            style={{ left: `calc(var(--tlx-side) + ${String(todayX)}px)` }}
-          />
+        {notices}
 
-          {rows.map((sprint, index) => (
-            <SprintGroup
-              key={sprint.id}
-              sprint={sprint}
-              index={index}
-              now={now}
-              span={sprintSpan(range, sprint)}
-              dayWidth={dayWidth}
-              isOpen={open.has(sprint.id)}
-              load={timeline.tasks(sprint.id)}
-              members={members}
-              theme={theme}
-              onToggle={() => {
-                toggle(sprint.id);
-              }}
-              onOpenTask={openTask}
+        <div
+          ref={scroller}
+          className="tlx"
+          style={chartStyle}
+          data-window-from={range.from}
+          data-day-width={dayWidth}
+          tabIndex={0}
+          role="region"
+          aria-label="Sprint timeline — the arrow keys scroll it"
+          onKeyDown={onChartKey}
+          onScroll={(event) => {
+            const el = event.currentTarget;
+            centreDay.current = (el.scrollLeft + viewWidth(el) / 2) / dayWidth;
+            if (frame.current !== undefined) return;
+            frame.current = requestAnimationFrame(() => {
+              frame.current = undefined;
+              setScrollX(el.scrollLeft);
+              setViewW(viewWidth(el));
+            });
+          }}
+        >
+          <div className="tlx-inner">
+            {/* The header: sticky to the top, its corner sticky both ways. */}
+            <div className="tlx-row tlx-head">
+              <div className="tlx-side tlx-corner">Sprint</div>
+              <div className="tlx-track tlx-scale" aria-hidden="true">
+                <div className="tlx-scale-row">
+                  {top.map((band) => {
+                    if (!inDraw(band.start * dayWidth, (band.start + band.days) * dayWidth)) {
+                      return null;
+                    }
+                    /*
+                     * **The month you are in stays named, and never half-named.**
+                     * The label rides at the left of the view while its band is
+                     * under it, and stops at the band's end; once less than the
+                     * label's width of the band is left, it is not drawn at all,
+                     * rather than a clipped tail ("326") beside the next month.
+                     */
+                    const from = band.start * dayWidth;
+                    const to = (band.start + band.days) * dayWidth;
+                    const labelWidth = charWidth(band.label, 10) + 20;
+                    const x = Math.min(Math.max(from, scrollX), to - labelWidth);
+                    // Whole, inside its band, and inside the view — not under the sprint column.
+                    const fits = x >= from && x >= scrollX && x + labelWidth <= to;
+                    return (
+                      <span
+                        key={band.key}
+                        className="tlx-scale-band"
+                        style={{ left: from, width: to - from }}
+                      >
+                        {fits && (
+                          <span className="tlx-scale-label" style={{ left: x - from }}>
+                            {band.label}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+                <div className="tlx-scale-row tlx-scale-lower">
+                  {lower === undefined
+                    ? ticks.map((tick) => {
+                        const x = tick.index * dayWidth;
+                        if (!inDraw(x, x)) return null;
+                        const show =
+                          (zoom === 'weeks' || dayWidth * 7 >= 28) && clearOfPill(x, tick.label);
+                        return (
+                          <span key={tick.index} className="tlx-scale-tick" style={{ left: x }}>
+                            {show ? tick.label : ''}
+                          </span>
+                        );
+                      })
+                    : lower.map((band) => {
+                        const x = band.start * dayWidth;
+                        if (!inDraw(x, (band.start + band.days) * dayWidth)) return null;
+                        return (
+                          <span key={band.key} className="tlx-scale-tick" style={{ left: x }}>
+                            {clearOfPill(x, band.label) ? band.label : ''}
+                          </span>
+                        );
+                      })}
+                </div>
+                <span className="tlx-today-pill" style={{ left: todayX }}>
+                  {pillText}
+                </span>
+              </div>
+            </div>
+
+            {/* One line for today, under the header and the sprint column. */}
+            <div
+              className="tlx-today"
+              style={{ left: `calc(var(--tlx-side) + ${String(todayX)}px)` }}
             />
-          ))}
 
-          {/*
+            {rows.map((sprint, index) => (
+              <SprintGroup
+                key={sprint.id}
+                sprint={sprint}
+                index={index}
+                now={now}
+                span={sprintSpan(range, sprint)}
+                dayWidth={dayWidth}
+                isOpen={open.has(sprint.id)}
+                load={timeline.tasks(sprint.id)}
+                members={members}
+                theme={theme}
+                onToggle={() => {
+                  toggle(sprint.id);
+                }}
+                onOpenTask={openTask}
+              />
+            ))}
+
+            {/*
             **The tray is the chart's last group, not a box below it** (LAI-721
             review): a second scroller under the chart squeezed it to ~225px
             when opened. Its tasks are rows like a sprint's, with no bars.
           */}
-          <UnscheduledGroup
-            open={trayOpen}
-            onToggle={toggleTray}
-            load={timeline.tasks('none')}
-            members={members}
-            theme={theme}
-            onOpenTask={openTask}
-          />
+            <UnscheduledGroup
+              open={trayOpen}
+              onToggle={toggleTray}
+              load={timeline.tasks('none')}
+              members={members}
+              theme={theme}
+              onOpenTask={openTask}
+            />
+          </div>
+        </div>
+
+        <div className="tlx-legend">
+          <span className="tlx-legend-item">
+            <span className="tlx-swatch tlx-bar-current" aria-hidden="true" />
+            active
+          </span>
+          <span className="tlx-legend-item">
+            <span className="tlx-swatch tlx-bar-future" aria-hidden="true" />
+            planned
+          </span>
+          <span className="tlx-legend-item">
+            <span className="tlx-swatch tlx-bar-past" aria-hidden="true" />
+            ended
+          </span>
+          <span className="tlx-legend-note">
+            A bar is a sprint; its fill is the share done. Open a sprint to see its tasks.
+          </span>
         </div>
       </div>
-
-      <div className="tlx-legend">
-        <span className="tlx-legend-item">
-          <span className="tlx-swatch tlx-bar-current" aria-hidden="true" />
-          active
-        </span>
-        <span className="tlx-legend-item">
-          <span className="tlx-swatch tlx-bar-future" aria-hidden="true" />
-          planned
-        </span>
-        <span className="tlx-legend-item">
-          <span className="tlx-swatch tlx-bar-past" aria-hidden="true" />
-          ended
-        </span>
-        <span className="tlx-legend-note">
-          A bar is a sprint; its fill is the share done. Open a sprint to see its tasks.
-        </span>
-      </div>
-    </div>
+    </StatusesById.Provider>
   );
 }
 
@@ -810,6 +816,7 @@ function TaskRow({
   readonly blocked: boolean | undefined;
   readonly onOpen: (taskId: string) => void;
 }) {
+  const statusesById = useStatusesById();
   return (
     <div className="tlx-row tlx-task" data-task-id={task.id}>
       <div className="tlx-side tlx-task-side">
@@ -844,9 +851,9 @@ function TaskRow({
             <span className="tlx-task-blocked-text">Blocked?</span>
           </span>
         )}
-        {/* `In progress`, not `in_progress`: the lane's word, not the enum's. */}
+        {/* The status's name — the column's word — coloured by its kind (LAI-739). */}
         <span className={`timeline-task-status timeline-task-${task.status}`}>
-          {statusLabel(task.status)}
+          {statusNameOf(task, statusesById)}
         </span>
         {ink === undefined ? (
           <span className="tlx-avatar tlx-avatar-none" title="Unassigned">
@@ -974,6 +981,7 @@ function UnscheduledTray({
   readonly load: TasksLoad | undefined;
 }) {
   const tasks = load?.status === 'ready' ? load.tasks : undefined;
+  const statusesById = useStatusesById();
   return (
     <section className="timeline-tray" aria-label="Unscheduled tasks">
       <h2 className="timeline-tray-title">
@@ -1008,7 +1016,7 @@ function UnscheduledTray({
                   <span className="timeline-task-key">{task.key}</span>
                   <span className="timeline-task-title">{task.title}</span>
                   <span className={`timeline-task-status timeline-task-${task.status}`}>
-                    {statusLabel(task.status)}
+                    {statusNameOf(task, statusesById)}
                   </span>
                 </li>
               ))}

@@ -17,8 +17,10 @@ import {
   bulkPlan,
   bulkSummary,
   failureMessage,
+  statusChoices,
   statusTargets,
 } from '../../../../src/routes/screens/list/list-bulk.ts';
+import type { ProjectStatus } from '../../../../src/api/statuses.ts';
 
 void describe('statusTargets', () => {
   void test('is the server’s own human transition table, status for status', async () => {
@@ -136,23 +138,65 @@ void describe('failureMessage and bulkSummary', () => {
   });
 });
 
+void describe('statusChoices — what a task’s status menu offers (LAI-739)', () => {
+  const st = (
+    id: string,
+    category: ProjectStatus['category'],
+    position: number,
+  ): ProjectStatus => ({
+    id,
+    project_id: 'p',
+    name: id,
+    category,
+    position,
+    hidden: false,
+    created_at: 0,
+    task_count: 0,
+  });
+  const all = [
+    st('Backlog', 'backlog', 0),
+    st('QA', 'review', 3),
+    st('Code review', 'review', 2),
+    st('Done', 'done', 4),
+    st('Cancelled', 'cancelled', 5),
+  ];
+  const ids = (status: Task['status'], statusId: string) =>
+    statusChoices({ status, status_id: statusId }, all).map((s) => s.id);
+
+  void test('a sibling of the same kind is always offered; the current one never', () => {
+    assert.deepEqual(ids('review', 'QA'), ['Backlog', 'Code review', 'Done', 'Cancelled']);
+  });
+
+  void test('across kinds, only what the lifecycle allows — done is never cancelled', () => {
+    assert.ok(!ids('done', 'Done').includes('Cancelled'));
+    assert.deepEqual(ids('cancelled', 'Cancelled'), ['Backlog']);
+  });
+
+  void test('in board order, not the order they arrived in', () => {
+    assert.deepEqual(ids('backlog', 'Backlog'), ['Code review', 'QA', 'Done', 'Cancelled']);
+  });
+});
+
 void describe('bulkPlan', () => {
   const task = (id: string, over: Partial<Task>): Task =>
     ({
       id,
       key: id.toUpperCase(),
       status: 'todo',
+      status_id: 's-todo',
       priority: 'p2',
       assignee_id: null,
       sprint_id: null,
       ...over,
     }) as Task;
 
-  void test('a status change skips the tasks already in that status', () => {
-    const plan = bulkPlan({ kind: 'status', status: 'in_progress' }, [
+  void test('a status change skips the tasks already in that status — by id, not by kind', () => {
+    // `c` is in the same kind as the target and still moves: QA → Code review
+    // is a real change (LAI-739).
+    const plan = bulkPlan({ kind: 'status', statusId: 's-cr' }, [
       task('a', {}),
-      task('b', { status: 'in_progress' }),
-      task('c', { status: 'done' }),
+      task('b', { status: 'review', status_id: 's-cr' }),
+      task('c', { status: 'review', status_id: 's-qa' }),
     ]);
     assert.deepEqual(plan, { ids: ['a', 'c'], skipped: 1 });
   });

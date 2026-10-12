@@ -1,8 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { ALL_STATUSES, boardStatusLabel } from '../../../api/board-derive.ts';
-import type { BoardColumn } from '../../../api/columns.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
 import type { Sprint } from '../../../api/sprints.ts';
-import { PRIORITIES, type Member, type TaskPriority, type TaskStatus } from '../../../api/tasks.ts';
+import { PRIORITIES, type Member, type TaskPriority } from '../../../api/tasks.ts';
 import { anchorOf, ListMenu, type MenuAnchor, type MenuItem } from './ListMenu.tsx';
 import type { BulkAction, BulkRun } from './list-bulk.ts';
 
@@ -12,7 +11,8 @@ export interface BulkBarProps {
   readonly total: number;
   readonly onSelectAll: () => void;
   readonly onClear: () => void;
-  readonly columns: readonly BoardColumn[];
+  /** The project's statuses — what *Status* offers (LAI-739). */
+  readonly statuses: readonly ProjectStatus[];
   readonly members: ReadonlyMap<string, Member>;
   readonly sprints: readonly Sprint[];
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
@@ -51,7 +51,7 @@ export function BulkBar({
   total,
   onSelectAll,
   onClear,
-  columns,
+  statuses,
   members,
   sprints,
   sprintLabels,
@@ -99,11 +99,15 @@ export function BulkBar({
       case 'status':
         return {
           label: 'Change status',
-          items: ALL_STATUSES.map((s) => ({
-            value: s,
-            label: boardStatusLabel(s, columns),
-            danger: s === 'cancelled',
-          })),
+          items: [...statuses]
+            .sort((a, b) => a.position - b.position)
+            .map((s) => ({
+              value: s.id,
+              label: s.name,
+              danger: s.category === 'cancelled',
+              icon: <span className={`dd-dot dd-dot-${s.category}`} aria-hidden="true" />,
+              ...(s.hidden ? { note: 'Hidden' } : {}),
+            })),
         };
       case 'priority':
         return {
@@ -136,7 +140,7 @@ export function BulkBar({
     setOpen(undefined);
     switch (which) {
       case 'status':
-        onAction({ kind: 'status', status: value as TaskStatus });
+        onAction({ kind: 'status', statusId: value });
         return;
       case 'priority':
         onAction({ kind: 'priority', priority: value as TaskPriority });

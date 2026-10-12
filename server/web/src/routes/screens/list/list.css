@@ -941,3 +941,11 @@
   font-size: 0.75rem;
   white-space: nowrap;
 }
+
+/* A status's marker in a status menu — `Hidden` (LAI-739). */
+.list-menu-note {
+  margin-left: auto;
+  padding-left: 0.5rem;
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+}

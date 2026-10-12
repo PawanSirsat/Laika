@@ -1,18 +1,13 @@
 import { useId, useState } from 'react';
 import { AssignControl } from '../board/AssignControl.tsx';
 import { TagPicker } from '../board/TagPicker.tsx';
-import { ALL_STATUSES, boardStatusLabel } from '../../../api/board-derive.ts';
-import type { BoardColumn } from '../../../api/columns.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
+import { statusNameOf } from '../../../api/status-derive.ts';
+import { statusOptions } from '../board/status-options.tsx';
 import { dateInputToMs, dateLabel, isOverdue, msToDateInput } from '../../../api/date-only.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import { timeLabel } from '../../../api/time-label.ts';
-import {
-  updateTask,
-  PRIORITIES,
-  type Member,
-  type Task,
-  type TaskStatus,
-} from '../../../api/tasks.ts';
+import { updateTask, PRIORITIES, type Member, type Task } from '../../../api/tasks.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
@@ -26,8 +21,8 @@ export interface TaskMetaProps {
   readonly task: Task;
   /** Everything loaded, for naming the parent and offering one. */
   readonly byId: ReadonlyMap<string, Task>;
-  /** The board's columns — a renamed column names the status here too. */
-  readonly columns: readonly BoardColumn[];
+  /** The project's statuses — the board's columns — for the status control (LAI-739). */
+  readonly statuses: readonly ProjectStatus[];
   /** Every sprint on the project, for the sprint control. */
   readonly sprints: readonly Sprint[];
   /** False for a Viewer — assigning to a sprint is member+ (§3.2). */
@@ -54,7 +49,8 @@ export interface TaskMetaProps {
   readonly openSubtasks: number;
   /** Commits recorded against the task — the Changes tab's count, for the Development card. */
   readonly changesCount: number;
-  readonly onMove: (taskId: string, to: TaskStatus) => void;
+  /** Into a project status, by id (LAI-739). */
+  readonly onMove: (taskId: string, toStatusId: string) => void;
   readonly onAssigned: () => void;
   readonly onTaskEdited: () => void;
   readonly onTagsChanged: (tags: readonly string[]) => void;
@@ -115,7 +111,7 @@ export function TaskMeta({
   slug,
   task,
   byId,
-  columns,
+  statuses,
   sprints,
   maySetSprint,
   onSprintChange,
@@ -187,6 +183,10 @@ export function TaskMeta({
     .sort((a, b) => a.number - b.number);
 
   const discovered = task.discovered_from === null ? undefined : byId.get(task.discovered_from);
+  const byStatusId = new Map(statuses.map((s) => [s.id, s]));
+  const reviewColumn = [...statuses]
+    .sort((a, b) => a.position - b.position)
+    .find((s) => s.category === 'review' && !s.hidden);
   const hasDevelopment = task.branch !== null || task.external_ref !== null || changesCount > 0;
   const externalIsUrl = task.external_ref !== null && /^https?:\/\//.test(task.external_ref);
 
@@ -199,11 +199,11 @@ export function TaskMeta({
             Status
           </span>
           {/*
-            **All six, `cancelled` included** (LAI-266). The board never
-            resolves a drop to `cancelled` — a mis-drag must not cancel
-            somebody's work — so this control is the only way to reach it.
-            The pill shows the name alone; the list adds each status's dot
-            (LAI-726). The caret is the label's, so the trigger draws none.
+            **Every status of the project** (LAI-739), hidden ones marked —
+            a cancelled one included, which starts hidden on the board and so
+            is reached from here. The pill shows the name, coloured by its
+            kind; the list adds each status's dot (LAI-726). The caret is the
+            label's, so the trigger draws none.
           */}
           <Dropdown
             variant="bare"
@@ -213,32 +213,33 @@ export function TaskMeta({
             }}
             aria-labelledby={statusId}
             noun="statuses"
-            value={task.status}
+            value={task.status_id}
             disabled={moving || !mayEdit}
-            display={<span className="dd-value">{boardStatusLabel(task.status, columns)}</span>}
-            options={ALL_STATUSES.map((c) => ({
-              value: c,
-              label: boardStatusLabel(c, columns),
-              icon: <span className={`dd-dot dd-dot-${c}`} />,
-            }))}
+            display={<span className="dd-value">{statusNameOf(task, byStatusId)}</span>}
+            options={statusOptions(statuses)}
             onChange={(to) => {
-              if (to !== task.status) onMove(task.id, to);
+              if (to !== task.status_id) onMove(task.id, to);
             }}
           />
           <span className="meta-status-caret" aria-hidden="true" />
         </label>
-        {mayEdit && task.status !== 'review' && task.status !== 'done' && (
-          <button
-            type="button"
-            className="meta-review"
-            disabled={moving}
-            onClick={() => {
-              onMove(task.id, 'review');
-            }}
-          >
-            Move to Review
-          </button>
-        )}
+        {/* The project's first review column, by name — *Move to QA* on a
+            board that calls it that (LAI-739). */}
+        {mayEdit &&
+          reviewColumn !== undefined &&
+          task.status !== 'review' &&
+          task.status !== 'done' && (
+            <button
+              type="button"
+              className="meta-review"
+              disabled={moving}
+              onClick={() => {
+                onMove(task.id, reviewColumn.id);
+              }}
+            >
+              Move to {reviewColumn.name}
+            </button>
+          )}
       </div>
       {/* `started_at` is when it was claimed — the design's second line. */}
       {since(task.started_at, now) !== undefined && (

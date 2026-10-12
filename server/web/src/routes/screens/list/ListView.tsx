@@ -5,24 +5,22 @@ import { PriorityIcon } from '../../../components/PriorityIcon.tsx';
 import { startTicker } from '../../../api/time-label.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import type { Theme } from '../../../theme/theme.ts';
-import { boardStatusLabel } from '../../../api/board-derive.ts';
 import {
   assignTask,
   changeStatus,
   updateTask,
   type Member,
   type Task,
-  type TaskStatus,
 } from '../../../api/tasks.ts';
 import { addTasksToSprint, removeTaskFromSprint, type Sprint } from '../../../api/sprints.ts';
-import type { BoardColumn } from '../../../api/columns.ts';
+import type { ProjectStatus } from '../../../api/statuses.ts';
 import { LIST_COLUMNS, listRows, nextSort, sortRows, type ListSort } from './list-derive.ts';
 import { effectiveSelection, pageState, selectAll, toggleOne, togglePage } from './list-select.ts';
 import {
   applyToEach,
   bulkPlan,
   bulkSummary,
-  statusTargets,
+  statusChoices,
   type BulkAction,
   type BulkRun,
 } from './list-bulk.ts';
@@ -44,8 +42,8 @@ export interface ListViewProps {
   readonly byId: ReadonlyMap<string, Task>;
   readonly members: ReadonlyMap<string, Member>;
   readonly sprintLabels: ReadonlyMap<string, { readonly label: string }>;
-  /** The board's columns, so STATUS says what the board says (LAI-490). */
-  readonly columns: readonly BoardColumn[];
+  /** The project's statuses, so STATUS says what the board says (LAI-490, LAI-739). */
+  readonly statuses: readonly ProjectStatus[];
   readonly sprints: readonly Sprint[];
   readonly theme: Theme;
   readonly filtered: boolean;
@@ -77,7 +75,8 @@ export interface ListViewProps {
    * server answers (LAI-049).
    */
   readonly movingId: string | undefined;
-  readonly onMove: (taskId: string, to: TaskStatus) => void;
+  /** Into a project status, by id (LAI-739). */
+  readonly onMove: (taskId: string, toStatusId: string) => void;
   /**
    * The selection and the bulk run, **held by `BoardScreen`** for the same
    * reason the sort is in the URL: this view is unmounted on every reload,
@@ -95,9 +94,11 @@ export interface ListViewProps {
 function applyAction(action: BulkAction, task: Task): Promise<unknown> {
   switch (action.kind) {
     case 'status':
-      return changeStatus(task.id, action.status);
+      return changeStatus(task.id, { status_id: action.statusId });
     case 'cancel':
-      return changeStatus(task.id, 'cancelled');
+      // The kind, not a status: the server files it under the project's
+      // first cancelled status, whatever this board calls it.
+      return changeStatus(task.id, { status: 'cancelled' });
     case 'priority':
       return updateTask(task.id, { priority: action.priority });
     case 'assignee':
@@ -139,7 +140,7 @@ export function ListView({
   byId,
   members,
   sprintLabels,
-  columns,
+  statuses,
   sprints,
   theme,
   filtered,
@@ -176,7 +177,7 @@ export function ListView({
     [],
   );
   const rows = sortRows(
-    listRows({ tasks, byId, members, sprintLabels, now, columns }),
+    listRows({ tasks, byId, members, sprintLabels, now, statuses }),
     byId,
     sort.key,
     sort.ascending,
@@ -573,7 +574,7 @@ export function ListView({
               onSelect(new Set());
               onBulkRun(undefined);
             }}
-            columns={columns}
+            statuses={statuses}
             members={members}
             sprints={sprints}
             sprintLabels={sprintLabels}
@@ -631,21 +632,30 @@ export function ListView({
         <ListMenu
           label={`Change status of ${menuTask.key}`}
           anchor={statusMenu.at}
+          /*
+           * The project's statuses in board order (LAI-739): the current one
+           * ticked, then every one the task may move to — another of the same
+           * kind always, other kinds as the lifecycle allows. Each wears its
+           * kind's dot; hidden columns are marked.
+           */
           items={[
             {
-              value: menuTask.status,
-              label: boardStatusLabel(menuTask.status, columns),
+              value: menuTask.status_id,
+              label: rows.find((r) => r.id === menuTask.id)?.status ?? menuTask.status_name,
               current: true,
+              icon: <span className={`dd-dot dd-dot-${menuTask.status}`} aria-hidden="true" />,
             },
-            ...statusTargets(menuTask.status).map((s) => ({
-              value: s,
-              label: boardStatusLabel(s, columns),
-              danger: s === 'cancelled',
+            ...statusChoices(menuTask, statuses).map((s) => ({
+              value: s.id,
+              label: s.name,
+              danger: s.category === 'cancelled',
+              icon: <span className={`dd-dot dd-dot-${s.category}`} aria-hidden="true" />,
+              ...(s.hidden ? { note: 'Hidden' } : {}),
             })),
           ]}
           onPick={(value) => {
             setStatusMenu(undefined);
-            if (value !== menuTask.status) onMove(menuTask.id, value as TaskStatus);
+            if (value !== menuTask.status_id) onMove(menuTask.id, value);
           }}
           onClose={() => {
             setStatusMenu(undefined);
