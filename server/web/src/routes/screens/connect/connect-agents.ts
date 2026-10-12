@@ -113,7 +113,7 @@ export const AGENT_GUIDES: readonly AgentGuide[] = [
     name: 'Antigravity',
     client: 'antigravity',
     primary: true,
-    beta: 'Beta — not yet verified against Laika. Antigravity opens with a handshake other servers have tripped on, and it cannot read environment variables.',
+    beta: 'Beta — not yet verified against Laika. Antigravity opens with a handshake other servers have tripped on, it cannot read environment variables, and antigravity-cli issue 233 reports remote headers answered Unauthorized.',
     tokenWord: 'antigravity',
     via: 'mcp',
   },
@@ -288,20 +288,48 @@ ${PLUGIN_HOME}/cli/bin/laika connect ${id}`,
   };
 }
 
-/** The variable every env-reading config points at. */
+/** A single-quoted shell word that survives any character, `'` included. */
+export function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+/** The marker `laika connect` writes, so the two never add the line twice. */
+const RC_MARKER = '# Laika — export LAIKA_URL and LAIKA_TOKEN for coding agents (laika connect)';
+const RC_LINE = '[ -r "$HOME/.laika/env" ] && { set -a; . "$HOME/.laika/env"; set +a; }';
+
+/**
+ * The variable every env-reading config points at — stored where the CLI
+ * stores it (review round 1).
+ *
+ * The token goes in `~/.laika/env`, created `0600` in a `0700` directory, and
+ * the shell profile only **sources** that file. It used to be two `export`
+ * lines for `~/.zshrc`, which put the token in a file that dotfile managers
+ * commit and sync. Same file, same marker and same line as `laika connect`,
+ * so either can run after the other and the profile gains the line once.
+ */
 function envBlock(origin: string, token: string): SetupBlock {
   return {
     key: 'env',
     group: 'manual',
-    label: '~/.zshrc or ~/.bashrc — your shell profile, outside any repository',
-    what: 'the environment lines',
+    label: 'Terminal — stores the token in ~/.laika/env and loads it in new shells',
+    what: 'the environment setup',
     lang: 'sh',
     token: 'secret',
-    text: `export LAIKA_URL="${origin}"
-export LAIKA_TOKEN="${token}"`,
-    note: 'Open a new terminal afterwards. An app started from the Dock or Start menu does not read your shell profile — start it from that terminal so it sees LAIKA_TOKEN.',
+    text: `mkdir -p ~/.laika && chmod 700 ~/.laika
+(umask 077 && cat > ~/.laika/env <<'LAIKA_ENV'
+LAIKA_URL="${origin}"
+LAIKA_TOKEN="${token}"
+LAIKA_ENV
+)
+chmod 600 ~/.laika/env
+RC=~/.profile; [ -n "$ZSH_VERSION" ] && RC=~/.zshrc; [ -n "$BASH_VERSION" ] && RC=~/.bashrc
+grep -qF '(laika connect)' "$RC" 2>/dev/null || printf '%s\\n' ${shellQuote(RC_MARKER)} ${shellQuote(RC_LINE)} >> "$RC"`,
+    note: 'Your shell profile only sources ~/.laika/env, so it never holds the token. Open a new terminal afterwards. An app started from the Dock or Start menu does not read your shell profile — start it from that terminal so it sees LAIKA_TOKEN.',
   };
 }
+
+const VSCODE_HOSTED =
+  'It runs inside VS Code, which sees LAIKA_TOKEN only when started from a terminal that has it (`code .`), or when the variable is set system-wide.';
 
 // ------------------------------------------------------------------ blocks
 
@@ -351,6 +379,7 @@ export function setupBlocks(
           text: `claude mcp add --transport http --scope user laika "$LAIKA_URL/mcp" \\
   --header "Authorization: Bearer $LAIKA_TOKEN"`,
           note: 'Without the plugin: the tools, but no /laika commands and no Capacity heartbeat. Needs LAIKA_URL and LAIKA_TOKEN exported first — and the double quotes write the token’s value into ~/.claude.json.',
+          warn: 'Not verified: single-quoting the header to keep ${LAIKA_TOKEN} as a reference instead of its value has not been tested.',
         },
         {
           key: 'claude-mcp-json',
@@ -369,6 +398,7 @@ export function setupBlocks(
             },
           }),
           note: 'Claude Code expands ${VAR} in a remote server’s url and headers, and asks once before using a project server.',
+          warn: 'Not verified: Claude Code reads some credential variables as empty in a remote server’s headers; that LAIKA_TOKEN is not one of them is untested — check once with claude --debug.',
         },
       ];
 
@@ -519,16 +549,42 @@ bearer_token_env_var = "LAIKA_TOKEN"`,
           token: 'none',
           text: `gemini mcp add -s user -t http laika "${url}" -H 'Authorization: Bearer \${LAIKA_TOKEN}'`,
           note: 'Single quotes keep ${LAIKA_TOKEN} as a reference for Gemini to expand at start-up. Without -s user it is added to the current project only.',
+          warn: 'Not verified: that the single-quoted reference survives and expands at load is read from Gemini’s code, not run.',
         },
       ];
 
     case 'vscode':
       return [
+        envBlock(origin, token),
         {
           key: 'vscode-json',
-          group: 'recommended',
+          group: 'manual',
           label: '.vscode/mcp.json — this workspace, safe to commit',
           what: 'the VS Code config',
+          lang: 'json',
+          token: 'none',
+          text: json({
+            servers: {
+              laika: { type: 'http', url, headers: { Authorization: 'Bearer ${env:LAIKA_TOKEN}' } },
+            },
+          }),
+          note: 'The file holds no token. VS Code sees LAIKA_TOKEN only when started from a terminal that has it (`code .`), or when the variable is set system-wide.',
+        },
+        {
+          key: 'vscode-add',
+          group: 'alternative',
+          label: 'Terminal — user profile, reads LAIKA_TOKEN',
+          what: 'the code --add-mcp command',
+          lang: 'sh',
+          token: 'none',
+          text: `code --add-mcp ${shellQuote(JSON.stringify({ name: 'laika', type: 'http', url, headers: { Authorization: 'Bearer ${env:LAIKA_TOKEN}' } }))}`,
+          warn: 'VS Code documents --add-mcp with a local server only; this HTTP form is inferred from its config shape, not tested.',
+        },
+        {
+          key: 'vscode-input-json',
+          group: 'alternative',
+          label: '.vscode/mcp.json — VS Code asks for the token instead',
+          what: 'the VS Code prompt config',
           lang: 'json',
           token: 'none',
           text: json({
@@ -548,18 +604,7 @@ bearer_token_env_var = "LAIKA_TOKEN"`,
               },
             },
           }),
-          note: 'VS Code asks for the token the first time the server starts and keeps it in its own secret storage — the file never holds it.',
-        },
-        envBlock(origin, token),
-        {
-          key: 'vscode-add',
-          group: 'alternative',
-          label: 'Terminal — user profile, reads LAIKA_TOKEN',
-          what: 'the code --add-mcp command',
-          lang: 'sh',
-          token: 'none',
-          text: `code --add-mcp '${JSON.stringify({ name: 'laika', type: 'http', url, headers: { Authorization: 'Bearer ${env:LAIKA_TOKEN}' } })}'`,
-          warn: 'VS Code documents --add-mcp with a local server only; this HTTP form is inferred from its config shape, not tested.',
+          note: 'VS Code prompts once and keeps the token in its secret storage. Its docs now steer away from this form, which is why the environment variable leads.',
         },
       ];
 
@@ -660,6 +705,33 @@ hermes mcp test laika`,
           note: BRIDGE_NOTE,
         },
         {
+          key: 'zed-env',
+          group: 'alternative',
+          label: '~/.config/zed/settings.json — bridge reading LAIKA_TOKEN from Zed’s environment',
+          what: 'the Zed tokenless bridge config',
+          lang: 'json',
+          token: 'none',
+          text: json({
+            context_servers: {
+              laika: {
+                command: 'npx',
+                args: [
+                  '-y',
+                  BRIDGE_PACKAGE,
+                  url,
+                  '--allow-http',
+                  '--transport',
+                  'http-only',
+                  '--header',
+                  'Authorization:Bearer ${LAIKA_TOKEN}',
+                ],
+              },
+            },
+          }),
+          note: 'Keeps the token out of settings.json: mcp-remote expands ${LAIKA_TOKEN} from the environment it inherits, so start Zed from a terminal that has it.',
+          warn: 'Not verified: that Zed passes its environment to the bridge it starts.',
+        },
+        {
           key: 'zed-direct',
           group: 'alternative',
           label: '~/.config/zed/settings.json — direct, no bridge',
@@ -694,7 +766,9 @@ hermes mcp test laika`,
               },
             },
           }),
-          note: 'type must be streamableHttp — without it Cline falls back to the old SSE transport. An unset variable is sent literally.',
+          note:
+            'type must be streamableHttp — without it Cline falls back to the old SSE transport. An unset variable is sent literally. ' +
+            VSCODE_HOSTED,
         },
         {
           key: 'roo-json',
@@ -712,7 +786,8 @@ hermes mcp test laika`,
               },
             },
           }),
-          note: 'Roo Code’s repository is archived, so this shape will not change.',
+          note:
+            'Roo Code’s repository is archived, so this shape will not change. ' + VSCODE_HOSTED,
         },
       ];
 
@@ -735,7 +810,7 @@ mcpServers:
     requestOptions:
       headers:
         Authorization: Bearer \${{ secrets.LAIKA_TOKEN }}`,
-          note: 'Continue resolves the secret from ~/.continue/.env, then the workspace .env files, then your environment.',
+          note: 'Continue resolves the secret from ~/.continue/.env, then the workspace .env files, then your environment — the last only when the editor was started from a terminal that has it, or the variable is set system-wide.',
         },
         {
           key: 'continue-env',
@@ -768,7 +843,7 @@ mcpServers:
         {
           key: 'kiro-bridge',
           group: 'recommended',
-          label: '~/.kiro/settings/mcp.json — user scope',
+          label: '~/.kiro/settings/mcp.json — user scope only, it holds your token',
           what: 'the Kiro config',
           lang: 'json',
           token: 'inline',
@@ -826,7 +901,7 @@ mcpServers:
         {
           key: 'junie-json',
           group: 'manual',
-          label: 'Junie — ~/.junie/mcp/mcp.json',
+          label: 'Junie — ~/.junie/mcp/mcp.json, user scope only, it holds your token',
           what: 'the Junie config',
           lang: 'json',
           token: 'inline',
@@ -839,7 +914,7 @@ mcpServers:
           key: 'jetbrains-bridge',
           group: 'alternative',
           label:
-            'JetBrains AI Assistant — Settings → Tools → AI Assistant → Model Context Protocol',
+            'JetBrains AI Assistant — Settings → Tools → AI Assistant → Model Context Protocol (global)',
           what: 'the AI Assistant bridge config',
           lang: 'json',
           token: 'inline',
@@ -1142,20 +1217,30 @@ export function likelyCauses(id: AgentChoice): readonly string[] {
 // ---------------------------------------------- the project's instructions
 
 export interface InstructionsTarget {
-  /** Where in the repository the block goes. */
+  /** Where the block goes — a repository path, or for a client with no file, where in its UI. */
   readonly path: string;
   /** The file's content around the block — frontmatter for a rule file. */
   readonly wrap: (block: string) => string;
+  /** False when there is no file to commit (Claude Desktop keeps it in its UI). */
+  readonly committable: boolean;
+  /** What else decides whether the agent reads it — a file that wins over it. */
+  readonly note?: string;
 }
 
-const plain = (path: string): InstructionsTarget => ({ path, wrap: (block) => block });
+const plain = (path: string, note?: string): InstructionsTarget => ({
+  path,
+  wrap: (block) => block,
+  committable: true,
+  ...(note === undefined ? {} : { note }),
+});
 
 /**
  * Which file a project's agents read their standing instructions from.
  *
  * AGENTS.md is the default because most agents read it (Codex, OpenCode, Amp,
  * Goose, Hermes, Zed, Warp, and Cursor's CLI); the rest are each client's own
- * rule location from the report.
+ * rule location from the report. Where a client reads the *first* of several
+ * files, the note says which ones win over AGENTS.md (review round 1).
  */
 export function instructionsTarget(id: AgentChoice): InstructionsTarget {
   switch (id) {
@@ -1167,6 +1252,7 @@ export function instructionsTarget(id: AgentChoice): InstructionsTarget {
     case 'cursor':
       return {
         path: '.cursor/rules/laika.mdc',
+        committable: true,
         wrap: (block) => `---
 description: How agents work the Laika board for this project
 alwaysApply: true
@@ -1179,13 +1265,38 @@ ${block}`,
     case 'windsurf':
       return plain('.windsurf/rules/laika.md');
     case 'cline':
-      return plain('.clinerules/laika.md');
+      return plain(
+        '.clinerules/laika.md',
+        'Roo Code reads .roo/rules/laika.md instead — put the same block there.',
+      );
     case 'continue':
       return plain('.continue/rules/laika.md');
     case 'kiro':
       return plain('.kiro/steering/laika.md');
     case 'junie':
       return plain('.junie/AGENTS.md');
+    case 'claude-desktop':
+      return {
+        path: 'Claude Desktop project instructions',
+        committable: false,
+        wrap: (block) => block,
+        note: 'Claude Desktop has no instructions file: paste the block into a project’s Project instructions in its UI.',
+      };
+    case 'zed':
+      return plain(
+        'AGENTS.md',
+        'Zed reads only the first it finds of .rules, .cursorrules, .windsurfrules, .clinerules, .github/copilot-instructions.md, AGENT.md, AGENTS.md — an earlier one in that list wins, so put the block there instead if the repo has one.',
+      );
+    case 'hermes':
+      return plain(
+        'AGENTS.md',
+        'Hermes reads .hermes.md or HERMES.md first, then AGENTS.override.md, before AGENTS.md — if the repo has one of those, it wins; put the block there instead.',
+      );
+    case 'warp':
+      return plain(
+        'AGENTS.md',
+        'Warp reads WARP.md instead when both exist — if the repo has a WARP.md, put the block there.',
+      );
     default:
       return plain('AGENTS.md');
   }

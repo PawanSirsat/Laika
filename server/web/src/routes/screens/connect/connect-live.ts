@@ -53,7 +53,16 @@ export type LiveState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'watching'; readonly ticks: number }
   | { readonly kind: 'found'; readonly entry: PresenceEntry }
-  | { readonly kind: 'connected'; readonly token: TokenView }
+  /**
+   * `by` is what proved it: `mcp` is the token's own MCP stamp; `client` (an
+   * `initialize` recorded on it) and `use` (any request, accepted only while
+   * presence is off) are weaker, and the page says so.
+   */
+  | {
+      readonly kind: 'connected';
+      readonly token: TokenView;
+      readonly by: 'mcp' | 'client' | 'use';
+    }
   | { readonly kind: 'spent' }
   | { readonly kind: 'disabled' }
   | { readonly kind: 'error'; readonly error: unknown };
@@ -112,14 +121,15 @@ export function tokenLiveStateFrom(
   const mine = tokens.find((token) => token.id === mintedId);
   if (mine !== undefined) {
     const after = (at: number | null): boolean => at !== null && at >= mine.created_at;
-    const connected =
-      via === 'api'
-        ? after(mine.last_used_at)
-        : after(mine.last_mcp_at) ||
-          mine.last_client !== null ||
-          mine.last_client_name !== null ||
-          (!presenceOn && after(mine.last_used_at));
-    if (connected) return { kind: 'connected', token: mine };
+    if (via === 'api') {
+      if (after(mine.last_used_at)) return { kind: 'connected', token: mine, by: 'use' };
+    } else if (after(mine.last_mcp_at)) {
+      return { kind: 'connected', token: mine, by: 'mcp' };
+    } else if (mine.last_client !== null || mine.last_client_name !== null) {
+      return { kind: 'connected', token: mine, by: 'client' };
+    } else if (!presenceOn && after(mine.last_used_at)) {
+      return { kind: 'connected', token: mine, by: 'use' };
+    }
   }
   return ticksSoFar >= LIVE_TICKS ? { kind: 'spent' } : { kind: 'watching', ticks: ticksSoFar };
 }

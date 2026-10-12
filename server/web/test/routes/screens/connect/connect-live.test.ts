@@ -214,3 +214,23 @@ void describe('what the page says once it connected', () => {
     assert.equal(connectedLabel(bare, 'Omnigent'), 'Connected — Omnigent');
   });
 });
+
+void describe('which signal proved it (review round 1)', () => {
+  void test('an MCP stamp is the strong signal', () => {
+    const state = tokenLiveStateFrom([token({ last_mcp_at: 1_788_272_010_000 })], MINTED, 'mcp', 1);
+    assert.equal(state.kind === 'connected' ? state.by : '', 'mcp');
+  });
+
+  void test('a recorded client, or a bare use with presence off, is reported as weaker', () => {
+    const named = tokenLiveStateFrom([token({ last_client: 'codex' })], MINTED, 'mcp', 1, false);
+    assert.equal(named.kind === 'connected' ? named.by : '', 'client');
+    const used = tokenLiveStateFrom(
+      [token({ last_used_at: 1_788_272_010_000 })],
+      MINTED,
+      'mcp',
+      1,
+      false,
+    );
+    assert.equal(used.kind === 'connected' ? used.by : '', 'use');
+  });
+});

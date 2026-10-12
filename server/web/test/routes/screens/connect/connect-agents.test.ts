@@ -8,6 +8,10 @@
  */
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, test } from 'node:test';
 import {
   AGENT_GUIDES,
@@ -218,14 +222,18 @@ void describe('each client gets its own verified shape', () => {
     assert.equal(at(cfg, 'mcp', 'laika', 'headers', 'Authorization'), 'Bearer {env:LAIKA_TOKEN}');
   });
 
-  void test('VS Code uses `servers` and a password input, so the file carries nothing', () => {
+  void test('VS Code recommends ${env:LAIKA_TOKEN}; the password input is the alternative', () => {
+    // Review round 1: `${input:…}` is the route VS Code's docs steer away from,
+    // so it moved under "Other ways" and the env reference leads.
     const cfg = json('vscode', 'vscode-json');
     assert.equal(at(cfg, 'servers', 'laika', 'type'), 'http');
     assert.equal(
       at(cfg, 'servers', 'laika', 'headers', 'Authorization'),
-      'Bearer ${input:laika-token}',
+      'Bearer ${env:LAIKA_TOKEN}',
     );
-    assert.equal(at(cfg, 'inputs', '0', 'password'), true);
+    const input = json('vscode', 'vscode-input-json');
+    assert.equal(at(input, 'inputs', '0', 'password'), true);
+    assert.equal(block('vscode', 'vscode-input-json').group, 'alternative');
   });
 
   void test('Antigravity uses serverUrl, and the token inline', () => {
@@ -340,5 +348,80 @@ void describe('starting and diagnosing', () => {
         `${id}'s causes never mention LAIKA_TOKEN`,
       );
     }
+  });
+});
+
+void describe('review round 1', () => {
+  void test('the by-hand token block writes ~/.laika/env 0600 and the profile only sources it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'laika-envblock-'));
+    try {
+      const text = block('codex', 'env').text;
+      for (let run = 0; run < 2; run += 1) {
+        execFileSync('bash', ['-c', text], {
+          env: { HOME: root, PATH: process.env.PATH ?? '', BASH_VERSION: '5' },
+        });
+      }
+      const env = readFileSync(join(root, '.laika', 'env'), 'utf8');
+      assert.match(env, new RegExp(`^LAIKA_TOKEN="${SECRET}"$`, 'm'));
+      assert.match(env, new RegExp(`^LAIKA_URL="${ORIGIN}"$`, 'm'));
+      assert.equal(statSync(join(root, '.laika', 'env')).mode & 0o777, 0o600);
+      const rc = readFileSync(join(root, '.bashrc'), 'utf8');
+      assert.ok(!rc.includes(SECRET), 'the token is in the shell profile');
+      assert.equal(rc.split('(laika connect)').length - 1, 1, 'the source line was added twice');
+      assert.match(rc, /\. "\$HOME\/\.laika\/env"/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  void test('code --add-mcp is shell-quoted for any URL', () => {
+    const odd = "http://board.example.test/it's";
+    const text =
+      setupBlocks('vscode', { origin: odd, secret: SECRET }).find((b) => b.key === 'vscode-add')
+        ?.text ?? '';
+    const seen = execFileSync('bash', ['-c', `code(){ printf '%s\\n' "$2"; }; ${text}`], {
+      encoding: 'utf8',
+    });
+    assert.equal((JSON.parse(seen) as { url: string }).url, `${odd}/mcp`);
+  });
+
+  void test('Antigravity names the issue that reports remote headers refused', () => {
+    assert.match(guideFor('antigravity').beta ?? '', /issue 233/);
+    assert.match(guideFor('antigravity').beta ?? '', /Unauthorized/);
+  });
+
+  void test('the two claims nobody tested say so on the page', () => {
+    assert.match(block('claude-code', 'claude-mcp-json').warn ?? '', /not verified/i);
+    assert.match(block('claude-code', 'claude-mcp-add').warn ?? '', /not verified/i);
+    assert.match(block('gemini-cli', 'gemini-add').warn ?? '', /not verified/i);
+  });
+
+  void test('VS Code-hosted extensions say VS Code must see the variable', () => {
+    for (const [id, key] of [
+      ['cline', 'cline-json'],
+      ['cline', 'roo-json'],
+      ['continue', 'continue-yaml'],
+    ] as const) {
+      assert.match(block(id, key).note ?? '', /terminal|system-wide/i, `${id}/${key}`);
+    }
+  });
+
+  void test('kiro and junie say user scope only; zed offers a tokenless variant, marked unverified', () => {
+    assert.match(block('kiro', 'kiro-bridge').label, /user scope only/i);
+    assert.match(block('junie', 'junie-json').label, /user scope only/i);
+    const env = block('zed', 'zed-env');
+    assert.equal(env.token, 'none');
+    assert.ok(env.text.includes('Authorization:Bearer ${LAIKA_TOKEN}'));
+    assert.match(env.warn ?? '', /not verified/i);
+  });
+
+  void test('where instructions go says what shadows them, and Claude Desktop is not a file', () => {
+    assert.match(instructionsTarget('cline').note ?? '', /\.roo\/rules/);
+    assert.equal(instructionsTarget('claude-desktop').committable, false);
+    assert.match(instructionsTarget('claude-desktop').note ?? '', /project instructions/i);
+    for (const id of ['zed', 'hermes', 'warp'] as const) {
+      assert.match(instructionsTarget(id).note ?? '', /first|wins|instead/i, id);
+    }
+    assert.equal(instructionsTarget('codex').committable, true);
   });
 });
