@@ -226,7 +226,7 @@ void describe('the dropdown in a modal dialog (LAI-726)', () => {
 
       await pick(target, 'st-doing');
       assert.equal(await valueOf(target), 'st-doing');
-      assert.equal((await target.innerText()).trim(), 'In progress — In progress');
+      assert.equal((await target.innerText()).trim(), 'In progress');
       assert.equal(await dialog.count(), 1, 'choosing an option closed the dialog');
 
       await h.page.keyboard.press('Escape');

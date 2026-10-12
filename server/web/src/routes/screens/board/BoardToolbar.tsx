@@ -109,6 +109,9 @@ export interface BoardToolbarProps {
   readonly onViewSettings: (anchor: { top: number; right: number }) => void;
   readonly onRefresh: () => void;
   readonly onOverflow: (anchor: { top: number; right: number }) => void;
+  /** Hidden columns on this board; the entry is drawn only when there are any (LAI-739). */
+  readonly hiddenColumns?: number | undefined;
+  readonly onHiddenColumns?: (() => void) | undefined;
 }
 
 /**
@@ -283,6 +286,8 @@ export function BoardToolbar({
   onViewSettings,
   onRefresh,
   onOverflow,
+  hiddenColumns,
+  onHiddenColumns,
 }: BoardToolbarProps) {
   const [open, setOpen] = useState<'filter' | 'group' | undefined>(undefined);
   const filterButton = filterButtonRef;
@@ -845,6 +850,33 @@ export function BoardToolbar({
               </div>
             )}
           </span>
+        )}
+
+        {/* **Hidden columns (N)**, where it can be seen (review round 1) —
+            not only in the ⋯ menu. An icon and the count: Cancelled starts
+            hidden, so this is on most boards and must cost little width. */}
+        {hiddenColumns !== undefined && hiddenColumns > 0 && onHiddenColumns !== undefined && (
+          <button
+            type="button"
+            className="bt-icon bt-hidden-columns"
+            data-hidden-columns=""
+            aria-label={`Hidden columns (${String(hiddenColumns)})`}
+            title={`Hidden columns (${String(hiddenColumns)})`}
+            onClick={onHiddenColumns}
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <path d="M3 3l18 18M10.6 10.6a2 2 0 0 0 2.8 2.8M9.9 5.1A10 10 0 0 1 12 5c5 0 9 4.5 10 7a13 13 0 0 1-3 4.2M6.6 6.6C4.4 8 2.8 10.1 2 12c1 2.5 5 7 10 7a9.8 9.8 0 0 0 5.4-1.6" />
+            </svg>
+            <span className="bt-hidden-count" aria-hidden="true">
+              {hiddenColumns}
+            </span>
+          </button>
         )}
 
         <span className="bt-spacer" />

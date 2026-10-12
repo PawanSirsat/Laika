@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { useDialogFocus } from '../../../components/use-dialog-focus.ts';
+import { statusOptions } from './status-options.ts';
 import { defaultMoveTarget, deleteBlockedReason } from '../../../api/status-derive.ts';
 import { CATEGORY_COPY, type ProjectStatus } from '../../../api/statuses.ts';
 import './column-editor.css';
@@ -17,6 +19,8 @@ export interface DeleteColumnDialogProps {
   /** Always a destination: the server requires one even for an empty column. */
   readonly onDelete: (moveTo: string) => void;
   readonly onClose: () => void;
+  /** Where focus goes when the dialog closes — the column's ⋯, while it exists. */
+  readonly restoreFocus?: (() => HTMLElement | null | undefined) | undefined;
 }
 
 function tasks(n: number): string {
@@ -41,11 +45,39 @@ export function DeleteColumnDialog({
   error,
   onDelete,
   onClose,
+  restoreFocus,
 }: DeleteColumnDialogProps) {
   const blocked = deleteBlockedReason(column, all);
   const others = all.filter((s) => s.id !== column.id);
   const [moveTo, setMoveTo] = useState<string>(defaultMoveTarget(column, all)?.id ?? '');
   const target = others.find((s) => s.id === moveTo);
+  /** The column picked to take the work, by name, so its going can be said. */
+  const picked = useRef<string | undefined>(target?.name);
+  if (target !== undefined) picked.current = target.name;
+  const [lost, setLost] = useState<string | undefined>(undefined);
+
+  /*
+   * **The destination went away while the dialog was open** — deleted in
+   * another tab, or by another person (review round 1). Sending it would be
+   * refused; quietly swapping it would move the work somewhere nobody chose.
+   * So: pick the default again, and say so above the picker.
+   */
+  useEffect(() => {
+    if (moveTo === '' || others.some((s) => s.id === moveTo)) return;
+    setLost(picked.current);
+    setMoveTo(defaultMoveTarget(column, all)?.id ?? '');
+  }, [all, column, moveTo, others]);
+
+  const box = useRef<HTMLDivElement>(null);
+  const needsTarget = taskCount > 0;
+  // On the choice when there is one to make; otherwise on the way out.
+  useDialogFocus(box, {
+    initial: () =>
+      blocked === undefined && needsTarget
+        ? box.current?.querySelector<HTMLElement>('[role="combobox"]')
+        : box.current?.querySelector<HTMLElement>('.cd-cancel'),
+    restore: restoreFocus,
+  });
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -57,7 +89,6 @@ export function DeleteColumnDialog({
     };
   }, [onClose]);
 
-  const needsTarget = taskCount > 0;
   // The server takes a destination even for an empty column (LAI-738), so one
   // is always chosen — by the reader when there is work to move, by default
   // when there is none.
@@ -67,6 +98,7 @@ export function DeleteColumnDialog({
     <>
       <div className="column-dialog-scrim" aria-hidden="true" onClick={onClose} />
       <div
+        ref={box}
         className="column-dialog"
         role="dialog"
         aria-modal="true"
@@ -105,17 +137,19 @@ export function DeleteColumnDialog({
                   value={moveTo}
                   onChange={(value) => {
                     setMoveTo(value);
+                    setLost(undefined);
                   }}
-                  options={others.map((s) => ({
-                    value: s.id,
-                    label: `${s.name} — ${CATEGORY_COPY[s.category].label}${s.hidden ? ' (hidden)' : ''}`,
-                    icon: <span className={`dd-dot dd-dot-${s.category}`} />,
-                  }))}
+                  options={statusOptions(others, { kind: true })}
                 />
               </label>
-            ) : (
-              <p className="cd-hint">This column has no tasks.</p>
-            )}
+            ) : null}
+            {needsTarget && lost !== undefined && target !== undefined ? (
+              <p className="cd-hint cd-lost" role="status">
+                “{lost}” is no longer on this board, so its tasks would go to “{target.name}”
+                instead. Pick another if that is wrong.
+              </p>
+            ) : null}
+            {needsTarget ? null : <p className="cd-hint">This column has no tasks.</p>}
             <p className="cd-hint cd-consequence">
               {needsTarget && target !== undefined
                 ? `Its ${tasks(taskCount)} ${taskCount === 1 ? 'moves' : 'move'} to “${target.name}”${

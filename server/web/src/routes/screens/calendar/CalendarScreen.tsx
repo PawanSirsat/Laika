@@ -177,10 +177,14 @@ export function CalendarScreen({ slug, onOpenTask }: CalendarScreenProps) {
                               onOpenTask(task.id);
                             }}
                             title={`${task.key} — ${task.title} · ${statusNameOf(task, statuses.byId)}`}
-                            data-status={task.status}
                           >
                             <span className="cal-task-key">{task.key}</span>
                             <span className="cal-task-title">{task.title}</span>
+                            {/* Its status, as the project calls it, in its kind's
+                                colour (LAI-739 review round 1). */}
+                            <span className={`cal-task-status cal-status-${task.status}`}>
+                              {statusNameOf(task, statuses.byId)}
+                            </span>
                             {task.created_via === 'mcp' && (
                               <span className="cal-task-agent" aria-hidden="true" />
                             )}

@@ -949,3 +949,10 @@
   font-size: 0.6875rem;
   color: var(--text-muted);
 }
+
+/* An item shown but not offered — the last column cannot be hidden (LAI-739). */
+.list-menu-item:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  background: none;
+}

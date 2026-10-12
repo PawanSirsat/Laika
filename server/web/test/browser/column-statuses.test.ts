@@ -18,6 +18,7 @@ import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import {
   closeBrowser,
+  fakeStream,
   open,
   refuse,
   reply,
@@ -536,6 +537,194 @@ void describe('both themes (CLAUDE.md §5.1)', () => {
         assert.notEqual(s.hint, s.bg, `${theme}: the descriptions vanish into the dialog`);
       }
       assert.notEqual(seen.light?.bg, seen.dark?.bg, 'the dialog did not follow the theme');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+/* ----------------------------------------------- review round 1 (LAI-739) */
+
+/** What holds focus: its accessible name, and whether it sits in a dialog. */
+async function focused(h: Harness): Promise<{ name: string; role: string; inDialog: boolean }> {
+  return h.page.evaluate(() => {
+    const el = document.activeElement as HTMLElement | null;
+    return {
+      name: (el?.getAttribute('aria-label') ?? el?.textContent ?? '').trim(),
+      role: el?.getAttribute('role') ?? el?.tagName.toLowerCase() ?? '',
+      inDialog:
+        el?.closest('[role="dialog"]') !== null && el?.closest('[role="dialog"]') !== undefined,
+    };
+  });
+}
+
+void describe('focus in the column dialogs (review round 1)', () => {
+  void test('Delete opens on its picker, keeps Tab inside, and gives focus back to the ⋯', async () => {
+    const h = await open('/board?project=laika-core', world().stub);
+    try {
+      await board(h);
+      await columnMenu(h, 'QA', 'Delete column');
+      await h.page.getByRole('dialog', { name: 'Delete “QA”?' }).waitFor();
+      await h.page.waitForTimeout(100);
+
+      const first = await focused(h);
+      assert.equal(first.role, 'combobox', `focus opened on ${JSON.stringify(first)}`);
+      assert.equal(first.inDialog, true);
+
+      for (let i = 0; i < 6; i += 1) {
+        await h.page.keyboard.press(i % 2 === 0 ? 'Tab' : 'Shift+Tab');
+        await h.page.keyboard.press('Tab');
+        assert.equal((await focused(h)).inDialog, true, 'Tab left the dialog');
+      }
+
+      await h.page.keyboard.press('Escape');
+      await h.page.getByRole('dialog').waitFor({ state: 'detached' });
+      await h.page.waitForTimeout(100);
+      assert.equal((await focused(h)).name, 'Column menu for QA');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a Delete that cannot happen opens on Cancel', async () => {
+    const h = await open('/board?project=laika-core', world().stub);
+    try {
+      await board(h);
+      await columnMenu(h, 'In progress', 'Delete column');
+      await h.page.getByRole('dialog', { name: 'Delete “In progress”?' }).waitFor();
+      await h.page.waitForTimeout(100);
+      assert.equal((await focused(h)).name, 'Cancel');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('Hidden columns is on the toolbar, opens on its first Show, and gives focus back', async () => {
+    const h = await open('/board?project=laika-core', world().stub);
+    try {
+      await board(h);
+      // Visible on the toolbar, not only in the ⋯ menu: Cancelled starts hidden.
+      const entry = h.page.getByRole('button', { name: 'Hidden columns (1)' });
+      await entry.click();
+      await h.page.getByRole('dialog', { name: /Hidden columns/ }).waitFor();
+      await h.page.waitForTimeout(100);
+      assert.equal((await focused(h)).name, 'Show Cancelled');
+
+      await h.page.keyboard.press('Tab');
+      await h.page.keyboard.press('Tab');
+      await h.page.keyboard.press('Tab');
+      assert.equal((await focused(h)).inDialog, true, 'Tab left the dialog');
+
+      await h.page.keyboard.press('Escape');
+      await h.page.getByRole('dialog').waitFor({ state: 'detached' });
+      await h.page.waitForTimeout(100);
+      assert.equal((await focused(h)).name, 'Hidden columns (1)');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('hiding a column moves focus to the next column’s header', async () => {
+    const h = await open('/board?project=laika-core', world().stub);
+    try {
+      await board(h);
+      await columnMenu(h, 'QA', 'Hide column');
+      await h.page.waitForTimeout(250);
+      assert.equal((await focused(h)).name, 'Code review', 'focus was left on nothing');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('hiding and deleting, said plainly (review round 1)', () => {
+  void test('the last column on the board cannot be hidden, and the menu says why', async () => {
+    const w = world();
+    for (const s of w.statuses) s.hidden = s.id !== 's-todo';
+    const h = await open('/board?project=laika-core', w.stub);
+    try {
+      await board(h);
+      await h.page.getByRole('button', { name: 'Column menu for To do' }).click();
+      const hide = h.page.getByRole('menuitem', { name: /Hide column/ });
+      assert.equal(await hide.isDisabled(), true, 'the last column could be hidden');
+      assert.match(await hide.innerText(), /last column on the board/i);
+      assert.equal(sent(h, 'PATCH', '/statuses/s-todo').length, 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a hidden column names its kind only when its name does not already', async () => {
+    const h = await open('/board?project=laika-core', world().stub);
+    try {
+      await board(h);
+      await columnMenu(h, 'QA', 'Hide column');
+      await h.page.waitForTimeout(200);
+      await h.page.getByRole('button', { name: 'Hidden columns (2)' }).click();
+      const dialog = h.page.getByRole('dialog', { name: /Hidden columns/ });
+      await dialog.waitFor();
+      const rows = await dialog.locator('.cd-hidden-row .cd-kind-hint').allInnerTexts();
+      // QA is a review column; Cancelled is called what it is.
+      assert.deepEqual(rows, ['In review · 1 task', '0 tasks']);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('if the column picked to take the work disappears, Delete says so and picks another', async () => {
+    const w = world();
+    // A third review column, so QA can still be deleted once Code review goes.
+    w.statuses.push(status('s-uat', 'UAT', 'review', 6));
+    const h = await open('/board?project=laika-core', w.stub, { before: fakeStream });
+    try {
+      await board(h);
+      await columnMenu(h, 'QA', 'Delete column');
+      const dialog = h.page.getByRole('dialog', { name: 'Delete “QA”?' });
+      await dialog.waitFor();
+      assert.match(await dialog.innerText(), /moves to “Code review”/);
+
+      // Someone else deletes Code review; the frame re-reads the statuses.
+      w.statuses.splice(
+        w.statuses.findIndex((s) => s.id === 's-cr'),
+        1,
+      );
+      await h.page.evaluate(() => {
+        (
+          window as unknown as {
+            __laikaStream: { emit: (t: string, d: unknown, id: string) => void };
+          }
+        ).__laikaStream.emit('project.updated', { entity: 'project_status' }, '9');
+      });
+      await dialog.getByText(/“Code review” is no longer on this board/).waitFor({ timeout: 5000 });
+
+      await dialog.getByRole('button', { name: 'Delete column' }).click();
+      await h.page.waitForTimeout(300);
+      const del = sent(h, 'DELETE', '/statuses/s-qa');
+      assert.equal(del.length, 1);
+      // The default again: the other review column that is left.
+      assert.equal((del[0]?.body as { move_to: string }).move_to, 's-uat');
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('a drag inside one column (review round 1)', () => {
+  void test('between swimlanes is not a status change', async () => {
+    const w = world();
+    // Ada's row and the Unassigned row both have a To do column.
+    w.tasks[1]!.assignee_id = 'u1' as never;
+    const h = await open('/board?project=laika-core&group=assignee', w.stub);
+    try {
+      await h.page.waitForSelector('.swim');
+      await drag(
+        h,
+        '.lane-item[data-task-id="t1"] .card',
+        '.swim:nth-of-type(1) .lane:nth-of-type(1)',
+      );
+      await h.page.waitForTimeout(300);
+      assert.equal(sent(h, 'POST', '/tasks/t1/status').length, 0, 'a same-column drop sent a move');
+      assert.equal(await h.page.locator('.board-alert').count(), 0);
     } finally {
       await h.close();
     }

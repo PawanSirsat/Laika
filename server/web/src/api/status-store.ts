@@ -9,9 +9,16 @@ import type { ProjectStatus } from './statuses.ts';
  * List — so, like `task-store.ts`, there is one copy, and live frames keep it
  * current in one place (`store.ts`).
  *
- * Small and slow-changing, so the policy is simple: load on first subscribe,
- * re-read on a frame (debounced, and only for a project somebody is looking
- * at), and let a local write win over any read that began before it.
+ * Small and slow-changing, so the policy is simple, and `task-store.ts`'s:
+ *
+ * - **Load on first subscribe.** A frame for a project nobody is looking at
+ *   reads nothing — it marks the copy **stale**, and the next subscribe reads
+ *   it. The stream closes when the reader leaves, so that frame is often the
+ *   only news there is (review round 1, B1: returning showed old columns).
+ * - **Re-read on a frame** for a project somebody is looking at, debounced.
+ * - **A local edit wins.** A read that answers while an edit is in flight —
+ *   begun before it or during it — may predate the server applying it, so it
+ *   is not applied; a re-read is owed and runs when the last edit ends.
  */
 
 export interface StatusSnapshot {
@@ -43,6 +50,16 @@ export interface StatusStore {
    * and asked again once the last write ends.
    */
   begin(slug: string): () => void;
+  /**
+   * An edit, start to finish: the optimistic change at once, the request held
+   * against re-reads for its life, and the hold released however it ends —
+   * refused included.
+   */
+  transaction<T>(
+    slug: string,
+    optimistic: ((statuses: readonly ProjectStatus[]) => readonly ProjectStatus[]) | undefined,
+    call: () => Promise<T>,
+  ): Promise<T>;
   /** Forget everything — a different user, or none. */
   reset(): void;
 }
@@ -65,6 +82,8 @@ interface Entry {
   writing: number;
   /** A read was held back during a write and is owed once it ends. */
   owed: boolean;
+  /** A frame arrived while nobody was looking: the next subscribe reads. */
+  stale: boolean;
 }
 
 function byPosition(statuses: readonly ProjectStatus[]): readonly ProjectStatus[] {
@@ -94,15 +113,16 @@ export function createStatusStore(deps: StatusStoreDeps): StatusStore {
       (statuses) => {
         if (entries.get(slug) !== entry || entry.controller !== controller) return;
         entry.controller = undefined;
-        // A local write landed while this was in flight: its answer predates
-        // the write, so it is dropped rather than allowed to undo it.
-        if (entry.epoch !== epoch) return;
-        // A write is still in flight: this may have been read before the
-        // server applied it. Ask again when it lands.
-        if (entry.writing > 0) {
-          entry.owed = true;
+        // A local write landed while this was in flight, or one is still in
+        // flight: this answer may predate the server applying it, so it is
+        // not applied. It may also carry someone else's change, so it is not
+        // forgotten either — read again once no write is in flight.
+        if (entry.epoch !== epoch || entry.writing > 0) {
+          if (entry.writing > 0) entry.owed = true;
+          else load(slug, entry);
           return;
         }
+        entry.stale = false;
         publish(entry, { slug, status: 'ready', statuses: byPosition(statuses), error: null });
       },
       (cause: unknown) => {
@@ -126,15 +146,52 @@ export function createStatusStore(deps: StatusStoreDeps): StatusStore {
       debounce: undefined,
       writing: 0,
       owed: false,
+      stale: false,
     };
     entries.set(slug, entry);
     load(slug, entry);
     return entry;
   }
 
+  function write(
+    slug: string,
+    update: (statuses: readonly ProjectStatus[]) => readonly ProjectStatus[],
+  ): void {
+    const entry = ensure(slug);
+    entry.epoch += 1;
+    publish(entry, {
+      slug,
+      status: 'ready',
+      statuses: byPosition(update(entry.snapshot.statuses)),
+      error: null,
+    });
+  }
+
+  function begin(slug: string): () => void {
+    const entry = ensure(slug);
+    entry.writing += 1;
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true;
+      entry.writing -= 1;
+      if (entry.writing === 0 && entry.owed && entries.get(slug) === entry) {
+        entry.owed = false;
+        load(slug, entry);
+      }
+    };
+  }
+
   return {
+    write,
+    begin,
+
     subscribe(slug, listener) {
       const entry = ensure(slug);
+      if (entry.stale) {
+        entry.stale = false;
+        load(slug, entry);
+      }
       entry.listeners.add(listener);
       return () => {
         entry.listeners.delete(listener);
@@ -160,6 +217,11 @@ export function createStatusStore(deps: StatusStoreDeps): StatusStore {
     frame(slug) {
       const entry = entries.get(slug);
       if (entry === undefined) return;
+      // Nobody looking: no read now, one on the next visit.
+      if (entry.listeners.size === 0) {
+        entry.stale = true;
+        return;
+      }
       if (entry.debounce !== undefined) clearTimer(entry.debounce);
       entry.debounce = setTimer(() => {
         entry.debounce = undefined;
@@ -167,30 +229,14 @@ export function createStatusStore(deps: StatusStoreDeps): StatusStore {
       }, debounceMs);
     },
 
-    write(slug, update) {
-      const entry = ensure(slug);
-      entry.epoch += 1;
-      publish(entry, {
-        slug,
-        status: 'ready',
-        statuses: byPosition(update(entry.snapshot.statuses)),
-        error: null,
-      });
-    },
-
-    begin(slug) {
-      const entry = ensure(slug);
-      entry.writing += 1;
-      let ended = false;
-      return () => {
-        if (ended) return;
-        ended = true;
-        entry.writing -= 1;
-        if (entry.writing === 0 && entry.owed && entries.get(slug) === entry) {
-          entry.owed = false;
-          load(slug, entry);
-        }
-      };
+    async transaction(slug, optimistic, call) {
+      const end = begin(slug);
+      try {
+        if (optimistic !== undefined) write(slug, optimistic);
+        return await call();
+      } finally {
+        end();
+      }
     },
 
     reset() {

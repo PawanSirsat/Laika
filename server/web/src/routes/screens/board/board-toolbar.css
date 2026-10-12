@@ -734,3 +734,15 @@
   position: relative;
   z-index: 1;
 }
+
+/* Hidden columns (N): the icon and its count, side by side (LAI-739). */
+.bt-hidden-columns {
+  width: auto;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+}
+
+.bt-hidden-count {
+  font-size: 0.75rem;
+  font-weight: var(--weight-semibold);
+}

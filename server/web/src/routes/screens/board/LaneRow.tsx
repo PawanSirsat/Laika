@@ -7,6 +7,7 @@ import { CATEGORY_COPY, type ProjectStatus } from '../../../api/statuses.ts';
 import type { Member, Task } from '../../../api/tasks.ts';
 import { anchorOf, ListMenu, type MenuAnchor } from '../list/ListMenu.tsx';
 import { ColumnComposer } from './ColumnComposer.tsx';
+import { statusOptions } from './status-options.ts';
 import type { CardFields } from './card-fields.ts';
 import type { Theme } from '../../../theme/theme.ts';
 
@@ -383,7 +384,9 @@ export function LaneRow({
                * already …"` in the alert bar on an ordinary mis-drag. Otherwise
                * the drop sets **this column's status** (LAI-739).
                */
-              const status = tasks.some((t) => t.id === task.id) ? undefined : column.id;
+              // By status, not by the cards this row draws: in a swimlane the
+              // same column appears once per row (review round 1).
+              const status = task.status_id === column.id ? undefined : column.id;
               if (onPlace === undefined) {
                 if (status !== undefined) onMove(task.id, status);
                 return;
@@ -534,6 +537,7 @@ export function LaneRow({
                   type="button"
                   className="lane-menu"
                   aria-label={`Column menu for ${column.name}`}
+                  data-column-menu={column.id}
                   aria-haspopup="menu"
                   aria-expanded={menuFor?.id === column.id}
                   onClick={(event) => {
@@ -640,11 +644,7 @@ export function LaneRow({
                           onChange={(value) => {
                             if (value !== task.status_id) onMove(task.id, value);
                           }}
-                          options={(statuses ?? lanes.map((l) => l.column)).map((s) => ({
-                            value: s.id,
-                            label: s.hidden ? `${s.name} (hidden)` : s.name,
-                            icon: <span className={`dd-dot dd-dot-${s.category}`} />,
-                          }))}
+                          options={statusOptions(statuses ?? lanes.map((l) => l.column))}
                         />
                       </label>
                     </div>
@@ -718,15 +718,32 @@ export function LaneRow({
 
       {menuFor !== undefined &&
         (() => {
-          const column = lanes.find((l) => l.column.id === menuFor.id)?.column;
+          const at = lanes.findIndex((l) => l.column.id === menuFor.id);
+          const column = lanes[at]?.column;
           if (column === undefined) return null;
+          // The column focus moves to once this one is hidden: the next, else
+          // the one before (review round 1).
+          const neighbour = (lanes[at + 1] ?? lanes[at - 1])?.column.id;
+          const last = lanes.length <= 1;
           return (
             <ListMenu
               label={`Column menu for ${column.name}`}
               anchor={menuFor.at}
               items={[
                 ...(onRenameColumn === undefined ? [] : [{ value: 'rename', label: 'Rename' }]),
-                ...(onHideColumn === undefined ? [] : [{ value: 'hide', label: 'Hide column' }]),
+                ...(onHideColumn === undefined
+                  ? []
+                  : [
+                      {
+                        value: 'hide',
+                        label: 'Hide column',
+                        // A board with no columns has nowhere to drop a card
+                        // and no column to open a menu on to bring one back.
+                        ...(last
+                          ? { disabled: true, note: 'It is the last column on the board' }
+                          : {}),
+                      },
+                    ]),
                 ...(onDeleteColumn === undefined
                   ? []
                   : [{ value: 'delete', label: 'Delete column', danger: true }]),
@@ -734,7 +751,17 @@ export function LaneRow({
               onPick={(value) => {
                 setMenuFor(undefined);
                 if (value === 'rename') setRenaming({ id: column.id, draft: column.name });
-                if (value === 'hide') onHideColumn?.(column.id);
+                if (value === 'hide' && !last) {
+                  onHideColumn?.(column.id);
+                  requestAnimationFrame(() => {
+                    (
+                      (neighbour === undefined
+                        ? null
+                        : document.getElementById(`lane-${neighbour}`)) ??
+                      document.querySelector<HTMLElement>('.board-bar button')
+                    )?.focus();
+                  });
+                }
                 if (value === 'delete') onDeleteColumn?.(column);
               }}
               onClose={() => {

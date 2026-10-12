@@ -49,6 +49,13 @@ void describe('statusOptions', () => {
     assert.equal(hidden?.label, 'Cancelled', 'the name is what is searched and announced');
   });
 
+  void test('the kind is said beside the name only when asked for', () => {
+    const [plain] = statusOptions([s('QA', 'review', 0)]);
+    const [kinded] = statusOptions([s('QA', 'review', 0)], { kind: true });
+    assert.equal(plain?.detail, undefined);
+    assert.equal(kinded?.detail, 'In review');
+  });
+
   void test('each wears its kind’s dot', () => {
     const [option] = statusOptions([s('QA', 'review', 0)]);
     const icon = option?.icon as { props: { className: string } };

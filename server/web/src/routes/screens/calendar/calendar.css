@@ -297,3 +297,28 @@
   line-height: 1.4;
   color: var(--text-muted);
 }
+
+/* The task's status, by name, in its kind's colour (LAI-739). Backlog takes
+   the muted default; done and cancelled work has no due date to draw. */
+.cal-task-status {
+  flex: none;
+  max-width: 6rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.cal-status-todo {
+  color: var(--chip-purple);
+}
+
+.cal-status-in_progress {
+  color: var(--chip-blue);
+}
+
+.cal-status-review {
+  color: var(--chip-orange);
+}

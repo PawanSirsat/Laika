@@ -143,6 +143,33 @@ void describe('live frames', () => {
     assert.equal(store.peek('lc')?.statuses[0]?.name, 'Renamed elsewhere');
   });
 
+  void test('coming back to a project re-reads what changed while nobody was looking (B1)', async () => {
+    // The stream closes when the reader leaves: the frame for that is the
+    // only news, and nothing reads then. The next visit must.
+    const time = fakeTime();
+    const io = manualFetch();
+    const store = createStatusStore({ fetch: io.fetch, ...time });
+    const stop = store.subscribe('lc', () => undefined);
+    io.calls[0]?.resolve([status({ id: 'a', position: 0, name: 'Before' })]);
+    await tick();
+    stop();
+
+    store.frame('lc');
+    time.flush();
+    assert.equal(io.calls.length, 1, 'read for a project nobody is looking at');
+
+    store.subscribe('lc', () => undefined);
+    assert.equal(io.calls.length, 2, 'returning showed the old columns without a re-read');
+    io.calls[1]?.resolve([status({ id: 'a', position: 0, name: 'After' })]);
+    await tick();
+    assert.equal(store.peek('lc')?.statuses[0]?.name, 'After');
+
+    // And a return with no news in between reads nothing more.
+    const again = store.subscribe('lc', () => undefined);
+    again();
+    assert.equal(io.calls.length, 2);
+  });
+
   void test('a frame about a project nobody is looking at fetches nothing', () => {
     const time = fakeTime();
     const io = manualFetch();
@@ -219,6 +246,54 @@ void describe('local writes', () => {
       store.peek('lc')?.statuses.map((s) => s.id),
       ['b', 'a'],
     );
+  });
+
+  void test('a read begun before a write that is still in flight is owed, not lost', async () => {
+    // Review round 1, M6: the read may carry someone else's change (a frame),
+    // so dropping it must leave a re-read owed for when the write ends.
+    const time = fakeTime();
+    const io = manualFetch();
+    const store = createStatusStore({ fetch: io.fetch, ...time });
+    store.subscribe('lc', () => undefined);
+    io.calls[0]?.resolve([status({ id: 'a', position: 0 })]);
+    await tick();
+
+    store.reload('lc');
+    const end = store.begin('lc');
+    store.write('lc', (list) => list.map((s) => ({ ...s, name: 'Mine' })));
+    io.calls[1]?.resolve([status({ id: 'a', position: 0, name: 'Old' })]);
+    await tick();
+    assert.equal(store.peek('lc')?.statuses[0]?.name, 'Mine');
+
+    end();
+    assert.equal(io.calls.length, 3, 'the dropped read was not owed');
+    io.calls[2]?.resolve([status({ id: 'a', position: 0, name: 'Mine' })]);
+    await tick();
+    assert.equal(store.peek('lc')?.statuses[0]?.name, 'Mine');
+  });
+
+  void test('a failed write still releases the hold (review round 1, M6)', async () => {
+    const time = fakeTime();
+    const io = manualFetch();
+    const store = createStatusStore({ fetch: io.fetch, ...time });
+    store.subscribe('lc', () => undefined);
+    io.calls[0]?.resolve([status({ id: 'a', position: 0 })]);
+    await tick();
+
+    await assert.rejects(
+      store.transaction(
+        'lc',
+        (list) => list.map((s) => ({ ...s, name: 'Guess' })),
+        () => Promise.reject(new Error('refused')),
+      ),
+      /refused/,
+    );
+    // Nothing is held now: a read is applied, not owed.
+    store.reload('lc');
+    const last = io.calls.length - 1;
+    io.calls[last]?.resolve([status({ id: 'a', position: 0, name: 'Server' })]);
+    await tick();
+    assert.equal(store.peek('lc')?.statuses[0]?.name, 'Server', 'the hold outlived the write');
   });
 
   void test('reset forgets everything', async () => {

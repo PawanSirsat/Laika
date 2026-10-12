@@ -70,6 +70,14 @@ export function statusFilter(value: string): Pick<TaskFilter, 'status' | 'status
   return isCategory(value) ? { status: value } : { status_id: value };
 }
 
+/**
+ * `?sprint=all` — every sprint, **chosen** (LAI-713).
+ *
+ * The board opens on the active sprint when the URL names none, so "no
+ * `?sprint=`" can no longer mean "all sprints": the default would take it
+ * straight back. A reader who picks *All sprints* gets this value instead,
+ * which a reload keeps and the default leaves alone.
+ */
 export const ALL_SPRINTS = 'all';
 
 /**

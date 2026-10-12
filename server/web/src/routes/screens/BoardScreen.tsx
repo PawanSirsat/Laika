@@ -1066,6 +1066,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           onOverflow={(anchor) => {
             setOverflowAt((at) => (at === undefined ? anchor : undefined));
           }}
+          // The board's own entry; the List has no columns to hide.
+          hiddenColumns={view === 'list' || !mayAddColumn ? 0 : statuses.hidden.length}
+          onHiddenColumns={() => {
+            setHiddenOpen(true);
+          }}
         />
         <SprintStats
           scope={statsScope(sprintScope, sprintsKnown ? sprints : undefined, Date.now())}
@@ -1232,6 +1237,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
             setDeletingColumn(undefined);
             columnEdits.dismissError();
           }}
+          // Back to the column's ⋯ — or, once it is deleted, the first column.
+          restoreFocus={() =>
+            document.querySelector<HTMLElement>(`[data-column-menu="${columnToDelete.id}"]`) ??
+            document.querySelector<HTMLElement>('.lane-title-editable')
+          }
         />
       )}
 
@@ -1245,6 +1255,11 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
           onClose={() => {
             setHiddenOpen(false);
           }}
+          // Back to the entry that opened it, or the ⋯ when it is gone.
+          restoreFocus={() =>
+            document.querySelector<HTMLElement>('[data-hidden-columns]') ??
+            document.querySelector<HTMLElement>('.board-bar [aria-haspopup="menu"]')
+          }
         />
       )}
 
@@ -1644,6 +1659,8 @@ export function BoardScreen({ params, onParamsChange, me, path = '/board' }: Boa
                     onRenameColumn: (columnId: string, name: string) =>
                       columnEdits.rename(columnId, name),
                     onHideColumn: (columnId: string) => {
+                      // Never the last one: LaneRow disables it and says why.
+                      if (statuses.visible.length <= 1) return;
                       void columnEdits.setHidden(columnId, true);
                     },
                     onDeleteColumn: (column: ProjectStatus) => {

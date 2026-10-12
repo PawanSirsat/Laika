@@ -111,3 +111,45 @@ now names `use-statuses.ts`. That map is the web owner's (D-026) but the file
 is under `server/test/`: a one-line, named edit, flagged for the reviewer.
 (3) The Filter's Status field used a `(hidden)` label suffix; it now uses the
 shared builder's *Hidden* badge like every other picker.
+
+## Review round 1 fixes
+
+- **B1** — returning to a project showed its old columns. `status-store.ts`
+  now does what `task-store.ts` does: a frame for a project nobody is looking
+  at marks it stale and reads nothing; the next subscribe reads. Unit test:
+  subscribe → unsubscribe → frame → subscribe expects a new read (red first).
+  Docblock rewritten.
+- **M6** — a read dropped because it began before a write that is still in
+  flight is now owed and re-run when the write ends; a read that lost to an
+  already-settled write is re-run at once. Edits go through a store
+  `transaction()`, and a unit test shows a *failed* write releases the hold.
+- **Focus** — `use-dialog-focus.ts` (new, `trapTarget` unit-tested): Delete
+  opens on its picker (Cancel when it cannot delete), Hidden columns on its
+  first Show; Tab stays inside; closing returns focus to the column's ⋯ (or
+  the first column once deleted) / the Hidden columns entry. After Hide, focus
+  moves to the next column's header (the previous one, else the toolbar).
+- **One options builder** — LaneRow's card picker and Delete's picker use
+  `statusOptions()`; Delete's adds each column's kind as `detail`.
+- **Calendar** — each chip prints its status's name, coloured by kind
+  (`.cal-task-status`). Pinned by a source test: chips render only on demo due
+  dates, which the production build the browser harness serves switches off.
+- **Filter** — the `?sprint=all` (LAI-713) docblock above `ALL_SPRINTS` is back.
+- **Same-column drag** — LaneRow compares `task.status_id === column.id`. The
+  swimlane test for it was green before the change: `use-board`'s `place()`
+  already skips a same-status move, so this removes a redundant path rather
+  than a live 409. Said here so the test is not mistaken for a red-first one.
+- **UX** — *Hidden columns (N)* is an icon-and-count button on the board
+  toolbar (and stays in ⋯); a hidden column's row names its kind only when its
+  name does not; the last visible column cannot be hidden (the menu item is
+  disabled and says why, and BoardScreen refuses it too); if Delete's chosen
+  destination disappears, the dialog says so and picks the default again.
+
+**Recorded (item 8): dropping a card onto a visible Cancelled column cancels
+the task.** It follows from one column per status — Cancelled starts hidden,
+but a lead who shows it has made it a drop target like any other, and the
+server's lifecycle rules still apply (a `done` task cannot be cancelled). The
+old board refused a drag to `cancelled`; that rule went with multi-status
+columns.
+
+Mutation runs: all 6 new browser behaviours and the kind-detail unit test go
+red with their fix removed (`# pass 0 / # fail 1` per filtered run).

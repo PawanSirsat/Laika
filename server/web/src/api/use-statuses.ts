@@ -141,21 +141,21 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
       if (slug === undefined) return { ok: false, message: 'No project.' };
       setBusy(true);
       setError(undefined);
-      // Held for the request's life: a frame's re-read meanwhile may predate
-      // this write on the server, and must not undo it (LAI-739).
-      const end = statusStore.begin(slug);
-      if (optimistic !== undefined) statusStore.write(slug, optimistic);
       try {
-        const answer = await call();
-        settle(answer);
+        // Held against re-reads for the request's life, released however it
+        // ends (`status-store.ts`, LAI-739): a frame's re-read meanwhile may
+        // predate this write on the server, and must not undo it.
+        const answer = await statusStore.transaction(slug, optimistic, async () => {
+          const got = await call();
+          settle(got);
+          return got;
+        });
         return { ok: true, answer };
       } catch (cause) {
-        const said = message(cause);
         // Whatever was guessed on screen, the server's list replaces it.
         statusStore.reload(slug);
-        return { ok: false, message: said };
+        return { ok: false, message: message(cause) };
       } finally {
-        end();
         setBusy(false);
       }
     },
