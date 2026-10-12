@@ -93,6 +93,8 @@ const STUB: ApiStub = {
         matched_task_id: 't1',
         project_ids: ['p1'],
         is_agent: true,
+        client: 'claude-code',
+        clients: ['claude-code', 'cursor'],
         last_seen: now,
       },
       // LAI-438: present, location withheld. repo/branch absent; the other two null/[].
@@ -102,7 +104,20 @@ const STUB: ApiStub = {
         matched_task_id: null,
         project_ids: [],
         is_agent: false,
+        client: null,
+        clients: [],
         last_seen: now - 60000,
+      },
+      // LAI-736: an MCP-only agent session — no heartbeat, so no repo at all.
+      {
+        user_id: 'u3',
+        name: 'Priya Raman',
+        matched_task_id: null,
+        project_ids: [],
+        is_agent: true,
+        client: 'codex',
+        clients: ['codex'],
+        last_seen: now - 30000,
       },
     ],
   },
@@ -221,6 +236,32 @@ void describe('the capacity screen', () => {
         0,
         'a human is badged as an agent',
       );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an agent session names its agent; an MCP-only one says which, not a repo (LAI-737)', async () => {
+    const h = await open('/capacity', STUB);
+    try {
+      const ada = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
+      await ada.waitFor({ timeout: 20_000 });
+      const clients = await ada.locator('.cap-client').allInnerTexts();
+      assert.deepEqual(
+        clients.map((c) => c.trim()),
+        ['Claude Code', 'Cursor'],
+      );
+      assert.equal(await ada.locator('.agent-mark').count(), 2);
+
+      const priya = h.page.locator('.cap-card', { hasText: 'Priya Raman' });
+      const text = await priya.innerText();
+      assert.match(text, /connected via Codex/, 'the MCP-only session does not say which agent');
+      assert.doesNotMatch(text, /undefined|null/i);
+
+      // CONTROL: the person in the browser is still just a person.
+      const tomas = h.page.locator('.cap-card', { hasText: 'Tomas Nel' });
+      assert.equal(await tomas.locator('.cap-client').count(), 0);
+      assert.match(await tomas.innerText(), /working elsewhere/);
     } finally {
       await h.close();
     }

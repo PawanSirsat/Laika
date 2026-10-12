@@ -1,4 +1,9 @@
-import type { AgentClient } from './agent-clients.ts';
+import {
+  agentClientName,
+  asAgentClient,
+  asAgentClients,
+  type AgentClient,
+} from './agent-clients.ts';
 import { request } from './client.ts';
 
 /**
@@ -133,4 +138,33 @@ export function getCapacity(signal?: AbortSignal): Promise<CapacityView> {
  */
 export function hasLocation(entry: PresenceEntry): boolean {
   return entry.repo !== undefined;
+}
+
+/**
+ * The agents behind a session, newest first — empty for a person in the
+ * browser (LAI-737).
+ *
+ * Read through `asAgentClients`, so a slug this client does not know is
+ * dropped rather than drawn, and a fixture from before LAI-736 reads as none.
+ */
+export function agentsOf(entry: PresenceEntry): AgentClient[] {
+  if (!entry.is_agent) return [];
+  const all = asAgentClients(entry.clients);
+  const newest = asAgentClient(entry.client);
+  return newest === null || all.includes(newest) ? all : [newest, ...all];
+}
+
+/**
+ * `connected via Codex` — what a row says where a repo would be, when the
+ * session's agent is known (LAI-737).
+ *
+ * An MCP-only session has no heartbeat and so no `repo` (LAI-736), the same
+ * shape as a location that is withheld. Both are true of it: the person is
+ * working somewhere this reader is not told about, *through Codex*. Saying the
+ * agent is the more useful half; `undefined` leaves the caller's own
+ * *working elsewhere*.
+ */
+export function connectedVia(entry: PresenceEntry): string | undefined {
+  const client = entry.is_agent ? asAgentClient(entry.client) : null;
+  return client === null ? undefined : `connected via ${agentClientName(client)}`;
 }

@@ -1,4 +1,6 @@
-import { hasLocation, type PresenceEntry } from '../api/presence.ts';
+import { agentClientName } from '../api/agent-clients.ts';
+import { agentsOf, connectedVia, hasLocation, type PresenceEntry } from '../api/presence.ts';
+import { AgentMark } from './agent-mark/AgentMark.tsx';
 import { avatarColor } from '../theme/avatar-color.ts';
 import { initials } from '../theme/initials.ts';
 import type { Theme } from '../theme/theme.ts';
@@ -91,6 +93,13 @@ export function PresencePerson({ entry, theme, variant, spaceSlug }: PresencePer
    * on which branch, and it keeps the full name and the repo.
    */
   const chip = variant === 'chip';
+  /*
+   * **Which agent, said in words beside its mark** (LAI-737). The mark is
+   * decoration (`aria-hidden`, letters drawn by CSS); the name is the text.
+   */
+  const agents = agentsOf(entry);
+  const newest = agents[0];
+  const via = connectedVia(entry);
 
   return (
     <span className={`pp pp-${variant}`}>
@@ -109,6 +118,12 @@ export function PresencePerson({ entry, theme, variant, spaceSlug }: PresencePer
           <span className="pp-name">{chip ? shortName(entry.name) : entry.name}</span>
           {/* A dot, not the word "agent": the design marks the session's state
               here and puts the agent badge on the avatar. */}
+          {newest !== undefined && (
+            <span className="pp-agent" title={agents.map(agentClientName).join(', ')}>
+              <AgentMark client={newest} size="sm" />
+              {!chip && <span className="pp-agent-name">{agentClientName(newest)}</span>}
+            </span>
+          )}
           {chip ? (
             <>
               <span
@@ -149,7 +164,7 @@ export function PresencePerson({ entry, theme, variant, spaceSlug }: PresencePer
 
              So: a sentence. No dash, no "unknown", no skeleton that never
              resolves, and nothing that reads as an error. */
-          <span className="pp-elsewhere">working elsewhere</span>
+          <span className="pp-elsewhere">{via ?? 'working elsewhere'}</span>
         )}
       </span>
     </span>

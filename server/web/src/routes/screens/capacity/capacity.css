@@ -323,8 +323,19 @@
 
 .cap-who-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.375rem;
+}
+
+/* An agent's mark and name (LAI-737). */
+.cap-client {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
 }
 
 .cap-seen-dot {

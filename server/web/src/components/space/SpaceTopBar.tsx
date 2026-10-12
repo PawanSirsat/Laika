@@ -3,7 +3,9 @@ import { avatarColor } from '../../theme/avatar-color.ts';
 import { initials } from '../../theme/initials.ts';
 import { useTheme } from '../../theme/use-theme.ts';
 import { useLive } from './SpaceLive.tsx';
-import { agentCount, cluster } from './top-bar-derive.ts';
+import { agentCount, agentsLive, cluster } from './top-bar-derive.ts';
+import { agentClientName } from '../../api/agent-clients.ts';
+import { AgentMark } from '../agent-mark/AgentMark.tsx';
 import { PRIORITIES, type Member, type TaskPriority } from '../../api/tasks.ts';
 import { useSpaceFiltersClaimed } from './SpaceSlot.tsx';
 import { useShell } from '../shell/shell-context.ts';
@@ -109,6 +111,8 @@ export function SpaceTopBar({
    * changed it. §5.1: every number in the shipped UI comes from a response.
    */
   const agents = presence === undefined ? undefined : agentCount(presence.present);
+  /** Which coding agents those are (LAI-737) — marks on the chip, names in its title. */
+  const live = agentsLive(presence?.present);
 
   /*
    * **Four of these move out when a view supplies its own filtering** (LAI-290).
@@ -370,7 +374,11 @@ export function SpaceTopBar({
               : 'space-chip space-agents-start'
           }
           aria-pressed={agentOnly}
-          title="Show only agent-authored work"
+          title={
+            live.length === 0
+              ? 'Show only agent-authored work'
+              : `Show only agent-authored work — live now: ${live.map(agentClientName).join(', ')}`
+          }
           onClick={() => {
             onAgentOnly(!agentOnly);
           }}
@@ -395,6 +403,11 @@ export function SpaceTopBar({
             number arrives when it arrives.
           */}
           Agents {agents}
+          {/* Up to three marks; the rest are in the title. Decoration only —
+              the letters are CSS content, so the chip still reads "Agents 2". */}
+          {live.slice(0, 3).map((client) => (
+            <AgentMark key={client} client={client} size="sm" />
+          ))}
         </button>
 
         <button type="button" className="space-create" onClick={onCreate}>

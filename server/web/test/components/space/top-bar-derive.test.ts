@@ -10,6 +10,7 @@ import { describe, test } from 'node:test';
 import {
   CLUSTER_LIMIT,
   agentCount,
+  agentsLive,
   cluster,
   nextPriority,
   priorityLabel,
@@ -82,5 +83,29 @@ void describe('the agent count', () => {
   void test('no presence yet is zero, not a guess', () => {
     assert.equal(agentCount(undefined), 0);
     assert.equal(agentCount([]), 0);
+  });
+});
+
+void describe('which agents are live, for the Agents chip (LAI-737)', () => {
+  const agent = (
+    id: string,
+    client: string | null,
+    clients: string[] = client === null ? [] : [client],
+  ) => ({ ...person(id, true), client, clients }) as unknown as ReturnType<typeof person>;
+
+  void test('every distinct agent across the sessions, in order', () => {
+    assert.deepEqual(
+      agentsLive([
+        agent('a', 'codex', ['codex', 'cursor']),
+        agent('b', 'cursor'),
+        agent('c', 'claude-code'),
+      ]),
+      ['codex', 'cursor', 'claude-code'],
+    );
+  });
+
+  void test('CONTROL: a person in the browser names no agent, and nor does an unknown slug', () => {
+    assert.deepEqual(agentsLive([person('a'), agent('b', 'teleporter')]), []);
+    assert.deepEqual(agentsLive(undefined), []);
   });
 });

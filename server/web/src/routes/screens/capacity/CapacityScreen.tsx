@@ -4,9 +4,13 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
+import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
+import { agentClientName } from '../../../api/agent-clients.ts';
 import {
   getCapacity,
   getPresence,
+  agentsOf,
+  connectedVia,
   hasLocation,
   type CapacityView,
   type PresenceView,
@@ -312,6 +316,14 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
                           {here?.is_agent === true && (
                             <span className="marker marker-agent">agent</span>
                           )}
+                          {/* Which agents, in words beside their marks (LAI-737). */}
+                          {here !== undefined &&
+                            agentsOf(here).map((client) => (
+                              <span key={client} className="cap-client">
+                                <AgentMark client={client} size="sm" />
+                                {agentClientName(client)}
+                              </span>
+                            ))}
                           <span className="cap-seen-dot">
                             <span
                               className={here === undefined ? 'cap-dot' : 'cap-dot cap-dot-live'}
@@ -342,11 +354,18 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
                               {now.title}
                             </span>
                           </span>
-                          {here?.repo !== undefined && (
+                          {here?.repo !== undefined ? (
                             <span className="cap-now-repo">
                               {here.repo}
                               {here.branch === undefined ? '' : ` · ${here.branch}`}
                             </span>
+                          ) : (
+                            /* An MCP-only session has no repo (LAI-736); it
+                               says which agent instead (LAI-737). */
+                            here !== undefined &&
+                            connectedVia(here) !== undefined && (
+                              <span className="cap-now-repo">{connectedVia(here)}</span>
+                            )
                           )}
                         </>
                       ) : (
@@ -364,7 +383,7 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
                             ? 'Not in a session right now.'
                             : hasLocation(here)
                               ? 'In a session, on no particular task.'
-                              : 'working elsewhere'}
+                              : (connectedVia(here) ?? 'working elsewhere')}
                         </span>
                       )}
                     </div>
