@@ -82,10 +82,21 @@ export function liveStateFrom(
 /**
  * What one answer from `GET /tokens` means for the token this page minted.
  *
- * `via: 'mcp'` reads `last_mcp_at` and nothing else: a `curl` with the token
- * moves `last_used_at`, and an agent that is not connected must not be reported
- * as connected because somebody tested the token by hand. `via: 'api'` is for
- * the reader who chose *No MCP*, for whom a REST call is the whole point.
+ * `via: 'mcp'` wants proof the token reached `/mcp`, strongest first:
+ *
+ * 1. `last_mcp_at` moved after the mint.
+ * 2. The token has a recorded client (`last_client` / `last_client_name`).
+ *    The server writes those on an MCP `initialize` only, so a `curl` cannot
+ *    produce them, and they are written whether presence is on or off.
+ * 3. **Only while the org has presence off**, `last_used_at` moved after the
+ *    mint. Since LAI-736's first review the server stops stamping
+ *    `last_mcp_at` with presence off (it is a presence signal), so without
+ *    this fallback a working agent would read as broken. With presence on, a
+ *    bare use stays insufficient: a `curl` that tests the token by hand must
+ *    not be reported as the agent connecting.
+ *
+ * `via: 'api'` is for the reader who chose *No MCP*, for whom a REST call is
+ * the whole point.
  *
  * A use stamped before the token was created is ignored — it cannot be this
  * token's, and a check that can be satisfied by a row it did not cause is the
@@ -96,11 +107,19 @@ export function tokenLiveStateFrom(
   mintedId: string,
   via: 'mcp' | 'api',
   ticksSoFar: number,
+  presenceOn = true,
 ): LiveState {
   const mine = tokens.find((token) => token.id === mintedId);
-  const at = mine === undefined ? null : via === 'mcp' ? mine.last_mcp_at : mine.last_used_at;
-  if (mine !== undefined && at !== null && at >= mine.created_at) {
-    return { kind: 'connected', token: mine };
+  if (mine !== undefined) {
+    const after = (at: number | null): boolean => at !== null && at >= mine.created_at;
+    const connected =
+      via === 'api'
+        ? after(mine.last_used_at)
+        : after(mine.last_mcp_at) ||
+          mine.last_client !== null ||
+          mine.last_client_name !== null ||
+          (!presenceOn && after(mine.last_used_at));
+    if (connected) return { kind: 'connected', token: mine };
   }
   return ticksSoFar >= LIVE_TICKS ? { kind: 'spent' } : { kind: 'watching', ticks: ticksSoFar };
 }

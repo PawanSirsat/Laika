@@ -364,6 +364,49 @@ void describe('the live check', () => {
     }
   });
 
+  void test('with presence off, the minted token still proves itself by its use (LAI-736 round 1)', async () => {
+    /*
+     * The server stops stamping `last_mcp_at` while the org has presence off.
+     * The token's `last_used_at` still moves, and the page must read it,
+     * or a working agent spins for three minutes and is reported broken.
+     */
+    const h = await open(
+      '/connect?agent=omnigent',
+      stub({
+        ...mints({ last_used_at: MINTED_AT + 5_000 }),
+        '/api/v1/org': {
+          id: 'org1',
+          name: 'Kvell Dynamics',
+          presence_enabled: false,
+          created_at: 1,
+          updated_at: 1,
+        },
+      }),
+    );
+    try {
+      await mint(h);
+      await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
+      assert.match(await h.page.locator('.conn-live-ok').innerText(), /Connected — Omnigent/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('CONTROL: with presence on, a bare use of the minted token is not an MCP connection', async () => {
+    const h = await open(
+      '/connect?agent=omnigent',
+      stub(mints({ last_used_at: MINTED_AT + 5_000 })),
+    );
+    try {
+      await mint(h);
+      await h.page.locator('.conn-live-watching').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(6_000);
+      assert.equal(await h.page.locator('.conn-live-ok').count(), 0, 'a curl passed for the agent');
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('presence switched off is said, not guessed at', async () => {
     const h = await open('/connect', stub({ '/api/v1/presence': { enabled: false, present: [] } }));
     try {

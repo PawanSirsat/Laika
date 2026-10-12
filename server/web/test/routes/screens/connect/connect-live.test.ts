@@ -168,6 +168,35 @@ void describe('watching the token this page minted (LAI-737)', () => {
   });
 });
 
+void describe('watching the token while the org has presence off (LAI-736 round 1)', () => {
+  /*
+   * With presence off the server stops writing `last_mcp_at` — it is a
+   * presence signal — but still records the client on `initialize` and still
+   * moves `last_used_at`. Without these the check would spin for three
+   * minutes and report a working agent as broken.
+   */
+  void test('the client recorded on initialize proves the MCP connection, presence on or off', () => {
+    const named = token({ last_client: 'codex', last_client_name: 'codex-mcp-client' });
+    assert.equal(tokenLiveStateFrom([named], MINTED, 'mcp', 1, false).kind, 'connected');
+    assert.equal(tokenLiveStateFrom([named], MINTED, 'mcp', 1, true).kind, 'connected');
+  });
+
+  void test('with presence off, a use of the token after the mint is the fallback', () => {
+    const used = token({ last_used_at: 1_788_272_010_000 });
+    assert.equal(tokenLiveStateFrom([used], MINTED, 'mcp', 1, false).kind, 'connected');
+  });
+
+  void test('CONTROL: with presence on, a bare use is still not an MCP connection', () => {
+    const used = token({ last_used_at: 1_788_272_010_000 });
+    assert.equal(tokenLiveStateFrom([used], MINTED, 'mcp', 1, true).kind, 'watching');
+  });
+
+  void test('CONTROL: with presence off, a use from before the mint still does not count', () => {
+    const stale = token({ last_used_at: 1_788_271_000_000 });
+    assert.equal(tokenLiveStateFrom([stale], MINTED, 'mcp', 1, false).kind, 'watching');
+  });
+});
+
 void describe('what the page says once it connected', () => {
   void test('the agent the server recognised, and the name it gave', () => {
     const used = token({

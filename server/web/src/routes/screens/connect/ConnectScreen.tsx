@@ -9,6 +9,7 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { everyPage } from '../../../api/every-page.ts';
 import { canManageOrg } from '../../../api/invites.ts';
+import { getOrg } from '../../../api/org.ts';
 import { getPresence, hasLocation } from '../../../api/presence.ts';
 import { pickProject } from '../../../api/pick-project.ts';
 import {
@@ -220,6 +221,20 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
 
     const controller = new AbortController();
 
+    /*
+     * Whether the org records presence, asked once per watch. With it off the
+     * server does not stamp `last_mcp_at`, so the token watch needs to know
+     * to accept `last_used_at` instead (`tokenLiveStateFrom`). If the org
+     * cannot be read, the strict reading stands: presence on.
+     */
+    const presenceOn: Promise<boolean> =
+      minted === undefined
+        ? Promise.resolve(true)
+        : getOrg(controller.signal).then(
+            (org) => org.presence_enabled,
+            () => true,
+          );
+
     const ask = (): void => {
       const answer: Promise<LiveState> =
         minted === undefined
@@ -230,9 +245,12 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
           : // Every page, not the first: the list is newest-first so the token
             // is almost always on page one, but "almost" is a sample, and a
             // miss here would read as "not connected" with nothing to say why.
-            everyPage((cursor) => listTokens(controller.signal, { cursor })).then((tokens) => {
+            Promise.all([
+              everyPage((cursor) => listTokens(controller.signal, { cursor })),
+              presenceOn,
+            ]).then(([tokens, on]) => {
               ticks.current += 1;
-              return tokenLiveStateFrom(tokens.items, minted.id, via, ticks.current);
+              return tokenLiveStateFrom(tokens.items, minted.id, via, ticks.current, on);
             });
 
       answer
