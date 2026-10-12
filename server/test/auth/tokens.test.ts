@@ -15,7 +15,7 @@ import {
 } from '../../src/auth/tokens.ts';
 import { newId } from '../../src/db/ids.ts';
 import { eq } from 'drizzle-orm';
-import { tokens, users } from '../../src/db/schema.ts';
+import { orgs, tokens, users } from '../../src/db/schema.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
@@ -420,6 +420,26 @@ describe('MCP activity is recorded on the token (D-076)', () => {
 
     expect(recordMcpUse(t.db, tokenId, 1_000, 'mcp').client).toBe(true);
     expect(stored()).toMatchObject({ lastClient: 'omnigent', lastClientName: 'mcp' });
+  });
+
+  it('stamps no MCP time while presence is off, and still records the client', () => {
+    // LAI-150: a disabled org stores no heartbeats, so turning presence back on
+    // shows nothing from while it was off. MCP activity follows the same rule.
+    // The client is token metadata, like `last_used_at`, and is kept.
+    t.db
+      .insert(orgs)
+      .values({
+        id: newId(),
+        name: 'Laika',
+        ownerUserId: t.db.select().from(users).get()?.id ?? '',
+        presenceEnabled: 0,
+        createdAt: 0,
+        updatedAt: 0,
+      })
+      .run();
+
+    expect(recordMcpUse(t.db, tokenId, 1_000, 'Cursor')).toEqual({ mcp: false, client: true });
+    expect(stored()).toEqual({ lastMcpAt: null, lastClient: 'cursor', lastClientName: 'Cursor' });
   });
 
   it('touches nothing for a token that does not exist', () => {

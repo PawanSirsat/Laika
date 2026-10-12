@@ -4055,9 +4055,13 @@ rules.
    has **no location**: those keys are absent, which already means *"working,
    somewhere this reader is not told"*. Capacity's `active_sessions` counts
    distinct tokens across heartbeats and MCP calls. A revoked or expired token
-   is not present.
+   is not present. **This applies to heartbeats as well:** a heartbeat on a
+   revoked or expired token no longer shows or counts toward Capacity, which it
+   did before this decision; a signed-in session's heartbeat (no token) is
+   unchanged.
 2. **On `initialize` the server keeps the client's own `clientInfo.name`** on
-   the token, with control and bidi characters stripped and at most 64
+   the token, with Unicode `Other` characters (control, format and bidi,
+   surrogates, private use) and line/paragraph separators stripped, at most 64
    characters, and a slug from a fixed list (`AGENT_CLIENTS` in
    `server/src/auth/agent-clients.ts`, ending in `other`). A name that
    identifies nothing, such as the Python SDK's `mcp` (sent by Omnigent and
@@ -4075,11 +4079,21 @@ rules.
    work. It describes the tool, at the same level as a `User-Agent` header, and
    it is shown only where the person is already shown. That is this decision's
    reading, and the reason it adds no opt-in.
-5. **`presence_enabled` still governs the views.** With it off, Presence and
-   Capacity show no MCP sessions, exactly as they show no heartbeats. The
-   token's own `last_mcp_at` and client are still written, because they are
-   token metadata like `last_used_at`. Only the token's owner, and an admin
-   listing that person's tokens, can see them.
+
+   **MCP presence applies to every token's user, without a per-user opt-in**,
+   for three reasons. It says less than a heartbeat already does: a time and a
+   client name, never a location. An agent's writes over `/mcp` already appear
+   in the activity log under that person (§4.8), so being seen as working adds
+   nothing a reader of the board could not infer. And the org can switch
+   presence off for everyone (item 5).
+5. **`presence_enabled` governs MCP presence as it governs heartbeats.** With
+   it off, Presence and Capacity show no MCP sessions, and **`last_mcp_at` is
+   not stamped**, just as LAI-150 stores no heartbeats. So turning presence
+   back on shows nothing from the time it was off. The client's name and slug
+   are still written, because they are token metadata like `last_used_at`.
+   Only the token's owner, and an admin listing that person's tokens, can see
+   them. One consequence: with presence off, `last_mcp_at` cannot tell the
+   Connect screen that a new token has connected.
 6. **The server tells every agent how to work the board.** `/mcp` returns
    `instructions` on `initialize`: call `laika_whoami`, read
    `get_project_context`, claim with `start_working` before coding,

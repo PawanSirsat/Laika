@@ -484,7 +484,12 @@ describe('an MCP call is presence, with no heartbeat (D-076)', () => {
   function mcpToken(
     userId: string,
     lastMcpAt: number | null,
-    options: { client?: string | null; name?: string; revokedAt?: number | null } = {},
+    options: {
+      client?: string | null;
+      name?: string;
+      revokedAt?: number | null;
+      expiresAt?: number | null;
+    } = {},
   ): string {
     const id = newId();
     t.db
@@ -499,6 +504,7 @@ describe('an MCP call is presence, with no heartbeat (D-076)', () => {
         lastMcpAt,
         lastClient: options.client === undefined ? 'cursor' : options.client,
         revokedAt: options.revokedAt ?? null,
+        expiresAt: options.expiresAt ?? null,
         createdAt: NOW,
       })
       .run();
@@ -609,6 +615,67 @@ describe('an MCP call is presence, with no heartbeat (D-076)', () => {
     mcpToken(ada, NOW - 1000, { revokedAt: NOW - 500 });
 
     expect(entryFor(ada)).toBeUndefined();
+  });
+
+  it('drops an expired token, and keeps one that expires later', () => {
+    const gone = makeUser('member', 'Gone');
+    const still = makeUser('member', 'Still');
+    mcpToken(gone, NOW - 1000, { expiresAt: NOW - 500 });
+    mcpToken(still, NOW - 1000, { expiresAt: NOW + 60_000 });
+
+    expect(presenceNow(t.db, actor(adminId), NOW).present.map((p) => p.name)).toEqual(['Still']);
+  });
+
+  it('drops a heartbeat on a revoked or expired token, and keeps a cookie heartbeat', () => {
+    // The same rule as an MCP call: a token that can make no further request
+    // has no live session, whichever way it was last seen.
+    const revoked = makeUser('member', 'Revoked');
+    const expired = makeUser('member', 'Expired');
+    const cookie = makeUser('member', 'Cookie');
+    beat(revoked, NOW - 1000, 'kvell/laika', mcpToken(revoked, null, { revokedAt: NOW - 500 }));
+    beat(expired, NOW - 1000, 'kvell/laika', mcpToken(expired, null, { expiresAt: NOW - 500 }));
+    beat(cookie, NOW - 1000);
+
+    expect(presenceNow(t.db, actor(adminId), NOW).present.map((p) => p.name)).toEqual(['Cookie']);
+
+    const people = capacityNow(t.db, actor(adminId), NOW).people;
+    for (const id of [revoked, expired]) {
+      expect(people.find((p) => p.user_id === id)).toMatchObject({
+        active_sessions: 0,
+        last_seen: null,
+      });
+    }
+    expect(people.find((p) => p.user_id === cookie)).toMatchObject({
+      active_sessions: 1,
+      last_seen: NOW - 1000,
+    });
+  });
+
+  it('names the agent session even when a cookie heartbeat is newer', () => {
+    const ada = makeUser('member', 'Ada');
+    mcpToken(ada, NOW - 60_000, { client: 'codex' });
+    beat(ada, NOW - 1000);
+
+    expect(entryFor(ada)).toMatchObject({
+      repo: 'kvell/laika',
+      is_agent: true,
+      client: 'codex',
+      clients: ['codex'],
+      last_seen: NOW - 1000,
+    });
+  });
+
+  it('orders merged entries by their newest session, from either source', () => {
+    const ada = makeUser('member', 'Ada');
+    const bob = makeUser('member', 'Bob');
+    beat(ada, NOW - 120_000);
+    mcpToken(ada, NOW - 1000);
+    beat(bob, NOW - 60_000);
+
+    expect(presenceNow(t.db, actor(adminId), NOW).present.map((p) => p.name)).toEqual([
+      'Ada',
+      'Bob',
+    ]);
   });
 
   it('shows nothing when presence is off', () => {

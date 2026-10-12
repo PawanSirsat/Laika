@@ -156,11 +156,24 @@ function clientOf(lastClient: string | null, tokenName: string | null): AgentCli
 }
 
 /**
- * Tokens that called `/mcp` inside the window (D-076).
+ * A token that can still make a request: not revoked, not expired (D-076).
  *
- * A revoked or expired token is dropped even if its last call was recent: it
- * cannot make another one, so the session is over.
+ * A token that can make no further call has no live session, however recently
+ * it was seen, by heartbeat or by `/mcp`.
  */
+function tokenStillUsable(now: number) {
+  return and(isNull(tokens.revokedAt), or(isNull(tokens.expiresAt), gt(tokens.expiresAt, now)));
+}
+
+/**
+ * A heartbeat that still counts: a signed-in session's (no token), or one on a
+ * token that is still usable. Used with a left join to `tokens`.
+ */
+function liveHeartbeat(now: number) {
+  return or(isNull(heartbeats.tokenId), tokenStillUsable(now));
+}
+
+/** Tokens that called `/mcp` inside the window (D-076). */
 function mcpSessionsSince(db: Db, since: number, now: number) {
   return db
     .select({
@@ -173,13 +186,7 @@ function mcpSessionsSince(db: Db, since: number, now: number) {
     })
     .from(tokens)
     .innerJoin(users, eq(users.id, tokens.userId))
-    .where(
-      and(
-        gt(tokens.lastMcpAt, since),
-        isNull(tokens.revokedAt),
-        or(isNull(tokens.expiresAt), gt(tokens.expiresAt, now)),
-      ),
-    )
+    .where(and(gt(tokens.lastMcpAt, since), tokenStillUsable(now)))
     .all()
     .map((row) => ({
       tokenId: row.tokenId,
@@ -213,7 +220,7 @@ export function presenceNow(db: Db, actor: ResolvedActor, now: number = Date.now
     .from(heartbeats)
     .innerJoin(users, eq(users.id, heartbeats.userId))
     .leftJoin(tokens, eq(tokens.id, heartbeats.tokenId))
-    .where(gt(heartbeats.createdAt, since))
+    .where(and(gt(heartbeats.createdAt, since), liveHeartbeat(now)))
     .orderBy(desc(heartbeats.createdAt))
     .all();
 
@@ -327,7 +334,8 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
           tokenId: heartbeats.tokenId,
         })
         .from(heartbeats)
-        .where(gt(heartbeats.createdAt, now - PRESENCE_WINDOW_MS))
+        .leftJoin(tokens, eq(tokens.id, heartbeats.tokenId))
+        .where(and(gt(heartbeats.createdAt, now - PRESENCE_WINDOW_MS), liveHeartbeat(now)))
         .all()
     : [];
 
