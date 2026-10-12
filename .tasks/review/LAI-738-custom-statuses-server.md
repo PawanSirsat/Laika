@@ -242,3 +242,24 @@ the reviewer's repro and fixes the non-blocking items, each test-first:
   `server/` `pnpm test` → 1: 2304 test cases collected, 2302 pass; the 2
   failures are the `response-type-coverage` PAIRS checks the web half
   retires.
+
+## Round-2 follow-ups — 2026-10-12 (df6dc54)
+
+Approved at f940a87; two follow-ups, test-first:
+
+- **Status by name** (`services/tasks.ts`, `resolveStatus`): an exact,
+  case-sensitive match wins; otherwise a single case-insensitive match;
+  several case-insensitive matches are a `422` — *More than one status is
+  called "ÉTAT" in this project: État, état. Use the exact name* — with
+  `details.candidates` in board order. Test with `État`/`état` inserted
+  directly (SQLite's ASCII-only `lower()` admits both; the service would
+  refuse the second). Red before: `état` resolved to `État`.
+- **0028 `named` comment** no longer claims a lead's own `X (2)` is always
+  honoured. Typed names beat generated labels, but a suffix minted for an
+  earlier typed clash can take `X (2)` first. A new migration test pins the
+  comment's example: `X`, `x`, `X (2)` → `X`, `x (2)`, `X (2) (2)`.
+  Migration behaviour is unchanged; only the comment and that test are new.
+- **Gate:** `pnpm lint` → 0 and `pnpm format` → 0, both from the root.
+  `server/` `pnpm test` → 1: 2306 test cases collected, 2304 pass; the 2
+  failures are the `response-type-coverage` PAIRS checks the web half
+  retires.
