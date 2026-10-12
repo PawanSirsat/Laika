@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { Member, TaskPriority } from '../../../api/tasks.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import { statusOptions as projectStatusOptions } from './status-options.tsx';
+import { statusOptions as projectStatusOptions } from './status-options.ts';
 import {
   isCategory,
   UPDATED_LABELS,

@@ -1,11 +1,12 @@
+import { createElement } from 'react';
 import type { DropdownOption } from '../../../components/Dropdown.tsx';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 
 /**
  * A status picker's choices (LAI-739): the project's statuses — its board
- * columns — in position order, each with its kind's dot, hidden ones marked.
- * One builder for the card, the task panel, the subtasks and the List, so
- * they cannot list the statuses four different ways.
+ * columns — in position order, each with its kind's dot, hidden ones wearing
+ * a *Hidden* badge. One builder for the card, the task panel, the subtasks,
+ * the List and the Filter, so they cannot list the statuses five ways.
  */
 export function statusOptions(statuses: readonly ProjectStatus[]): DropdownOption[] {
   return [...statuses]
@@ -13,7 +14,7 @@ export function statusOptions(statuses: readonly ProjectStatus[]): DropdownOptio
     .map((s) => ({
       value: s.id,
       label: s.name,
-      icon: <span className={`dd-dot dd-dot-${s.category}`} />,
+      icon: createElement('span', { className: `dd-dot dd-dot-${s.category}` }),
       ...(s.hidden ? { badge: 'Hidden' } : {}),
     }));
 }

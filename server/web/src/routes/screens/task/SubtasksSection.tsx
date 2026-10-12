@@ -15,7 +15,7 @@ import {
 } from '../../../api/tasks.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
 import type { ProjectStatus } from '../../../api/statuses.ts';
-import { statusOptions } from '../board/status-options.tsx';
+import { statusOptions } from '../board/status-options.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';

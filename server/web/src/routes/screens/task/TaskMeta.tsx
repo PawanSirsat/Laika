@@ -3,7 +3,7 @@ import { AssignControl } from '../board/AssignControl.tsx';
 import { TagPicker } from '../board/TagPicker.tsx';
 import type { ProjectStatus } from '../../../api/statuses.ts';
 import { statusNameOf } from '../../../api/status-derive.ts';
-import { statusOptions } from '../board/status-options.tsx';
+import { statusOptions } from '../board/status-options.ts';
 import { dateInputToMs, dateLabel, isOverdue, msToDateInput } from '../../../api/date-only.ts';
 import type { Sprint } from '../../../api/sprints.ts';
 import { timeLabel } from '../../../api/time-label.ts';
