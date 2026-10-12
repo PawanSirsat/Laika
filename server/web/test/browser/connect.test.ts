@@ -1,5 +1,5 @@
 /**
- * Settings → Connect, in a browser (LAI-622).
+ * Settings → Connect, in a browser (LAI-622, made agent-neutral by LAI-737).
  *
  * The page's job is to take a developer from nothing to a connected session, so
  * what is asserted here is the behaviour a developer would notice: the blocks
@@ -63,25 +63,58 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
   };
 }
 
-/** The mint endpoint, answering with the one-time secret. */
-const MINTS: Partial<ApiStub> = {
-  '/api/v1/tokens': (call: { method?: string }) =>
-    call.method === 'POST'
-      ? {
-          token: {
-            id: 't1',
-            name: 'laika-claude on macOS',
-            prefix: SECRET.slice(0, 8),
-            scope: 'full',
-            last_used_at: null,
-            expires_at: Date.now() + 90 * 86_400_000,
-            revoked_at: null,
-            created_at: Date.now(),
-          },
-          secret: SECRET,
-        }
-      : { data: [], next_cursor: null },
-};
+const MINTED_AT = Date.now();
+
+/** The token row as the server lists it (LAI-736's fields included). */
+const tokenRow = (over: Record<string, unknown> = {}) => ({
+  id: 't1',
+  name: 'claude-code on macOS',
+  prefix: SECRET.slice(0, 8),
+  scope: 'full',
+  project_ids: null,
+  last_used_at: null,
+  last_mcp_at: null,
+  last_client: null,
+  last_client_name: null,
+  expires_at: MINTED_AT + 90 * 86_400_000,
+  revoked_at: null,
+  created_at: MINTED_AT,
+  ...over,
+});
+
+/**
+ * The mint endpoint, answering with the one-time secret — and, once minted,
+ * listing that token as `listed` describes it.
+ */
+function mints(listed: Record<string, unknown> | undefined = undefined): Partial<ApiStub> {
+  let minted = false;
+  return {
+    '/api/v1/tokens': (call: { method?: string }) => {
+      if (call.method === 'POST') {
+        minted = true;
+        return { token: tokenRow(), secret: SECRET };
+      }
+      return { data: minted && listed !== undefined ? [tokenRow(listed)] : [], next_cursor: null };
+    },
+  };
+}
+
+const MINTS = mints();
+
+/** An agent session of Ada's, as presence lists it. */
+const agentSession = (over: Record<string, unknown> = {}) => ({
+  user_id: 'u1',
+  name: 'Ada Lovelace',
+  repo: 'kvelld/onroute',
+  branch: 'main',
+  matched_task_id: null,
+  project_ids: [],
+  is_agent: true,
+  client: 'claude-code',
+  clients: ['claude-code'],
+  last_seen: Date.now(),
+  ...over,
+});
 
 async function mint(h: Awaited<ReturnType<typeof open>>): Promise<void> {
   await h.page.locator('.conn-mint button').click();
@@ -159,7 +192,7 @@ void describe('minting fills the page in', () => {
     const h = await open('/connect', stub(MINTS));
     try {
       await mint(h);
-      const block = await h.page.locator('.conn-claude-md').innerText();
+      const block = await h.page.locator('.conn-project-block').innerText();
       assert.ok(!block.includes(SECRET), 'the secret reached the committed block');
       assert.doesNotMatch(block, /lai_/, 'a token shape reached the committed block');
       assert.match(block, /onroute/, 'the block does not name the project');
@@ -186,14 +219,14 @@ void describe('minting fills the page in', () => {
   void test('the block follows the project picker', async () => {
     const h = await open('/connect', stub(MINTS));
     try {
-      await h.page.locator('.conn-claude-md').waitFor({ timeout: 20_000 });
+      await h.page.locator('.conn-project-block').waitFor({ timeout: 20_000 });
       await pick(h.page.locator('#conn-project'), 'skynet');
       await h.page.waitForFunction(
-        () => (document.querySelector('.conn-claude-md')?.textContent ?? '').includes('skynet'),
+        () => (document.querySelector('.conn-project-block')?.textContent ?? '').includes('skynet'),
         undefined,
         { timeout: 10_000 },
       );
-      const block = await h.page.locator('.conn-claude-md').innerText();
+      const block = await h.page.locator('.conn-project-block').innerText();
       assert.match(block, /SKY-42/, 'the prefix did not follow the picker');
       assert.doesNotMatch(block, /ONR-42/, 'the old project is still named');
     } finally {
@@ -235,28 +268,13 @@ void describe('copy, on a board with no clipboard API', () => {
 });
 
 void describe('the live check', () => {
-  void test('CONTROL: my own browser does not satisfy it', async () => {
+  void test('CONTROL: my own browser does not satisfy the presence watch', async () => {
     const h = await open(
       '/connect',
-      stub({
-        ...MINTS,
-        '/api/v1/presence': {
-          enabled: true,
-          present: [
-            {
-              user_id: 'u1',
-              name: 'Ada Lovelace',
-              matched_task_id: null,
-              project_ids: [],
-              is_agent: false,
-              last_seen: Date.now(),
-            },
-          ],
-        },
-      }),
+      stub({ '/api/v1/presence': { enabled: true, present: [agentSession({ is_agent: false })] } }),
     );
     try {
-      await mint(h);
+      await h.page.getByRole('button', { name: 'Watch for my session' }).click();
       await h.page.locator('.conn-live-watching').waitFor({ timeout: 20_000 });
       assert.equal(
         await h.page.locator('.conn-live-ok').count(),
@@ -268,54 +286,212 @@ void describe('the live check', () => {
     }
   });
 
-  void test('an agent session turns it green, and the watch then stops', async () => {
+  void test('without a token minted here, any agent session of mine turns it green — and it says so', async () => {
     const h = await open(
       '/connect',
-      stub({
-        ...MINTS,
-        '/api/v1/presence': {
-          enabled: true,
-          present: [
-            {
-              user_id: 'u1',
-              name: 'Ada Lovelace',
-              repo: 'kvelld/onroute',
-              branch: 'main',
-              matched_task_id: null,
-              project_ids: [],
-              is_agent: true,
-              last_seen: Date.now(),
-            },
-          ],
-        },
-      }),
+      stub({ '/api/v1/presence': { enabled: true, present: [agentSession()] } }),
     );
     try {
-      await mint(h);
+      await h.page.getByRole('button', { name: 'Watch for my session' }).click();
       await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
-      assert.match(await h.page.locator('.conn-live-ok').innerText(), /kvelld\/onroute/);
-
-      const asked = h.calls.filter((c) => c.path === '/api/v1/presence').length;
-      await h.page.waitForTimeout(6_000);
-      assert.equal(
-        h.calls.filter((c) => c.path === '/api/v1/presence').length,
-        asked,
-        'the watch kept polling after it succeeded',
+      const text = await h.page.locator('.conn-live-ok').innerText();
+      assert.match(text, /kvelld\/onroute/);
+      assert.match(
+        text,
+        /not necessarily a new one/,
+        'the weaker check passes itself off as proof',
       );
     } finally {
       await h.close();
     }
   });
 
-  void test('presence switched off is said, not guessed at', async () => {
+  void test('CONTROL: after a mint, another session of mine does not turn it green (LAI-737)', async () => {
+    /*
+     * **The false positive this task fixes.** LAI-622's check matched any
+     * agent session of the reader's — so an agent already running on an old
+     * token reported the brand-new one as connected before it was used.
+     */
     const h = await open(
       '/connect',
-      stub({ ...MINTS, '/api/v1/presence': { enabled: false, present: [] } }),
+      stub({ ...mints(), '/api/v1/presence': { enabled: true, present: [agentSession()] } }),
     );
     try {
       await mint(h);
+      await h.page.locator('.conn-live-watching').waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(6_000);
+      assert.equal(
+        await h.page.locator('.conn-live-ok').count(),
+        0,
+        'an old session passed for the new token',
+      );
+      assert.equal(
+        h.calls.filter((c) => c.path === '/api/v1/presence').length,
+        0,
+        'with a token minted here, the watch still read presence',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the minted token calling /mcp turns it green, names the agent, and the watch stops', async () => {
+    const h = await open(
+      '/connect?agent=codex',
+      stub(
+        mints({
+          last_mcp_at: MINTED_AT + 5_000,
+          last_client: 'codex',
+          last_client_name: 'codex-mcp-client',
+        }),
+      ),
+    );
+    try {
+      await mint(h);
+      await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
+      assert.match(
+        await h.page.locator('.conn-live-ok').innerText(),
+        /Connected — Codex \(codex-mcp-client\)/,
+      );
+
+      const listed = () =>
+        h.calls.filter((c) => c.path === '/api/v1/tokens' && c.method !== 'POST').length;
+      const asked = listed();
+      await h.page.waitForTimeout(6_000);
+      assert.equal(listed(), asked, 'the watch kept polling after it succeeded');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('presence switched off is said, not guessed at', async () => {
+    const h = await open('/connect', stub({ '/api/v1/presence': { enabled: false, present: [] } }));
+    try {
+      await h.page.getByRole('button', { name: 'Watch for my session' }).click();
       await h.page.locator('.conn-live-disabled').waitFor({ timeout: 20_000 });
       assert.equal(await h.page.locator('.conn-live-spent').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('the agent picker (LAI-737)', () => {
+  const radios = (h: Awaited<ReturnType<typeof open>>) =>
+    h.page.getByRole('radiogroup', { name: 'Your coding agent' }).getByRole('radio');
+
+  void test('it is one labelled radio group, Claude Code first and chosen by default', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      const first = radios(h).first();
+      assert.equal(await first.getAttribute('value'), 'claude-code');
+      assert.equal(await first.isChecked(), true);
+      // The tile's accessible name is the product's name, not its monogram.
+      assert.equal(await h.page.getByRole('radio', { name: 'Codex', exact: true }).count(), 1);
+      assert.match(await h.page.locator('.conn-steps').innerText(), /Add Laika to Claude Code/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('More reveals the rest, and they are radios of the same group', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.getByRole('radio', { name: 'Kiro', exact: true }).count(),
+        0,
+        'Kiro is not under More',
+      );
+      const more = h.page.locator('.conn-more');
+      assert.equal(await more.getAttribute('aria-expanded'), 'false');
+      await more.click();
+      assert.equal(await more.getAttribute('aria-expanded'), 'true');
+      await h.page.getByRole('radio', { name: 'Kiro', exact: true }).check();
+      assert.match(await h.page.locator('.conn-steps').innerText(), /Add Laika to Kiro/);
+      assert.match(await h.page.locator('.conn-steps').innerText(), /--allow-http/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the keyboard moves the choice, and the URL and token name follow', async () => {
+    const h = await open('/connect', stub());
+    try {
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      await radios(h).first().focus();
+      await h.page.keyboard.press('ArrowRight');
+      await h.page.waitForFunction(
+        () => window.location.search.includes('agent=codex'),
+        undefined,
+        {
+          timeout: 10_000,
+        },
+      );
+      assert.equal(
+        await h.page.getByRole('radio', { name: 'Codex', exact: true }).isChecked(),
+        true,
+      );
+      assert.match(await h.page.locator('#conn-token-name').inputValue(), /^codex( on |$)/);
+      assert.match(
+        await h.page.locator('.conn-steps').innerText(),
+        /bearer_token_env_var = "LAIKA_TOKEN"/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('?agent= opens the page on that agent, and the choice is remembered', async () => {
+    const h = await open('/connect?agent=gemini-cli', stub());
+    try {
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.getByRole('radio', { name: 'Gemini CLI', exact: true }).isChecked(),
+        true,
+      );
+      assert.match(await h.page.locator('.conn-project-block').innerText(), /Laika/);
+      assert.match(await h.page.locator('.conn-extra').first().innerText(), /GEMINI\.md/);
+
+      await h.page.goto(`${h.origin}/connect`);
+      await h.page.locator('.conn-picker').waitFor({ timeout: 20_000 });
+      assert.equal(
+        await h.page.getByRole('radio', { name: 'Gemini CLI', exact: true }).isChecked(),
+        true,
+        'the choice was not remembered without the URL',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('the minted token is named after the agent', async () => {
+    const h = await open('/connect?agent=omnigent', stub(MINTS));
+    try {
+      await mint(h);
+      const posted = h.calls.find((c) => c.path === '/api/v1/tokens' && c.method === 'POST');
+      assert.match((posted?.body as { name?: string }).name ?? '', /^omnigent( on |$)/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('CONTROL: after a mint, the token appears only in blocks that say they carry it', async () => {
+    const h = await open('/connect?agent=cursor', stub(MINTS));
+    try {
+      await mint(h);
+      const setups = h.page.locator('.conn-setup');
+      const count = await setups.count();
+      assert.ok(count >= 3, `only ${String(count)} setup blocks rendered`);
+      for (let i = 0; i < count; i += 1) {
+        const one = setups.nth(i);
+        const kind = await one.getAttribute('data-token');
+        const text = await one.locator('pre').innerText();
+        if (kind === 'none')
+          assert.ok(!text.includes(SECRET), `a tokenless block carries it: ${text}`);
+        else assert.match(await one.innerText(), /carries your token/);
+      }
     } finally {
       await h.close();
     }

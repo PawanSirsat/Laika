@@ -274,7 +274,7 @@ function cliBlock(origin: string, token: string, id: AgentChoice, note: string):
   return {
     key: 'cli',
     group: 'recommended',
-    label: 'Terminal — carries your token',
+    label: 'Terminal',
     what: 'the setup commands',
     lang: 'sh',
     token: 'secret',

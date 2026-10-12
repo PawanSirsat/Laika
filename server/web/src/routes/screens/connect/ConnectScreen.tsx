@@ -6,47 +6,111 @@ import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { Spinner } from '../../../components/Spinner.tsx';
+import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
+import { everyPage } from '../../../api/every-page.ts';
 import { canManageOrg } from '../../../api/invites.ts';
 import { getPresence, hasLocation } from '../../../api/presence.ts';
 import { pickProject } from '../../../api/pick-project.ts';
 import {
   createToken,
   forcedTokenScope,
+  listTokens,
   mayChooseScope,
   type CreatedToken,
 } from '../../../api/tokens.ts';
 import { useProjects } from '../../../api/use-projects.ts';
 import type { MeProfile } from '../../../api/me.ts';
-import { projectBlock, manualCommands, setupPrompt, type ProjectRef } from './connect-copy.ts';
-import { LIVE_POLL_MS, LIVE_TICKS, liveStateFrom, type LiveState } from './connect-live.ts';
+import {
+  AGENT_GUIDES,
+  guideFor,
+  instructionsTarget,
+  likelyCauses,
+  setupBlocks,
+  startGuide,
+  type AgentChoice,
+  type AgentGuide,
+  type SetupBlock,
+} from './connect-agents.ts';
+import { projectBlock, type ProjectRef } from './connect-copy.ts';
+import {
+  connectedLabel,
+  LIVE_POLL_MS,
+  LIVE_TICKS,
+  liveStateFrom,
+  tokenLiveStateFrom,
+  type LiveState,
+} from './connect-live.ts';
 import { suggestTokenName } from './connect-token-name.ts';
 import './connect.css';
 
 /**
- * Connect — the front door for a developer with nothing set up (LAI-622).
+ * Connect — the front door for a developer with nothing set up (LAI-622), for
+ * whichever coding agent they use (LAI-737).
  *
  * ## Why the secret is never stored twice
  *
  * The one-time plaintext lives in exactly one hook, and every string built from
- * it — the prompt, the curl line, the heredoc — is computed **during render**
- * and stored nowhere. A `useMemo` or a second `useState` holding "the prompt
- * text" would survive the blanking pass that {@link forget} performs and defeat
- * it entirely, one level of indirection out from where `TokensScreen` measured
- * the same failure.
+ * it — the prompt, the commands, an inline config — is computed **during
+ * render** and stored nowhere. A `useMemo` or a second `useState` holding "the
+ * prompt text" would survive the blanking pass that {@link forget} performs and
+ * defeat it entirely, one level of indirection out from where `TokensScreen`
+ * measured the same failure.
+ *
+ * ## The agent choice
+ *
+ * Kept in `?agent=` so a lead can send a teammate the page already set to the
+ * team's agent, and in `localStorage` so a person who comes back is not asked
+ * again. The URL wins; storage is a convenience and may be unavailable, so
+ * every read and write of it is allowed to fail.
  */
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+const AGENT_KEY = 'laika.connect.agent';
+
+function storedAgent(): string | null {
+  try {
+    return window.localStorage.getItem(AGENT_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function storeAgent(id: AgentChoice): void {
+  try {
+    window.localStorage.setItem(AGENT_KEY, id);
+  } catch {
+    // Private mode or blocked storage: the URL still carries the choice.
+  }
+}
 
 export interface ConnectScreenProps {
   readonly me: MeProfile | undefined;
   readonly origin: string;
+  /** The route's query, for `?agent=`. Optional so the screen renders bare. */
+  readonly params?: URLSearchParams | undefined;
+  readonly setParams?:
+    ((next: URLSearchParams, options?: { readonly push?: boolean }) => void) | undefined;
 }
 
-export function ConnectScreen({ me, origin }: ConnectScreenProps) {
+/** Enough of the minted token to watch it — the id and when it was made, never the secret. */
+interface MintedRef {
+  readonly id: string;
+  readonly created_at: number;
+}
+
+export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenProps) {
   const projects = useProjects();
 
-  const [name, setName] = useState(() => suggestTokenName(navigator.userAgent));
+  const [agentId, setAgentId] = useState<AgentChoice>(
+    () => guideFor(params?.get('agent') ?? storedAgent()).id,
+  );
+  const guide = guideFor(agentId);
+
+  const [name, setName] = useState(() => suggestTokenName(navigator.userAgent, guide.tokenWord));
+  /** Once the reader types a name, choosing another agent stops rewriting it. */
+  const nameTouched = useRef(false);
   const [revealed, setRevealed] = useState<CreatedToken | undefined>(undefined);
+  const [minted, setMinted] = useState<MintedRef | undefined>(undefined);
   const [pending, setPending] = useState(false);
   const [mintError, setMintError] = useState<string | undefined>(undefined);
   const [slug, setSlug] = useState<string | undefined>(undefined);
@@ -60,9 +124,28 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
    */
   const [forgotten, setForgotten] = useState(false);
   const ticks = useRef(0);
-
-  const promptRef = useRef<HTMLPreElement | null>(null);
   const blockRef = useRef<HTMLPreElement | null>(null);
+
+  /*
+   * Remembered whichever way it was chosen — a click, the keyboard, or a link
+   * that arrived with `?agent=`. Writing only on a click forgot the agent a
+   * lead's link had set, which the browser test caught.
+   */
+  useEffect(() => {
+    storeAgent(agentId);
+  }, [agentId]);
+
+  const choose = (id: AgentChoice): void => {
+    setAgentId(id);
+    if (!nameTouched.current) {
+      setName(suggestTokenName(navigator.userAgent, guideFor(id).tokenWord));
+    }
+    if (params !== undefined && setParams !== undefined) {
+      const next = new URLSearchParams(params);
+      next.set('agent', id);
+      setParams(next);
+    }
+  };
 
   /**
    * Two phases, copied from `TokensScreen.forget()` and for the same measured
@@ -87,23 +170,27 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
       ? undefined
       : { slug: chosen.slug, prefix: chosen.prefix, name: chosen.name };
 
-  const prompt = setupPrompt({ origin, secret, project });
-  const block = project === undefined ? undefined : projectBlock(origin, project);
+  const blocks = setupBlocks(guide.id, { origin, secret, project });
+  const target = instructionsTarget(guide.id);
+  const block = project === undefined ? undefined : target.wrap(projectBlock(origin, project));
+  const start = startGuide(guide.id);
 
   const mint = (): void => {
     if (me === undefined) return;
     setPending(true);
     setMintError(undefined);
     createToken({
-      name: name.trim() === '' ? suggestTokenName(navigator.userAgent) : name.trim(),
+      name:
+        name.trim() === '' ? suggestTokenName(navigator.userAgent, guide.tokenWord) : name.trim(),
       scope: forcedTokenScope(me.org_role, 'full'),
-      // A credential that is about to be pasted into a transcript should have
-      // an end date. Nothing else in the UI sets one; the field has always
-      // existed.
+      // A credential that is about to be pasted into a transcript or a config
+      // should have an end date. Nothing else in the UI sets one; the field
+      // has always existed.
       expires_at: Date.now() + NINETY_DAYS_MS,
     })
       .then((created) => {
         setRevealed(created);
+        setMinted({ id: created.token.id, created_at: created.token.created_at });
         setForgotten(false);
         // Minting is the moment the reader is about to go and do it, so the
         // watch arms itself rather than waiting to be asked.
@@ -118,9 +205,15 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
       });
   };
 
+  const via = guide.via;
+
   /**
    * The watch. Bounded, and it stops on every terminal answer rather than
    * polling a server forever because somebody left a tab open.
+   *
+   * **By token when this page minted one** — the token's own `last_mcp_at`,
+   * which only that token can move — and by presence otherwise, which any
+   * agent session of the reader's satisfies.
    */
   useEffect(() => {
     if (live.kind !== 'watching' || me === undefined) return;
@@ -128,10 +221,23 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
     const controller = new AbortController();
 
     const ask = (): void => {
-      getPresence(controller.signal)
-        .then((presence) => {
-          ticks.current += 1;
-          setLive(liveStateFrom(presence, me.id, ticks.current));
+      const answer: Promise<LiveState> =
+        minted === undefined
+          ? getPresence(controller.signal).then((presence) => {
+              ticks.current += 1;
+              return liveStateFrom(presence, me.id, ticks.current);
+            })
+          : // Every page, not the first: the list is newest-first so the token
+            // is almost always on page one, but "almost" is a sample, and a
+            // miss here would read as "not connected" with nothing to say why.
+            everyPage((cursor) => listTokens(controller.signal, { cursor })).then((tokens) => {
+              ticks.current += 1;
+              return tokenLiveStateFrom(tokens.items, minted.id, via, ticks.current);
+            });
+
+      answer
+        .then((state) => {
+          setLive(state);
         })
         .catch((cause: unknown) => {
           if (cause instanceof DOMException && cause.name === 'AbortError') return;
@@ -151,25 +257,30 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
      * would be a dependency, and every tick would tear the interval down and
      * build a new one — a watch that restarts itself is not a watch.
      */
-  }, [live.kind, me]);
+  }, [live.kind, me, minted, via]);
 
   const viewerOnly = me !== undefined && !mayChooseScope(me.org_role);
 
   /*
    * Step state, from what this page already knows and nothing else (LAI-733).
    * A token minted here — still shown, or hidden since — finishes step 1; a
-   * session the live check found finishes step 4. Steps 2 and 3 happen on the
-   * reader's machine, where the page cannot see, so they are never ticked.
+   * connection the live check found finishes step 4. Steps 2 and 3 happen on
+   * the reader's machine, where the page cannot see, so they are never ticked.
    */
-  const minted = revealed !== undefined || forgotten;
-  const connected = live.kind === 'found';
-  const current = connected ? undefined : minted ? 2 : 1;
+  const mintedHere = revealed !== undefined || forgotten;
+  const connected = live.kind === 'found' || live.kind === 'connected';
+  const current = connected ? undefined : mintedHere ? 2 : 1;
   const stepState = (n: number, done: boolean): StepState =>
     done ? 'done' : n === current ? 'current' : 'todo';
 
+  const recommended = blocks.filter((b) => b.group === 'recommended');
+  const manual = blocks.filter((b) => b.group === 'manual');
+  const alternative = blocks.filter((b) => b.group === 'alternative');
+  const carriesToken = blocks.some((b) => b.token !== 'none');
+
   return (
     <div className="connect">
-      <ScreenHeader title="Connect" context="Link Claude Code on your machine to this board">
+      <ScreenHeader title="Connect" context="Link your coding agent to this board">
         <span className="conn-url">
           <span className="conn-url-label">Board</span>
           <code className="conn-url-value">{origin}</code>
@@ -179,17 +290,21 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
 
       <div className="conn-page">
         <p className="conn-lede">
-          Four steps, about five minutes. At the end, a Claude Code session on your machine reads
-          this board, claims tasks, and appears on Capacity while it works. Everything below is
-          filled in for <strong>this</strong> board — you should not need another document.
+          Pick your agent, then four steps, about five minutes. At the end, an agent on your machine
+          reads this board, claims tasks, and appears on Capacity while it works. Everything below
+          is filled in for <strong>this</strong> board — you should not need another document.
         </p>
+
+        <AgentPicker value={guide.id} onChange={choose} />
 
         <ol className="conn-steps">
           {/* -------------------------------------------------------- step 1 */}
-          <Step n={1} state={stepState(1, minted)} title="Mint a token for this machine">
+          <Step n={1} state={stepState(1, mintedHere)} title="Mint a token for this machine">
             <p className="conn-body">
               A token is how a tool acts as you. It carries your permissions, so treat it like a
               password — and give it a name you will recognise on the Tokens screen a year from now.
+              The name starts with your agent, which is how the board recognises an agent that does
+              not introduce itself.
             </p>
 
             {viewerOnly && (
@@ -209,6 +324,7 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
                   className="conn-input"
                   value={name}
                   onChange={(event) => {
+                    nameTouched.current = true;
                     setName(event.target.value);
                   }}
                 />
@@ -255,11 +371,10 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
                   </div>
                 </div>
                 <p className="conn-note">
-                  Everything below now carries this token, including the prompt in step 2 — so it
-                  will be in your Claude Code transcript. That is the trade for one paste. If you
-                  would rather it was not, use <em>run it yourself</em> below and type the token at
-                  the installer’s prompt. Either way, revoking it on Tokens stops it working
-                  immediately.
+                  The blocks below marked <em>carries your token</em> now include it — paste them
+                  only into your own terminal, shell profile or agent. Every config that can read it
+                  from <code>LAIKA_TOKEN</code> does, and carries no token at all. Revoking it on
+                  Tokens stops it working immediately.
                 </p>
               </div>
             )}
@@ -272,82 +387,60 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
           </Step>
 
           {/* -------------------------------------------------------- step 2 */}
-          <Step n={2} state={stepState(2, false)} title="Hand the setup to Claude">
-            <p className="conn-body">
-              Open Claude Code in your project folder — plain <code>claude</code> is fine, nothing
-              is installed yet — and paste this. It installs the plugin, checks the board answers,
-              and writes the Laika block into this project’s <code>CLAUDE.md</code> so later
-              sessions mirror their work onto the board without being asked.
-            </p>
+          <Step n={2} state={stepState(2, false)} title={`Add Laika to ${guide.name}`}>
+            {guide.beta !== undefined && (
+              <p className="conn-note conn-note-warn conn-beta">{guide.beta}</p>
+            )}
 
-            <div className="conn-block conn-block-main">
-              <div className="conn-block-bar">
-                <span className="conn-block-label" id="conn-prompt-label">
-                  Paste into Claude Code
-                </span>
-                <CopyButton
-                  text={prompt}
-                  selects={promptRef}
-                  what="the setup prompt"
-                  className="conn-copy-primary"
-                  disabled={secret === undefined}
-                  disabledReason="Mint a token first — the prompt carries it"
-                />
-              </div>
-              <pre
-                className="conn-pre conn-prompt"
-                ref={promptRef}
-                tabIndex={0}
-                aria-labelledby="conn-prompt-label"
-              >
-                {prompt}
-              </pre>
-            </div>
+            {recommended.map((b) => (
+              <SetupBlockView key={b.key} block={b} minted={secret !== undefined} main />
+            ))}
 
-            <details className="conn-alt" open>
-              <summary>Or run it yourself</summary>
-              <p className="conn-body">
-                The same thing by hand. The installer asks for the board URL and your token — the
-                URL is <code>{origin}</code>, and the token is the one above.
+            {manual.length > 0 && (
+              <details className="conn-alt" open>
+                <summary>{recommended.length > 0 ? 'Or by hand' : 'By hand'}</summary>
+                {manual.map((b) => (
+                  <SetupBlockView key={b.key} block={b} minted={secret !== undefined} />
+                ))}
+              </details>
+            )}
+
+            {alternative.length > 0 && (
+              <details className="conn-alt">
+                <summary>Other ways</summary>
+                {alternative.map((b) => (
+                  <SetupBlockView key={b.key} block={b} minted={secret !== undefined} />
+                ))}
+              </details>
+            )}
+
+            {carriesToken && secret === undefined && (
+              <p className="conn-note">
+                Blocks that carry your token show a placeholder until you mint one in step 1.
               </p>
-              <div className="conn-block">
-                <div className="conn-block-bar">
-                  <span className="conn-block-label" id="conn-manual-label">
-                    Terminal
-                  </span>
-                  <CopyButton text={manualCommands()} what="the install commands" />
-                </div>
-                <pre className="conn-pre" tabIndex={0} aria-labelledby="conn-manual-label">
-                  {manualCommands()}
-                </pre>
-              </div>
-            </details>
+            )}
           </Step>
 
           {/* -------------------------------------------------------- step 3 */}
-          <Step n={3} state={stepState(3, false)} title="Start a connected session">
-            <p className="conn-body">
-              Open a <strong>new</strong> terminal — the installer changed your PATH and the one you
-              have does not know yet. Then, from any project folder:
-            </p>
-            <div className="conn-block">
-              <div className="conn-block-bar">
-                <span className="conn-block-label">Terminal</span>
-                <CopyButton text="laika-claude" what="the laika-claude command" />
+          <Step n={3} state={stepState(3, false)} title={`Start ${guide.name}`}>
+            <p className="conn-body">{start.body}</p>
+            {start.command !== undefined && (
+              <div className="conn-block">
+                <div className="conn-block-bar">
+                  <span className="conn-block-label">Terminal</span>
+                  <CopyButton text={start.command} what={start.commandWhat ?? 'the command'} />
+                </div>
+                <pre className="conn-pre">{start.command}</pre>
               </div>
-              <pre className="conn-pre">laika-claude</pre>
-            </div>
-            <p className="conn-body">
-              Use it exactly like <code>claude</code>; every flag passes through. Inside the
-              session, <code>/laika:status</code> names this board and confirms a token is present.
-              It never prints the token.
-            </p>
+            )}
           </Step>
 
           {/* -------------------------------------------------------- step 4 */}
           <Step n={4} state={stepState(4, connected)} title="Did it work?">
             <LiveCheck
               live={live}
+              guide={guide}
+              byToken={minted !== undefined}
               onWatch={() => {
                 ticks.current = 0;
                 setLive({ kind: 'watching', ticks: 0 });
@@ -360,9 +453,10 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
         <section className="conn-card conn-extra">
           <h2 className="conn-step-title">For the project lead</h2>
           <p className="conn-body">
-            Commit this to the project’s own <code>CLAUDE.md</code> and every session that opens the
-            repo works the board without being told how. Step 2’s prompt does it for you; this is
-            the copy to hand someone who set up another way.
+            Commit this to <code>{target.path}</code> in the project, and every {guide.name} session
+            that opens the repo works the board without being told how. It carries no token. The
+            same rules reach every agent from the board itself when it connects; this adds the
+            project they belong to.
           </p>
 
           {projects.status === 'loading' ? (
@@ -390,24 +484,24 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
                   options={projects.projects
                     .filter((row): row is typeof row & { slug: string } => 'slug' in row)
                     .map((row) => ({ value: row.slug, label: row.name }))}
-                  onChange={(slug) => {
-                    setSlug(slug);
+                  onChange={(next) => {
+                    setSlug(next);
                   }}
                 />
               </div>
 
               <div className="conn-block">
                 <div className="conn-block-bar">
-                  <span className="conn-block-label" id="conn-claude-md-label">
-                    CLAUDE.md — carries no token
+                  <span className="conn-block-label" id="conn-project-block-label">
+                    {target.path} — carries no token
                   </span>
-                  <CopyButton text={block} selects={blockRef} what="the CLAUDE.md block" />
+                  <CopyButton text={block} selects={blockRef} what={`the ${target.path} block`} />
                 </div>
                 <pre
-                  className="conn-pre conn-claude-md"
+                  className="conn-pre conn-project-block"
                   ref={blockRef}
                   tabIndex={0}
-                  aria-labelledby="conn-claude-md-label"
+                  aria-labelledby="conn-project-block-label"
                 >
                   {block}
                 </pre>
@@ -420,8 +514,8 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
         <section className="conn-card conn-extra conn-reference">
           <h2 className="conn-step-title">What an agent can do here</h2>
           <p className="conn-body">
-            Eighteen tools, served by this board at <code>{origin}/mcp</code>, under the same
-            permissions you have in the browser.
+            Eighteen tools, served by this board at <code>{origin}/mcp</code> over Streamable HTTP
+            with a bearer token, under the same permissions you have in the browser.
           </p>
           <dl className="conn-tools">
             <div className="conn-tool-row">
@@ -472,6 +566,119 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
   );
 }
 
+/**
+ * The agent picker: one radio group, drawn as tiles (LAI-737).
+ *
+ * **Native radios**, visually hidden inside their labels, so arrow keys,
+ * `Tab` into the group and a screen reader's "radio button, 3 of 10" all come
+ * from the browser rather than a re-implementation. The *More* agents are the
+ * same group; while collapsed they are `hidden`, so the arrows skip them.
+ */
+function AgentPicker({
+  value,
+  onChange,
+}: {
+  readonly value: AgentChoice;
+  readonly onChange: (id: AgentChoice) => void;
+}) {
+  const primary = AGENT_GUIDES.filter((g) => g.primary);
+  const more = AGENT_GUIDES.filter((g) => !g.primary);
+  const [open, setOpen] = useState(() => more.some((g) => g.id === value));
+
+  const tile = (g: AgentGuide) => (
+    <label key={g.id} className="conn-agent" data-checked={g.id === value}>
+      <input
+        type="radio"
+        name="conn-agent"
+        className="conn-agent-input"
+        value={g.id}
+        checked={g.id === value}
+        onChange={() => {
+          onChange(g.id);
+        }}
+      />
+      <AgentMark client={g.client} size="lg" />
+      <span className="conn-agent-name">{g.name}</span>
+      {g.beta !== undefined && <span className="conn-agent-beta">beta</span>}
+    </label>
+  );
+
+  return (
+    /* `radiogroup` on the fieldset, named by its legend: a screen reader then
+       says "Your coding agent, radio group" and counts the tiles. */
+    <fieldset
+      className="conn-card conn-picker"
+      role="radiogroup"
+      aria-labelledby="conn-picker-legend"
+    >
+      <legend className="conn-picker-legend" id="conn-picker-legend">
+        Your coding agent
+      </legend>
+      <div className="conn-agents">{primary.map(tile)}</div>
+      <button
+        type="button"
+        className="conn-more"
+        aria-expanded={open}
+        aria-controls="conn-agents-more"
+        onClick={() => {
+          setOpen(!open);
+        }}
+      >
+        {open ? 'Fewer agents' : `More agents (${String(more.length)})`}
+      </button>
+      <div className="conn-agents conn-agents-more" id="conn-agents-more" hidden={!open}>
+        {more.map(tile)}
+      </div>
+    </fieldset>
+  );
+}
+
+/** One copyable block, with its file, its warning and its note. */
+function SetupBlockView({
+  block,
+  minted,
+  main = false,
+}: {
+  readonly block: SetupBlock;
+  readonly minted: boolean;
+  readonly main?: boolean;
+}) {
+  const ref = useRef<HTMLPreElement | null>(null);
+  const labelId = `conn-block-${block.key}-label`;
+  const holdsToken = block.token !== 'none';
+  return (
+    <div className="conn-setup" data-token={block.token}>
+      {block.note !== undefined && main && <p className="conn-body">{block.note}</p>}
+      <div className={main ? 'conn-block conn-block-main' : 'conn-block'}>
+        <div className="conn-block-bar">
+          <span className="conn-block-label" id={labelId}>
+            {block.label}
+          </span>
+          {holdsToken && <span className="conn-block-tag">carries your token</span>}
+          <CopyButton
+            text={block.text}
+            selects={ref}
+            what={block.what}
+            className={main ? 'conn-copy-primary' : undefined}
+            disabled={holdsToken && !minted}
+            disabledReason="Mint a token first — this carries it"
+          />
+        </div>
+        <pre
+          className={`conn-pre conn-block-${block.key}${block.key === 'claude-prompt' ? ' conn-prompt' : ''}`}
+          ref={ref}
+          tabIndex={0}
+          aria-labelledby={labelId}
+        >
+          {block.text}
+        </pre>
+      </div>
+      {block.warn !== undefined && <p className="conn-note conn-note-warn">{block.warn}</p>}
+      {block.note !== undefined && !main && <p className="conn-note">{block.note}</p>}
+    </div>
+  );
+}
+
 type StepState = 'done' | 'current' | 'todo';
 
 const STEP_STATE_WORDS: Readonly<Record<StepState, string | undefined>> = {
@@ -518,11 +725,26 @@ function Step({
   );
 }
 
-function LiveCheck({ live, onWatch }: { readonly live: LiveState; readonly onWatch: () => void }) {
+function LiveCheck({
+  live,
+  guide,
+  byToken,
+  onWatch,
+}: {
+  readonly live: LiveState;
+  readonly guide: AgentGuide;
+  readonly byToken: boolean;
+  readonly onWatch: () => void;
+}) {
+  const minutes = String((LIVE_TICKS * (LIVE_POLL_MS / 1000)) / 60);
+
   if (live.kind === 'idle') {
     return (
       <div className="conn-live conn-live-idle">
-        <p className="conn-body">Run step 3, then watch here.</p>
+        <p className="conn-body">
+          Mint a token in step 1 and this watches that exact token reach the board. Brought a token
+          from elsewhere? Watch for any agent session of yours instead.
+        </p>
         <button type="button" className="bar-control" onClick={onWatch}>
           Watch for my session
         </button>
@@ -532,10 +754,35 @@ function LiveCheck({ live, onWatch }: { readonly live: LiveState; readonly onWat
 
   if (live.kind === 'watching') {
     return (
-      <p className="conn-live conn-live-watching conn-body">
-        <Spinner size="sm" /> Watching for a session — nothing yet. This checks every few seconds
-        for {String((LIVE_TICKS * (LIVE_POLL_MS / 1000)) / 60)} minutes.
-      </p>
+      <div className="conn-live conn-live-watching">
+        <p className="conn-body">
+          <Spinner size="sm" />{' '}
+          {byToken
+            ? `Watching for the token you just minted to reach the board${guide.via === 'mcp' ? ' over MCP' : ''} — nothing yet.`
+            : 'Watching for any agent session of yours — nothing yet.'}{' '}
+          This checks every few seconds for {minutes} minutes.
+        </p>
+        {!byToken && (
+          <p className="conn-note">
+            This is the weaker check: an agent you already had running satisfies it. Mint a token
+            above to check that exact one.
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  if (live.kind === 'connected') {
+    return (
+      <div className="conn-live conn-live-ok">
+        <p className="conn-body">
+          <strong>{connectedLabel(live.token, guide.name)}</strong>
+        </p>
+        <p className="conn-note">
+          That is the token you minted here, calling this board. <a href="/capacity">Capacity</a>{' '}
+          shows the session beside everyone else’s while it works.
+        </p>
+      </div>
     );
   }
 
@@ -549,8 +796,8 @@ function LiveCheck({ live, onWatch }: { readonly live: LiveState; readonly onWat
           <strong>{live.entry.name}</strong> is connected. {where}
         </p>
         <p className="conn-note">
-          That is a session holding your token, checking in. <a href="/capacity">Capacity</a> shows
-          it beside everyone else.
+          That is a session holding one of your tokens, checking in — not necessarily a new one.{' '}
+          <a href="/capacity">Capacity</a> shows it beside everyone else.
         </p>
       </div>
     );
@@ -560,10 +807,14 @@ function LiveCheck({ live, onWatch }: { readonly live: LiveState; readonly onWat
     return (
       <div className="conn-live conn-live-spent">
         <p className="conn-body">
-          Three minutes, no session. The usual causes: the terminal is older than the installer
-          (open a new one), or the session was started with <code>claude</code> rather than{' '}
-          <code>laika-claude</code>.
+          {minutes} minutes, and {byToken ? 'the token has not reached the board' : 'no session'}.
+          The usual causes for {guide.name}:
         </p>
+        <ul className="conn-causes">
+          {likelyCauses(guide.id).map((cause) => (
+            <li key={cause}>{cause}</li>
+          ))}
+        </ul>
         <button type="button" className="bar-control" onClick={onWatch}>
           Check again
         </button>

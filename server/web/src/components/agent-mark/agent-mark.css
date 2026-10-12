@@ -1,0 +1,76 @@
+/*
+ * Agent marks (LAI-737). Tokens only — the chip families from styles/theme.css,
+ * which define both themes; theme-single-source.test.ts forbids a literal here.
+ */
+
+.agent-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border: 1px solid var(--chip-neutral-border);
+  border-radius: var(--radius-chip);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.02em;
+  line-height: 1;
+  user-select: none;
+}
+
+/* The letters live in generated content so they never join the text of the
+   row the mark sits in — the name beside it is the text. */
+.agent-mark::before {
+  content: attr(data-mono);
+}
+
+.agent-mark-sm {
+  width: 1.125rem;
+  height: 1.125rem;
+  font-size: 0.5625rem;
+}
+
+.agent-mark-md {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: var(--text-xs);
+}
+
+.agent-mark-lg {
+  width: 2rem;
+  height: 2rem;
+  border-radius: var(--radius-control);
+  font-size: var(--text-xs);
+}
+
+.agent-mark-blue {
+  border-color: var(--chip-blue-border);
+  background: var(--chip-blue-bg);
+  color: var(--chip-blue);
+}
+
+.agent-mark-green {
+  border-color: var(--chip-green-border);
+  background: var(--chip-green-bg);
+  color: var(--chip-green);
+}
+
+.agent-mark-orange {
+  border-color: var(--chip-orange-border);
+  background: var(--chip-orange-bg);
+  color: var(--chip-orange);
+}
+
+.agent-mark-pink {
+  border-color: var(--chip-pink-border);
+  background: var(--chip-pink-bg);
+  color: var(--chip-pink);
+}
+
+.agent-mark-purple {
+  border-color: var(--chip-purple-border);
+  background: var(--chip-purple-bg);
+  color: var(--chip-purple);
+}
