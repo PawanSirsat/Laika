@@ -476,6 +476,9 @@ export function TimelineScreen() {
           style={chartStyle}
           data-window-from={range.from}
           data-day-width={dayWidth}
+          // The scroll the header was last drawn for. It follows the scroll a
+          // frame later, so a reader waits for this to equal `scrollLeft`.
+          data-scroll-x={scrollX}
           tabIndex={0}
           role="region"
           aria-label="Sprint timeline — the arrow keys scroll it"

@@ -225,6 +225,33 @@ const openTimeline = async (
 /** A sprint's row, by its id. */
 const group = (h: Harness, id: string) => h.page.locator(`.tlx-group[data-sprint-id="${id}"]`);
 
+/**
+ * A sprint's task rows, **loaded**. "Loading tasks…" wears the same
+ * `.tlx-task` class, so waiting on that is satisfied before the tasks arrive
+ * and a read straight after it finds none — on a loaded runner, `[]` where
+ * five keys were expected (CI, 2026-10-12). Only a task's row has an id.
+ */
+const taskRows = (h: Harness, id: string) => group(h, id).locator('.tlx-task[data-task-id]');
+
+/**
+ * Scroll the chart and wait for the header to be redrawn there. The scale
+ * follows the scroll a frame later, through React state, so a fixed pause
+ * reads the previous position's labels when the machine is busy.
+ */
+const scrollChart = async (h: Harness, to: number): Promise<void> => {
+  await h.page.locator('.tlx').evaluate((el, x) => {
+    el.scrollLeft = x;
+  }, to);
+  await h.page.waitForFunction(
+    () => {
+      const chart = document.querySelector<HTMLElement>('.tlx');
+      return chart !== null && chart.dataset.scrollX === String(chart.scrollLeft);
+    },
+    undefined,
+    { timeout: 10_000 },
+  );
+};
+
 const box = async (h: Harness, selector: string) => {
   const b = await h.page.locator(selector).first().boundingBox();
   assert.ok(b !== null, `${selector} is not on the page`);
@@ -291,7 +318,7 @@ void describe('the Timeline is one row per sprint (LAI-721)', () => {
       assert.deepEqual(h.unmatched, [], 'a task request named no sprint');
 
       await group(h, 's2').locator('.tlx-chevron').click();
-      await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
+      await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
       assert.ok(
         asked.length > 0 && asked.every((q) => new URLSearchParams(q).get('sprint') === 's2'),
         `opening S2 asked for ${asked.join(', ')}`,
@@ -352,7 +379,7 @@ void describe('the axis scrolls sideways (LAI-721)', () => {
     const h = await openTimeline('/timeline?project=laika-core', 1366, STUB, 520);
     try {
       await group(h, 's2').locator('.tlx-chevron').click();
-      await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
+      await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
       const scroller = h.page.locator('.tlx');
       const headBefore = await box(h, '.tlx-head');
       const scrolled = await scroller.evaluate((el) => {
@@ -489,15 +516,11 @@ void describe('the axis scrolls sideways (LAI-721)', () => {
       // its band and right of the sprint column; at least one is in view; and
       // when the month under the view's left edge has room for its name, the
       // leftmost label is that month's.
-      const scroller = h.page.locator('.tlx');
-      const width = await scroller.evaluate((el) => el.scrollWidth - el.clientWidth);
+      const width = await h.page.locator('.tlx').evaluate((el) => el.scrollWidth - el.clientWidth);
       let checked = 0;
       let named = 0;
       for (let x = 0; x <= width; x += 97) {
-        await scroller.evaluate((el, to) => {
-          el.scrollLeft = to;
-        }, x);
-        await h.page.waitForTimeout(40);
+        await scrollChart(h, x);
         const stop = await h.page.evaluate(() => {
           const chart = document.querySelector<HTMLElement>('.tlx')!;
           const corner = document.querySelector('.tlx-corner')!.getBoundingClientRect();
@@ -557,7 +580,7 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
       assert.equal(await chevron.getAttribute('aria-expanded'), 'false');
       await chevron.focus();
       await h.page.keyboard.press('Enter');
-      await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
+      await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
       assert.equal(await chevron.getAttribute('aria-expanded'), 'true');
 
       const keys = await group(h, 's2').locator('.tlx-task .tlx-task-key').allInnerTexts();
@@ -586,7 +609,7 @@ void describe('a sprint opens to list its tasks (LAI-721)', () => {
     const h = await openTimeline();
     try {
       await group(h, 's2').locator('.tlx-chevron').click();
-      await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
+      await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
       assert.equal(
         (await group(h, 's2').locator('.tlx-bar-blocked').innerText()).trim(),
         '1 blocked · 1 blocked?',
@@ -762,7 +785,7 @@ void describe('`?sprint=` from a link (LAI-721 review)', () => {
   void test('a real sprint opens, and the chart starts at that sprint, not at today', async () => {
     const h = await openTimeline('/timeline?project=laika-core&zoom=weeks&sprint=s3', 1366);
     try {
-      await group(h, 's3').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
+      await taskRows(h, 's3').first().waitFor({ timeout: 10_000 });
       assert.equal(await group(h, 's2').locator('.tlx-task').count(), 0);
       const bar = await box(h, '.tlx-group[data-sprint-id="s3"] .tlx-bar');
       const side = await box(h, '.tlx-corner');
@@ -858,17 +881,14 @@ void describe('distant and impossible dates (LAI-721 review)', () => {
       assert.ok(bands > 0 && bands < 15, `${String(bands)} month bands drawn`);
 
       // Scrolled to the far end, the header there is drawn too.
-      await h.page.locator('.tlx').evaluate((el) => {
-        el.scrollLeft = el.scrollWidth;
-      });
-      await h.page.waitForTimeout(100);
+      await scrollChart(h, await h.page.locator('.tlx').evaluate((el) => el.scrollWidth));
       assert.ok((await h.page.locator('.tlx-scale-label').count()) > 0, 'no month at the far end');
 
       // A time bound only as a backstop behind the counts — generous.
       const clicked = Date.now();
       await h.page.getByRole('button', { name: 'Today', exact: true }).click();
       await group(h, 's2').locator('.tlx-chevron').click();
-      await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
+      await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
       const click = Date.now() - clicked;
       assert.ok(click < 3000, `opening a sprint took ${String(click)} ms`);
     } finally {
@@ -1172,7 +1192,7 @@ void describe('the Timeline reads the task set the Board already holds (LAI-724)
       seen.length = 0;
 
       await group(h, 's2').locator('.tlx-chevron').click();
-      await group(h, 's2').locator('.tlx-task').first().waitFor({ timeout: 10_000 });
+      await taskRows(h, 's2').first().waitFor({ timeout: 10_000 });
       const keys = await group(h, 's2').locator('.tlx-task .tlx-task-key').allInnerTexts();
       assert.deepEqual(keys.sort(), ['LC-1', 'LC-2', 'LC-5', 'LC-6', 'LC-9']);
 
