@@ -185,9 +185,11 @@ and 39c55fa.
 
 ## Accepted
 
-2026-10-12, by polly (orchestrator), for release 5. reviewed: LAI-736 approved
-round 2 on 1b98195; LAI-737 approved round 2 on 7d69539 + follow-ups 19dff2f;
-owner's direct instruction. Integrated on `build-release-5` by §4.4:
+2026-10-12, by polly (orchestrator), for release 5.
+
+reviewed: LAI-736 approved round 2 on 1b98195; LAI-737 approved round 2 on 7d69539 + follow-ups 19dff2f; owner's direct instruction
+
+Integrated on `build-release-5` by §4.4:
 `build-agent-server` merged first, then `build-agent-connect`; the only
 conflict was `logs/chief-2026-10-12.md`, resolved by keeping every entry from
 both sides in timestamp order. The two review nits are fixed in the same
