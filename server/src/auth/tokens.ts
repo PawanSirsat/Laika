@@ -4,6 +4,7 @@ import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
 import { tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { agentClientSlug, cleanClientName } from './agent-clients.ts';
 
 /**
  * Personal access token secrets (SPEC §4.9, §13.1).
@@ -243,6 +244,79 @@ export function touchTokenUsage(
 
   readOnlyReported = false;
   return true;
+}
+
+/** What {@link recordMcpUse} wrote, so a test can assert the throttle directly. */
+export interface McpUseWrite {
+  /** `last_mcp_at` was stamped. */
+  mcp: boolean;
+  /** `last_client` / `last_client_name` changed. */
+  client: boolean;
+}
+
+/**
+ * Record one authenticated `/mcp` request on its token (D-076).
+ *
+ * - `last_mcp_at` is stamped at most once per {@link LAST_USED_THROTTLE_MS},
+ *   for the same reason `last_used_at` is: a busy agent's thousand calls are
+ *   one write, not a thousand. §9.3's five-minute window is far wider than the
+ *   throttle, so presence never misses a live agent because of it.
+ * - `clientName` is `clientInfo.name` from an `initialize` request, and
+ *   `undefined` on every other request. It is cleaned, turned into a slug, and
+ *   written **only when it changed**.
+ *
+ * Bookkeeping on the credential that was just presented, the same as
+ * `touchTokenUsage`, which is why it lives here and asks `can()` nothing. It
+ * decides nothing about access.
+ *
+ * A read-only database skips the write and lets the request through, as
+ * `touchTokenUsage` does (LAI-156). That function logs the condition once per
+ * spell; this one stays quiet rather than report it a second time.
+ */
+export function recordMcpUse(
+  db: Db,
+  tokenId: string,
+  now: number,
+  clientName: unknown,
+): McpUseWrite {
+  const row = db
+    .select({
+      name: tokens.name,
+      lastMcpAt: tokens.lastMcpAt,
+      lastClient: tokens.lastClient,
+      lastClientName: tokens.lastClientName,
+    })
+    .from(tokens)
+    .where(eq(tokens.id, tokenId))
+    .get();
+  if (row === undefined) return { mcp: false, client: false };
+
+  const set: Partial<typeof tokens.$inferInsert> = {};
+
+  const mcp = row.lastMcpAt === null || now - row.lastMcpAt >= LAST_USED_THROTTLE_MS;
+  if (mcp) set.lastMcpAt = now;
+
+  let client = false;
+  if (clientName !== undefined) {
+    const name = cleanClientName(clientName);
+    const slug = agentClientSlug(name, row.name);
+    if (name !== row.lastClientName || slug !== row.lastClient) {
+      set.lastClientName = name;
+      set.lastClient = slug;
+      client = true;
+    }
+  }
+
+  if (!mcp && !client) return { mcp, client };
+
+  try {
+    db.update(tokens).set(set).where(eq(tokens.id, tokenId)).run();
+  } catch (err) {
+    if (!isReadOnly(err)) throw err;
+    return { mcp: false, client: false };
+  }
+
+  return { mcp, client };
 }
 
 /** better-sqlite3 reports the reason in `code`; the message is prose. */

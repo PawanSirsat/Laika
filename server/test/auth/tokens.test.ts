@@ -5,6 +5,7 @@ import {
   hashToken,
   LAST_USED_THROTTLE_MS,
   newTokenSecret,
+  recordMcpUse,
   TOKEN_PREFIX,
   TOKEN_SECRET_LENGTH,
   tokenDisplayPrefix,
@@ -12,6 +13,7 @@ import {
   touchTokenUsage,
 } from '../../src/auth/tokens.ts';
 import { newId } from '../../src/db/ids.ts';
+import { eq } from 'drizzle-orm';
 import { tokens, users } from '../../src/db/schema.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
@@ -232,6 +234,9 @@ describe('last_used_at is throttled (§7.2)', () => {
       scope: 'full',
       projectIdsJson: null,
       lastUsedAt,
+      lastMcpAt: null,
+      lastClient: null,
+      lastClientName: null,
       expiresAt: null,
       revokedAt: null,
       createdAt: 0,
@@ -266,6 +271,9 @@ describe('the project whitelist errs closed', () => {
       scope: 'full',
       projectIdsJson: json,
       lastUsedAt: null,
+      lastMcpAt: null,
+      lastClient: null,
+      lastClientName: null,
       expiresAt: null,
       revokedAt: null,
       createdAt: 0,
@@ -287,5 +295,106 @@ describe('the project whitelist errs closed', () => {
     expect(tokenProjectIds(row('{ not json'))).toEqual([]);
     expect(tokenProjectIds(row('"a string"'))).toEqual([]);
     expect(tokenProjectIds(row('42'))).toEqual([]);
+  });
+});
+
+describe('MCP activity is recorded on the token (D-076)', () => {
+  let t: TestDb;
+  let tokenId: string;
+
+  beforeEach(() => {
+    t = freshDb();
+    const userId = newId();
+    tokenId = newId();
+    t.db
+      .insert(users)
+      .values({
+        id: userId,
+        email: 'agent@example.test',
+        name: 'Agent',
+        orgRole: 'member',
+        createdAt: new Date(0),
+        updatedAt: new Date(0),
+      })
+      .run();
+    t.db
+      .insert(tokens)
+      .values({
+        id: tokenId,
+        userId,
+        name: 'omnigent on macOS',
+        prefix: 'lai_aaaa',
+        tokenHash: 'x'.repeat(64),
+        scope: 'full',
+        createdAt: 0,
+      })
+      .run();
+  });
+  afterEach(() => {
+    t.close();
+  });
+
+  function stored() {
+    const row = t.db.select().from(tokens).where(eq(tokens.id, tokenId)).get();
+    if (row === undefined) throw new Error('token vanished');
+    return {
+      lastMcpAt: row.lastMcpAt,
+      lastClient: row.lastClient,
+      lastClientName: row.lastClientName,
+    };
+  }
+
+  it('stamps last_mcp_at the first time, and the client named on initialize', () => {
+    expect(recordMcpUse(t.db, tokenId, 1_000, 'claude-code')).toEqual({ mcp: true, client: true });
+
+    expect(stored()).toEqual({
+      lastMcpAt: 1_000,
+      lastClient: 'claude-code',
+      lastClientName: 'claude-code',
+    });
+  });
+
+  it('is throttled like last_used_at', () => {
+    recordMcpUse(t.db, tokenId, 1_000, undefined);
+
+    expect(recordMcpUse(t.db, tokenId, 1_000 + LAST_USED_THROTTLE_MS - 1, undefined).mcp).toBe(
+      false,
+    );
+    expect(stored().lastMcpAt).toBe(1_000);
+
+    expect(recordMcpUse(t.db, tokenId, 1_000 + LAST_USED_THROTTLE_MS, undefined).mcp).toBe(true);
+    expect(stored().lastMcpAt).toBe(1_000 + LAST_USED_THROTTLE_MS);
+  });
+
+  it('leaves the client alone on a request that is not initialize', () => {
+    recordMcpUse(t.db, tokenId, 1_000, 'Cursor');
+    recordMcpUse(t.db, tokenId, 1_000 + LAST_USED_THROTTLE_MS, undefined);
+
+    expect(stored()).toMatchObject({ lastClient: 'cursor', lastClientName: 'Cursor' });
+  });
+
+  it('writes the client only when it changed', () => {
+    recordMcpUse(t.db, tokenId, 1_000, 'Cursor');
+
+    expect(recordMcpUse(t.db, tokenId, 2_000, 'Cursor').client).toBe(false);
+    expect(recordMcpUse(t.db, tokenId, 3_000, 'opencode').client).toBe(true);
+    expect(stored()).toMatchObject({ lastClient: 'opencode', lastClientName: 'opencode' });
+  });
+
+  it('falls back to the token name for a generic client', () => {
+    // Omnigent introduces itself as `mcp`.
+    recordMcpUse(t.db, tokenId, 1_000, 'mcp');
+
+    expect(stored()).toMatchObject({ lastClient: 'omnigent', lastClientName: 'mcp' });
+  });
+
+  it('stores the name cleaned and capped', () => {
+    recordMcpUse(t.db, tokenId, 1_000, `\u202E${'y'.repeat(100)}`);
+
+    expect(stored().lastClientName).toBe('y'.repeat(64));
+  });
+
+  it('touches nothing for a token that does not exist', () => {
+    expect(recordMcpUse(t.db, 'nope', 1_000, 'Cursor')).toEqual({ mcp: false, client: false });
   });
 });
