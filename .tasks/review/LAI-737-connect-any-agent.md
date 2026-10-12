@@ -102,3 +102,16 @@ branch changes nothing under `server/`.
 
 `logs/chief-2026-10-12.md` also exists on `build-agent-server`, so the merge
 hits an add/add conflict on it. Keep both entries.
+
+**Follow-up to LAI-736 round 1 (server 1b98195).** With presence off the
+server no longer stamps `last_mcp_at`. Step 4 now counts the minted token as
+connected on any of these:
+- `last_mcp_at` after the mint;
+- a recorded client (`last_client` / `last_client_name`), which is written
+  only on an MCP `initialize`, with presence on or off;
+- only while presence is off, `last_used_at` after the mint.
+
+The page reads `presence_enabled` from `GET /org` once per watch. Unit and
+browser tests cover presence off, plus a control that a bare use with presence
+on still does not count. A mutation that hard-wires presence on turns the
+browser test red. The three drift checks pass 26/26 against 1b98195 as well.
