@@ -4,6 +4,7 @@ import {
   agentClientSlug,
   cleanClientName,
   CLIENT_NAME_MAX_LENGTH,
+  isWeakClientName,
 } from '../../src/auth/agent-clients.ts';
 
 /**
@@ -31,6 +32,19 @@ describe('a client name maps to its agent', () => {
     ['agy', 'antigravity'],
     ['hermes-agent', 'hermes'],
     ['Omnigent', 'omnigent'],
+    ['antigravity-client', 'antigravity'],
+    ['cursor-vscode', 'cursor'],
+    ['Zed', 'zed'],
+    ['Cline', 'cline'],
+    ['Roo Code', 'roo'],
+    ['continue-client', 'continue'],
+    ['Kiro', 'kiro'],
+    ['goose', 'goose'],
+    ['amp', 'amp'],
+    ['Junie', 'junie'],
+    ['Warp', 'warp'],
+    ['claude-ai', 'claude-desktop'],
+    ['Claude Desktop', 'claude-desktop'],
   ])('%s → %s', (name, slug) => {
     expect(agentClientSlug(name, 'whatever')).toBe(slug);
   });
@@ -40,10 +54,20 @@ describe('a client name maps to its agent', () => {
     expect(agentClientSlug('OpenCode', null)).toBe('opencode');
   });
 
-  it('does not read "agy" out of the middle of a word', () => {
-    // `agy` is Antigravity's CLI name, and three letters is short enough to sit
-    // inside an unrelated one. Only a whole word counts.
-    expect(agentClientSlug('stagyard', null)).toBe('other');
+  it('does not read a short name out of the middle of a word', () => {
+    // `agy`, `zed`, `amp`… are short enough to sit inside an unrelated word.
+    // Only a whole word counts.
+    for (const name of [
+      'stagyard',
+      'authorized',
+      'example',
+      'decline',
+      'broom',
+      'kirov',
+      'warped',
+    ]) {
+      expect(agentClientSlug(name, null), name).toBe('other');
+    }
   });
 });
 
@@ -87,6 +111,16 @@ describe('the vocabulary', () => {
       'antigravity',
       'hermes',
       'omnigent',
+      'zed',
+      'cline',
+      'roo',
+      'continue',
+      'kiro',
+      'goose',
+      'amp',
+      'junie',
+      'warp',
+      'claude-desktop',
       'other',
     ]);
   });
@@ -95,7 +129,7 @@ describe('the vocabulary', () => {
 describe('a client name is cleaned before it is stored', () => {
   it('strips control and bidi characters', () => {
     // U+202E would reverse the rest of the line on the Tokens screen.
-    expect(cleanClientName('‮evil\u0007 client​')).toBe('evil client');
+    expect(cleanClientName('\u202Eevil\u0007 client\u200B')).toBe('evil client');
   });
 
   it(`caps at ${String(CLIENT_NAME_MAX_LENGTH)} characters`, () => {
@@ -110,8 +144,24 @@ describe('a client name is cleaned before it is stored', () => {
 
   it('answers null for nothing left', () => {
     expect(cleanClientName('   ')).toBeNull();
-    expect(cleanClientName('\u0000‮')).toBeNull();
+    expect(cleanClientName('\u0000\u202E')).toBeNull();
     expect(cleanClientName(undefined)).toBeNull();
     expect(cleanClientName(42)).toBeNull();
+  });
+});
+
+describe('a weak client name', () => {
+  it('is a generic SDK default, a probe, or nothing', () => {
+    // Omnigent and Hermes send the Python SDK's `mcp`; Hermes also opens a
+    // throwaway `hermes-probe` session before its real one.
+    for (const name of ['mcp', 'MCP', 'hermes-probe', '', null]) {
+      expect(isWeakClientName(name), String(name)).toBe(true);
+    }
+  });
+
+  it('is not a name that identifies an agent', () => {
+    for (const name of ['claude-code', 'Cursor', 'hermes-agent', 'mcp-remote']) {
+      expect(isWeakClientName(name), name).toBe(false);
+    }
   });
 });

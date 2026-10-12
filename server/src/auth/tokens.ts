@@ -4,7 +4,7 @@ import { type Db } from '../db/client.ts';
 import { type Logger } from '../log.ts';
 import { tokens } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
-import { agentClientSlug, cleanClientName } from './agent-clients.ts';
+import { agentClientSlug, cleanClientName, isWeakClientName } from './agent-clients.ts';
 
 /**
  * Personal access token secrets (SPEC §4.9, §13.1).
@@ -102,6 +102,30 @@ export function tokenDisplayPrefix(secret: string): string {
  */
 export const LAST_USED_THROTTLE_MS = 60_000;
 
+/**
+ * Does the presented "token" look like a variable that was never expanded?
+ *
+ * Every agent client has its own syntax for reading the token from the
+ * environment (`${LAIKA_TOKEN}`, `{env:LAIKA_TOKEN}`, `$LAIKA_TOKEN`,
+ * `${{ secrets.X }}`), and several send the text unchanged when the variable is
+ * unset. Saying so turns a mystery 401 into a fix. It reveals nothing about any
+ * stored token: it is a fact about the text the caller sent.
+ */
+export function looksLikePlaceholder(presented: string): boolean {
+  return (
+    /^\$\{.*\}$/.test(presented) ||
+    /^\{\{?\s*env[:.].*\}\}?$/i.test(presented) ||
+    /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(presented) ||
+    /^%[A-Za-z_][A-Za-z0-9_]*%$/.test(presented) ||
+    /^<.*>$/.test(presented) ||
+    /^lai_(\.\.\.|…)$/.test(presented)
+  );
+}
+
+/** What a placeholder is told instead of "not valid". It never echoes the text. */
+export const PLACEHOLDER_MESSAGE =
+  'The Authorization header carries an unexpanded variable placeholder, not a token. Set the variable in the agent’s environment, or check how this client writes environment variables.';
+
 /** Why a presented token was refused. Logged, never returned (§6.1). */
 export type TokenRejection = 'malformed' | 'unknown' | 'expired' | 'revoked' | 'inactive_user';
 
@@ -118,8 +142,8 @@ export type TokenRejection = 'malformed' | 'unknown' | 'expired' | 'revoked' | '
 export class TokenAuthError extends ApiError {
   readonly reason: TokenRejection;
 
-  constructor(reason: TokenRejection) {
-    super('unauthorized', 'That access token is not valid');
+  constructor(reason: TokenRejection, message = 'That access token is not valid') {
+    super('unauthorized', message);
     this.name = 'TokenAuthError';
     this.reason = reason;
   }
@@ -300,7 +324,11 @@ export function recordMcpUse(
   if (clientName !== undefined) {
     const name = cleanClientName(clientName);
     const slug = agentClientSlug(name, row.name);
-    if (name !== row.lastClientName || slug !== row.lastClient) {
+    // A weak name (`mcp`, `hermes-probe`) never replaces a client the token
+    // already knows; it only fills a blank or an `other`.
+    const known = row.lastClient !== null && row.lastClient !== 'other';
+    const keep = isWeakClientName(name) && known;
+    if (!keep && (name !== row.lastClientName || slug !== row.lastClient)) {
       set.lastClientName = name;
       set.lastClient = slug;
       client = true;

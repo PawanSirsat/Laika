@@ -14,16 +14,23 @@
  * | agent | `clientInfo.name` |
  * | --- | --- |
  * | Claude Code | `claude-code` |
+ * | Codex | `codex-mcp-client` |
  * | Gemini CLI | `gemini-cli-mcp-client` |
- * | cursor-agent | `Cursor` |
+ * | cursor-agent | `Cursor` (the editor may send `cursor-vscode`) |
+ * | VS Code | `Visual Studio Code` |
  * | OpenCode | `opencode` |
- * | Omnigent | `mcp`, which says nothing |
- * | Codex, VS Code | not yet observed; matched loosely |
+ * | Zed, Cline, Roo Code | `Zed`, `Cline`, `Roo Code` |
+ * | Continue | `continue-client` |
+ * | Antigravity | `antigravity-client`, from a third-party capture |
+ * | Omnigent, Hermes | `mcp`, the Python SDK default, which says nothing |
  *
- * A client that says nothing useful (`mcp`, or nothing) falls back to the first
- * word of the **token's** name, because the Connect screen names a token after
- * its agent: `omnigent on macOS`, `codex on Linux`. Tokens minted before that
- * are mostly `laika-claude on macOS`, which reads as Claude Code.
+ * Kiro, Goose, Amp, Junie, Warp, Windsurf and Claude Desktop are not yet
+ * observed, so they are matched on their product name.
+ *
+ * A client that says nothing useful falls back to the first word of the
+ * **token's** name, because the Connect screen names a token after its agent:
+ * `omnigent on macOS`, `codex on Linux`. Tokens minted before that are mostly
+ * `laika-claude on macOS`, which reads as Claude Code.
  */
 
 /**
@@ -43,6 +50,16 @@ export const AGENT_CLIENTS = [
   'antigravity',
   'hermes',
   'omnigent',
+  'zed',
+  'cline',
+  'roo',
+  'continue',
+  'kiro',
+  'goose',
+  'amp',
+  'junie',
+  'warp',
+  'claude-desktop',
   'other',
 ] as const;
 
@@ -51,11 +68,14 @@ export type AgentClient = (typeof AGENT_CLIENTS)[number];
 /**
  * First match wins, tested against the lower-cased name.
  *
- * None of the measured names matches two patterns, so order decides only a
- * name that mentions two agents. `agy` is the one pattern with a word boundary:
- * three letters is short enough to turn up inside an unrelated word.
+ * Order matters twice: Claude Desktop before Claude Code, which would otherwise
+ * take every name with `claude` in it, and Cursor before VS Code, because
+ * Cursor's editor calls itself `cursor-vscode`. Short names carry word
+ * boundaries: `zed`, `amp` or `agy` turn up inside unrelated words.
  */
 const PATTERNS: readonly (readonly [RegExp, AgentClient])[] = [
+  // `claude-ai` is what Claude Desktop is reported to send; not yet observed.
+  [/claude-ai|claude.?desktop/, 'claude-desktop'],
   [/claude/, 'claude-code'],
   [/codex/, 'codex'],
   [/cursor/, 'cursor'],
@@ -66,6 +86,15 @@ const PATTERNS: readonly (readonly [RegExp, AgentClient])[] = [
   [/antigravity|\bagy\b/, 'antigravity'],
   [/hermes/, 'hermes'],
   [/omnigent/, 'omnigent'],
+  [/\bzed\b/, 'zed'],
+  [/\bcline\b/, 'cline'],
+  [/\broo\b/, 'roo'],
+  [/\bcontinue\b/, 'continue'],
+  [/\bkiro\b/, 'kiro'],
+  [/\bgoose\b/, 'goose'],
+  [/\bamp\b/, 'amp'],
+  [/\bjunie\b/, 'junie'],
+  [/\bwarp\b/, 'warp'],
 ];
 
 function match(name: string | null | undefined): AgentClient | null {
@@ -89,6 +118,25 @@ export function agentClientSlug(
 ): AgentClient {
   const firstWord = tokenName?.trim().split(/\s+/)[0];
   return match(clientName) ?? match(firstWord) ?? 'other';
+}
+
+/**
+ * Names that identify no agent: the Python SDK's default `mcp`, sent by both
+ * Omnigent and Hermes, and `hermes-probe`, the throwaway session Hermes opens
+ * before its real one. Compared lower-cased.
+ */
+const WEAK_CLIENT_NAMES: ReadonlySet<string> = new Set(['mcp', 'hermes-probe']);
+
+/**
+ * Does this name say nothing about which agent connected?
+ *
+ * A weak name may fill a blank or `other`, but it never replaces a client the
+ * token already has: a stored `cursor` is worth more than a later `mcp`.
+ */
+export function isWeakClientName(name: string | null | undefined): boolean {
+  if (name === null || name === undefined) return true;
+  const lower = name.trim().toLowerCase();
+  return lower === '' || WEAK_CLIENT_NAMES.has(lower);
 }
 
 /** The stored name is capped here, counted in characters rather than UTF-16 units. */

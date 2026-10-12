@@ -6,7 +6,14 @@ import { ApiError } from '../errors.ts';
 import { type Logger } from '../log.ts';
 import { type Actor, type Principal, type SystemPrincipal } from '../policy/can.ts';
 import { type Auth } from './auth.ts';
-import { findTokenBySecret, TokenAuthError, touchTokenUsage, tokenProjectIds } from './tokens.ts';
+import {
+  findTokenBySecret,
+  looksLikePlaceholder,
+  PLACEHOLDER_MESSAGE,
+  TokenAuthError,
+  touchTokenUsage,
+  tokenProjectIds,
+} from './tokens.ts';
 
 /**
  * Turn a request into an `Actor`, or `null` when nobody is signed in.
@@ -125,7 +132,14 @@ export function resolveTokenActor(
   log?: Logger,
 ): ResolvedActor {
   const found = findTokenBySecret(db, presented, now);
-  if (!found.ok) throw new TokenAuthError(found.reason);
+  if (!found.ok) {
+    // The one refusal that may say more: a placeholder is the caller's own
+    // configuration showing through, and naming it leaks nothing (D-076).
+    if (found.reason === 'malformed' && looksLikePlaceholder(presented)) {
+      throw new TokenAuthError('malformed', PLACEHOLDER_MESSAGE);
+    }
+    throw new TokenAuthError(found.reason);
+  }
 
   const actor = loadActor(db, found.row.userId);
   if (actor === null) throw new TokenAuthError('unknown');

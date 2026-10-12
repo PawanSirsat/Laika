@@ -4,6 +4,7 @@ import {
   findTokenBySecret,
   hashToken,
   LAST_USED_THROTTLE_MS,
+  looksLikePlaceholder,
   newTokenSecret,
   recordMcpUse,
   TOKEN_PREFIX,
@@ -394,7 +395,57 @@ describe('MCP activity is recorded on the token (D-076)', () => {
     expect(stored().lastClientName).toBe('y'.repeat(64));
   });
 
+  it('never lets a generic name or a probe replace a better client', () => {
+    // A stored `cursor` is worth more than Omnigent's `mcp` (which reads the
+    // token name) or Hermes's throwaway `hermes-probe`.
+    recordMcpUse(t.db, tokenId, 1_000, 'Cursor');
+
+    expect(recordMcpUse(t.db, tokenId, 2_000, 'mcp').client).toBe(false);
+    expect(recordMcpUse(t.db, tokenId, 3_000, 'hermes-probe').client).toBe(false);
+    expect(stored()).toMatchObject({ lastClient: 'cursor', lastClientName: 'Cursor' });
+  });
+
+  it('lets a weak name fill a blank', () => {
+    expect(recordMcpUse(t.db, tokenId, 1_000, 'mcp').client).toBe(true);
+    expect(stored()).toMatchObject({ lastClient: 'omnigent', lastClientName: 'mcp' });
+  });
+
+  it('lets a weak name replace an unknown client', () => {
+    // `other` is no better than what the token name says.
+    t.db
+      .update(tokens)
+      .set({ lastClient: 'other', lastClientName: 'some-tool' })
+      .where(eq(tokens.id, tokenId))
+      .run();
+
+    expect(recordMcpUse(t.db, tokenId, 1_000, 'mcp').client).toBe(true);
+    expect(stored()).toMatchObject({ lastClient: 'omnigent', lastClientName: 'mcp' });
+  });
+
   it('touches nothing for a token that does not exist', () => {
     expect(recordMcpUse(t.db, 'nope', 1_000, 'Cursor')).toEqual({ mcp: false, client: false });
   });
+});
+
+describe('an unexpanded placeholder is recognised, not looked up', () => {
+  it.each([
+    '${LAIKA_TOKEN}',
+    '${env:LAIKA_TOKEN}',
+    '{env:LAIKA_TOKEN}',
+    '$LAIKA_TOKEN',
+    '${{ secrets.LAIKA_TOKEN }}',
+    '%LAIKA_TOKEN%',
+    '<token>',
+    'lai_...',
+    'lai_…',
+  ])('%s is a placeholder', (presented) => {
+    expect(looksLikePlaceholder(presented)).toBe(true);
+  });
+
+  it.each([`lai_${'a'.repeat(40)}`, 'lai_tooshort', 'ghp_0123', 'not a token'])(
+    '%s is not',
+    (presented) => {
+      expect(looksLikePlaceholder(presented)).toBe(false);
+    },
+  );
 });
