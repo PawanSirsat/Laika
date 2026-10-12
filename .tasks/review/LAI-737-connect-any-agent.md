@@ -115,3 +115,68 @@ The page reads `presence_enabled` from `GET /org` once per watch. Unit and
 browser tests cover presence off, plus a control that a bare use with presence
 on still does not count. A mutation that hard-wires presence on turns the
 browser test red. The three drift checks pass 26/26 against 1b98195 as well.
+
+## Review round 1 fixes
+
+Each fix started from a test that failed; the commits are 4419328, 2625323
+and 39c55fa.
+
+**Blocking**
+1. **Presence off.** Step 4 counts the minted token as connected when
+   `last_mcp_at` moved after the mint (`by: 'mcp'`), or when the token has a
+   recorded client (`by: 'client'`), which only an MCP `initialize` writes,
+   with presence on or off. While presence is off, `last_used_at` after the
+   mint also counts (`by: 'use'`). The page says when a weaker signal proved
+   it. Covered by unit tests and a browser test.
+2. **Codex.** `codexLaikaState` recognises `[mcp_servers.laika]` and its
+   sub-tables, inline `laika = {…}` under `[mcp_servers]`,
+   `mcp_servers = { laika … }`, and dotted keys, quoted or not. Any other
+   mention of `laika` counts as `unsure`, so the file is left alone and the
+   block is printed. The fixtures assert the file is byte-identical and that
+   a minimal duplicate-table check passes. The comment is fixed.
+3. **Bridge one-liner.** It is now
+   `LAIKA_AUTH="Bearer $LAIKA_TOKEN" npx … 'URL' … --header 'Authorization:${LAIKA_AUTH}'`.
+   A test runs it through `bash -n` and a bash stub, which receives the
+   literal `${LAIKA_AUTH}` and has `LAIKA_AUTH=Bearer <token>` in its env.
+4. **Kiro and Junie** say "user scope only". The project paths are gone.
+5. **Zed** text is honest: both the inline form and the bridge keep the
+   token in settings.json. A new variant reads `Bearer ${LAIKA_TOKEN}` from
+   Zed's inherited environment and is marked not verified. REPORT names
+   `--header-file` but not its format, so it is not used.
+
+**Also**
+- The web "by hand" block writes `~/.laika/env` (0700 dir, 0600 file) and
+  appends the CLI's source line to the shell profile once. A test runs it in
+  bash: the profile never holds the token, and the line is added only once.
+  The CLI rc line is checked the same way.
+- Files that hold the token (`~/.laika/env`, Antigravity's config, and its
+  backup) are written to a 0600 temp file and renamed into place. A test
+  asserts the inode changes.
+- `LAIKA_URL` and `LAIKA_TOKEN` in the environment win over `~/.laika/env`
+  and update it.
+- `--project` and `--dir` back up to `~/.laika/backups/`, never into the repo.
+- VS Code leads with `${env:LAIKA_TOKEN}`; `${input:}` moved to an
+  alternative.
+- The Antigravity beta note cites issue 233. It is written without `#`
+  because `theme-single-source.test.ts` reads `#233` as a colour literal.
+- Junie is the same on the page and in the CLI: direct inline config plus
+  the AI Assistant bridge.
+- Roo is pointed to `.roo/rules`. Claude Desktop is told to paste into its
+  Project instructions. Zed, Hermes and Warp name the files that override
+  AGENTS.md.
+- Claude Code's env in a remote header and Gemini's single-quote expansion
+  are marked not verified.
+- Cline, Roo and Continue say VS Code must be started from a terminal (or the
+  variable set system-wide).
+- UI:
+  - setup-block labels are no longer upper-cased; only the path tokens wrap
+    mid-name;
+  - Capacity stacks its panels below 40rem, and a test asserts nothing is
+    clipped at 390px;
+  - presence chips say the agent's name in visually hidden text;
+  - the Agents chip says "N people with agent sessions, using …" for screen
+    readers and in its title, with a separator before the marks;
+  - collapsing More keeps the chosen agent's tile shown;
+  - an unknown `?agent=` is removed from the URL;
+  - `code --add-mcp` is JSON-escaped and shell-quoted on the page and in the
+    CLI, and tested with a URL containing `'`.
