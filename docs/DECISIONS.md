@@ -4033,3 +4033,65 @@ build-ui-polish; this takes the next number.)
   JSON, and code-splitting. These are later performance phases.
 - The server change that would retire Capacity's last per-task reads (for
   tasks outside the open project). It is filed from LAI-724.
+
+## D-076 — An MCP call is presence, and the server records which agent connected.
+
+**2026-10-12, the owner, directly** (LAI-736, "Laika works with any coding
+agent"). Presence came only from `POST /api/v1/heartbeats`, and only Claude
+Code's plugin hook sends one. An agent in Codex, Cursor, OpenCode, Gemini CLI or
+Omnigent could claim, comment and finish tasks over `/mcp` all day and never
+appear on Presence or Capacity, and the Connect screen could not tell whether
+the token it had just minted had connected. `/mcp` also told a connecting agent
+nothing about how to work the board, so every harness needed its own copy of the
+rules.
+
+### Decided
+
+1. **Every authenticated `/mcp` request stamps its token's `last_mcp_at`**,
+   throttled to once a minute, as `last_used_at` is. A token stamped inside
+   §9.3's five-minute window is a live agent session with or without a
+   heartbeat. Presence stays one entry per person, newest wins. A heartbeat
+   still supplies `repo`, `branch` and the matched task. An MCP-only session
+   has **no location**: those keys are absent, which already means *"working,
+   somewhere this reader is not told"*. Capacity's `active_sessions` counts
+   distinct tokens across heartbeats and MCP calls. A revoked or expired token
+   is not present.
+2. **On `initialize` the server keeps the client's own `clientInfo.name`** on
+   the token, with control and bidi characters stripped and at most 64
+   characters, and a slug from a fixed list (`AGENT_CLIENTS`:
+   `claude-code`, `codex`, `cursor`, `opencode`, `gemini-cli`, `vscode`,
+   `windsurf`, `antigravity`, `hermes`, `omnigent`, `other`). A generic name
+   such as Omnigent's `mcp` falls back to the first word of the token's name,
+   which the Connect screen sets to the agent. Both are written only when they
+   change. **Neither is ever an authorisation input**: a client can call itself
+   anything.
+3. **Nothing else is collected.** No repo, branch, path, prompt, tool argument
+   or transcript arrives through this path. The server records *when* a token
+   last spoke MCP and *what the client calls itself*.
+4. **D-005 is unchanged.** `POST /api/v1/heartbeats` keeps its strict
+   `{ repo, branch }` body. D-005 requires a new decision and an opt-in for
+   *"richer session data"*. A client's name is not data about the session's
+   work. It describes the tool, at the same level as a `User-Agent` header, and
+   it is shown only where the person is already shown. That is this decision's
+   reading, and the reason it adds no opt-in.
+5. **`presence_enabled` still governs the views.** With it off, Presence and
+   Capacity show no MCP sessions, exactly as they show no heartbeats. The
+   token's own `last_mcp_at` and client are still written, because they are
+   token metadata like `last_used_at`. Only the token's owner, and an admin
+   listing that person's tokens, can see them.
+6. **The server tells every agent how to work the board.** `/mcp` returns
+   `instructions` on `initialize`: call `laika_whoami`, read
+   `get_project_context`, claim with `start_working` before coding,
+   `create_task` when there is none, `add_comment` as you go, `finish_task`
+   into review (a person marks done), and `log_unlisted_work` for stray
+   findings. Some clients drop server instructions, so `laika_whoami` returns
+   the same text as `how_to_work`. The tool list is unchanged.
+
+### Why
+
+Laika's promise is one source of truth for people *and coding agents*, not
+Claude Code alone. The heartbeat hook is a Claude Code plugin feature, and
+asking every other harness to grow one would leave presence as wide as the
+plugin ecosystem. An MCP call is something every connected agent already makes,
+on a credential the server already checks. Counting it costs one throttled write
+and collects nothing new about the work.

@@ -11,8 +11,8 @@ log and CHIEF resolves it in `DECISIONS.md`. Do not silently diverge.
 
 ## 1. Product
 
-Laika is a **self-hosted project board where humans and Claude Code agents work
-from one source of truth.**
+Laika is a **self-hosted project board where humans and coding agents work from
+one source of truth.**
 
 Today a team running coding agents keeps state in three incompatible places: a
 SaaS tracker humans look at, the agent's own scratch notes, and whatever the
@@ -581,6 +581,7 @@ where the instance itself was created.
 | `project_ids_json` | **nullable, and `null` is the *wider* value** — an unscoped token reaches every project the user may reach. A JSON array scopes it to those projects and nothing else. **The absent value is the permissive one**, which is the opposite of the usual reading, so a migration or a bug that loses this column widens every token it touches. |
 | `project_ids_json` | null = all the user's projects |
 | `last_used_at`, `expires_at`, `revoked_at` | nullable |
+| `last_mcp_at`, `last_client`, `last_client_name` | nullable (D-076). `last_mcp_at` is the last authenticated `/mcp` request, stamped at most once a minute like `last_used_at`. `last_client` is an `AGENT_CLIENTS` slug and `last_client_name` the client's own `clientInfo.name` (control and bidi characters stripped, at most 64 characters), both from the last `initialize`. Display and presence only; **never an authorisation input** |
 
 Token format `lai_<40 base62>`. **The secret is never stored and is shown exactly
 once, at creation.**
@@ -612,6 +613,10 @@ resolved server-side from the branch — §9.2), `created_at`.
 
 **Metadata only**: repo name, branch name, timestamp. Never file paths, diffs,
 prompts, or transcript content (D-005). Cron deletes rows older than 30 days.
+
+**Heartbeats are not the only source of presence** (D-076). A token's
+`last_mcp_at` (§4.9) also makes its user present, for the agents that send no
+heartbeat. Nothing about that path is stored here.
 
 ### 4.11 `invites`
 
@@ -1106,6 +1111,15 @@ client built from the spec getting a `422` on its first status change.
 Served by the same process at **`/mcp`** (Streamable HTTP transport). Auth is a
 personal access token as `Bearer`, identical to §6.1.
 
+**Any MCP client, not only Claude Code** (D-076). On `initialize` the server
+returns `instructions`: the rules for working the board, written for any agent
+(call `laika_whoami`, read `get_project_context`, claim with `start_working`
+before coding, `create_task` when there is none, `add_comment` as you go,
+`finish_task` into review, `log_unlisted_work` for stray findings). Every
+authenticated request stamps the token's `last_mcp_at`, and `initialize` records
+the client's `clientInfo.name` and its slug on the token (§4.9). That is what
+makes an agent with no heartbeat hook present (§9.3).
+
 **Every tool acts as the token's user.** No service account, no elevated mode, no
 bypass. Each tool is a thin wrapper over the same service layer the REST routes
 use: same `assertCan`, same `activity` row (with `actor_kind: agent`, which is how
@@ -1119,7 +1133,7 @@ read them.
 
 | Tool | Input | Returns |
 | --- | --- | --- |
-| `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope`. Reads nothing, changes nothing |
+| `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope` — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
 | `get_task_context` | `{ task }` | task, description, `blocked_by` + their statuses, comments, recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`) |
@@ -1383,8 +1397,18 @@ request time**. Nothing is stored on the heartbeat — consistent with there bei
 no separate presence store to fall out of sync, and a single column could not
 hold a result that is legitimately many.
 
-- **Presence** (`GET /api/v1/presence`) — users with a heartbeat in the last 5
-  minutes. "Who is working right now."
+- **Presence** (`GET /api/v1/presence`) — users with a heartbeat **or an `/mcp`
+  call on a token** in the last 5 minutes (D-076). "Who is working right now."
+  One entry per user, the newest session winning. Each entry carries `client`,
+  the `AGENT_CLIENTS` slug of the newest live agent session or `null`, and
+  `clients`, every distinct agent among that user's live sessions, newest
+  first. `is_agent` is true for a heartbeat on a token or any live `/mcp` call.
+  A token that is revoked or expired is not present.
+
+  **An `/mcp` call carries no location.** Only a heartbeat supplies `repo`,
+  `branch`, `project_ids` and `matched_task_id`, so a user seen only over MCP
+  has `repo` and `branch` absent, `project_ids` empty and `matched_task_id`
+  `null`, exactly as for a reader who may not be told where.
 
   **Where is shown only to a reader who can see it** (LAI-438). `repo`, `branch`,
   `project_ids` and `matched_task_id` are present when the heartbeat attributes
@@ -1401,13 +1425,16 @@ hold a result that is legitimately many.
 
   §4.2's `presence_enabled` remains the org-level switch and is a different
   question: whether anything is recorded at all.
-- **Capacity** (`GET /api/v1/capacity`) — per user: `active_sessions`,
+- **Capacity** (`GET /api/v1/capacity`) — per user: `active_sessions` (distinct
+  tokens seen by heartbeat or `/mcp` call in the window, one token doing both
+  counted once; D-076),
   `in_progress_tasks[]`, `last_seen`, oldest in-progress age, tasks in review
   awaiting them, and `unlisted[]` from `log_unlisted_work`. Answers "who takes
   the next thing" and "what is stuck with nobody on it".
 
-Both are computed from `heartbeats` + `tasks` at request time. No separate
-presence store to fall out of sync.
+Both are computed from `heartbeats`, `tokens.last_mcp_at` and `tasks` at request
+time. No separate presence store to fall out of sync. With `presence_enabled`
+off, neither shows any session from either source.
 
 ---
 
