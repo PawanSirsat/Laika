@@ -59,9 +59,13 @@ export function useProjectStatuses(slug: string | undefined): UseStatuses {
     slug === undefined ? undefined : statusStore.peek(slug),
   );
 
-  // Dropped by a change of user while mounted: ask again.
+  // Dropped by a change of user while mounted: ask again. Only then — on the
+  // first render nothing is held yet either, and `subscribe` is already
+  // loading it; a second read here would abort and repeat that one.
   useEffect(() => {
-    if (slug !== undefined && snapshot === undefined) statusStore.reload(slug);
+    if (slug !== undefined && snapshot === undefined && statusStore.peek(slug) === undefined) {
+      statusStore.reload(slug);
+    }
   }, [slug, snapshot]);
 
   const all = snapshot?.statuses ?? NONE;
@@ -155,41 +159,37 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
   );
 
   /*
-   * The server's answer replaces the guess. An answer without the status in
-   * it (a `204`, or a shape this client does not expect) is not trusted to
-   * mean anything: the list is read again instead.
+   * The server's list replaces the guess — every status write answers with
+   * the whole list (LAI-738). An answer without one (a shape this client does
+   * not expect) is not trusted to mean anything: the list is read again.
    */
-  const replaceOne = useCallback(
-    (answer: { readonly data?: ProjectStatus } | undefined) => {
+  const settleList = useCallback(
+    (answer: { readonly data?: unknown } | undefined) => {
       if (slug === undefined) return;
-      const next = answer?.data;
-      if (typeof next?.id !== 'string') {
-        statusStore.reload(slug);
-        return;
-      }
-      statusStore.write(slug, (list) =>
-        list.some((s) => s.id === next.id)
-          ? list.map((s) => (s.id === next.id ? next : s))
-          : [...list, next],
-      );
+      const list = listIn(answer);
+      if (list === undefined) statusStore.reload(slug);
+      else statusStore.write(slug, () => list);
     },
     [slug],
   );
 
   const create = useCallback(
     async (name: string, category: StatusCategory) => {
+      // The new one is found by **id difference**, not by name: two columns
+      // may share a name, and the answer is the whole list.
+      const before = new Set((statusStore.peek(slug ?? '')?.statuses ?? []).map((s) => s.id));
       const result = await run(
         undefined,
         () => createStatus(slug ?? '', { name, category }),
-        replaceOne,
+        settleList,
       );
       if (!result.ok) {
         setError(result.message);
         return undefined;
       }
-      return result.answer.data;
+      return listIn(result.answer)?.find((s) => !before.has(s.id));
     },
-    [run, slug, replaceOne],
+    [run, slug, settleList],
   );
 
   const rename = useCallback(
@@ -197,12 +197,12 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
       const result = await run(
         (list) => list.map((s) => (s.id === id ? { ...s, name } : s)),
         () => updateStatus(slug ?? '', id, { name }),
-        replaceOne,
+        settleList,
       );
       // Inline: the header that asked shows it, not the board's alert bar.
       return result.ok ? undefined : result.message;
     },
-    [run, slug, replaceOne],
+    [run, slug, settleList],
   );
 
   const setHidden = useCallback(
@@ -210,11 +210,11 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
       const result = await run(
         (list) => list.map((s) => (s.id === id ? { ...s, hidden } : s)),
         () => updateStatus(slug ?? '', id, { hidden }),
-        replaceOne,
+        settleList,
       );
       if (!result.ok) setError(result.message);
     },
-    [run, slug, replaceOne],
+    [run, slug, settleList],
   );
 
   const reorder = useCallback(
@@ -224,15 +224,11 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
       const result = await run(
         (list) => applyOrder(list, ids),
         () => reorderStatuses(slug, ids),
-        (answer) => {
-          const list = listIn(answer);
-          if (list === undefined) statusStore.reload(slug);
-          else statusStore.write(slug, () => list);
-        },
+        settleList,
       );
       if (!result.ok) setError(result.message);
     },
-    [run, slug],
+    [run, slug, settleList],
   );
 
   const remove = useCallback(

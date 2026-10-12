@@ -118,7 +118,7 @@ export function DeleteColumnDialog({
             )}
             <p className="cd-hint cd-consequence">
               {needsTarget && target !== undefined
-                ? `Its ${tasks(taskCount)} move to “${target.name}”${
+                ? `Its ${tasks(taskCount)} ${taskCount === 1 ? 'moves' : 'move'} to “${target.name}”${
                     target.category === column.category
                       ? ''
                       : ` and become ${CATEGORY_COPY[target.category].label}`

@@ -60,13 +60,14 @@ export const CATEGORY_COPY: Readonly<
   cancelled: { label: 'Cancelled', description: 'Dropped — will not be done' },
 };
 
-interface StatusList {
+/**
+ * The project's statuses, by position. **Every write answers with this too**
+ * (LAI-738) — a create, a rename, a hide, a reorder, a delete — because one
+ * change can move others: a new status lands after the last of its kind and
+ * shifts every position after it.
+ */
+export interface StatusList {
   readonly data: readonly ProjectStatus[];
-}
-
-/** One status, in the same `data` envelope the list uses (LAI-738). */
-interface OneStatus {
-  readonly data: ProjectStatus;
 }
 
 export function listStatuses(slug: string, signal?: AbortSignal): Promise<StatusList> {
@@ -82,8 +83,9 @@ export interface NewStatus {
   readonly position?: number | undefined;
 }
 
-export function createStatus(slug: string, input: NewStatus): Promise<OneStatus> {
-  return request<OneStatus>(`/projects/${encodeURIComponent(slug)}/statuses`, {
+/** Without `position`, it lands right after the last status of its kind. */
+export function createStatus(slug: string, input: NewStatus): Promise<StatusList> {
+  return request<StatusList>(`/projects/${encodeURIComponent(slug)}/statuses`, {
     method: 'POST',
     body: {
       name: input.name,
@@ -98,8 +100,8 @@ export interface StatusEdit {
   readonly hidden?: boolean;
 }
 
-export function updateStatus(slug: string, id: string, edit: StatusEdit): Promise<OneStatus> {
-  return request<OneStatus>(
+export function updateStatus(slug: string, id: string, edit: StatusEdit): Promise<StatusList> {
+  return request<StatusList>(
     `/projects/${encodeURIComponent(slug)}/statuses/${encodeURIComponent(id)}`,
     { method: 'PATCH', body: edit },
   );
