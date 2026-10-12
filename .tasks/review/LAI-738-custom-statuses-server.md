@@ -207,3 +207,38 @@ Requested: 0028 must never fail on production data.
   (web half) and two `build.test.ts` *built server never became healthy*
   load timeouts. `build.test.ts` alone passes 15/15, and the full run before
   prettier's whitespace-only change had no build failures (2296 pass, 2 fail).
+
+## Review round 1 — 2026-10-12 (9d8880e)
+
+The one blocker (the ` (2)` collision) was fixed in 549aecf. This round adds
+the reviewer's repro and fixes the non-blocking items, each test-first:
+
+- **Repro covered:** `X` = [in_progress, backlog], `Backlog` = [review],
+  `Backlog (2)` = [done] → `X`, `Backlog (3)`, `Backlog`, `Backlog (2)`,
+  hidden `To do`, hidden `Cancelled`. Two 40-character names sharing their
+  first 34 characters, each needing a suffix → `A×34 BB (2)` and
+  `A×34 CC (2)`; and sharing 36 → `Z×36 (2)` then `Z×36 (3)`. Both pass
+  on 549aecf as written; they are coverage, not a change.
+- **1. No-primary naming:** `0028` ranks first the status whose default
+  label equals the trimmed column name case-insensitively, then canonical
+  order. OnRoute's `TO DO` = [todo, backlog] → `TO DO` (todo), `Backlog`.
+  Red before: backlog took `TO DO`.
+- **2. M2 killed:** a project with no review column gets a **hidden**
+  `Review`. Mutating the hidden rule to Cancelled-only now fails it (and
+  the repro).
+- **3. backfill.ts:** `task.status_changed` rows with `from === to` are
+  skipped; a done→done row no longer moves `completed_at`, and an
+  in_progress→in_progress row no longer sets `started_at`. Red before.
+- **4. 403 before 422:** POST, PATCH, PUT order and DELETE call
+  `assertCanEditStatuses` (`project.settings.edit`) before parsing the
+  body. A project member sending invalid bodies gets 403 on all five probes,
+  including PATCH `{}` and PATCH `{ category }`. Red before: 422.
+- **5.** The `status_name` fallback comment in `services/tasks.ts` no
+  longer claims a rename race; the FK makes it unreachable.
+- **6.** SPEC §4.20: `claim` leaves a task already in an `in_progress`
+  status where it is; only a task from another category lands in the first
+  visible one.
+- **Gate:** `pnpm lint` → 0 and `pnpm format` → 0, both from the root.
+  `server/` `pnpm test` → 1: 2304 test cases collected, 2302 pass; the 2
+  failures are the `response-type-coverage` PAIRS checks the web half
+  retires.
