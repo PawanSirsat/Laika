@@ -6,7 +6,8 @@ assignee: unclaimed
 priority: p2
 depends-on: []
 discovered-from: LAI-605
-status: backlog
+status: done
+closed: 2026-10-12T09:36:20Z
 ---
 
 ## Goal
@@ -33,3 +34,13 @@ tool addition.
 - From the same agent brief as LAI-611/612. The fixed-enum-plus-`testing`
   option is much cheaper than fully custom workflows and satisfies the stated
   need; worth weighing first.
+
+## Closed unbuilt — superseded, 2026-10-12
+
+superseded by LAI-738/739 (D-077)
+
+**Closed, not done.** Nothing was built from this file. D-077 replaced board
+columns with per-project statuses in six fixed categories (LAI-738 server,
+LAI-739 web), and this task was written against the columns model, which no
+longer exists. Closed by polly (orchestrator) for release 5 on the owner's
+direct instruction.

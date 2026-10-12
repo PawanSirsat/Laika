@@ -6,7 +6,8 @@ assignee: unclaimed
 priority: p1
 depends-on: []
 discovered-from: LAI-266
-status: backlog
+status: done
+closed: 2026-10-12T09:36:20Z
 ---
 
 ## Goal
@@ -113,3 +114,13 @@ task still owns: §11.4.1's columns and swimlanes text, §11.4.3 as a
 task-dated timeline, the `work_type` and `flagged_at` rows if they are still
 wanted, and retiring the LAI-266 exemptions. The ids LAI-291/292/293 named
 above now belong to unrelated tasks; read them as "the column tasks".
+
+## Closed unbuilt — superseded, 2026-10-12
+
+superseded by LAI-738/739 (D-077)
+
+**Closed, not done.** Nothing was built from this file. D-077 replaced board
+columns with per-project statuses in six fixed categories (LAI-738 server,
+LAI-739 web), and this task was written against the columns model, which no
+longer exists. Closed by polly (orchestrator) for release 5 on the owner's
+direct instruction.

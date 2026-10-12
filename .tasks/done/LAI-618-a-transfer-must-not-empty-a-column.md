@@ -6,7 +6,8 @@ assignee: unclaimed
 priority: p2
 depends-on: []
 discovered-from: LAI-617
-status: backlog
+status: done
+closed: 2026-10-12T09:36:20Z
 ---
 
 ## Goal
@@ -66,3 +67,13 @@ only writes `[]` and asserts `422` passes forever while this is broken.
 
 **`server/src/` is CORE's.** Found from the UI side while fixing what it looks
 like; filed rather than crossed into.
+
+## Closed unbuilt — superseded, 2026-10-12
+
+superseded by LAI-738/739 (D-077)
+
+**Closed, not done.** Nothing was built from this file. D-077 replaced board
+columns with per-project statuses in six fixed categories (LAI-738 server,
+LAI-739 web), and this task was written against the columns model, which no
+longer exists. Closed by polly (orchestrator) for release 5 on the owner's
+direct instruction.
