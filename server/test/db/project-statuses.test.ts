@@ -382,8 +382,9 @@ describe('migration 0028 turns board columns into project statuses', () => {
     column(p, 'To do', 1, ['todo']);
     // LAI-618's donor bug: the column survived with neither status primary.
     column(p, 'Work', 2, ['review', 'in_progress'], { primary: null });
-    // A column a lead named "Review", holding done — clashes with the Review
-    // status the Work column's second status becomes.
+    // A column a lead named "review", holding done — clashes with the Review
+    // status the Work column's second status becomes. The lead's name wins;
+    // the generated label moves.
     column(p, 'review', 3, ['done']);
     // No column holds `cancelled`.
     const made = tasksIn(p, ['in_progress', 'review', 'done', 'cancelled']);
@@ -394,11 +395,89 @@ describe('migration 0028 turns board columns into project statuses', () => {
       ['Backlog', 'backlog', 0],
       ['To do', 'todo', 0],
       ['Work', 'in_progress', 0],
-      ['Review', 'review', 0],
-      ['review (2)', 'done', 0],
+      ['Review (2)', 'review', 0],
+      ['review', 'done', 0],
       ['Cancelled', 'cancelled', 1],
     ]);
     expectTasksPlaced(p, made);
+  });
+
+  it('never fails on a clash: an existing "X (2)" pushes on to "X (3)", and a 39-character name is cut to fit 40', () => {
+    const p = project('clash');
+    // `in_progress` keeps the column's name; `review`, the second status, is
+    // generated as "Review" — which three columns below already claim.
+    column(p, 'Doing', 0, ['in_progress', 'review']);
+    column(p, 'Review', 1, ['done']);
+    column(p, 'Review (2)', 2, ['backlog']);
+    // Two 39-character names that differ only in case — legal under the old
+    // case-sensitive index, one name under the new case-insensitive one.
+    const long = 'Q'.repeat(39);
+    column(p, long, 3, ['todo']);
+    column(p, long.toLowerCase(), 4, ['cancelled']);
+    const made = tasksIn(p, TASK_STATUSES);
+
+    runMigrations(db);
+
+    const after = board(db, p);
+    expect(after).toEqual([
+      ['Doing', 'in_progress', 0],
+      ['Review (3)', 'review', 0],
+      ['Review', 'done', 0],
+      ['Review (2)', 'backlog', 0],
+      [long, 'todo', 0],
+      [`${'q'.repeat(36)} (2)`, 'cancelled', 0],
+    ]);
+    // The cut is exact: 36 + " (2)" is the whole 40.
+    expect(after[5]![0]).toHaveLength(40);
+    expect(new Set(after.map(([name]) => name.toLowerCase())).size).toBe(after.length);
+    expectTasksPlaced(p, made);
+  });
+
+  it('gives an archived project and a project with no tasks their statuses like any other', () => {
+    const archived = project('old');
+    db.run(sql`UPDATE projects SET archived_at = ${now} WHERE id = ${archived}`);
+    column(archived, 'Doing', 0, ['in_progress']);
+    const made = tasksIn(archived, ['in_progress', 'done']);
+    const empty = project('empty');
+    column(empty, 'Only', 0, ['todo']);
+
+    runMigrations(db);
+
+    expect(board(db, archived).map(([name, category]) => [name, category])).toEqual([
+      ['Doing', 'in_progress'],
+      ['Backlog', 'backlog'],
+      ['To do', 'todo'],
+      ['Review', 'review'],
+      ['Done', 'done'],
+      ['Cancelled', 'cancelled'],
+    ]);
+    expectTasksPlaced(archived, made);
+    expect(new Set(statusesOf(db, empty).map((s) => s.category))).toEqual(new Set(TASK_STATUSES));
+  });
+
+  it('survives every project at once, clashes and all, with nothing dangling', () => {
+    // The scenarios above, in one database: the recursion names each project
+    // independently, so one project's names never push another's.
+    const a = project('alpha');
+    const b = project('beta');
+    for (const p of [a, b]) {
+      column(p, 'Doing', 0, ['in_progress', 'review']);
+      column(p, 'Review', 1, ['done']);
+      column(p, 'Review (2)', 2, ['backlog']);
+    }
+    tasksIn(a, TASK_STATUSES);
+    tasksIn(b, TASK_STATUSES);
+
+    runMigrations(db);
+
+    for (const p of [a, b]) {
+      expect(
+        board(db, p)
+          .slice(0, 4)
+          .map(([name]) => name),
+      ).toEqual(['Doing', 'Review (3)', 'Review', 'Review (2)']);
+    }
+    expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
   });
 
   it('gives a project with no columns at all the six defaults, as it was already drawing them', () => {
