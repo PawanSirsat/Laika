@@ -156,3 +156,8 @@ true), highlight (`commandRuns` never marks), logos (`agentLogo` →
 `# pass 0 / # fail 1` on its filtered browser run, plus the unit suites.
 
 Screenshots: `/tmp/laika-connect-wizard-shots/step{1..4}-{light,dark}-{1366,390}.png`.
+
+**Found by the gate, fixed before hand-back.** *Connect another agent* read
+the step-3 lock one render early under load: `forget()` drops the blanked
+token on a `setTimeout`, so the lock returns a tick later. The product settles
+correctly; the test now waits for the lock instead of sampling it.

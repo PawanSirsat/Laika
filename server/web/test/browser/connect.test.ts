@@ -954,7 +954,13 @@ void describe('the wizard (LAI-740)', () => {
 
       await h.page.getByRole('button', { name: 'Connect another agent' }).click();
       assert.equal(await h.page.locator('.conn-wizard-card').getAttribute('data-step'), '1');
-      assert.equal(await h.page.locator('.conn-rail-step').nth(2).isDisabled(), true);
+      // `forget()` drops the blanked token a tick after blanking it, so the
+      // lock returns on the next render — wait for it rather than sample it.
+      await h.page.waitForFunction(
+        () => document.querySelectorAll<HTMLButtonElement>('.conn-rail-step')[2]?.disabled === true,
+        undefined,
+        { timeout: 10_000 },
+      );
       assert.ok(!(await h.page.locator('body').innerText()).includes(SECRET));
     } finally {
       await h.close();
