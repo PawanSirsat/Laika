@@ -581,7 +581,7 @@ where the instance itself was created.
 | `project_ids_json` | **nullable, and `null` is the *wider* value** — an unscoped token reaches every project the user may reach. A JSON array scopes it to those projects and nothing else. **The absent value is the permissive one**, which is the opposite of the usual reading, so a migration or a bug that loses this column widens every token it touches. |
 | `project_ids_json` | null = all the user's projects |
 | `last_used_at`, `expires_at`, `revoked_at` | nullable |
-| `last_mcp_at`, `last_client`, `last_client_name` | nullable (D-076). `last_mcp_at` is the last authenticated `/mcp` request, stamped at most once a minute like `last_used_at`. `last_client` is an `AGENT_CLIENTS` slug and `last_client_name` the client's own `clientInfo.name` (control and bidi characters stripped, at most 64 characters), both from the last `initialize`. Display and presence only; **never an authorisation input** |
+| `last_mcp_at`, `last_client`, `last_client_name` | nullable (D-076). `last_mcp_at` is the last authenticated `/mcp` request, stamped at most once a minute like `last_used_at`. **Not stamped while §4.2's `presence_enabled` is off.** `last_client` is an `AGENT_CLIENTS` slug and `last_client_name` the client's own `clientInfo.name` (Unicode `Other` characters and line/paragraph separators stripped, at most 64 characters), both from the last `initialize` that named an agent: a generic name such as `mcp` fills a blank but never replaces a known client. Display and presence only; **never an authorisation input** |
 
 Token format `lai_<40 base62>`. **The secret is never stored and is shown exactly
 once, at creation.**
@@ -1410,7 +1410,9 @@ hold a result that is legitimately many.
   the `AGENT_CLIENTS` slug of the newest live agent session or `null`, and
   `clients`, every distinct agent among that user's live sessions, newest
   first. `is_agent` is true for a heartbeat on a token or any live `/mcp` call.
-  A token that is revoked or expired is not present.
+  A token that is revoked or expired is not present, **whether it was last seen
+  by `/mcp` or by heartbeat**, and does not count in Capacity. A signed-in
+  session's heartbeat, which has no token, is unaffected.
 
   **An `/mcp` call carries no location.** Only a heartbeat supplies `repo`,
   `branch`, `project_ids` and `matched_task_id`, so a user seen only over MCP
@@ -1431,7 +1433,10 @@ hold a result that is legitimately many.
   a repo names the place**, so all four fields follow one gate.
 
   §4.2's `presence_enabled` remains the org-level switch and is a different
-  question: whether anything is recorded at all.
+  question: whether presence is recorded at all. While it is off, no heartbeat
+  is stored (LAI-150) and no token's `last_mcp_at` is stamped (D-076), so
+  turning it back on shows nothing from the time it was off. The connecting
+  client's name is still kept on the token, as token metadata.
 - **Capacity** (`GET /api/v1/capacity`) — per user: `active_sessions` (distinct
   tokens seen by heartbeat or `/mcp` call in the window, one token doing both
   counted once; D-076),
