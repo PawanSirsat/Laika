@@ -12,7 +12,8 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, test } from 'node:test';
 
@@ -49,5 +50,32 @@ void describe('the installer still reads the two answers in the order the prompt
      */
     assert.match(script, /^read -r URL_INPUT/m, 'the URL is no longer read from stdin');
     assert.match(script, /^read -r TOKEN/m, 'the token is no longer read from stdin');
+  });
+});
+
+void describe('the installer and plugin serve every agent, and carry no secret (LAI-737)', () => {
+  const PLUGIN = fileURLToPath(new URL('../../../../../../plugin/', import.meta.url));
+
+  void test('the installer’s closing words point other agents at `laika connect`', () => {
+    const script = readFileSync(INSTALLER, 'utf8');
+    assert.match(script, /laika connect <agent>/);
+    assert.match(script, /laika connect --list/);
+  });
+
+  void test('CONTROL: nothing under plugin/ holds a token', () => {
+    /*
+     * The plugin is cloned onto every developer's machine from a public
+     * repository. A real token anywhere in it is a leak to everyone. The
+     * shape is `lai_` and a long run of key characters; `lai_...`, the
+     * placeholder in the docs, is deliberately too short to match.
+     */
+    const files = readdirSync(PLUGIN, { recursive: true, withFileTypes: true }).filter((e) =>
+      e.isFile(),
+    );
+    assert.ok(files.length > 10, `read ${String(files.length)} plugin files — wrong path?`);
+    const leaks = files
+      .map((e) => join(e.parentPath, e.name))
+      .filter((path) => /lai_[A-Za-z0-9_-]{20,}/.test(readFileSync(path, 'utf8')));
+    assert.deepEqual(leaks, []);
   });
 });

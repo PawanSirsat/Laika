@@ -38,12 +38,13 @@ if [ -z "$URL" ]; then
 Not configured — the plugin is loaded, but there is no board to talk to. This
 is safe to leave installed; the Laika MCP server simply has nothing to reach.
 
-To configure, set both variables in the environment Claude Code starts in:
+To configure, set both variables in the environment your coding agent starts in:
 
   export LAIKA_URL="https://laika.example.com"   # your deployment, no trailing slash
   export LAIKA_TOKEN="lai_..."                   # Settings -> Tokens on that board
 
-Then restart Claude Code so the MCP server picks them up.
+Then restart the agent (here, Claude Code) so the MCP server picks them up.
+For any other agent, `laika connect <agent>` writes its config.
 MSG
   exit 0
 fi

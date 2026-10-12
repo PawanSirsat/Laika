@@ -5,6 +5,14 @@ agent reads ready tasks, claims work, comments, and hands it back for review —
 through the same MCP endpoint and the same `can()` permissions a human gets in
 the browser.
 
+**Using another coding agent?** Codex, Cursor, Gemini CLI, OpenCode, VS Code,
+Antigravity, Omnigent and the rest connect to the same `/mcp` endpoint without
+this plugin. The board's **Connect** page shows the exact config for each, and
+`laika connect <agent>` (`laika connect --list` for the names) writes it for you
+after `plugin/scripts/install.sh` has stored the board and token (LAI-737). This
+plugin adds what only Claude Code can load: the `/laika:*` commands and the
+heartbeat hooks.
+
 > **Status: skeleton (LAI-012).** The manifest, the MCP declaration, and one
 > working command are here. The MCP tools themselves land in M3 and the hooks,
 > skills, and remaining commands in M4. See [What is not built yet](#what-is-not-built-yet).
