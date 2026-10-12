@@ -22,7 +22,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
+import { closeBrowser, DEFAULT_STATUSES, open, setTheme, type ApiStub } from './harness.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -523,33 +523,18 @@ void describe('the lanes fill the window (LAI-283)', () => {
 /**
  * A board with **real columns**, so the `+` tile renders.
  *
- * The rest of this file predates `board_columns` and has no such route, so it
- * takes the 404 fallback — which draws one lane per status and, deliberately,
- * no column controls at all. A layout test for the tile written against that
- * stub measures a tile that is not there: it passed against the broken layout
- * and the fixed one alike, which is how the first version of this block was
- * caught being worthless.
+ * The rest of this file predates `board_columns`. It once took a 404 fallback
+ * that drew no column controls at all, so a layout test for the tile written
+ * against that stub measured a tile that was not there — it passed against
+ * the broken layout and the fixed one alike. Since LAI-739 every board has
+ * real statuses (the harness serves the server's default six), so the tile
+ * draws on `STUB` too; this names the five columns anyway, so the block does
+ * not depend on a default it cannot see.
  */
 const COLUMNS_STUB: ApiStub = {
   ...STUB,
-  '/api/v1/projects/laika-core/board-columns': {
-    columns: [
-      // Five, matching what `boardReady` expects of the fallback board — this
-      // fixture differs only in that the columns are *real*, so the tile draws.
-      ['c1', 'Backlog', ['backlog']],
-      ['c2', 'To do', ['todo']],
-      ['c3', 'In progress', ['in_progress']],
-      ['c4', 'Review', ['review']],
-      ['c5', 'Done', ['done']],
-    ].map(([id, name, statuses], position) => ({
-      id,
-      project_id: 'p1',
-      name,
-      position,
-      hidden: false,
-      statuses,
-      primary_status: (statuses as string[])[0],
-    })),
+  '/api/v1/projects/laika-core/statuses': {
+    data: DEFAULT_STATUSES.map((s) => ({ ...s, hidden: s.category === 'cancelled' })),
   },
 };
 

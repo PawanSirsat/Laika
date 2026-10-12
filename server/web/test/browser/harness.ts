@@ -61,6 +61,79 @@ const TYPES: Readonly<Record<string, string>> = {
   '.svg': 'image/svg+xml',
 };
 
+/**
+ * A project's statuses as the server seeds them (LAI-738, `DEFAULT_STATUSES`
+ * in `server/src/db/project-statuses.ts`): one per category, in category
+ * order, named for it, Cancelled hidden. Ids are `st-<category>`.
+ *
+ * **The one route the stub answers unasked.** Every project has these from
+ * its first boot, so a fixture written before LAI-739 — about cards, filters,
+ * the drawer — is not about statuses and should not have to say so. A task
+ * fixture with no `status_id` files under its category's status, which is
+ * `laneStatusId`'s fallback and what the server's backfill does.
+ */
+export const DEFAULT_STATUSES = (
+  [
+    ['backlog', 'Backlog'],
+    ['todo', 'To do'],
+    ['in_progress', 'In progress'],
+    ['review', 'Review'],
+    ['done', 'Done'],
+    ['cancelled', 'Cancelled'],
+  ] as const
+).map(([category, name], position) => ({
+  id: `st-${category}`,
+  project_id: 'p1',
+  name,
+  category,
+  position,
+  hidden: category === 'cancelled',
+  created_at: 1,
+  task_count: 0,
+}));
+
+const STATUSES_PATH = /^\/api\/v1\/projects\/[^/]+\/statuses$/;
+
+/**
+ * A fixture task as the server sends it since LAI-738: in its kind's default
+ * status, by id and name, unless the fixture names one. For fixtures written
+ * before statuses had ids, so a filter or a picker by id has something to
+ * match.
+ */
+export function asServed<T extends { readonly status?: unknown }>(
+  task: T,
+): T & { status_id: string; status_name: string } {
+  const status = DEFAULT_STATUSES.find((s) => s.category === task.status);
+  return { status_id: status?.id ?? '', status_name: status?.name ?? '', ...task };
+}
+
+/**
+ * Apply a `POST /tasks/:id/status` body to a fixture task the way the server
+ * does (LAI-738): `{status_id}` puts it in that status, `{status}` in the
+ * first status of that kind. Returns the kind it landed in, for stubs that
+ * decide on it. Against {@link DEFAULT_STATUSES} unless told otherwise.
+ */
+export function applyStatusWrite(
+  task: { status?: unknown },
+  body: unknown,
+  statuses: readonly {
+    id: string;
+    name: string;
+    category: string;
+    position: number;
+  }[] = DEFAULT_STATUSES,
+): string | undefined {
+  const sent = body as { status?: string; status_id?: string };
+  const byPosition = [...statuses].sort((a, b) => a.position - b.position);
+  const to =
+    sent.status_id !== undefined
+      ? byPosition.find((s) => s.id === sent.status_id)
+      : byPosition.find((s) => s.category === sent.status);
+  if (to === undefined) return undefined;
+  Object.assign(task, { status: to.category, status_id: to.id, status_name: to.name });
+  return to.category;
+}
+
 /** What the stub saw. Recorded for every `/api/` call, in arrival order. */
 export interface StubCall {
   readonly method: string;
@@ -254,6 +327,15 @@ function serve(
         // string is usually the client's business rather than the fixture's.
         // A key that *names* a query opts that path into caring (LAI-241).
         const chosen = pick(stub, path, url.searchParams);
+
+        if (chosen === undefined && req.method === 'GET' && STATUSES_PATH.test(path)) {
+          // Every project has statuses from its first boot (LAI-738), so a
+          // stub that does not name them gets the server's default six — see
+          // DEFAULT_STATUSES. A test about columns names its own.
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ data: DEFAULT_STATUSES }));
+          return;
+        }
 
         if (chosen === undefined) {
           res.writeHead(404, { 'content-type': 'application/json' });

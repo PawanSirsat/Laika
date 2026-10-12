@@ -14,7 +14,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, type Harness } from './harness.ts';
+import { closeBrowser, DEFAULT_STATUSES, open, type ApiStub, type Harness } from './harness.ts';
 
 const PROJECT = { id: 'p1', slug: 'laika-core', name: 'Laika Core', prefix: 'LAI' };
 
@@ -69,26 +69,15 @@ const TASK = {
   updated_at: 1,
 };
 
-const COLUMNS = [
-  {
-    id: 'c1',
-    project_id: 'p1',
-    name: 'To do',
-    position: 0,
-    hidden: false,
-    statuses: ['todo', 'backlog'],
-    primary_status: 'todo',
-  },
-  {
-    id: 'c2',
-    project_id: 'p1',
-    name: 'Done',
-    position: 1,
-    hidden: false,
-    statuses: ['done'],
-    primary_status: 'done',
-  },
-];
+/**
+ * Two columns — the board this file was written against — as project statuses
+ * (LAI-739); the other kinds exist, hidden, as every kind keeps one.
+ */
+const STATUSES = DEFAULT_STATUSES.map((s) => ({
+  ...s,
+  hidden: s.category !== 'todo' && s.category !== 'done',
+}));
+const COLUMNS = STATUSES.filter((s) => !s.hidden);
 
 const STUB: ApiStub = {
   '/api/v1/me': {
@@ -101,7 +90,7 @@ const STUB: ApiStub = {
   },
   '/api/v1/projects': { data: [FULL_PROJECT], next_cursor: null },
   '/api/v1/projects/laika-core': FULL_PROJECT,
-  '/api/v1/projects/laika-core/board-columns': { columns: COLUMNS },
+  '/api/v1/projects/laika-core/statuses': { data: STATUSES },
   '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
   '/api/v1/projects/laika-core/members': {
     members: [{ user_id: 'u1', name: 'Ada', email: 'a@example.com', role: 'lead', created_at: 1 }],

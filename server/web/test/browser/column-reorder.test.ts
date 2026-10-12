@@ -59,6 +59,8 @@ const TASK = {
   description_md: null,
   acceptance_md: null,
   status: 'todo',
+  status_id: 's1',
+  status_name: 'To do',
   priority: 'p2',
   assignee_id: null,
   sprint_id: null,
@@ -84,48 +86,27 @@ const TASK = {
   updated_at: 1,
 };
 
-function column(id: string, name: string, position: number, statuses: string[]) {
-  return {
-    id,
-    project_id: 'p1',
-    name,
-    position,
-    hidden: false,
-    statuses,
-    primary_status: statuses[0] ?? null,
-  };
+/** One column is one project status (LAI-739). */
+function status(id: string, name: string, category: string, position: number, hidden = false) {
+  return { id, project_id: 'p1', name, category, position, hidden, created_at: 1, task_count: 0 };
 }
 
-const COLUMNS = [
-  column('c1', 'To do', 0, ['todo', 'backlog']),
-  column('c2', 'In progress', 1, ['in_progress']),
-  column('c3', 'Review', 2, ['review']),
-  column('c4', 'Done', 3, ['done']),
+const STATUSES = [
+  status('s1', 'To do', 'todo', 0),
+  status('s2', 'In progress', 'in_progress', 1),
   /*
-   * **The hidden column every real board has**, and the reason this fixture
-   * existed without one for a day.
+   * **A hidden column in the middle**, where it does the most damage.
    *
-   * `reorderColumns` requires *every* column exactly once; the board draws
-   * only the visible ones. A fixture with nothing hidden makes those two sets
-   * identical, so a caller that sent only the visible order passed here and
-   * failed against every real project — which is exactly what happened.
+   * `PUT /statuses/order` requires every id exactly once; the board draws only
+   * the visible ones. A fixture with nothing hidden makes those two sets
+   * identical — the shape that let a visible-only order pass here and fail on
+   * every real board once (LAI-266's `Cancelled`, LAI-620's status-less
+   * columns). In the middle rather than at the end, because the hidden one
+   * must keep its slot: hide it, reorder, show it, and it is where it was.
    */
-  { ...column('c5', 'Cancelled', 4, ['cancelled']), hidden: true },
-  /*
-   * **The column the board cannot draw, and the reason this fixture needed a
-   * second undrawable kind** (LAI-620).
-   *
-   * `visible` excludes a column for two reasons — hidden, and owning no
-   * statuses (LAI-617) — and a caller that compensates by listing the reasons
-   * covers whichever it was written against. With only `Cancelled` here, a
-   * caller appending `filter((c) => c.hidden)` passed this file and was
-   * refused `expected 7, received 5` on the owner's real board, where two
-   * columns own nothing.
-   *
-   * It is a status-less column rather than a second hidden one on purpose:
-   * the same shape as `BACKLOGS` after `TO DO` took `backlog`.
-   */
-  column('c6', 'Backlogs', 5, []),
+  status('s5', 'Cancelled', 'cancelled', 2, true),
+  status('s3', 'Review', 'review', 3),
+  status('s4', 'Done', 'done', 4),
 ];
 
 function stub(over: Partial<ApiStub> = {}): ApiStub {
@@ -140,20 +121,17 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
     },
     '/api/v1/projects': { data: [FULL_PROJECT], next_cursor: null },
     '/api/v1/projects/laika-core': FULL_PROJECT,
-    '/api/v1/projects/laika-core/board-columns': { columns: COLUMNS },
+    '/api/v1/projects/laika-core/statuses': { data: STATUSES },
     /*
-     * **Echoes the order it was sent**, because the real endpoint returns the
-     * board it just wrote and `useColumns` takes that as the answer rather than
+     * **Echoes the order it was sent**, because the real endpoint answers with
+     * the list it just wrote and the board takes that as the answer rather than
      * keeping its optimistic guess. A static fixture here would make a correct
      * implementation look broken — the board would revert every drag.
      */
-    '/api/v1/projects/laika-core/board-columns/reorder': (call: { body: unknown }) => {
-      const ids = (call.body as { column_ids: string[] }).column_ids;
+    '/api/v1/projects/laika-core/statuses/order': (call: { body: unknown }) => {
+      const ids = (call.body as { ids: string[] }).ids;
       return {
-        columns: ids.map((id, position) => {
-          const found = COLUMNS.find((c) => c.id === id);
-          return { ...found, position };
-        }),
+        data: ids.map((id, position) => ({ ...STATUSES.find((s) => s.id === id), position })),
       };
     },
     '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
@@ -229,14 +207,15 @@ void describe('dragging a column', () => {
         'the lane did not move',
       );
 
-      const sent = h.calls.find((c) => c.path.endsWith('/board-columns/reorder'));
+      const sent = h.calls.find((c) => c.path.endsWith('/statuses/order'));
       assert.ok(sent !== undefined, 'no reorder was sent');
+      assert.equal(sent.method, 'PUT');
       assert.deepEqual(
-        (sent.body as { column_ids: string[] }).column_ids,
-        // Every column of the project, exactly once: the three dragged, then
-        // the ones the board never drew, in their own order.
-        ['c4', 'c1', 'c2', 'c3', 'c5', 'c6'],
-        'the whole board must go — hidden columns included — or the server refuses it',
+        (sent.body as { ids: string[] }).ids,
+        // Every status of the project, exactly once: the four drawn in their
+        // new order around the hidden one, which keeps its slot.
+        ['s4', 's1', 's5', 's2', 's3'],
+        'every id must go — the hidden one in its own slot — or the server refuses it',
       );
     } finally {
       await h.close();
@@ -247,7 +226,7 @@ void describe('dragging a column', () => {
     const h = await open(
       '/board?project=laika-core',
       stub({
-        '/api/v1/projects/laika-core/board-columns/reorder': refuse(
+        '/api/v1/projects/laika-core/statuses/order': refuse(
           403,
           'forbidden',
           'Only a project lead may configure columns',
@@ -293,7 +272,7 @@ void describe('the two drags cannot be confused', () => {
 
       assert.deepEqual(await titles(h), before, 'a card drag moved a column');
       assert.equal(
-        h.calls.filter((c) => c.path.endsWith('/board-columns/reorder')).length,
+        h.calls.filter((c) => c.path.endsWith('/statuses/order')).length,
         0,
         'a card drag sent a reorder',
       );
@@ -340,16 +319,9 @@ void describe('the keyboard route', () => {
 
       assert.deepEqual(await titles(h), ['Review', 'To do', 'In progress', 'Done']);
 
-      const sent = h.calls.find((c) => c.path.endsWith('/board-columns/reorder'));
+      const sent = h.calls.find((c) => c.path.endsWith('/statuses/order'));
       assert.ok(sent !== undefined, 'the keyboard path sent nothing');
-      assert.deepEqual((sent.body as { column_ids: string[] }).column_ids, [
-        'c3',
-        'c1',
-        'c2',
-        'c4',
-        'c5',
-        'c6',
-      ]);
+      assert.deepEqual((sent.body as { ids: string[] }).ids, ['s3', 's1', 's5', 's2', 's4']);
     } finally {
       await h.close();
     }

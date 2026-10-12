@@ -20,7 +20,15 @@
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
 import type { Page } from 'playwright';
-import { closeBrowser, fakeStream, open, refuse, type ApiStub, type Harness } from './harness.ts';
+import {
+  applyStatusWrite,
+  closeBrowser,
+  fakeStream,
+  open,
+  refuse,
+  type ApiStub,
+  type Harness,
+} from './harness.ts';
 
 const PROJECT = {
   id: 'p1',
@@ -42,24 +50,28 @@ const PROJECT = {
   last_activity_at: 2,
 };
 
-function column(id: string, name: string, position: number, statuses: string[]) {
-  return {
-    id,
-    project_id: 'p1',
-    name,
-    position,
-    hidden: false,
-    statuses,
-    primary_status: statuses[0] ?? null,
-  };
-}
-
-const COLUMNS = [
-  column('c1', 'To do', 0, ['todo']),
-  column('c2', 'In progress', 1, ['in_progress']),
-  column('c3', 'Review', 2, ['review']),
-  column('c4', 'Done', 3, ['done']),
-];
+/**
+ * The board this file was written against — four columns — as project
+ * statuses (LAI-739). Backlog and Cancelled exist, as every kind keeps one,
+ * and are hidden so the layout is the one the glide measurements assume.
+ */
+const STATUSES = [
+  ['todo', 'To do', false],
+  ['in_progress', 'In progress', false],
+  ['review', 'Review', false],
+  ['done', 'Done', false],
+  ['backlog', 'Backlog', true],
+  ['cancelled', 'Cancelled', true],
+].map(([category, name, hidden], position) => ({
+  id: `st-${String(category)}`,
+  project_id: 'p1',
+  name,
+  category,
+  position,
+  hidden,
+  created_at: 1,
+  task_count: 0,
+}));
 
 interface StubTask {
   id: string;
@@ -132,7 +144,7 @@ function world(fail: { readonly status?: boolean } = {}): World {
         return refuse(422, 'invalid_transition', 'That move is not allowed.');
       }
       const target = find(t.id);
-      target.status = (call.body as { status: string }).status;
+      applyStatusWrite(target, call.body);
       return { ...target };
     };
     routes[`/api/v1/tasks/${t.id}/reorder`] = (call: { body: unknown }) => {
@@ -158,7 +170,7 @@ function world(fail: { readonly status?: boolean } = {}): World {
       },
       '/api/v1/projects': { data: [PROJECT], next_cursor: null },
       '/api/v1/projects/laika-core': PROJECT,
-      '/api/v1/projects/laika-core/board-columns': { columns: COLUMNS },
+      '/api/v1/projects/laika-core/statuses': { data: STATUSES },
       '/api/v1/projects/laika-core/tasks': () => ({
         data: tasks.map((t) => ({ ...t })),
         next_cursor: null,
@@ -444,7 +456,10 @@ void describe('cards glide between lanes (LAI-708)', () => {
       const start = (await transitions(h)).length;
 
       // An agent moves LAI-2 over MCP: the server changes, then the stream says so.
-      w.tasks.find((t) => t.id === 't2')!.status = 'in_progress';
+      applyStatusWrite(
+        w.tasks.find((t) => t.id === 't2')!,
+        { status: 'in_progress' },
+      );
       await frame(h, 't2', 1, { id: 'u2', kind: 'agent' });
       const rec = await finished(h, start + 1);
       await landsIn(h, 't2', 'in_progress');
@@ -470,7 +485,10 @@ void describe('cards glide between lanes (LAI-708)', () => {
     const h = await open('/board?project=laika-core', w.stub, { before: withProbe });
     try {
       await ready(h);
-      w.tasks.find((t) => t.id === 't2')!.status = 'in_progress';
+      applyStatusWrite(
+        w.tasks.find((t) => t.id === 't2')!,
+        { status: 'in_progress' },
+      );
       // Positive control in the same page: the frame is mine, as myself.
       await frame(h, 't2', 1, { id: 'u1', kind: 'user' });
       await landsIn(h, 't2', 'in_progress');
@@ -492,7 +510,10 @@ void describe('cards glide between lanes (LAI-708)', () => {
     try {
       await ready(h);
       const start = (await transitions(h)).length;
-      w.tasks.find((t) => t.id === 't2')!.status = 'in_progress';
+      applyStatusWrite(
+        w.tasks.find((t) => t.id === 't2')!,
+        { status: 'in_progress' },
+      );
       await frame(h, 't2', 1, { id: 'u2', kind: 'agent' });
       await landsIn(h, 't2', 'in_progress');
       await h.page.waitForTimeout(300);
@@ -516,7 +537,10 @@ void describe('cards glide between lanes (LAI-708)', () => {
       await ready(h);
       await h.page.locator('[role="dialog"]').first().waitFor({ timeout: 5000 });
       const start = (await transitions(h)).length;
-      w.tasks.find((t) => t.id === 't2')!.status = 'in_progress';
+      applyStatusWrite(
+        w.tasks.find((t) => t.id === 't2')!,
+        { status: 'in_progress' },
+      );
       await frame(h, 't2', 1, { id: 'u2', kind: 'agent' });
       await landsIn(h, 't2', 'in_progress');
       await h.page.waitForTimeout(300);
@@ -537,7 +561,10 @@ void describe('cards glide between lanes (LAI-708)', () => {
           ':root.board-motion::view-transition-group(*),:root.board-motion::view-transition-old(*),:root.board-motion::view-transition-new(*){animation-duration:3s!important}',
       });
       const start = (await transitions(h)).length;
-      w.tasks.find((t) => t.id === 't2')!.status = 'in_progress';
+      applyStatusWrite(
+        w.tasks.find((t) => t.id === 't2')!,
+        { status: 'in_progress' },
+      );
       await frame(h, 't2', 1, { id: 'u2', kind: 'agent' });
       await h.page.waitForFunction(
         (n) => ((window as ProbeWindow).__vt ?? [])[n]?.running === 'running',

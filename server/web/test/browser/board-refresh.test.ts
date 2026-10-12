@@ -568,7 +568,7 @@ void describe('a refresh never undoes your own move (LAI-707)', () => {
       const lc1 = h.page.locator('.lane-item', {
         has: h.page.locator('.card-key', { hasText: /^LC-1\b/ }),
       });
-      await pick(lc1.locator('.lane-move-select'), 'todo');
+      await pick(lc1.locator('.lane-move-select'), 'st-todo');
       await h.page.waitForFunction(
         () =>
           [...document.querySelectorAll('.card')]

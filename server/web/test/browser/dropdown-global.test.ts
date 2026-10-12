@@ -51,6 +51,8 @@ const TASK = {
   description_md: null,
   acceptance_md: null,
   status: 'todo',
+  status_id: 'st-todo',
+  status_name: 'To do',
   priority: 'p2',
   assignee_id: null,
   sprint_id: null,
@@ -75,16 +77,6 @@ const TASK = {
   updated_at: 1,
 };
 
-const column = (id: string, name: string, position: number, statuses: string[]) => ({
-  id,
-  project_id: 'p1',
-  name,
-  position,
-  hidden: false,
-  statuses,
-  primary_status: statuses[0] ?? null,
-});
-
 const STUB: ApiStub = {
   '/api/v1/me': {
     id: 'u1',
@@ -96,15 +88,33 @@ const STUB: ApiStub = {
   },
   '/api/v1/projects': { data: [FULL_PROJECT], next_cursor: null },
   '/api/v1/projects/laika-core': FULL_PROJECT,
-  '/api/v1/projects/laika-core/board-columns': {
-    columns: [
-      column('c1', 'To do', 0, ['todo', 'backlog']),
-      column('c2', 'In progress', 1, ['in_progress']),
-      column('c3', 'Done', 2, ['done']),
-    ],
+  /*
+   * Project statuses (LAI-739): three columns, plus a second *to do* column so
+   * To do can be deleted — its Delete dialog is the modal that holds a
+   * dropdown now. The other kinds exist, hidden, as every kind keeps one.
+   */
+  '/api/v1/projects/laika-core/statuses': {
+    data: [
+      ['st-todo', 'To do', 'todo', false],
+      ['st-doing', 'In progress', 'in_progress', false],
+      ['st-done', 'Done', 'done', false],
+      ['st-later', 'Later', 'todo', false],
+      ['st-backlog', 'Backlog', 'backlog', true],
+      ['st-review', 'Review', 'review', true],
+      ['st-cancelled', 'Cancelled', 'cancelled', true],
+    ].map(([id, name, category, hidden], position) => ({
+      id,
+      project_id: 'p1',
+      name,
+      category,
+      position,
+      hidden,
+      created_at: 1,
+      task_count: 0,
+    })),
   },
   '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
-  '/api/v1/tasks/t1/status': { ...TASK, status: 'done' },
+  '/api/v1/tasks/t1/status': { ...TASK, status: 'done', status_id: 'st-done', status_name: 'Done' },
   // The task drawer, for the scroll and modal tests (review, round 1).
   '/api/v1/tasks/t1': TASK,
   '/api/v1/tasks/t1/comments': { data: [], next_cursor: null },
@@ -195,24 +205,28 @@ void describe('the dropdown in a modal dialog (LAI-726)', () => {
     const h = await open('/board?project=laika-core', STUB);
     try {
       await h.page.locator('.lane-title').first().waitFor({ timeout: 20_000 });
-      await h.page.locator('.lane-new').click();
-      const dialog = h.page.getByRole('dialog', { name: 'Create status' });
+      // The Delete dialog's "Move its tasks to" (LAI-739): the add-column
+      // dialog asks its one choice with radios now, so this is the modal
+      // that holds a dropdown.
+      await h.page.getByRole('button', { name: 'Column menu for To do' }).click();
+      await h.page.getByRole('menuitem', { name: 'Delete column' }).click();
+      const dialog = h.page.getByRole('dialog', { name: 'Delete “To do”?' });
       await dialog.waitFor({ timeout: 5_000 });
 
-      // Named by its <label>, hint and all — as the <select> was.
-      const category = dialog.getByRole('combobox', { name: /^Status category/ });
-      await category.click();
+      // Named by its <label>.
+      const target = dialog.getByRole('combobox', { name: /^Move its 1 task to/i });
+      await target.click();
       await assertOnTop(h, 'over the dialog');
-      await assertInModalAndPlaced(h, category, 'the new-column dialog');
+      await assertInModalAndPlaced(h, target, 'the delete-column dialog');
 
       await h.page.keyboard.press('Escape');
       assert.equal(await panel(h).count(), 0, 'Escape left the dropdown open');
       assert.equal(await dialog.count(), 1, 'Escape closed the dialog with the dropdown');
-      assert.equal(await isFocused(category), true, 'focus did not return to the trigger');
+      assert.equal(await isFocused(target), true, 'focus did not return to the trigger');
 
-      await pick(category, '');
-      assert.equal(await valueOf(category), '');
-      assert.equal((await category.innerText()).trim(), 'Nothing yet');
+      await pick(target, 'st-doing');
+      assert.equal(await valueOf(target), 'st-doing');
+      assert.equal((await target.innerText()).trim(), 'In progress — In progress');
       assert.equal(await dialog.count(), 1, 'choosing an option closed the dialog');
 
       await h.page.keyboard.press('Escape');
@@ -275,7 +289,7 @@ void describe('the dropdown on a board card (LAI-726)', () => {
       assert.equal(await isFocused(move), true, 'opening moved focus off the card control');
 
       // An option's click: the card's own click must not take it.
-      await panel(h).locator('[role="option"][data-value="done"]').click();
+      await panel(h).locator('[role="option"][data-value="st-done"]').click();
       await h.page.waitForFunction(
         () => document.querySelector('[data-dropdown-panel]') === null,
         undefined,
@@ -285,7 +299,7 @@ void describe('the dropdown on a board card (LAI-726)', () => {
         (c) => c.method === 'POST' && c.path === '/api/v1/tasks/t1/status',
       );
       assert.equal(moves.length, 1, 'no move was sent');
-      assert.equal((moves[0]?.body as { status?: string }).status, 'done');
+      assert.equal((moves[0]?.body as { status_id?: string }).status_id, 'st-done');
       assert.equal(
         new URL(h.page.url()).searchParams.get('task'),
         null,
@@ -414,24 +428,25 @@ void describe('the dropdown in the task drawer (LAI-726 round 1)', () => {
  * (review, round 2 — blocking). Round 1 centred `.column-dialog` with
  * `inset: 0; margin: auto`, and `NewColumnDialog` rendered as a child of
  * `.board`, whose children all get an 18px side margin that outranks
- * `margin: auto` — so "Create status" sat against the left edge (x=18 at
+ * `margin: auto` — so the add-column dialog sat against the left edge (x=18 at
  * 1366, where ec1281a had 492) and its scrim left undimmed strips at both
  * sides. Measured at a laptop, a 900px window and a phone.
  */
 void describe('the column dialogs (LAI-726 round 2)', () => {
   const DIALOGS = [
     {
-      name: 'Create status',
+      name: 'Add column',
       open: async (h: Harness) => {
         await h.page.locator('.lane-new').click();
       },
     },
     {
-      name: 'Configure To do',
+      name: 'Delete “To do”?',
       open: async (h: Harness) => {
-        const menu = h.page.getByRole('button', { name: 'Configure To do', exact: true });
+        const menu = h.page.getByRole('button', { name: 'Column menu for To do', exact: true });
         await menu.focus();
         await menu.click();
+        await h.page.getByRole('menuitem', { name: 'Delete column' }).click();
       },
     },
   ] as const;
