@@ -417,6 +417,22 @@ describe('listing', () => {
     });
   });
 
+  it('sends no slug the client does not know', () => {
+    // `last_client` is plain text in the database; only an `AGENT_CLIENTS`
+    // value reaches the wire.
+    const { token } = createToken(t.sqlite, t.db, actor(ownerId), { name: 'n', scope: 'full' });
+    t.db
+      .update(tokens)
+      .set({ lastClient: 'not-a-slug', lastClientName: 'x' })
+      .where(eq(tokens.id, token.id))
+      .run();
+
+    expect(listOwnTokens(t.db, actor(ownerId), LIST)[0]).toMatchObject({
+      last_client: null,
+      last_client_name: 'x',
+    });
+  });
+
   it('404s for a user who does not exist, rather than an empty list', () => {
     const adminId = makeUser('admin', 'admin');
     try {

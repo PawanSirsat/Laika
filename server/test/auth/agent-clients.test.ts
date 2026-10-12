@@ -25,7 +25,7 @@ describe('a client name maps to its agent', () => {
     ['gemini-cli-mcp-client', 'gemini-cli'],
     ['Visual Studio Code', 'vscode'],
     ['vscode', 'vscode'],
-    ['GitHub Copilot', 'vscode'],
+    ['Code - OSS', 'vscode'],
     ['Windsurf', 'windsurf'],
     ['codeium', 'windsurf'],
     ['Antigravity', 'antigravity'],
@@ -142,11 +142,26 @@ describe('a client name is cleaned before it is stored', () => {
     expect(cleaned).toBe('😀'.repeat(CLIENT_NAME_MAX_LENGTH));
   });
 
+  it('strips line separators, lone surrogates and private-use characters', () => {
+    expect(cleanClientName('a\u2028b\u2029c')).toBe('abc');
+    expect(cleanClientName('x\uD800y')).toBe('xy');
+    expect(cleanClientName('p\uE000q')).toBe('pq');
+  });
+
   it('answers null for nothing left', () => {
     expect(cleanClientName('   ')).toBeNull();
     expect(cleanClientName('\u0000\u202E')).toBeNull();
     expect(cleanClientName(undefined)).toBeNull();
     expect(cleanClientName(42)).toBeNull();
+  });
+});
+
+describe('Copilot is not VS Code', () => {
+  it('leaves a bare Copilot name as other', () => {
+    // Copilot also runs as a CLI and inside JetBrains; only VS Code's own name
+    // says VS Code.
+    expect(agentClientSlug('GitHub Copilot', null)).toBe('other');
+    expect(agentClientSlug('copilot-cli', null)).toBe('other');
   });
 });
 

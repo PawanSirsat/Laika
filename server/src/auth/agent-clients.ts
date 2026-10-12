@@ -81,7 +81,8 @@ const PATTERNS: readonly (readonly [RegExp, AgentClient])[] = [
   [/cursor/, 'cursor'],
   [/opencode/, 'opencode'],
   [/gemini/, 'gemini-cli'],
-  [/visual studio code|vscode|copilot/, 'vscode'],
+  // Not bare `copilot`: Copilot also runs as a CLI and inside JetBrains.
+  [/visual studio code|vscode|code - oss/, 'vscode'],
   [/windsurf|codeium/, 'windsurf'],
   [/antigravity|\bagy\b/, 'antigravity'],
   [/hermes/, 'hermes'],
@@ -143,11 +144,13 @@ export function isWeakClientName(name: string | null | undefined): boolean {
 export const CLIENT_NAME_MAX_LENGTH = 64;
 
 /**
- * Control (`Cc`) and format (`Cf`) characters. `Cf` covers the bidi overrides
- * (U+202A–U+202E, U+2066–U+2069) and the zero-width ones, any of which would
- * let a client's name rearrange or hide text on the Tokens screen.
+ * Every `Other` character — control, format, lone surrogate, private use,
+ * unassigned — and the line and paragraph separators. `Cf` covers the bidi
+ * overrides (U+202A–U+202E, U+2066–U+2069) and the zero-width ones; U+2028 and
+ * U+2029 break a line where no newline was typed. Any of them would let a
+ * client's name rearrange, hide or split text on the Tokens screen.
  */
-const UNPRINTABLE = /[\p{Cc}\p{Cf}]/gu;
+const UNPRINTABLE = /[\p{C}\p{Zl}\p{Zp}]/gu;
 
 /**
  * A client-supplied name, made safe to store and show, or `null` if nothing is
