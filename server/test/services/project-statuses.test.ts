@@ -630,6 +630,47 @@ describe('a task moving between statuses (services/tasks.ts)', () => {
     );
   });
 
+  it('prefers an exact name, then a case-insensitive one, and refuses an ambiguous one', () => {
+    // SQLite's `lower()` folds ASCII only, so the unique index admits both of
+    // these; the service would refuse the second, so they go in directly.
+    const now = Date.now();
+    const [upper, lower] = [newId(), newId()];
+    t.db
+      .insert(projectStatuses)
+      .values([
+        { id: upper, projectId, name: 'État', category: 'review', position: 6, createdAt: now },
+        { id: lower, projectId, name: 'état', category: 'done', position: 7, createdAt: now },
+      ])
+      .run();
+
+    const first = newTask('review');
+    expect(changeStatus(t.db, actor(adminId), first.id, { status_name: 'état' })).toMatchObject({
+      status_id: lower,
+      status_name: 'état',
+    });
+    const second = newTask('in_progress');
+    expect(changeStatus(t.db, actor(adminId), second.id, { status_name: ' État ' })).toMatchObject({
+      status_id: upper,
+      status_name: 'État',
+    });
+
+    // Neither spelling exactly: two statuses fold to it — say so, in board order.
+    const third = newTask('in_progress');
+    const err = expectApiError(
+      () => changeStatus(t.db, actor(adminId), third.id, { status_name: 'ÉTAT' }),
+      'unprocessable',
+    );
+    expect(err.message).toBe(
+      'More than one status is called "ÉTAT" in this project: État, état. Use the exact name',
+    );
+    expect(err.details).toMatchObject({ field: 'status', candidates: ['État', 'état'] });
+
+    // A unique case-insensitive match still resolves.
+    expect(
+      changeStatus(t.db, actor(adminId), third.id, { status_name: 'REVIEW' }).status_name,
+    ).toBe('Review');
+  });
+
   it('creates into an exact status, or a category’s first visible one, and refuses a disagreement', () => {
     const triage = add('Triage', 'backlog', 0);
     expect(

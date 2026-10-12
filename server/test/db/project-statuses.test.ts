@@ -529,6 +529,23 @@ describe('migration 0028 turns board columns into project statuses', () => {
     expectTasksPlaced(p, made);
   });
 
+  it('lets a suffix minted for an earlier typed clash take a lead’s own "X (2)", which then moves on', () => {
+    // What the `named` comment in 0028 says, held to it: typed names do not
+    // all survive, and none of this fails.
+    const p = project('typed');
+    column(p, 'X', 0, ['todo']);
+    column(p, 'x', 1, ['backlog']);
+    column(p, 'X (2)', 2, ['review']);
+
+    runMigrations(db);
+
+    expect(
+      board(db, p)
+        .slice(0, 3)
+        .map(([name]) => name),
+    ).toEqual(['X', 'x (2)', 'X (2) (2)']);
+  });
+
   it('gives an archived project and a project with no tasks their statuses like any other', () => {
     const archived = project('old');
     db.run(sql`UPDATE projects SET archived_at = ${now} WHERE id = ${archived}`);

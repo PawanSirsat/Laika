@@ -450,17 +450,6 @@ function statusRow(db: Db, projectId: string, id: string): StatusRef | undefined
   return row === undefined ? undefined : { ...row, hidden: row.hidden === 1 };
 }
 
-/** The names a project's statuses go by, in board order — for an error to list. */
-function statusNames(db: Db, projectId: string): string[] {
-  return db
-    .select({ name: projectStatuses.name })
-    .from(projectStatuses)
-    .where(eq(projectStatuses.projectId, projectId))
-    .orderBy(asc(projectStatuses.position))
-    .all()
-    .map((r) => r.name);
-}
-
 /**
  * The status a target names in this project, or a `422` that says what the
  * project does have. Missing and another project's are one answer, as
@@ -481,8 +470,10 @@ function resolveStatus(db: Db, projectId: string, target: StatusTarget): StatusR
     return row;
   }
 
-  const wanted = target.status_name.trim().toLowerCase();
-  const match = db
+  // In board order, so every answer below — including the list of candidates
+  // in an error — is the same on every call.
+  const wanted = target.status_name.trim();
+  const rows = db
     .select({
       id: projectStatuses.id,
       name: projectStatuses.name,
@@ -491,14 +482,28 @@ function resolveStatus(db: Db, projectId: string, target: StatusTarget): StatusR
     })
     .from(projectStatuses)
     .where(eq(projectStatuses.projectId, projectId))
-    .all()
-    .find((r) => r.name.toLowerCase() === wanted);
+    .orderBy(asc(projectStatuses.position))
+    .all();
 
-  if (match === undefined) {
-    const names = statusNames(db, projectId);
+  // Exact first. SQLite's `lower()` folds ASCII only, so the unique index
+  // admits `État` beside `état`; whoever types one of them exactly means it.
+  const folded = rows.filter((r) => r.name.toLowerCase() === wanted.toLowerCase());
+  const match =
+    rows.find((r) => r.name === wanted) ?? (folded.length === 1 ? folded[0] : undefined);
+
+  if (match === undefined && folded.length > 1) {
+    const candidates = folded.map((r) => r.name);
     throw new ApiError(
       'unprocessable',
-      `This project has no status called "${target.status_name.trim()}". It has: ${names.join(', ')}`,
+      `More than one status is called "${wanted}" in this project: ${candidates.join(', ')}. Use the exact name`,
+      { field: 'status', status: target.status_name, candidates },
+    );
+  }
+  if (match === undefined) {
+    const names = rows.map((r) => r.name);
+    throw new ApiError(
+      'unprocessable',
+      `This project has no status called "${wanted}". It has: ${names.join(', ')}`,
       { field: 'status', status: target.status_name, statuses: names },
     );
   }

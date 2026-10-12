@@ -136,10 +136,13 @@ WITH RECURSIVE
   --
   -- **One of those is always free.** At most n-1 names are taken when a row is
   -- named, and the n candidates differ from one another — each ends in its own
-  -- "(k)" — so by pigeonhole at least one is not taken. A lead's own "X (2)"
-  -- is honoured too: it is named before any generated label, and a later clash
-  -- simply moves on to "X (3)". `lower()` is the very function the unique index
-  -- uses, so "free" here means free there.
+  -- "(k)" — so by pigeonhole at least one is not taken. Typed names are named
+  -- before generated labels, so a generated label never takes a name a lead
+  -- typed. That is not a promise that every typed "X (2)" survives: if two
+  -- typed names clash earlier in position order — "X" and "x" — the second is
+  -- given "x (2)" first, and a lead's own "X (2)" further along moves on to
+  -- "X (2) (2)". Nothing fails either way. `lower()` is the very function the
+  -- unique index uses, so "free" here means free there.
   named(project_id, k, n, category, base, hidden, position, name, taken) AS (
     SELECT o.project_id, o.k, o.n, o.category, o.base, o.hidden, o.position,
            o.base, json_array(lower(o.base))
