@@ -301,7 +301,9 @@ const RC_LINE = '[ -r "$HOME/.laika/env" ] && { set -a; . "$HOME/.laika/env"; se
  * The variable every env-reading config points at — stored where the CLI
  * stores it (review round 1).
  *
- * The token goes in `~/.laika/env`, created `0600` in a `0700` directory, and
+ * The token goes in `~/.laika/env`, made `0600` **before** it is written —
+ * `umask` covers only a file it creates, so an existing `0644` one is narrowed
+ * first (re-review) — in a `0700` directory, and
  * the shell profile only **sources** that file. It used to be two `export`
  * lines for `~/.zshrc`, which put the token in a file that dotfile managers
  * commit and sync. Same file, same marker and same line as `laika connect`,
@@ -316,12 +318,11 @@ function envBlock(origin: string, token: string): SetupBlock {
     lang: 'sh',
     token: 'secret',
     text: `mkdir -p ~/.laika && chmod 700 ~/.laika
-(umask 077 && cat > ~/.laika/env <<'LAIKA_ENV'
+(umask 077 && touch ~/.laika/env) && chmod 600 ~/.laika/env
+cat > ~/.laika/env <<'LAIKA_ENV'
 LAIKA_URL="${origin}"
 LAIKA_TOKEN="${token}"
 LAIKA_ENV
-)
-chmod 600 ~/.laika/env
 RC=~/.profile; [ -n "$ZSH_VERSION" ] && RC=~/.zshrc; [ -n "$BASH_VERSION" ] && RC=~/.bashrc
 grep -qF '(laika connect)' "$RC" 2>/dev/null || printf '%s\\n' ${shellQuote(RC_MARKER)} ${shellQuote(RC_LINE)} >> "$RC"`,
     note: 'Your shell profile only sources ~/.laika/env, so it never holds the token. Open a new terminal afterwards. An app started from the Dock or Start menu does not read your shell profile — start it from that terminal so it sees LAIKA_TOKEN.',

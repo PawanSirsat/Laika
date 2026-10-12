@@ -397,6 +397,35 @@ void describe('the live check', () => {
     }
   });
 
+  void test('No MCP: a REST call on the minted token is the proof, said plainly (re-review)', async () => {
+    const h = await open('/connect?agent=rest', stub(mints({ last_used_at: MINTED_AT + 5_000 })));
+    try {
+      await mint(h);
+      await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
+      const text = await h.page.locator('.conn-live-ok').innerText();
+      assert.match(text, /That is the token you minted here, calling this board\./);
+      assert.doesNotMatch(text, /presence/i, 'presence blamed in an org that has it on');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a recorded client with presence on is weaker, and does not blame presence (re-review)', async () => {
+    const h = await open(
+      '/connect?agent=codex',
+      stub(mints({ last_client: 'codex', last_client_name: 'codex-mcp-client' })),
+    );
+    try {
+      await mint(h);
+      await h.page.locator('.conn-live-ok').waitFor({ timeout: 20_000 });
+      const text = await h.page.locator('.conn-live-ok').innerText();
+      assert.match(text, /weaker/);
+      assert.doesNotMatch(text, /presence off/i);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('CONTROL: with presence on, a bare use of the minted token is not an MCP connection', async () => {
     const h = await open(
       '/connect?agent=omnigent',

@@ -62,6 +62,8 @@ export type LiveState =
       readonly kind: 'connected';
       readonly token: TokenView;
       readonly by: 'mcp' | 'client' | 'use';
+      /** Whether the org had presence off when it was proved — said only then. */
+      readonly presenceOff: boolean;
     }
   | { readonly kind: 'spent' }
   | { readonly kind: 'disabled' }
@@ -122,13 +124,14 @@ export function tokenLiveStateFrom(
   if (mine !== undefined) {
     const after = (at: number | null): boolean => at !== null && at >= mine.created_at;
     if (via === 'api') {
-      if (after(mine.last_used_at)) return { kind: 'connected', token: mine, by: 'use' };
+      if (after(mine.last_used_at))
+        return { kind: 'connected', token: mine, by: 'use', presenceOff: !presenceOn };
     } else if (after(mine.last_mcp_at)) {
-      return { kind: 'connected', token: mine, by: 'mcp' };
+      return { kind: 'connected', token: mine, by: 'mcp', presenceOff: !presenceOn };
     } else if (mine.last_client !== null || mine.last_client_name !== null) {
-      return { kind: 'connected', token: mine, by: 'client' };
+      return { kind: 'connected', token: mine, by: 'client', presenceOff: !presenceOn };
     } else if (!presenceOn && after(mine.last_used_at)) {
-      return { kind: 'connected', token: mine, by: 'use' };
+      return { kind: 'connected', token: mine, by: 'use', presenceOff: !presenceOn };
     }
   }
   return ticksSoFar >= LIVE_TICKS ? { kind: 'spent' } : { kind: 'watching', ticks: ticksSoFar };
@@ -150,4 +153,29 @@ export function connectedLabel(token: TokenView, chosenName: string): string {
   return token.last_client_name === null
     ? `Connected — ${agent}`
     : `Connected — ${agent} (${token.last_client_name})`;
+}
+
+/**
+ * The sentence under "Connected — …", saying how the page knows (re-review).
+ *
+ * Three readers, three different truths: somebody who chose *No MCP* proved it
+ * with any call, which is exactly what they set up; an MCP agent proved by the
+ * board's own MCP stamp is the strong case; and anything weaker says so. The
+ * presence-off reason is given **only when presence is off** — a recorded
+ * client can prove a connection in an org with presence on too, and blaming
+ * a setting the org does not have would send somebody to look for it.
+ */
+export function connectedNote(
+  by: 'mcp' | 'client' | 'use',
+  via: 'mcp' | 'api',
+  presenceOff: boolean,
+): string {
+  if (via === 'api') return 'That is the token you minted here, calling this board.';
+  if (by === 'mcp') return 'That is the token you minted here, calling this board over MCP.';
+  const off =
+    ' This organisation has presence off, so the board does not record MCP calls, and Capacity will not show the session.';
+  if (by === 'client') {
+    return `That is the token you minted here: it introduced itself to this board as an MCP client — a weaker signal than the board’s own MCP stamp.${presenceOff ? off : ''}`;
+  }
+  return `That is the token you minted here, used against this board — the weaker signal, accepted because this organisation has presence off.${off}`;
 }

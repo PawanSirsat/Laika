@@ -35,6 +35,7 @@ import {
 import { projectBlock, type ProjectRef } from './connect-copy.ts';
 import {
   connectedLabel,
+  connectedNote,
   LIVE_POLL_MS,
   LIVE_TICKS,
   liveStateFrom,
@@ -853,21 +854,16 @@ function LiveCheck({
         <p className="conn-body">
           <strong>{connectedLabel(live.token, guide.name)}</strong>
         </p>
-        {live.by === 'mcp' ? (
-          <p className="conn-note">
-            That is the token you minted here, calling this board over MCP.{' '}
-            <a href="/capacity">Capacity</a> shows the session beside everyone else’s while it
-            works.
-          </p>
-        ) : (
-          <p className="conn-note">
-            {live.by === 'client'
-              ? 'Proved by the client the token introduced itself as, a weaker signal than the board’s MCP stamp'
-              : 'Proved by the token being used at all — the weaker signal, accepted because this organisation has presence off'}
-            . With presence off the board does not record MCP calls, so Capacity will not show the
-            session.
-          </p>
-        )}
+        <p className="conn-note">
+          {connectedNote(live.by, guide.via, live.presenceOff)}
+          {live.by === 'mcp' && (
+            <>
+              {' '}
+              <a href="/capacity">Capacity</a> shows the session beside everyone else’s while it
+              works.
+            </>
+          )}
+        </p>
       </div>
     );
   }

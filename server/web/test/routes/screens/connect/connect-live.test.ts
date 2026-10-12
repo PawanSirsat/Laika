@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   connectedLabel,
+  connectedNote,
   findMySession,
   liveStateFrom,
   tokenLiveStateFrom,
@@ -232,5 +233,31 @@ void describe('which signal proved it (review round 1)', () => {
       false,
     );
     assert.equal(used.kind === 'connected' ? used.by : '', 'use');
+  });
+});
+
+void describe('what the page says about how it knows (re-review)', () => {
+  void test('No MCP: the token calling the board, and nothing about presence', () => {
+    const note = connectedNote('use', 'api', false);
+    assert.match(note, /That is the token you minted here, calling this board/);
+    assert.doesNotMatch(note, /presence/i);
+  });
+
+  void test('a recorded client with presence on is weaker, and says nothing about presence off', () => {
+    const note = connectedNote('client', 'mcp', false);
+    assert.match(note, /weaker/);
+    assert.doesNotMatch(note, /presence off/i);
+  });
+
+  void test('a recorded client with presence off says so', () => {
+    assert.match(connectedNote('client', 'mcp', true), /presence off/i);
+  });
+
+  void test('a bare use for an MCP agent names presence off as the reason it was accepted', () => {
+    assert.match(connectedNote('use', 'mcp', true), /presence off/i);
+  });
+
+  void test('the MCP stamp says MCP', () => {
+    assert.match(connectedNote('mcp', 'mcp', false), /over MCP/);
   });
 });

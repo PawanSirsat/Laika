@@ -374,6 +374,30 @@ void describe('review round 1', () => {
     }
   });
 
+  void test('an existing world-readable ~/.laika/env is narrowed before the token is written', () => {
+    // Re-review: `cat >` into an existing 0644 file writes the token while the
+    // file is still world-readable; umask only applies to a file it creates.
+    const root = mkdtempSync(join(tmpdir(), 'laika-envmode-'));
+    try {
+      execFileSync(
+        'bash',
+        ['-c', 'mkdir -p ~/.laika && printf old > ~/.laika/env && chmod 644 ~/.laika/env'],
+        {
+          env: { HOME: root, PATH: process.env.PATH ?? '' },
+        },
+      );
+      const probe =
+        'cat(){ perl -e \'printf "%o", (stat shift)[2] & 0777\' "$HOME/.laika/env" > "$HOME/mode-at-write"; command cat "$@"; }; ';
+      execFileSync('bash', ['-c', probe + block('codex', 'env').text], {
+        env: { HOME: root, PATH: process.env.PATH ?? '', BASH_VERSION: '5' },
+      });
+      assert.equal(readFileSync(join(root, 'mode-at-write'), 'utf8'), '600');
+      assert.match(readFileSync(join(root, '.laika', 'env'), 'utf8'), new RegExp(SECRET));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   void test('code --add-mcp is shell-quoted for any URL', () => {
     const odd = "http://board.example.test/it's";
     const text =
