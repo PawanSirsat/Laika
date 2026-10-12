@@ -141,6 +141,9 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
       if (slug === undefined) return { ok: false, message: 'No project.' };
       setBusy(true);
       setError(undefined);
+      // Held for the request's life: a frame's re-read meanwhile may predate
+      // this write on the server, and must not undo it (LAI-739).
+      const end = statusStore.begin(slug);
       if (optimistic !== undefined) statusStore.write(slug, optimistic);
       try {
         const answer = await call();
@@ -152,6 +155,7 @@ export function useStatusEditor(slug: string | undefined): StatusEditor {
         statusStore.reload(slug);
         return { ok: false, message: said };
       } finally {
+        end();
         setBusy(false);
       }
     },

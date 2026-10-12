@@ -187,6 +187,40 @@ void describe('local writes', () => {
     );
   });
 
+  void test('a read that starts while a write is in flight cannot undo it either', async () => {
+    // A live frame lands mid-request: its read begins *after* the optimistic
+    // write and answers with the list from before the server applied it.
+    const time = fakeTime();
+    const io = manualFetch();
+    const store = createStatusStore({ fetch: io.fetch, ...time });
+    store.subscribe('lc', () => undefined);
+    io.calls[0]?.resolve([status({ id: 'a', position: 0 }), status({ id: 'b', position: 1 })]);
+    await tick();
+
+    const end = store.begin('lc');
+    store.write('lc', (list) =>
+      list.map((s) => (s.id === 'a' ? { ...s, position: 1 } : { ...s, position: 0 })),
+    );
+    store.reload('lc');
+    io.calls[1]?.resolve([status({ id: 'a', position: 0 }), status({ id: 'b', position: 1 })]);
+    await tick();
+    assert.deepEqual(
+      store.peek('lc')?.statuses.map((s) => s.id),
+      ['b', 'a'],
+      'a read begun mid-write overwrote it',
+    );
+
+    // The write lands; the read that was held back is asked again, now.
+    end();
+    assert.equal(io.calls.length, 3, 'the held-back read was never repeated');
+    io.calls[2]?.resolve([status({ id: 'b', position: 0 }), status({ id: 'a', position: 1 })]);
+    await tick();
+    assert.deepEqual(
+      store.peek('lc')?.statuses.map((s) => s.id),
+      ['b', 'a'],
+    );
+  });
+
   void test('reset forgets everything', async () => {
     const time = fakeTime();
     const io = manualFetch();

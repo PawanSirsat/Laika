@@ -110,6 +110,8 @@ const STATUSES = [
 ];
 
 function stub(over: Partial<ApiStub> = {}): ApiStub {
+  // The server's current order: a reorder changes what the next read says.
+  let current = STATUSES;
   return {
     '/api/v1/me': {
       id: 'u1',
@@ -121,18 +123,17 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
     },
     '/api/v1/projects': { data: [FULL_PROJECT], next_cursor: null },
     '/api/v1/projects/laika-core': FULL_PROJECT,
-    '/api/v1/projects/laika-core/statuses': { data: STATUSES },
+    '/api/v1/projects/laika-core/statuses': () => ({ data: current }),
     /*
-     * **Echoes the order it was sent**, because the real endpoint answers with
-     * the list it just wrote and the board takes that as the answer rather than
-     * keeping its optimistic guess. A static fixture here would make a correct
-     * implementation look broken — the board would revert every drag.
+     * **Writes the order it was sent and answers with it**, as the real
+     * endpoint does. A static fixture would make a correct implementation look
+     * broken twice over: the answer would revert the drag, and so would the
+     * next read — which a live frame or a refused stream asks for (LAI-739).
      */
     '/api/v1/projects/laika-core/statuses/order': (call: { body: unknown }) => {
       const ids = (call.body as { ids: string[] }).ids;
-      return {
-        data: ids.map((id, position) => ({ ...STATUSES.find((s) => s.id === id), position })),
-      };
+      current = ids.map((id, position) => ({ ...STATUSES.find((s) => s.id === id)!, position }));
+      return { data: current };
     },
     '/api/v1/projects/laika-core/tasks': { data: [TASK], next_cursor: null },
     '/api/v1/projects/laika-core/members': {
@@ -154,6 +155,27 @@ async function board(h: Harness): Promise<void> {
 
 async function titles(h: Harness): Promise<string[]> {
   return h.page.locator('.lane-title').allTextContents();
+}
+
+/**
+ * Wait for the board to show `expected` — at most 5s — and then a beat more,
+ * so an answer that undid the move would be on screen before the caller
+ * asserts. A fixed 150ms sleep read the board before it re-rendered on a
+ * loaded machine; this waits for the move and still lets a revert show.
+ * It asserts nothing itself: the caller's `deepEqual` says what went wrong.
+ */
+async function movedTo(h: Harness, expected: readonly string[]): Promise<void> {
+  await h.page
+    .waitForFunction(
+      (want: readonly string[]) =>
+        JSON.stringify(
+          [...document.querySelectorAll('.lane-title')].map((el) => el.textContent ?? ''),
+        ) === JSON.stringify(want),
+      expected,
+      { timeout: 5_000 },
+    )
+    .catch(() => undefined);
+  await h.page.waitForTimeout(300);
 }
 
 /**
@@ -199,7 +221,7 @@ void describe('dragging a column', () => {
 
       // Grip of the last lane onto the first.
       await drag(h, '.lane:nth-of-type(4) .lane-head-drag', '.lane:nth-of-type(1)');
-      await h.page.waitForTimeout(150);
+      await movedTo(h, ['Done', 'To do', 'In progress', 'Review']);
 
       assert.deepEqual(
         await titles(h),
@@ -315,7 +337,7 @@ void describe('the keyboard route', () => {
 
       // The position control is the app's dropdown since LAI-726.
       await pick(h.page.locator('.lane:nth-of-type(3) .lane-order-select'), '1');
-      await h.page.waitForTimeout(150);
+      await movedTo(h, ['Review', 'To do', 'In progress', 'Done']);
 
       assert.deepEqual(await titles(h), ['Review', 'To do', 'In progress', 'Done']);
 

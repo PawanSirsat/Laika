@@ -37,6 +37,12 @@ export interface StatusStore {
     slug: string,
     update: (statuses: readonly ProjectStatus[]) => readonly ProjectStatus[],
   ): void;
+  /**
+   * A write is in flight until the returned function is called. Reads that
+   * answer meanwhile are held back — they may predate the server applying it —
+   * and asked again once the last write ends.
+   */
+  begin(slug: string): () => void;
   /** Forget everything — a different user, or none. */
   reset(): void;
 }
@@ -55,6 +61,10 @@ interface Entry {
   epoch: number;
   controller: AbortController | undefined;
   debounce: unknown;
+  /** Writes in flight; while any are, a read's answer is not trusted. */
+  writing: number;
+  /** A read was held back during a write and is owed once it ends. */
+  owed: boolean;
 }
 
 function byPosition(statuses: readonly ProjectStatus[]): readonly ProjectStatus[] {
@@ -87,6 +97,12 @@ export function createStatusStore(deps: StatusStoreDeps): StatusStore {
         // A local write landed while this was in flight: its answer predates
         // the write, so it is dropped rather than allowed to undo it.
         if (entry.epoch !== epoch) return;
+        // A write is still in flight: this may have been read before the
+        // server applied it. Ask again when it lands.
+        if (entry.writing > 0) {
+          entry.owed = true;
+          return;
+        }
         publish(entry, { slug, status: 'ready', statuses: byPosition(statuses), error: null });
       },
       (cause: unknown) => {
@@ -108,6 +124,8 @@ export function createStatusStore(deps: StatusStoreDeps): StatusStore {
       epoch: 0,
       controller: undefined,
       debounce: undefined,
+      writing: 0,
+      owed: false,
     };
     entries.set(slug, entry);
     load(slug, entry);
@@ -158,6 +176,21 @@ export function createStatusStore(deps: StatusStoreDeps): StatusStore {
         statuses: byPosition(update(entry.snapshot.statuses)),
         error: null,
       });
+    },
+
+    begin(slug) {
+      const entry = ensure(slug);
+      entry.writing += 1;
+      let ended = false;
+      return () => {
+        if (ended) return;
+        ended = true;
+        entry.writing -= 1;
+        if (entry.writing === 0 && entry.owed && entries.get(slug) === entry) {
+          entry.owed = false;
+          load(slug, entry);
+        }
+      };
     },
 
     reset() {
