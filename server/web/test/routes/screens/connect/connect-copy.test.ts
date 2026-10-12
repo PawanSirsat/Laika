@@ -9,7 +9,7 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
-  claudeMdBlock,
+  projectBlock,
   manualCommands,
   PLACEHOLDER_TOKEN,
   setupPrompt,
@@ -81,7 +81,7 @@ void describe('the setup prompt', () => {
   });
 });
 
-void describe('the CLAUDE.md block', () => {
+void describe('the project block', () => {
   void test('CONTROL: it carries no token, because it is committed', () => {
     /*
      * **This is the assertion that keeps the two blocks apart.** They sit
@@ -90,21 +90,30 @@ void describe('the CLAUDE.md block', () => {
      * decision, and this one goes into a git repository where a secret is a
      * leak rather than a bug.
      */
-    const block = claudeMdBlock(ORIGIN, PROJECT);
+    const block = projectBlock(ORIGIN, PROJECT);
     assert.doesNotMatch(block, /lai_/, 'a token shape reached the committed block');
     assert.ok(!block.includes(SECRET), 'the secret reached the committed block');
   });
 
   void test('it names the project it was generated for', () => {
-    const block = claudeMdBlock(ORIGIN, PROJECT);
+    const block = projectBlock(ORIGIN, PROJECT);
     assert.match(block, /`onroute`/, 'the slug is missing');
     assert.match(block, /ONR-42/, 'the key shape is missing');
     // An un-interpolated template is the failure this catches.
     assert.doesNotMatch(block, /\{SLUG\}|\{PREFIX\}|\$\{/);
   });
 
+  void test('it is for any agent, and starts where the server says to start', () => {
+    // LAI-737: the same text goes into AGENTS.md, GEMINI.md or a Cursor rule,
+    // and LAI-736's server instructions tell every agent to call laika_whoami
+    // first — a block that disagreed would be two rulebooks.
+    const block = projectBlock(ORIGIN, PROJECT);
+    assert.doesNotMatch(block, /Claude/, 'the block assumes one agent');
+    assert.match(block, /laika_whoami/);
+  });
+
   void test('it teaches review, never done', () => {
-    const block = claudeMdBlock(ORIGIN, PROJECT);
+    const block = projectBlock(ORIGIN, PROJECT);
     assert.match(block, /review, never done/i);
     assert.match(block, /claim/i, 'it never says to claim before coding');
   });

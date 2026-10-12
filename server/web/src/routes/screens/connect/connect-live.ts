@@ -1,7 +1,21 @@
+import { agentClientName, asAgentClient } from '../../../api/agent-clients.ts';
 import { type PresenceEntry, type PresenceView } from '../../../api/presence.ts';
+import type { TokenView } from '../../../api/tokens.ts';
 
 /**
- * Proof that a session actually connected (LAI-622).
+ * Proof that a session actually connected (LAI-622, LAI-737).
+ *
+ * ## Two watches, and the stronger one wins whenever it can
+ *
+ * **By token** ({@link tokenLiveStateFrom}), when this page minted one: the
+ * token's own `last_mcp_at` (LAI-736) moving is proof that *this* token
+ * reached the board over MCP, from whichever agent the reader configured. It
+ * fixes the false positive the presence watch has — any agent session of the
+ * reader's turned it green, including one started yesterday on another token.
+ *
+ * **By presence** ({@link liveStateFrom}), when nothing was minted here — the
+ * reader brought a token from Tokens — and the page says that it is the weaker
+ * check.
  *
  * Pure, so the rules below are asserted without a browser or a clock.
  *
@@ -39,6 +53,7 @@ export type LiveState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'watching'; readonly ticks: number }
   | { readonly kind: 'found'; readonly entry: PresenceEntry }
+  | { readonly kind: 'connected'; readonly token: TokenView }
   | { readonly kind: 'spent' }
   | { readonly kind: 'disabled' }
   | { readonly kind: 'error'; readonly error: unknown };
@@ -62,4 +77,48 @@ export function liveStateFrom(
   if (mine !== undefined) return { kind: 'found', entry: mine };
 
   return ticksSoFar >= LIVE_TICKS ? { kind: 'spent' } : { kind: 'watching', ticks: ticksSoFar };
+}
+
+/**
+ * What one answer from `GET /tokens` means for the token this page minted.
+ *
+ * `via: 'mcp'` reads `last_mcp_at` and nothing else: a `curl` with the token
+ * moves `last_used_at`, and an agent that is not connected must not be reported
+ * as connected because somebody tested the token by hand. `via: 'api'` is for
+ * the reader who chose *No MCP*, for whom a REST call is the whole point.
+ *
+ * A use stamped before the token was created is ignored — it cannot be this
+ * token's, and a check that can be satisfied by a row it did not cause is the
+ * failure this replaced.
+ */
+export function tokenLiveStateFrom(
+  tokens: readonly TokenView[],
+  mintedId: string,
+  via: 'mcp' | 'api',
+  ticksSoFar: number,
+): LiveState {
+  const mine = tokens.find((token) => token.id === mintedId);
+  const at = mine === undefined ? null : via === 'mcp' ? mine.last_mcp_at : mine.last_used_at;
+  if (mine !== undefined && at !== null && at >= mine.created_at) {
+    return { kind: 'connected', token: mine };
+  }
+  return ticksSoFar >= LIVE_TICKS ? { kind: 'spent' } : { kind: 'watching', ticks: ticksSoFar };
+}
+
+/**
+ * `Connected — Codex (codex-mcp-client)`.
+ *
+ * The agent is the server's reading of the client when it has one, because a
+ * reader who picked Cursor and then connected Codex should be told what
+ * actually connected. When the server could not place it (`other`, or nothing
+ * yet), the agent the reader chose here is the honest fallback. The client's
+ * own name is shown as it introduced itself — cleaned by the server, rendered
+ * by React as text.
+ */
+export function connectedLabel(token: TokenView, chosenName: string): string {
+  const known = asAgentClient(token.last_client);
+  const agent = known === null || known === 'other' ? chosenName : agentClientName(known);
+  return token.last_client_name === null
+    ? `Connected — ${agent}`
+    : `Connected — ${agent} (${token.last_client_name})`;
 }

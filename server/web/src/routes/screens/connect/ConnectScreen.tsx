@@ -17,7 +17,7 @@ import {
 } from '../../../api/tokens.ts';
 import { useProjects } from '../../../api/use-projects.ts';
 import type { MeProfile } from '../../../api/me.ts';
-import { claudeMdBlock, manualCommands, setupPrompt, type ProjectRef } from './connect-copy.ts';
+import { projectBlock, manualCommands, setupPrompt, type ProjectRef } from './connect-copy.ts';
 import { LIVE_POLL_MS, LIVE_TICKS, liveStateFrom, type LiveState } from './connect-live.ts';
 import { suggestTokenName } from './connect-token-name.ts';
 import './connect.css';
@@ -88,7 +88,7 @@ export function ConnectScreen({ me, origin }: ConnectScreenProps) {
       : { slug: chosen.slug, prefix: chosen.prefix, name: chosen.name };
 
   const prompt = setupPrompt({ origin, secret, project });
-  const block = project === undefined ? undefined : claudeMdBlock(origin, project);
+  const block = project === undefined ? undefined : projectBlock(origin, project);
 
   const mint = (): void => {
     if (me === undefined) return;
