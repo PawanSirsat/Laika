@@ -180,3 +180,5 @@ and 39c55fa.
   - an unknown `?agent=` is removed from the URL;
   - `code --add-mcp` is JSON-escaped and shell-quoted on the page and in the
     CLI, and tested with a URL containing `'`.
+
+**Re-review follow-ups (approved at 7d69539):** the step 4 note now reads "calling this board" for No MCP and mentions presence off only when the org has it off (40307f5, 5ceab9f); codex detection is tested directly with six mutations killed, is quote-aware, skips multi-line strings and ignores laika outside `mcp_servers`; `~/.laika/env` is made 0600 before the token is written; Capacity's summary strip wraps at 390 (e54b243); the 17 screenshots are retaken from this build.
