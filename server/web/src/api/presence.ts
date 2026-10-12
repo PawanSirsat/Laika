@@ -1,3 +1,4 @@
+import type { AgentClient } from './agent-clients.ts';
 import { request } from './client.ts';
 
 /**
@@ -48,8 +49,21 @@ export interface PresenceEntry {
   readonly matched_task_id: string | null;
   /** Empty both when the repo matches no project **and** when the reader may not be told. */
   readonly project_ids: readonly string[];
-  /** A heartbeat sent with a token, per §4.8's `actor_kind`. */
+  /** A heartbeat sent with a token, or a token's `/mcp` call (§4.8, D-076). */
   readonly is_agent: boolean;
+  /**
+   * The coding agent of the newest live agent session, or `null` when none is
+   * live (LAI-736). **Read it through `asAgentClient`**, never directly: a
+   * server ahead of this client's slug list sends a value the client does not
+   * know, and a fixture from before LAI-736 sends none.
+   *
+   * An MCP-only session has no heartbeat, so it carries a `client` and **no
+   * `repo`** — which is why "connected via Codex" is said where a repo would
+   * otherwise be.
+   */
+  readonly client: AgentClient | null;
+  /** Every distinct agent among this person's live sessions, newest first. */
+  readonly clients: readonly AgentClient[];
   readonly last_seen: number;
 }
 

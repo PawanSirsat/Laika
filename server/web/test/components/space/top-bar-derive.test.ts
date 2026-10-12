@@ -21,6 +21,8 @@ const person = (id: string, isAgent = false) => ({
   is_agent: isAgent,
   matched_task_id: null,
   project_ids: [],
+  client: null,
+  clients: [],
   last_seen: 0,
 });
 

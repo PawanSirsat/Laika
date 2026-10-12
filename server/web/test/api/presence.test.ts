@@ -140,6 +140,8 @@ function present(over: Partial<PresenceEntry> & { user_id: string }): PresenceEn
     matched_task_id: null,
     project_ids: [],
     is_agent: false,
+    client: null,
+    clients: [],
     last_seen: 0,
     ...over,
   };
