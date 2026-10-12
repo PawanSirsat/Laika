@@ -153,3 +153,5 @@ columns.
 
 Mutation runs: all 6 new browser behaviours and the kind-detail unit test go
 red with their fix removed (`# pass 0 / # fail 1` per filtered run).
+
+**Round 2 (N1):** `status-store.test.ts` now covers a read begun before a write that answers after the write has ended — it must be re-run (red with `else load(slug, entry)` removed, green restored).
