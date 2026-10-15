@@ -485,7 +485,9 @@
   border: 1px solid var(--accent);
 }
 
-.rating-submit:disabled {
+.rating-submit:disabled,
+.rating-cancel:disabled,
+.rating-close:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
