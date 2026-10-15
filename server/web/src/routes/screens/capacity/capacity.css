@@ -524,8 +524,7 @@
 /*
  * A chip is key + title, and **the title gives way, never the key** (LAI-754).
  * Bounded so one long title cannot take the row; chips wrap onto the next
- * line rather than squeezing each other down to a dot and `…`, which is what
- * the owner's screenshot showed.
+ * line.
  */
 .cap-chip {
   display: flex;

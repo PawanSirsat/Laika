@@ -87,9 +87,9 @@ export function CapacityScreen({ onOpenTask, unlistedOpen, onNavigate }: Capacit
    * drawn**: three chips a person and the task their session is on.
    *
    * **A failed read is asked again on the next poll.** The owner's screenshot
-   * had chips reading only a dot and `…`: an id that did not resolve once was
-   * never asked again for the rest of the visit. The server change that
-   * retires these reads is LAI-728.
+   * had chips reading only a dot and `…`, which is what an unresolved id draws;
+   * before this, an id that failed once was not asked again for the rest of
+   * the visit. The server change that retires these reads is LAI-728.
    */
   const [resolved, setResolved] = useState<ReadonlyMap<string, Task>>(new Map());
   /**
