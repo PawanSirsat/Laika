@@ -24,7 +24,15 @@
 import assert from 'node:assert/strict';
 import { execFile, execFileSync } from 'node:child_process';
 import { createServer, type IncomingMessage, type Server } from 'node:http';
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +42,17 @@ const PLUGIN = fileURLToPath(new URL('../../plugin', import.meta.url));
 const HOOK = join(PLUGIN, 'hooks', 'heartbeat.sh');
 const HOOKS_JSON = join(PLUGIN, 'hooks', 'hooks.json');
 const HOOK_README = join(PLUGIN, 'hooks', 'README.md');
+
+/** The script's own throttle, read from it so the tests cannot drift from it. */
+const THROTTLE_SECONDS = Number(/^THROTTLE_SECONDS=(\d+)$/m.exec(readFileSync(HOOK, 'utf8'))?.[1]);
+
+/** Pretend the last post of `session` happened `seconds` ago. */
+function backdateStamp(state: string, session: string, seconds: number): void {
+  const stamp = readdirSync(state).find((name) => name.endsWith(`-${session}`));
+  assert.ok(stamp !== undefined, 'no stamp for that session — the hook never posted');
+  const at = Number(readFileSync(join(state, stamp), 'utf8'));
+  writeFileSync(join(state, stamp), String(at - seconds));
+}
 
 const scratch: string[] = [];
 function dir(prefix: string): string {
@@ -157,6 +176,8 @@ interface HookOptions {
   token?: string;
   state?: string;
   path?: string;
+  /** The `session_id` in the payload (LAI-752 throttles per session). */
+  session?: string;
   /** The script to run. Overridden only to drive the failure-to-start path. */
   hook?: string;
 }
@@ -208,7 +229,9 @@ function spawnOnce(mode: string, options: HookOptions): Promise<Run & { spawnErr
     child.stdin?.on('error', (cause: NodeJS.ErrnoException) => {
       if (cause.code !== 'EPIPE') throw cause;
     });
-    child.stdin?.end(JSON.stringify({ session_id: 'abc', hook_event_name: 'PostToolUse' }));
+    child.stdin?.end(
+      JSON.stringify({ session_id: options.session ?? 'abc', hook_event_name: 'PostToolUse' }),
+    );
   });
 }
 
@@ -522,7 +545,7 @@ void describe('the throttle', () => {
     );
   });
 
-  void test('Stop shares the same 5 minutes as PostToolUse', async () => {
+  void test('Stop shares the same throttle as PostToolUse', async () => {
     const board = await stubBoard();
     const state = dir('laika-hookstate-');
     const cwd = repo();
@@ -544,7 +567,12 @@ void describe('the throttle', () => {
     assert.equal(board.beats.length, 2);
   });
 
-  void test('another branch posts immediately, throttle or not', async () => {
+  /**
+   * LAI-752: at most one post per **session** per THROTTLE_SECONDS, decided
+   * before git runs — so a move inside one session is reported at the next
+   * post, not at once. Presence itself is covered below.
+   */
+  void test('a branch switch reaches the board on the next post, not at once', async () => {
     const board = await stubBoard();
     const state = dir('laika-hookstate-');
     const cwd = repo();
@@ -553,23 +581,132 @@ void describe('the throttle', () => {
     execFileSync('git', ['checkout', '-q', '-b', 'other'], { cwd, stdio: 'pipe' });
     await runHook('tool-use', { cwd, url: board.url, token: 'lai_x', state });
     await settle();
-    assert.equal(board.beats.length, 2, 'presence is about where somebody is; a move is news');
+    assert.equal(board.beats.length, 1, 'one session posts at most once per throttle period');
+
+    backdateStamp(state, 'abc', THROTTLE_SECONDS + 1);
+    await runHook('tool-use', { cwd, url: board.url, token: 'lai_x', state });
+    await settle();
+    assert.equal(board.beats.length, 2);
     assert.equal((JSON.parse(board.beats[1]?.body ?? '{}') as { branch: string }).branch, 'other');
   });
 
-  void test('another repository posts immediately too', async () => {
+  void test('another session posts immediately — the throttle is per session', async () => {
     const board = await stubBoard();
     const state = dir('laika-hookstate-');
-    await runHook('tool-use', { cwd: repo(), url: board.url, token: 'lai_x', state });
+    await runHook('tool-use', {
+      cwd: repo(),
+      url: board.url,
+      token: 'lai_x',
+      state,
+      session: 's1',
+    });
     await settle();
     await runHook('tool-use', {
       cwd: repo({ remote: 'git@github.com:PawanSirsat/Other.git' }),
       url: board.url,
       token: 'lai_x',
       state,
+      session: 's2',
     });
     await settle();
     assert.equal(board.beats.length, 2);
+  });
+
+  void test('the throttled path runs no git at all', async () => {
+    const board = await stubBoard();
+    const state = dir('laika-hookstate-');
+    const cwd = repo();
+    // A git first on PATH that records each call, then hands over to the real one.
+    const bin = dir('laika-fakegit-');
+    const calls = join(bin, 'calls.txt');
+    const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+    writeFileSync(join(bin, 'git'), `#!/bin/sh\necho "$*" >> '${calls}'\nexec '${realGit}' "$@"\n`);
+    chmodSync(join(bin, 'git'), 0o755);
+    const path = `${bin}:${process.env.PATH ?? ''}`;
+
+    await runHook('tool-use', { cwd, url: board.url, token: 'lai_x', state, path });
+    await settle();
+    const afterFirst = readFileSync(calls, 'utf8').trim().split('\n').length;
+    assert.ok(afterFirst >= 2, 'the fake git never ran — this test proves nothing');
+
+    for (let i = 0; i < 3; i += 1) {
+      await runHook('tool-use', { cwd, url: board.url, token: 'lai_x', state, path });
+    }
+    assert.equal(
+      readFileSync(calls, 'utf8').trim().split('\n').length,
+      afterFirst,
+      'a throttled tool use forked git — the cost LAI-752 removed',
+    );
+    assert.equal(board.beats.length, 1);
+  });
+});
+
+/**
+ * Presence must stay correct with the cheaper throttle (LAI-752).
+ *
+ * The server's rule is "a heartbeat in the last PRESENCE_WINDOW_MS"
+ * (`server/src/services/presence.ts`). Read from the server source, so a change
+ * to the window there fails here rather than silently breaking presence.
+ */
+void describe('presence stays correct', () => {
+  const presence = readFileSync(
+    fileURLToPath(new URL('../../server/src/services/presence.ts', import.meta.url)),
+    'utf8',
+  );
+  const window = /PRESENCE_WINDOW_MS = (\d+) \* 60_000/.exec(presence);
+  const windowS = Number(window?.[1]) * 60;
+
+  void test('the throttle is at most a third of the server presence window', () => {
+    assert.ok(window !== null, 'PRESENCE_WINDOW_MS moved — re-read it in presence.ts');
+    assert.ok(Number.isFinite(windowS) && windowS > 0);
+    assert.ok(
+      THROTTLE_SECONDS * 3 <= windowS,
+      `throttle ${String(THROTTLE_SECONDS)}s is more than a third of the ${String(windowS)}s window`,
+    );
+  });
+
+  /**
+   * Ten simulated minutes of a session using a tool every 20 s, on a clock the
+   * test controls: a `date` first on PATH that prints a file. At every second
+   * of it, the newest post must be inside the window — what the board needs to
+   * show the person — and the posts must be at most one per throttle period.
+   */
+  void test('a working session is never out of the window, and posts at most once per period', async () => {
+    const board = await stubBoard();
+    const state = dir('laika-hookstate-');
+    const cwd = repo();
+    const bin = dir('laika-fakedate-');
+    const clock = join(bin, 'now');
+    writeFileSync(join(bin, 'date'), `#!/bin/sh\ncat '${clock}'\n`);
+    chmodSync(join(bin, 'date'), 0o755);
+    const path = `${bin}:${process.env.PATH ?? ''}`;
+
+    const start = 1_800_000_000;
+    const posts: number[] = [];
+    for (let t = 0; t <= 600; t += 20) {
+      writeFileSync(clock, `${String(start + t)}\n`);
+      const before = board.beats.length;
+      const mode = t === 0 ? 'session-start' : 'tool-use';
+      await runHook(mode, { cwd, url: board.url, token: 'lai_x', state, path });
+      await settle();
+      if (board.beats.length > before) posts.push(t);
+    }
+
+    for (let i = 1; i < posts.length; i += 1) {
+      const gap = (posts[i] ?? 0) - (posts[i - 1] ?? 0);
+      assert.ok(gap >= THROTTLE_SECONDS, `two posts ${String(gap)}s apart`);
+    }
+    for (let t = 0; t <= 600; t += 1) {
+      const newest = Math.max(...posts.filter((p) => p <= t));
+      assert.ok(
+        t - newest < windowS,
+        `at ${String(t)}s the newest post was ${String(t - newest)}s old`,
+      );
+    }
+    assert.ok(
+      posts.length <= Math.ceil(600 / THROTTLE_SECONDS) + 1,
+      `${String(posts.length)} posts`,
+    );
   });
 });
 

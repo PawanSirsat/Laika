@@ -35,9 +35,13 @@ MODE="${1:-tool-use}"
 URL="${LAIKA_URL:-}"
 TOKEN="${LAIKA_TOKEN:-}"
 
-# §9.3: presence is "a heartbeat in the last 5 minutes", so posting more often
-# than that tells the board nothing it does not already know.
-THROTTLE_SECONDS=300
+# §9.3: presence is "a heartbeat in the last 5 minutes" — `PRESENCE_WINDOW_MS`
+# in server/src/services/presence.ts. At most one post per session per 90 s,
+# under a third of that window: a session that is working posts at least three
+# times inside any window, so one lost post never drops it from the board.
+# Throttling at the full 300 s (as this did before LAI-752) left no margin: a
+# post at 0 s and the next tool use at 301 s was a gap the board showed as gone.
+THROTTLE_SECONDS=90
 
 # Opt-in, off by default, and it never prints the token. Presence being silently
 # empty is the failure this diagnoses, and without it the only way to tell "not
@@ -54,6 +58,42 @@ if [ -z "$URL" ] || [ -z "$TOKEN" ]; then
   note "not configured (LAIKA_URL / LAIKA_TOKEN unset) — nothing sent"
   exit 0
 fi
+
+# --- throttle, before anything forks ----------------------------------------
+# Keyed by the session, which every hook payload names (`session_id`, first in
+# what Claude Code writes). Decided before git runs: this script fires on every
+# tool use, and the throttled path used to cost two `git` processes, a `cksum`
+# and an `id` each time (≈50 ms) to decide to do nothing. Now it is one `date`.
+#
+# Only the first 1 KiB of stdin is read, by a builtin, and nothing but the id
+# is kept. A payload without one (a hand run, another runner) shares one key
+# per user. SessionStart is never throttled — sitting down is exactly the moment
+# the board should know — and a move to another branch or repo reaches the
+# board within one throttle period rather than at once.
+SESSION=''
+if [ ! -t 0 ]; then
+  INPUT=''
+  IFS= read -r -d '' -n 1024 -t 2 INPUT || true
+  SESSION_RE='"session_id"[[:space:]]*:[[:space:]]*"([A-Za-z0-9_.-]{1,128})"'
+  if [[ $INPUT =~ $SESSION_RE ]]; then SESSION="${BASH_REMATCH[1]}"; fi
+  INPUT=''
+fi
+STAMP="${TMPDIR:-/tmp}/laika-heartbeat-${UID:-0}-${SESSION:-nosession}"
+NOW="$(date +%s)"
+
+if [ "$MODE" != "session-start" ]; then
+  LAST=''
+  { IFS= read -r LAST <"$STAMP"; } 2>/dev/null || true
+  case "$LAST" in '' | *[!0-9]*) LAST=0 ;; esac
+  if [ "$((NOW - LAST))" -lt "$THROTTLE_SECONDS" ]; then
+    note "throttled ($((NOW - LAST))s since the last one, limit ${THROTTLE_SECONDS}s)"
+    exit 0
+  fi
+fi
+
+# Stamped before the request, not after: a board that is down must not turn
+# every tool call into a two-second connect attempt.
+printf '%s' "$NOW" >"$STAMP" 2>/dev/null || true
 
 # --- what git says, or nothing -----------------------------------------------
 # No repository, no remote, or no commit yet all mean there is nothing to report
@@ -73,28 +113,6 @@ if [ -z "$REPO" ] || [ -z "$BRANCH" ]; then
   note "no git remote or no branch here — nothing sent"
   exit 0
 fi
-
-# --- throttle ----------------------------------------------------------------
-# Keyed by repo and branch, so switching either posts immediately: the point of
-# presence is where somebody is, and a global stamp would hide the move for five
-# minutes. SessionStart is never throttled — sitting down is exactly the moment
-# the board should know.
-KEY="$(printf '%s\n%s' "$REPO" "$BRANCH" | cksum 2>/dev/null | cut -d' ' -f1)"
-STAMP="${TMPDIR:-/tmp}/laika-heartbeat-$(id -u 2>/dev/null || echo 0)-${KEY:-0}"
-NOW="$(date +%s)"
-
-if [ "$MODE" != "session-start" ]; then
-  LAST="$(cat "$STAMP" 2>/dev/null || true)"
-  case "$LAST" in '' | *[!0-9]*) LAST=0 ;; esac
-  if [ "$((NOW - LAST))" -lt "$THROTTLE_SECONDS" ]; then
-    note "throttled ($((NOW - LAST))s since the last one, limit ${THROTTLE_SECONDS}s)"
-    exit 0
-  fi
-fi
-
-# Stamped before the request, not after: a board that is down must not turn
-# every tool call into a two-second connect attempt.
-printf '%s' "$NOW" >"$STAMP" 2>/dev/null || true
 
 # --- send --------------------------------------------------------------------
 # Escapes for a JSON string and for a curl config value, which take the same two.

@@ -6,8 +6,20 @@ and registers one script, `heartbeat.sh`, on three events (SPEC §8):
 | Event | Argument | Throttled |
 | --- | --- | --- |
 | `SessionStart` | `session-start` | no |
-| `PostToolUse` | `tool-use` | yes — at most one post per 5 minutes |
-| `Stop` | `stop` | yes — the same 5 minutes, shared |
+| `PostToolUse` | `tool-use` | yes — at most one post per session per 90 s |
+| `Stop` | `stop` | yes — the same 90 s, shared |
+
+**The throttle is per session and decided before git runs** (LAI-752). The
+session is the `session_id` in the hook's stdin; only its first 1 KiB is read,
+by a builtin, and nothing else from it is kept. A throttled tool use costs one
+`date` and no `git`. 90 s is under a third of the server's presence window
+(`PRESENCE_WINDOW_MS`, 5 minutes, `server/src/services/presence.ts`), so a
+working session posts at least three times in any window and one lost post
+never drops it from the board. The cost of that: a branch or repo switch inside
+a session reaches the board at the session's next post, within 90 s, not at
+once. `cli/test/plugin-hooks.test.ts` reads the window from the server source
+and simulates ten minutes of tool use to prove the newest post is always inside
+it.
 
 Each POSTs `{ repo, branch }` to `$LAIKA_URL/api/v1/heartbeats` with
 `Authorization: Bearer $LAIKA_TOKEN`. That is the whole of it. **Metadata
