@@ -135,10 +135,7 @@ export const users = sqliteTable(
     // Both added by 0031 as column constraints on `ALTER TABLE … ADD`, as 0029
     // added `profile_kind`'s (LAI-751).
     check('users_share_local_activity_check', sql.raw('share_local_activity IN (0, 1)')),
-    check(
-      'users_local_activity_scope_check',
-      oneOf('local_activity_scope', LOCAL_ACTIVITY_SCOPES),
-    ),
+    check('users_local_activity_scope_check', oneOf('local_activity_scope', LOCAL_ACTIVITY_SCOPES)),
   ],
 );
 
