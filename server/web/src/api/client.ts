@@ -69,7 +69,7 @@ export function setSetupRequiredHandler(handler: (() => void) | undefined): void
  *
  * **Small, slow-changing lists only**, for {@link FRESH_MS}: the projects list,
  * one project, its members, mentionable people, sprints, tags, meeting reviews
- * and statuses, and the org. Every one of them was asked for twice on a cold
+ * and statuses, the org, and a profile's heatmap (LAI-751). Every one of them was asked for twice on a cold
  * load, by the space frame and by the screen. Presence is polled, so it is
  * reused only for a moment — enough for the frame and a screen asking at once.
  *
@@ -89,6 +89,9 @@ const CACHED: readonly RegExp[] = [
   /^\/projects\/[^/?]+$/,
   /^\/projects\/[^/?]+\/(members|mentionable|sprints|tags|meeting-reviews|statuses)(\?|$)/,
   /^\/org$/,
+  // A profile's heatmap, per person and range (LAI-751): a year of days that
+  // changes by the day, asked once per range however often a viewer switches.
+  /^\/people\/[^/?]+\/activity\?range=(12w|52w)$/,
 ];
 
 export function freshFor(path: string): number {

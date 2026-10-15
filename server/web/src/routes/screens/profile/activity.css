@@ -1,0 +1,604 @@
+/*
+ * The profile's Activity card (D-079, LAI-751): daily grids of three sources,
+ * in two designs, over 12 weeks or a year. Design tokens only — the heat
+ * steps are `--heat-*` in `styles/theme.css`, both themes — and no chart
+ * library: every square is an element on a CSS grid.
+ *
+ * The sizes below are this card's own, declared here so `tokens.test.ts` can
+ * see each one is defined: a square is fluid between a floor and a ceiling,
+ * and the year scrolls sideways inside the card once the floor is reached.
+ */
+
+.hm {
+  --hm-cols: 53;
+  --hm-gap: 3px;
+  --hm-days-w: 1.875rem;
+  --hm-cell-min: 0.6875rem;
+  --hm-cell-max: 1.125rem;
+  --hm-cell: var(--hm-cell-max);
+  --hm-g: var(--heat-empty);
+  --hm-l: var(--heat-empty);
+}
+
+.hm[data-range='12w'] {
+  --hm-cell-max: 1.625rem;
+}
+
+.hm-head {
+  flex-wrap: wrap;
+  row-gap: 0.5rem;
+}
+
+.hm-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hm-seg .prof-seg-face {
+  padding: 0.25rem 0.625rem;
+  font-size: var(--text-xs);
+}
+
+.hm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  min-width: 0;
+}
+
+.hm-stats {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+}
+
+/* The share pushed as a bar under its tile, violet then amber. */
+.hm-split {
+  flex-basis: 100%;
+  display: flex;
+  gap: 2px;
+  height: 0.3125rem;
+  margin: 0.25rem 0 0;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.hm-split > i:first-child {
+  background: var(--heat-gh-3);
+}
+
+.hm-split > i:last-child {
+  background: var(--heat-lo-3);
+}
+
+.hm-split[data-empty='true'] {
+  background: var(--heat-empty);
+}
+
+.hm-note {
+  margin: 0;
+  font-size: var(--text-ui);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+  padding: 0.5rem 0.75rem;
+}
+
+.hm-note b {
+  color: var(--text-primary);
+}
+
+.hm-note code,
+.hm-blocked-msg code {
+  font-family: var(--font-mono);
+  font-size: var(--text-mono);
+  color: var(--text-primary);
+}
+
+.hm-link {
+  font-weight: var(--weight-bold);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+.hm-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* ---------------------------------------------------------------- figure */
+
+.hm-figure {
+  min-width: 0;
+}
+
+/*
+ * The scroller is also the size container: a square is the card's width over
+ * the weeks, between the floor and the ceiling. Past the floor the canvas is
+ * wider than the card, and only this element scrolls — never the page.
+ */
+.hm-scroll {
+  container-type: inline-size;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  padding-bottom: 0.25rem;
+}
+
+.hm-canvas {
+  --hm-cell: clamp(
+    var(--hm-cell-min),
+    calc((100cqw - var(--hm-days-w) - var(--hm-cols) * var(--hm-gap)) / var(--hm-cols)),
+    var(--hm-cell-max)
+  );
+
+  width: max-content;
+  display: grid;
+  row-gap: 0.375rem;
+}
+
+.hm-row {
+  display: grid;
+  grid-template-columns: var(--hm-days-w) auto;
+  column-gap: var(--hm-gap);
+}
+
+/* The weekday column and the corner above it stay put while the weeks scroll. */
+.hm-days,
+.hm-corner {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--bg-card);
+}
+
+.hm-days {
+  display: grid;
+  grid-template-rows: repeat(7, var(--hm-cell));
+  row-gap: var(--hm-gap);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.hm-days > span {
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.hm-months,
+.hm-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--hm-cols), var(--hm-cell));
+  column-gap: var(--hm-gap);
+}
+
+.hm-months {
+  height: 1rem;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1rem;
+  color: var(--text-muted);
+}
+
+.hm-month {
+  min-width: 0;
+  grid-row: 1;
+}
+
+/*
+ * **A month's label is never under the weekday column.** It sticks just right
+ * of it while any of its month is in view, and the next month's pushes it out
+ * — the label moves; it is never covered.
+ */
+.hm-month-label {
+  position: sticky;
+  left: calc(var(--hm-days-w) + var(--hm-gap));
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* Being pushed out, under the weekday column: not drawn rather than half covered. */
+.hm-month-label[data-under] {
+  visibility: hidden;
+}
+
+.hm-grid {
+  grid-template-rows: repeat(7, var(--hm-cell));
+  row-gap: var(--hm-gap);
+}
+
+.hm-cell {
+  position: relative;
+  border-radius: 3px;
+  background: var(--heat-empty);
+  outline: none;
+}
+
+.hm-cell:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+  z-index: 1;
+}
+
+/* One source per grid: its own four steps. */
+.hm-grid[data-kind='github'] .hm-cell[data-v='1'],
+.hm-ramp[data-source='github'] > i[data-v='1'] {
+  background: var(--heat-gh-1);
+}
+.hm-grid[data-kind='github'] .hm-cell[data-v='2'],
+.hm-ramp[data-source='github'] > i[data-v='2'] {
+  background: var(--heat-gh-2);
+}
+.hm-grid[data-kind='github'] .hm-cell[data-v='3'],
+.hm-ramp[data-source='github'] > i[data-v='3'] {
+  background: var(--heat-gh-3);
+}
+.hm-grid[data-kind='github'] .hm-cell[data-v='4'],
+.hm-ramp[data-source='github'] > i[data-v='4'] {
+  background: var(--heat-gh-4);
+}
+.hm-grid[data-kind='local'] .hm-cell[data-v='1'],
+.hm-ramp[data-source='local'] > i[data-v='1'] {
+  background: var(--heat-lo-1);
+}
+.hm-grid[data-kind='local'] .hm-cell[data-v='2'],
+.hm-ramp[data-source='local'] > i[data-v='2'] {
+  background: var(--heat-lo-2);
+}
+.hm-grid[data-kind='local'] .hm-cell[data-v='3'],
+.hm-ramp[data-source='local'] > i[data-v='3'] {
+  background: var(--heat-lo-3);
+}
+.hm-grid[data-kind='local'] .hm-cell[data-v='4'],
+.hm-ramp[data-source='local'] > i[data-v='4'] {
+  background: var(--heat-lo-4);
+}
+.hm-grid[data-kind='board'] .hm-cell[data-v='1'],
+.hm-ramp[data-source='board'] > i[data-v='1'] {
+  background: var(--heat-all-1);
+}
+.hm-grid[data-kind='board'] .hm-cell[data-v='2'],
+.hm-ramp[data-source='board'] > i[data-v='2'] {
+  background: var(--heat-all-2);
+}
+.hm-grid[data-kind='board'] .hm-cell[data-v='3'],
+.hm-ramp[data-source='board'] > i[data-v='3'] {
+  background: var(--heat-all-3);
+}
+.hm-grid[data-kind='board'] .hm-cell[data-v='4'],
+.hm-ramp[data-source='board'] > i[data-v='4'] {
+  background: var(--heat-all-4);
+}
+
+/*
+ * Design A: each day cut on the diagonal, GitHub top-left and Local
+ * bottom-right, each on its own scale, a hairline of card between. A day with
+ * one source fills the whole square with it.
+ */
+.hm-grid[data-kind='split'] .hm-cell[data-g='1'] {
+  --hm-g: var(--heat-gh-1);
+}
+.hm-grid[data-kind='split'] .hm-cell[data-g='2'] {
+  --hm-g: var(--heat-gh-2);
+}
+.hm-grid[data-kind='split'] .hm-cell[data-g='3'] {
+  --hm-g: var(--heat-gh-3);
+}
+.hm-grid[data-kind='split'] .hm-cell[data-g='4'] {
+  --hm-g: var(--heat-gh-4);
+}
+.hm-grid[data-kind='split'] .hm-cell[data-l='1'] {
+  --hm-l: var(--heat-lo-1);
+}
+.hm-grid[data-kind='split'] .hm-cell[data-l='2'] {
+  --hm-l: var(--heat-lo-2);
+}
+.hm-grid[data-kind='split'] .hm-cell[data-l='3'] {
+  --hm-l: var(--heat-lo-3);
+}
+.hm-grid[data-kind='split'] .hm-cell[data-l='4'] {
+  --hm-l: var(--heat-lo-4);
+}
+
+.hm-grid[data-kind='split'] .hm-cell[data-g][data-l] {
+  background: linear-gradient(
+    135deg,
+    var(--hm-g) 0 calc(50% - 0.7px),
+    var(--bg-card) calc(50% - 0.7px) calc(50% + 0.7px),
+    var(--hm-l) calc(50% + 0.7px) 100%
+  );
+}
+
+.hm-grid[data-kind='split'] .hm-cell[data-g]:not([data-l]) {
+  background: var(--hm-g);
+}
+
+.hm-grid[data-kind='split'] .hm-cell[data-l]:not([data-g]) {
+  background: var(--hm-l);
+}
+
+/* The pointed day; in B the same day in the other grids, quieter. */
+.hm-ring {
+  z-index: 1;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 2px var(--text-primary);
+  pointer-events: none;
+}
+
+.hm-ring[data-twin='true'] {
+  box-shadow: inset 0 0 0 2px var(--text-muted);
+}
+
+/* ------------------------------------------------------------ B: blocks */
+
+.hm-block {
+  display: grid;
+  row-gap: 0.25rem;
+}
+
+.hm-block + .hm-block {
+  margin-top: 0.375rem;
+}
+
+/* Each source's heading stays on screen while its weeks scroll. */
+.hm-block-head {
+  position: sticky;
+  left: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+  max-width: 100cqw;
+  padding-left: calc(var(--hm-days-w) + var(--hm-gap));
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.hm-block-name,
+.hm-key-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.hm-key {
+  display: inline-block;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 2px;
+  background: var(--heat-all-3);
+}
+
+.hm-key[data-source='github'] {
+  background: var(--heat-gh-3);
+}
+
+.hm-key[data-source='local'] {
+  background: var(--heat-lo-3);
+}
+
+.hm-key[data-off='true'] {
+  background: transparent;
+  border: 1px dashed var(--border-default);
+}
+
+.hm-total {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+}
+
+.hm-block-head .hm-ramp {
+  margin-left: auto;
+}
+
+.hm-ramp {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.hm-ramp > i {
+  display: inline-block;
+  width: 0.6875rem;
+  height: 0.6875rem;
+  border-radius: 2px;
+  background: var(--heat-empty);
+}
+
+.hm-ramp > i:first-of-type {
+  margin-left: 0.25rem;
+}
+
+.hm-ramp > i:last-of-type {
+  margin-right: 0.25rem;
+}
+
+/* A source with nothing to show keeps its footprint: a ghost grid and one message. */
+.hm-blocked {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: calc(var(--hm-cell) * 7 + var(--hm-gap) * 6);
+  width: calc(var(--hm-cell) * var(--hm-cols) + var(--hm-gap) * (var(--hm-cols) - 1));
+  border-radius: 3px;
+  background-color: color-mix(in srgb, var(--heat-empty) 55%, var(--bg-card));
+  background-image:
+    linear-gradient(to right, var(--bg-card) var(--hm-gap), transparent var(--hm-gap)),
+    linear-gradient(to bottom, var(--bg-card) var(--hm-gap), transparent var(--hm-gap));
+  background-size: calc(var(--hm-cell) + var(--hm-gap)) calc(var(--hm-cell) + var(--hm-gap));
+  background-position: calc(var(--hm-gap) * -1) calc(var(--hm-gap) * -1);
+}
+
+.hm-blocked[data-reason='loading'] {
+  opacity: 0.7;
+}
+
+.hm-blocked-msg {
+  position: sticky;
+  left: calc(var(--hm-days-w) + 0.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  max-width: min(27rem, calc(100cqw - var(--hm-days-w) - 1.5rem));
+  margin: 0 0.5rem;
+  background: var(--bg-card);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 0.5rem 0.75rem;
+  font-size: var(--text-xs);
+  line-height: var(--leading-body);
+  color: var(--text-secondary);
+}
+
+.hm-blocked-msg b {
+  font-size: var(--text-ui);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+/* ------------------------------------------------------------ A: legend */
+
+.hm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  min-height: 1.375rem;
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.hm-split-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hm-sample {
+  display: inline-block;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 3px;
+  background: linear-gradient(
+    135deg,
+    var(--heat-gh-3) 0 calc(50% - 0.7px),
+    var(--bg-card) calc(50% - 0.7px) calc(50% + 0.7px),
+    var(--heat-lo-3) calc(50% + 0.7px) 100%
+  );
+}
+
+/* ---------------------------------------------------------------- the tip */
+
+.hm-tip {
+  position: fixed;
+  z-index: 50;
+  min-width: 12.5rem;
+  max-width: min(18rem, calc(100vw - 1rem));
+  pointer-events: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  padding: 0.5rem 0.6875rem 0.5625rem;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.hm-tip p {
+  margin: 0;
+}
+
+.hm-tip-date {
+  margin-bottom: 0.25rem;
+  font-size: var(--text-ui);
+  font-weight: var(--weight-heavy);
+  color: var(--text-primary);
+}
+
+.hm-tip-group + .hm-tip-group {
+  margin-top: 0.3125rem;
+  padding-top: 0.3125rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.hm-tip-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4375rem;
+}
+
+.hm-tip-row::before {
+  content: '';
+  flex: none;
+  align-self: center;
+  width: 0.75rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--heat-all-3);
+}
+
+.hm-tip-group[data-source='github'] .hm-tip-row::before {
+  background: var(--heat-gh-3);
+}
+
+.hm-tip-group[data-source='local'] .hm-tip-row::before {
+  background: var(--heat-lo-3);
+}
+
+.hm-tip-row b {
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  color: var(--text-primary);
+}
+
+.hm-tip-row[data-none='true'] {
+  color: var(--text-muted);
+}
+
+/* ------------------------------------------------------- 12 weeks, wide */
+
+/* Twelve weeks leave most of a wide card empty: the tiles move beside it. */
+@container prof (min-width: 50rem) {
+  .hm[data-range='12w'] .hm-body {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 30rem);
+    column-gap: 2rem;
+    row-gap: 0.75rem;
+    align-items: start;
+  }
+
+  .hm[data-range='12w'] .hm-stats {
+    grid-column: 2;
+    grid-row: 1 / span 3;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hm[data-range='12w'] .hm-stats > :last-child {
+    grid-column: 1 / -1;
+  }
+
+  .hm[data-range='12w'] .hm-note,
+  .hm[data-range='12w'] .hm-figure,
+  .hm[data-range='12w'] .hm-legend {
+    grid-column: 1;
+  }
+
+  .hm[data-range='12w'] .hm-scroll {
+    width: calc(var(--hm-days-w) + 12 * (var(--hm-cell-max) + var(--hm-gap)) + 1.5rem);
+    max-width: 100%;
+  }
+}

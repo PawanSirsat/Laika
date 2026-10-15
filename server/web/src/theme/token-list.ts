@@ -94,6 +94,25 @@ export const COLOR_TOKENS: readonly TokenGroup[] = [
     note: 'The modal scrim and its shadow.',
     tokens: ['--scrim', '--shadow-modal'],
   },
+  {
+    title: 'Activity heatmap',
+    note: 'The profile’s daily grids (D-079): an empty step, then four of GitHub violet, Local amber and Board slate, lightness-matched so one step reads alike in each colour (LAI-751).',
+    tokens: [
+      '--heat-empty',
+      '--heat-gh-1',
+      '--heat-gh-2',
+      '--heat-gh-3',
+      '--heat-gh-4',
+      '--heat-lo-1',
+      '--heat-lo-2',
+      '--heat-lo-3',
+      '--heat-lo-4',
+      '--heat-all-1',
+      '--heat-all-2',
+      '--heat-all-3',
+      '--heat-all-4',
+    ],
+  },
 ];
 
 /** Flat list of every themed colour token. */

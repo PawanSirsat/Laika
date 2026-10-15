@@ -109,6 +109,7 @@ void describe('the AI settings are absent, not null', () => {
       id: 'o1',
       name: 'An Org',
       presence_enabled: false,
+      developer_insights: false,
       created_at: 1,
       updated_at: 2,
     };

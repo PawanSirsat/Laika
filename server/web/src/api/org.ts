@@ -37,6 +37,12 @@ export interface Org {
    * would otherwise track, who have the strongest claim to know it (D-005).
    */
   readonly presence_enabled: boolean;
+  /**
+   * D-079's organisation switch (LAI-751): whether developers who choose to
+   * may share local activity counts. Readable by everyone, for presence's
+   * reason; writable by Admin up.
+   */
+  readonly developer_insights: boolean;
   readonly created_at: number;
   readonly updated_at: number;
   /**
@@ -50,6 +56,7 @@ export interface Org {
 
 export interface OrgPatch {
   readonly presence_enabled?: boolean;
+  readonly developer_insights?: boolean;
   /**
    * `null` clears, absent leaves alone.
    *

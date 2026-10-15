@@ -46,6 +46,12 @@ void describe('which answers may be reused (client.ts)', () => {
     assert.equal(freshFor('/projects/laika-core/meeting-reviews?limit=200'), 30_000);
     assert.equal(freshFor('/org'), 30_000);
     assert.equal(freshFor('/presence'), 2_000);
+    // A profile's heatmap, once per person and range (LAI-751) — and not the
+    // developer's own preview, which a delete must never answer stale.
+    assert.equal(freshFor('/people/01ABC/activity?range=12w'), 30_000);
+    assert.equal(freshFor('/people/01ABC/activity?range=52w'), 30_000);
+    assert.equal(freshFor('/me/local-activity?days=14'), 0);
+    assert.equal(freshFor('/me/activity-sharing'), 0);
     // The task set is the store's, kept current by the stream, never by age.
     assert.equal(freshFor('/projects/laika-core/tasks?limit=200'), 0);
     assert.equal(freshFor('/projects/laika-core/activity?limit=200'), 0);
