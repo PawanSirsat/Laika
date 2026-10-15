@@ -1,4 +1,9 @@
-import { RATING_NOTE_MAX } from '../../../api/profiles.ts';
+import type { AgentClient } from '../../../api/agent-clients.ts';
+import {
+  RATING_NOTE_MAX,
+  type AgentWrites,
+  type ProfileAgentToken,
+} from '../../../api/profiles.ts';
 
 /**
  * How the member profile's figures read (LAI-743).
@@ -47,6 +52,87 @@ export function monthYear(at: number): string {
 export function barHeights(counts: readonly number[]): number[] {
   const most = Math.max(0, ...counts);
   return counts.map((count) => (most === 0 ? 0 : count / most));
+}
+
+/**
+ * Whole percentages for parts of a total that add up to exactly 100 — the
+ * largest-remainder rule, so a legend never reads 33 + 33 + 33. Empty, or all
+ * zero, is all zeros: no share of nothing is invented.
+ */
+export function sharePercents(counts: readonly number[]): number[] {
+  const total = counts.reduce((sum, n) => sum + n, 0);
+  if (total === 0) return counts.map(() => 0);
+
+  const exact = counts.map((n) => (n * 100) / total);
+  const whole = exact.map(Math.floor);
+  let left = 100 - whole.reduce((sum, n) => sum + n, 0);
+  const byRemainder = exact
+    .map((value, i) => ({ i, rest: value - Math.floor(value) }))
+    .sort((a, b) => b.rest - a.rest || a.i - b.i);
+  for (const { i } of byRemainder) {
+    if (left === 0) break;
+    whole[i] = (whole[i] ?? 0) + 1;
+    left -= 1;
+  }
+  return whole;
+}
+
+/** One agent on the profile: its share of writes, and the tokens it is on. */
+export interface AgentRow {
+  readonly client: AgentClient;
+  /** Writes through it in the window; 0 for an agent on a token that wrote nothing. */
+  readonly writes: number;
+  /** Of all writes through agents, a whole percentage; the rows add up to 100. */
+  readonly percent: number;
+  /** The usable tokens that last connected as it, most recently used first. */
+  readonly tokens: readonly ProfileAgentToken[];
+}
+
+/**
+ * One row per agent (LAI-750): every agent with writes in the window — most
+ * first, the server's order — and then every agent on a usable token that
+ * wrote nothing, most recently used first. An agent that wrote through a token
+ * since revoked is still a row: the writes happened. Nothing is counted here;
+ * the shares are the server's counts as percentages.
+ */
+export function agentRows(
+  writes: readonly AgentWrites[],
+  tokens: readonly ProfileAgentToken[],
+): AgentRow[] {
+  const percents = sharePercents(writes.map((w) => w.writes));
+  const onTokens = (client: AgentClient) => tokens.filter((token) => token.client === client);
+  const written = new Set(writes.map((w) => w.client));
+  const silent = [...new Set(tokens.map((token) => token.client))].filter((c) => !written.has(c));
+
+  return [
+    ...writes.map((w, i) => ({
+      client: w.client,
+      writes: w.writes,
+      percent: percents[i] ?? 0,
+      tokens: onTokens(w.client),
+    })),
+    ...silent.map((client) => ({ client, writes: 0, percent: 0, tokens: onTokens(client) })),
+  ];
+}
+
+/**
+ * When an agent last reached Laika on any of this person's tokens — a request
+ * or an `/mcp` call (D-076) — or `null` when none of them ever has.
+ */
+export function lastActive(
+  tokens: readonly ProfileAgentToken[],
+  client: AgentClient,
+): number | null {
+  const seen = tokens
+    .filter((token) => token.client === client)
+    .map((token) => Math.max(token.last_used_at ?? 0, token.last_mcp_at ?? 0))
+    .filter((at) => at > 0);
+  return seen.length === 0 ? null : Math.max(...seen);
+}
+
+/** `1 project`, `3 projects` — a count said as words around it. */
+export function countLabel(n: number, one: string, many: string): string {
+  return `${String(n)} ${n === 1 ? one : many}`;
 }
 
 export function scoreLabel(score: number): string {

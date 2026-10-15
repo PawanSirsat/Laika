@@ -84,10 +84,43 @@ export interface ReviewDecision {
   readonly assignee: { readonly id: string; readonly name: string };
 }
 
+/** One week of their decisions on other people's work (LAI-750). */
+export interface ReviewWeek {
+  readonly week_start: number;
+  readonly accepted: number;
+  readonly sent_back: number;
+}
+
+/** Latest entry into Review → the decision; unmeasured ones are counted, never 0. */
+export interface ProfileDecideTime {
+  readonly measured: number;
+  readonly unmeasured: number;
+  readonly p50_ms: number | null;
+}
+
 export interface ProfileReview {
   readonly accepted: number;
   readonly sent_back: number;
+  /** Decisions in the thirty days to now. */
+  readonly last_30_days: number;
+  /** Oldest first, one per week of the window. */
+  readonly per_week: readonly ReviewWeek[];
+  readonly time_to_decide: ProfileDecideTime;
   readonly recent: readonly ReviewDecision[];
+}
+
+export interface QueueProject {
+  readonly project_id: string;
+  readonly waiting: number;
+}
+
+/** A manager's review queue now (LAI-750). **Absent** for a builder. */
+export interface ProfileQueue {
+  readonly projects_led: number;
+  readonly waiting: number;
+  /** When the longest-waiting task entered Review, or null. */
+  readonly oldest_waiting_since: number | null;
+  readonly projects: readonly QueueProject[];
 }
 
 export interface ProfileAgentToken {
@@ -107,11 +140,20 @@ export interface AgentPresence {
   readonly last_seen: number | null;
 }
 
+/** Their board writes through one agent, in the window (LAI-750). */
+export interface AgentWrites {
+  readonly client: AgentClient;
+  readonly writes: number;
+}
+
 export interface ProfileAgents {
   /** At most the server's list cap (50); `tokens_total` is all of them. */
   readonly tokens: readonly ProfileAgentToken[];
   readonly tokens_total: number;
   readonly online: AgentPresence;
+  /** Most first; one entry per agent. */
+  readonly writes: readonly AgentWrites[];
+  readonly writes_total: number;
 }
 
 export interface MemberRating {
@@ -149,6 +191,8 @@ export interface MemberProfile {
   readonly current_work?: ProfileCurrentWork;
   readonly delivery?: ProfileDelivery;
   readonly agents?: ProfileAgents;
+  /** A manager's only. **Absent** for a builder. */
+  readonly queue?: ProfileQueue;
 }
 
 export function getProfile(userId: string, signal?: AbortSignal): Promise<MemberProfile> {
