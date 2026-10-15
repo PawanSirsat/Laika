@@ -66,6 +66,7 @@ void describe('Organisation: Developer insights', () => {
 
       await toggle.click();
       await until(async () => (await toggle.getAttribute('aria-checked')) === 'true');
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true');
       const patch = h.calls.find((c) => c.method === 'PATCH' && c.path === '/api/v1/org');
       assert.deepEqual(patch?.body, { developer_insights: true });
       assert.match(await toggle.innerText(), /On/);
@@ -74,6 +75,7 @@ void describe('Organisation: Developer insights', () => {
       await toggle.focus();
       await h.page.keyboard.press('Space');
       await until(async () => (await toggle.getAttribute('aria-checked')) === 'false');
+      assert.equal(await toggle.getAttribute('aria-checked'), 'false');
     } finally {
       await h.close();
     }
@@ -181,17 +183,19 @@ void describe('Connect: Share local activity', () => {
       assert.equal(await toggle.getAttribute('aria-checked'), 'false');
       await toggle.click();
       await until(async () => (await toggle.getAttribute('aria-checked')) === 'true');
+      assert.equal(await toggle.getAttribute('aria-checked'), 'true');
       const puts = () =>
         h.calls.filter((c) => c.method === 'PUT' && c.path === '/api/v1/me/activity-sharing');
       assert.deepEqual(puts()[0]?.body, { enabled: true });
 
-      await panel.locator('input[name="share-scope"][value="laika-repos"]').check();
+      // The radio follows the server's answer, so click and wait for it —
+      // `check()` would assert before the PUT has returned.
+      const narrow = panel.locator('input[name="share-scope"][value="laika-repos"]');
+      await narrow.click();
       await until(() => puts().length === 2);
       assert.deepEqual(puts()[1]?.body, { scope: 'laika-repos' });
-      assert.equal(
-        await panel.locator('input[name="share-scope"][value="laika-repos"]').isChecked(),
-        true,
-      );
+      await until(() => narrow.isChecked());
+      assert.equal(await narrow.isChecked(), true);
 
       assert.equal((await panel.locator('pre.conn-pre').innerText()).trim(), 'laika activity on');
     } finally {
