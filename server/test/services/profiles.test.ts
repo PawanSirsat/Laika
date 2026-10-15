@@ -17,6 +17,7 @@ import {
   setProfileKind,
 } from '../../src/services/profiles.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
+import { createProjectStatus } from '../../src/services/project-statuses.ts';
 import { changeStatus, claimTask, createTask, updateTask } from '../../src/services/tasks.ts';
 import { freshDb, type TestDb } from '../helpers/db.ts';
 
@@ -693,5 +694,125 @@ describe('profile_kind changes no permission (D-078, LAI-743)', () => {
     expect(claimed.assignee_id).toBe(bea);
     move(bea, id, 'review', NOW + MIN);
     move(cal, id, 'done', NOW + 2 * MIN);
+  });
+});
+
+// ------------------------------------------- what the review's mutations hit
+
+/**
+ * Four rules LAI-743's tests did not pin, found by the review mutating them
+ * and watching nothing go red (LAI-746). Each fixture here is built so the
+ * mutated code gives a different answer: a test whose fixture cannot tell the
+ * rule from its mutation does not test the rule.
+ */
+describe('rules the first fixture could not tell apart (LAI-746)', () => {
+  it('does not count a move between two Done statuses as another acceptance (M2)', () => {
+    createProjectStatus(t.sqlite, t.db, actor(ada), 'laika', { name: 'Shipped', category: 'done' });
+    const id = task('laika', 'Shipped later');
+    claimTask(t.sqlite, t.db, actor(bea), id, M0 - 2 * WEEK);
+    move(bea, id, 'review', M0 - 2 * WEEK + HOUR);
+    move(cal, id, 'done', M0 - 2 * WEEK + DAY);
+    // Done → Shipped: both Done, so `from` and `to` are equal (D-077) — a
+    // column change, not a second acceptance.
+    changeStatus(t.db, actor(cal), id, { status_name: 'Shipped' }, M0 - WEEK);
+
+    const delivery = getProfile(t.db, actor(ada), bea, NOW).delivery;
+    expect(delivery?.accepted).toBe(1);
+    expect(delivery?.accepted_per_week.map((w) => w.accepted)).toEqual([
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0,
+    ]);
+    expect(getProfile(t.db, actor(ada), cal, NOW).review.accepted).toBe(1);
+  });
+
+  it('shows only this person’s agents as online, never a colleague’s (M8)', () => {
+    const mine = newId();
+    const theirs = newId();
+    const theirBeat = newId();
+    const base = { prefix: 'lai_xxxx', scope: 'full' as const, createdAt: M0 - WEEK };
+    t.db
+      .insert(tokens)
+      .values([
+        { ...base, id: mine, userId: bea, name: 'Claude Code', tokenHash: newId() },
+        {
+          ...base,
+          id: theirs,
+          userId: cal,
+          name: 'Cursor',
+          tokenHash: newId(),
+          lastClient: 'cursor',
+          lastMcpAt: NOW - MIN,
+        },
+        {
+          ...base,
+          id: theirBeat,
+          userId: cal,
+          name: 'Codex',
+          tokenHash: newId(),
+          lastClient: 'codex',
+        },
+      ])
+      .run();
+    t.db
+      .insert(heartbeats)
+      .values({
+        id: newId(),
+        userId: cal,
+        tokenId: theirBeat,
+        repo: 'kvell/laika',
+        branch: 'main',
+        matchedTaskId: null,
+        createdAt: NOW - 2 * MIN,
+      })
+      .run();
+
+    // Cal has a live `/mcp` call and a live heartbeat; Bea has neither.
+    expect(getProfile(t.db, actor(ada), bea, NOW).agents?.online).toEqual({
+      enabled: true,
+      clients: [],
+      last_seen: null,
+    });
+    // And Cal's own profile does see both — so the empty answer above is the
+    // filter, not a fixture nobody is online in.
+    setProfileKind(t.db, actor(ada), cal, 'builder', NOW);
+    expect(getProfile(t.db, actor(ada), cal, NOW).agents?.online.clients).toEqual([
+      'cursor',
+      'codex',
+    ]);
+  });
+
+  it('buckets an acceptance into the week it happened in, late in the week too (M18)', () => {
+    // Saturday 23:00 and Sunday 23:59:59.999 belong to their own week; Monday
+    // 00:00 starts the next. Rounding instead of flooring moves the first two.
+    const accept = (title: string, at: number) => {
+      const id = task('laika', title);
+      claimTask(t.sqlite, t.db, actor(bea), id, at - 2 * DAY);
+      move(bea, id, 'review', at - DAY);
+      move(cal, id, 'done', at);
+    };
+    accept('Saturday night', M0 - 2 * WEEK + 5 * DAY + 23 * HOUR); // week 9
+    accept('Last millisecond of Sunday', M0 - WEEK - 1); // week 9
+    accept('First millisecond of Monday', M0 - WEEK); // week 10
+
+    expect(
+      getProfile(t.db, actor(ada), bea, NOW).delivery?.accepted_per_week.map((w) => w.accepted),
+    ).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 1, 0]);
+  });
+
+  it('lists a project reached only through review decisions (M19)', () => {
+    // Ada is the owner: implicit lead everywhere, no membership row in
+    // `side`, no task there. Her only tie to it is accepting Bea's work.
+    createProject(t.sqlite, t.db, actor(ada), { name: 'Side', slug: 'side', prefix: 'SID' });
+    t.db.run(sql`DELETE FROM project_memberships WHERE user_id = ${ada}`);
+    addMember(t.db, actor(ada), 'side', bea, 'member');
+    const id = task('side', 'Side work');
+    claimTask(t.sqlite, t.db, actor(bea), id, M0 - DAY);
+    move(bea, id, 'review', M0 - DAY + HOUR);
+    move(ada, id, 'done', M0 - DAY + 2 * HOUR);
+
+    const admin = makeUser('Ari', 'admin');
+    const { projects } = getProfile(t.db, actor(admin), ada, NOW);
+    expect(projects).toEqual([
+      expect.objectContaining({ slug: 'side', role: null, open_tasks: 0, reviewed: 1 }),
+    ]);
   });
 });
