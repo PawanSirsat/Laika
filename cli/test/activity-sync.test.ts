@@ -548,8 +548,12 @@ void describe('state.json is what the hook reads', () => {
 /* Review round 1                                                             */
 /* -------------------------------------------------------------------------- */
 
+/** A process's start time the way the lock records it: in UTC, C locale. */
 const lstart = (pid: number): string =>
-  execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+  execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+    encoding: 'utf8',
+    env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
+  }).trim();
 
 const until = async (check: () => boolean, ms = 5_000): Promise<void> => {
   const end = Date.now() + ms;
