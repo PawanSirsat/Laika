@@ -35,6 +35,8 @@ export interface StubBoard {
   readonly requests: Recorded[];
   readonly violations: string[];
   sharing: { org_enabled: boolean; enabled: boolean; scope: string; min_sync_interval_s: number };
+  /** `hang`: the sharing GET is never answered — a board that is up but stuck. */
+  get: 'ok' | 'hang';
   put: PutMode;
   /** When the contract's day range is checked: the collector's clock, not the test machine's. */
   now: () => Date;
@@ -56,6 +58,7 @@ export async function stubBoard(token: string): Promise<StubBoard> {
     requests: [],
     violations: [],
     sharing: { org_enabled: true, enabled: true, scope: 'agent-repos', min_sync_interval_s: 600 },
+    get: 'ok',
     put: { kind: 'ok' },
     now: () => new Date(),
     close: () => undefined,
@@ -82,6 +85,7 @@ export async function stubBoard(token: string): Promise<StubBoard> {
         return;
       }
       if (req.method === 'GET' && req.url === '/api/v1/me/activity-sharing') {
+        if (board.get === 'hang') return;
         json(200, board.sharing);
         return;
       }

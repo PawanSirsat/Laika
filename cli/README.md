@@ -131,14 +131,34 @@ counted again: neither as local work while the original is on a remote, nor as
 a second pushed key once force-pushed. Commits whose remote branch was deleted
 after a squash merge are not counted as local again either — provided a sync saw
 them on the remote first (a branch pushed and squash-merged between two syncs is
-counted as local until it is deleted, and only inside the 14-day window). Unpushed commits
-from before collection started are not reported.
+counted as local until it is deleted, and only inside the 14-day window).
+**Nothing authored before sharing was turned on on this machine is reported** —
+pushed or not: the consent covers work from then on (D-079).
+
+**Which board.** The one `laika activity on` was run against, recorded in
+`state.json`, with that board's token (from `~/.laika/env` first). A session
+whose environment points at a different board sends nothing — neither to that
+board nor to the recorded one — and wipes nothing; `status` says why. Running
+`on` against another board starts over: what was counted for one board is never
+sent to another.
 
 **How often.** Never more often than the board's `min_sync_interval_s`. The
 session-start and session-end hooks start the sync in the background when it is
-due; it re-reads the switch at most once a day. A 429 waits for `Retry-After`;
-a failure backs off, doubling, up to a day; a request gives up after 5 s. A 403
+due, and the sync claims the next slot the moment it starts, so a sync that
+hangs still holds the next one off. Every sync first asks the board whether
+sharing is on and which scope applies, so turning it off or narrowing it to
+`laika-repos` in the web app takes effect on the very next sync, and `status`
+asks too. A 429 waits for `Retry-After`; any failure — an error answer, a board
+that cannot be reached, or a crash in the count — backs off, doubling from the
+interval, to at most 6 hours; a request gives up after 5 s. A 403
 `local_activity_off` stops collection, clears the local log, starts a new
 collector id (so its days never overwrite the old one's), and checks again
 after 24 hours. Errors go only to `~/.laika/activity/last-error`, shown by
-`status`. A lock keeps two syncs from running at once.
+`status`.
+
+**One at a time, and never stuck.** A lock file records the sync's pid and
+start time. A live sync keeps it however long it runs; only a lock whose
+process is gone (or whose pid now belongs to another process) is taken over.
+Every sync has a 2-minute deadline: git runs asynchronously and is killed at
+the deadline, repo paths are checked without blocking, and a CLI sync that
+reaches it exits rather than wait on a call stuck on a dead network mount.

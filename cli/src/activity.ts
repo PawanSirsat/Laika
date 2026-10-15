@@ -23,6 +23,7 @@ import {
 import {
   findCredentials,
   getSharing,
+  currentSharing,
   previewSnapshot,
   startCollecting,
   sync,
@@ -53,7 +54,14 @@ export interface ActivityIo {
   readonly hookShell: string;
   /** Re-run `activity sync` detached from this process's session. */
   readonly spawnDetached: (args: readonly string[]) => void;
+  /**
+   * End the process now. Used only after a sync's deadline, when a call stuck
+   * on a dead mount would otherwise keep node alive.
+   */
+  readonly exit: (code: number) => void;
   readonly git?: GitRunner;
+  /** Overrides the sync's overall deadline — for tests. */
+  readonly deadlineMs?: number;
 }
 
 export const HOOK_SCRIPT = fileURLToPath(
@@ -79,6 +87,7 @@ const CONSOLE: ActivityIo = {
   tz: machineTimeZone(),
   hookScript: HOOK_SCRIPT,
   hookShell: hookShell(),
+  exit: (code) => process.exit(code),
   spawnDetached: (args) => {
     // `detached` is setsid(2): a new session, so a Ctrl-C or a hook timeout
     // aimed at the agent's process group cannot reach the sync.
@@ -107,6 +116,7 @@ const context = (io: ActivityIo): SyncContext => ({
   nowMs: io.nowMs,
   tz: io.tz,
   ...(io.git === undefined ? {} : { git: io.git }),
+  ...(io.deadlineMs === undefined ? {} : { deadlineMs: io.deadlineMs }),
 });
 
 const when = (epochS: number): string =>
@@ -123,7 +133,7 @@ export async function activity(argv: readonly string[], io: ActivityIo = CONSOLE
     case 'off':
       return off(io);
     case 'status':
-      return status(io);
+      return await status(io);
     case 'sync':
       return runSync(rest, io);
     case 'emails':
@@ -208,7 +218,7 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
 
   const nowS = Math.floor(io.nowMs() / 1000);
   const paths = activityPaths(io.home);
-  startCollecting(paths, sharing, nowS);
+  startCollecting(paths, sharing, nowS, creds.url);
 
   const detected = configuredAgents(io.home, io.env);
   const agents = HOOK_AGENTS.filter((a) => detected.includes(a) || forced.includes(a));
@@ -254,7 +264,7 @@ function off(io: ActivityIo): number {
   return reports.some((r) => r.status === 'refused') ? 1 : 0;
 }
 
-function status(io: ActivityIo): number {
+async function status(io: ActivityIo): Promise<number> {
   const paths = activityPaths(io.home);
   const state = readState(paths);
   if (state === undefined) {
@@ -262,13 +272,18 @@ function status(io: ActivityIo): number {
     return 0;
   }
 
-  const creds = findCredentials(io.home, io.env);
+  // Asked fresh, as the next sync will: a scope narrowed in the web app shows
+  // here (and applies there) at once.
+  const fresh = state.collect ? await currentSharing(context(io)) : undefined;
+  const scope = fresh?.scope ?? state.scope;
   io.out(`Local activity  ${state.collect ? 'on' : 'off — the board says sharing is off'}`);
-  io.out(`Board           ${creds?.url ?? 'not configured'}`);
+  io.out(`Board           ${state.board ?? 'not recorded — run laika activity on again'}`);
   io.out(
     `Sharing         organisation ${state.org_enabled ? 'on' : 'off'}, you ${state.enabled ? 'on' : 'off'} (checked ${when(state.checked_at)})`,
   );
-  io.out(`Scope           ${state.scope}`);
+  io.out(
+    `Scope           ${scope}${state.collect && fresh === undefined ? ' (as last seen; the board did not answer now)' : ''}`,
+  );
   if (state.collect) io.out(`Counting since  ${when(state.since)}`);
   io.out(
     `Next sync       ${state.next_sync_at === 0 ? 'at the next agent session' : `not before ${when(state.next_sync_at)}`}`,
@@ -283,14 +298,16 @@ function status(io: ActivityIo): number {
           ? 'the board asked to wait (429)'
           : last.outcome === 'off'
             ? 'the board said sharing is off'
-            : `failed${last.status === undefined ? '' : ` (${String(last.status)})`}`;
+            : last.outcome === 'refused'
+              ? 'not sent: the session pointed at another board'
+              : `failed${last.status === undefined ? '' : ` (${String(last.status)})`}`;
     io.out(`Last sync       ${when(last.at)} — ${detail}`);
   }
   const lastError = readText(paths.lastError)?.trim();
   if (lastError !== undefined && lastError !== '') io.out(`Last error      ${lastError}`);
 
   io.out('');
-  const snapshot = previewSnapshot(context(io));
+  const snapshot = await previewSnapshot(context(io), scope);
   if (snapshot === undefined) {
     io.out('Nothing would be sent: collection is off until the board says sharing is on.');
     return 0;
@@ -330,6 +347,8 @@ function describe(outcome: SyncOutcome): { line: string; code: number } {
       };
     case 'rate-limited':
       return { line: `The board asked to wait until ${when(outcome.nextAt)}.`, code: 0 };
+    case 'refused':
+      return { line: `Not sent: ${outcome.message}.`, code: 1 };
     case 'error':
       return {
         line: `Sync failed: ${outcome.message}. Next try after ${when(outcome.nextAt)}.`,
@@ -344,10 +363,13 @@ async function runSync(args: readonly string[], io: ActivityIo): Promise<number>
     return 0;
   }
   const outcome = await sync(context(io));
-  if (args.includes('--quiet')) return 0;
   const { line, code } = describe(outcome);
-  (code === 0 ? io.out : io.err)(line);
-  return code;
+  if (!args.includes('--quiet')) (code === 0 ? io.out : io.err)(line);
+  // A deadline means something is still stuck (a git on a dead mount); its
+  // handle would keep this process alive, so leave without it.
+  if (outcome.kind === 'error' && outcome.deadline === true)
+    io.exit(args.includes('--quiet') ? 0 : code);
+  return args.includes('--quiet') ? 0 : code;
 }
 
 const EMAIL = /^[^\s@<>"]+@[^\s@<>"]+$/;

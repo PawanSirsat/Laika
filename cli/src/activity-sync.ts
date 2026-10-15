@@ -50,9 +50,17 @@ import { readEnvFile } from './whoami.ts';
  */
 
 export const REQUEST_TIMEOUT_MS = 5_000;
+/**
+ * A sync that has not finished in this long is abandoned: its git children are
+ * killed, its requests aborted, and a CLI run exits. A repo on a network mount
+ * that has gone away is the case — without it, each session start left one
+ * more process waiting on the mount.
+ */
+export const SYNC_DEADLINE_MS = 120_000;
 /** Events older than this are dropped from the log after a successful send. */
 const EVENTS_KEEP_S = 15 * DAY_S;
-const MAX_BACKOFF_S = DAY_S;
+/** Failures back off, doubling from the interval, to at most this. */
+export const MAX_BACKOFF_S = 6 * 3600;
 
 export interface SyncContext {
   readonly home: string;
@@ -60,6 +68,8 @@ export interface SyncContext {
   readonly nowMs: () => number;
   readonly tz: string;
   readonly git?: GitRunner;
+  /** Overrides {@link SYNC_DEADLINE_MS} — for tests. */
+  readonly deadlineMs?: number;
 }
 
 export function defaultContext(home: string): SyncContext {
@@ -103,6 +113,40 @@ export function findCredentials(
   return { url: normaliseUrl(url), token };
 }
 
+/**
+ * The token for the board activity was turned on for, and for no other.
+ *
+ * `~/.laika/env` first — the file `install.sh` and `laika connect` write, and
+ * the one a hook-launched sync can always read — then `laika init`'s
+ * `~/.claude/settings.json`, then the environment; from each, only when its
+ * `LAIKA_URL` is that board.
+ */
+export function credentialsFor(
+  home: string,
+  env: Readonly<Record<string, string | undefined>>,
+  board: string,
+): Credentials | undefined {
+  let settings: Record<string, string> = {};
+  try {
+    settings = readSettings(join(home, '.claude', 'settings.json')).env ?? {};
+  } catch {
+    settings = {};
+  }
+  const sources: readonly Readonly<Record<string, string | undefined>>[] = [
+    readEnvFile(join(home, '.laika', 'env')),
+    settings,
+    env,
+  ];
+  for (const source of sources) {
+    const url = source.LAIKA_URL?.trim();
+    const token = source.LAIKA_TOKEN?.trim();
+    if (url !== undefined && token !== undefined && token !== '' && normaliseUrl(url) === board) {
+      return { url: board, token };
+    }
+  }
+  return undefined;
+}
+
 /* -------------------------------------------------------------------------- */
 /* The two calls                                                              */
 /* -------------------------------------------------------------------------- */
@@ -129,7 +173,9 @@ async function request(
   method: 'GET' | 'PUT',
   path: string,
   body?: string,
+  abort?: AbortSignal,
 ): Promise<Response | { readonly error: string }> {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   try {
     return await fetch(`${creds.url}${path}`, {
       method,
@@ -139,7 +185,7 @@ async function request(
         ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
       },
       ...(body === undefined ? {} : { body }),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: abort === undefined ? timeout : AbortSignal.any([timeout, abort]),
     });
   } catch (cause) {
     const name = cause instanceof Error ? cause.name : '';
@@ -185,8 +231,12 @@ async function failed<T>(response: Response, nowMs: number): Promise<Call<T>> {
   };
 }
 
-export async function getSharing(creds: Credentials, nowMs: number): Promise<Call<Sharing>> {
-  const response = await request(creds, 'GET', '/api/v1/me/activity-sharing');
+export async function getSharing(
+  creds: Credentials,
+  nowMs: number,
+  abort?: AbortSignal,
+): Promise<Call<Sharing>> {
+  const response = await request(creds, 'GET', '/api/v1/me/activity-sharing', undefined, abort);
   if ('error' in response) return { ok: false, message: response.error };
   if (!response.ok) return failed(response, nowMs);
   try {
@@ -212,8 +262,9 @@ export async function putActivity(
   creds: Credentials,
   body: string,
   nowMs: number,
+  abort?: AbortSignal,
 ): Promise<Call<{ readonly accepted_days: number }>> {
-  const response = await request(creds, 'PUT', '/api/v1/me/local-activity', body);
+  const response = await request(creds, 'PUT', '/api/v1/me/local-activity', body, abort);
   if ('error' in response) return { ok: false, message: response.error };
   if (!response.ok) return failed(response, nowMs);
   let accepted = 0;
@@ -284,7 +335,14 @@ export type SyncOutcome =
   | { readonly kind: 'off'; readonly recheckAt: number }
   | { readonly kind: 'sent'; readonly acceptedDays: number; readonly deferredKeys: number }
   | { readonly kind: 'rate-limited'; readonly nextAt: number }
-  | { readonly kind: 'error'; readonly message: string; readonly nextAt: number };
+  | { readonly kind: 'refused'; readonly message: string }
+  | {
+      readonly kind: 'error';
+      readonly message: string;
+      readonly nextAt: number;
+      /** The overall deadline ended it; a CLI run should exit rather than wait. */
+      readonly deadline?: true;
+    };
 
 /** Turn collection off locally: what both 403 and a "not enabled" answer mean. */
 function stopCollecting(
@@ -312,88 +370,151 @@ function stopCollecting(
   };
 }
 
-function backoff(state: ActivityState, nowS: number, result: LastResult): ActivityState {
+export function backoff(state: ActivityState, nowS: number, result: LastResult): ActivityState {
   const failures = state.failures + 1;
   const delay = Math.min(state.min_sync_interval_s * 2 ** (failures - 1), MAX_BACKOFF_S);
   return { ...state, failures, next_sync_at: nowS + delay, last_result: result };
 }
 
+/** Record why, and push the next attempt out by the backoff. */
+function failed_(
+  paths: ActivityPaths,
+  nowS: number,
+  message: string,
+  status?: number,
+): { readonly message: string; readonly nextAt: number } {
+  recordError(paths, nowS, message);
+  const state = readState(paths);
+  if (state === undefined) return { message, nextAt: nowS };
+  const next = backoff(state, nowS, {
+    at: nowS,
+    outcome: 'error',
+    ...(status === undefined ? {} : { status }),
+  });
+  writeState(paths, next);
+  return { message, nextAt: next.next_sync_at };
+}
+
+class Abandoned extends Error {}
+
+/**
+ * Send the snapshot, if one is due — one sync at a time, and never for longer
+ * than the deadline.
+ */
 export async function sync(ctx: SyncContext): Promise<SyncOutcome> {
   const paths = activityPathsFor(ctx);
+  if (readState(paths) === undefined) return { kind: 'not-on' };
+
+  const release = acquireLock(paths);
+  if (release === undefined) return { kind: 'busy' };
+
+  const controller = new AbortController();
+  const deadlineMs = ctx.deadlineMs ?? SYNC_DEADLINE_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<SyncOutcome>((done) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      const nowS = Math.floor(ctx.nowMs() / 1000);
+      const f = failed_(
+        paths,
+        nowS,
+        `the sync did not finish within ${String(deadlineMs / 1000)} s and was abandoned`,
+      );
+      done({ kind: 'error', ...f, deadline: true });
+    }, deadlineMs);
+  });
+  try {
+    return await Promise.race([syncLocked(ctx, paths, controller.signal), deadline]);
+  } finally {
+    clearTimeout(timer);
+    release();
+  }
+}
+
+async function syncLocked(
+  ctx: SyncContext,
+  paths: ActivityPaths,
+  signal: AbortSignal,
+): Promise<SyncOutcome> {
+  // Re-read under the lock: another sync may have just finished.
   let state = readState(paths);
   if (state === undefined) return { kind: 'not-on' };
+  const nowS = Math.floor(ctx.nowMs() / 1000);
+  if (nowS < state.next_sync_at) return { kind: 'not-due', nextAt: state.next_sync_at };
 
-  const release = acquireLock(paths, ctx.nowMs());
-  if (release === undefined) return { kind: 'busy' };
+  // Once the deadline has answered, this run writes nothing more.
+  const save = (next: ActivityState): void => {
+    if (signal.aborted) throw new Abandoned();
+    writeState(paths, next);
+  };
+  const fail = (message: string, status?: number): SyncOutcome => ({
+    kind: 'error',
+    ...failed_(paths, nowS, message, status),
+  });
+
   try {
-    // Re-read under the lock: another sync may have just finished.
-    state = readState(paths) ?? state;
-    const nowS = Math.floor(ctx.nowMs() / 1000);
-    if (nowS < state.next_sync_at) return { kind: 'not-due', nextAt: state.next_sync_at };
+    // Claimed before any work, so a sync that hangs or dies still holds the
+    // next launch off for an interval: session hooks cannot pile them up.
+    state = { ...state, next_sync_at: nowS + state.min_sync_interval_s };
+    save(state);
 
-    const save = (next: ActivityState): void => {
-      writeState(paths, next);
-    };
-
-    const creds = findCredentials(ctx.home, ctx.env);
-    if (creds === undefined) {
-      const message = 'no board configured (LAIKA_URL / LAIKA_TOKEN) — run laika connect';
+    // --- which board ---------------------------------------------------------
+    const board = state.board;
+    if (board === undefined) {
+      return fail('activity was set up by an older laika — run `laika activity on` again');
+    }
+    const live = ctx.env.LAIKA_URL?.trim();
+    if (live !== undefined && live !== '' && normaliseUrl(live) !== board) {
+      const message = `this session points at ${normaliseUrl(live)}, but local activity is set up for ${board} — nothing sent`;
       recordError(paths, nowS, message);
-      const next = backoff(state, nowS, { at: nowS, outcome: 'error' });
-      save(next);
-      return { kind: 'error', message, nextAt: next.next_sync_at };
+      save({ ...state, last_result: { at: nowS, outcome: 'refused' } });
+      return { kind: 'refused', message };
+    }
+    const creds = credentialsFor(ctx.home, ctx.env, board);
+    if (creds === undefined) {
+      return fail(`no token for ${board} in ~/.laika/env — run laika connect`);
     }
 
-    // --- the switch, at most once a day ---------------------------------------
-    if (nowS - state.checked_at >= DAY_S) {
-      const answer = await getSharing(creds, ctx.nowMs());
-      if (answer.ok) {
-        const on = answer.value.org_enabled && answer.value.enabled;
-        if (!on) {
-          save(stopCollecting(paths, state, nowS, answer.value));
-          return { kind: 'off', recheckAt: nowS + DAY_S };
-        }
-        state = {
-          ...state,
-          org_enabled: true,
-          enabled: true,
-          scope: answer.value.scope,
-          min_sync_interval_s: answer.value.min_sync_interval_s,
-          checked_at: nowS,
-          // Back on after being off: count from now, as a new collector.
-          ...(state.collect ? {} : { collect: true, since: nowS }),
-        };
-        save(state);
-      } else if (!state.collect) {
-        recordError(paths, nowS, `checking whether sharing is on: ${answer.message}`);
-        const next = backoff(state, nowS, {
-          at: nowS,
-          outcome: 'error',
-          ...(answer.status === undefined ? {} : { status: answer.status }),
-        });
-        save(next);
-        return { kind: 'error', message: answer.message, nextAt: next.next_sync_at };
-      }
-      // Collecting, and the check failed: carry on with what is cached. The
-      // PUT is refused 403 if sharing was in fact turned off.
+    // --- the switch and the scope, every time -----------------------------------
+    // Cheap, and the only way a narrowed scope or a switch turned off takes
+    // effect on the very next sync rather than a day later.
+    const sharing = await getSharing(creds, ctx.nowMs(), signal);
+    if (!sharing.ok) {
+      return fail(`checking whether sharing is on: ${sharing.message}`, sharing.status);
     }
-
-    if (!state.collect) return { kind: 'off', recheckAt: state.next_sync_at };
+    if (!(sharing.value.org_enabled && sharing.value.enabled)) {
+      save(stopCollecting(paths, state, nowS, sharing.value));
+      return { kind: 'off', recheckAt: nowS + DAY_S };
+    }
+    state = {
+      ...state,
+      org_enabled: true,
+      enabled: true,
+      scope: sharing.value.scope,
+      min_sync_interval_s: sharing.value.min_sync_interval_s,
+      checked_at: nowS,
+      next_sync_at: nowS + sharing.value.min_sync_interval_s,
+      // Back on after being off: count from now, as a new collector.
+      ...(state.collect ? {} : { collect: true, since: nowS }),
+    };
+    save(state);
 
     // --- the snapshot ---------------------------------------------------------
-    const snapshot: Snapshot = buildSnapshot({
+    const snapshot: Snapshot = await buildSnapshot({
       paths,
       state,
       collectorId: collectorId(paths),
       tz: ctx.tz,
       nowS,
       extraEmails: readEmails(paths),
-      git: ctx.git ?? gitRunner(ctx.env),
+      git: ctx.git ?? gitRunner(ctx.env, signal),
     });
+    if (signal.aborted) throw new Abandoned();
     writeFile600(paths.repos, snapshot.prunedRepos);
 
-    const answer = await putActivity(creds, JSON.stringify(snapshot.body), ctx.nowMs());
+    const answer = await putActivity(creds, JSON.stringify(snapshot.body), ctx.nowMs(), signal);
     if (answer.ok) {
+      if (signal.aborted) throw new Abandoned();
       rememberKeys(paths, snapshot.sentKeys, nowS);
       compactEvents(paths, nowS);
       rmSync(paths.lastError, { force: true });
@@ -425,33 +546,43 @@ export async function sync(ctx: SyncContext): Promise<SyncOutcome> {
       return { kind: 'rate-limited', nextAt: nowS + wait };
     }
 
-    recordError(paths, nowS, answer.message);
-    const next = backoff(state, nowS, {
-      at: nowS,
-      outcome: 'error',
-      ...(answer.status === undefined ? {} : { status: answer.status }),
-    });
-    save(next);
-    return { kind: 'error', message: answer.message, nextAt: next.next_sync_at };
+    return fail(answer.message, answer.status);
   } catch (cause) {
-    const nowS = Math.floor(ctx.nowMs() / 1000);
-    const message = cause instanceof Error ? cause.message : String(cause);
-    recordError(paths, nowS, message);
-    return { kind: 'error', message, nextAt: nowS };
-  } finally {
-    release();
+    // The deadline has already recorded this run and answered for it.
+    if (signal.aborted || cause instanceof Abandoned) {
+      return { kind: 'error', message: 'abandoned', nextAt: nowS, deadline: true };
+    }
+    // Anything else — a census that throws, a full disk — backs off like any
+    // failure, so it is not retried on every session event.
+    return fail(cause instanceof Error ? cause.message : String(cause));
   }
 }
 
+/**
+ * What `status` shows: the switch and scope as the board says now, if it can be
+ * asked — the same answer the next sync would act on.
+ */
+export async function currentSharing(ctx: SyncContext): Promise<Sharing | undefined> {
+  const state = readState(activityPathsFor(ctx));
+  if (state?.board === undefined) return undefined;
+  const creds = credentialsFor(ctx.home, ctx.env, state.board);
+  if (creds === undefined) return undefined;
+  const answer = await getSharing(creds, ctx.nowMs());
+  return answer.ok ? answer.value : undefined;
+}
+
 /** The snapshot `sync` would send now — for `status`. Writes nothing. */
-export function previewSnapshot(ctx: SyncContext): Snapshot | undefined {
+export async function previewSnapshot(
+  ctx: SyncContext,
+  scope?: Scope,
+): Promise<Snapshot | undefined> {
   const paths = activityPathsFor(ctx);
   const state = readState(paths);
   if (state?.collect !== true) return undefined;
   const existing = readText(paths.collectorId)?.trim();
   return buildSnapshot({
     paths,
-    state,
+    state: scope === undefined ? state : { ...state, scope },
     collectorId: existing !== undefined && existing !== '' ? existing : '(created on first sync)',
     tz: ctx.tz,
     nowS: Math.floor(ctx.nowMs() / 1000),
@@ -461,13 +592,23 @@ export function previewSnapshot(ctx: SyncContext): Snapshot | undefined {
 }
 
 /**
- * Start collecting: the directory, the id and the first state. Only called
- * once the board has said sharing is on.
+ * Start collecting for `board`: the directory, the id and the first state. Only
+ * called once that board has said sharing is on. Pointing it at a different
+ * board starts over — what was counted for one board is not sent to another.
  */
-export function startCollecting(paths: ActivityPaths, sharing: Sharing, nowS: number): void {
+export function startCollecting(
+  paths: ActivityPaths,
+  sharing: Sharing,
+  nowS: number,
+  board: string,
+): void {
   ensureDir(paths);
+  let previous = readState(paths);
+  if (previous?.board !== undefined && previous.board !== board) {
+    rotate(paths);
+    previous = undefined;
+  }
   collectorId(paths);
-  const previous = readState(paths);
   writeState(paths, {
     collect: true,
     // The first session start sends; nothing is due before that.
@@ -479,6 +620,7 @@ export function startCollecting(paths: ActivityPaths, sharing: Sharing, nowS: nu
     since: previous?.collect === true ? previous.since : nowS,
     checked_at: nowS,
     failures: 0,
+    board,
     ...(previous?.last_result === undefined ? {} : { last_result: previous.last_result }),
   });
 }

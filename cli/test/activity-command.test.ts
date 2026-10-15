@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { after, describe, test } from 'node:test';
 
 import { activity, HOOK_SCRIPT, type ActivityIo } from '../src/activity.ts';
+import { type GitRunner } from '../src/activity-census.ts';
 import { codexTomlHasHandlers, MARKER } from '../src/activity-hooks.ts';
 import { activityPaths, readState } from '../src/activity-store.ts';
 import { sync } from '../src/activity-sync.ts';
@@ -54,6 +55,7 @@ interface Harness {
   readonly out: string[];
   readonly err: string[];
   readonly spawned: (readonly string[])[];
+  readonly exits: number[];
   readonly run: (...argv: string[]) => Promise<number>;
 }
 
@@ -63,6 +65,7 @@ async function harness(): Promise<Harness> {
   const out: string[] = [];
   const err: string[] = [];
   const spawned: (readonly string[])[] = [];
+  const exits: number[] = [];
   const io: ActivityIo = {
     out: (line) => out.push(line),
     err: (line) => err.push(line),
@@ -82,6 +85,9 @@ async function harness(): Promise<Harness> {
     spawnDetached: (args) => {
       spawned.push(args);
     },
+    exit: (code) => {
+      exits.push(code);
+    },
   };
   return {
     home,
@@ -90,6 +96,7 @@ async function harness(): Promise<Harness> {
     out,
     err,
     spawned,
+    exits,
     run: (...argv) => activity(argv, io),
   };
 }
@@ -109,6 +116,8 @@ function fixtures(home: string) {
     hooks: {
       UserPromptSubmit: [{ hooks: [{ type: 'command', command: '/usr/local/bin/my-own-hook' }] }],
       PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo pre' }] }],
+      // A person's own hook that mentions laika is theirs, not ours.
+      SessionEnd: [{ hooks: [{ type: 'command', command: '~/bin/laika-standup-notes.sh' }] }],
     },
   };
   write(claude, `${JSON.stringify(claudeBefore, null, 2)}\n`, 0o600);
@@ -267,7 +276,13 @@ void describe('on, then off: every agent’s file', () => {
 
     // Off: back to how it was.
     assert.equal(await h.run('off'), 0, h.out.join('\n'));
-    assert.deepEqual(json(f.claude), f.claudeBefore);
+    const claudeAfter = json(f.claude) as typeof f.claudeBefore;
+    assert.deepEqual(
+      claudeAfter.hooks.SessionEnd,
+      f.claudeBefore.hooks.SessionEnd,
+      'a person’s own hook that mentions laika was removed',
+    );
+    assert.deepEqual(claudeAfter, f.claudeBefore);
     assert.deepEqual(json(f.gemini), f.geminiBefore);
     assert.ok(
       !existsSync(join(h.home, '.codex', 'hooks.json')),
@@ -395,6 +410,26 @@ void describe('status, sync, emails', () => {
     assert.deepEqual(h.spawned, [['activity', 'sync', '--quiet']]);
     assert.deepEqual([...h.out, ...h.err], []);
   });
+
+  void test(
+    'a sync that reaches its deadline ends the process rather than wait on a hung call',
+    { timeout: 10_000 },
+    async () => {
+      const h = await harness();
+      assert.equal(await h.run('on'), 0);
+      writeFileSync(
+        join(h.home, '.laika', 'activity', 'repos'),
+        `${String(Math.floor(Date.now() / 1000))}\t${h.home}\n`,
+      );
+      const hung: GitRunner = () => new Promise<string | undefined>(() => undefined);
+      const io: ActivityIo = { ...h.io, git: hung, deadlineMs: 200 };
+      assert.equal(await activity(['sync'], io), 1);
+      assert.deepEqual(h.exits, [1]);
+      assert.match(h.err.join('\n'), /did not finish within/);
+      assert.equal(await activity(['sync', '--quiet'], io), 0, 'not due yet: the start claimed it');
+      assert.deepEqual(h.exits, [1]);
+    },
+  );
 
   void test('sync --quiet prints nothing even when it fails', async () => {
     const h = await harness();

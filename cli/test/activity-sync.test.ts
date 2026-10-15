@@ -9,7 +9,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
@@ -17,17 +17,20 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 
-import { addDays, localDay, pushedKey, type GitRunner } from '../src/activity-census.ts';
+import { addDays, gitRunner, localDay, pushedKey, type GitRunner } from '../src/activity-census.ts';
 import { acquireLock, activityPaths, readState, writeState } from '../src/activity-store.ts';
 import {
   compactEvents,
+  credentialsFor,
   findCredentials,
+  MAX_BACKOFF_S,
   retryAfterSeconds,
   startCollecting,
   sync,
@@ -123,6 +126,7 @@ async function world(options: { git?: GitRunner } = {}): Promise<World> {
     paths,
     { org_enabled: true, enabled: true, scope: 'agent-repos', min_sync_interval_s: 600 },
     nowS() - 20 * DAY,
+    board.url,
   );
   writeFileSync(paths.repos, `${String(nowS() - 100)}\t${repo}\n`, { mode: 0o600 });
   writeFileSync(
@@ -315,6 +319,11 @@ void describe('the board says no', () => {
       second?.days.reduce((n, d) => n + d.commits_local + d.sessions, 0),
       0,
     );
+    assert.deepEqual(
+      second?.days.flatMap((d) => d.pushed_keys),
+      [],
+      'a commit authored before sharing was turned back on was reported',
+    );
     assert.deepEqual(w.board.violations, []);
   });
 
@@ -330,14 +339,16 @@ void describe('the board says no', () => {
     assert.ok(!existsSync(w.paths.events));
   });
 
-  void test('the switch is read at most once a day', async () => {
+  void test('the switch and the scope are read before every send', async () => {
     const w = await world();
     for (let i = 0; i < 6; i += 1) {
       await sync(w.ctx);
       w.advance(600);
     }
-    assert.equal(w.board.requests.filter((r) => r.method === 'GET').length, 1);
-    assert.equal(w.puts().length, 6);
+    assert.deepEqual(
+      w.board.requests.map((r) => r.method),
+      ['GET', 'PUT', 'GET', 'PUT', 'GET', 'PUT', 'GET', 'PUT', 'GET', 'PUT', 'GET', 'PUT'],
+    );
   });
 
   void test('429: waits for Retry-After, never less than the interval', async () => {
@@ -392,10 +403,7 @@ void describe('the board says no', () => {
   void test('a board that is down is an error in last-error, not a crash', async () => {
     const w = await world();
     w.board.close();
-    const outcome = await sync({
-      ...w.ctx,
-      env: { ...w.ctx.env, LAIKA_URL: 'http://127.0.0.1:1' },
-    });
+    const outcome = await sync(w.ctx);
     assert.equal(outcome.kind, 'error');
     assert.match(readFileSync(w.paths.lastError, 'utf8'), /could not reach the board/);
   });
@@ -404,7 +412,7 @@ void describe('the board says no', () => {
 void describe('one at a time', () => {
   void test('a held lock means another sync is running: nothing is sent', async () => {
     const w = await world();
-    const release = acquireLock(w.paths, Date.now());
+    const release = acquireLock(w.paths);
     assert.ok(release !== undefined);
     assert.equal((await sync(w.ctx)).kind, 'busy');
     assert.equal(w.board.requests.length, 0);
@@ -434,7 +442,7 @@ void describe('16 KB', () => {
         .toString()
         .slice(0, 40),
     );
-    const fakeGit: GitRunner = (_cwd, args) => {
+    const answer = (args: readonly string[]): string | undefined => {
       if (args.includes('--git-common-dir')) return '/fake/.git\n';
       if (args[0] === 'config') return `${ME}\n`;
       if (args.includes('--verify')) return 'abc\n';
@@ -445,6 +453,7 @@ void describe('16 KB', () => {
       }
       return undefined;
     };
+    const fakeGit: GitRunner = (_cwd, args) => Promise.resolve(answer(args));
     const w = await world({ git: fakeGit });
     const first = await sync(w.ctx);
     assert.equal(first.kind, 'sent');
@@ -490,7 +499,7 @@ void describe('credentials', () => {
     const outcome = await sync({ ...w.ctx, env: { PATH: process.env.PATH ?? '', HOME: w.home } });
     assert.equal(outcome.kind, 'error');
     assert.equal(w.board.requests.length, 0);
-    assert.match(readFileSync(w.paths.lastError, 'utf8'), /no board configured/);
+    assert.match(readFileSync(w.paths.lastError, 'utf8'), /no token for/);
   });
 
   void test('Retry-After in either form', () => {
@@ -531,5 +540,220 @@ void describe('state.json is what the hook reads', () => {
       60,
       'an interval below a minute was trusted',
     );
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Review round 1                                                             */
+/* -------------------------------------------------------------------------- */
+
+const lstart = (pid: number): string =>
+  execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8' }).trim();
+
+const until = async (check: () => boolean, ms = 5_000): Promise<void> => {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error('timed out waiting');
+    await new Promise((res) => setTimeout(res, 20));
+  }
+};
+
+void describe('syncs cannot pile up (review 1, item 1)', () => {
+  void test('a live holder keeps the lock, however old it is', async () => {
+    const w = await world();
+    const holder = spawn('sleep', ['30'], { stdio: 'ignore' });
+    try {
+      const pid = holder.pid ?? 0;
+      const content = `${JSON.stringify({ pid, start: lstart(pid) })}\n`;
+      writeFileSync(w.paths.lock, content);
+      const sixMinutesAgo = new Date(Date.now() - 6 * 60_000);
+      utimesSync(w.paths.lock, sixMinutesAgo, sixMinutesAgo);
+      assert.equal((await sync(w.ctx)).kind, 'busy');
+      assert.equal(readFileSync(w.paths.lock, 'utf8'), content, 'a live sync’s lock was taken');
+      assert.equal(w.board.requests.length, 0);
+    } finally {
+      holder.kill('SIGKILL');
+    }
+  });
+
+  void test('a pid that now belongs to a process started at another time is not the holder', async () => {
+    const w = await world();
+    writeFileSync(
+      w.paths.lock,
+      `${JSON.stringify({ pid: process.pid, start: 'Thu Jan  1 00:00:00 1970' })}\n`,
+    );
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    assert.ok(!existsSync(w.paths.lock));
+  });
+
+  /**
+   * Held at the very first call — the board's GET never answers — so nothing
+   * but the claim made on starting can have moved `next_sync_at`. (Holding it
+   * in the census instead proves nothing: by then the GET's answer has been
+   * saved, which moves it too.)
+   */
+  void test('the next sync is claimed when a sync starts, before any work', async () => {
+    const w = await world();
+    w.board.get = 'hang';
+    const running = sync(w.ctx);
+    await until(() => w.board.requests.some((r) => r.method === 'GET'));
+    // Mid-sync: a session start now would find the sync not due, and launch nothing.
+    assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + 600);
+    assert.equal((await sync(w.ctx)).kind, 'busy');
+    const outcome = await running;
+    assert.equal(outcome.kind, 'error', 'the GET should have timed out');
+  });
+
+  void test(
+    'a sync that hangs is abandoned at its deadline, and writes nothing after',
+    { timeout: 10_000 },
+    async () => {
+      let resume: () => void = () => undefined;
+      const gate = new Promise<void>((res) => {
+        resume = res;
+      });
+      const hungGit: GitRunner = async () => {
+        await gate;
+        return undefined;
+      };
+      const w = await world({ git: hungGit });
+      const started = Date.now();
+      const outcome = await sync({ ...w.ctx, deadlineMs: 300 });
+      assert.ok(Date.now() - started < 2_000, `took ${String(Date.now() - started)} ms`);
+      assert.equal(outcome.kind, 'error');
+      assert.ok(outcome.kind === 'error' && outcome.deadline === true);
+      assert.ok(!existsSync(w.paths.lock), 'the lock outlived the sync');
+      assert.match(readFileSync(w.paths.lastError, 'utf8'), /did not finish within 0\.3 s/);
+      const state = readFileSync(w.paths.state, 'utf8');
+      assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + 600);
+      assert.equal(readState(w.paths)?.failures, 1);
+
+      // The stuck call returns later: the abandoned run must not send or write.
+      resume();
+      await new Promise((res) => setTimeout(res, 300));
+      assert.deepEqual(
+        w.board.requests.map((r) => r.method),
+        ['GET'],
+      );
+      assert.equal(readFileSync(w.paths.state, 'utf8'), state);
+    },
+  );
+
+  void test(
+    'a git stuck on a dead mount is killed when the deadline aborts',
+    { timeout: 20_000 },
+    async () => {
+      const bin = dir('laika-hunggit-');
+      const pidFile = join(bin, 'pid');
+      writeFileSync(join(bin, 'git'), `#!/bin/sh\necho $$ > '${pidFile}'\nexec sleep 30\n`, {
+        mode: 0o755,
+      });
+      const controller = new AbortController();
+      const run = gitRunner({ PATH: `${bin}:${process.env.PATH ?? ''}` }, controller.signal);
+      const started = Date.now();
+      const pending = run(bin, ['log']);
+      await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== '');
+      controller.abort();
+      assert.equal(await pending, undefined);
+      assert.ok(Date.now() - started < 3_000);
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      await until(() => {
+        try {
+          process.kill(pid, 0);
+          return false;
+        } catch {
+          return true;
+        }
+      });
+    },
+  );
+});
+
+void describe('one board (review 1, item 3)', () => {
+  void test('a session pointed at another board sends to neither and wipes nothing', async () => {
+    const w = await world();
+    const other = await stubBoard(TOKEN);
+    other.put = { kind: 'off' };
+    const id = readFileSync(w.paths.collectorId, 'utf8');
+    const events = readFileSync(w.paths.events, 'utf8');
+    const outcome = await sync({ ...w.ctx, env: { ...w.ctx.env, LAIKA_URL: other.url } });
+    assert.equal(outcome.kind, 'refused');
+    assert.equal(other.requests.length, 0, 'counts went to a board activity was not turned on for');
+    assert.equal(w.board.requests.length, 0);
+    assert.equal(readFileSync(w.paths.collectorId, 'utf8'), id);
+    assert.equal(readFileSync(w.paths.events, 'utf8'), events);
+    assert.equal(readState(w.paths)?.collect, true);
+    assert.equal(readState(w.paths)?.last_result?.outcome, 'refused');
+    assert.match(readFileSync(w.paths.lastError, 'utf8'), /set up for/);
+  });
+
+  void test('the token comes from ~/.laika/env for the board activity was turned on for', async () => {
+    const w = await world();
+    mkdirSync(join(w.home, '.laika'), { recursive: true });
+    writeFileSync(
+      join(w.home, '.laika', 'env'),
+      `LAIKA_URL="${w.board.url}/"\nLAIKA_TOKEN="${TOKEN}"\n`,
+    );
+    const bare = { PATH: process.env.PATH ?? '', HOME: w.home, GIT_CONFIG_NOSYSTEM: '1' };
+    assert.equal((await sync({ ...w.ctx, env: bare })).kind, 'sent');
+    assert.ok(w.board.requests.every((r) => r.auth === `Bearer ${TOKEN}`));
+    assert.equal(credentialsFor(w.home, {}, 'http://elsewhere'), undefined);
+  });
+
+  void test('turning activity on for another board starts over', async () => {
+    const w = await world();
+    const id = readFileSync(w.paths.collectorId, 'utf8');
+    startCollecting(
+      w.paths,
+      { org_enabled: true, enabled: true, scope: 'agent-repos', min_sync_interval_s: 600 },
+      w.nowS(),
+      'http://another-board',
+    );
+    assert.ok(!existsSync(w.paths.events), 'counts for one board would go to another');
+    assert.notEqual(readFileSync(w.paths.collectorId, 'utf8'), id);
+    assert.equal(readState(w.paths)?.since, w.nowS());
+    assert.equal(readState(w.paths)?.board, 'http://another-board');
+  });
+});
+
+void describe('the scope as the board says it now (review 1, item 4)', () => {
+  void test('narrowed in the web app, it applies on the very next sync — pushed keys too', async () => {
+    const w = await world();
+    w.board.sharing = { ...w.board.sharing, scope: 'laika-repos' };
+    assert.equal(readState(w.paths)?.scope, 'agent-repos');
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    const body = w.puts()[0];
+    assert.equal(
+      body?.days.reduce((n, d) => n + d.commits_local, 0),
+      0,
+    );
+    assert.deepEqual(
+      body?.days.flatMap((d) => d.pushed_keys),
+      [],
+      'a repo outside the scope was reported',
+    );
+    assert.equal(readState(w.paths)?.scope, 'laika-repos');
+  });
+});
+
+void describe('exceptions back off too (review 1, item 5)', () => {
+  void test('doubling from the interval, capped at 6 hours', async () => {
+    const broken: GitRunner = () => Promise.reject(new Error('census exploded'));
+    const w = await world({ git: broken });
+    let outcome = await sync(w.ctx);
+    assert.equal(outcome.kind, 'error');
+    assert.match(readFileSync(w.paths.lastError, 'utf8'), /census exploded/);
+    assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + 600);
+    w.advance(600);
+    outcome = await sync(w.ctx);
+    assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + 1200);
+
+    const state = readState(w.paths);
+    assert.ok(state !== undefined);
+    writeState(w.paths, { ...state, failures: 20, next_sync_at: 0 });
+    await sync(w.ctx);
+    assert.equal(MAX_BACKOFF_S, 6 * 3600);
+    assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + MAX_BACKOFF_S);
+    assert.equal(w.puts().length, 0);
   });
 });

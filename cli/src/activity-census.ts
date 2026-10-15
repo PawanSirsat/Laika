@@ -1,7 +1,7 @@
-import { execFileSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { closeSync, existsSync, openSync, readSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { access, open, realpath } from 'node:fs/promises';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import { AGENTS } from './agents.ts';
 import {
@@ -177,9 +177,25 @@ export function rememberedRepos(paths: ActivityPaths, nowS: number): RememberedR
   return [...latest].map(([path, lastUsed]) => ({ path, lastUsed }));
 }
 
+/**
+ * Does a path exist? **Asynchronous on purpose**, like every other touch of a
+ * repo path here: a repo on a network mount that has gone away can block a
+ * `stat` for minutes, and a blocking call would stop the sync's deadline timer
+ * from ever firing.
+ */
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** `repos` rewritten without the entries that are expired or gone from disk. */
-export function prunedReposFile(repos: readonly RememberedRepo[]): string {
-  const kept = repos.filter((r) => existsSync(r.path));
+export async function prunedReposFile(repos: readonly RememberedRepo[]): Promise<string> {
+  const present = await Promise.all(repos.map((r) => exists(r.path)));
+  const kept = repos.filter((_, i) => present[i] === true);
   return kept.map((r) => `${String(r.lastUsed)}\t${r.path}\n`).join('');
 }
 
@@ -214,25 +230,24 @@ export const LAIKA_BLOCK_FILES = [
 /** At most this much of each file is read looking for the marker. */
 const MARKER_READ_BYTES = 256 * 1024;
 
-function fileHead(path: string): string | undefined {
-  let fd: number | undefined;
+async function fileHead(path: string): Promise<string | undefined> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
-    if (!statSync(path).isFile()) return undefined;
-    fd = openSync(path, 'r');
+    handle = await open(path, 'r');
+    if (!(await handle.stat()).isFile()) return undefined;
     const buffer = Buffer.alloc(MARKER_READ_BYTES);
-    const read = readSync(fd, buffer, 0, MARKER_READ_BYTES, 0);
-    return buffer.subarray(0, read).toString('utf8');
+    const { bytesRead } = await handle.read(buffer, 0, MARKER_READ_BYTES, 0);
+    return buffer.subarray(0, bytesRead).toString('utf8');
   } catch {
     return undefined;
   } finally {
-    if (fd !== undefined) closeSync(fd);
+    await handle?.close();
   }
 }
 
-export function hasLaikaBlock(toplevel: string): boolean {
-  return LAIKA_BLOCK_FILES.some((file) =>
-    LAIKA_BLOCK_PATTERN.test(fileHead(join(toplevel, file)) ?? ''),
-  );
+export async function hasLaikaBlock(toplevel: string): Promise<boolean> {
+  const heads = await Promise.all(LAIKA_BLOCK_FILES.map((file) => fileHead(join(toplevel, file))));
+  return heads.some((head) => LAIKA_BLOCK_PATTERN.test(head ?? ''));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -258,36 +273,67 @@ export function authorIdentity(email: string, at: number): string {
 
 /** How far back git is asked to look, past the window: `--since` is the COMMITTER date. */
 const WIDE_SINCE_S = 45 * DAY_S;
-const GIT_TIMEOUT_MS = 15_000;
+const GIT_TIMEOUT_MS = 10_000;
 
-export type GitRunner = (cwd: string, args: readonly string[]) => string | undefined;
+export type GitRunner = (cwd: string, args: readonly string[]) => Promise<string | undefined>;
 
 /**
  * `git` with nothing from the environment that could change what it prints:
  * no prompt for credentials, no optional locks, C locale. Mailmap, signatures
  * and colour are turned off per command. `undefined` on any failure — a repo
  * that cannot be read counts nothing, it does not stop the sync.
+ *
+ * Asynchronous, killed after 10 s, and killed at once when `signal` aborts (the
+ * sync's overall deadline): a `git` stuck on a dead network mount must never
+ * hold the sync open.
  */
-export function gitRunner(env: Readonly<Record<string, string | undefined>>): GitRunner {
+export function gitRunner(
+  env: Readonly<Record<string, string | undefined>>,
+  signal?: AbortSignal,
+): GitRunner {
   const childEnv = {
     ...env,
     GIT_TERMINAL_PROMPT: '0',
     GIT_OPTIONAL_LOCKS: '0',
     LC_ALL: 'C',
   };
-  return (cwd, args) => {
-    try {
-      return execFileSync('git', ['-C', cwd, ...args], {
-        encoding: 'utf8',
-        env: childEnv,
-        stdio: ['ignore', 'pipe', 'ignore'],
-        timeout: GIT_TIMEOUT_MS,
-        maxBuffer: 64 * 1024 * 1024,
-      });
-    } catch {
-      return undefined;
-    }
-  };
+  return (cwd, args) =>
+    new Promise((done) => {
+      execFile(
+        'git',
+        ['-C', cwd, ...args],
+        {
+          encoding: 'utf8',
+          env: childEnv,
+          timeout: GIT_TIMEOUT_MS,
+          killSignal: 'SIGKILL',
+          maxBuffer: 64 * 1024 * 1024,
+          ...(signal === undefined ? {} : { signal }),
+        },
+        (error, stdout) => {
+          done(error === null ? stdout : undefined);
+        },
+      ).stdin?.end();
+    });
+}
+
+/**
+ * The repo's common git directory, absolute and resolved — what its worktrees
+ * share. `--git-common-dir` exists since git 2.5; `--path-format=absolute`
+ * only since 2.31, and an older `rev-parse` **echoes** a flag it does not know
+ * and exits 0, which once made every repo look like the same one. So the path
+ * is made absolute here, and anything that is not one plain path is refused.
+ */
+export async function commonGitDir(git: GitRunner, repo: string): Promise<string | undefined> {
+  const out = (await git(repo, ['rev-parse', '--git-common-dir']))?.trim();
+  if (out === undefined || out === '' || out.includes('\n') || out.startsWith('-'))
+    return undefined;
+  const absolute = isAbsolute(out) ? out : resolve(repo, out);
+  try {
+    return await realpath(absolute);
+  } catch {
+    return absolute;
+  }
 }
 
 interface Commit {
@@ -355,8 +401,10 @@ export function readSentMemory(paths: ActivityPaths): SentMemory {
  *   branch whose remote was deleted after a squash merge), is not local, and a
  *   pushed key with an acknowledged authorship is not sent twice.
  * - Merge commits are not counted: they record that two lines met, not work.
+ * - **Nothing authored before `sinceS`**, pushed or not: the developer agreed
+ *   to share from the moment sharing was turned on, not before (D-079 item 2).
  */
-export function countCommits(options: {
+export async function countCommits(options: {
   readonly repos: readonly string[];
   readonly extraEmails: readonly string[];
   readonly days: readonly string[];
@@ -365,7 +413,7 @@ export function countCommits(options: {
   readonly sinceS: number;
   readonly sent: SentMemory;
   readonly git: GitRunner;
-}): CommitCensus {
+}): Promise<CommitCensus> {
   const { days, tz, nowS, sinceS, sent, git } = options;
   const inWindow = new Set(days);
   const wideSince = `--since=@${String(nowS - WIDE_SINCE_S)}`;
@@ -376,24 +424,25 @@ export function countCommits(options: {
   const local = new Map<string, Commit>();
 
   for (const repo of options.repos) {
-    const gitDir = git(repo, ['rev-parse', '--path-format=absolute', '--git-common-dir'])?.trim();
-    if (gitDir === undefined || gitDir === '' || seenGitDirs.has(gitDir)) continue;
+    const gitDir = await commonGitDir(git, repo);
+    if (gitDir === undefined || seenGitDirs.has(gitDir)) continue;
     seenGitDirs.add(gitDir);
 
-    const own = git(repo, ['config', '--get', 'user.email'])?.trim().toLowerCase();
+    const own = (await git(repo, ['config', '--get', 'user.email']))?.trim().toLowerCase();
     const mine = new Set(options.extraEmails.map((e) => e.toLowerCase()));
     if (own !== undefined && own !== '') mine.add(own);
     if (mine.size === 0) continue;
 
     const keep = (c: Commit): boolean => mine.has(c.email) && inWindow.has(localDay(c.at, tz));
 
-    for (const c of parseLog(git(repo, ['log', '--remotes', ...common, wideSince, LOG_FORMAT]))) {
+    const onRemotes = await git(repo, ['log', '--remotes', ...common, wideSince, LOG_FORMAT]);
+    for (const c of parseLog(onRemotes)) {
       if (keep(c)) pushed.set(c.sha, c);
     }
 
-    const hasHead = git(repo, ['rev-parse', '--verify', '-q', 'HEAD']) !== undefined;
+    const hasHead = (await git(repo, ['rev-parse', '--verify', '-q', 'HEAD'])) !== undefined;
     const tips = hasHead ? ['--branches', 'HEAD'] : ['--branches'];
-    const unpushed = git(repo, [
+    const unpushed = await git(repo, [
       'log',
       ...tips,
       '--not',
@@ -416,7 +465,10 @@ export function countCommits(options: {
     const identity = authorIdentity(c.email, c.at);
     const key = pushedKey(c.sha);
     const fresh = !sent.keys.has(key) && !sent.identities.has(identity);
-    if (fresh && !pushedIdentities.has(identity)) pending.push({ key, identity, at: c.at });
+    // Like unpushed work: nothing authored before sharing was turned on here.
+    const counted = c.at >= sinceS;
+    if (counted && fresh && !pushedIdentities.has(identity))
+      pending.push({ key, identity, at: c.at });
     pushedIdentities.add(identity);
   }
 
@@ -455,12 +507,20 @@ export interface Snapshot {
 }
 
 /** Repos in scope, given the developer's choice (contract: `local_activity_scope`). */
-export function reposInScope(repos: readonly RememberedRepo[], scope: Scope): string[] {
-  const existing = repos.filter((r) => existsSync(r.path)).map((r) => r.path);
-  return scope === 'laika-repos' ? existing.filter(hasLaikaBlock) : existing;
+export async function reposInScope(
+  repos: readonly RememberedRepo[],
+  scope: Scope,
+): Promise<string[]> {
+  const kept: string[] = [];
+  for (const r of repos) {
+    if (!(await exists(r.path))) continue;
+    if (scope === 'laika-repos' && !(await hasLaikaBlock(r.path))) continue;
+    kept.push(r.path);
+  }
+  return kept;
 }
 
-export function buildSnapshot(options: {
+export async function buildSnapshot(options: {
   readonly paths: ActivityPaths;
   readonly state: ActivityState;
   readonly collectorId: string;
@@ -468,13 +528,13 @@ export function buildSnapshot(options: {
   readonly nowS: number;
   readonly extraEmails: readonly string[];
   readonly git: GitRunner;
-}): Snapshot {
+}): Promise<Snapshot> {
   const { paths, state, tz, nowS } = options;
   const days = windowDays(nowS, tz);
   const events = countEvents(paths, tz, state.since);
   const remembered = rememberedRepos(paths, nowS);
-  const census = countCommits({
-    repos: reposInScope(remembered, state.scope),
+  const census = await countCommits({
+    repos: await reposInScope(remembered, state.scope),
     extraEmails: options.extraEmails,
     days,
     tz,
@@ -519,5 +579,10 @@ export function buildSnapshot(options: {
     }
   }
 
-  return { body, sentKeys, deferredKeys: deferred, prunedRepos: prunedReposFile(remembered) };
+  return {
+    body,
+    sentKeys,
+    deferredKeys: deferred,
+    prunedRepos: await prunedReposFile(remembered),
+  };
 }

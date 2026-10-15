@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { after, describe, test } from 'node:test';
+import { after, before, describe, test } from 'node:test';
 
 import {
   addDays,
@@ -29,6 +29,8 @@ import {
   localDay,
   pushedKey,
   windowDays,
+  type CommitCensus,
+  type GitRunner,
   type SentMemory,
 } from '../src/activity-census.ts';
 import { activityPaths, writeState, type ActivityState } from '../src/activity-store.ts';
@@ -111,9 +113,9 @@ function clone(remote: string, name: string, email = ME): string {
 const NOTHING_SENT: SentMemory = { keys: new Set(), identities: new Set() };
 const DAYS = windowDays(NOW, TZ);
 
-function census(
+async function census(
   repos: readonly string[],
-  options: { sent?: SentMemory; extra?: string[]; since?: number } = {},
+  options: { sent?: SentMemory; extra?: string[]; since?: number; git?: GitRunner } = {},
 ) {
   return countCommits({
     repos,
@@ -123,11 +125,11 @@ function census(
     nowS: NOW,
     sinceS: options.since ?? 0,
     sent: options.sent ?? NOTHING_SENT,
-    git: gitRunner(ENV),
+    git: options.git ?? gitRunner(ENV),
   });
 }
 
-const keysOn = (c: ReturnType<typeof census>, daysAgo: number): string[] =>
+const keysOn = (c: CommitCensus, daysAgo: number): string[] =>
   (c.pendingByDay.get(dayOf(daysAgo)) ?? []).map((p) => p.key);
 
 void describe('days', () => {
@@ -163,13 +165,13 @@ void describe('pushed and unpushed', () => {
   git(work, ['push', '-q', 'origin', 'main']);
   const local = commit(work, { at: dayAt(1) });
 
-  void test('a commit on a remote is a pushed key on its author day', () => {
-    const c = census([work]);
+  void test('a commit on a remote is a pushed key on its author day', async () => {
+    const c = await census([work]);
     assert.deepEqual(keysOn(c, 3), [pushedKey(pushed)]);
   });
 
-  void test('a commit on no remote is commits_local on its author day', () => {
-    const c = census([work]);
+  void test('a commit on no remote is commits_local on its author day', async () => {
+    const c = await census([work]);
     assert.equal(c.local.get(dayOf(1)), 1);
     assert.ok(
       !c.pending.some((p) => p.key === pushedKey(local)),
@@ -177,8 +179,15 @@ void describe('pushed and unpushed', () => {
     );
   });
 
-  void test('a key the board already has is not sent again', () => {
-    const c = census([work], {
+  void test('a pushed commit authored before sharing was turned on is not reported', async () => {
+    const c = await census([work], { since: dayAt(2) });
+    assert.deepEqual(keysOn(c, 3), [], 'pushed work from before the consent was sent');
+    const d = await census([work], { since: dayAt(4) });
+    assert.deepEqual(keysOn(d, 3), [pushedKey(pushed)]);
+  });
+
+  void test('a key the board already has is not sent again', async () => {
+    const c = await census([work], {
       sent: { keys: new Set([pushedKey(pushed)]), identities: new Set() },
     });
     assert.deepEqual(keysOn(c, 3), []);
@@ -195,8 +204,8 @@ void describe('author date, not committer date', () => {
   // Committed long ago by the clock, authored inside the window.
   commit(work, { at: dayAt(2), committed: dayAt(40) });
 
-  void test('each commit is counted on its author day, and only inside the window', () => {
-    const c = census([work]);
+  void test('each commit is counted on its author day, and only inside the window', async () => {
+    const c = await census([work]);
     assert.equal(c.local.get(dayOf(6)), 1, 'counted on the committer day instead');
     assert.equal(
       c.local.get(dayOf(2)),
@@ -219,14 +228,14 @@ void describe('amend after push', () => {
   });
   const amended = git(work, ['rev-parse', 'HEAD']).trim();
 
-  void test('the amended copy is not counted as local work — it is the pushed commit again', () => {
+  void test('the amended copy is not counted as local work — it is the pushed commit again', async () => {
     assert.notEqual(amended, original);
-    const c = census([work]);
+    const c = await census([work]);
     assert.equal(c.local.get(dayOf(2)) ?? 0, 0, 'amend after push double counted as local');
     assert.deepEqual(keysOn(c, 2), [pushedKey(original)]);
   });
 
-  void test('once force-pushed, the amended key is not sent if the original was', () => {
+  void test('once force-pushed, the amended key is not sent if the original was', async () => {
     git(work, ['push', '-q', '--force', 'origin', 'main']);
     const sent: SentMemory = {
       keys: new Set([pushedKey(original)]),
@@ -234,7 +243,7 @@ void describe('amend after push', () => {
         authorIdentity(ME, Number(git(work, ['log', '-1', '--format=%at']).trim())),
       ]),
     };
-    const c = census([work], { sent });
+    const c = await census([work], { sent });
     assert.deepEqual(keysOn(c, 2), [], 'the same work counted twice on the board');
     assert.equal(c.local.get(dayOf(2)) ?? 0, 0);
   });
@@ -250,35 +259,40 @@ void describe('squash merge, then fetch --prune', () => {
   const f2 = commit(work, { at: dayAt(4) });
   git(work, ['push', '-q', 'origin', 'feature']);
 
-  // While the remote branch existed, a sync saw F1 and F2 as pushed.
-  const before = census([work]);
-  const sent: SentMemory = {
-    keys: new Set(before.pending.map((p) => p.key)),
-    identities: new Set(before.pending.map((p) => p.identity)),
-  };
-
-  // Somebody squash-merges the PR on the server and deletes the branch.
-  const other = clone(remote, 'squash-other');
-  git(other, ['merge', '-q', '--squash', 'origin/feature']);
-  const squash = commit(other, { at: dayAt(1), message: 'squash' });
-  git(other, ['push', '-q', 'origin', 'main']);
-  git(other, ['push', '-q', 'origin', '--delete', 'feature']);
-  git(work, ['fetch', '-q', '--prune']);
-
-  void test('before the merge, the feature commits were pushed keys', () => {
-    assert.deepEqual(keysOn(before, 5), [pushedKey(f1)]);
-    assert.deepEqual(keysOn(before, 4), [pushedKey(f2)]);
+  // While the remote branch existed, a sync saw F1 and F2 as pushed. Then
+  // somebody squash-merges the PR on the server and deletes the branch.
+  let seen: CommitCensus | undefined;
+  let sent: SentMemory = NOTHING_SENT;
+  let squash = '';
+  before(async () => {
+    seen = await census([work]);
+    sent = {
+      keys: new Set(seen.pending.map((p) => p.key)),
+      identities: new Set(seen.pending.map((p) => p.identity)),
+    };
+    const other = clone(remote, 'squash-other');
+    git(other, ['merge', '-q', '--squash', 'origin/feature']);
+    squash = commit(other, { at: dayAt(1), message: 'squash' });
+    git(other, ['push', '-q', 'origin', 'main']);
+    git(other, ['push', '-q', 'origin', '--delete', 'feature']);
+    git(work, ['fetch', '-q', '--prune']);
   });
 
-  void test('after the prune they are not counted again as local work', () => {
-    const c = census([work], { sent });
+  void test('before the merge, the feature commits were pushed keys', () => {
+    assert.ok(seen !== undefined);
+    assert.deepEqual(keysOn(seen, 5), [pushedKey(f1)]);
+    assert.deepEqual(keysOn(seen, 4), [pushedKey(f2)]);
+  });
+
+  void test('after the prune they are not counted again as local work', async () => {
+    const c = await census([work], { sent });
     assert.equal(c.local.get(dayOf(5)) ?? 0, 0, 'shipped work came back as local');
     assert.equal(c.local.get(dayOf(4)) ?? 0, 0);
     assert.deepEqual(keysOn(c, 1), [pushedKey(squash)]);
   });
 
-  void test('without that memory they would be — which is why the keys are remembered', () => {
-    const c = census([work]);
+  void test('without that memory they would be — which is why the keys are remembered', async () => {
+    const c = await census([work]);
     assert.equal(c.local.get(dayOf(5)), 1);
     assert.equal(c.local.get(dayOf(4)), 1);
   });
@@ -299,19 +313,19 @@ void describe('whose commits', () => {
   git(work, ['add', '.mailmap']);
   commit(work, { at: dayAt(2), email: ME });
 
-  void test('the repo’s user.email counts; a mailmap cannot add anyone else', () => {
-    const c = census([work]);
+  void test('the repo’s user.email counts; a mailmap cannot add anyone else', async () => {
+    const c = await census([work]);
     assert.equal(c.local.get(dayOf(3)), 1, 'mailmap widened the count');
     assert.equal(c.local.get(dayOf(2)), 1);
   });
 
-  void test('a second email from `laika activity emails` counts too, exactly', () => {
-    const c = census([work], { extra: ['Second@Example.test'] });
+  void test('a second email from `laika activity emails` counts too, exactly', async () => {
+    const c = await census([work], { extra: ['Second@Example.test'] });
     assert.equal(c.local.get(dayOf(3)), 2);
   });
 
-  void test('emails match whole, not as a substring', () => {
-    const c = census([work], { extra: ['ond@example.test'] });
+  void test('emails match whole, not as a substring', async () => {
+    const c = await census([work], { extra: ['ond@example.test'] });
     assert.equal(c.local.get(dayOf(3)), 1);
   });
 });
@@ -332,28 +346,28 @@ void describe('worktrees, no remote, deleted repos', () => {
   commit(solo, { at: dayAt(4) });
   commit(solo, { at: dayAt(4) });
 
-  void test('a repo and its worktree are counted once', () => {
-    const c = census([work, tree]);
+  void test('a repo and its worktree are counted once', async () => {
+    const c = await census([work, tree]);
     assert.equal(c.local.get(dayOf(2)), 1, 'a worktree double counted its repo');
   });
 
-  void test('a repo with no remote: every commit of mine is local', () => {
-    const c = census([solo]);
+  void test('a repo with no remote: every commit of mine is local', async () => {
+    const c = await census([solo]);
     assert.equal(c.local.get(dayOf(4)), 2);
     assert.equal(c.pending.length, 0);
   });
 
-  void test('a deleted repo counts nothing and does not stop the others', () => {
+  void test('a deleted repo counts nothing and does not stop the others', async () => {
     const gone = join(root, 'gone');
     mkdirSync(gone);
     git(gone, ['init', '-q', '-b', 'main']);
     rmSync(gone, { recursive: true, force: true });
-    const c = census([gone, solo]);
+    const c = await census([gone, solo]);
     assert.equal(c.local.get(dayOf(4)), 2);
   });
 
-  void test('unpushed work from before collection started is not this collector’s', () => {
-    const c = census([solo], { since: dayAt(3) });
+  void test('unpushed work from before collection started is not this collector’s', async () => {
+    const c = await census([solo], { since: dayAt(3) });
     assert.equal(c.local.get(dayOf(4)) ?? 0, 0);
   });
 });
@@ -404,8 +418,8 @@ void describe('the snapshot', () => {
       git: gitRunner(ENV),
     });
 
-  void test('fourteen days, every one present, counts where they happened', () => {
-    const s = snapshot('agent-repos');
+  void test('fourteen days, every one present, counts where they happened', async () => {
+    const s = await snapshot('agent-repos');
     assert.equal(s.body.days.length, 14);
     const yesterday = s.body.days.find((d) => d.day === dayOf(1));
     assert.deepEqual(yesterday, {
@@ -418,35 +432,35 @@ void describe('the snapshot', () => {
     assert.equal(s.body.days.find((d) => d.day === dayOf(3))?.pushed_keys.length, 1);
   });
 
-  void test('an agent the contract does not name is sent as `other`', () => {
-    const s = snapshot('agent-repos');
+  void test('an agent the contract does not name is sent as `other`', async () => {
+    const s = await snapshot('agent-repos');
     const kinds = s.body.days.flatMap((d) => Object.keys(d.prompts));
     assert.ok(!kinds.includes('copilot'));
   });
 
-  void test('a deleted or expired repo is dropped from the remembered list', () => {
-    const s = snapshot('agent-repos');
+  void test('a deleted or expired repo is dropped from the remembered list', async () => {
+    const s = await snapshot('agent-repos');
     assert.equal(s.prunedRepos, `${String(NOW - DAY)}\t${work}\n`);
   });
 
-  void test('laika-repos counts only a repo carrying the Connect block', () => {
+  void test('laika-repos counts only a repo carrying the Connect block', async () => {
     assert.equal(
-      snapshot('laika-repos').body.days.find((d) => d.day === dayOf(1))?.commits_local,
+      (await snapshot('laika-repos')).body.days.find((d) => d.day === dayOf(1))?.commits_local,
       0,
     );
     writeFileSync(
       join(work, 'AGENTS.md'),
       `# Notes\n\n## Laika\n\n${LAIKA_BLOCK_MARKER} Mirror work onto it.\n`,
     );
-    assert.ok(hasLaikaBlock(work));
+    assert.ok(await hasLaikaBlock(work));
     assert.equal(
-      snapshot('laika-repos').body.days.find((d) => d.day === dayOf(1))?.commits_local,
+      (await snapshot('laika-repos')).body.days.find((d) => d.day === dayOf(1))?.commits_local,
       1,
     );
   });
 
-  void test('nothing on the contract’s never-sent list is in the body', () => {
-    const raw = JSON.stringify(snapshot('agent-repos').body);
+  void test('nothing on the contract’s never-sent list is in the body', async () => {
+    const raw = JSON.stringify((await snapshot('agent-repos')).body);
     const head = git(work, ['rev-parse', 'HEAD']).trim();
     const secrets = [
       work,
@@ -461,5 +475,74 @@ void describe('the snapshot', () => {
     for (const secret of secrets) {
       assert.ok(!raw.includes(secret), `the body carries ${secret}`);
     }
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Review round 1                                                             */
+/* -------------------------------------------------------------------------- */
+
+void describe('merge commits (review 1, item 7)', () => {
+  const solo = join(root, 'merges');
+  mkdirSync(solo);
+  git(solo, ['init', '-q', '-b', 'main']);
+  git(solo, ['config', 'user.email', ME]);
+  commit(solo, { at: dayAt(5) });
+  git(solo, ['checkout', '-q', '-b', 'side']);
+  commit(solo, { at: dayAt(4) });
+  git(solo, ['checkout', '-q', 'main']);
+  commit(solo, { at: dayAt(4) });
+  const mergedAt = dayAt(3);
+  git(solo, ['merge', '-q', '--no-ff', 'side', '-m', 'merge side'], {
+    GIT_AUTHOR_NAME: 'Dev',
+    GIT_AUTHOR_EMAIL: ME,
+    GIT_AUTHOR_DATE: `@${String(mergedAt)} +0000`,
+    GIT_COMMITTER_NAME: 'Dev',
+    GIT_COMMITTER_EMAIL: ME,
+    GIT_COMMITTER_DATE: `@${String(mergedAt)} +0000`,
+  });
+
+  void test('a merge commit of mine is not counted; the commits it joins are, once', async () => {
+    assert.equal(git(solo, ['log', '-1', '--format=%p']).trim().split(' ').length, 2);
+    const c = await census([solo]);
+    assert.equal(c.local.get(dayOf(3)) ?? 0, 0, 'a merge was counted as work');
+    assert.equal(c.local.get(dayOf(4)), 2);
+    assert.equal(c.local.get(dayOf(5)), 1);
+  });
+});
+
+void describe('older git (review 1, item 2)', () => {
+  const a = join(root, 'old-git-a');
+  const b = join(root, 'old-git-b');
+  for (const repo of [a, b]) {
+    mkdirSync(repo);
+    git(repo, ['init', '-q', '-b', 'main']);
+    git(repo, ['config', 'user.email', ME]);
+    commit(repo, { at: dayAt(2) });
+  }
+  /**
+   * git before 2.31: `rev-parse` does not know `--path-format=absolute`, prints
+   * it back, and exits 0 — and `--git-common-dir` alone answers `.git`,
+   * relative, for every repo. Everything else is the real git.
+   */
+  const real = gitRunner(ENV);
+  const oldGit: GitRunner = (cwd, args) => {
+    if (args[0] === 'rev-parse' && args.includes('--git-common-dir')) {
+      const echoed = args.filter((x) => x.startsWith('--path-format'));
+      return Promise.resolve([...echoed, '.git'].join('\n') + '\n');
+    }
+    return real(cwd, args);
+  };
+
+  void test('two repos are two repos, even when rev-parse answers with a relative path', async () => {
+    const c = await census([a, b], { git: oldGit });
+    assert.equal(c.local.get(dayOf(2)), 2, 'every repo after the first was skipped');
+  });
+
+  void test('an answer that is not one plain path counts nothing rather than guessing', async () => {
+    const garbage: GitRunner = (cwd, args) =>
+      args[0] === 'rev-parse' ? Promise.resolve('--unknown\n.git\n') : real(cwd, args);
+    const c = await census([a], { git: garbage });
+    assert.equal(c.local.size, 0);
   });
 });

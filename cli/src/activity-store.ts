@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   chmodSync,
@@ -7,7 +8,6 @@ import {
   openSync,
   readFileSync,
   rmSync,
-  statSync,
   writeSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -40,7 +40,7 @@ export type Scope = 'agent-repos' | 'laika-repos';
 
 export interface LastResult {
   readonly at: number;
-  readonly outcome: 'sent' | 'off' | 'rate_limited' | 'error';
+  readonly outcome: 'sent' | 'off' | 'rate_limited' | 'refused' | 'error';
   readonly accepted_days?: number;
   /** HTTP status, when there was one. */
   readonly status?: number;
@@ -70,6 +70,13 @@ export interface ActivityState {
   readonly checked_at: number;
   /** Consecutive failed syncs, for the backoff. */
   readonly failures: number;
+  /**
+   * The board `laika activity on` was pointed at. Every sync goes there, with
+   * that board's token, and to no other: a session whose environment names
+   * another board neither sends this machine's counts to it nor lets that
+   * board's 403 wipe them.
+   */
+  readonly board?: string;
   readonly last_result?: LastResult;
 }
 
@@ -161,6 +168,7 @@ export function readState(paths: ActivityPaths): ActivityState | undefined {
     since: num(s.since, 0),
     checked_at: num(s.checked_at, 0),
     failures: num(s.failures, 0),
+    ...(typeof s.board === 'string' && s.board !== '' ? { board: s.board } : {}),
     ...(typeof last === 'object' && last !== null ? { last_result: last } : {}),
   };
 }
@@ -177,6 +185,7 @@ export function writeState(paths: ActivityPaths, state: ActivityState): void {
     since: state.since,
     checked_at: state.checked_at,
     failures: state.failures,
+    ...(state.board === undefined ? {} : { board: state.board }),
     ...(state.last_result === undefined ? {} : { last_result: state.last_result }),
   };
   writeFile600(paths.state, `${JSON.stringify(ordered)}\n`);
@@ -234,9 +243,6 @@ export function recordError(paths: ActivityPaths, nowS: number, message: string)
 /* The lock                                                                   */
 /* -------------------------------------------------------------------------- */
 
-/** A sync that has held the lock this long has died without releasing it. */
-const STALE_LOCK_MS = 5 * 60_000;
-
 function pidAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
@@ -247,11 +253,57 @@ function pidAlive(pid: number): boolean {
 }
 
 /**
- * Take the sync lock, or say it is held. `wx` is the atomic part: two syncs
- * started in the same instant cannot both create the file. A lock whose owner
- * is gone, or that is older than any sync can take, is broken and retaken.
+ * When a process started, as `ps` prints it — to tell the lock's holder from an
+ * unrelated process that was later given the same pid. `''` when `ps` cannot
+ * say, which is then treated as "the same process" (the safe side: busy).
  */
-export function acquireLock(paths: ActivityPaths, nowMs: number): (() => void) | undefined {
+function processStart(pid: number): string {
+  try {
+    return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 2_000,
+    }).trim();
+  } catch {
+    return '';
+  }
+}
+
+interface Holder {
+  readonly pid: number;
+  readonly start: string;
+}
+
+function readHolder(raw: string | undefined): Holder | undefined {
+  if (raw === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as Partial<Holder>;
+    if (typeof parsed.pid === 'number') return { pid: parsed.pid, start: parsed.start ?? '' };
+  } catch {
+    // An older or torn lock file: its first word is the pid, if anything.
+  }
+  const pid = Number(raw.trim().split(/\s+/)[0]);
+  return Number.isInteger(pid) && pid > 0 ? { pid, start: '' } : undefined;
+}
+
+/**
+ * Take the sync lock, or say it is held.
+ *
+ * **A live holder keeps it, however long it has held it.** A sync stuck on a
+ * dead network mount is still a sync; taking its lock would start a second one,
+ * and a third five minutes later — the pile-up this replaced. The sync's own
+ * deadline is what ends a stuck one. Only a lock whose process is gone, or
+ * whose pid now belongs to a process that started at another time (the pid was
+ * reused), is broken and retaken.
+ *
+ * `wx` is the atomic part: two syncs started in the same instant cannot both
+ * create the file. Release removes the file only while it is still ours.
+ */
+export function acquireLock(paths: ActivityPaths): (() => void) | undefined {
+  const mine = JSON.stringify({ pid: process.pid, start: processStart(process.pid) });
+  const release = (): void => {
+    if (readText(paths.lock)?.trim() === mine) rmSync(paths.lock, { force: true });
+  };
   const take = (): (() => void) | undefined => {
     let fd: number;
     try {
@@ -259,32 +311,23 @@ export function acquireLock(paths: ActivityPaths, nowMs: number): (() => void) |
     } catch {
       return undefined;
     }
-    writeSync(fd, `${String(process.pid)} ${String(nowMs)}\n`);
+    writeSync(fd, `${mine}\n`);
     closeSync(fd);
-    return () => {
-      rmSync(paths.lock, { force: true });
-    };
+    return release;
   };
 
   const first = take();
   if (first !== undefined) return first;
 
-  const [pidText, atText] = (readText(paths.lock) ?? '').trim().split(' ');
-  const pid = Number(pidText);
-  let at = Number(atText);
-  if (!Number.isFinite(at)) {
-    try {
-      at = statSync(paths.lock).mtimeMs;
-    } catch {
-      at = 0;
-    }
+  const holder = readHolder(readText(paths.lock));
+  if (holder !== undefined && pidAlive(holder.pid)) {
+    const now = holder.start === '' ? '' : processStart(holder.pid);
+    if (holder.start === '' || now === '' || now === holder.start) return undefined;
   }
-  const dead = !Number.isInteger(pid) || pid <= 0 || !pidAlive(pid);
-  if (dead || nowMs - at > STALE_LOCK_MS) {
-    rmSync(paths.lock, { force: true });
-    return take();
-  }
-  return undefined;
+  rmSync(paths.lock, { force: true });
+  const second = take();
+  // Two syncs may have broken the same dead lock at once; the file says who won.
+  return second !== undefined && readText(paths.lock)?.trim() === mine ? second : undefined;
 }
 
 export function activityOn(paths: ActivityPaths): boolean {
