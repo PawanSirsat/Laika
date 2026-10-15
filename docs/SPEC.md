@@ -160,6 +160,9 @@ the feed but not export it — that is the moment to split them, and the split w
 be obvious because someone will be asking for it.
 | Configure webhooks | ✓ | ✓ | — | — |
 | View the organisation | ✓ | ✓ | ✓ | ✓ |
+| View a member's profile | ✓ (session only) | ✓ (session only) | — | — |
+| Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
+| Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -173,6 +176,26 @@ the same four roles today. Whether an org has an LLM provider wired up is not
 implied by who is in it, so the borrow would have been **a fact about the current
 payload rather than a property of the row** — and the next field added to the
 response would inherit a grant nobody reviewed.
+
+**The three profile rows are `profile.read`, `profile.set_kind` and
+`profile.rate`** (D-078, LAI-743), behind §6.4's `/users/:id/profile` and
+`/users/:id/ratings` and §11.4.2's member profile. Each is its own row, not a
+borrow: the profile carries private ratings, which nothing about the member list
+or an org role implies.
+
+**"session only" means a signed-in web session and no personal access token** —
+not an owner's or admin's full token, not a `read_only` one, not one pinned to
+projects. Every other token rule narrows a role; this one closes the door,
+because a token is how an agent acts and ratings are about people. `can()`
+refuses it before scope is looked at, and `profile.read` is deliberately **not**
+a read action in the `read_only` sense: no token may do it at all.
+
+**"not themselves"**: an owner or admin cannot rate themselves. They may read
+their own profile, ratings included, and set their own profile kind.
+
+**The profile kind is a label, not a permission.** `builder` or `manager`
+(§4.1) changes what the profile shows and nothing anybody may do: `can()` never
+reads it, and no row of §3.1 or §3.2 depends on it.
 
 ### 3.2 Project-level permission matrix
 

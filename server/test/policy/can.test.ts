@@ -145,6 +145,55 @@ describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () =
   });
 });
 
+/**
+ * A member's profile is for a person at the web app, never for a token
+ * (§3.1 "session only", D-078, LAI-743).
+ *
+ * Every other token rule here *narrows* a role; this one closes the door
+ * outright, because a profile carries private ratings and a token is how an
+ * agent acts. A full, unscoped Owner token is the case that matters: scope
+ * rules alone would let it through, since the three actions name no project
+ * and an Owner holds them.
+ */
+describe('profile actions refuse every token (LAI-743)', () => {
+  const PROFILE_ACTIONS = ['profile.read', 'profile.set_kind', 'profile.rate'] as const;
+  const someoneElse = { targetUserId: 'u2' };
+  const tokens: Record<string, TokenContext> = {
+    'full and unscoped': { id: 'tok_full', scope: 'full', projectIds: null },
+    read_only: { id: 'tok_ro', scope: 'read_only', projectIds: null },
+    'pinned to a project': { id: 'tok_pin', scope: 'full', projectIds: ['p1'] },
+  };
+
+  it('allows each on a cookie session, so the refusals below are the token’s', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      for (const action of PROFILE_ACTIONS) {
+        expect(can(actor(role), action, someoneElse), `${role} / ${action}`).toBe(true);
+      }
+    }
+  });
+
+  it('refuses each to an Owner or Admin holding any kind of token', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      for (const [kind, token] of Object.entries(tokens)) {
+        for (const action of PROFILE_ACTIONS) {
+          expect(
+            can(actor(role, null, token), action, someoneElse),
+            `${role} / ${kind} / ${action}`,
+          ).toBe(false);
+        }
+      }
+    }
+  });
+
+  it('leaves the same tokens able to do what they could before', () => {
+    // The refusal is about these three actions, not a token that stopped
+    // working: the same Owner token still reads the member list and invites.
+    const owner = actor('owner', null, { id: 'tok_full', scope: 'full', projectIds: null });
+    expect(can(owner, 'member_list.read')).toBe(true);
+    expect(can(owner, 'user.invite')).toBe(true);
+  });
+});
+
 describe('deny by default (SPEC §3.3 rule 3)', () => {
   it('denies a deactivated user everything, including reads', () => {
     const deactivated: Actor = { ...actor('owner', 'lead'), isActive: false };

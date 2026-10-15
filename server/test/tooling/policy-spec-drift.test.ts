@@ -66,6 +66,9 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ['Export audit log', ['audit_log.export']],
   ['Configure webhooks', ['webhook.configure']],
   ['View the organisation', ['org.read']],
+  ["View a member's profile", ['profile.read']],
+  ["Set a member's profile kind", ['profile.set_kind']],
+  ['Rate a member', ['profile.rate']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([
@@ -311,7 +314,49 @@ const QUALIFIERS: ReadonlyMap<string, QualifierCheck> = new Map([
       },
     },
   ],
+  [
+    'session only',
+    {
+      why: 'The role may, and only on a signed-in web session: any personal access token is refused, whatever its scope or project list (D-078, LAI-743). A profile carries private ratings and a token is how an agent acts.',
+      verify: (action: Action, role: string) => verifySessionOnly(action, role),
+    },
+  ],
+  [
+    'session only, not themselves',
+    {
+      why: 'As "session only", and the person may not be the one being rated: an Owner or Admin cannot rate themselves (D-078, LAI-743).',
+      verify: (action: Action, role: string) => {
+        verifySessionOnly(action, role);
+
+        const self = orgActor(role.toLowerCase() as OrgRole);
+        expect(can(self, action, { targetUserId: self.userId }), 'rating yourself').toBe(false);
+      },
+    },
+  ],
 ]);
+
+/**
+ * A `✓ (session only)` cell, both halves: the role may with a cookie, and no
+ * token of any shape may (LAI-743). Either half alone reads as a different
+ * rule — the first as a plain tick, the second as the role being refused.
+ */
+function verifySessionOnly(action: Action, role: string): void {
+  const actor = orgActor(role.toLowerCase() as OrgRole);
+  const about = { targetUserId: 'someone-else' };
+
+  expect(can(actor, action, about), `${action} / ${role} on a session`).toBe(true);
+
+  for (const token of [
+    { id: 'tok', scope: 'full' as const, projectIds: null },
+    { id: 'tok', scope: 'read_only' as const, projectIds: null },
+    { id: 'tok', scope: 'full' as const, projectIds: ['p'] },
+  ]) {
+    expect(
+      can({ ...actor, token }, action, about),
+      `${action} / ${role} on a ${token.scope} token${token.projectIds === null ? '' : ', project-scoped'}`,
+    ).toBe(false);
+  }
+}
 
 // ------------------------------------------------------------------ the tests
 

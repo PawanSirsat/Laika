@@ -33,6 +33,9 @@ export const ORG_ACTIONS = [
   'heartbeat.send_own',
   'audit_log.export',
   'webhook.configure',
+  'profile.read',
+  'profile.set_kind',
+  'profile.rate',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -108,3 +111,22 @@ export const READ_ACTIONS: ReadonlySet<Action> = new Set<Action>([
 export function isReadAction(action: Action): boolean {
   return READ_ACTIONS.has(action);
 }
+
+/**
+ * Actions no personal access token may perform, whatever its scope or project
+ * list — §3.1's `(session only)` cells (D-078, LAI-743).
+ *
+ * Every other token rule narrows a role; this one closes a door. A member's
+ * profile carries private ratings, and a token is how an agent acts, so the
+ * profile is answered only to a person signed in to the web app.
+ *
+ * **`profile.read` is deliberately not in `READ_ACTIONS`** although it reads.
+ * The set above decides what a `read_only` token may do, and no token may do
+ * this; listing it there would make the day this set is relaxed the day a
+ * read-only token could read ratings.
+ */
+export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
+  'profile.read',
+  'profile.set_kind',
+  'profile.rate',
+]);
