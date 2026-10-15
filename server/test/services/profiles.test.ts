@@ -6,7 +6,7 @@ import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
 import { appendActivity } from '../../src/db/activity.ts';
 import { type OrgRole, type ProfileKind } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { heartbeats, orgs, projects, tokens, users } from '../../src/db/schema.ts';
+import { heartbeats, orgs, projects, tasks, tokens, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 import { ALL_ACTIONS } from '../../src/policy/actions.ts';
@@ -21,7 +21,7 @@ import {
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { createProjectStatus } from '../../src/services/project-statuses.ts';
 import { changeStatus, claimTask, createTask, updateTask } from '../../src/services/tasks.ts';
-import { freshDb, type TestDb } from '../helpers/db.ts';
+import { atCategory, freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
  * The member profile (SPEC §6.4, §11.4.2, D-078, LAI-743).
@@ -92,6 +92,10 @@ function task(slug: string, title: string, extra: Record<string, unknown> = {}):
 
 function move(by: string, id: string, to: Parameters<typeof changeStatus>[3], at: number): void {
   changeStatus(t.db, actor(by), id, to, at);
+}
+
+function laikaProjectId(): string {
+  return t.db.select().from(projects).where(eq(projects.slug, 'laika')).get()!.id;
 }
 
 function code(fn: () => unknown): string {
@@ -363,6 +367,34 @@ describe('a builder’s profile, on the seeded history (LAI-743)', () => {
       started_at: M0 - 5 * WEEK,
     });
     expect(work?.in_review.map((x) => x.key)).toEqual(['ORB-1']);
+    expect(work?.in_progress[0]?.review_since).toBeNull();
+  });
+
+  it('lists work in Review longest waiting first, saying since when (LAI-751)', () => {
+    // Three more of Bea's in Review, entered at different times and created
+    // in a different order: LAI-9 newest in, LAI-10 oldest, LAI-11 between —
+    // and LAI-11 created straight into Review, so it waits from its creation.
+    const lai9 = task('laika', 'Nine');
+    claimTask(t.sqlite, t.db, actor(bea), lai9, NOW - 3 * DAY);
+    move(bea, lai9, 'review', NOW - 30 * MIN);
+    const lai10 = task('laika', 'Ten');
+    claimTask(t.sqlite, t.db, actor(bea), lai10, NOW - 9 * DAY);
+    move(bea, lai10, 'review', NOW - 8 * DAY);
+    const lai11 = task('laika', 'Eleven', { status: 'review', assignee_id: bea });
+    t.db
+      .update(tasks)
+      .set({ createdAt: NOW - 2 * DAY })
+      .where(eq(tasks.id, lai11))
+      .run();
+
+    const work = getProfile(t.db, actor(ada), bea, NOW).current_work;
+    // ORB-1 entered Review at NOW − 1 h in the seeded history.
+    expect(work?.in_review.map((x) => [x.key, x.review_since])).toEqual([
+      ['LAI-10', NOW - 8 * DAY],
+      ['LAI-11', NOW - 2 * DAY],
+      ['ORB-1', NOW - HOUR],
+      ['LAI-9', NOW - 30 * MIN],
+    ]);
   });
 
   it('counts accepted per week — only what someone else moved to Done', () => {
@@ -989,14 +1021,65 @@ describe('review load, recent decisions and time to decide (LAI-750)', () => {
     expect(review.time_to_decide).toEqual({ measured: 1, unmeasured: 0, p50_ms: HOUR });
   });
 
-  it('does not time a decision on a task whose entry into Review was never logged', () => {
-    // Created straight into Review: no move into it is in the log.
+  it('times a task created straight into Review from its creation (LAI-751)', () => {
+    // No move into Review is in the log: it was created there, three hours
+    // before Cal accepted it, so it waited three hours.
     const lai9 = task('laika', 'Nine', { status: 'review', assignee_id: bea });
+    t.db
+      .update(tasks)
+      .set({ createdAt: NOW - 4 * HOUR })
+      .where(eq(tasks.id, lai9))
+      .run();
+    move(cal, lai9, 'done', NOW - HOUR);
+
+    const { review } = getProfile(t.db, actor(ada), cal, NOW);
+    // Waits 1 h, 3 h, 23 h, 1 d, 1 d, 2 d; LAI-5 (from To do) unmeasured.
+    // Nearest rank of six at p50 is the third: 23 h.
+    expect(review.time_to_decide).toEqual({ measured: 6, unmeasured: 1, p50_ms: 23 * HOUR });
+    expect(review.last_30_days).toBe(5);
+  });
+
+  it('does not time a decision the log cannot place: it shows the task elsewhere, never coming back', () => {
+    // In progress by a logged move, then into Review by a write the log does
+    // not hold — there is no entry to measure from, and creation is not it.
+    const lai9 = task('laika', 'Nine');
+    claimTask(t.sqlite, t.db, actor(bea), lai9, NOW - 3 * DAY);
+    t.db
+      .update(tasks)
+      .set(atCategory(t.db, laikaProjectId(), 'review'))
+      .where(eq(tasks.id, lai9))
+      .run();
     move(cal, lai9, 'done', NOW - HOUR);
 
     const { review } = getProfile(t.db, actor(ada), cal, NOW);
     expect(review.time_to_decide).toEqual({ measured: 5, unmeasured: 2, p50_ms: DAY });
-    expect(review.last_30_days).toBe(5);
+  });
+
+  it('measures from the move into Review, not from a move between two Review statuses (LAI-751)', () => {
+    // QA is a second status in the Review category. Into Review at NOW − 4 d,
+    // across to QA at NOW − 3 d (Review → Review: no new entry), accepted at
+    // NOW − 1 d: it waited three days, not two.
+    createProjectStatus(t.sqlite, t.db, actor(ada), 'laika', { name: 'QA', category: 'review' });
+    const id = task('laika', 'Through QA');
+    claimTask(t.sqlite, t.db, actor(bea), id, NOW - 5 * DAY);
+    move(bea, id, 'review', NOW - 4 * DAY);
+    changeStatus(t.db, actor(bea), id, { status_name: 'QA' }, NOW - 3 * DAY);
+    move(ada, id, 'done', NOW - DAY);
+
+    expect(getProfile(t.db, actor(ada), ada, NOW).review.time_to_decide).toEqual({
+      measured: 1,
+      unmeasured: 0,
+      p50_ms: 3 * DAY,
+    });
+  });
+
+  it('counts deciding an unassigned task as a decision, as it counted as waiting (LAI-751)', () => {
+    const id = task('laika', 'Nobody’s', { status: 'review' });
+    move(ada, id, 'done', NOW - HOUR);
+
+    const { review } = getProfile(t.db, actor(ada), ada, NOW);
+    expect(review.accepted).toBe(1);
+    expect(review.recent[0]).toMatchObject({ task_id: id, decision: 'accepted', assignee: null });
   });
 
   it('measures from the latest entry into Review, and only a decision made out of Review', () => {
@@ -1080,6 +1163,25 @@ describe('a manager’s queue (LAI-750)', () => {
       oldest_waiting_since: NOW - 2 * DAY,
       projects: [{ project_id: laika, waiting: 3 }],
     });
+  });
+
+  it('counts a task created straight into Review as waiting since its creation (LAI-751)', () => {
+    seedQueue();
+    // LAI-12 went straight into Review with no logged move. It is the oldest
+    // waiting once its creation is older than LAI-9's entry.
+    const lai12 = t.db
+      .select()
+      .from(tasks)
+      .all()
+      .find((x) => x.title === 'Twelve')!.id;
+    t.db
+      .update(tasks)
+      .set({ createdAt: NOW - 6 * DAY })
+      .where(eq(tasks.id, lai12))
+      .run();
+    setProfileKind(t.db, actor(ada), cal, 'manager', NOW);
+
+    expect(getProfile(t.db, actor(ada), cal, NOW).queue?.oldest_waiting_since).toBe(NOW - 6 * DAY);
   });
 
   it('answers an empty queue for a manager who leads nothing, and none for a builder', () => {
