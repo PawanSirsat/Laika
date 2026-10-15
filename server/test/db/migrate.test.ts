@@ -428,6 +428,30 @@ describe('0029 adds the member profile to a populated 0028 database (LAI-743)', 
         VALUES (${newId()}, ${s.projectId}, 1, 'A', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${member}, ${s.userId}, 'api', ${now}, ${now})
       `);
       appendActivity(db, { orgId: s.orgId, actorKind: 'system', type: 'webhook.commit' });
+      // What hangs off a person and would go with a rebuilt `users` (LAI-746):
+      // better-auth's account and session rows cascade from it, and a token is
+      // how their agents reach the board.
+      db.run(sql`
+        INSERT INTO accounts (id, user_id, issuer, account_id, provider_id, password, created_at, updated_at)
+        VALUES (${newId()}, ${member}, 'credential', ${member}, 'credential', 'hash', ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO sessions (id, user_id, token, expires_at, created_at, updated_at)
+        VALUES (${newId()}, ${member}, 'session-token', ${now + 86_400_000}, ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO tokens (id, user_id, name, prefix, token_hash, scope, created_at)
+        VALUES (${newId()}, ${member}, 'Claude Code', 'lai_abcd', 'hash-1', 'full', ${now})
+      `);
+      const hanging = () => ({
+        accounts: db.all(sql`SELECT id, user_id, password FROM accounts ORDER BY id`),
+        sessions: db.all(sql`SELECT id, user_id, token FROM sessions ORDER BY id`),
+        tokens: db.all(sql`SELECT id, user_id, token_hash FROM tokens ORDER BY id`),
+      });
+      const hangingBefore = hanging();
+      expect(hangingBefore.accounts).toHaveLength(1);
+      expect(hangingBefore.sessions).toHaveLength(1);
+      expect(hangingBefore.tokens).toHaveLength(1);
 
       const rootpage = () =>
         db.get<{ rootpage: number }>(
@@ -442,6 +466,7 @@ describe('0029 adds the member profile to a populated 0028 database (LAI-743)', 
 
       expect(rootpage(), 'users was rebuilt').toBe(before);
       expect(users()).toEqual(usersBefore);
+      expect(hanging()).toEqual(hangingBefore);
       expect(columns()).toContain('profile_kind');
       expect(db.all(sql`SELECT DISTINCT profile_kind FROM users`)).toEqual([
         { profile_kind: 'builder' },
