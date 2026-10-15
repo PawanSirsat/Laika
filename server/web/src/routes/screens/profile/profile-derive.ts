@@ -68,29 +68,36 @@ export function ratingProblem(score: number | undefined, note: string): string |
   return undefined;
 }
 
-/** One rating the reader is trying to save, and the key every try of it carries. */
+/**
+ * One rating the reader is trying to save — of one member — and the key every
+ * try of it carries.
+ */
 export interface RatingAttempt {
   readonly key: string;
+  /** The member rated. An attempt never crosses to another (LAI-749). */
+  readonly userId: string;
   readonly score: number;
   readonly note: string;
 }
 
 /**
  * The attempt a submit belongs to (LAI-746): the previous one again when the
- * reader is retrying the same rating — so the server can answer from what it
- * may already have written — and a new one, with a new key, when the rating
- * changed, since the old key with a different body is the server's `409`. The
- * note is compared trimmed, as the server stores it.
+ * reader is retrying the same rating of the same member — so the server can
+ * answer from what it may already have written — and a new one, with a new
+ * key, when the member, the score or the note changed, since the old key with
+ * a different body is the server's `409`. The note is compared trimmed, as the
+ * server stores it.
  */
 export function nextAttempt(
   previous: RatingAttempt | undefined,
+  userId: string,
   score: number,
   note: string,
   makeKey: () => string,
 ): RatingAttempt {
   const trimmed = note.trim();
-  if (previous?.score === score && previous.note === trimmed) {
+  if (previous?.userId === userId && previous.score === score && previous.note === trimmed) {
     return previous;
   }
-  return { key: makeKey(), score, note: trimmed };
+  return { key: makeKey(), userId, score, note: trimmed };
 }

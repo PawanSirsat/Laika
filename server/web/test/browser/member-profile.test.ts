@@ -677,6 +677,80 @@ void describe('rating a member', () => {
     }
   });
 
+  /**
+   * An attempt belongs to the member it rates (LAI-749). The screen stays
+   * mounted when `?user=` changes, so an attempt kept from one member's failed
+   * save must not be reused for the next member's rating of the same score and
+   * note: the server would answer `409` — that key already wrote, or tried to
+   * write, a rating of someone else.
+   */
+  void test('does not carry a failed attempt’s key over to another member', async () => {
+    const sent: { path: string; key: string | undefined }[] = [];
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': BUILDER,
+      '/api/v1/users/u3/profile': {
+        ...BUILDER,
+        user: { ...BUILDER.user, id: 'u3', name: 'Cal Lead' },
+      },
+    });
+    try {
+      await h.page.route('**/api/v1/users/*/ratings', async (route) => {
+        const path = new URL(route.request().url()).pathname;
+        sent.push({ path, key: route.request().headers()['idempotency-key'] });
+        if (path.includes('/u2/')) {
+          await route.abort('connectionreset');
+          return;
+        }
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify(BUILDER.ratings[0]),
+        });
+      });
+
+      const rate = async (): Promise<void> => {
+        await h.page.locator('button.prof-rate').click();
+        const dialog = h.page.locator('.rating-dialog');
+        await dialog.locator('input[name="rating-score"][value="3"]').check();
+        await dialog.locator('textarea').fill('Same note.');
+        await dialog.locator('button.rating-submit').click();
+      };
+
+      // Bea: the save is lost; the dialog says so and is closed.
+      await h.page.locator('.prof-head', { hasText: 'Bea Builder' }).waitFor({ timeout: 20_000 });
+      await rate();
+      await until(() => sent.length === 1);
+      const dialog = h.page.locator('.rating-dialog');
+      await dialog.locator('[role="alert"]').waitFor();
+      await until(async () => !(await dialog.locator('button.rating-cancel').isDisabled()));
+      await dialog.locator('button.rating-cancel').click();
+      await dialog.waitFor({ state: 'detached' });
+
+      // Cal, by changing `?user=` in place — the same screen, still mounted.
+      await h.page.evaluate(() => {
+        history.pushState({}, '', '/people?user=u3');
+        dispatchEvent(new PopStateEvent('popstate'));
+      });
+      await h.page.locator('.prof-head', { hasText: 'Cal Lead' }).waitFor();
+      await rate();
+      await until(() => sent.length === 2);
+      await dialog.waitFor({ state: 'detached' });
+
+      assert.deepEqual(
+        sent.map((s) => s.path),
+        ['/api/v1/users/u2/ratings', '/api/v1/users/u3/ratings'],
+      );
+      assert.match(sent[0]?.key ?? '', /^rating-[0-9a-f]{32}$/);
+      assert.match(sent[1]?.key ?? '', /^rating-[0-9a-f]{32}$/);
+      assert.notEqual(sent[1]?.key, sent[0]?.key, 'Cal’s rating reused Bea’s attempt key');
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
   void test('keeps the dialog open while a save is in flight — Escape, Cancel and ✕ wait', async () => {
     let release = (): void => undefined;
     const held = new Promise<void>((resolve) => {

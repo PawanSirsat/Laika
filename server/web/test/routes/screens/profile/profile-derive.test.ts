@@ -100,8 +100,9 @@ void describe('nextAttempt — one key per rating the reader is trying to save (
 
   void test('starts a fresh attempt when there is none', () => {
     made = 0;
-    assert.deepEqual(nextAttempt(undefined, 4, 'Steady.', make), {
+    assert.deepEqual(nextAttempt(undefined, 'u2', 4, 'Steady.', make), {
       key: 'k1',
+      userId: 'u2',
       score: 4,
       note: 'Steady.',
     });
@@ -109,16 +110,26 @@ void describe('nextAttempt — one key per rating the reader is trying to save (
 
   void test('keeps the key for a retry of the same rating, so a lost answer cannot duplicate it', () => {
     made = 0;
-    const first = nextAttempt(undefined, 4, 'Steady.', make);
-    assert.equal(nextAttempt(first, 4, 'Steady.', make).key, 'k1');
+    const first = nextAttempt(undefined, 'u2', 4, 'Steady.', make);
+    assert.equal(nextAttempt(first, 'u2', 4, 'Steady.', make).key, 'k1');
     // The note is compared as the server stores it: trimmed.
-    assert.equal(nextAttempt(first, 4, '  Steady.  ', make).key, 'k1');
+    assert.equal(nextAttempt(first, 'u2', 4, '  Steady.  ', make).key, 'k1');
   });
 
   void test('takes a new key when the rating changed — the old one would be a 409', () => {
     made = 0;
-    const first = nextAttempt(undefined, 4, 'Steady.', make);
-    assert.equal(nextAttempt(first, 5, 'Steady.', make).key, 'k2');
-    assert.equal(nextAttempt(first, 4, 'Steadier.', make).key, 'k3');
+    const first = nextAttempt(undefined, 'u2', 4, 'Steady.', make);
+    assert.equal(nextAttempt(first, 'u2', 5, 'Steady.', make).key, 'k2');
+    assert.equal(nextAttempt(first, 'u2', 4, 'Steadier.', make).key, 'k3');
+  });
+
+  void test('takes a new key for another member, whatever the score and note (LAI-749)', () => {
+    // The same score and note about somebody else is a different rating: the
+    // first member's key would answer 409, or worse, name the wrong person.
+    made = 0;
+    const first = nextAttempt(undefined, 'u2', 4, 'Steady.', make);
+    const other = nextAttempt(first, 'u3', 4, 'Steady.', make);
+    assert.equal(other.key, 'k2');
+    assert.equal(other.userId, 'u3');
   });
 });

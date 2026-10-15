@@ -97,11 +97,14 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
   });
   const rateButton = useRef<HTMLButtonElement>(null);
   /**
-   * The rating being tried, and its `Idempotency-Key` (LAI-746). Kept across a
-   * failed try and a closed dialog — a response lost on the way back may still
-   * have been written — and dropped only once a save is answered.
+   * The rating being tried for each member, and its `Idempotency-Key`
+   * (LAI-746). Kept across a failed try and a closed dialog — a response lost
+   * on the way back may still have been written — and dropped once a save is
+   * answered. **One per member** (LAI-749): this screen stays mounted when
+   * `?user=` changes, and a key from one member's attempt must never be sent
+   * for another's.
    */
-  const ratingAttempt = useRef<RatingAttempt | undefined>(undefined);
+  const ratingAttempts = useRef(new Map<string, RatingAttempt>());
 
   useEffect(() => {
     if (!allowed || userId === undefined) return;
@@ -201,12 +204,18 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
   };
 
   const save = (score: number, note: string): void => {
-    const trying = nextAttempt(ratingAttempt.current, score, note, attemptKey);
-    ratingAttempt.current = trying;
+    const trying = nextAttempt(
+      ratingAttempts.current.get(user.id),
+      user.id,
+      score,
+      note,
+      attemptKey,
+    );
+    ratingAttempts.current.set(user.id, trying);
     setRating({ open: true, busy: true });
     rateMember(user.id, { score, note }, trying.key).then(
       () => {
-        ratingAttempt.current = undefined;
+        ratingAttempts.current.delete(user.id);
         setRating({ open: false, busy: false });
         // The whole profile again rather than splicing the answer in: the
         // order of the history is the server's, and so is every figure. A
