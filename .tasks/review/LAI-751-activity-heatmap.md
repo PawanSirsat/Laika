@@ -162,7 +162,7 @@ Single-agent mode, on the owner's direct instruction (HANDOVER §4), on
 Commits: `595aabe` claim · `b61bee9` LAI-753 filed · `6ad9a79` server ·
 `9586a5f` profile server fixes · `66a80f1` Activity card · `53940bf` the two
 switches · `af872fd` profile web pass · `62b2d7f` SPEC from LAI-752's review ·
-`0b7e11e` zone lookup without a sort · `8f10253` the two API modules' mirrored tests (the gate's structure check). The owner's addition of 2026-10-16
+`0b7e11e` zone lookup without a sort · `8f10253` the two API modules' mirrored tests (the gate's structure check) · `7e82347` a scope-radio test that raced the server under load. The owner's addition of 2026-10-16
 (Current work, card heights, Agents used) arrived mid-task and is in
 `9586a5f` (review order, `review_since`) and `af872fd`.
 
