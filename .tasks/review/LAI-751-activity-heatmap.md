@@ -139,7 +139,9 @@ one run-on line.
 - [x] Scale proof at 300 users, 200 projects, 3,000,000 activity rows and a
       year of local rows per user: backfill time, people-activity p50/p95 for
       12w and 52w, ingest time, gzipped 52-week size, query plans — against
-      read p95 ≤ 50 ms, ingest ≤ 20 ms, payload ≤ 4 KB, backfill ≤ 60 s.
+      read p95 ≤ 50 ms, ingest ≤ 20 ms, payload ≤ 4 KB as a target (up to
+      ~6 KB gzipped accepted for heavy use, orchestrator 2026-10-16),
+      backfill ≤ 60 s.
 - [x] Every fix and rule has a test shown to fail without it; privacy tests
       (tokens refused, local series null with either switch off, nothing
       echoed); a contract test for every 4xx.
@@ -176,8 +178,8 @@ the caller's), so a row is never logged uncounted or counted unlogged.
 Endpoints per the contract plus `GET /me/local-activity?days=` (the consent
 preview), each with its own §3.1 row; `assertCan` now says
 `details.reason: "session_required"` when a token is refused only because the
-row is session only. Ingest: 16 KB route body limit, 30/hour bucket per token
-(per user for a session), switches asked before the body is judged, snapshot
+row is session only. Ingest: 16 KB route body limit, a bucket of 30 refilled
+one per 120 s per token (per user for a session), switches asked before the body is judged, snapshot
 overwrite, keys upserted at their earliest day, no `activity` row. Retention:
 `system.local_activity.prune`, daily and once at boot (`atStart`).
 
@@ -238,15 +240,17 @@ projects, 3,000,000 activity rows over two years; 114,786 local rows and
 | people activity, 52w, p50 / p95 | 1.26 / 1.69 ms | p95 ≤ 50 ms |
 | PUT local-activity, 14 days, p50 / p95 | 2.2 / 8.2 ms | ≤ 20 ms |
 | appendActivity with rollup, p50 / p95 | 0.15 / 0.32 ms | — |
-| 52w payload gzipped, realistic (1–2 agents, weekdays) max / median | 2.84 / 2.74 KB | ≤ 4 KB |
-| 52w payload gzipped, worst case (6 agents, random, daily) max / median | **4.67 / 4.51 KB** | ≤ 4 KB — **missed** |
+| 52w payload gzipped, realistic (1–2 agents, weekdays) max / median | 2.84 / 2.74 KB | 4 KB target |
+| 52w payload gzipped, worst case (6 agents, random, daily) max / median | **4.67 / 4.51 KB** | over the 4 KB target; within the ~6 KB accepted |
 
 The rollup matched a `GROUP BY` of the log for the heaviest user. Every read
 is a `SEARCH` on an index leading with the person (plans in
 `logs/chief-2026-10-15.md`); `SCAN orgs` is the one-row org. The worst-case
-payload misses by about 14%: the contract's shape carries one integer per day
-per series plus a per-day agent breakdown, and uniformly random counts do not
-compress. Not fixable inside the shape; reported rather than reshaped.
+payload is about 14% over the 4 KB target: the contract's shape carries one
+integer per day per series plus a per-day agent breakdown, and uniformly
+random counts do not compress. Not fixable inside the shape. The orchestrator
+accepts up to about 6 KB gzipped for heavy use (2026-10-16), so 4 KB is a
+target, not a limit.
 
 **Screenshots** in `/tmp/laika-activity-heatmap-shots/` (82), light and dark
 at 1366, 1024 and 390, from a local instance on port 3481 seeded through the
@@ -267,3 +271,129 @@ PATCH returns; a click-and-wait probe showed both working.
 **Gate**: run after the last edit, from the worktree root; exit codes in the
 final report. No Laika board tools were available in this session, so the
 board card was not mirrored (CLAUDE.md, "Laika").
+
+### 2026-10-16 — owner addition: the profile layout; the two reviews of 50ecd36
+
+**Owner addition (2026-10-16)**, made before anything was merged, in new
+commits on `50ecd36` (history not rewritten): *"this page needs to be
+structured, the components, use the space properly."* With it came the two
+reviews of `50ecd36`: server APPROVE with six non-blocking items, web CHANGES
+REQUIRED with three blocking and five small ones. All are fixed here, each with
+a test shown red without it. The task stays in review.
+
+Commits: `609d411` layout · `8ad725f` Activity card (web review) ·
+`0080dd0` server review items, SPEC, D-079 · `32b87ba` narrow tiles and heads
+· and this note.
+
+**The layout.** The header and the full-width Activity card come first; the
+other cards flow down columns chosen by `columnPlan` in `profile-derive.ts`:
+
+- **Builder, three columns (≥ 1200 px):** Delivered and Current work · Agents
+  used and Review work · Projects and Admin's rating.
+- **Builder, two columns (≥ 768 px):** Delivered, Current work, Review work ·
+  Agents used, Projects, Rating.
+- **Builder, one column:** the reading order, Delivered → Rating.
+- **Manager:** Review work · Recent decisions · Projects and Rating; in two
+  columns, Review and Rating · Decisions and Projects.
+
+Each column is a flex stack with the page's 16 px gap, so a card is as tall as
+its content and long lists scroll inside it (`.prof-scroll`, 22rem). Measured
+on the owner's shape at 1366, the three columns end at 1465, 1407 and 1466 px.
+
+- **Online now** is no longer a card. Agents used says *N online*, *none
+  online* or *presence off* in its header, and each row carries its dot,
+  *online* and *active X ago*. An agent online on a token the list does not
+  show still gets a row.
+- **Empty cards** are their title and one short line, with no dashed box and
+  no tiles of zeros. Delivered with nothing accepted is one line, plus the
+  cycle figure when one exists. Review work with no decisions is one line.
+  Tile rows of only zeros are hidden. The manager's queue tiles fit in one
+  row.
+- **The `other` agent** reads *Other agent*. Its share is a number, and a row
+  with no writes shows no share and no dash.
+
+**Layout tests** (`member-profile.test.ts`, *the profile's layout*). There are
+three, at 1366: (a) the owner's shape — 9 in progress, 34 in review, four
+agent kinds with two online, three projects, nothing accepted; (b) an empty
+profile; (c) a manager. Each is measured from what is painted, not from the
+page's classes. Each checks:
+
+- the gap between consecutive cards in a column equals the page gap;
+- no card has more than 48 px drawn empty inside it;
+- *Online now* is not a card, and the online state is in Agents used;
+- at 390 there is one column, in reading order on screen and in the DOM;
+- at 1024, (a) has two columns.
+
+Against 50ecd36's files they are red: (a) and (b) fail on *"Online now is a
+card of its own"*, and (c) fails on *"2 columns, not 3"*. Two CSS mutations
+are red at their own assertion: rows instead of columns gives *"review: 302px
+above it in its column, not the 16px gap"*, and stretched cards give
+*"delivery: 179px of empty card"*.
+
+**Web review, blocking.**
+
+1. **No jump on load.** The profile now answers `activity_sharing`, the
+   person's two switches, so the skeleton is drawn in the final shape. Text
+   that waits on the answer sits on a line of its own that never wraps:
+   block heads, legend items and tile subs, each chosen by width and never by
+   the text. A test holds the response and measures four states × both
+   designs × 1366, 1024 and 390. The old card moved in every combination,
+   for example 698 → 749 px with insights off, stacked, at 1366.
+2. **One panel for GitHub and Local** when either switch is off: one sentence
+   and one link for owners and admins, then the Board grid. There is no
+   separate note and no empty grids. With both switches on and nothing yet,
+   the GitHub and Local heads say *nothing from their machines yet*, with
+   `laika activity on` in the title.
+3. **Twelve weeks fit a phone in design B.** The head is `border-box`, and at
+   narrow widths it drops the weekday indent. Tests check that nothing is
+   wider than the card at 390 in both designs, and that each heading's total
+   and key stay whole wherever the year is scrolled. Against the old files,
+   B fails with *"twelve weeks scroll sideways by 33px"*.
+
+**Web review, small.**
+
+- Connect shows the year on a held day from another year.
+- Split design keeps each source's label with its scale.
+- *Other agent* on the profile. `agentClientName('other')` is still *another
+  agent* elsewhere, for example in presence's *"connected via another
+  agent"* and on Capacity. That is outside this page, so I left it.
+- The blank under Delivered at 1366 is gone with the columns, and the layout
+  test catches it.
+- Busiest weekday names a tie: two days by name (*Mon, Tue*); more than two
+  as *no single busiest day*.
+
+Against the pre-fix card, CSS, derive and Connect files, 8 tests are red.
+
+**Server review.**
+
+1. **Agent aliases** are a `Map`; `constructor` had stored `Object`'s own
+   function as a key.
+2. **The time-zone formatters** are kept under the canonical zone name, at
+   most 64 of them, the least recently used dropped first. The comment now
+   says exactly that.
+3. **Developer insights** is web-session only: its own §3.1 row,
+   `org.developer_insights.set`. A token's `PATCH /org` that carries it gets
+   `403 session_required` and writes nothing. SPEC §3.1 and D-079 say so.
+4. **SPEC states the limiter exactly:** a bucket of 30, refilled one per
+   120 s. A test pins it, and it goes red with the refill doubled.
+5. **Payload:** 4 KB is a target, not a limit; up to about 6 KB gzipped is
+   accepted for heavy use (orchestrator, 2026-10-16).
+6. **Test gaps.** One test checks that the per-agent breakdown is replaced on
+   overwrite. The unreachable per-day `pushed_keys` cap is removed, and SPEC
+   says why: a key costs 19 bytes, so fewer than 900 fit in 16 KB. Removing
+   it changes no behaviour, so its test pins the body bound (the most keys
+   that fit are taken, and one more is a 413) rather than failing without it.
+
+The other fixes were mutated one at a time, each restored with a checksum.
+All six went red at their own test.
+
+**Screenshots** in `/tmp/laika-activity-heatmap-shots/`, from a local
+instance on port 3491 seeded through the real API:
+
+- `layout-{a,b,c}-{light,dark}-{1366,1024,390}.png` — the new layout;
+- `layout-before-a-{light,dark}-1366.png` — 50ecd36's build served against
+  the same seeded API;
+- `activity-{sharing,not-sharing,insights-off}-{a,b}-{light,dark}-{1366,1024,390}.png`.
+
+**Click-through** on the same instance passed all eleven steps, with no page
+or console errors. The kind switch now clicks and waits for the redraw.
