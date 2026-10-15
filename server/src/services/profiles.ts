@@ -1,5 +1,6 @@
 import {
   and,
+  asc,
   count,
   desc,
   eq,
@@ -63,9 +64,10 @@ import { agentPresenceFor, clientOf, type AgentPresence } from './presence.ts';
  *
  * ## The kind changes what is shown, never what is allowed
  *
- * A `manager` profile carries no `current_work`, `delivery` or `agents` block —
- * **absent, not empty**, the convention `unlisted` and the org's `ai` block use
- * — and that is all `profile_kind` does. `can()` never reads it.
+ * A `manager` profile carries no `current_work`, `delivery` or `agents` block,
+ * and a `builder` profile no `queue` block — **absent, not empty**, the
+ * convention `unlisted` and the org's `ai` block use — and that is all
+ * `profile_kind` does. `can()` never reads it.
  *
  * ## Ratings stay here
  *
@@ -86,6 +88,9 @@ export const RATING_NOTE_MAX = 500;
 /** How many of a person's review decisions the profile lists. */
 const RECENT_DECISIONS = 10;
 
+/** `review.last_30_days`: decisions in the thirty days to now (LAI-750). */
+const RECENT_DAYS = 30;
+
 /**
  * The most any of the profile's growing lists carries — ratings, open work,
  * agent tokens — each beside its total, so the page can say *"and N more"*
@@ -93,7 +98,8 @@ const RECENT_DECISIONS = 10;
  */
 export const PROFILE_LIST_LIMIT = 50;
 
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEK_MS = 7 * DAY_MS;
 
 /** Categories a task can be sent back to from review (§5): earlier ones. */
 const BEFORE_REVIEW: readonly TaskStatus[] = ['backlog', 'todo', 'in_progress'];
@@ -176,11 +182,64 @@ export interface ReviewDecision {
   assignee: { id: string; name: string };
 }
 
+/** One week of their review decisions on other people's work (LAI-750). */
+export interface ReviewWeek {
+  /** Monday 00:00 UTC. */
+  week_start: number;
+  accepted: number;
+  sent_back: number;
+}
+
+/**
+ * How long their decisions took, from the task's latest entry into Review to
+ * the decision (LAI-750).
+ */
+export interface ProfileDecideTime {
+  /** Decisions made out of Review, with that entry in the activity log. */
+  measured: number;
+  /**
+   * Decisions with nothing to measure from — made from outside Review, or on a
+   * task whose entry into Review the log does not hold. Counted, not measured.
+   */
+  unmeasured: number;
+  /** `null` when nothing was measured — not a zero nobody took. */
+  p50_ms: number | null;
+}
+
 export interface ProfileReview {
   accepted: number;
   sent_back: number;
+  /** Decisions in the thirty days to now — a part of the window. */
+  last_30_days: number;
+  /** Oldest first, one per week of the window, zeros included (LAI-750). */
+  per_week: ReviewWeek[];
+  time_to_decide: ProfileDecideTime;
   /** Newest first, the most recent few. */
   recent: ReviewDecision[];
+}
+
+/** One project they lead, and how much waits there for a decision (LAI-750). */
+export interface QueueProject {
+  project_id: string;
+  waiting: number;
+}
+
+/**
+ * A manager's review queue now (LAI-750). **Managers only** — absent for a
+ * builder, as the builder blocks are absent for a manager.
+ */
+export interface ProfileQueue {
+  /** Projects they lead — membership role `lead` — that are not archived. */
+  projects_led: number;
+  /** Tasks in a Review-category status there, assigned to anyone but them. */
+  waiting: number;
+  /**
+   * When the longest-waiting of those entered Review, from the activity log;
+   * `null` when nothing waits or no entry is recorded.
+   */
+  oldest_waiting_since: number | null;
+  /** Each led project, alphabetical, with what waits in it — zeros included. */
+  projects: QueueProject[];
 }
 
 export interface ProfileAgentToken {
@@ -194,6 +253,12 @@ export interface ProfileAgentToken {
   created_at: number;
 }
 
+/** Their board writes through one agent, in the window (LAI-750). */
+export interface AgentWrites {
+  client: AgentClient;
+  writes: number;
+}
+
 export interface ProfileAgents {
   /**
    * Tokens still usable — not revoked, not expired — most recently used first;
@@ -203,6 +268,14 @@ export interface ProfileAgents {
   /** All of them, however many `tokens` carries. */
   tokens_total: number;
   online: AgentPresence;
+  /**
+   * Their `activity` rows made through a token in the window, grouped by the
+   * agent that token last connected as (D-076), most first (LAI-750). Revoked
+   * tokens count: the writes happened. One entry per agent, so no cap.
+   */
+  writes: AgentWrites[];
+  /** The sum of `writes`. */
+  writes_total: number;
 }
 
 export interface RatingView {
@@ -243,6 +316,8 @@ export interface ProfileView {
   delivery?: ProfileDelivery;
   /** Builders only — absent for a manager. */
   agents?: ProfileAgents;
+  /** Managers only — absent for a builder (LAI-750). */
+  queue?: ProfileQueue;
 }
 
 export interface RateMemberInput {
@@ -298,13 +373,16 @@ export function getProfile(
     review: {
       accepted: theirDecisions.filter((d) => d.decision === 'accepted').length,
       sent_back: theirDecisions.filter((d) => d.decision === 'sent_back').length,
+      last_30_days: theirDecisions.filter((d) => d.view.at >= now - RECENT_DAYS * DAY_MS).length,
+      per_week: reviewPerWeek(theirDecisions, since),
+      time_to_decide: timeToDecide(db, theirDecisions),
       recent: theirDecisions.slice(0, RECENT_DECISIONS).map((d) => d.view),
     },
     ratings: ratingsFor(db, userId),
     ratings_total: ratingCount(db, userId),
   };
 
-  if (person.profileKind === 'manager') return profile;
+  if (person.profileKind === 'manager') return { ...profile, queue: queueFor(db, userId) };
 
   return {
     ...profile,
@@ -318,7 +396,11 @@ export function getProfile(
       reopened: onTheirTasks.filter((m) => isReopen(m.move)).length,
       cycle_time: cycleTime(theirTasks, since, now),
     },
-    agents: { ...agentTokens(db, userId, now), online: agentPresenceFor(db, userId, now) },
+    agents: {
+      ...agentTokens(db, userId, now),
+      online: agentPresenceFor(db, userId, now),
+      ...agentWrites(db, userId, since, now),
+    },
   };
 }
 
@@ -603,6 +685,10 @@ function loadMovesOnTheirTasks(db: Db, userId: string, since: number, now: numbe
 interface Decision {
   decision: 'accepted' | 'sent_back';
   projectId: string;
+  /** The `activity` row the decision is, for {@link timeToDecide}. */
+  activityId: string;
+  /** The category it was decided from — only a decision out of Review is timed. */
+  from: TaskStatus;
   view: ReviewDecision;
 }
 
@@ -661,6 +747,8 @@ function loadDecisionsOnOthers(db: Db, userId: string, since: number, now: numbe
       {
         decision,
         projectId: r.projectId,
+        activityId: r.row.id,
+        from: move.from,
         view: {
           task_id: r.taskId,
           key: `${r.prefix}-${String(r.number)}`,
@@ -743,6 +831,147 @@ function perWeek(accepted: readonly MoveRow[], since: number): WeekCount[] {
   return weeks;
 }
 
+/** Their decisions per week of the window, oldest first, zeros included. */
+function reviewPerWeek(decisions: readonly Decision[], since: number): ReviewWeek[] {
+  const weeks = Array.from({ length: PROFILE_WINDOW_WEEKS }, (_, i) => ({
+    week_start: since + i * WEEK_MS,
+    accepted: 0,
+    sent_back: 0,
+  }));
+
+  for (const d of decisions) {
+    const week = weeks[Math.floor((d.view.at - since) / WEEK_MS)];
+    if (week !== undefined) week[d.decision] += 1;
+  }
+
+  return weeks;
+}
+
+/** A move into Review from another category — one between two Review statuses is not. */
+function entersReview(move: Move): boolean {
+  return move.to === 'review' && move.from !== 'review';
+}
+
+/**
+ * Each task's status changes, oldest first, for the tasks named — the history
+ * {@link timeToDecide} and {@link queueFor} read entries into Review from.
+ */
+function movesOn(
+  db: Db,
+  taskIds: readonly string[],
+): Map<string, { id: string; at: number; move: Move }[]> {
+  const byTask = new Map<string, { id: string; at: number; move: Move }[]>();
+  if (taskIds.length === 0) return byTask;
+
+  const rows = db
+    .select()
+    .from(activity)
+    .where(and(eq(activity.type, 'task.status_changed'), inArray(activity.taskId, [...taskIds])))
+    .orderBy(asc(activity.createdAt), asc(activity.id))
+    .all();
+
+  for (const row of rows) {
+    const move = moveOf(row);
+    if (move === null || row.taskId === null) continue;
+    const list = byTask.get(row.taskId) ?? [];
+    list.push({ id: row.id, at: row.createdAt, move });
+    byTask.set(row.taskId, list);
+  }
+  return byTask;
+}
+
+/**
+ * The median time from a task's latest entry into Review to their decision on
+ * it (LAI-750). Only a decision made **out of** Review has a wait to measure;
+ * the rest — an acceptance straight from To do, or a task that reached Review
+ * without a logged move — are counted as unmeasured, never as zero.
+ */
+function timeToDecide(db: Db, decisions: readonly Decision[]): ProfileDecideTime {
+  const history = movesOn(db, [...new Set(decisions.map((d) => d.view.task_id))]);
+
+  const waits: number[] = [];
+  for (const d of decisions) {
+    if (d.from !== 'review') continue;
+    const moves = history.get(d.view.task_id) ?? [];
+    const at = moves.findIndex((m) => m.id === d.activityId);
+    const entry = moves
+      .slice(0, Math.max(at, 0))
+      .reverse()
+      .find((m) => entersReview(m.move));
+    if (entry !== undefined) waits.push(d.view.at - entry.at);
+  }
+  waits.sort((a, b) => a - b);
+
+  return {
+    measured: waits.length,
+    unmeasured: decisions.length - waits.length,
+    p50_ms: waits.length === 0 ? null : percentile(waits, 50),
+  };
+}
+
+/**
+ * A manager's queue now (LAI-750): the projects they lead, and the work in
+ * Review there that waits for somebody's decision — anyone's task but their
+ * own, unassigned included. How long the oldest has waited is read from its
+ * latest entry into Review, as {@link timeToDecide} reads it.
+ *
+ * Membership role `lead`, not the org role: an owner or admin leads every
+ * project implicitly (§3), and counting that would make every admin's queue
+ * the whole board's.
+ */
+function queueFor(db: Db, userId: string): ProfileQueue {
+  const led = db
+    .select({ id: projects.id, name: projects.name, slug: projects.slug })
+    .from(projectMemberships)
+    .innerJoin(projects, eq(projects.id, projectMemberships.projectId))
+    .where(
+      and(
+        eq(projectMemberships.userId, userId),
+        eq(projectMemberships.role, 'lead'),
+        isNull(projects.archivedAt),
+      ),
+    )
+    .all()
+    .sort((a, b) => a.name.localeCompare(b.name) || a.slug.localeCompare(b.slug));
+  if (led.length === 0) {
+    return { projects_led: 0, waiting: 0, oldest_waiting_since: null, projects: [] };
+  }
+
+  const waiting = db
+    .select({ id: tasks.id, projectId: tasks.projectId })
+    .from(tasks)
+    .where(
+      and(
+        inArray(
+          tasks.projectId,
+          led.map((p) => p.id),
+        ),
+        eq(tasks.status, 'review'),
+        or(isNull(tasks.assigneeId), ne(tasks.assigneeId, userId)),
+      ),
+    )
+    .all();
+
+  const history = movesOn(
+    db,
+    waiting.map((x) => x.id),
+  );
+  const entered = waiting.flatMap((x) => {
+    const entry = (history.get(x.id) ?? []).filter((m) => entersReview(m.move)).at(-1);
+    return entry === undefined ? [] : [entry.at];
+  });
+
+  return {
+    projects_led: led.length,
+    waiting: waiting.length,
+    oldest_waiting_since: entered.length === 0 ? null : Math.min(...entered),
+    projects: led.map((p) => ({
+      project_id: p.id,
+      waiting: waiting.filter((x) => x.projectId === p.id).length,
+    })),
+  };
+}
+
 /**
  * `started_at` → `completed_at` for their tasks that are done now and were
  * completed in the window — `GET /projects/:slug/metrics`'s rule (LAI-124),
@@ -804,6 +1033,51 @@ function agentTokens(
     .sort((a, b) => lastSeen(b) - lastSeen(a) || b.created_at - a.created_at);
 
   return { tokens: usable.slice(0, PROFILE_LIST_LIMIT), tokens_total: usable.length };
+}
+
+/**
+ * Their writes through each agent in the window (LAI-750): `activity` rows they
+ * made on a token, grouped by the agent that token last connected as (D-076's
+ * `last_client`, through {@link clientOf}). A token that later connected as
+ * another agent moves its history with it — the log keeps the token, not the
+ * client — so this is a share, not an audit.
+ */
+function agentWrites(
+  db: Db,
+  userId: string,
+  since: number,
+  now: number,
+): Pick<ProfileAgents, 'writes' | 'writes_total'> {
+  const rows = db
+    .select({
+      n: count(),
+      lastClient: tokens.lastClient,
+      tokenName: tokens.name,
+    })
+    .from(activity)
+    .leftJoin(tokens, eq(tokens.id, activity.actorTokenId))
+    .where(
+      and(
+        eq(activity.actorId, userId),
+        isNotNull(activity.actorTokenId),
+        gte(activity.createdAt, since),
+        lte(activity.createdAt, now),
+      ),
+    )
+    .groupBy(activity.actorTokenId)
+    .all();
+
+  const byClient = new Map<AgentClient, number>();
+  for (const row of rows) {
+    const client = clientOf(row.lastClient, row.tokenName);
+    byClient.set(client, (byClient.get(client) ?? 0) + row.n);
+  }
+
+  const writes = [...byClient]
+    .map(([client, n]) => ({ client, writes: n }))
+    .sort((a, b) => b.writes - a.writes || a.client.localeCompare(b.client));
+
+  return { writes, writes_total: writes.reduce((sum, w) => sum + w.writes, 0) };
 }
 
 /** Their newest ratings, at most `PROFILE_LIST_LIMIT`, with who gave each. */

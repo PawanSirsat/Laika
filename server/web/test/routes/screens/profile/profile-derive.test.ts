@@ -10,13 +10,18 @@
 
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
+import type { ProfileAgentToken } from '../../../../src/api/profiles.ts';
 import {
+  agentRows,
   barHeights,
+  countLabel,
   durationLabel,
+  lastActive,
   monthYear,
   nextAttempt,
   ratingProblem,
   scoreLabel,
+  sharePercents,
   weekLabel,
 } from '../../../../src/routes/screens/profile/profile-derive.ts';
 
@@ -131,5 +136,92 @@ void describe('nextAttempt — one key per rating the reader is trying to save (
     const other = nextAttempt(first, 'u3', 4, 'Steady.', make);
     assert.equal(other.key, 'k2');
     assert.equal(other.userId, 'u3');
+  });
+});
+
+// ------------------------------------------------------------ LAI-750
+
+const token = (
+  id: string,
+  client: ProfileAgentToken['client'],
+  lastUsed: number | null,
+  lastMcp: number | null = null,
+): ProfileAgentToken => ({
+  id,
+  name: `Token ${id}`,
+  client,
+  client_name: null,
+  last_used_at: lastUsed,
+  last_mcp_at: lastMcp,
+  created_at: 1,
+});
+
+void describe('sharePercents', () => {
+  void test('adds up to exactly 100 by the largest remainder, never 33 + 33 + 33', () => {
+    assert.deepEqual(sharePercents([1, 1, 1]), [34, 33, 33]);
+    assert.deepEqual(sharePercents([6, 3, 1]), [60, 30, 10]);
+    assert.deepEqual(sharePercents([2, 1]), [67, 33]);
+    for (const counts of [
+      [7, 5, 3, 1],
+      [1, 1, 1, 1, 1, 1, 1],
+      [99, 1, 1],
+    ]) {
+      assert.equal(
+        sharePercents(counts).reduce((sum, n) => sum + n, 0),
+        100,
+        String(counts),
+      );
+    }
+  });
+
+  void test('invents no share of nothing', () => {
+    assert.deepEqual(sharePercents([0, 0]), [0, 0]);
+    assert.deepEqual(sharePercents([]), []);
+  });
+});
+
+void describe('agentRows', () => {
+  void test('one row per agent: those that wrote, most first, then those on a token that did not', () => {
+    const rows = agentRows(
+      [
+        { client: 'codex', writes: 3 },
+        { client: 'cursor', writes: 1 },
+      ],
+      [token('a', 'claude-code', 50), token('b', 'codex', 40), token('c', 'codex', 10)],
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.client, r.writes, r.percent, r.tokens.map((t) => t.id)]),
+      [
+        ['codex', 3, 75, ['b', 'c']],
+        // Wrote through a token since revoked: a share, no usable token.
+        ['cursor', 1, 25, []],
+        ['claude-code', 0, 0, ['a']],
+      ],
+    );
+  });
+
+  void test('is empty for nobody’s agents', () => {
+    assert.deepEqual(agentRows([], []), []);
+  });
+});
+
+void describe('lastActive', () => {
+  void test('is the latest request or MCP call on any of that agent’s tokens', () => {
+    const tokens = [token('a', 'codex', 10, 30), token('b', 'codex', 20), token('c', 'cursor', 99)];
+    assert.equal(lastActive(tokens, 'codex'), 30);
+    assert.equal(lastActive(tokens, 'cursor'), 99);
+  });
+
+  void test('says never rather than the epoch', () => {
+    assert.equal(lastActive([token('a', 'codex', null)], 'codex'), null);
+    assert.equal(lastActive([], 'codex'), null);
+  });
+});
+
+void describe('countLabel', () => {
+  void test('says one and many', () => {
+    assert.equal(countLabel(1, 'project', 'projects'), '1 project');
+    assert.equal(countLabel(0, 'project', 'projects'), '0 projects');
+    assert.equal(countLabel(3, 'type', 'types'), '3 types');
   });
 });

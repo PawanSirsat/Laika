@@ -308,8 +308,13 @@ const PAIRS: readonly Pair[] = [
       ['ProfileDelivery', 'services/profiles.ts'],
       ['ReviewDecision', 'services/profiles.ts'],
       ['ProfileReview', 'services/profiles.ts'],
+      ['ReviewWeek', 'services/profiles.ts'],
+      ['ProfileDecideTime', 'services/profiles.ts'],
+      ['ProfileQueue', 'services/profiles.ts'],
+      ['QueueProject', 'services/profiles.ts'],
       ['ProfileAgentToken', 'services/profiles.ts'],
       ['ProfileAgents', 'services/profiles.ts'],
+      ['AgentWrites', 'services/profiles.ts'],
       ['AgentPresence', 'services/presence.ts'],
     ] as const
   ).map(([name, serverFile]) => ({

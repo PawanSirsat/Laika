@@ -12,6 +12,8 @@
  * The delivery figures that sit side by side are given different values —
  * accepted 4, sent back 6, reopened 7, p50 3 d, p75 4.5 d — so a card showing
  * one field under another's label fails rather than matching by coincidence.
+ * The manager's tiles likewise (LAI-750): led 1, decided in 30 days 4,
+ * accepted 9, sent back 2, median 5 h, waiting 3, oldest 2 d.
  */
 
 import assert from 'node:assert/strict';
@@ -21,6 +23,7 @@ import { closeBrowser, open, refuse, setTheme, until, type ApiStub } from './har
 
 const NOW = Date.now();
 const MIN = 60_000;
+const HOUR = 60 * MIN;
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
 
@@ -31,6 +34,12 @@ const MONDAY = (() => {
 })();
 const SINCE = MONDAY - 11 * WEEK;
 const WEEKLY = [0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 2, 0];
+/** A manager's review decisions per week (LAI-750): 9 accepted, 2 sent back. */
+const REVIEWED = [0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 0];
+const SENT_BACK = [0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0];
+
+const reviewWeeks = (accepted: readonly number[], sentBack: readonly number[]) =>
+  accepted.map((n, i) => ({ week_start: SINCE + i * WEEK, accepted: n, sent_back: sentBack[i] }));
 
 const person = (id: string, name: string, org_role: string) => ({
   id,
@@ -92,6 +101,12 @@ const BUILDER = {
   review: {
     accepted: 0,
     sent_back: 1,
+    last_30_days: 1,
+    per_week: reviewWeeks(
+      WEEKLY.map(() => 0),
+      WEEKLY.map((_, i) => (i === 10 ? 1 : 0)),
+    ),
+    time_to_decide: { measured: 1, unmeasured: 0, p50_ms: 2 * HOUR },
     recent: [
       {
         task_id: 't9',
@@ -177,6 +192,13 @@ const BUILDER = {
     ],
     tokens_total: 2,
     online: { enabled: true, clients: ['claude-code'], last_seen: NOW - MIN },
+    // Cursor wrote through a token since revoked: a share, and no token row.
+    writes: [
+      { client: 'claude-code', writes: 6 },
+      { client: 'codex', writes: 3 },
+      { client: 'cursor', writes: 1 },
+    ],
+    writes_total: 10,
   },
 };
 
@@ -191,6 +213,9 @@ const MANAGER = {
   review: {
     accepted: 9,
     sent_back: 2,
+    last_30_days: 4,
+    per_week: reviewWeeks(REVIEWED, SENT_BACK),
+    time_to_decide: { measured: 10, unmeasured: 1, p50_ms: 5 * HOUR },
     recent: [
       {
         task_id: 't3',
@@ -214,13 +239,29 @@ const MANAGER = {
   },
   ratings: [],
   ratings_total: 0,
+  queue: {
+    projects_led: 1,
+    waiting: 3,
+    oldest_waiting_since: NOW - 2 * DAY,
+    projects: [{ project_id: 'p1', waiting: 3 }],
+  },
 };
 
 const EMPTY = {
   ...BUILDER,
   user: { ...BUILDER.user, id: 'u6', name: 'Nia New' },
   projects: [],
-  review: { accepted: 0, sent_back: 0, recent: [] },
+  review: {
+    accepted: 0,
+    sent_back: 0,
+    last_30_days: 0,
+    per_week: reviewWeeks(
+      WEEKLY.map(() => 0),
+      WEEKLY.map(() => 0),
+    ),
+    time_to_decide: { measured: 0, unmeasured: 0, p50_ms: null },
+    recent: [],
+  },
   ratings: [],
   ratings_total: 0,
   current_work: { in_progress: [], in_progress_total: 0, in_review: [], in_review_total: 0 },
@@ -231,7 +272,13 @@ const EMPTY = {
     reopened: 0,
     cycle_time: { measured: 0, unmeasured: 0, p50_ms: null, p75_ms: null },
   },
-  agents: { tokens: [], tokens_total: 0, online: { enabled: true, clients: [], last_seen: null } },
+  agents: {
+    tokens: [],
+    tokens_total: 0,
+    online: { enabled: true, clients: [], last_seen: null },
+    writes: [],
+    writes_total: 0,
+  },
 };
 
 const BASE: ApiStub = {
@@ -259,6 +306,15 @@ async function stat(page: Page, name: string): Promise<string> {
   return (await page.locator(`[data-stat="${name}"] .prof-stat-value`).innerText()).trim();
 }
 
+/** A week chart's bars, as each bar's values: `[accepted]` or `[accepted, sent back]`. */
+async function bars(page: Page, card: string): Promise<number[][]> {
+  return page
+    .locator(`.prof-card[data-section="${card}"] .prof-bars [data-values]`)
+    .evaluateAll((els) =>
+      els.map((el) => (el.getAttribute('data-values') ?? '').split(',').map(Number)),
+    );
+}
+
 // ------------------------------------------------------------------ builder
 
 void describe('a builder’s profile', () => {
@@ -275,6 +331,9 @@ void describe('a builder’s profile', () => {
       assert.match(headText, /Bea Builder/);
       assert.match(headText, /bea@example\.com/);
       assert.match(headText, /Member/);
+      // The sub-line counts the response's projects; the pill says who sees this.
+      assert.match(headText, /2 projects/);
+      assert.match(await head.locator('.prof-pill').innerText(), /owners and admins only/i);
       assert.equal(
         await h.page.locator('input[name="profile-kind"][value="builder"]').isChecked(),
         true,
@@ -293,19 +352,26 @@ void describe('a builder’s profile', () => {
       assert.match(currentText, /Seven: the migration runner/);
       assert.match(currentText, /ORB-1/);
       assert.match(currentText, /Code review/);
+      assert.equal(await stat(h.page, 'in_progress'), '1');
+      assert.equal(await stat(h.page, 'in_review'), '1');
+      // LC-7 started three days ago, and it is the oldest in progress.
+      assert.equal(await stat(h.page, 'oldest_in_progress'), '3 d');
 
       await section(h.page, 'delivery');
-      const bars = h.page.locator('.prof-bars [data-accepted]');
-      assert.equal(await bars.count(), 12, 'one bar per week of the window');
+      const weekly = await bars(h.page, 'delivery');
+      assert.equal(weekly.length, 12, 'one bar per week of the window');
       assert.deepEqual(
-        await bars.evaluateAll((els) => els.map((el) => Number(el.getAttribute('data-accepted')))),
+        weekly.map(([n]) => n),
         WEEKLY,
       );
       assert.equal(await stat(h.page, 'accepted'), '4');
       assert.equal(await stat(h.page, 'sent_back'), '6');
       assert.equal(await stat(h.page, 'reopened'), '7');
-      assert.equal(await stat(h.page, 'p50'), '3 d');
-      assert.equal(await stat(h.page, 'p75'), '4.5 d');
+      assert.equal(await stat(h.page, 'cycle'), '3 d');
+      assert.equal(
+        (await h.page.locator('[data-stat="cycle"] .prof-stat-sub').innerText()).trim(),
+        '/ 4.5 d',
+      );
       assert.match(await h.page.locator('.prof-unmeasured').innerText(), /1 .*not measured/i);
 
       const review = await section(h.page, 'review');
@@ -318,13 +384,19 @@ void describe('a builder’s profile', () => {
         '1',
       );
 
+      assert.equal(await stat(h.page, 'review_30d'), '1');
+      assert.equal(await stat(h.page, 'decide_p50'), '2 h');
+
       const agents = await section(h.page, 'agents');
       const agentText = await agents.innerText();
       assert.match(agentText, /Claude Code/);
       assert.match(agentText, /Codex/);
       assert.match(agentText, /Laptop Claude/);
-      assert.match(await agents.locator('.prof-online').innerText(), /Claude Code/);
       assert.equal(await agents.locator('.prof-agent[data-online="true"]').count(), 1);
+      assert.match(
+        await (await section(h.page, 'online')).locator('.prof-online').innerText(),
+        /Claude Code/,
+      );
 
       const rating = await section(h.page, 'rating');
       const latest = await rating.locator('.prof-rating-latest').innerText();
@@ -339,7 +411,7 @@ void describe('a builder’s profile', () => {
     }
   });
 
-  void test('fits 1366 and 390 in both themes, with nothing scrolling sideways', async () => {
+  void test('fits 1366, 1024 and 390 in both themes, with nothing scrolling sideways', async () => {
     const h = await open('/people?user=u2', {
       ...BASE,
       '/api/v1/me': me('u1', 'owner'),
@@ -352,7 +424,7 @@ void describe('a builder’s profile', () => {
         // switch at laptop width, then measure both.
         await h.page.setViewportSize({ width: 1366, height: 900 });
         await setTheme(h.page, theme);
-        for (const width of [1366, 390]) {
+        for (const width of [1366, 1024, 390]) {
           await h.page.setViewportSize({ width, height: 900 });
           const overflow = await h.page.evaluate(
             () => document.documentElement.scrollWidth - window.innerWidth,
@@ -395,7 +467,7 @@ void describe('a builder’s profile', () => {
     });
     try {
       const current = await section(h.page, 'current');
-      assert.match(await current.locator('.prof-sub').first().innerText(), /In progress\s*4/i);
+      assert.equal(await stat(h.page, 'in_progress'), '4');
       assert.match(await current.locator('.prof-more').innerText(), /and 3 more/);
 
       const agents = await section(h.page, 'agents');
@@ -434,10 +506,189 @@ void describe('a builder’s profile', () => {
       assert.match(text, /No projects yet/);
       assert.match(text, /Nothing in progress or in review/);
       assert.match(text, /Nothing accepted in these 12 weeks/);
-      assert.match(text, /No agent has connected/);
+      assert.match(text, /No agent has connected with this person’s tokens yet/);
+      assert.match(text, /No agent online now/);
+      assert.match(text, /No review decisions on other people’s work in these 12 weeks/);
       assert.match(text, /Not rated yet/);
-      assert.equal(await stat(h.page, 'p50'), '—', 'nothing measured reads as a dash, not 0');
+      assert.equal(await stat(h.page, 'cycle'), '—', 'nothing measured reads as a dash, not 0');
+      assert.equal(await stat(h.page, 'decide_p50'), '—');
+      assert.equal(await stat(h.page, 'oldest_in_progress'), '—');
       assert.doesNotMatch(text, /undefined|NaN|null/);
+      // A compact sentence inside the card, not twelve empty bars (LAI-750).
+      for (const card of ['delivery', 'review']) {
+        assert.equal(
+          await h.page.locator(`.prof-card[data-section="${card}"] .prof-bars`).count(),
+          0,
+          `an empty ${card} card still draws a chart`,
+        );
+      }
+      assert.equal(
+        await h.page.locator('.prof-card[data-section="agents"] .prof-share').count(),
+        0,
+        'a share bar with no writes',
+      );
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+// ------------------------------------------------------- v2 cards (LAI-750)
+
+void describe('the agents and online cards', () => {
+  void test('split one bar by share of writes, with each agent’s real mark, name and share', async () => {
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': BUILDER,
+    });
+    try {
+      const agents = await section(h.page, 'agents');
+      assert.match(await agents.locator('.prof-card-title').innerText(), /3 types/);
+
+      const parts = agents.locator('.prof-share-part');
+      assert.deepEqual(
+        await parts.evaluateAll((els) =>
+          els.map((el) => [el.getAttribute('data-client'), (el as HTMLElement).style.flexGrow]),
+        ),
+        [
+          ['claude-code', '6'],
+          ['codex', '3'],
+          ['cursor', '1'],
+        ],
+      );
+      assert.match(
+        (await agents.locator('.prof-share').getAttribute('aria-label')) ?? '',
+        /Claude Code 60%, Codex 30%, Cursor 10%/,
+      );
+
+      const claude = agents.locator('.prof-agent[data-client="claude-code"]');
+      assert.match(await claude.innerText(), /Claude Code.*60%/s);
+      // The vendor's mark, not a two-letter monogram.
+      assert.equal(await claude.locator('.agent-mark-logo svg').count(), 1);
+      // Cursor wrote through a token that is gone: a share, and no token now.
+      const cursor = await agents.locator('.prof-agent[data-client="cursor"]').innerText();
+      assert.match(cursor, /10%/);
+      assert.match(cursor, /no usable token now/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('say who is online with a live dot and the mark, and never where', async () => {
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': BUILDER,
+    });
+    try {
+      const online = await section(h.page, 'online');
+      const row = online.locator('li[data-client="claude-code"]');
+      assert.equal(await row.locator('.prof-live-dot').count(), 1);
+      assert.equal(await row.locator('.agent-mark').count(), 1);
+      // Laptop Claude was last used two minutes ago.
+      assert.match(await row.innerText(), /Claude Code.*active 2 min/s);
+      assert.equal(await online.locator('li').count(), 1, 'Codex is not online');
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('say presence is off, rather than nobody online, when the org turned it off', async () => {
+    const off = {
+      ...BUILDER,
+      agents: { ...BUILDER.agents, online: { enabled: false, clients: [], last_seen: null } },
+    };
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': off,
+    });
+    try {
+      const online = await section(h.page, 'online');
+      assert.match(await online.innerText(), /Presence is off/);
+      assert.equal(await online.locator('.prof-live-dot').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+void describe('definitions and the kind control', () => {
+  void test('keeps definitions in an (i) that opens and closes by keyboard, not in paragraphs', async () => {
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': BUILDER,
+    });
+    try {
+      const delivery = await section(h.page, 'delivery');
+      assert.doesNotMatch(
+        await h.page.locator('.prof').innerText(),
+        /moved into a Done status by someone/i,
+        'a definition is printed on the page',
+      );
+
+      const button = delivery.locator('.prof-info-button');
+      assert.equal(await button.getAttribute('aria-label'), 'About delivered');
+      await button.focus();
+      await h.page.keyboard.press('Enter');
+      assert.equal(await button.getAttribute('aria-expanded'), 'true');
+      const pop = delivery.locator('.prof-info-pop');
+      assert.match(await pop.innerText(), /Accepted\s*Moved into a Done status by someone other/);
+      assert.match(await pop.innerText(), /Cycle time/);
+
+      // Reading it with the pointer takes focus off the button; it stays open.
+      await pop.click();
+      assert.equal(await button.evaluate((el) => el === document.activeElement), false);
+      assert.equal(await button.getAttribute('aria-expanded'), 'true');
+
+      await h.page.keyboard.press('Escape');
+      await pop.waitFor({ state: 'detached' });
+      assert.equal(await button.getAttribute('aria-expanded'), 'false');
+      assert.equal(await button.evaluate((el) => el === document.activeElement), true);
+
+      // A tile carries its own meaning as a tooltip too.
+      assert.match(
+        (await h.page.locator('[data-stat="reopened"]').getAttribute('title')) ?? '',
+        /out of Done/,
+      );
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('is a labelled radio group that a keyboard moves', async () => {
+    let patched: unknown;
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': (call: { method: string; body: unknown }) => {
+        if (call.method === 'PATCH') patched = call.body;
+        return patched === undefined ? BUILDER : asManager(BUILDER);
+      },
+    });
+    try {
+      const group = h.page.locator('.prof-head [role="radiogroup"]');
+      await group.waitFor({ timeout: 20_000 });
+      const labelledBy = (await group.getAttribute('aria-labelledby')) ?? '';
+      assert.equal(
+        (await h.page.locator(`[id="${labelledBy}"]`).innerText()).trim(),
+        'Profile kind',
+      );
+      const describedBy = (await group.getAttribute('aria-describedby')) ?? '';
+      assert.match(
+        await h.page.locator(`[id="${describedBy}"]`).innerText(),
+        /a label, never a permission/,
+      );
+
+      await h.page.locator('input[name="profile-kind"][value="builder"]').focus();
+      await h.page.keyboard.press('ArrowRight');
+      await until(() => patched !== undefined);
+      assert.deepEqual(patched, { profile_kind: 'manager' });
+      await until(
+        async () => (await h.page.locator('.prof-card[data-section="delivery"]').count()) === 0,
+      );
     } finally {
       await h.close();
     }
@@ -465,13 +716,46 @@ void describe('a manager’s profile', () => {
         '2',
       );
 
+      // The queue's and the review's tiles, each its own field (LAI-750).
+      assert.equal(await stat(h.page, 'projects_led'), '1');
+      assert.equal(await stat(h.page, 'review_30d'), '4');
+      assert.equal(await stat(h.page, 'decide_p50'), '5 h');
+      assert.equal(
+        (await h.page.locator('[data-stat="decide_p50"] .prof-stat-sub').innerText()).trim(),
+        '10 timed',
+      );
+      assert.equal(await stat(h.page, 'waiting'), '3');
+      assert.equal(await stat(h.page, 'oldest_waiting'), '2 d');
+
+      // Review load per week: accepted and sent back, stacked, one bar a week.
+      assert.deepEqual(
+        await bars(h.page, 'review'),
+        REVIEWED.map((n, i) => [n, SENT_BACK[i]]),
+      );
+      const load = h.page.locator('.prof-card[data-section="review"] .prof-bars');
+      assert.match((await load.getAttribute('aria-label')) ?? '', /Review decisions per week/);
+      assert.match(
+        await load.locator('li').nth(4).innerText(),
+        /0 accepted, 1 sent back/,
+        'a bar without words for a screen reader',
+      );
+
+      // A manager's project bars count their decisions — Laika Core has 2 of
+      // their own open and 0 reviewed — and say what waits.
+      const projects = await section(h.page, 'projects');
+      assert.match(await projects.locator('[data-project="laika-core"]').innerText(), /3 waiting/);
+      assert.equal(
+        (await projects.locator('[data-project="laika-core"] .prof-pbar-n').innerText()).trim(),
+        '0',
+      );
+
       const decisions = await section(h.page, 'decisions');
       const rows = await decisions.locator('li').allInnerTexts();
       assert.equal(rows.length, 2);
       assert.match(rows[0] ?? '', /Accepted.*LC-3/s);
       assert.match(rows[1] ?? '', /Sent back.*LC-2/s);
 
-      for (const absent of ['agents', 'current', 'delivery']) {
+      for (const absent of ['agents', 'current', 'delivery', 'online']) {
         assert.equal(
           await h.page.locator(`.prof-card[data-section="${absent}"]`).count(),
           0,
