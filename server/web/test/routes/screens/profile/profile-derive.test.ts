@@ -13,6 +13,7 @@ import { describe, test } from 'node:test';
 import type { ProfileAgentToken } from '../../../../src/api/profiles.ts';
 import {
   agentRows,
+  workTab,
   barHeights,
   countLabel,
   durationLabel,
@@ -202,6 +203,35 @@ void describe('agentRows', () => {
 
   void test('is empty for nobody’s agents', () => {
     assert.deepEqual(agentRows([], []), []);
+  });
+
+  void test('leaves out a token that never connected — it used no agent (LAI-751)', () => {
+    const rows = agentRows(
+      [{ client: 'codex', writes: 2 }],
+      [
+        token('a', 'codex', 40),
+        // Minted and never used: its client is a guess from its name.
+        token('b', 'codex', null),
+        token('c', 'other', null),
+        // Reached /mcp once, never a REST request: that is connecting.
+        token('d', 'cursor', null, 30),
+      ],
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.client, r.tokens.map((t) => t.id)]),
+      [
+        ['codex', ['a']],
+        ['cursor', ['d']],
+      ],
+    );
+  });
+});
+
+void describe('Current work (LAI-751)', () => {
+  void test('opens on in progress, unless only review has work', () => {
+    assert.equal(workTab({ in_progress_total: 9, in_review_total: 34 }), 'in_progress');
+    assert.equal(workTab({ in_progress_total: 0, in_review_total: 34 }), 'in_review');
+    assert.equal(workTab({ in_progress_total: 0, in_review_total: 0 }), 'in_progress');
   });
 });
 

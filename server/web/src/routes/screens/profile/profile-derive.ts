@@ -97,8 +97,12 @@ export interface AgentRow {
  */
 export function agentRows(
   writes: readonly AgentWrites[],
-  tokens: readonly ProfileAgentToken[],
+  usable: readonly ProfileAgentToken[],
 ): AgentRow[] {
+  // A token that has never connected has used no agent (LAI-751): it is not a
+  // row of its own, and not one of an agent's tokens — it would only read as
+  // "another agent, never used".
+  const tokens = usable.filter((token) => connected(token));
   const percents = sharePercents(writes.map((w) => w.writes));
   const onTokens = (client: AgentClient) => tokens.filter((token) => token.client === client);
   const written = new Set(writes.map((w) => w.client));
@@ -113,6 +117,22 @@ export function agentRows(
     })),
     ...silent.map((client) => ({ client, writes: 0, percent: 0, tokens: onTokens(client) })),
   ];
+}
+
+/** Whether a token has ever reached Laika — a request or an `/mcp` call. */
+export function connected(token: ProfileAgentToken): boolean {
+  return token.last_used_at !== null || token.last_mcp_at !== null;
+}
+
+/** The two lists *Current work* switches between (LAI-751). */
+export type WorkTab = 'in_progress' | 'in_review';
+
+/** How many rows a list shows before *Show all* (LAI-751). */
+export const ROWS_SHOWN = 5;
+
+/** The list *Current work* opens on: in progress if it has any, else in review. */
+export function workTab(totals: { in_progress_total: number; in_review_total: number }): WorkTab {
+  return totals.in_progress_total === 0 && totals.in_review_total > 0 ? 'in_review' : 'in_progress';
 }
 
 /**

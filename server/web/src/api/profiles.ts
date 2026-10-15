@@ -51,6 +51,8 @@ export interface ProfileTask {
   readonly status: string;
   readonly status_name: string;
   readonly started_at: number | null;
+  /** When a task in Review last entered it (LAI-751); null for work in progress. */
+  readonly review_since: number | null;
 }
 
 export interface WeekCount {
@@ -81,7 +83,8 @@ export interface ReviewDecision {
   readonly project_slug: string;
   readonly decision: 'accepted' | 'sent_back';
   readonly at: number;
-  readonly assignee: { readonly id: string; readonly name: string };
+  /** Null for a task nobody was assigned (LAI-751): deciding one counts too. */
+  readonly assignee: { readonly id: string; readonly name: string } | null;
 }
 
 /** One week of their decisions on other people's work (LAI-750). */

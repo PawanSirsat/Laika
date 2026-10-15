@@ -42,6 +42,7 @@ import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
+import { ActivityCard } from './ActivityCard.tsx';
 import { InfoTip } from './InfoTip.tsx';
 import {
   agentRows,
@@ -49,6 +50,9 @@ import {
   countLabel,
   durationLabel,
   lastActive,
+  ROWS_SHOWN,
+  workTab,
+  type WorkTab,
   monthYear,
   nextAttempt,
   type RatingAttempt,
@@ -91,13 +95,16 @@ const MEANS = {
   reopened: 'Moved out of Done into work again, by anyone.',
   cycle:
     'From the first start to completion, for their tasks done in the window. Tasks done with no recorded start are counted, not measured.',
-  reviewAccepted: 'Their moves of somebody else’s task into a Done status.',
-  reviewSentBack: 'Their moves of somebody else’s task from Review back to an earlier status.',
-  decided30: 'Their accepts and send-backs on other people’s work in the last 30 days.',
+  reviewAccepted:
+    'Their moves into a Done status of a task that is not theirs — someone else’s, or nobody’s.',
+  reviewSentBack:
+    'Their moves from Review back to an earlier status of a task that is not theirs — someone else’s, or nobody’s.',
+  decided30: 'Their accepts and send-backs on work that is not theirs in the last 30 days.',
   decide:
-    'Median time from a task’s latest move into Review to their decision on it. Decisions made from outside Review are counted, not measured.',
+    'Median time from a task’s latest move into Review — or its creation, if it was created there — to their decision on it. Decisions made from outside Review are counted, not measured.',
   led: 'Projects where their membership role is Lead, not archived.',
-  waiting: 'Tasks in Review in the projects they lead, assigned to anyone but them.',
+  waiting:
+    'Tasks in Review in the projects they lead that are not theirs — someone else’s, or nobody’s.',
   oldest: 'How long the longest-waiting of those has been in Review.',
 } as const;
 
@@ -149,6 +156,20 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
    * for another's.
    */
   const ratingAttempts = useRef(new Map<string, RatingAttempt>());
+  /**
+   * Whose profile is on the page now (LAI-751). A save or a kind change
+   * answers after its request — and Back may have moved the page to someone
+   * else by then; an answer about anybody but this person is dropped, never
+   * drawn over the person now shown.
+   */
+  const shown = useRef(userId);
+
+  useEffect(() => {
+    shown.current = userId;
+    // A dialog belongs to the person it was opened on; moving away closes it.
+    setRating({ open: false, busy: false });
+    setKindError(undefined);
+  }, [userId]);
 
   useEffect(() => {
     if (!allowed || userId === undefined) return;
@@ -238,10 +259,10 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
     setKindError(undefined);
     setProfileKind(user.id, kind)
       .then((next) => {
-        setLoad({ kind: 'ready', profile: next });
+        if (shown.current === user.id) setLoad({ kind: 'ready', profile: next });
       })
       .catch((cause: unknown) => {
-        setKindError(said(cause));
+        if (shown.current === user.id) setKindError(said(cause));
       })
       .finally(() => {
         setKindBusy(false);
@@ -261,6 +282,9 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
     rateMember(user.id, { score, note }, trying.key).then(
       () => {
         ratingAttempts.current.delete(user.id);
+        // Saved — but the page may have moved on (Back, a link) while it was
+        // in flight; then this person's profile is not the one to draw.
+        if (shown.current !== user.id) return;
         setRating({ open: false, busy: false });
         // The whole profile again rather than splicing the answer in: the
         // order of the history is the server's, and so is every figure. A
@@ -268,14 +292,14 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
         // the screen's error state, never the dialog's.
         getProfile(user.id)
           .then((next) => {
-            setLoad({ kind: 'ready', profile: next });
+            if (shown.current === user.id) setLoad({ kind: 'ready', profile: next });
           })
           .catch((cause: unknown) => {
-            setLoad({ kind: 'error', error: cause });
+            if (shown.current === user.id) setLoad({ kind: 'error', error: cause });
           });
       },
       (cause: unknown) => {
-        setRating({ open: true, busy: false, error: said(cause) });
+        if (shown.current === user.id) setRating({ open: true, busy: false, error: said(cause) });
       },
     );
   };
@@ -307,6 +331,12 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
        * and then one (profile.css).
        */}
       <div className="prof-grid">
+        <ActivityCard
+          userId={user.id}
+          name={user.name}
+          viewerId={me.id}
+          canManageOrg={mayOpenProfiles(me.org_role)}
+        />
         {user.profile_kind === 'manager' ? (
           <>
             <ReviewCard
@@ -338,10 +368,10 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
               {profile.agents !== undefined && <OnlineCard agents={profile.agents} now={now} />}
             </div>
             {profile.current_work !== undefined && (
-              <CurrentWorkCard work={profile.current_work} now={now} />
+              <CurrentWorkCard key={user.id} work={profile.current_work} now={now} />
             )}
             {profile.agents !== undefined && (
-              <AgentsCard agents={profile.agents} weeks={weeks} now={now} />
+              <AgentsCard key={user.id} agents={profile.agents} weeks={weeks} now={now} />
             )}
             <ReviewCard
               review={profile.review}
@@ -718,10 +748,9 @@ function ProjectsCard({
             const wait = waiting.get(project.id);
             return (
               <li key={project.id} className="prof-project" data-project={project.slug}>
-                <span className="prof-project-name">
+                <span className="prof-project-name" title={project.name}>
                   <span className="prof-key">{project.key}</span>
                   <span className="prof-project-title">{project.name}</span>
-                  {project.archived && <span className="prof-chip">ARCHIVED</span>}
                 </span>
                 <span className="prof-pbar" aria-hidden="true">
                   <span
@@ -731,6 +760,7 @@ function ProjectsCard({
                 </span>
                 <b className="prof-pbar-n">{value(project)}</b>
                 <span className="prof-row-meta">
+                  {project.archived && <span className="prof-chip">ARCHIVED</span>}
                   {projectRole(project)}
                   {wait !== undefined && ` · ${String(wait)} waiting`}
                   {kind === 'manager'
@@ -748,23 +778,50 @@ function ProjectsCard({
   );
 }
 
-function TaskRow({ task, now }: { readonly task: ProfileTask; readonly now: number }) {
+/** One line: key, the title cut to fit (whole on hover), and its age. */
+function TaskRow({
+  task,
+  now,
+  tab,
+}: {
+  readonly task: ProfileTask;
+  readonly now: number;
+  readonly tab: WorkTab;
+}) {
+  const since = tab === 'in_review' ? task.review_since : task.started_at;
   return (
-    <li className="prof-task">
+    <li className="prof-task prof-work-row" data-task={task.key}>
       <span className="prof-key">{task.key}</span>
-      <span className="prof-task-who">
-        <span className="prof-task-title" title={task.title}>
-          {task.title}
-        </span>
-        <span className="prof-row-meta">
-          {task.status_name}
-          {task.started_at !== null && ` · started ${durationLabel(now - task.started_at)} ago`}
-        </span>
+      <span className="prof-task-title" title={task.title}>
+        {task.title}
+      </span>
+      <span
+        className="prof-when"
+        title={
+          since === null
+            ? undefined
+            : tab === 'in_review'
+              ? `In Review since ${new Date(since).toLocaleString()}`
+              : `First started ${new Date(since).toLocaleString()}`
+        }
+      >
+        {since === null
+          ? '—'
+          : tab === 'in_review'
+            ? `waiting ${durationLabel(Math.max(0, now - since))}`
+            : durationLabel(Math.max(0, now - since))}
       </span>
     </li>
   );
 }
 
+/**
+ * Their open work (LAI-750), kept to a card's height (LAI-751): the tiles,
+ * then one list at a time — *In progress* or *In review* — at most five rows,
+ * the longest running or longest waiting first (the server's order). *Show
+ * all* opens the rest inside the card, in a scroll of its own; nothing here
+ * makes the card, or the row it sits in, as tall as the list.
+ */
 function CurrentWorkCard({
   work,
   now,
@@ -772,9 +829,20 @@ function CurrentWorkCard({
   readonly work: ProfileCurrentWork;
   readonly now: number;
 }) {
+  const [tab, setTab] = useState<WorkTab>(() => workTab(work));
+  const [all, setAll] = useState(false);
   const empty = work.in_progress_total === 0 && work.in_review_total === 0;
   // The server sends in-progress work oldest start first.
   const oldest = work.in_progress.find((task) => task.started_at !== null)?.started_at ?? null;
+  const list = tab === 'in_progress' ? work.in_progress : work.in_review;
+  const total = tab === 'in_progress' ? work.in_progress_total : work.in_review_total;
+  const rows = all ? list : list.slice(0, ROWS_SHOWN);
+
+  const choose = (next: WorkTab): void => {
+    setTab(next);
+    setAll(false);
+  };
+
   return (
     <Card name="current" title="Current work">
       <dl className="prof-stats prof-stats-compact">
@@ -791,28 +859,57 @@ function CurrentWorkCard({
         <Empty>Nothing in progress or in review.</Empty>
       ) : (
         <>
-          {work.in_progress.length > 0 && (
-            <>
-              <h4 className="prof-sub">In progress</h4>
-              <ul className="prof-list">
-                {work.in_progress.map((task) => (
-                  <TaskRow key={task.id} task={task} now={now} />
+          <span className="prof-seg prof-work-switch" role="radiogroup" aria-label="Which work">
+            {(
+              [
+                ['in_progress', 'In progress', work.in_progress_total],
+                ['in_review', 'In review', work.in_review_total],
+              ] as const
+            ).map(([value, label, n]) => (
+              <label key={value} className="prof-seg-option">
+                <input
+                  type="radio"
+                  name="prof-work"
+                  value={value}
+                  checked={tab === value}
+                  onChange={() => {
+                    choose(value);
+                  }}
+                />
+                <span className="prof-seg-face">
+                  {label} <span className="prof-work-n">{n}</span>
+                </span>
+              </label>
+            ))}
+          </span>
+          {total === 0 ? (
+            <Empty>{tab === 'in_progress' ? 'Nothing in progress.' : 'Nothing in review.'}</Empty>
+          ) : (
+            <div className="prof-work-panel" data-expanded={all}>
+              <ul
+                className="prof-list prof-work-list"
+                aria-label={tab === 'in_progress' ? 'In progress' : 'In review'}
+              >
+                {rows.map((task) => (
+                  <TaskRow key={task.id} task={task} now={now} tab={tab} />
                 ))}
               </ul>
-            </>
+              {/* What the server cut (LAI-746), once everything it sent is on show. */}
+              {(all || list.length <= ROWS_SHOWN) && <More shown={list.length} total={total} />}
+            </div>
           )}
-          <More shown={work.in_progress.length} total={work.in_progress_total} />
-          {work.in_review.length > 0 && (
-            <>
-              <h4 className="prof-sub">In review</h4>
-              <ul className="prof-list">
-                {work.in_review.map((task) => (
-                  <TaskRow key={task.id} task={task} now={now} />
-                ))}
-              </ul>
-            </>
+          {list.length > ROWS_SHOWN && (
+            <button
+              type="button"
+              className="prof-show-all"
+              aria-expanded={all}
+              onClick={() => {
+                setAll((open) => !open);
+              }}
+            >
+              {all ? 'Show less' : `Show all ${String(total)}`}
+            </button>
           )}
-          <More shown={work.in_review.length} total={work.in_review_total} />
         </>
       )}
     </Card>
@@ -1041,7 +1138,9 @@ function DecisionsCard({
                 <span className="prof-task-title" title={decision.title}>
                   <span className="prof-key">{decision.key}</span> {decision.title}
                 </span>
-                <span className="prof-row-meta">{decision.assignee.name}’s</span>
+                <span className="prof-row-meta">
+                  {decision.assignee === null ? 'Unassigned' : `${decision.assignee.name}’s`}
+                </span>
               </span>
               <span className="prof-when">{timeLabel(decision.at, now).text}</span>
             </li>
@@ -1054,9 +1153,10 @@ function DecisionsCard({
 
 /**
  * The agents they use (LAI-750): one bar split by their share of writes
- * through each agent in the window, then one row per agent — its real mark,
- * its share, the tokens it is on and when it was last used. An agent appears
- * once, however many tokens it is on.
+ * through each agent in the window, then **one row per agent** (LAI-751) — its
+ * real mark, its share, how many tokens it is on and when it was last used.
+ * The token names wait behind each row's expand, so many tokens never become
+ * one long line.
  */
 function AgentsCard({
   agents,
@@ -1073,6 +1173,16 @@ function AgentsCard({
   const spoken = shared
     .map((row) => `${agentClientName(row.client)} ${String(row.percent)}%`)
     .join(', ');
+  const [open, setOpen] = useState<ReadonlySet<string>>(() => new Set());
+
+  const toggle = (client: string): void => {
+    setOpen((was) => {
+      const next = new Set(was);
+      if (next.has(client)) next.delete(client);
+      else next.add(client);
+      return next;
+    });
+  };
 
   return (
     <Card
@@ -1087,9 +1197,12 @@ function AgentsCard({
           items={[
             [
               'Share',
-              `Their board writes made through each agent in the last ${String(weeks)} weeks, by the agent each token last connected as. Writes on the web are not in it.`,
+              `Their board writes made through each agent in the last ${String(weeks)} weeks, by the agent each token last connected as. A token used with two agents credits all its writes to the last one it connected as. Writes on the web are not in it.`,
             ],
-            ['Tokens', 'The tokens they can still use — not revoked, not expired.'],
+            [
+              'Tokens',
+              'The tokens they can still use — not revoked, not expired — that have connected at least once. Open a row to see their names.',
+            ],
           ]}
         />
       }
@@ -1120,6 +1233,8 @@ function AgentsCard({
           <ul className="prof-list prof-agents">
             {rows.map((row, i) => {
               const used = lastActive(row.tokens, row.client);
+              const expanded = open.has(row.client);
+              const listId = `prof-agent-tokens-${row.client}`;
               return (
                 <li
                   key={row.client}
@@ -1132,35 +1247,57 @@ function AgentsCard({
                       : undefined
                   }
                 >
-                  <span
-                    className="prof-swatch"
-                    data-slot={row.writes > 0 ? slot(i) : undefined}
-                    data-none={row.writes === 0}
-                    aria-hidden="true"
-                  />
-                  <AgentMark client={row.client} />
-                  <span className="prof-task-who">
-                    <span className="prof-agent-name">{agentClientName(row.client)}</span>
-                    <span className="prof-row-meta">
-                      {row.tokens.length === 0
-                        ? 'no usable token now'
-                        : row.tokens
-                            .map((token) =>
-                              token.client_name !== null && token.client_name !== token.name
-                                ? `${token.name} (${token.client_name})`
-                                : token.name,
-                            )
-                            .join(', ')}
+                  <span className="prof-agent-line">
+                    <span
+                      className="prof-swatch"
+                      data-slot={row.writes > 0 ? slot(i) : undefined}
+                      data-none={row.writes === 0}
+                      aria-hidden="true"
+                    />
+                    <AgentMark client={row.client} />
+                    <span className="prof-task-who">
+                      <span className="prof-agent-name">{agentClientName(row.client)}</span>
+                      <span className="prof-row-meta">
+                        {row.tokens.length === 0 ? (
+                          'no usable token now'
+                        ) : (
+                          <button
+                            type="button"
+                            className="prof-tokens-toggle"
+                            aria-expanded={expanded}
+                            aria-controls={listId}
+                            onClick={() => {
+                              toggle(row.client);
+                            }}
+                          >
+                            {countLabel(row.tokens.length, 'token', 'tokens')}
+                          </button>
+                        )}
+                        {` · ${used === null ? 'never used' : `used ${timeLabel(used, now).text}`}`}
+                      </span>
                     </span>
-                  </span>
-                  <span className="prof-agent-figures">
                     <b className="prof-share-pct">
                       {row.writes > 0 ? `${String(row.percent)}%` : '—'}
                     </b>
-                    <span className="prof-when">
-                      {used === null ? 'never used' : `used ${timeLabel(used, now).text}`}
-                    </span>
                   </span>
+                  {expanded && (
+                    <ul className="prof-token-names" id={listId}>
+                      {/* The row already names the agent; what the client called
+                          itself is on hover, not repeated on every line. */}
+                      {row.tokens.map((token) => (
+                        <li
+                          key={token.id}
+                          title={
+                            token.client_name === null
+                              ? undefined
+                              : `Connected as “${token.client_name}”`
+                          }
+                        >
+                          {token.name}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </li>
               );
             })}
