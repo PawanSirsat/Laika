@@ -1210,7 +1210,8 @@ plain §4.15 shape.
 **A member's profile is one read** (D-078, LAI-743): `GET /users/:id/profile`
 answers `{ user, window, projects, review, ratings }`, and for a `builder`
 also `current_work`, `delivery` and `agents` — **absent, not empty**, for a
-`manager`. `PATCH` takes exactly `{ profile_kind }` and answers the whole
+`manager` — and for a `manager` also `queue`, absent for a `builder`
+(LAI-750). `PATCH` takes exactly `{ profile_kind }` and answers the whole
 profile, because the kind decides which blocks it carries. `POST …/ratings`
 takes exactly `{ score, note }` — an integer 1–5 and a note of 1–500
 characters after trimming — and answers the rating, `201`. With an
@@ -1225,11 +1226,12 @@ on a Monday, 00:00 UTC:
 | field | what it counts |
 | --- | --- |
 | `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
-| `review` | their moves of someone else's task into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them |
+| `review` | their moves of someone else's task into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them; `per_week` (both, per week of the window), `last_30_days` (decisions in the thirty days to now) and `time_to_decide` — the median from the task's latest move into Review to the decision, a decision made from outside Review or with no logged entry counted as `unmeasured` (LAI-750) |
 | `ratings` | §4.21, newest first; the first is the current one. At most 50, with `ratings_total` beside it (LAI-746) |
 | `current_work` | their tasks in progress and in review, oldest start first; each list at most 50, with `in_progress_total` and `in_review_total` |
 | `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
-| `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; and which agents are online now (§9.3) — never where |
+| `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; which agents are online now (§9.3) — never where; and `writes`: their `activity` rows made through a token in the window, grouped by the agent that token last connected as, most first, with `writes_total` — revoked tokens' writes included (LAI-750) |
+| `queue` | a manager's only: projects they lead (membership role `lead`, not archived), the tasks in a Review status there assigned to anyone but them (`waiting`, in total and per project) and `oldest_waiting_since`, the latest entry into Review of the longest-waiting one (LAI-750) |
 
 **This is not a §4 table and its rows are not columns** — the drift check reads
 §4 only. Setting a kind or adding a rating writes no `activity` row, so neither
@@ -1934,18 +1936,25 @@ anything missing sends the task back.
   keeps a `transcript_hash` and never the words. The quotes are what makes a
   proposal reviewable, and they are all that is kept.
 - **Member profile** (`/people?user=<id>`, D-078) — owners and admins only:
-  anyone else sees a permission notice and the profile is never requested. A
-  head with name, email, org role, member since and the **Builder / Manager**
-  control, which says it is a label and not a permission; **projects** with
-  role and figures; for a builder, **current work**, **delivered** — accepted
-  per week as twelve bars, sent back, reopened, cycle p50/p75 with the
-  unmeasured count — and **agents**, with which are online now; **review work
-  for others**, and for a manager **recent review decisions**; the **rating** —
-  the latest on top, the history below, *Rate* for anyone but yourself, a
-  dialog taking 1–5 and a required note. Every figure from the response; an
-  empty state, never a zero, where there is nothing. Reached from a person's
-  name on Organisation, a Capacity card or a *Work by person* row — links for
-  owners and admins, plain text for everyone else.
+  anyone else sees a permission notice and the profile is never requested.
+  Laid out as cards on a grid that folds to one column on a phone (LAI-750).
+  A head card with name, org role, project count, email, member since, an
+  *owners and admins only* pill and the **Builder / Manager** control, which
+  says it is a label and not a permission; **projects** as horizontal bars —
+  a builder's open tasks, a manager's review decisions — with role and
+  figures; for a builder, **delivered** — accepted per week as twelve bars,
+  sent back, reopened, cycle p50/p75 with the unmeasured count — **current
+  work**, **agents used** — one bar split by share of writes, each agent with
+  its mark, share and tokens — and **online now**; **review work** with
+  decisions in 30 days, median time to decide and review load per week, and
+  for a manager the queue — projects led, waiting now, oldest waiting — and
+  **recent decisions**; the **rating** — the latest on top, the history
+  below, *Rate* for anyone but yourself, a dialog taking 1–5 and a required
+  note. What each figure counts is in an (i) beside it, not in paragraphs.
+  Every figure from the response; an empty state, never a zero, where there is
+  nothing. Reached from a person's name on Organisation, a Capacity card or a
+  *Work by person* row — links for owners and admins, plain text for everyone
+  else.
 
 #### 11.4.3 Timeline view
 
