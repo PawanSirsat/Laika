@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-743, LAI-746, LAI-749]
 discovered-from:
 started: 2026-10-15T12:04:52Z
-status: review
+status: done
 finished: 2026-10-15T12:40:58Z
 ---
 
@@ -205,3 +205,7 @@ port 3471 with its own database, seeded through the real services:
 `before-*` (master's screen) at 1366 and 390, `after-*` at 1366, 1024 and 390,
 each for builder, manager, an empty profile and the rating dialog, light and
 dark; and `ref-mockup-{light,dark}.png`.
+
+## Accepted
+
+2026-10-15, by polly (orchestrator), on the owner's direct instruction. Same-vendor review of 0fa7347...350cab1: APPROVE, no blockers. Orchestrator gate at 350cab1: LINT 0, FMT 0; web 1891/1891, cli 168/168, server 2396/2401 with the 5 failures all in test/tooling/build.test.ts under load average ~22-25, which passed 15/15 alone. Reviewer measured profile load at 20k tasks / 248k activity rows: 51 ms (was 19-33 ms), every new query indexed. Non-blocking follow-ups, recorded in logs/chief-2026-10-15.md for a later task: "waiting" counts unassigned tasks while SPEC 1234 and the (i) say otherwise, and accepting an unassigned task is not counted as a decision; no test pins the Review-to-Review rule in entersReview; a token that never connected appears under "Agents used"; agent share follows each token's latest agent (disclosed; say it plainly in the (i)); "Oldest waiting" skips tasks with no logged entry into Review; an archived project's name can shrink to one letter with an 8-character key.
