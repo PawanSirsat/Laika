@@ -277,7 +277,7 @@ describe('local work and pushed commits — only with both switches on', () => {
 });
 
 describe('bounded reads (D-079 item 5)', () => {
-  it('reads every table through an index, one person’s days at a time, and never the log', () => {
+  it('reads every table through an index, one person’s days at a time, never sorting, never the log', () => {
     share({ org: true, user: true });
     send([{ day: '2026-10-14', sessions: 1, pushed_keys: ['a1b2c3d4e5f6a7b8'] }]);
     act(bea, 'user', NOW - HOUR);
@@ -296,7 +296,10 @@ describe('bounded reads (D-079 item 5)', () => {
         t.sqlite.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...bindings) as { detail: string }[]
       ).map((row) => row.detail);
       // `orgs` holds exactly one row (§4.2): reading it whole is reading one row.
-      const scans = plan.filter((line) => line.startsWith('SCAN ') && !/^SCAN orgs\b/.test(line));
+      const scans = plan.filter(
+        (line) =>
+          (line.startsWith('SCAN ') && !/^SCAN orgs\b/.test(line)) || line.includes('TEMP B-TREE'),
+      );
       expect(scans, `${source}\n${plan.join('\n')}`).toEqual([]);
     }
 

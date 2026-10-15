@@ -360,13 +360,17 @@ export function recordLocalActivity(
 
 // ------------------------------------------------------------- own history
 
-/** The zone of the person's newest report, or `UTC`. One step down the key. */
+/**
+ * The zone of the person's newest reported day, or `UTC`. One step down the
+ * key: ordered by day alone, so no sort is built — two machines reporting the
+ * same newest day in different zones is a tie either answer settles.
+ */
 export function latestReportZone(db: Db, userId: string): string {
   const row = db
     .select({ tz: localActivityDays.tz })
     .from(localActivityDays)
     .where(eq(localActivityDays.userId, userId))
-    .orderBy(desc(localActivityDays.day), desc(localActivityDays.updatedAt))
+    .orderBy(desc(localActivityDays.day))
     .limit(1)
     .get();
   return row !== undefined && isTimeZone(row.tz) ? row.tz : 'UTC';
