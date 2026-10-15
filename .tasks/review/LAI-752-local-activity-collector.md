@@ -186,3 +186,30 @@ git fork on every tool use while presence stays correct.
   the common-dir dedupe alone is not what counts a worktree once (SHA and
   authorship keys also do).
 - Commits: `92361af` (heartbeat), `2bc915b` (collector).
+
+## Review round 1
+
+An independent same-vendor review found one blocking and six non-blocking
+issues. All are fixed in `c44e85a`; the acceptance criteria above are frozen
+and unchanged, and the task stays in review. Each fix has a test, and each test
+was shown red with its fix reverted (a harness that requires every anchor to
+match exactly once, checksums the edit, runs the test unmutated first, counts a
+cancelled test as red, and restores in a `finally`): **18 of 18 reverts red.**
+
+| # | Finding | Fix | Test (red without the fix) |
+| --- | --- | --- | --- |
+| 1 | Background syncs could pile up: a 5-minute-old lock was taken from a live holder, `next_sync_at` moved only when a sync finished, and a hung mount blocked sync calls | Lock records pid + start time and is taken only from a dead holder or a reused pid; `next_sync_at` is claimed when a sync starts; a 2-minute deadline aborts in-flight git (async, killed) and requests, repo paths are checked asynchronously, and a CLI run exits at the deadline | `activity-sync`: live holder with a 6-minute-old lock stays busy; reused pid is taken; next sync claimed while the GET hangs; hung sync abandoned at its deadline and writes nothing after; a stuck `git` is killed. `activity-command`: CLI exits at the deadline |
+| 2 | `--path-format=absolute` is echoed by git < 2.31, so every repo looked like the first | `rev-parse --git-common-dir`, made absolute and resolved here; anything but one plain path is refused | `activity-census`, "older git": two repos counted with old-git output; garbage output counts nothing |
+| 3 | Credentials came from whichever session started the sync; another board got the counts and its 403 wiped them | The board is recorded at `on`; syncs go only there with its token (`~/.laika/env` first); a session pointed elsewhere is refused with no send and no wipe; `on` against another board starts over | `activity-sync`, "one board": three tests |
+| 4 | Narrowing to `laika-repos` took up to 24 h | The switch and scope are read before every send, and by `status` | `activity-sync`: scope narrowed at the board applies to the next body, pushed keys included |
+| 5 | No backoff after an exception | Every failure backs off, doubling from the interval, capped at 6 h | `activity-sync`: exceptions back off 600 s, 1200 s, then the 6 h cap |
+| 6 | Owner decision: pushed keys must respect "counting since" | Pushed keys only for commits authored at or after `since` | `activity-census` and the 403 resume test in `activity-sync` |
+| 7 | Mutations survived: `--no-merges`, a widened `isOurs` | — | `activity-census`: a merge commit is not counted; `activity-command`: a person's own hook that mentions laika survives `off` |
+
+Contract notes accepted without change: `gemini-cli`, `other` for Copilot CLI,
+a new collector id when history is cleared, merge commits not counted. The
+contract now names `gemini-cli` and Copilot CLI as `other` itself.
+
+Behaviour changes worth a SPEC line: the switch and scope are read on every
+sync (not at most daily); syncs are bound to the board `on` was run against;
+nothing authored before sharing was turned on is reported, pushed or not.
