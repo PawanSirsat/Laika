@@ -1031,7 +1031,11 @@ describe('a manager’s queue (LAI-750)', () => {
 
   beforeEach(() => {
     seedHistory();
-    laika = t.db.select().from(projects).all().find((p) => p.slug === 'laika')!.id;
+    laika = t.db
+      .select()
+      .from(projects)
+      .all()
+      .find((p) => p.slug === 'laika')!.id;
   });
 
   function seedQueue(): void {
@@ -1058,7 +1062,11 @@ describe('a manager’s queue (LAI-750)', () => {
     const old1 = task('old', 'Old one');
     claimTask(t.sqlite, t.db, actor(bea), old1, NOW - 9 * DAY);
     move(bea, old1, 'review', NOW - 8 * DAY);
-    t.db.update(projects).set({ archivedAt: NOW - DAY }).where(eq(projects.slug, 'old')).run();
+    t.db
+      .update(projects)
+      .set({ archivedAt: NOW - DAY })
+      .where(eq(projects.slug, 'old'))
+      .run();
   }
 
   it('counts what waits in the projects they lead, and when the oldest entered Review', () => {
