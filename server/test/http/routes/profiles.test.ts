@@ -229,6 +229,34 @@ describe('who may call the three endpoints (§3.1, LAI-743)', () => {
 });
 
 describe('the bodies (§6.3, LAI-743)', () => {
+  it('sets a kind without telling a member anything changed (LAI-746)', async () => {
+    // The kind is not in the member list's shape, so bumping `updated_at`
+    // would hand every member's catch-up a row that looks unchanged — an
+    // unexplained edit, and a hint that something about that person moved.
+    // Pinned old first, so a bump cannot hide inside the same millisecond.
+    h.db
+      .update(users)
+      .set({ updatedAt: new Date(1_000) })
+      .where(eq(users.id, member.id))
+      .run();
+
+    await ok(
+      req(
+        `/api/v1/users/${member.id}/profile`,
+        { method: 'PATCH', body: JSON.stringify({ profile_kind: 'manager' }) },
+        ownerCookie,
+      ),
+    );
+
+    const page = await ok(req('/api/v1/users?updated_since=2000', {}, viewer.cookie));
+    expect((page.data as { id: string }[]).map((u) => u.id)).not.toContain(member.id);
+    // The kind did change — so the silence above is the timestamp, not a
+    // write that never happened.
+    expect(h.db.select().from(users).where(eq(users.id, member.id)).get()?.profileKind).toBe(
+      'manager',
+    );
+  });
+
   it('returns the profile, and the profile with the new kind after a PATCH', async () => {
     const before = await ok(req(`/api/v1/users/${member.id}/profile`, {}, ownerCookie));
     expect(before).toMatchObject({ user: { id: member.id, profile_kind: 'builder' } });

@@ -291,6 +291,11 @@ export function getProfile(
  * **No `activity` row.** The kind is a label on a page only admins see, and it
  * grants nothing; a §4.8 verb for it would rebuild the append-only `activity`
  * table, which D-078's additive-only rule excludes. D-078 records the trade.
+ *
+ * **`updated_at` is left alone** (LAI-746). It is what `GET /users?
+ * updated_since=` reads, and the kind is not in that list's shape: a bump
+ * would hand every member's catch-up a row that looks unchanged — an
+ * unexplained edit about a person, from a page they cannot see.
  */
 export function setProfileKind(
   db: Db,
@@ -303,10 +308,7 @@ export function setProfileKind(
   const person = requireUser(db, userId);
 
   if (person.profileKind !== kind) {
-    db.update(users)
-      .set({ profileKind: kind, updatedAt: new Date(now) })
-      .where(eq(users.id, userId))
-      .run();
+    db.update(users).set({ profileKind: kind }).where(eq(users.id, userId)).run();
   }
 
   return getProfile(db, actor, userId, now);
