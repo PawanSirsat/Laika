@@ -11,6 +11,7 @@ import { ApiError } from '../../../api/errors.ts';
 import type { OrgRole } from '../../../api/invites.ts';
 import type { MeProfile } from '../../../api/me.ts';
 import {
+  attemptKey,
   getProfile,
   mayOpenProfiles,
   mayRate,
@@ -33,7 +34,15 @@ import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
 import { SCREEN_COPY } from '../screen-copy.ts';
-import { barHeights, durationLabel, monthYear, scoreLabel, weekLabel } from './profile-derive.ts';
+import {
+  barHeights,
+  durationLabel,
+  monthYear,
+  nextAttempt,
+  type RatingAttempt,
+  scoreLabel,
+  weekLabel,
+} from './profile-derive.ts';
 import { RatingDialog } from './RatingDialog.tsx';
 import './profile.css';
 
@@ -87,6 +96,12 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
     busy: false,
   });
   const rateButton = useRef<HTMLButtonElement>(null);
+  /**
+   * The rating being tried, and its `Idempotency-Key` (LAI-746). Kept across a
+   * failed try and a closed dialog — a response lost on the way back may still
+   * have been written — and dropped only once a save is answered.
+   */
+  const ratingAttempt = useRef<RatingAttempt | undefined>(undefined);
 
   useEffect(() => {
     if (!allowed || userId === undefined) return;
@@ -186,9 +201,12 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
   };
 
   const save = (score: number, note: string): void => {
+    const trying = nextAttempt(ratingAttempt.current, score, note, attemptKey);
+    ratingAttempt.current = trying;
     setRating({ open: true, busy: true });
-    rateMember(user.id, { score, note }).then(
+    rateMember(user.id, { score, note }, trying.key).then(
       () => {
+        ratingAttempt.current = undefined;
         setRating({ open: false, busy: false });
         // The whole profile again rather than splicing the answer in: the
         // order of the history is the server's, and so is every figure. A
@@ -247,6 +265,9 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
           error={rating.error}
           onSave={save}
           onClose={() => {
+            // A save in flight is not abandoned by closing (LAI-746): the
+            // dialog waits for its answer, here as well as in the dialog.
+            if (rating.busy) return;
             setRating({ open: false, busy: false });
           }}
           restoreFocus={() => rateButton.current}

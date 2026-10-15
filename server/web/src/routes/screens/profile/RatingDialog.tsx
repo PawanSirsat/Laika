@@ -46,22 +46,31 @@ export function RatingDialog({
 
   useDialogFocus(box, { initial: () => firstScore.current, restore: restoreFocus });
 
+  /**
+   * Closing waits for a save in flight (LAI-746). Closing would not stop the
+   * request — it may already be written — and the reader would be left not
+   * knowing whether it was; the answer closes the dialog, or shows why not.
+   */
+  const close = (): void => {
+    if (!busy) onClose();
+  };
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && !busy) onClose();
     };
     document.addEventListener('keydown', onKey);
     return () => {
       document.removeEventListener('keydown', onKey);
     };
-  }, [onClose]);
+  }, [onClose, busy]);
 
   const problem = ratingProblem(score, note);
   const touched = score !== undefined || note !== '';
 
   return createPortal(
     <>
-      <div className="rating-scrim" aria-hidden="true" onClick={onClose} />
+      <div className="rating-scrim" aria-hidden="true" onClick={close} />
       <form
         ref={box}
         className="rating-dialog"
@@ -79,7 +88,13 @@ export function RatingDialog({
           <h2 className="rating-title" id="rating-title">
             Rate {name}
           </h2>
-          <button type="button" className="rating-close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="rating-close"
+            onClick={close}
+            disabled={busy}
+            aria-label="Close"
+          >
             ✕
           </button>
         </header>
@@ -139,7 +154,7 @@ export function RatingDialog({
         )}
 
         <footer className="rating-actions">
-          <button type="button" className="rating-cancel" onClick={onClose}>
+          <button type="button" className="rating-cancel" onClick={close} disabled={busy}>
             Cancel
           </button>
           <button type="submit" className="rating-submit" disabled={problem !== undefined || busy}>

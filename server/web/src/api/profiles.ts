@@ -166,15 +166,34 @@ export function setProfileKind(userId: string, kind: ProfileKind): Promise<Membe
   });
 }
 
-/** Appends a rating. Never an edit — a new one supersedes the last. */
+/**
+ * Appends a rating. Never an edit — a new one supersedes the last.
+ *
+ * `idempotencyKey` is the attempt's (LAI-746): the same key on a retry makes
+ * the server answer with the rating it already wrote, so a response lost on
+ * the way back cannot become a second, undeletable rating.
+ */
 export function rateMember(
   userId: string,
   rating: { readonly score: number; readonly note: string },
+  idempotencyKey?: string,
 ): Promise<MemberRating> {
   return request<MemberRating>(`/users/${encodeURIComponent(userId)}/ratings`, {
     method: 'POST',
     body: { score: rating.score, note: rating.note },
+    ...(idempotencyKey === undefined ? {} : { headers: { 'Idempotency-Key': idempotencyKey } }),
   });
+}
+
+/**
+ * A fresh key for one rating attempt: `rating-` and 32 hex characters.
+ *
+ * **`getRandomValues`, not `randomUUID`**: production is plain HTTP, which is
+ * not a secure context, and `crypto.randomUUID` does not exist there.
+ */
+export function attemptKey(): string {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
+  return `rating-${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
 /** §3.1 `profile.read`: an owner or an admin. Nobody before the session lands. */

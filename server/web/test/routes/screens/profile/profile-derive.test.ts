@@ -14,6 +14,7 @@ import {
   barHeights,
   durationLabel,
   monthYear,
+  nextAttempt,
   ratingProblem,
   scoreLabel,
   weekLabel,
@@ -87,5 +88,37 @@ void describe('ratingProblem — the form refuses what the server would', () => 
 
   void test('is satisfied by a score and a note', () => {
     assert.equal(ratingProblem(5, 'Clears review fast.'), undefined);
+  });
+});
+
+void describe('nextAttempt — one key per rating the reader is trying to save (LAI-746)', () => {
+  let made = 0;
+  const make = (): string => {
+    made += 1;
+    return `k${String(made)}`;
+  };
+
+  void test('starts a fresh attempt when there is none', () => {
+    made = 0;
+    assert.deepEqual(nextAttempt(undefined, 4, 'Steady.', make), {
+      key: 'k1',
+      score: 4,
+      note: 'Steady.',
+    });
+  });
+
+  void test('keeps the key for a retry of the same rating, so a lost answer cannot duplicate it', () => {
+    made = 0;
+    const first = nextAttempt(undefined, 4, 'Steady.', make);
+    assert.equal(nextAttempt(first, 4, 'Steady.', make).key, 'k1');
+    // The note is compared as the server stores it: trimmed.
+    assert.equal(nextAttempt(first, 4, '  Steady.  ', make).key, 'k1');
+  });
+
+  void test('takes a new key when the rating changed — the old one would be a 409', () => {
+    made = 0;
+    const first = nextAttempt(undefined, 4, 'Steady.', make);
+    assert.equal(nextAttempt(first, 5, 'Steady.', make).key, 'k2');
+    assert.equal(nextAttempt(first, 4, 'Steadier.', make).key, 'k3');
   });
 });

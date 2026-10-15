@@ -616,6 +616,112 @@ void describe('rating a member', () => {
     }
   });
 
+  /**
+   * A lost answer must not become two ratings (LAI-746). Each submit of one
+   * rating carries the same `Idempotency-Key`, so the server answers a retry
+   * from the row the first attempt wrote; a changed rating is a new attempt.
+   */
+  void test('retries a lost save with the same Idempotency-Key, and a changed rating with a new one', async () => {
+    const keys: (string | undefined)[] = [];
+    let answer: 'drop' | 'ok' = 'drop';
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': BUILDER,
+    });
+    try {
+      await h.page.route('**/api/v1/users/u2/ratings', async (route) => {
+        keys.push(route.request().headers()['idempotency-key']);
+        if (answer === 'drop') {
+          await route.abort('connectionreset');
+          return;
+        }
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify({ ...BUILDER.ratings[0], note: 'Second try.' }),
+        });
+      });
+
+      await h.page.locator('button.prof-rate').click();
+      const dialog = h.page.locator('.rating-dialog');
+      const submit = dialog.locator('button.rating-submit');
+      await dialog.locator('input[name="rating-score"][value="3"]').check();
+      await dialog.locator('textarea').fill('First try.');
+
+      await submit.click();
+      await until(() => keys.length === 1);
+      await dialog.locator('[role="alert"]').waitFor();
+      await until(async () => !(await submit.isDisabled()));
+      await submit.click();
+      await until(() => keys.length === 2);
+
+      await until(async () => !(await submit.isDisabled()));
+      await dialog.locator('textarea').fill('Second try.');
+      await submit.click();
+      await until(() => keys.length === 3);
+
+      answer = 'ok';
+      await until(async () => !(await submit.isDisabled()));
+      await submit.click();
+      await dialog.waitFor({ state: 'detached' });
+
+      assert.equal(keys.length, 4);
+      assert.match(keys[0] ?? '', /^rating-[0-9a-f]{32}$/);
+      assert.equal(keys[1], keys[0], 'a retry of the same rating took a new key');
+      assert.notEqual(keys[2], keys[1], 'a changed rating kept the old key');
+      assert.equal(keys[3], keys[2], 'the retry that went through took a new key');
+    } finally {
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
+  void test('keeps the dialog open while a save is in flight — Escape, Cancel and ✕ wait', async () => {
+    let release = (): void => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let seen = false;
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': BUILDER,
+    });
+    try {
+      await h.page.route('**/api/v1/users/u2/ratings', async (route) => {
+        seen = true;
+        await held;
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify(BUILDER.ratings[0]),
+        });
+      });
+
+      await h.page.locator('button.prof-rate').click();
+      const dialog = h.page.locator('.rating-dialog');
+      await dialog.locator('input[name="rating-score"][value="5"]').check();
+      await dialog.locator('textarea').fill('Held in flight.');
+      await dialog.locator('button.rating-submit').click();
+      await until(() => seen);
+
+      await h.page.keyboard.press('Escape');
+      await h.page.locator('.rating-scrim').click({ position: { x: 5, y: 5 }, force: true });
+      assert.equal(await dialog.locator('button.rating-cancel').isDisabled(), true);
+      assert.equal(await dialog.locator('button.rating-close').isDisabled(), true);
+      await h.page.waitForTimeout(200);
+      assert.equal(await dialog.count(), 1, 'the dialog let go of a save in flight');
+
+      release();
+      await dialog.waitFor({ state: 'detached' });
+    } finally {
+      release();
+      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+      await h.close();
+    }
+  });
+
   void test('shows the server’s refusal in the dialog rather than closing it', async () => {
     const h = await open('/people?user=u2', {
       ...BASE,
