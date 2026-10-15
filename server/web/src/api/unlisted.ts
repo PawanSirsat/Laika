@@ -110,3 +110,33 @@ export function unlistedState(row: UnlistedWork): UnlistedState {
 export function mayPromote(row: UnlistedWork): boolean {
   return unlistedState(row) === 'pending';
 }
+
+/**
+ * How many notes still wait for somebody — the sidebar's badge and Capacity's
+ * link (LAI-754).
+ *
+ * **Pending only.** `GET /unlisted` leaves dismissed rows out by default but
+ * keeps promoted ones, and a promoted note is decided: counting it would make
+ * the badge a total of everything ever logged rather than what is left to do.
+ */
+export function openUnlistedCount(rows: readonly UnlistedWork[]): number {
+  return rows.filter((row) => unlistedState(row) === 'pending').length;
+}
+
+/**
+ * Newest first, by when the note was logged — the order the server sorts in,
+ * restated so the list does not depend on it (LAI-754).
+ */
+export function newestFirst(rows: readonly UnlistedWork[]): UnlistedWork[] {
+  return [...rows].sort((a, b) => b.created_at - a.created_at || (a.id < b.id ? 1 : -1));
+}
+
+/** A note's first non-blank line, for the one-line row; the rest opens on click. */
+export function firstLine(note: string): string {
+  return (
+    note
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line !== '') ?? ''
+  );
+}

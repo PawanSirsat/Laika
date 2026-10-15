@@ -4,7 +4,7 @@ import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
-import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
+import { ScreenHeader } from '../../../components/ScreenHeader.tsx';
 import { AgentMark } from '../../../components/agent-mark/AgentMark.tsx';
 import { agentClientName } from '../../../api/agent-clients.ts';
 import {
@@ -17,27 +17,37 @@ import {
   type PresenceView,
 } from '../../../api/presence.ts';
 import { getTask, type Task } from '../../../api/tasks.ts';
-import { useProjectTasks } from '../../../api/use-project-tasks.ts';
-import { useRoute } from '../../use-route.ts';
-import { listProjects } from '../../../api/projects.ts';
-import { listUnlisted, type UnlistedWork } from '../../../api/unlisted.ts';
-import { UnlistedList } from '../unlisted/UnlistedList.tsx';
+import { taskStore } from '../../../api/store.ts';
+import { isProject, listProjects } from '../../../api/projects.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import { useTheme } from '../../../theme/use-theme.ts';
-import { byAvailability, oldestAge, taskIdsToResolve } from './capacity-derive.ts';
+import { byAvailability, chipsFor, oldestAge, taskIdsToResolve } from './capacity-derive.ts';
 import '../../../components/markers.css';
 import './capacity.css';
 
 export interface CapacityScreenProps {
   readonly onOpenTask: (taskKey: string) => void;
+  /**
+   * Unlisted notes still waiting, from the shell (LAI-754). **`undefined` draws
+   * no link** — a reader without `audit_log.export` is not told the queue
+   * exists, the same rule that keeps it out of their sidebar.
+   */
+  readonly unlistedOpen?: number | undefined;
+  /** Follow the summary strip's Unlisted link without reloading the page. */
+  readonly onNavigate: (to: string) => void;
 }
 
 /** How often to re-read. §11.4.2's screen is worthless if it silently ages. */
 const POLL_MS = 20_000;
 
 /**
- * Capacity — who is working now, and what is stuck with nobody (§11.4.2).
+ * Capacity — who is working now, across **every space you can see** (§11.4.2).
+ *
+ * **One page for the organisation since LAI-754** (owner, 2026-10-15:
+ * *"Capacity must not be at project level; it must go to the sidebar and be
+ * global"*). It was a space tab from LAI-251; it is a sidebar entry now, with
+ * no space frame, and its unlisted-work list moved to `/unlisted`.
  *
  * **M5's exit criterion**: *"the capacity screen answers 'who takes the next
  * task' without asking."*
@@ -47,9 +57,6 @@ const POLL_MS = 20_000;
  * `enabled` is a **field**, not something to infer: `{ enabled: false }` and an
  * empty list are opposite claims, and since LAI-150 a disabled org stores
  * nothing, so an empty list is all that is left to infer from.
- *
- * `unlisted` is **absent**, not empty, for a reader without `audit_log.export` —
- * so the section renders on the key being present and never on `?? []`.
  *
  * Capacity **keeps the person and shortens their list** when a reader cannot see
  * a project. The person is not the secret.
@@ -67,69 +74,35 @@ const POLL_MS = 20_000;
  * still while going stale. AC8 says a stale capacity screen is worse than a slow
  * one, so this polls every 20s and says so.
  */
-export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
+export function CapacityScreen({ onOpenTask, unlistedOpen, onNavigate }: CapacityScreenProps) {
   const { theme } = useTheme();
-  const { params } = useRoute();
   const [capacity, setCapacity] = useState<CapacityView | undefined>(undefined);
   const [presence, setPresence] = useState<PresenceView | undefined>(undefined);
-  const [unlisted, setUnlisted] = useState<readonly UnlistedWork[]>([]);
   /**
-   * The tasks capacity names, **from the open project's set** (LAI-724).
+   * The tasks the screen draws, by id (LAI-754).
    *
-   * Capacity serves task **ids**, and this screen resolved each one with its
-   * own `GET /tasks/:id` — 133 of them on a 350-task project, on every 20s
-   * poll, ~4.6 s on a WAN. The project's one set (`task-store.ts`) already
-   * holds every task in the open space, so those resolve with no request.
+   * Capacity serves task **ids**. Each one resolves from a project's task set
+   * when one is already held (`task-store.ts`, LAI-724 — usually the space you
+   * just left), and otherwise with one `GET /tasks/:id`, **only for what is
+   * drawn**: three chips a person and the task their session is on.
    *
-   * **Capacity is org-wide, the set is not**: an id from another project is
-   * genuinely missing from it, and only those are fetched by id — once per
-   * visit, kept in `elsewhere`. The server change that retires even those is
-   * for capacity to send each task's key, title and priority beside its id
-   * (filed from LAI-724).
+   * **A failed read is asked again on the next poll.** The owner's screenshot
+   * had chips reading only a dot and `…`: an id that did not resolve once was
+   * never asked again for the rest of the visit. The server change that
+   * retires these reads is LAI-728.
    */
-  const set = useProjectTasks(params.get('project') ?? undefined);
-  const [elsewhere, setElsewhere] = useState<ReadonlyMap<string, Task>>(new Map());
-  /** Ids capacity named on its last answer, for resolving. */
-  const [named, setNamed] = useState<readonly string[]>([]);
+  const [resolved, setResolved] = useState<ReadonlyMap<string, Task>>(new Map());
   /**
-   * How many spaces this screen reads across.
+   * The spaces this screen reads across, by slug.
    *
-   * A real count from `GET /projects`, and `undefined` until it lands — the bar
-   * then says how often it refreshes rather than "across 0 spaces", which would
-   * be a claim rather than a gap.
+   * A real list from `GET /projects`: `undefined` until it lands and `null` if
+   * it failed — the strip then says how often it refreshes rather than "across
+   * 0 spaces", which would be a claim rather than a gap.
    */
-  const [spaceCount, setSpaceCount] = useState<number | undefined>(undefined);
+  const [spaces, setSpaces] = useState<readonly string[] | null | undefined>(undefined);
   const [error, setError] = useState<unknown>(null);
 
-  const load = (signal?: AbortSignal): void => {
-    Promise.all([getCapacity(signal), getPresence(signal)])
-      .then(([cap, pres]) => {
-        setCapacity(cap);
-        setPresence(pres);
-        setNamed(taskIdsToResolve(cap.people));
-      })
-      .catch((cause: unknown) => {
-        if (cause instanceof DOMException && cause.name === 'AbortError') return;
-        setError(cause);
-      });
-
-    everyPage((cursor) => listUnlisted({ cursor, limit: 200 }, signal))
-      .then(({ items }) => {
-        // Every page, not the first (LAI-703); `page.data` is the whole list.
-        const page = { data: items };
-        setUnlisted(page.data);
-      })
-      .catch(() => {
-        // A reader without `audit_log.export` gets 403 here, and that is not an
-        // error on this screen — it is the same permission that makes
-        // `unlisted` absent from capacity. Leave the section out.
-        setUnlisted([]);
-      });
-  };
-
-  // Once, not on the poll: the number of spaces does not change every 20s, and
-  // re-reading it with the presence poll would be a request per tick for a
-  // figure nobody watches.
+  // Once, not on the poll: the number of spaces does not change every 20s.
   useEffect(() => {
     const controller = new AbortController();
     everyPage((cursor) =>
@@ -139,12 +112,15 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
       ),
     )
       .then(({ items }) => {
-        // Every page, not the first (LAI-703); `page.data` is the whole list.
-        const page = { data: items };
-        if (!controller.signal.aborted) setSpaceCount(page.data.length);
+        // Every page, not the first (LAI-703).
+        if (!controller.signal.aborted) {
+          setSpaces(items.filter(isProject).map((project) => project.slug));
+        }
       })
       .catch(() => {
-        // The bar falls back to saying how often it refreshes.
+        // The strip falls back to saying how often it refreshes, and no set
+        // is consulted before a task is read by id.
+        if (!controller.signal.aborted) setSpaces(null);
       });
     return () => {
       controller.abort();
@@ -153,10 +129,19 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
 
   useEffect(() => {
     const controller = new AbortController();
-    load(controller.signal);
-    const timer = setInterval(() => {
-      load();
-    }, POLL_MS);
+    const load = (): void => {
+      Promise.all([getCapacity(controller.signal), getPresence(controller.signal)])
+        .then(([cap, pres]) => {
+          setCapacity(cap);
+          setPresence(pres);
+        })
+        .catch((cause: unknown) => {
+          if (cause instanceof DOMException && cause.name === 'AbortError') return;
+          setError(cause);
+        });
+    };
+    load();
+    const timer = setInterval(load, POLL_MS);
     return () => {
       controller.abort();
       clearInterval(timer);
@@ -164,41 +149,59 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
   }, []);
 
   /*
-   * Ids the open project's set does not hold — decided only once the set has
-   * answered, or every id would look missing while it loads.
+   * What is drawn, re-derived on every poll — which is also what retries an
+   * id that failed: the new answer re-runs the effect below, and anything
+   * still missing is asked for again.
    */
-  const settled = set?.status !== 'loading';
-  const missing = useMemo(
-    () => (settled ? named.filter((id) => set?.byId.has(id) !== true && !elsewhere.has(id)) : []),
-    [settled, named, set?.byId, elsewhere],
+  const wanted = useMemo(
+    () =>
+      capacity === undefined || presence === undefined
+        ? []
+        : taskIdsToResolve(
+            capacity.people,
+            presence.present.map((entry) => entry.matched_task_id),
+          ),
+    [capacity, presence],
   );
+
   useEffect(() => {
-    if (missing.length === 0) return;
+    const missing = wanted.filter((id) => !resolved.has(id));
+    // Until the spaces are known a held set cannot be consulted, and reading
+    // by id first would spend the requests LAI-724 saved.
+    if (missing.length === 0 || spaces === undefined) return;
+
+    // A set some other screen already walked answers without a request.
+    const held = new Map<string, Task>();
+    for (const slug of spaces ?? []) {
+      const set = taskStore.peek(slug);
+      if (set?.status !== 'ready') continue;
+      for (const id of missing) {
+        const task = set.byId.get(id);
+        if (task !== undefined) held.set(id, task);
+      }
+    }
+
     const controller = new AbortController();
     Promise.all(
-      missing.map((id) =>
-        getTask(id, controller.signal)
-          .then((task) => [id, task] as const)
-          .catch(() => undefined),
-      ),
+      missing
+        .filter((id) => !held.has(id))
+        .map((id) =>
+          getTask(id, controller.signal)
+            .then((task) => [id, task] as const)
+            .catch(() => undefined),
+        ),
     )
-      .then((resolved) => {
+      .then((fetched) => {
         if (controller.signal.aborted) return;
-        setElsewhere((prev) => {
-          const next = new Map(prev);
-          for (const entry of resolved) if (entry !== undefined) next.set(entry[0], entry[1]);
-          return next;
-        });
+        const found = [...held, ...fetched.filter((entry) => entry !== undefined)];
+        if (found.length === 0) return;
+        setResolved((prev) => new Map([...prev, ...found]));
       })
       .catch(() => undefined);
     return () => {
       controller.abort();
     };
-  }, [missing.join(',')]);
-
-  const tasks = {
-    get: (id: string): Task | undefined => set?.byId.get(id) ?? elsewhere.get(id),
-  };
+  }, [wanted, spaces]);
 
   if (error !== null) {
     return <ApiErrorState error={error} resource="capacity" scope="organisation" />;
@@ -209,296 +212,285 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
 
   const people = byAvailability(capacity.people);
   const working = presence.present;
+  const scope =
+    spaces === undefined || spaces === null
+      ? `updated every ${String(POLL_MS / 1000)}s · live`
+      : `across ${String(spaces.length)} ${spaces.length === 1 ? 'space' : 'spaces'} · live`;
 
   return (
-    <div className="cap">
-      <SpaceSlot
+    <div className="cap-page">
+      <ScreenHeader
+        title="Capacity"
         context={`${String(people.length)} ${people.length === 1 ? 'person' : 'people'} · updated every ${String(POLL_MS / 1000)}s`}
       />
 
-      {!capacity.enabled ? (
-        /* **Disabled is not empty.** `{ enabled: false }` says this org does not
-           record who is working; an empty list would say nobody is. No control
-           here: turning it on is Admin+ on the Organisation screen (LAI-149),
-           and offering a switch that most readers cannot use is worse than
-           saying where it lives. */
-        <EmptyState
-          headline="Presence is off for this organisation"
-          body="Nobody's sessions are being recorded, so there is nothing to show — this is not the same as nobody working. An organisation admin can turn presence on from the Organisation screen."
-        />
-      ) : (
-        <>
-          {/*
-            The design's summary bar (prototype line 651). Three counts and a
-            sentence — every one of them counted from what the API sent, never
-            estimated.
-          */}
-          <div className="cap-summary">
-            <span className="cap-fig">
-              <span className="cap-fig-label">ACTIVE NOW</span>
-              <span className="cap-fig-value">{working.length}</span>
-            </span>
-            <span className="cap-fig cap-fig-agent">
-              <span className="cap-fig-label">AGENT SESSIONS</span>
-              <span className="cap-fig-value">
-                {people.reduce((n, person) => n + person.active_sessions, 0)}
-              </span>
-            </span>
-            <span className="cap-fig cap-fig-unlisted">
-              <span className="cap-fig-label">UNLISTED WORK</span>
-              <span className="cap-fig-value">{unlisted.length}</span>
-            </span>
+      <div className="cap">
+        {!capacity.enabled ? (
+          /* **Disabled is not empty.** `{ enabled: false }` says this org does
+             not record who is working; an empty list would say nobody is. No
+             control here: turning it on is Admin+ on the Organisation screen
+             (LAI-149), and offering a switch that most readers cannot use is
+             worse than saying where it lives. */
+          <EmptyState
+            headline="Presence is off for this organisation"
+            body="Nobody's sessions are being recorded, so there is nothing to show — this is not the same as nobody working. An organisation admin can turn presence on from the Organisation screen."
+          />
+        ) : (
+          <>
             {/*
-              **The scope, in words** (LAI-279, prototype line 656).
-
-              This screen reads across the whole organisation while living
-              inside a space. That used to be said by stripping `?project=` from
-              its link, which left the space bar reading "No space" over a screen
-              still showing the space's tabs — not a scope statement, just a
-              screen that looks broken. A sentence is what the design uses and
-              what a reader can actually act on.
+              The design's summary bar (prototype line 651). Counts and a
+              sentence — every one of them counted from what the API sent,
+              never estimated. The scope is said in words: this page reads
+              across every space the reader can see.
             */}
-            <span className="cap-summary-note">
-              {spaceCount === undefined
-                ? `updated every ${String(POLL_MS / 1000)}s · live`
-                : `across ${String(spaceCount)} ${spaceCount === 1 ? 'space' : 'spaces'} · live`}
-            </span>
-          </div>
+            <div className="cap-summary">
+              <span className="cap-fig">
+                <span className="cap-fig-label">ACTIVE NOW</span>
+                <span className="cap-fig-value">{working.length}</span>
+              </span>
+              <span className="cap-fig cap-fig-agent">
+                <span className="cap-fig-label">AGENT SESSIONS</span>
+                <span className="cap-fig-value">
+                  {people.reduce((n, person) => n + person.active_sessions, 0)}
+                </span>
+              </span>
+              {/*
+                **A link, not the list** (LAI-754). The notes have their own
+                page now; this says how many wait there, for a reader allowed
+                to open it.
+              */}
+              {unlistedOpen !== undefined && (
+                <a
+                  className="cap-fig cap-fig-unlisted cap-fig-link"
+                  href="/unlisted"
+                  onClick={(event) => {
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
+                    onNavigate('/unlisted');
+                  }}
+                >
+                  <span className="cap-fig-label">UNLISTED</span>
+                  <span className="cap-fig-value">{unlistedOpen}</span>
+                </a>
+              )}
+              <span className="cap-summary-note">{scope}</span>
+            </div>
 
-          {/*
-            One card per person, in four panels (prototype lines 657–693):
-            who they are · what they are working on · their agent session ·
-            what is in progress. It was two flat lists, which answered "who is
-            here" and "who is free" but never joined them up for one person.
-          */}
-          {/*
-            **Enabled and quiet is not disabled** (LAI-150). An org that records
-            presence and has nobody beating must say so in its own words — an
-            empty list beside a summary bar of zeroes reads as a broken screen,
-            and reads identically to presence being off, which is a different
-            claim entirely. `capacity.test.ts` is the fixture that separates them.
-          */}
-          {people.length === 0 && (
-            <p className="cap-quiet">No sessions in the last five minutes.</p>
-          )}
+            {/*
+              **Enabled and quiet is not disabled** (LAI-150). An org that
+              records presence and has nobody beating must say so in its own
+              words — `capacity.test.ts` is the fixture that separates them.
+            */}
+            {people.length === 0 && (
+              <p className="cap-quiet">No sessions in the last five minutes.</p>
+            )}
 
-          <ul className="cap-people">
-            {people.map((person) => {
-              const age = oldestAge(person.oldest_in_progress_ms);
-              const ink = avatarColor(person.user_id, theme);
-              const here = working.find((e) => e.user_id === person.user_id);
-              const now =
-                here?.matched_task_id === undefined || here.matched_task_id === null
-                  ? undefined
-                  : tasks.get(here.matched_task_id);
-              const mine = unlisted.filter((u) => u.user_id === person.user_id);
+            {/*
+              One card per person, in four panels (prototype lines 657–693):
+              who they are · what they are working on · their agent session ·
+              what is in progress.
+            */}
+            <ul className="cap-people">
+              {people.map((person) => {
+                const age = oldestAge(person.oldest_in_progress_ms);
+                const ink = avatarColor(person.user_id, theme);
+                const here = working.find((e) => e.user_id === person.user_id);
+                const now =
+                  here?.matched_task_id === undefined || here.matched_task_id === null
+                    ? undefined
+                    : resolved.get(here.matched_task_id);
+                const chips = chipsFor(person.in_progress_tasks);
 
-              return (
-                <li key={person.user_id} className="cap-card">
-                  <div className="cap-panels">
-                    <div className="cap-who">
-                      <span
-                        className="cap-avatar"
-                        style={{ background: ink.background, color: ink.foreground }}
-                        aria-hidden="true"
-                      >
-                        {initials(person.name)}
-                      </span>
-                      <span className="cap-who-lines">
-                        <span className="cap-name">
-                          <PersonLink
-                            userId={person.user_id}
-                            className="cap-name-link"
-                            label={`Open ${person.name}’s profile`}
-                          >
-                            {person.name}
-                          </PersonLink>
+                return (
+                  <li key={person.user_id} className="cap-card">
+                    <div className="cap-panels">
+                      <div className="cap-who">
+                        <span
+                          className="cap-avatar"
+                          style={{ background: ink.background, color: ink.foreground }}
+                          aria-hidden="true"
+                        >
+                          {initials(person.name)}
                         </span>
-                        <span className="cap-who-meta">
-                          {/*
-                            **`is_agent`, not `active_sessions > 0`.** A person
-                            can have a session count without that session being
-                            an agent's — `is_agent` is `tokenId !== null`, which
-                            is the fact this badge claims. The first cut badged a
-                            human as an agent, and `capacity.test.ts` said so.
-                          */}
-                          {here?.is_agent === true && (
-                            <span className="marker marker-agent">agent</span>
-                          )}
-                          {/* Which agents, in words beside their marks (LAI-737). */}
-                          {here !== undefined &&
-                            agentsOf(here).map((client) => (
-                              <span key={client} className="cap-client">
-                                <AgentMark client={client} size="sm" />
-                                {agentClientName(client)}
-                              </span>
-                            ))}
-                          <span className="cap-seen-dot">
-                            <span
-                              className={here === undefined ? 'cap-dot' : 'cap-dot cap-dot-live'}
-                              aria-hidden="true"
-                            />
+                        <span className="cap-who-lines">
+                          <span className="cap-name">
+                            <PersonLink
+                              userId={person.user_id}
+                              className="cap-name-link"
+                              label={`Open ${person.name}’s profile`}
+                            >
+                              {person.name}
+                            </PersonLink>
+                          </span>
+                          <span className="cap-who-meta">
                             {/*
-                              `last_seen` is nullable — a person who has never
-                              beaten has no time to show, and printing the epoch
-                              would read as 1970.
+                              **`is_agent`, not `active_sessions > 0`.** A
+                              person can have a session count without that
+                              session being an agent's — `is_agent` is
+                              `tokenId !== null`, which is the fact this badge
+                              claims.
                             */}
-                            <span className="cap-seen">
-                              {person.last_seen === null
-                                ? 'never seen'
-                                : new Date(person.last_seen).toLocaleTimeString()}
+                            {here?.is_agent === true && (
+                              <span className="marker marker-agent">agent</span>
+                            )}
+                            {/* Which agents, in words beside their marks (LAI-737). */}
+                            {here !== undefined &&
+                              agentsOf(here).map((client) => (
+                                <span key={client} className="cap-client">
+                                  <AgentMark client={client} size="sm" />
+                                  {agentClientName(client)}
+                                </span>
+                              ))}
+                            <span className="cap-seen-dot">
+                              <span
+                                className={here === undefined ? 'cap-dot' : 'cap-dot cap-dot-live'}
+                                aria-hidden="true"
+                              />
+                              {/*
+                                `last_seen` is nullable — a person who has never
+                                beaten has no time to show, and printing the
+                                epoch would read as 1970.
+                              */}
+                              <span className="cap-seen">
+                                {person.last_seen === null
+                                  ? 'never seen'
+                                  : new Date(person.last_seen).toLocaleTimeString()}
+                              </span>
                             </span>
                           </span>
                         </span>
-                      </span>
-                    </div>
+                      </div>
 
-                    <div className="cap-panel cap-working">
-                      <span className="cap-panel-label">WORKING ON</span>
-                      {now !== undefined ? (
-                        <>
-                          <span className="cap-now">
-                            <span className="cap-now-key">{now.key}</span>
-                            <span className="cap-now-title" title={now.title}>
-                              {now.title}
+                      <div className="cap-panel cap-working">
+                        <span className="cap-panel-label">WORKING ON</span>
+                        {now !== undefined ? (
+                          <>
+                            <span className="cap-now">
+                              <span className="cap-now-key">{now.key}</span>
+                              <span className="cap-now-title" title={now.title}>
+                                {now.title}
+                              </span>
                             </span>
-                          </span>
-                          {here?.repo !== undefined ? (
-                            <span className="cap-now-repo">
-                              {here.repo}
-                              {here.branch === undefined ? '' : ` · ${here.branch}`}
-                            </span>
-                          ) : (
-                            /* An MCP-only session has no repo (LAI-736); it
-                               says which agent instead (LAI-737). */
-                            here !== undefined &&
-                            connectedVia(here) !== undefined && (
-                              <span className="cap-now-repo">{connectedVia(here)}</span>
-                            )
-                          )}
-                        </>
-                      ) : (
-                        <span className="cap-idle">
-                          {/*
-                            **Three states, not two** (LAI-438). A person whose
-                            location is withheld is not the same as one who is
-                            in a session on no particular task, and neither is
-                            the same as being away — `hasLocation` is the one
-                            rule that tells the first apart, and it tests
-                            `repo` because `matched_task_id` and `project_ids`
-                            arrive `null`/`[]` either way.
-                          */}
-                          {here === undefined
-                            ? 'Not in a session right now.'
-                            : hasLocation(here)
-                              ? 'In a session, on no particular task.'
-                              : (connectedVia(here) ?? 'working elsewhere')}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="cap-panel cap-agent">
-                      <span className="cap-panel-label">AGENT SESSION</span>
-                      {person.active_sessions > 0 ? (
-                        <>
-                          <span className="cap-agent-live">
-                            <span className="cap-pulse" aria-hidden="true" />
-                            running
-                            <span className="cap-agent-count">
-                              {person.active_sessions}{' '}
-                              {person.active_sessions === 1 ? 'token' : 'tokens'}
-                            </span>
-                          </span>
-                          {age !== undefined && (
-                            <span className="cap-agent-meta">oldest task {age}</span>
-                          )}
-                        </>
-                      ) : (
-                        <span className="cap-idle">No agent session.</span>
-                      )}
-                    </div>
-
-                    <div className="cap-panel cap-wip">
-                      <span className="cap-panel-label">
-                        IN PROGRESS
-                        <span className="cap-wip-count">{person.in_progress_tasks.length}</span>
-                      </span>
-                      <span className="cap-chips">
-                        {person.in_progress_tasks.length === 0 ? (
-                          <span className="cap-idle">Nothing assigned in progress</span>
+                            {here?.repo !== undefined ? (
+                              <span className="cap-now-repo">
+                                {here.repo}
+                                {here.branch === undefined ? '' : ` · ${here.branch}`}
+                              </span>
+                            ) : (
+                              /* An MCP-only session has no repo (LAI-736); it
+                                 says which agent instead (LAI-737). */
+                              here !== undefined &&
+                              connectedVia(here) !== undefined && (
+                                <span className="cap-now-repo">{connectedVia(here)}</span>
+                              )
+                            )}
+                          </>
                         ) : (
-                          person.in_progress_tasks.map((id) => {
-                            const task = tasks.get(id);
-                            return (
-                              <button
-                                key={id}
-                                type="button"
-                                className="cap-chip"
-                                disabled={task === undefined}
-                                // Which in-progress column, when a project has
-                                // several (LAI-739).
-                                title={task === undefined ? undefined : task.status_name}
-                                onClick={() => {
-                                  if (task !== undefined) onOpenTask(task.key);
-                                }}
-                              >
-                                <span
-                                  className={`cap-chip-dot cap-chip-${task?.priority ?? 'p3'}`}
-                                  aria-hidden="true"
-                                />
-                                {/* An id is not a key — until it resolves this
-                                    says so rather than printing a ULID. */}
-                                <span className="cap-chip-key">{task?.key ?? '…'}</span>
-                                <span className="cap-chip-title">{task?.title ?? ''}</span>
-                              </button>
-                            );
-                          })
+                          <span className="cap-idle">
+                            {/*
+                              **Three states, not two** (LAI-438). A person whose
+                              location is withheld is not the same as one who is
+                              in a session on no particular task, and neither is
+                              the same as being away — `hasLocation` is the one
+                              rule that tells the first apart.
+                            */}
+                            {here === undefined
+                              ? 'Not in a session right now.'
+                              : hasLocation(here)
+                                ? 'In a session, on no particular task.'
+                                : (connectedVia(here) ?? 'working elsewhere')}
+                          </span>
                         )}
-                      </span>
-                    </div>
-                  </div>
+                      </div>
 
-                  {/*
-                    **Absent, not empty** — `?? []` here would turn "you may not
-                    be told" into "they have logged nothing" (the field is
-                    withheld without `audit_log.export`).
-                  */}
-                  {person.unlisted !== undefined && mine.length > 0 && (
-                    <div className="cap-unlisted-strip">
-                      <span className="cap-unlisted-label">UNLISTED WORK</span>
-                      <span className="cap-unlisted-note">{mine[0]?.note ?? ''}</span>
-                      <span className="cap-unlisted-meta">
-                        {mine.length > 1 ? `+${String(mine.length - 1)} more · ` : ''}
-                        {mine[0]?.repo ?? ''}
-                      </span>
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
+                      <div className="cap-panel cap-agent">
+                        <span className="cap-panel-label">AGENT SESSION</span>
+                        {person.active_sessions > 0 ? (
+                          <>
+                            <span className="cap-agent-live">
+                              <span className="cap-pulse" aria-hidden="true" />
+                              running
+                              <span className="cap-agent-count">
+                                {person.active_sessions}{' '}
+                                {person.active_sessions === 1 ? 'token' : 'tokens'}
+                              </span>
+                            </span>
+                            {age !== undefined && (
+                              <span className="cap-agent-meta">oldest task {age}</span>
+                            )}
+                          </>
+                        ) : (
+                          <span className="cap-idle">No agent session.</span>
+                        )}
+                      </div>
 
-          {unlisted.length > 0 && (
-            <section className="cap-section">
-              <h2 className="cap-h">Unlisted work</h2>
-              <p className="cap-quiet">
-                Work an agent noticed outside any project. Promote what matters without leaving this
-                screen.
-              </p>
-              <UnlistedList
-                rows={unlisted}
-                // Real names, from `GET /capacity` — the screen already has
-                // them, so a note does not have to say "Someone".
-                names={new Map(capacity.people.map((person) => [person.user_id, person.name]))}
-                onOpenTask={onOpenTask}
-                onChanged={() => {
-                  load();
-                }}
-              />
-            </section>
-          )}
-        </>
-      )}
+                      <div className="cap-panel cap-wip">
+                        <span className="cap-panel-label">
+                          IN PROGRESS
+                          <span className="cap-wip-count">{person.in_progress_tasks.length}</span>
+                        </span>
+                        <span className="cap-chips">
+                          {person.in_progress_tasks.length === 0 ? (
+                            <span className="cap-idle">Nothing assigned in progress</span>
+                          ) : (
+                            <>
+                              {chips.shown.map((id) => {
+                                const task = resolved.get(id);
+                                return (
+                                  <button
+                                    key={id}
+                                    type="button"
+                                    className="cap-chip"
+                                    disabled={task === undefined}
+                                    // The whole title, and which in-progress
+                                    // column when a project has several (LAI-739).
+                                    title={
+                                      task === undefined
+                                        ? 'Loading this task…'
+                                        : `${task.key} · ${task.title} — ${task.status_name}`
+                                    }
+                                    aria-label={
+                                      task === undefined
+                                        ? 'Loading task'
+                                        : `${task.key} ${task.title}`
+                                    }
+                                    onClick={() => {
+                                      if (task !== undefined) onOpenTask(task.key);
+                                    }}
+                                  >
+                                    <span
+                                      className={`cap-chip-dot cap-chip-${task?.priority ?? 'p3'}`}
+                                      aria-hidden="true"
+                                    />
+                                    {/* An id is not a key — until it resolves
+                                        this says so rather than printing a ULID. */}
+                                    <span className="cap-chip-key">{task?.key ?? '…'}</span>
+                                    {task !== undefined && (
+                                      <span className="cap-chip-title">{task.title}</span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                              {chips.more > 0 && (
+                                <span
+                                  className="cap-chip-more"
+                                  title={`${String(chips.more)} more in progress`}
+                                >
+                                  +{chips.more} more
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+      </div>
     </div>
   );
 }

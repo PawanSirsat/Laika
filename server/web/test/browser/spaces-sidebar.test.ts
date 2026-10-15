@@ -152,16 +152,28 @@ void describe('the SPACES section', () => {
       for (const group of ['WORK', 'REVIEW']) {
         assert.doesNotMatch(sidebar, new RegExp(group), `${group} is still a sidebar group`);
       }
-      // **Capacity left the sidebar in LAI-251** — the design's tab strip
-      // carries it. **`ORG` left in LAI-484**: the owner asked for the section
-      // hidden for now. This reader is an **owner** — the one who used to see
-      // it — so its absence here is the hiding, not the permission gate.
-      assert.doesNotMatch(sidebar, /Capacity/, 'Capacity is offered twice');
-      // Positive control first: the sidebar rendered its other sections, so
-      // the two absences below cannot be a blank rail.
+      // Positive control: the sidebar rendered its other sections, so the
+      // absences above cannot be a blank rail.
       assert.match(sidebar, /SETTINGS/, 'the sidebar did not render at all');
-      assert.doesNotMatch(sidebar, /\bORG\b/, 'the ORG heading is back');
-      assert.doesNotMatch(sidebar, /Unlisted work/, 'Unlisted work is back in the sidebar');
+      /*
+       * **`ORG` leads the rail since LAI-754**: Capacity, one page across every
+       * space, and Unlisted work for this reader, an **owner**. Above SPACES,
+       * because neither belongs to the space listed under it.
+       */
+      const org = h.page.locator('.sidebar-group', { has: h.page.locator('#nav-ORG') });
+      assert.deepEqual(
+        (await org.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
+        ['Capacity', 'Unlisted work'],
+      );
+      const orgTop = (await org.boundingBox())?.y ?? Infinity;
+      const spacesTop = (await h.page.locator('.space-row').first().boundingBox())?.y ?? -Infinity;
+      assert.ok(orgTop < spacesTop, 'ORG is not above the spaces');
+      // Once — the tab strip no longer offers it as well.
+      assert.equal(
+        await h.page.locator('.view-tab', { hasText: 'Capacity' }).count(),
+        0,
+        'Capacity is offered twice',
+      );
     } finally {
       await h.close();
     }
@@ -218,17 +230,15 @@ void describe('the view tabs', () => {
         'Timeline',
         'Calendar',
         'Sprints',
-        'Capacity',
         'Dashboard',
         'Activity',
         'Meeting review',
       ]);
 
       /*
-       * **The project travels with every tab, `/capacity` included** (LAI-279).
-       * A bare path drops `?project=` and the destination falls back to a
-       * different project (LAI-423) — or, for Capacity, to none at all, which
-       * is what left the space bar reading "No space".
+       * **The project travels with every tab** (LAI-279). A bare path drops
+       * `?project=` and the destination falls back to a different project
+       * (LAI-423). Capacity is not a tab since LAI-754.
        */
       const hrefs = await h.page
         .locator('.view-tab')
@@ -244,46 +254,35 @@ void describe('the view tabs', () => {
   });
 
   /**
-   * **Capacity is a tab, and it keeps the space** (LAI-279).
+   * **Capacity is a sidebar entry, not a tab** (owner, 2026-10-15, LAI-754).
    *
-   * LAI-251 had its link drop `?project=` so a tab under `laika-core` could not
-   * claim to be about `laika-core`. The honesty was right; the mechanism left
-   * the space bar reading **"No space"** over a screen still showing that
-   * space's tabs, which the owner reported as the screen looking like a
-   * different page.
-   *
-   * The design draws Capacity inside the space and puts the scope into a
-   * sentence — *"across N spaces · live"* — which is where a reader can see it.
-   * This asserts the link; `capacity.test.ts` asserts the sentence.
+   * From a space, its link is bare `/capacity` — one page for every space —
+   * and the page it opens has no space bar and no tabs to claim otherwise.
    */
-  void test('the Capacity tab keeps the space, and the bar names it', async () => {
-    const h = await open('/board?project=laika-core', STUB);
+  void test('Capacity opens from the sidebar as one page, without the space frame', async () => {
+    const h = await open('/board?project=laika-core', {
+      ...STUB,
+      '/api/v1/capacity': { enabled: true, people: [] },
+      '/api/v1/presence': { enabled: true, present: [] },
+    });
     try {
-      const tab = h.page.locator('.view-tab', { hasText: 'Capacity' });
-      await tab.waitFor({ timeout: 20_000 });
-      assert.equal(await tab.getAttribute('href'), '/capacity?project=laika-core');
+      const link = h.page.locator('#sidebar .sidebar-link', { hasText: 'Capacity' });
+      await link.waitFor({ timeout: 20_000 });
+      assert.equal(await link.getAttribute('href'), '/capacity');
 
-      await tab.click();
-      await h.page.waitForURL(/capacity\?project=laika-core/, { timeout: 10_000 });
-
-      /*
-       * The whole of the owner's report: the space must be **named**, not
-       * fall back to "No space". The name moved from the rail's wordmark to
-       * the space bar's headline (owner, 2026-09-21 — the rail is the product
-       * again), so the bar is where the regression would now show.
-       */
-      await h.page.waitForFunction(
-        () => (document.querySelector('.space-name')?.textContent ?? '') !== '',
-        undefined,
-        { timeout: 10_000 },
-      );
-      const name = await h.page.locator('.space-name').innerText();
-      assert.notEqual(name, 'No space', 'the bar lost the space');
-      assert.match(name, /Laika Core/);
+      await link.click();
+      await h.page.waitForURL((url) => url.pathname === '/capacity' && url.search === '', {
+        timeout: 10_000,
+      });
+      await h.page.locator('.screen-bar-title', { hasText: 'Capacity' }).waitFor({
+        timeout: 10_000,
+      });
+      assert.equal(await h.page.locator('.view-tab').count(), 0, 'the space tabs are still drawn');
+      assert.equal(await h.page.locator('.space-name').count(), 0, 'the space bar is still drawn');
       assert.equal(
-        await h.page.locator('.sidebar-wordmark').innerText(),
-        'Laika',
-        'the rail must always be the product now',
+        await h.page.locator('#sidebar .sidebar-link-active').innerText(),
+        'Capacity',
+        'the rail does not mark Capacity as the current page',
       );
     } finally {
       await h.close();

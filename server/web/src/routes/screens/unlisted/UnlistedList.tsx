@@ -2,24 +2,24 @@ import { Spinner } from '../../../components/Spinner.tsx';
 import { useState } from 'react';
 import {
   dismissUnlisted,
+  firstLine,
   mayPromote,
   promoteUnlisted,
   unlistedState,
   type UnlistedWork,
 } from '../../../api/unlisted.ts';
+import { timeLabel } from '../../../api/time-label.ts';
 import '../../../components/markers.css';
 import './unlisted.css';
 
 export interface UnlistedListProps {
+  /** Already in the order to show — newest first is the caller's. */
   readonly rows: readonly UnlistedWork[];
   /**
    * `user_id` → display name.
    *
-   * **A name map, not `Member`.** The list only ever reads `.name`, and Capacity
-   * knows people's names from `GET /capacity` while knowing nothing about their
-   * email, role or join date — so a `Member`-shaped prop could only be satisfied
-   * by inventing three fields. Narrowing the prop to what is used is what let
-   * that screen pass real names instead of rendering "Someone".
+   * **A name map, not `Member`.** The list only ever reads `.name`, so the
+   * prop asks for nothing it would have to invent.
    */
   readonly names: ReadonlyMap<string, string>;
   /** Open a task — a promotion that cannot be reached is a dead end. */
@@ -35,29 +35,27 @@ interface PromotionResult {
 }
 
 /**
- * The unlisted rows, with promote and dismiss (SPEC §4.14).
+ * The unlisted rows, **one line each** (LAI-754), with promote and dismiss
+ * (SPEC §4.14).
  *
- * **Extracted from `UnlistedScreen` by LAI-439**, which needs the same list on
- * the Capacity screen: §11.4.2 asks for *"unlisted work with one-click promote
- * to a task"* there, and AC5 says the click must not send somebody to another
- * screen and back.
+ * The owner's words about the card list this replaces: *"this Unlisted work
+ * list is too big"*. Each note is a line — repo, who, when, its first line —
+ * and a click opens the full text with the actions under it. Nothing a card
+ * offered is lost; it is one click further away, which is the trade a long
+ * queue wants.
  *
- * Copying it would have been the fourth `initials()` (LAI-215) and the third
- * padlock (LAI-436) — and worse than either, because a second promote form can
- * drift in what it sends rather than only in how it looks.
- *
- * The **loading**, the dismissed-toggle and the empty state stay with the
- * caller: the two screens genuinely differ there. `UnlistedScreen` shows the
- * whole org's queue with a toggle; Capacity shows one person's, already filtered
- * by the caller.
+ * Only the Unlisted screen uses it now: Capacity carried the same list from
+ * LAI-439 until LAI-754 took it off.
  */
 export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedListProps) {
+  const [expanded, setExpanded] = useState<string | undefined>(undefined);
   const [promoting, setPromoting] = useState<UnlistedWork | undefined>(undefined);
   const [slug, setSlug] = useState('');
   const [title, setTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | undefined>(undefined);
   const [justPromoted, setJustPromoted] = useState<PromotionResult | undefined>(undefined);
+  const now = Date.now();
 
   const promote = (): void => {
     if (promoting === undefined) return;
@@ -110,108 +108,139 @@ export function UnlistedList({ rows, names, onOpenTask, onChanged }: UnlistedLis
       <ul className="unl-list">
         {rows.map((row) => {
           const state = unlistedState(row);
-          const who = names.get(row.user_id);
+          const who = names.get(row.user_id) ?? 'Someone';
+          const when = timeLabel(row.created_at, now);
+          const open = expanded === row.id;
           const promotedKey =
             justPromoted?.unlistedId === row.id ? justPromoted.taskKey : undefined;
 
           return (
-            <li key={row.id} className={`unl-row unl-row-${state}`}>
-              <div className="unl-row-head">
-                <code className="unl-repo">{row.repo}</code>
-                {/* `token_id` is what makes it an agent's note rather than a
-                    person's — §4.14 carries it for exactly this. */}
-                {row.token_id !== null && <span className="marker marker-agent">agent</span>}
-                <span className="unl-when">{new Date(row.created_at).toLocaleString()}</span>
-                <span className="unl-who">{who ?? 'Someone'}</span>
-              </div>
-
-              <p className="unl-note">{row.note}</p>
-
-              <div className="unl-row-actions">
-                {state === 'promoted' ? (
-                  /* Already promoted. The server answers 409 to a second
-                     attempt, so this shows the result instead of offering a
-                     control that is guaranteed to fail. */
-                  <button
-                    type="button"
-                    className="unl-link"
-                    onClick={() => {
-                      onOpenTask(promotedKey ?? row.promoted_task_id ?? '');
-                    }}
-                  >
-                    {promotedKey === undefined ? 'Open the task it became' : `Open ${promotedKey}`}
-                  </button>
-                ) : state === 'dismissed' ? (
-                  <span className="unl-state">Dismissed</span>
-                ) : (
-                  <>
-                    <button
-                      type="button"
-                      className="unl-promote"
-                      onClick={() => {
-                        setPromoting(row);
-                        setTitle(row.note.slice(0, 120));
-                        setActionError(undefined);
-                      }}
-                    >
-                      Promote to task
-                    </button>
-                    <button
-                      type="button"
-                      className="unl-dismiss"
-                      onClick={() => {
-                        dismiss(row);
-                      }}
-                    >
-                      Dismiss
-                    </button>
-                  </>
+            <li key={row.id} className={`unl-row unl-row-${state}${open ? ' unl-row-open' : ''}`}>
+              <button
+                type="button"
+                className="unl-line"
+                aria-expanded={open}
+                onClick={() => {
+                  setExpanded(open ? undefined : row.id);
+                }}
+              >
+                <span className="unl-repo" title={row.repo}>
+                  {row.repo}
+                </span>
+                <span className="unl-who" title={who}>
+                  {who}
+                </span>
+                <time className="unl-when" dateTime={when.iso} title={when.full}>
+                  {when.text}
+                </time>
+                <span className="unl-first">{firstLine(row.note)}</span>
+                {/* Decided rows say so on the line, so the queue can be read
+                    without opening anything. */}
+                {state !== 'pending' && (
+                  <span className={`unl-tag unl-tag-${state}`}>
+                    {state === 'promoted' ? 'Promoted' : 'Dismissed'}
+                  </span>
                 )}
-              </div>
+                <span className="unl-caret" aria-hidden="true" />
+              </button>
 
-              {promoting?.id === row.id && mayPromote(row) && (
-                <div className="unl-form">
-                  <label className="unl-field">
-                    <span className="unl-label">Project</span>
-                    <input
-                      className="unl-input"
-                      value={slug}
-                      placeholder="laika-core"
-                      onChange={(event) => {
-                        setSlug(event.target.value);
-                      }}
-                    />
-                  </label>
-                  <label className="unl-field unl-field-wide">
-                    <span className="unl-label">Task title</span>
-                    <input
-                      className="unl-input"
-                      value={title}
-                      onChange={(event) => {
-                        setTitle(event.target.value);
-                      }}
-                    />
-                  </label>
-                  <div className="unl-form-actions">
-                    <button
-                      type="button"
-                      className="bar-control"
-                      onClick={() => {
-                        setPromoting(undefined);
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="bar-control bar-control-primary"
-                      disabled={busy || slug.trim() === '' || title.trim() === ''}
-                      onClick={promote}
-                    >
-                      {busy && <Spinner size="sm" />}
-                      Create task
-                    </button>
+              {open && (
+                <div className="unl-detail">
+                  <p className="unl-note">{row.note}</p>
+
+                  <div className="unl-row-actions">
+                    {/* `token_id` is what makes it an agent's note rather than a
+                        person's — §4.14 carries it for exactly this. */}
+                    {row.token_id !== null && <span className="marker marker-agent">agent</span>}
+                    <span className="unl-at">{when.full}</span>
+                    {state === 'promoted' ? (
+                      /* Already promoted. The server answers 409 to a second
+                         attempt, so this shows the result instead of offering a
+                         control that is guaranteed to fail. */
+                      <button
+                        type="button"
+                        className="unl-link"
+                        onClick={() => {
+                          onOpenTask(promotedKey ?? row.promoted_task_id ?? '');
+                        }}
+                      >
+                        {promotedKey === undefined
+                          ? 'Open the task it became'
+                          : `Open ${promotedKey}`}
+                      </button>
+                    ) : state === 'dismissed' ? (
+                      <span className="unl-state">Dismissed</span>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="unl-promote"
+                          onClick={() => {
+                            setPromoting(row);
+                            setTitle(firstLine(row.note).slice(0, 120));
+                            setActionError(undefined);
+                          }}
+                        >
+                          Promote to task
+                        </button>
+                        <button
+                          type="button"
+                          className="unl-dismiss"
+                          onClick={() => {
+                            dismiss(row);
+                          }}
+                        >
+                          Dismiss
+                        </button>
+                      </>
+                    )}
                   </div>
+
+                  {promoting?.id === row.id && mayPromote(row) && (
+                    <div className="unl-form">
+                      <label className="unl-field">
+                        <span className="unl-label">Project</span>
+                        <input
+                          className="unl-input"
+                          value={slug}
+                          placeholder="laika-core"
+                          onChange={(event) => {
+                            setSlug(event.target.value);
+                          }}
+                        />
+                      </label>
+                      <label className="unl-field unl-field-wide">
+                        <span className="unl-label">Task title</span>
+                        <input
+                          className="unl-input"
+                          value={title}
+                          onChange={(event) => {
+                            setTitle(event.target.value);
+                          }}
+                        />
+                      </label>
+                      <div className="unl-form-actions">
+                        <button
+                          type="button"
+                          className="bar-control"
+                          onClick={() => {
+                            setPromoting(undefined);
+                          }}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="bar-control bar-control-primary"
+                          disabled={busy || slug.trim() === '' || title.trim() === ''}
+                          onClick={promote}
+                        >
+                          {busy && <Spinner size="sm" />}
+                          Create task
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </li>

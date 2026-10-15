@@ -239,8 +239,7 @@ function SpaceFrame({
         **No WORKING NOW row** (LAI-727). It sat here on the board only, from
         the design's `boardLive` band (prototype line 2273); the owner asked for
         it to go. The header's `Agents` count still reads presence through
-        `SpaceLive`, which is why that read stays; Activity and Capacity read
-        their own.
+        `SpaceLive`, which is why that read stays; Activity reads its own.
       */}
 
         {children}

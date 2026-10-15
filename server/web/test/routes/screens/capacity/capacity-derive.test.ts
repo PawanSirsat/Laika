@@ -11,6 +11,8 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
   byAvailability,
+  CHIP_CAP,
+  chipsFor,
   oldestAge,
   taskIdsToResolve,
 } from '../../../../src/routes/screens/capacity/capacity-derive.ts';
@@ -95,11 +97,37 @@ void describe('byAvailability — a ranking, not a score', () => {
   });
 });
 
-void describe('taskIdsToResolve', () => {
-  void test('both lists, deduped across people', () => {
+void describe('chipsFor — a few named, then +N more (LAI-754)', () => {
+  void test('the first three, and how many are left', () => {
+    assert.equal(CHIP_CAP, 3);
+    assert.deepEqual(chipsFor(['a', 'b', 'c', 'd', 'e']), { shown: ['a', 'b', 'c'], more: 2 });
+  });
+
+  void test('at or under the cap there is no "more"', () => {
+    assert.deepEqual(chipsFor(['a', 'b', 'c']), { shown: ['a', 'b', 'c'], more: 0 });
+    assert.deepEqual(chipsFor([]), { shown: [], more: 0 });
+  });
+});
+
+void describe('taskIdsToResolve — only what is drawn (LAI-754)', () => {
+  void test('the drawn chips and the matched tasks, deduped across people', () => {
+    const ids = taskIdsToResolve(
+      [
+        person({ user_id: 'a', in_progress_tasks: ['t1', 't2'], tasks_in_review: ['t3'] }),
+        person({ user_id: 'b', in_progress_tasks: ['t2'], tasks_in_review: ['t3'] }),
+      ],
+      ['t9', null, 't1'],
+    );
+    assert.deepEqual([...ids].sort(), ['t1', 't2', 't9']);
+  });
+
+  void test('nothing in review and nothing behind +N more is asked for', () => {
     const ids = taskIdsToResolve([
-      person({ user_id: 'a', in_progress_tasks: ['t1', 't2'], tasks_in_review: ['t3'] }),
-      person({ user_id: 'b', in_progress_tasks: ['t2'], tasks_in_review: ['t3'] }),
+      person({
+        user_id: 'a',
+        in_progress_tasks: ['t1', 't2', 't3', 't4', 't5'],
+        tasks_in_review: ['r1'],
+      }),
     ]);
     assert.deepEqual([...ids].sort(), ['t1', 't2', 't3']);
   });

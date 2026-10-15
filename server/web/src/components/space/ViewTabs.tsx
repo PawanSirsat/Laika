@@ -20,10 +20,10 @@ export interface ViewTabsProps {
  * 700, the strip scrolling horizontally rather than wrapping (a tab bar that
  * changes height moves the content under it).
  *
- * **Every tab carries `?project=` except the org-level ones**, which drop it on
- * purpose (LAI-423): Capacity reads across every project, and a URL claiming
- * otherwise would be wrong even though the tab sits inside a space. `navHref`
- * makes that decision from the route table, not from here.
+ * **Every tab carries `?project=`**; an org-level route would drop it on
+ * purpose (LAI-423), and none is a tab since Capacity moved to the sidebar
+ * (LAI-754). `navHref` makes that decision from the route table, not from
+ * here.
  */
 export function ViewTabs({
   currentPath,

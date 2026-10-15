@@ -412,10 +412,16 @@ void describe('presence follows every burst', () => {
 });
 
 void describe('Capacity resolves tasks from the store (LAI-724)', () => {
-  void test('no GET /tasks/:id for the open project’s tasks, one for a task elsewhere, and 16 requests or fewer', async () => {
+  /*
+   * **Capacity is one global page since LAI-754**, reached from the sidebar,
+   * so there is no "open project" any more. What LAI-724 saved still holds for
+   * the space you came from: its task set is held, and the tasks in it resolve
+   * with no request. Only a drawn task from elsewhere is read by id.
+   */
+  void test('no GET /tasks/:id for a held space’s tasks, one for a drawn task elsewhere, nothing twice', async () => {
     const server: Server = { t3: 'in_progress', events: [] };
-    const elsewhere = task('x9', 9, 'review', { key: 'OT-9', project_id: 'other' });
-    const h = await open('/capacity?project=laika-core', {
+    const elsewhere = task('x9', 9, 'in_progress', { key: 'OT-9', project_id: 'other' });
+    const h = await open('/board?project=laika-core', {
       ...stub(server),
       '/api/v1/capacity': {
         enabled: true,
@@ -424,9 +430,9 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
             user_id: 'u1',
             name: 'Ada Lovelace',
             active_sessions: 0,
-            in_progress_tasks: ['t3', 't1'],
+            in_progress_tasks: ['t3', 't1', 'x9'],
             oldest_in_progress_ms: HOUR,
-            tasks_in_review: ['x9'],
+            tasks_in_review: ['x8'],
             last_seen: NOW,
             unlisted: [],
           },
@@ -435,26 +441,28 @@ void describe('Capacity resolves tasks from the store (LAI-724)', () => {
       '/api/v1/unlisted': { data: [], next_cursor: null },
       '/api/v1/tasks/x9': elsewhere,
       // Served if asked, so a client that resolves every id by GET fails on
-      // the count below rather than on a missing stub.
+      // the list below rather than on a missing stub.
+      '/api/v1/tasks/x8': task('x8', 8, 'review', { key: 'OT-8', project_id: 'other' }),
       '/api/v1/tasks/t1': task('t1', 1, 'todo'),
       '/api/v1/tasks/t3': task('t3', 3, 'in_progress'),
     });
     try {
+      await h.page.locator('.card').first().waitFor({ timeout: 20_000 });
+      const seen = record(h);
+      await h.page.locator('#sidebar .sidebar-link', { hasText: 'Capacity' }).click();
       await h.page.locator('.cap-chip-key', { hasText: 'LC-3' }).waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(1_500);
+      await h.page.locator('.cap-chip-key', { hasText: 'OT-9' }).waitFor({ timeout: 10_000 });
+      await settle(seen, h.page);
 
-      const paths = h.calls.map((c) => c.path);
-      const perTask = paths.filter((p) => p.startsWith('/api/v1/tasks/'));
+      const perTask = seen.filter((p) => p.startsWith('/api/v1/tasks/'));
+      // x8 is in review: not drawn, so not read.
       assert.deepEqual(perTask, ['/api/v1/tasks/x9'], `per-task reads: ${perTask.join(', ')}`);
       assert.ok(
         (await h.page.locator('.cap-chip-key', { hasText: 'LC-1' }).count()) === 1,
-        'a task in the open project did not resolve',
+        'a task in the held space did not resolve',
       );
-      assert.ok(
-        paths.length <= 16,
-        `Capacity's cold load was ${String(paths.length)} requests: ${paths.join(', ')}`,
-      );
-      assert.deepEqual(duplicates(paths), [], 'Capacity asked for something twice');
+      assert.ok(seen.length <= 8, `Capacity asked ${String(seen.length)}: ${seen.join(', ')}`);
+      assert.deepEqual(duplicates(seen), [], 'Capacity asked for something twice');
     } finally {
       await h.close();
     }

@@ -10,8 +10,11 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import {
+  firstLine,
   mayPromote,
   mayTriageUnlisted,
+  newestFirst,
+  openUnlistedCount,
   unlistedState,
   type UnlistedWork,
 } from '../../src/api/unlisted.ts';
@@ -81,5 +84,37 @@ void describe('the queue is offered to exactly whom the server allows', () => {
     // A new org role must default to hidden rather than inheriting access.
     assert.equal(mayTriageUnlisted('auditor'), false);
     assert.equal(mayTriageUnlisted(''), false);
+  });
+});
+
+void describe('the compact queue (LAI-754)', () => {
+  void test('the open count is pending notes only — promoted and dismissed are decided', () => {
+    const rows = [
+      row({ id: 'a' }),
+      row({ id: 'b' }),
+      row({ id: 'c', promoted_task_id: 'task-1' }),
+      row({ id: 'd', dismissed_at: 5 }),
+    ];
+    assert.equal(openUnlistedCount(rows), 2);
+    assert.equal(openUnlistedCount([]), 0);
+  });
+
+  void test('newest first, and the input is left alone', () => {
+    const rows = [row({ id: 'old', created_at: 1 }), row({ id: 'new', created_at: 9 })];
+    assert.deepEqual(
+      newestFirst(rows).map((r) => r.id),
+      ['new', 'old'],
+    );
+    assert.deepEqual(
+      rows.map((r) => r.id),
+      ['old', 'new'],
+      'sorted in place',
+    );
+  });
+
+  void test('a row shows the first line that says something', () => {
+    assert.equal(firstLine('\n  \n  The runner warns.\nSecond line'), 'The runner warns.');
+    assert.equal(firstLine('one line'), 'one line');
+    assert.equal(firstLine('   '), '');
   });
 });

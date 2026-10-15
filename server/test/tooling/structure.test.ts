@@ -108,6 +108,12 @@ const WEB_NO_MIRROR_REQUIRED = new Map<string, string>([
     'a React hook — no renderer in this package (CONVENTIONS §4). Its choice of task set and its requests are asserted in test/browser/board-sprint-stats.test.ts; the pure half, sprint-stats.ts, is mirrored.',
   ],
   ['api/use-projects.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
+  [
+    'api/use-unlisted-count.ts',
+    // LAI-754. The count it reads is `openUnlistedCount`, mirrored in
+    // test/api/unlisted.test.ts; the badge it feeds is asserted in a browser.
+    'a React hook — no renderer in this package (CONVENTIONS §4). Its pure half, openUnlistedCount, is tested in test/api/unlisted.test.ts and the sidebar badge in test/browser/capacity.test.ts.',
+  ],
   ['api/use-task-detail.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-members.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],
   ['api/use-invite.ts', 'a React hook — no renderer in this package (CONVENTIONS §4)'],

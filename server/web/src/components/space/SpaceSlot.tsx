@@ -35,9 +35,8 @@ export interface SpaceSlotProps {
  * effect per render and a dependency on node identity; a portal re-renders with
  * its owner and needs neither.
  *
- * Renders nothing when there is no slot — a space screen reached without the
- * space layout (a direct `/capacity` with no project) simply has nowhere to put
- * it, which is correct rather than an error.
+ * Renders nothing when there is no slot — a screen reached without the space
+ * layout simply has nowhere to put it, which is correct rather than an error.
  */
 export function SpaceSlot({ context, children }: SpaceSlotProps) {
   const [host, setHost] = useState<HTMLElement | null>(null);

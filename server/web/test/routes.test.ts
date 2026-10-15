@@ -72,12 +72,12 @@ void describe('sidebar groups (AC1)', () => {
     // gone and their project-scoped members are the tab bar
     // (`SPACE_TAB_PATHS`). What is left beside the spaces is genuinely org-wide.
     assert.deepEqual(
-      routesInGroup('ORG').map((r) => r.label),
-      // **Empty for every reader, since LAI-484.** `Unlisted work` was the
-      // group's only member — Capacity became a space tab in LAI-251 — and the
-      // owner asked for it hidden, so it is `group: null` for now. The gate
-      // it carries is asserted on a fixture in `nav-truth.test.ts`.
-      [],
+      routesInGroup('ORG', () => true).map((r) => r.label),
+      // **Capacity and Unlisted work, across every space** (owner,
+      // 2026-10-15, LAI-754). Capacity was a space tab from LAI-251 and
+      // Unlisted work hidden from LAI-484; the gate Unlisted carries is
+      // asserted in `nav-truth.test.ts`.
+      ['Capacity', 'Unlisted work'],
     );
     assert.deepEqual(
       routesInGroup('SETTINGS').map((r) => r.label),
@@ -90,16 +90,14 @@ void describe('sidebar groups (AC1)', () => {
   void test("the views are tabs, in the design's order", () => {
     assert.deepEqual(
       spaceTabs().map((r) => r.label),
-      // The prototype's strip, minus `Calendar` — absent until it has a route
-      // of its own; a tab pointing at nothing is worse than none. `List` joins
-      // in its own task. Capacity is here by the owner's decision (LAI-251).
+      // The prototype's strip. **No Capacity since LAI-754**: the owner moved
+      // it to the sidebar as one page across every space.
       [
         'Board',
         'List',
         'Timeline',
         'Calendar',
         'Sprints',
-        'Capacity',
         'Dashboard',
         'Activity',
         'Meeting review',

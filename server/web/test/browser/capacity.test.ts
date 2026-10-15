@@ -1,5 +1,7 @@
 /**
- * The Capacity screen renders (LAI-439) — M5's exit criterion.
+ * The Capacity screen renders (LAI-439) — M5's exit criterion. **One global
+ * page in the sidebar since LAI-754**, with its unlisted-work list moved to
+ * `/unlisted` (owner, 2026-10-15).
  *
  * ## The row this test exists for
  *
@@ -15,7 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, type ApiStub, setTheme } from './harness.ts';
+import { closeBrowser, open, refuse, type ApiStub, setTheme } from './harness.ts';
 
 const now = 1788272050095;
 const P = {
@@ -171,9 +173,30 @@ const STUB: ApiStub = {
         dismissed_at: null,
         created_at: now - 3600000,
       },
+      // Decided: promoted notes are listed by default and must not count as open.
+      {
+        id: 'n2',
+        user_id: 'u1',
+        token_id: 'tok1',
+        repo: 'PawanSirsat/Laika',
+        note: 'Already a task.',
+        promoted_task_id: 't3',
+        dismissed_at: null,
+        created_at: now - 7200000,
+      },
     ],
     next_cursor: null,
   },
+};
+
+/** A reader who may not triage unlisted work: no link, no sidebar entry, no request. */
+const MEMBER_ME = {
+  id: 'u2',
+  email: 'm@example.com',
+  name: 'Tomas Nel',
+  org_role: 'member',
+  is_active: true,
+  memberships: [{ project_id: 'p1', role: 'member' }],
 };
 
 void after(async () => {
@@ -267,8 +290,10 @@ void describe('the capacity screen', () => {
     }
   });
 
+  // The chip is the space bar's, not Capacity's: since LAI-754 Capacity has no
+  // space frame, so this is asserted on a space tab with the same presence.
   void test('the Agents chip says what its number counts, and which agents (LAI-737)', async () => {
-    const h = await open('/capacity', STUB);
+    const h = await open('/activity?project=laika-core', STUB);
     try {
       const chip = h.page.locator('.space-agents-start');
       await chip.locator('.agent-mark').first().waitFor({ timeout: 20_000 });
@@ -317,33 +342,53 @@ void describe('the capacity screen', () => {
       // `.cap-chip` since LAI-275 — the design's in-progress chips. Same
       // property: an id must never reach the screen in place of a key.
       await h.page.locator('.cap-chip').first().waitFor({ timeout: 20_000 });
+      await h.page.locator('.cap-chip-title').first().waitFor({ timeout: 20_000 });
       const chips = await h.page.locator('.cap-chip').allInnerTexts();
       assert.ok(chips.length >= 3, `only ${String(chips.length)} task chips`);
       for (const chip of chips) {
         assert.match(chip, /LAI-\d+/, `a chip shows no key: ${chip}`);
         assert.doesNotMatch(chip, /^t\d+$/, `a chip shows a raw id: ${chip}`);
       }
+      // LAI-754: the owner's chips read only a dot and `…`. Key **and** title,
+      // with the whole title in the tooltip.
+      const ada = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
+      const heartbeat = ada.locator('.cap-chip', { hasText: 'LAI-12' });
+      assert.match(await heartbeat.innerText(), /LAI-12\s*Heartbeat retention job/);
+      assert.match(
+        (await heartbeat.getAttribute('title')) ?? '',
+        /LAI-12 · Heartbeat retention job/,
+      );
     } finally {
       await h.close();
     }
   });
 
-  void test('unlisted work promotes without leaving the screen', async () => {
+  void test('no unlisted list on Capacity — a count that links to its page (LAI-754)', async () => {
     const h = await open('/capacity', STUB);
     try {
-      const promote = h.page.locator('.unl-promote').first();
-      await promote.waitFor({ timeout: 20_000 });
-      const before = h.page.url();
-      await promote.click();
-      await h.page
-        .locator('.unl-form')
-        .waitFor({ timeout: 5_000 })
-        .catch(() => undefined);
+      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
+      const link = h.page.locator('.cap-fig-link');
+      await link.waitFor({ timeout: 10_000 });
+      // One pending note; the promoted one is decided and not counted.
+      assert.match(await link.innerText(), /UNLISTED\s*1/);
+      assert.equal(await link.getAttribute('href'), '/unlisted');
 
-      // AC5: the click may open a form; it must not navigate.
-      assert.equal(h.page.url(), before, 'promoting navigated away');
-      assert.equal(await h.page.locator('.unl-form').count(), 1, 'no form appeared');
-      assert.ok((await h.page.locator('.cap-card').count()) >= 2, 'the screen was replaced');
+      // The owner's two complaints, each named: the amber strip in a person's
+      // card, and the long list of cards under the people.
+      assert.equal(await h.page.locator('.cap-unlisted-strip').count(), 0, 'the amber strip');
+      assert.equal(await h.page.locator('.unl-list, .unl-row').count(), 0, 'the unlisted list');
+      assert.doesNotMatch(
+        await h.page.locator('.cap').innerText(),
+        /migration runner logs a warning/,
+        'a note is still printed on Capacity',
+      );
+
+      // The sidebar carries the same count beside Unlisted work.
+      const entry = h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' });
+      assert.match(await entry.innerText(), /Unlisted work\s*1/);
+
+      await link.click();
+      await h.page.waitForURL((url) => url.pathname === '/unlisted', { timeout: 10_000 });
     } finally {
       await h.close();
     }
@@ -372,48 +417,29 @@ void describe('the capacity screen', () => {
     }
   });
 
-  void test('`unlisted` absent and `unlisted` empty both render no count', async () => {
-    // Absent means *you may not be told*; `[]` means *they have logged nothing*.
-    // Neither is a number to show, and `?? []` would collapse the first into the
-    // second — which a mutation proved this suite could not see.
-    const noKey = {
+  void test('a reader who may not triage gets no link, no entry and no request', async () => {
+    // `unlisted` is withheld from capacity for a reader without
+    // `audit_log.export`, and `GET /unlisted` refuses them — so nothing on the
+    // page may mention the queue, and the client must not ask for it.
+    const member = {
       ...STUB,
-      '/api/v1/capacity': {
-        enabled: true,
-        people: [
-          // No `unlisted` key at all: a reader without `audit_log.export`.
-          {
-            user_id: 'u1',
-            name: 'Ada Lovelace',
-            active_sessions: 1,
-            in_progress_tasks: [],
-            oldest_in_progress_ms: null,
-            tasks_in_review: [],
-            last_seen: now,
-          },
-          // Present and empty: they have logged nothing.
-          {
-            user_id: 'u2',
-            name: 'Tomas Nel',
-            active_sessions: 0,
-            in_progress_tasks: [],
-            oldest_in_progress_ms: null,
-            tasks_in_review: [],
-            last_seen: null,
-            unlisted: [],
-          },
-        ],
-      },
+      '/api/v1/me': MEMBER_ME,
+      '/api/v1/unlisted': refuse(403, 'forbidden', 'Admins only.'),
     };
-    const h = await open('/capacity', noKey);
+    const h = await open('/capacity', member);
     try {
-      // `.cap-card` since LAI-275 — one card per person, in the design's panels.
       await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
-      assert.equal(await h.page.locator('.cap-card').count(), 2);
+      await h.page.locator('#sidebar .sidebar-link', { hasText: 'Capacity' }).waitFor();
+      assert.equal(await h.page.locator('.cap-fig-unlisted').count(), 0, 'the link is drawn');
       assert.equal(
-        await h.page.locator('.cap-unlisted-count').count(),
+        await h.page.locator('#sidebar .sidebar-link', { hasText: 'Unlisted work' }).count(),
         0,
-        'a count was rendered for somebody with no unlisted work to report',
+        'the sidebar offers Unlisted work to a member',
+      );
+      assert.deepEqual(
+        h.calls.filter((c) => c.path === '/api/v1/unlisted'),
+        [],
+        'the client asked for the queue on behalf of a member',
       );
     } finally {
       await h.close();
@@ -437,6 +463,97 @@ void describe('the capacity screen', () => {
       assert.equal(await h.page.locator('.cap input[type="checkbox"]').count(), 0);
       assert.doesNotMatch(text, /nobody is working/i, 'disabled must not claim nobody is working');
       assert.equal(await h.page.locator('.cap-card').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('three chips and +N more; only drawn tasks are asked for (LAI-754)', async () => {
+    const many = {
+      ...STUB,
+      '/api/v1/capacity': {
+        enabled: true,
+        people: [
+          {
+            user_id: 'u1',
+            name: 'Ada Lovelace',
+            active_sessions: 1,
+            in_progress_tasks: ['t1', 't2', 't4', 't5', 't6'],
+            oldest_in_progress_ms: 3600000,
+            tasks_in_review: ['t3'],
+            last_seen: now,
+            unlisted: [],
+          },
+        ],
+      },
+      '/api/v1/tasks/t4': task('t4', 'LAI-20', 'Fourth task', 'in_progress'),
+      '/api/v1/tasks/t5': task('t5', 'LAI-21', 'Fifth task', 'in_progress'),
+      '/api/v1/tasks/t6': task('t6', 'LAI-22', 'Sixth task', 'in_progress'),
+    };
+    const h = await open('/capacity', many);
+    try {
+      const card = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
+      await card.locator('.cap-chip-title').first().waitFor({ timeout: 20_000 });
+      assert.equal(await card.locator('.cap-chip').count(), 3);
+      assert.equal((await card.locator('.cap-chip-more').innerText()).trim(), '+2 more');
+      assert.match(await card.locator('.cap-wip-count').innerText(), /5/);
+
+      await h.page.waitForTimeout(500);
+      const asked = h.calls
+        .map((c) => c.path)
+        .filter((p) => p.startsWith('/api/v1/tasks/'))
+        .sort();
+      // t1 is also the session's matched task; t3 is in review and t5, t6 are
+      // behind "+2 more" — none of those three is drawn, so none is read.
+      assert.deepEqual(asked, ['/api/v1/tasks/t1', '/api/v1/tasks/t2', '/api/v1/tasks/t4']);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a chip that failed to resolve is asked for again on the next poll (LAI-754)', async () => {
+    let tries = 0;
+    const flaky = {
+      ...STUB,
+      '/api/v1/tasks/t2': () => {
+        tries += 1;
+        return tries === 1
+          ? refuse(503, 'unavailable', 'Try again.')
+          : task('t2', 'LAI-12', 'Heartbeat retention job', 'in_progress');
+      },
+    };
+    const h = await open('/capacity', flaky, {
+      before: async (page) => {
+        await page.clock.install();
+      },
+    });
+    try {
+      const card = h.page.locator('.cap-card', { hasText: 'Ada Lovelace' });
+      await card.locator('.cap-chip', { hasText: 'LAI-9' }).waitFor({ timeout: 20_000 });
+      await h.page.waitForTimeout(300);
+      // Positive control: the first read failed, so the chip is still waiting.
+      assert.equal(tries, 1);
+      assert.equal(await card.locator('.cap-chip', { hasText: 'LAI-12' }).count(), 0);
+
+      await h.page.clock.fastForward(21_000);
+      await card.locator('.cap-chip', { hasText: 'LAI-12' }).waitFor({ timeout: 10_000 });
+      assert.equal(tries, 2);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an old space-tab link opens the one global page (LAI-754)', async () => {
+    const h = await open('/capacity?project=laika-core', STUB);
+    try {
+      await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
+      await h.page.waitForURL((url) => url.pathname === '/capacity' && url.search === '', {
+        timeout: 10_000,
+      });
+      assert.equal(await h.page.locator('.view-tab').count(), 0, 'the space tabs are drawn');
+      assert.match(await h.page.locator('.screen-bar-title').innerText(), /Capacity/);
+      // The scope, in words: every space this reader can see.
+      assert.match(await h.page.locator('.cap-summary-note').innerText(), /across 1 space/);
     } finally {
       await h.close();
     }

@@ -1,4 +1,4 @@
-import { NAV_GROUPS, routesInGroup } from '../../routes/route-table.ts';
+import { NAV_GROUPS, routesInGroup, type NavGroup } from '../../routes/route-table.ts';
 import { permissionHolder } from '../../routes/nav-permissions.ts';
 import { navHref } from '../../routes/nav-url.ts';
 import { SpacesSection } from './SpacesSection.tsx';
@@ -99,6 +99,79 @@ export function Sidebar({
     .filter((c) => c !== '')
     .join(' ');
 
+  /*
+   * `ORG` above the spaces, `SETTINGS` at the foot (LAI-754): Capacity and
+   * Unlisted work read across every space, so they lead the rail rather than
+   * sitting under one space's list.
+   */
+  const shown = NAV_GROUPS.filter((group) => routesInGroup(group, holds).length > 0);
+
+  const renderGroup = (group: NavGroup) => (
+    <div
+      key={group}
+      // SETTINGS sits at the foot of the rail, above the user, the way
+      // most apps keep account settings out of the working list.
+      className={group === 'SETTINGS' ? 'sidebar-group sidebar-group-end' : 'sidebar-group'}
+    >
+      {collapsed ? (
+        <div className="sidebar-minirule" aria-hidden="true" />
+      ) : (
+        <h2 className="sidebar-group-title" id={`nav-${group}`}>
+          {group}
+        </h2>
+      )}
+      <ul className="sidebar-list" aria-label={group}>
+        {routesInGroup(group, holds).map((route) => {
+          const active = route.path === currentPath;
+          const count = counts?.[route.path];
+          // The project travels with the link, not beside it — a bare
+          // path drops `?project=` and the destination then falls back
+          // to a different project entirely (LAI-423).
+          const href = navHref(route.path, projectSlug);
+
+          return (
+            <li key={route.path}>
+              <a
+                href={href}
+                className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
+                aria-current={active ? 'page' : undefined}
+                title={route.label}
+                onClick={(event) => {
+                  // Modified clicks stay the browser's — new tab, new
+                  // window, download.
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                  event.preventDefault();
+                  // The same URL the href advertises: copy-link and
+                  // left-click must agree.
+                  onNavigate(href);
+                  onClose();
+                }}
+              >
+                {/* Always present, transparent until active — selecting
+                    an item must not shift its label sideways. */}
+                <span className="sidebar-link-bar" aria-hidden="true" />
+                {/* The collapsed rail's two letters (prototype `n.abbr`). */}
+                <span className="sidebar-mini" aria-hidden="true">
+                  {route.mini ?? ''}
+                </span>
+                <span className="sidebar-link-label">{route.label}</span>
+
+                {/* Only where a count is real and non-zero: a fixture
+                    badge or a zero badge is noise. */}
+                {count !== undefined && count > 0 && (
+                  <span className="sidebar-count">
+                    {count}
+                    <span className="visually-hidden"> {route.label.toLowerCase()}</span>
+                  </span>
+                )}
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+
   return (
     <nav id="sidebar" className={railClass} aria-label="Primary">
       <div className="sidebar-head">
@@ -158,6 +231,8 @@ export function Sidebar({
       </div>
 
       <div className="sidebar-nav">
+        {shown.filter((group) => group === 'ORG').map(renderGroup)}
+
         {spaces !== undefined && spaces.length > 0 && onOpenSpace !== undefined && (
           <SpacesSection
             spaces={spaces}
@@ -170,72 +245,7 @@ export function Sidebar({
           />
         )}
 
-        {NAV_GROUPS.filter((group) => routesInGroup(group, holds).length > 0).map((group) => (
-          <div
-            key={group}
-            // SETTINGS sits at the foot of the rail, above the user, the way
-            // most apps keep account settings out of the working list.
-            className={group === 'SETTINGS' ? 'sidebar-group sidebar-group-end' : 'sidebar-group'}
-          >
-            {collapsed ? (
-              <div className="sidebar-minirule" aria-hidden="true" />
-            ) : (
-              <h2 className="sidebar-group-title" id={`nav-${group}`}>
-                {group}
-              </h2>
-            )}
-            <ul className="sidebar-list" aria-label={group}>
-              {routesInGroup(group, holds).map((route) => {
-                const active = route.path === currentPath;
-                const count = counts?.[route.path];
-                // The project travels with the link, not beside it — a bare
-                // path drops `?project=` and the destination then falls back
-                // to a different project entirely (LAI-423).
-                const href = navHref(route.path, projectSlug);
-
-                return (
-                  <li key={route.path}>
-                    <a
-                      href={href}
-                      className={active ? 'sidebar-link sidebar-link-active' : 'sidebar-link'}
-                      aria-current={active ? 'page' : undefined}
-                      title={route.label}
-                      onClick={(event) => {
-                        // Modified clicks stay the browser's — new tab, new
-                        // window, download.
-                        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey)
-                          return;
-                        event.preventDefault();
-                        // The same URL the href advertises: copy-link and
-                        // left-click must agree.
-                        onNavigate(href);
-                        onClose();
-                      }}
-                    >
-                      {/* Always present, transparent until active — selecting
-                          an item must not shift its label sideways. */}
-                      <span className="sidebar-link-bar" aria-hidden="true" />
-                      {/* The collapsed rail's two letters (prototype `n.abbr`). */}
-                      <span className="sidebar-mini" aria-hidden="true">
-                        {route.mini ?? ''}
-                      </span>
-                      <span className="sidebar-link-label">{route.label}</span>
-
-                      {/* Only where a count is real and non-zero: a fixture
-                          badge or a zero badge is noise. */}
-                      {count !== undefined && count > 0 && (
-                        <span className="sidebar-count">
-                          {count}
-                          <span className="visually-hidden"> {route.label.toLowerCase()}</span>
-                        </span>
-                      )}
-                    </a>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        ))}
+        {shown.filter((group) => group !== 'ORG').map(renderGroup)}
       </div>
 
       {user !== undefined && onSignOut !== undefined && (

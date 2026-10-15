@@ -50,12 +50,40 @@ export function byAvailability(people: readonly CapacityEntry[]): readonly Capac
   });
 }
 
-/** Every task id the screen has to resolve, deduped across people. */
-export function taskIdsToResolve(people: readonly CapacityEntry[]): readonly string[] {
+/**
+ * How many in-progress chips a person shows before *+N more* (LAI-754).
+ *
+ * The owner's screenshot had rows of chips reading only a dot and `…`. A few
+ * named tasks answer *"what is she on"*; a wall of them answers nothing, and
+ * every one drawn is a task to resolve.
+ */
+export const CHIP_CAP = 3;
+
+/** The chips a person shows, and how many more they have. */
+export function chipsFor(
+  ids: readonly string[],
+  cap: number = CHIP_CAP,
+): { readonly shown: readonly string[]; readonly more: number } {
+  return { shown: ids.slice(0, cap), more: Math.max(0, ids.length - cap) };
+}
+
+/**
+ * Every task id the screen **draws**, deduped across people (LAI-754).
+ *
+ * Each person's first {@link CHIP_CAP} in-progress tasks and the task their
+ * session resolved to — nothing in review and nothing behind *+N more*, because
+ * the screen shows neither and each id resolved is a request until LAI-728
+ * sends key and title beside the id.
+ */
+export function taskIdsToResolve(
+  people: readonly CapacityEntry[],
+  matched: readonly (string | null)[] = [],
+  cap: number = CHIP_CAP,
+): readonly string[] {
   const ids = new Set<string>();
   for (const person of people) {
-    for (const id of person.in_progress_tasks) ids.add(id);
-    for (const id of person.tasks_in_review) ids.add(id);
+    for (const id of chipsFor(person.in_progress_tasks, cap).shown) ids.add(id);
   }
+  for (const id of matched) if (id !== null) ids.add(id);
   return [...ids];
 }
