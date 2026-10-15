@@ -12,6 +12,7 @@ import { ALL_ACTIONS } from '../../src/policy/actions.ts';
 import { can } from '../../src/policy/can.ts';
 import {
   getProfile,
+  PROFILE_LIST_LIMIT,
   PROFILE_WINDOW_WEEKS,
   rateMember,
   setProfileKind,
@@ -457,6 +458,7 @@ describe('a manager’s profile (LAI-743)', () => {
     expect(Object.keys(profile).sort()).toEqual([
       'projects',
       'ratings',
+      'ratings_total',
       'review',
       'user',
       'window',
@@ -519,7 +521,12 @@ describe('a person with no history (LAI-743)', () => {
     const profile = getProfile(t.db, actor(ada), eve, NOW);
 
     expect(profile.projects).toEqual([]);
-    expect(profile.current_work).toEqual({ in_progress: [], in_review: [] });
+    expect(profile.current_work).toEqual({
+      in_progress: [],
+      in_progress_total: 0,
+      in_review: [],
+      in_review_total: 0,
+    });
     expect(profile.delivery).toEqual({
       accepted_per_week: Array.from({ length: 12 }, (_, i) => ({
         week_start: SINCE + i * WEEK,
@@ -533,9 +540,11 @@ describe('a person with no history (LAI-743)', () => {
     expect(profile.review).toEqual({ accepted: 0, sent_back: 0, recent: [] });
     expect(profile.agents).toEqual({
       tokens: [],
+      tokens_total: 0,
       online: { enabled: true, clients: [], last_seen: null },
     });
     expect(profile.ratings).toEqual([]);
+    expect(profile.ratings_total).toBe(0);
   });
 });
 
@@ -815,5 +824,77 @@ describe('rules the first fixture could not tell apart (LAI-746)', () => {
     expect(projects).toEqual([
       expect.objectContaining({ slug: 'side', role: null, open_tasks: 0, reviewed: 1 }),
     ]);
+  });
+});
+
+// ------------------------------------------------------------- long lists
+
+/**
+ * The three lists that grow with a person's history are capped, and say how
+ * long they are (LAI-746). Fifty-one of each: one past the cap, so the cap and
+ * the total both have something to prove.
+ */
+describe('long lists are capped and counted (LAI-746)', () => {
+  const OVER = 51;
+
+  it('keeps the newest ratings, the oldest open work and the latest agents', () => {
+    expect(PROFILE_LIST_LIMIT).toBe(50);
+    const admin = makeUser('Ari', 'admin');
+
+    for (let i = 0; i < OVER; i += 1) {
+      rateMember(
+        t.db,
+        actor(i % 2 === 0 ? ada : admin),
+        bea,
+        { score: 3, note: `Note ${String(i)}` },
+        NOW - (OVER - i) * MIN,
+      );
+
+      const id = task('laika', `Open ${String(i)}`);
+      claimTask(t.sqlite, t.db, actor(bea), id, M0 - (OVER - i) * HOUR);
+
+      t.db
+        .insert(tokens)
+        .values({
+          id: newId(),
+          userId: bea,
+          name: `Token ${String(i)}`,
+          prefix: 'lai_xxxx',
+          tokenHash: newId(),
+          scope: 'full',
+          lastUsedAt: NOW - (OVER - i) * MIN,
+          createdAt: M0 - WEEK,
+        })
+        .run();
+    }
+
+    const profile = getProfile(t.db, actor(ada), bea, NOW);
+
+    expect(profile.ratings).toHaveLength(50);
+    expect(profile.ratings_total).toBe(OVER);
+    // Newest first: the last one written leads, the very first is the one cut.
+    expect(profile.ratings[0]?.note).toBe('Note 50');
+    expect(profile.ratings.map((r) => r.note)).not.toContain('Note 0');
+
+    expect(profile.current_work?.in_progress).toHaveLength(50);
+    expect(profile.current_work?.in_progress_total).toBe(OVER);
+    // Oldest start first: the newest claim is the one past the cap.
+    expect(profile.current_work?.in_progress[0]?.title).toBe('Open 0');
+    expect(profile.current_work?.in_progress.map((x) => x.title)).not.toContain('Open 50');
+    expect(profile.current_work?.in_review).toEqual([]);
+    expect(profile.current_work?.in_review_total).toBe(0);
+
+    expect(profile.agents?.tokens).toHaveLength(50);
+    expect(profile.agents?.tokens_total).toBe(OVER);
+    expect(profile.agents?.tokens[0]?.name).toBe('Token 50');
+    expect(profile.agents?.tokens.map((x) => x.name)).not.toContain('Token 0');
+  });
+
+  it('says the total is the length when nothing was cut', () => {
+    rateMember(t.db, actor(ada), bea, { score: 4, note: 'Only one.' }, NOW);
+    const profile = getProfile(t.db, actor(ada), bea, NOW);
+    expect(profile.ratings_total).toBe(1);
+    expect(profile.agents?.tokens_total).toBe(0);
+    expect(profile.current_work?.in_progress_total).toBe(0);
   });
 });

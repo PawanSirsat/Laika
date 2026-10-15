@@ -1226,10 +1226,10 @@ on a Monday, 00:00 UTC:
 | --- | --- |
 | `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
 | `review` | their moves of someone else's task into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them |
-| `ratings` | §4.21, newest first; the first is the current one |
-| `current_work` | their tasks in progress and in review |
+| `ratings` | §4.21, newest first; the first is the current one. At most 50, with `ratings_total` beside it (LAI-746) |
+| `current_work` | their tasks in progress and in review, oldest start first; each list at most 50, with `in_progress_total` and `in_review_total` |
 | `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
-| `agents` | their usable tokens with the agent each last connected as (D-076), and which agents are online now (§9.3) — never where |
+| `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; and which agents are online now (§9.3) — never where |
 
 **This is not a §4 table and its rows are not columns** — the drift check reads
 §4 only. Setting a kind or adding a rating writes no `activity` row, so neither

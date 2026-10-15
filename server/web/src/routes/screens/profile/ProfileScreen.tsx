@@ -229,6 +229,7 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
         {profile.agents !== undefined && <AgentsCard agents={profile.agents} now={now} />}
         <RatingCard
           ratings={profile.ratings}
+          total={profile.ratings_total}
           self={me.id === user.id}
           canRate={mayRate(me, user.id)}
           now={now}
@@ -409,6 +410,15 @@ function ProjectsCard({
   );
 }
 
+/**
+ * How many a capped list is not showing (LAI-746). The server sends at most 50
+ * of each and the total beside it; nothing is drawn when nothing was cut.
+ */
+function More({ shown, total }: { readonly shown: number; readonly total: number }) {
+  const more = total - shown;
+  return more > 0 ? <p className="prof-more">and {more} more</p> : null;
+}
+
 function TaskRow({ task, now }: { readonly task: ProfileTask; readonly now: number }) {
   return (
     <li className="prof-task">
@@ -433,7 +443,7 @@ function CurrentWorkCard({
   readonly work: ProfileCurrentWork;
   readonly now: number;
 }) {
-  const empty = work.in_progress.length === 0 && work.in_review.length === 0;
+  const empty = work.in_progress_total === 0 && work.in_review_total === 0;
   return (
     <Card name="current" title="Current work">
       {empty ? (
@@ -441,7 +451,7 @@ function CurrentWorkCard({
       ) : (
         <>
           <h4 className="prof-sub">
-            In progress <span className="prof-sub-count">{work.in_progress.length}</span>
+            In progress <span className="prof-sub-count">{work.in_progress_total}</span>
           </h4>
           {work.in_progress.length > 0 && (
             <ul className="prof-list">
@@ -450,8 +460,9 @@ function CurrentWorkCard({
               ))}
             </ul>
           )}
+          <More shown={work.in_progress.length} total={work.in_progress_total} />
           <h4 className="prof-sub">
-            In review <span className="prof-sub-count">{work.in_review.length}</span>
+            In review <span className="prof-sub-count">{work.in_review_total}</span>
           </h4>
           {work.in_review.length > 0 && (
             <ul className="prof-list">
@@ -460,6 +471,7 @@ function CurrentWorkCard({
               ))}
             </ul>
           )}
+          <More shown={work.in_review.length} total={work.in_review_total} />
         </>
       )}
     </Card>
@@ -610,7 +622,7 @@ function AgentsCard({ agents, now }: { readonly agents: ProfileAgents; readonly 
           </>
         )}
       </p>
-      {agents.tokens.length === 0 ? (
+      {agents.tokens_total === 0 ? (
         <p className="prof-empty">No agent has connected — no token is in use.</p>
       ) : (
         <ul className="prof-list">
@@ -638,6 +650,7 @@ function AgentsCard({ agents, now }: { readonly agents: ProfileAgents; readonly 
           })}
         </ul>
       )}
+      <More shown={agents.tokens.length} total={agents.tokens_total} />
       <p className="prof-card-note">
         Each token they can still use, with the agent it last connected as. Where they are working
         is not shown here.
@@ -662,6 +675,7 @@ function RatingRow({ rating, now }: { readonly rating: MemberRating; readonly no
 
 function RatingCard({
   ratings,
+  total,
   self,
   canRate,
   now,
@@ -669,6 +683,8 @@ function RatingCard({
   onRate,
 }: {
   readonly ratings: readonly MemberRating[];
+  /** Every rating they have; `ratings` is at most the server's cap. */
+  readonly total: number;
   readonly self: boolean;
   readonly canRate: boolean;
   readonly now: number;
@@ -699,7 +715,7 @@ function RatingCard({
       {history.length > 0 && (
         <>
           <h4 className="prof-sub">
-            Earlier <span className="prof-sub-count">{history.length}</span>
+            Earlier <span className="prof-sub-count">{total - 1}</span>
           </h4>
           <ul className="prof-list prof-rating-history">
             {history.map((rating) => (
@@ -708,6 +724,7 @@ function RatingCard({
               </li>
             ))}
           </ul>
+          <More shown={ratings.length} total={total} />
         </>
       )}
       <p className="prof-card-note">

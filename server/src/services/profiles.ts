@@ -1,4 +1,17 @@
-import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, ne, or } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  lte,
+  ne,
+  or,
+} from 'drizzle-orm';
 import { type AgentClient } from '../auth/agent-clients.ts';
 import { type ResolvedActor } from '../auth/resolve-actor.ts';
 import { readPayload } from '../db/activity.ts';
@@ -72,6 +85,13 @@ export const RATING_NOTE_MAX = 500;
 
 /** How many of a person's review decisions the profile lists. */
 const RECENT_DECISIONS = 10;
+
+/**
+ * The most any of the profile's growing lists carries — ratings, open work,
+ * agent tokens — each beside its total, so the page can say *"and N more"*
+ * (LAI-746). A history that grows without bound is not a page.
+ */
+export const PROFILE_LIST_LIMIT = 50;
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -175,8 +195,13 @@ export interface ProfileAgentToken {
 }
 
 export interface ProfileAgents {
-  /** Tokens still usable — not revoked, not expired — most recently used first. */
+  /**
+   * Tokens still usable — not revoked, not expired — most recently used first;
+   * at most `PROFILE_LIST_LIMIT`.
+   */
   tokens: ProfileAgentToken[];
+  /** All of them, however many `tokens` carries. */
+  tokens_total: number;
   online: AgentPresence;
 }
 
@@ -195,9 +220,12 @@ export interface ProfileWindow {
   until: number;
 }
 
+/** Oldest start first, each list at most `PROFILE_LIST_LIMIT`, with its total. */
 export interface ProfileCurrentWork {
   in_progress: ProfileTask[];
+  in_progress_total: number;
   in_review: ProfileTask[];
+  in_review_total: number;
 }
 
 export interface ProfileView {
@@ -205,8 +233,10 @@ export interface ProfileView {
   window: ProfileWindow;
   projects: ProfileProject[];
   review: ProfileReview;
-  /** Newest first; the first is the current rating. */
+  /** Newest first, at most `PROFILE_LIST_LIMIT`; the first is the current one. */
   ratings: RatingView[];
+  /** Every rating they have, however many `ratings` carries. */
+  ratings_total: number;
   /** Builders only — absent for a manager. */
   current_work?: ProfileCurrentWork;
   /** Builders only — absent for a manager. */
@@ -271,16 +301,14 @@ export function getProfile(
       recent: theirDecisions.slice(0, RECENT_DECISIONS).map((d) => d.view),
     },
     ratings: ratingsFor(db, userId),
+    ratings_total: ratingCount(db, userId),
   };
 
   if (person.profileKind === 'manager') return profile;
 
   return {
     ...profile,
-    current_work: {
-      in_progress: theirTasks.filter((x) => x.status === 'in_progress').map(toProfileTask),
-      in_review: theirTasks.filter((x) => x.status === 'review').map(toProfileTask),
-    },
+    current_work: currentWork(theirTasks),
     delivery: {
       accepted_per_week: perWeek(accepted, since),
       accepted: accepted.length,
@@ -290,7 +318,19 @@ export function getProfile(
       reopened: onTheirTasks.filter((m) => isReopen(m.move)).length,
       cycle_time: cycleTime(theirTasks, since, now),
     },
-    agents: { tokens: agentTokens(db, userId, now), online: agentPresenceFor(db, userId, now) },
+    agents: { ...agentTokens(db, userId, now), online: agentPresenceFor(db, userId, now) },
+  };
+}
+
+/** Their open work, each list capped beside its total (LAI-746). */
+function currentWork(theirTasks: readonly TheirTask[]): ProfileCurrentWork {
+  const inProgress = theirTasks.filter((x) => x.status === 'in_progress');
+  const inReview = theirTasks.filter((x) => x.status === 'review');
+  return {
+    in_progress: inProgress.slice(0, PROFILE_LIST_LIMIT).map(toProfileTask),
+    in_progress_total: inProgress.length,
+    in_review: inReview.slice(0, PROFILE_LIST_LIMIT).map(toProfileTask),
+    in_review_total: inReview.length,
   };
 }
 
@@ -730,11 +770,18 @@ function cycleTime(theirTasks: readonly TheirTask[], since: number, now: number)
   };
 }
 
-/** Tokens they can still use, most recently used first (D-076's metadata). */
-function agentTokens(db: Db, userId: string, now: number): ProfileAgentToken[] {
+/**
+ * Tokens they can still use, most recently used first (D-076's metadata),
+ * capped beside the total.
+ */
+function agentTokens(
+  db: Db,
+  userId: string,
+  now: number,
+): Pick<ProfileAgents, 'tokens' | 'tokens_total'> {
   const lastSeen = (x: ProfileAgentToken) => Math.max(x.last_used_at ?? 0, x.last_mcp_at ?? 0);
 
-  return db
+  const usable = db
     .select()
     .from(tokens)
     .where(
@@ -755,9 +802,11 @@ function agentTokens(db: Db, userId: string, now: number): ProfileAgentToken[] {
       created_at: row.createdAt,
     }))
     .sort((a, b) => lastSeen(b) - lastSeen(a) || b.created_at - a.created_at);
+
+  return { tokens: usable.slice(0, PROFILE_LIST_LIMIT), tokens_total: usable.length };
 }
 
-/** Their ratings, newest first, with who gave each. */
+/** Their newest ratings, at most `PROFILE_LIST_LIMIT`, with who gave each. */
 function ratingsFor(db: Db, userId: string): RatingView[] {
   return db
     .select({
@@ -772,6 +821,7 @@ function ratingsFor(db: Db, userId: string): RatingView[] {
     .innerJoin(users, eq(users.id, memberRatings.ratedBy))
     .where(eq(memberRatings.userId, userId))
     .orderBy(desc(memberRatings.createdAt), desc(memberRatings.id))
+    .limit(PROFILE_LIST_LIMIT)
     .all()
     .map((row) => ({
       id: row.id,
@@ -780,4 +830,12 @@ function ratingsFor(db: Db, userId: string): RatingView[] {
       rated_by: { id: row.raterId, name: row.raterName },
       created_at: row.createdAt,
     }));
+}
+
+/** Every rating they have, for `ratings_total`. */
+function ratingCount(db: Db, userId: string): number {
+  return (
+    db.select({ n: count() }).from(memberRatings).where(eq(memberRatings.userId, userId)).get()
+      ?.n ?? 0
+  );
 }

@@ -108,7 +108,9 @@ export interface AgentPresence {
 }
 
 export interface ProfileAgents {
+  /** At most the server's list cap (50); `tokens_total` is all of them. */
   readonly tokens: readonly ProfileAgentToken[];
+  readonly tokens_total: number;
   readonly online: AgentPresence;
 }
 
@@ -127,9 +129,12 @@ export interface ProfileWindow {
   readonly until: number;
 }
 
+/** Each list at most the server's cap (50), beside its total. */
 export interface ProfileCurrentWork {
   readonly in_progress: readonly ProfileTask[];
+  readonly in_progress_total: number;
   readonly in_review: readonly ProfileTask[];
+  readonly in_review_total: number;
 }
 
 export interface MemberProfile {
@@ -137,8 +142,9 @@ export interface MemberProfile {
   readonly window: ProfileWindow;
   readonly projects: readonly ProfileProject[];
   readonly review: ProfileReview;
-  /** Newest first; the first is the current rating. */
+  /** Newest first, at most the server's cap (50); the first is the current one. */
   readonly ratings: readonly MemberRating[];
+  readonly ratings_total: number;
   /** A builder's only. **Absent** for a manager, not empty. */
   readonly current_work?: ProfileCurrentWork;
   readonly delivery?: ProfileDelivery;

@@ -120,6 +120,7 @@ const BUILDER = {
       created_at: NOW - 30 * DAY,
     },
   ],
+  ratings_total: 2,
   current_work: {
     in_progress: [
       {
@@ -143,6 +144,8 @@ const BUILDER = {
         started_at: NOW - DAY,
       },
     ],
+    in_progress_total: 1,
+    in_review_total: 1,
   },
   delivery: {
     accepted_per_week: WEEKLY.map((accepted, i) => ({ week_start: SINCE + i * WEEK, accepted })),
@@ -172,6 +175,7 @@ const BUILDER = {
         created_at: NOW - 50 * DAY,
       },
     ],
+    tokens_total: 2,
     online: { enabled: true, clients: ['claude-code'], last_seen: NOW - MIN },
   },
 };
@@ -209,6 +213,7 @@ const MANAGER = {
     ],
   },
   ratings: [],
+  ratings_total: 0,
 };
 
 const EMPTY = {
@@ -217,7 +222,8 @@ const EMPTY = {
   projects: [],
   review: { accepted: 0, sent_back: 0, recent: [] },
   ratings: [],
-  current_work: { in_progress: [], in_review: [] },
+  ratings_total: 0,
+  current_work: { in_progress: [], in_progress_total: 0, in_review: [], in_review_total: 0 },
   delivery: {
     accepted_per_week: WEEKLY.map((_, i) => ({ week_start: SINCE + i * WEEK, accepted: 0 })),
     accepted: 0,
@@ -225,7 +231,7 @@ const EMPTY = {
     reopened: 0,
     cycle_time: { measured: 0, unmeasured: 0, p50_ms: null, p75_ms: null },
   },
-  agents: { tokens: [], online: { enabled: true, clients: [], last_seen: null } },
+  agents: { tokens: [], tokens_total: 0, online: { enabled: true, clients: [], last_seen: null } },
 };
 
 const BASE: ApiStub = {
@@ -371,6 +377,52 @@ void describe('a builder’s profile', () => {
     }
   });
 
+  /**
+   * The server caps three lists at 50 and sends the total (LAI-746). The page
+   * says how many it is not showing, and counts by the total, not the length.
+   */
+  void test('says how many more there are when a list was cut', async () => {
+    const long = {
+      ...BUILDER,
+      ratings_total: 60,
+      current_work: { ...BUILDER.current_work, in_progress_total: 4, in_review_total: 1 },
+      agents: { ...BUILDER.agents, tokens_total: 9 },
+    };
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': long,
+    });
+    try {
+      const current = await section(h.page, 'current');
+      assert.match(await current.locator('.prof-sub').first().innerText(), /In progress\s*4/i);
+      assert.match(await current.locator('.prof-more').innerText(), /and 3 more/);
+
+      const agents = await section(h.page, 'agents');
+      assert.match(await agents.locator('.prof-more').innerText(), /and 7 more/);
+
+      const rating = await section(h.page, 'rating');
+      assert.match(await rating.locator('.prof-sub').innerText(), /Earlier\s*59/i);
+      assert.match(await rating.locator('.prof-more').innerText(), /and 58 more/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('says nothing about more when nothing was cut', async () => {
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': BUILDER,
+    });
+    try {
+      await section(h.page, 'rating');
+      assert.equal(await h.page.locator('.prof-more').count(), 0);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('says what is empty for a person with no history', async () => {
     const h = await open('/people?user=u6', {
       ...BASE,
@@ -477,7 +529,11 @@ void describe('rating a member', () => {
     const h = await open('/people?user=u2', {
       ...BASE,
       '/api/v1/me': me('u1', 'owner'),
-      '/api/v1/users/u2/profile': () => ({ ...BUILDER, ratings: [...ratings] }),
+      '/api/v1/users/u2/profile': () => ({
+        ...BUILDER,
+        ratings: [...ratings],
+        ratings_total: ratings.length,
+      }),
       '/api/v1/users/u2/ratings': (call: { body: unknown }) => {
         const body = call.body as { score: number; note: string };
         const created = {
