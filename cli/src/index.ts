@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { activity } from './activity.ts';
 import { connect } from './connect.ts';
 import { init } from './init.ts';
 import { whoami } from './whoami.ts';
@@ -21,6 +22,8 @@ const USAGE = [
   '  laika whoami             who this machine is, and to which board',
   '  laika connect <agent>    point a coding agent at the board (--project: this folder)',
   '  laika connect --list     the agents connect knows, and what it does for each',
+  '  laika activity on|off    count local agent activity for the heatmap (opt-in)',
+  '  laika activity status    what the next activity sync would send',
   '',
   '`init` writes your Claude Code user settings; `connect` keeps the token in',
   '~/.laika/env. Both are outside any repository, so a token cannot be committed',
@@ -40,6 +43,7 @@ async function main(argv: readonly string[]): Promise<number> {
   if (command === 'init') return init();
   if (command === 'whoami') return whoami();
   if (command === 'connect') return connect(argv.slice(1));
+  if (command === 'activity') return activity(argv.slice(1));
 
   process.stderr.write(`laika: unknown command "${command}"\n\n${USAGE}\n`);
   return 1;

@@ -107,7 +107,8 @@ and how to set them, and it never prints your token.
 | | Status |
 | --- | --- |
 | MCP tools — **eighteen**, §7.1 | ✅ served at `${LAIKA_URL}/mcp` |
-| Heartbeat hooks | ✅ LAI-418 — `SessionStart`, `Stop`, throttled `PostToolUse` |
+| Heartbeat hooks | ✅ LAI-418 — `SessionStart`, `Stop`, throttled `PostToolUse` (per session, 90 s — LAI-752) |
+| Local activity hooks | ✅ LAI-752 — `scripts/laika-activity-hook`, installed by `laika activity on` |
 | `laika init` | ✅ LAI-422 — writes both variables to `~/.claude/settings.json` |
 | `/laika:status` | ✅ |
 | `/laika:setup`, `/laika:tasks`, `/laika:standup` | LAI-420 |
@@ -118,6 +119,48 @@ and how to set them, and it never prints your token.
 files and in `CLAUDE.md`, and the count is asserted in
 `cli/test/plugin-mcp.test.ts` against the spec and the registry so the next drift
 is loud rather than repeated.
+
+## Local activity (LAI-752)
+
+`scripts/laika-activity-hook` counts prompts and agent sessions on this machine
+for the profile's activity heatmap. **It is opt-in twice over**: an owner or
+admin turns on Developer insights for the organisation, and the developer turns
+on "Share my local activity" from a signed-in browser — a token cannot. Then
+`laika activity on` installs the hook into each agent's own config (see
+`cli/README.md`), and `laika activity off` removes it.
+
+It is **not** in `hooks/hooks.json`. Claude Code runs a plugin's hooks and the
+settings file's hooks both, so registering it here as well would count every
+prompt twice for anyone who uses `laika-claude`. `laika activity on` puts it in
+`~/.claude/settings.json`, which serves plain `claude` and `laika-claude` alike.
+
+| Mode | Fired by | Does |
+| --- | --- | --- |
+| `prompt` | prompt submit | appends `p <agent> <epoch>` to `~/.laika/activity/events.log` |
+| `session-start` | session start | appends `s <agent> <epoch>`; remembers the repo's top level in `~/.laika/activity/repos`; starts a detached `laika activity sync` if one is due |
+| `session-end` | session end | starts a detached `laika activity sync` if one is due, and returns at once |
+
+What it never does:
+
+- **Read the prompt.** Stdin is drained to `/dev/null` without landing in a
+  variable, and `$USER_PROMPT` (Kiro) is unset first. A test sends a prompt
+  carrying a unique marker and asserts it is in no file under `HOME`.
+- **Print.** Claude Code feeds `UserPromptSubmit` output to the model, and
+  exit 2 blocks the prompt in four agents: stdout and stderr go to `/dev/null`
+  and every path exits 0.
+- **Cost time.** Under `/bin/zsh -f` (what `on` installs wherever zsh exists)
+  the prompt path forks nothing — zsh's own `EPOCHSECONDS` and `sysread` — and
+  measures about 4 ms against about 3 ms for the bare interpreter. Under
+  `/bin/sh` it takes one `cat` and one `date`. No network, git or node.
+- **Count anything while sharing is off.** Every mode is a no-op unless
+  `~/.laika/activity/state.json` says `"collect":true`, which only the sync
+  writes, from the board's answer.
+- **Count Devin CLI as Claude Code.** Devin CLI also runs the hooks in
+  `~/.claude/settings.json`; it sets `DEVIN_PROJECT_DIR`, and the hook counts
+  nothing for `claude-code` when that is set.
+
+`~/.laika/activity` is 0700 and its files 0600. Repo paths, the event log and
+extra emails stay there; only per-day counts and one-way commit keys are sent.
 
 ## Working on this plugin
 
