@@ -413,7 +413,7 @@ which is the check working on the document it exists to pin.
 | `external_ref` | nullable, e.g. a GitHub PR |
 | `stale_flagged_at` | nullable, set by cron (§11.6) |
 | `position` | nullable — **manual board order**, one sequence per project; a lane draws its tasks in this order (D-060, D-070). An opaque key compared byte-wise: set on create at the **end** of the project's order, moved only by `POST /tasks/:id/reorder`, which writes this one row. Nullable only so the column could be added to a populated table — the boot backfill fills every null in the order the board already showed (priority, then number), so a served task always has one |
-| `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in, and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
+| `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in — a claim after the task was released included (LAI-743) — and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -1107,6 +1107,8 @@ GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
 PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
+GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
+POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
@@ -1193,6 +1195,31 @@ the projects list's rule, for the same reason. It is how the Timeline shows a
 sprint's progress without loading its tasks (§11.4.3). **Only the list
 carries it**: a sprint from `GET /sprints/:id` or returned from a write is the
 plain §4.15 shape.
+
+**A member's profile is one read** (D-078, LAI-743): `GET /users/:id/profile`
+answers `{ user, window, projects, review, ratings }`, and for a `builder`
+also `current_work`, `delivery` and `agents` — **absent, not empty**, for a
+`manager`. `PATCH` takes exactly `{ profile_kind }` and answers the whole
+profile, because the kind decides which blocks it carries. `POST …/ratings`
+takes exactly `{ score, note }` — an integer 1–5 and a note of 1–500
+characters after trimming — and answers the rating, `201`. All three ask §3.1's
+`profile.*` **before** looking the person up: a member or any token gets `403`
+for a real id and a made-up one alike, and only an owner or admin is told
+`404`. Every figure is computed at read time in a twelve-week window starting
+on a Monday, 00:00 UTC:
+
+| field | what it counts |
+| --- | --- |
+| `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
+| `review` | their moves of someone else's task into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them |
+| `ratings` | §4.21, newest first; the first is the current one |
+| `current_work` | their tasks in progress and in review |
+| `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
+| `agents` | their usable tokens with the agent each last connected as (D-076), and which agents are online now (§9.3) — never where |
+
+**This is not a §4 table and its rows are not columns** — the drift check reads
+§4 only. Setting a kind or adding a rating writes no `activity` row, so neither
+reaches SSE, an MCP tool or an export (§4.21).
 
 **A task's read shape is §4.5's columns** — `branch` and `external_ref`
 included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
@@ -1811,6 +1838,7 @@ call MCP; agents do.
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Capacity** | 5 | `GET /capacity`, `GET /presence`, `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /events` | `log_unlisted_work` | ✅ |
+| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings` | — | ✅ D-078 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -1891,6 +1919,19 @@ anything missing sends the task back.
   **There is no transcript pane, because there is no transcript** (D-056): §4.12
   keeps a `transcript_hash` and never the words. The quotes are what makes a
   proposal reviewable, and they are all that is kept.
+- **Member profile** (`/people?user=<id>`, D-078) — owners and admins only:
+  anyone else sees a permission notice and the profile is never requested. A
+  head with name, email, org role, member since and the **Builder / Manager**
+  control, which says it is a label and not a permission; **projects** with
+  role and figures; for a builder, **current work**, **delivered** — accepted
+  per week as twelve bars, sent back, reopened, cycle p50/p75 with the
+  unmeasured count — and **agents**, with which are online now; **review work
+  for others**, and for a manager **recent review decisions**; the **rating** —
+  the latest on top, the history below, *Rate* for anyone but yourself, a
+  dialog taking 1–5 and a required note. Every figure from the response; an
+  empty state, never a zero, where there is nothing. Reached from a person's
+  name on Organisation, a Capacity card or a *Work by person* row — links for
+  owners and admins, plain text for everyone else.
 
 #### 11.4.3 Timeline view
 
