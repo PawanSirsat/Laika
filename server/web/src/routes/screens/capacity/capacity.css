@@ -190,6 +190,13 @@
  * never joined the two up for one person.
  * ======================================================================== */
 
+/* The global page (LAI-754): the shared header band, then the cards. */
+.cap-page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
 .cap {
   padding: 0.875rem 1.125rem 1.125rem;
   min-width: 0;
@@ -243,6 +250,22 @@
 .cap-fig-unlisted .cap-fig-label,
 .cap-fig-unlisted .cap-fig-value {
   color: var(--chip-orange);
+}
+
+/* The count of notes waiting on `/unlisted` (LAI-754) — a link, not the list. */
+.cap-fig-link {
+  text-decoration: none;
+  border-radius: var(--radius-chip);
+}
+
+.cap-fig-link:hover .cap-fig-label {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cap-fig-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
 .cap-summary-note {
@@ -498,6 +521,11 @@
   flex-wrap: wrap;
 }
 
+/*
+ * A chip is key + title, and **the title gives way, never the key** (LAI-754).
+ * Bounded so one long title cannot take the row; chips wrap onto the next
+ * line.
+ */
 .cap-chip {
   display: flex;
   align-items: center;
@@ -508,8 +536,10 @@
   border-radius: 6px;
   background: var(--bg-canvas);
   cursor: pointer;
-  max-width: 100%;
+  max-width: min(100%, 17rem);
   min-width: 0;
+  /* A button centres by default; a title wrapped on a phone reads from the left. */
+  text-align: left;
 }
 
 .cap-chip:hover:not(:disabled),
@@ -557,42 +587,14 @@
   text-overflow: ellipsis;
 }
 
-/* ------------------------------------------------- the unlisted-work strip */
-
-.cap-unlisted-strip {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.5625rem 0.875rem;
-  background: var(--chip-orange-bg);
-  border-top: 1px solid var(--chip-orange-border);
-}
-
-.cap-unlisted-label {
+.cap-chip-more {
   flex: none;
-  font-size: 0.71875rem;
-  font-weight: var(--weight-heavy);
-  line-height: 1;
-  letter-spacing: 0.07em;
-  color: var(--chip-orange);
-}
-
-.cap-unlisted-note {
-  flex: 1;
-  min-width: 0;
-  font-size: 0.8125rem;
-  font-weight: var(--weight-semibold);
-  line-height: 1.35;
-  color: var(--text-primary);
-}
-
-.cap-unlisted-meta {
-  flex: none;
+  padding: 0.3125rem 0.4375rem;
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  font-weight: var(--weight-semibold);
-  line-height: 1;
-  color: var(--text-secondary);
+  font-weight: var(--weight-bold);
+  line-height: 1.25;
+  color: var(--text-muted);
 }
 
 /*

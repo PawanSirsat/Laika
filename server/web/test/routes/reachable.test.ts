@@ -31,19 +31,14 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   // The SPACES section is built from the project list rather than from
   // `ROUTES`, so these two are reachable without being in any group.
   '/board': 'the SPACES section — every space row opens its board',
-  '/capacity': 'the space tab strip — an org-level view, reached from any space (LAI-251)',
   '/projects': 'the SPACES section — the *More spaces* row',
-  // Hidden from the sidebar at the owner's request (2026-09-28, LAI-484) and
-  // reached by typing the path, like `/design/states`. The triage itself is
-  // not stranded: the Capacity tab carries the same list, with promote and
-  // dismiss, for the same admins (LAI-439).
+  // `/capacity` and `/unlisted` left this list with LAI-754: both are sidebar
+  // entries in `ORG` now, so the sidebar half of the check reaches them.
   // A person's profile is reached from the person (LAI-743): their name on
   // Organisation, a Work by person row, a Capacity card — for owners and
   // admins, the only readers it is drawn for.
   '/people':
     'a person — their name on Organisation, a Work by person row or a Capacity card (owners and admins)',
-  '/unlisted':
-    'typing the path — hidden from the sidebar for now (LAI-484); the Capacity tab carries the same list',
 };
 
 const holds = () => true;
@@ -98,15 +93,10 @@ void describe('the tab bar is honest about scope', () => {
   /**
    * **Every space tab carries the space** (LAI-279).
    *
-   * LAI-251 exempted `/capacity`: it reads across the organisation, so its tab
-   * dropped `?project=` to avoid claiming otherwise. The honesty was right and
-   * the mechanism was wrong — the space bar then read **"No space"** over a
-   * screen still showing the space's tabs, which is not a scope statement, it
-   * is a screen that looks broken. The owner reported exactly that.
-   *
-   * The design draws Capacity inside the space and says its scope in words:
-   * *"across 3 spaces · live"* in its own summary bar (prototype line 656).
-   * `capacity.test.ts` asserts that sentence; this asserts the link.
+   * LAI-251 once exempted `/capacity`, whose tab dropped `?project=`, and the
+   * space bar then read **"No space"** over a screen still showing the
+   * space's tabs. Capacity is not a tab at all since LAI-754 — it is one page
+   * in the sidebar — so every tab left keeps the space.
    */
   void test('no space tab drops the project from its link', () => {
     // Or the loop below proves nothing if the strip is ever emptied.
@@ -118,8 +108,9 @@ void describe('the tab bar is honest about scope', () => {
     assert.deepEqual(dropped, [], `these tabs lose the space: ${dropped.join(', ')}`);
   });
 
-  void test('Capacity in particular keeps it — the bar said "No space" without it', () => {
-    assert.match(navHref('/capacity', 'laika-core'), /^\/capacity\?project=laika-core$/);
+  void test('Capacity is global: no tab, and its link never carries a space (LAI-754)', () => {
+    assert.ok(!SPACE_TAB_PATHS.includes('/capacity'), 'Capacity is a space tab again');
+    assert.equal(navHref('/capacity', 'laika-core'), '/capacity');
   });
 
   void test('a project-scoped tab does carry the project', () => {
@@ -136,12 +127,14 @@ void describe('the tab bar is honest about scope', () => {
     }
   });
 
-  void test('Unlisted work is in no group and no tab — hidden, not moved (LAI-484)', () => {
-    // The owner asked for it hidden, not relocated: a tab is a space-scoped
-    // place (LAI-251, LAI-279) and this screen reads across every project.
+  void test('Capacity and Unlisted work are in the sidebar, not the tabs (LAI-754)', () => {
+    // Both read across every project, and a tab is a space-scoped place
+    // (LAI-251, LAI-279). The owner put them in the sidebar.
     const grouped = NAV_GROUPS.flatMap((g) => routesInGroup(g, holds).map((r) => r.path));
-    assert.ok(!grouped.includes('/unlisted'), 'Unlisted work is back in the sidebar');
-    assert.ok(!SPACE_TAB_PATHS.includes('/unlisted'), 'Unlisted work became a space tab');
-    assert.ok(REACHED_FROM['/unlisted'] !== undefined, 'hidden without saying how it is reached');
+    for (const path of ['/capacity', '/unlisted']) {
+      assert.ok(grouped.includes(path), `${path} is not in the sidebar`);
+      assert.ok(!SPACE_TAB_PATHS.includes(path), `${path} became a space tab`);
+      assert.equal(navHref(path, 'laika-core'), path, `${path} carries a space`);
+    }
   });
 });

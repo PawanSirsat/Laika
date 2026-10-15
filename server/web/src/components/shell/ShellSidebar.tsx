@@ -29,6 +29,7 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
     signingOut,
     sprintCount,
     orgName,
+    unlistedOpen,
   } = useShell();
 
   const projectSlug = params.get('project') ?? undefined;
@@ -60,7 +61,9 @@ export function ShellSidebar({ open, onClose, collapsed, onToggleCollapse }: She
       orgRole={me?.org_role}
       orgName={orgName}
       spaceName={spaceName}
-      counts={{ '/sprints': sprintCount }}
+      // The open unlisted count is the shell's (LAI-754): one number for the
+      // badge and Capacity's link, `undefined` for a reader it is not for.
+      counts={{ '/sprints': sprintCount, '/unlisted': unlistedOpen }}
       user={me}
       onSignOut={signOut}
       signingOut={signingOut}

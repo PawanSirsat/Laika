@@ -17,31 +17,25 @@
  * slide-over on the Board, not a nav item, so it belongs to the Board's work.
  */
 
-/** The three sidebar groups, in the order `docs/design/README.md` fixes. */
 /**
  * The sidebar's groups, in the live design's order (LAI-247).
  *
  * **`SPACES` is not here**, and that is the point: its rows are the projects you
- * have opened recently, not routes. `Sidebar` renders it from the project list
- * and then renders these two beneath it.
+ * have opened recently, not routes. `Sidebar` renders it from the project list;
+ * `ORG` sits above it and `SETTINGS` at the foot.
  *
  * **`WORK` and `REVIEW` are gone.** The design ties every view to a space — its
  * `projectScreens` test lights a space row for the board, timeline, sprints,
  * dashboard and meeting review alike — so those views became **tabs inside a
  * space** rather than a flat list beside it.
  *
- * **`ORG` is ours, not the design's.** The design is single-project, so
- * "inside a space" and "across the org" are the same place there. Unlisted
- * work reads across every project (`orgLevel`, LAI-423) and has no tab in the
- * design to inherit. **Capacity left this group in LAI-251**: the design's
- * strip carries it, and a route's scope lives in its link rather than in the
- * bar it is offered from.
- *
- * **`ORG` is empty on purpose, for now** (owner, 2026-09-28, LAI-484). The
- * owner asked for the section hidden, and `/unlisted` was its only member, so
- * that route's `group` is `null` and the sidebar's empty-group filter drops the
- * heading. The group stays in this list so putting Unlisted work back is one
- * field on its route, not a restructure. Do not "tidy" it away.
+ * **`ORG` is ours, not the design's**, and it holds what reads across every
+ * space: **Capacity** and **Unlisted work** (owner, 2026-10-15, LAI-754 —
+ * *"Capacity must not be at project level; it must go to the sidebar and be
+ * global"*). The design is single-project, so "inside a space" and "across the
+ * org" are the same place there. Capacity was a space tab from LAI-251 to
+ * LAI-754, and Unlisted work was hidden from LAI-484 to LAI-754; both stories
+ * are in those task files.
  */
 export const NAV_GROUPS = ['ORG', 'SETTINGS'] as const;
 export type NavGroup = (typeof NAV_GROUPS)[number];
@@ -121,8 +115,6 @@ export interface Route {
    * `n.abbr`. The design supplies `TK` and `OR`; Capacity and Unlisted work
    * are not in its sidebar at all, so `CA` and `UW` are ours, formed the same
    * way. Only grouped routes need one — nothing else renders in the rail.
-   * (`/unlisted` keeps `UW` while it is hidden, LAI-484, for the day it
-   * returns.)
    */
   readonly mini?: string;
 }
@@ -193,49 +185,41 @@ export const ROUTES: readonly Route[] = [
     status: 'ready',
     phase: 'Phase 5',
   },
-  // A queue a human works through, and audit-shaped: admin-up only (§4.14).
   /*
-   * **Hidden from the sidebar, not removed** (owner, 2026-09-28, LAI-484).
-   * The screen still renders at `/unlisted` for an admin, and the same list
-   * with promote and dismiss is on the Capacity tab (LAI-439). Putting it back
-   * in the sidebar is `group: 'ORG'` again; everything else is kept for that.
+   * **One page for the whole organisation** (owner, 2026-10-15, LAI-754).
+   *
+   * It was a space tab from LAI-251, with its scope said in a sentence because
+   * a tab under one space could not say it in its link. The owner moved it:
+   * *"Capacity must not be at project level; it must go to the sidebar and be
+   * global."* So it is `orgLevel` — its link drops `?project=` — and an old
+   * `/capacity?project=…` is rewritten to `/capacity` by the screen's route.
+   */
+  {
+    orgLevel: true,
+    path: '/capacity',
+    label: 'Capacity',
+    group: 'ORG',
+    status: 'ready',
+    phase: 'Phase 5',
+    mini: 'CA',
+  },
+  /*
+   * A queue a human works through, and audit-shaped: admin-up only (§4.14).
+   *
+   * **Back in the sidebar, under Capacity** (LAI-754). LAI-484 hid it because
+   * the same list sat on the Capacity tab; the owner then took the list off
+   * Capacity (*"this Unlisted work list is too big"*), so this page is where
+   * triage lives again, compact, with the open count beside its name.
    */
   {
     orgLevel: true,
     requires: 'audit_log.export',
     path: '/unlisted',
     label: 'Unlisted work',
-    group: null /* hidden for now — was 'ORG' (LAI-484) */,
+    group: 'ORG',
     status: 'ready',
     phase: 'Phase 3',
     mini: 'UW',
-  },
-
-  /*
-   * **A space tab, and it keeps the space** (LAI-279).
-   *
-   * LAI-251 made this `orgLevel` so its tab dropped `?project=` — the reasoning
-   * being that a tab sitting under `laika-core` must not claim to be about
-   * `laika-core`. The honesty was right; the mechanism was not. Dropping the
-   * parameter left the space bar reading **"No space"** over a screen still
-   * showing the space's tabs, which is not a scope statement, it is a screen
-   * that looks broken.
-   *
-   * The design settles it (prototype line 651): Capacity is drawn inside the
-   * space, and its summary bar says **"across N spaces · live"** in words. The
-   * scope belongs in a sentence a person reads, not in a missing query
-   * parameter nobody sees — and keeping `?project=` means switching back to
-   * Board returns you to the space you came from.
-   *
-   * `group: null` because it is not a sidebar row: two places to reach one
-   * screen is two answers to one question.
-   */
-  {
-    path: '/capacity',
-    label: 'Capacity',
-    group: null /* a space tab */,
-    status: 'ready',
-    phase: 'Phase 5',
   },
 
   {
@@ -329,13 +313,9 @@ export const ROUTES: readonly Route[] = [
 /**
  * The views that live **inside** a space, in the order the tab bar shows them.
  *
- * **The design's own strip, Capacity included** — the owner's exact-match
- * decision (2026-09-18), which supersedes LAI-248's deviation. That task put
- * Capacity in an `ORG` sidebar group because it is `orgLevel` and reads across
- * every project, and the reasoning was right about the data: what it got wrong
- * is that a tab's *scope* is a property of its link, not of the strip it sits
- * in. `navHref` still drops `?project=` for an `orgLevel` route, so the URL
- * stays honest while the strip matches the design.
+ * The design's own strip, **without Capacity** since LAI-754: the owner moved
+ * it to the sidebar as one page across every space, so a tab offering it from
+ * inside one space would be a second answer to the same question.
  *
  * `Calendar` is deliberately absent until it has a route (its own task).
  */
@@ -345,7 +325,6 @@ export const SPACE_TAB_PATHS: readonly string[] = [
   '/timeline',
   '/calendar',
   '/sprints',
-  '/capacity',
   '/dashboard',
   /*
    * **Activity is a tab** (the owner's updated design, 2026-09-18). It carries
@@ -406,10 +385,8 @@ export function isShipped(route: Route): boolean {
  * hides every gated entry**: a caller that forgets to say who is asking must
  * not publish what the endpoints behind it would refuse (`nav-truth.test.ts`).
  *
- * Exported so the gate can be tested on a fixture route (LAI-484): with
- * `/unlisted` out of the sidebar, no route in the table is both grouped and
- * gated, and a gate proven only through `ROUTES` would be proven through
- * nothing.
+ * Exported so the gate can be tested on a fixture route (LAI-484), as well as
+ * through `/unlisted`, which is grouped and gated again since LAI-754.
  */
 export function permitted(route: Route, holds?: (permission: string) => boolean): boolean {
   if (route.requires === undefined) return true;

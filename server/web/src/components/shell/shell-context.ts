@@ -50,6 +50,14 @@ export interface ShellValue {
   /** The open project's name, for the rail's wordmark and the bar's fallback. */
   readonly spaceName: string | undefined;
   /**
+   * Unlisted notes still waiting, for an owner or admin (LAI-754); `undefined`
+   * for everyone else. Here because the rail's badge and Capacity's link are
+   * one number from one request.
+   */
+  readonly unlistedOpen: number | undefined;
+  /** Re-read that count — the Unlisted screen calls it after a promote or a dismiss. */
+  readonly refreshUnlisted: () => void;
+  /**
    * The instance the browser is pointed at, read from the location — the
    * prototype's `laika.kvelld.internal` is a fixture and this is correct for
    * every deployment without configuration.

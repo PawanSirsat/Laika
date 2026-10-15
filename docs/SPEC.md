@@ -1812,7 +1812,7 @@ become one gesture (D-067).
 The **endpoint column is still correct** — every row names what that surface
 cannot function without, and `endpoint-coverage.test.ts` (LAI-460) checks the
 served side against what the client calls. **The *nav* model is not**: there is no
-WORK / REVIEW sidebar, screens are not all routes, and five of these rows are now
+WORK / REVIEW sidebar, screens are not all routes, and several of these rows are now
 **tabs inside a space**.
 
 **Read the rows as surfaces, not as destinations**, until this section is
@@ -1825,9 +1825,10 @@ the decision currently governing it rather than the table naming one for all.
 
 | | | decision |
 | --- | --- | --- |
-| the sidebar | **SPACES** — two recent spaces, *More spaces*, SETTINGS. A space is a project with a two-letter key, a count and a colour | D-059.1, amended by **D-061** |
+| the sidebar | **ORG** — *Capacity*, and *Unlisted work* with its open count for owners and admins — then **SPACES** — two recent spaces, *More spaces* — then SETTINGS. A space is a project with a two-letter key, a count and a colour | D-059.1, amended by **D-061**; ORG by **LAI-754** (the owner, 2026-10-15) |
 | Task detail | a **centred modal over a dimmed board**, dismissed by the scrim or Escape — not a screen, and not a right-hand drawer | D-059.2, amended by **D-063** |
-| Timeline, Calendar, Capacity, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
+| Timeline, Calendar, Dashboard, Meeting review | **tabs across the top of a space** | **D-059.3** |
+| Capacity, Unlisted work | **one page each, across every space the reader can see**, reached from the sidebar's ORG group — `/capacity` and `/unlisted`, no space bar and no tabs. A `/capacity?project=` link from when Capacity was a tab is rewritten to `/capacity` | **LAI-754** — *"Capacity must not be at project level; it must go to the sidebar and be global"* |
 
 Checked against `docs/design/Laika Prototype.dc.html` — **which is dated 24 August
 and is behind the owner's live design.** `docs/design/README.md` says which copy
@@ -1853,7 +1854,8 @@ call MCP; agents do.
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
-| **Capacity** | 5 | `GET /capacity`, `GET /presence`, `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /events` | `log_unlisted_work` | ✅ |
+| **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id`, `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754 |
+| **Unlisted work** *(sidebar, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings` | — | ✅ D-078 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
@@ -1918,10 +1920,19 @@ anything missing sends the task back.
 - **Organisation** — org name; AI provider config showing `configured / provider
   / key_last4` and **never the key**; invites with role at invite time; member
   list with role controls; danger zone gated to Owner.
-- **Capacity** — who is active now with repo, branch and resolved task; agent
-  sessions distinct from humans; in-progress work across projects; last seen;
-  **unlisted work with one-click promote to a task**; disabled state when
-  `presence_enabled = 0`.
+- **Capacity** (`/capacity`, one page across every space, LAI-754) — who is
+  active now with repo, branch and resolved task; agent sessions distinct from
+  humans; in-progress work across projects as chips of **key and title** (the
+  whole title on hover), at most three a person and then *+N more*; last seen;
+  a summary strip saying how many spaces it reads across and, for owners and
+  admins, a link to *Unlisted work* with the open count; disabled state when
+  `presence_enabled = 0`. **No unlisted notes on this screen** — they are on
+  their own page.
+- **Unlisted work** (`/unlisted`, owners and admins, LAI-754) — **one line per
+  note**: repo, who, when and the note's first line, newest first; a click opens
+  the full text with **Promote to task** and **Dismiss** under it; the first
+  page of lines and then *Show more*; a *Show dismissed* toggle; the open count
+  in the header and beside the sidebar entry.
 - **Dashboard** — shaped like Jira's project Summary (D-072): **done, updated,
   created and due soon** for the chosen range; a **status donut** with the share
   done at its centre; a **donut of open work by person**, Unassigned as its own

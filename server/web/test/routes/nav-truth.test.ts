@@ -127,8 +127,9 @@ void describe('the sidebar offers nothing that does not exist', () => {
       // arriving somewhere else.
       // `Unlisted work` is gated on `audit_log.export` and `navRoutes()` here
       // takes no predicate, so it is absent by the same rule it always was.
-      // **Capacity left in LAI-251** — the design's tab strip carries it.
-      ['Connect', 'Tokens', 'Organisation'],
+      // **Capacity is back, as one global page** (owner, 2026-10-15, LAI-754);
+      // it was a space tab from LAI-251.
+      ['Capacity', 'Connect', 'Tokens', 'Organisation'],
     );
   });
 
@@ -154,17 +155,20 @@ void describe('the sidebar offers nothing that does not exist', () => {
     // today**, which means the filter above is currently guarding nothing
     // observable; it stays because the next hidden route re-creates the case,
     // and the rule is what matters rather than today's list.
-    // **`ORG` is empty for every reader since LAI-484** — the owner asked for
-    // the section hidden, and `/unlisted` (its only member) is `group: null`
-    // for now. The filter is what keeps an empty heading off the screen, so
-    // this is its real customer. Asserted as the specific expected case, for
-    // an admin as well: the reader who used to see it is the one that matters.
+    // **`ORG` was empty from LAI-484 to LAI-754**, and is not now: Capacity
+    // moved into it as one global page and Unlisted work came back under it
+    // (owner, 2026-10-15). Capacity is ungated, so even a reader with no
+    // permissions sees the heading with something under it.
     const empty = NAV_GROUPS.filter((g) => routesInGroup(g).length === 0);
-    assert.deepEqual(empty, ['ORG'], 'only ORG may be empty');
+    assert.deepEqual(empty, [], 'a group is empty');
     assert.deepEqual(
       routesInGroup('ORG', () => true).map((r) => r.path),
-      [],
-      'ORG has a member again — if that is deliberate, LAI-484 is being reversed',
+      ['/capacity', '/unlisted'],
+    );
+    assert.deepEqual(
+      routesInGroup('ORG').map((r) => r.path),
+      ['/capacity'],
+      'Unlisted work is offered to a reader who cannot open it',
     );
   });
 
@@ -244,19 +248,22 @@ void describe('a gated nav entry is hidden unless the reader holds it', () => {
     // not nav routes since LAI-248 — Board and Dashboard are space tabs,
     // Projects is the SPACES section's *More spaces* row. Naming them now would
     // assert that gating does not hide things that were never offered.
-    // **Capacity left with LAI-251** — it is a space tab now, so naming it
-    // here would assert that gating does not hide something never offered.
-    for (const label of ['Connect', 'Tokens', 'Organisation']) {
+    // **Capacity is a sidebar entry again since LAI-754**, and ungated.
+    for (const label of ['Capacity', 'Connect', 'Tokens', 'Organisation']) {
       assert.ok(withNone.includes(label), `${label} was hidden by an unrelated permission check`);
     }
   });
 
-  void test('Unlisted work is offered to nobody while it is hidden (LAI-484)', () => {
-    // Hidden, not deleted: the route is still gated and still routed — the
-    // owner's "for now" — but no reader, admin included, is offered it.
+  void test('Unlisted work is offered to an admin and absent for anyone else (LAI-754)', () => {
+    // Back in the sidebar (LAI-484 hid it while Capacity carried the list),
+    // with the gate it always had.
     const route = ROUTES.find((r) => r.path === '/unlisted');
-    assert.ok(route !== undefined, '/unlisted was deleted, not hidden');
+    assert.ok(route !== undefined, '/unlisted was deleted');
     assert.equal(route.requires, 'audit_log.export', 'the gate went with the sidebar entry');
-    assert.ok(!navRoutes(holdsAll).some((r) => r.path === '/unlisted'), 'offered to an admin');
+    assert.ok(
+      navRoutes(holdsAll).some((r) => r.path === '/unlisted'),
+      'not offered to an admin',
+    );
+    assert.ok(!navRoutes(holdsNone).some((r) => r.path === '/unlisted'), 'offered to a Member');
   });
 });

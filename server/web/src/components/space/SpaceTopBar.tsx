@@ -121,8 +121,7 @@ export function SpaceTopBar({
    * board they were two controls for one piece of state.
    *
    * Hidden rather than deleted: every other view of a space (Timeline,
-   * Calendar, Capacity) has no toolbar, and the bar is the only filtering it
-   * has. The `Agents` chip stays either way — it carries a live presence count
+   * Calendar) has no toolbar, and the bar is the only filtering it has. The `Agents` chip stays either way — it carries a live presence count
    * the Filter panel does not, so it is not the same control.
    */
   const ownFilters = !useSpaceFiltersClaimed();

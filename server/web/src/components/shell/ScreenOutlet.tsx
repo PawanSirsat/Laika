@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import { useEffect, type ComponentType } from 'react';
 import { useShell } from './shell-context.ts';
 import { SpaceLayout } from '../space/SpaceLayout.tsx';
 import { BoardScreen } from '../../routes/screens/BoardScreen.tsx';
@@ -120,18 +120,39 @@ function ActivityRoute() {
   return <ActivityScreen slug={params.get('project') ?? undefined} />;
 }
 
+/**
+ * One page for the organisation (LAI-754), so `?project=` means nothing here.
+ * A link from when Capacity was a space tab — `/capacity?project=laika-core` —
+ * is rewritten to `/capacity` in place, so the address says what is shown.
+ */
 function CapacityRoute() {
   const {
-    route: { navigate },
+    route: { navigate, params, setParams },
+    unlistedOpen,
   } = useShell();
-  return <CapacityScreen onOpenTask={openTaskByKey(navigate)} />;
+  const project = params.get('project');
+  useEffect(() => {
+    if (project === null) return;
+    const next = new URLSearchParams(params);
+    next.delete('project');
+    setParams(next);
+  }, [project]);
+  return (
+    <CapacityScreen
+      onOpenTask={openTaskByKey(navigate)}
+      unlistedOpen={unlistedOpen}
+      onNavigate={navigate}
+    />
+  );
 }
 
 function UnlistedRoute() {
   const {
     route: { navigate },
+    refreshUnlisted,
   } = useShell();
-  return <UnlistedScreen members={new Map()} onOpenTask={openTaskByKey(navigate)} />;
+  // A promote or a dismiss changes the sidebar's count; it re-reads (LAI-754).
+  return <UnlistedScreen onOpenTask={openTaskByKey(navigate)} onChanged={refreshUnlisted} />;
 }
 
 function ConnectRoute() {
@@ -193,7 +214,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/activity': { Component: ActivityRoute, layout: 'space' },
   '/meeting-review': { Component: MeetingReviewRoute, layout: 'space' },
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
-  '/capacity': { Component: CapacityRoute, layout: 'space' },
+  '/capacity': { Component: CapacityRoute, layout: 'plain' },
   '/unlisted': { Component: UnlistedRoute, layout: 'plain' },
   '/connect': { Component: ConnectRoute, layout: 'plain' },
   '/tokens': { Component: TokensRoute, layout: 'plain' },

@@ -3,6 +3,8 @@ import { useRoute } from '../../routes/use-route.ts';
 import { useSession } from '../../api/use-session.ts';
 import { useSetupStatus } from '../../api/use-setup-status.ts';
 import { useShellContext } from '../../api/use-shell-context.ts';
+import { useUnlistedCount } from '../../api/use-unlisted-count.ts';
+import { mayTriageUnlisted } from '../../api/unlisted.ts';
 import { showsAppNav } from '../shell-chrome.ts';
 import { ShellProviderContext, type ShellValue } from './shell-context.ts';
 
@@ -50,6 +52,9 @@ export function ShellProvider({ children }: ShellProviderProps) {
   }, [signOut, navigate]);
 
   const me = session.status === 'authenticated' ? session.user : undefined;
+  const { open: unlistedOpen, refresh: refreshUnlisted } = useUnlistedCount(
+    me !== undefined && mayTriageUnlisted(me.org_role),
+  );
 
   const value = useMemo<ShellValue>(
     () => ({
@@ -67,6 +72,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
       sprintCount,
       orgName,
       spaceName,
+      unlistedOpen,
+      refreshUnlisted,
       host: window.location.host,
     }),
     [
@@ -84,6 +91,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
       sprintCount,
       orgName,
       spaceName,
+      unlistedOpen,
+      refreshUnlisted,
     ],
   );
 
