@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdir, readFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -620,34 +620,32 @@ describe('a rating goes nowhere but the profile (D-078, LAI-743)', () => {
     ).toEqual([]);
   });
 
-  it('is read by one module only, and no MCP tool or route reaches past it', () => {
+  it('is read by one module only, and no MCP tool or route reaches past it', async () => {
     // Structural, because "no endpoint leaks it" cannot be proven by asking
     // each endpoint: whatever touches the table is the leak surface. Only the
     // profile service may name it, and only the profile routes may call it.
-    const src = join(SERVER_ROOT, 'src');
-    const files = walk(src).filter((f) => f.endsWith('.ts'));
-    const naming = files
-      .filter((f) => /\bmemberRatings\b|\bmember_ratings\b/.test(readFileSync(f, 'utf8')))
-      .map((f) => relative(src, f))
-      .sort();
+    const { naming, importing } = ratingsBoundary(await readSources());
 
     expect(naming).toEqual(['db/migrate.ts', 'db/schema.ts', 'services/profiles.ts']);
-
-    // Resolved import specifiers, not a text match: a comment naming the
-    // module is not a caller.
-    const service = join(src, 'services', 'profiles.ts');
-    const importing = files
-      .filter((f) =>
-        [...readFileSync(f, 'utf8').matchAll(/^import[^;]*?from '([^']+)';/gms)].some(
-          ([, specifier]) =>
-            specifier !== undefined &&
-            specifier.startsWith('.') &&
-            resolve(dirname(f), specifier) === service,
-        ),
-      )
-      .map((f) => relative(src, f))
-      .sort();
     expect(importing).toEqual(['http/routes/profiles.ts']);
+  });
+
+  it('reads every source file once for both questions (LAI-749)', async () => {
+    // The check above used to walk the tree and read it twice, synchronously:
+    // 112 ms alone, 6.2 s in a loaded full run, past vitest's 5 s (D-055: a
+    // flake is a defect). Every file is now read once, concurrently, and both
+    // questions are asked of that one copy.
+    const reads = new Map<string, number>();
+    const sources = await readSources(async (path) => {
+      reads.set(path, (reads.get(path) ?? 0) + 1);
+      return readFile(path, 'utf8');
+    });
+
+    // Not vacuous: a scan that found nothing would read nothing twice.
+    expect(sources.size).toBeGreaterThan(50);
+    expect([...sources.keys()]).toContain('services/profiles.ts');
+    expect([...reads.values()].filter((n) => n !== 1)).toEqual([]);
+    expect(reads.size).toBe(sources.size);
   });
 
   it('leaves the activity rows for setting a kind empty too — it is a label, not an event', () => {
@@ -658,11 +656,50 @@ describe('a rating goes nowhere but the profile (D-078, LAI-743)', () => {
   });
 });
 
-function walk(dir: string): string[] {
-  return readdirSync(dir).flatMap((name) => {
-    const path = join(dir, name);
-    return statSync(path).isDirectory() ? walk(path) : [path];
-  });
+const SOURCE_ROOT = join(SERVER_ROOT, 'src');
+
+/**
+ * Every `.ts` file under `server/src`, by path relative to it, each read once
+ * and all concurrently (LAI-749). `read` is injectable so a test can count.
+ */
+async function readSources(
+  read: (path: string) => Promise<string> = (path) => readFile(path, 'utf8'),
+): Promise<Map<string, string>> {
+  const files = (await readdir(SOURCE_ROOT, { recursive: true, withFileTypes: true }))
+    .filter((entry) => !entry.isDirectory() && entry.name.endsWith('.ts'))
+    .map((entry) => join(entry.parentPath, entry.name));
+  const texts = await Promise.all(files.map((file) => read(file)));
+  return new Map(files.map((file, i) => [relative(SOURCE_ROOT, file), texts[i] ?? '']));
+}
+
+/**
+ * Who names `member_ratings`, and who imports the profile service — asked of
+ * sources already read, so this can read nothing itself.
+ */
+function ratingsBoundary(sources: ReadonlyMap<string, string>): {
+  naming: string[];
+  importing: string[];
+} {
+  const service = join(SOURCE_ROOT, 'services', 'profiles.ts');
+  const naming: string[] = [];
+  const importing: string[] = [];
+
+  for (const [file, text] of sources) {
+    if (/\bmemberRatings\b|\bmember_ratings\b/.test(text)) naming.push(file);
+
+    // Resolved import specifiers, not a text match: a comment naming the
+    // module is not a caller.
+    const absolute = join(SOURCE_ROOT, file);
+    const imports = [...text.matchAll(/^import[^;]*?from '([^']+)';/gms)].some(
+      ([, specifier]) =>
+        specifier !== undefined &&
+        specifier.startsWith('.') &&
+        resolve(dirname(absolute), specifier) === service,
+    );
+    if (imports) importing.push(file);
+  }
+
+  return { naming: naming.sort(), importing: importing.sort() };
 }
 
 // --------------------------------------------- the kind is not a permission
