@@ -1,11 +1,19 @@
-import { and, eq, gt, isNotNull, isNull, lte, sql } from 'drizzle-orm';
+import { and, eq, gt, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
 import { appendActivity } from '../db/activity.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import { type Db } from '../db/client.ts';
-import { heartbeats, invites, meetingReviews, orgs, tasks } from '../db/schema.ts';
+import {
+  heartbeats,
+  invites,
+  localActivityDays,
+  meetingReviews,
+  orgs,
+  pushedCommitKeys,
+  tasks,
+} from '../db/schema.ts';
 
 /**
- * The six jobs §11.6 specifies, as plain functions (LAI-431).
+ * The jobs §11.6 specifies, as plain functions (LAI-431).
  *
  * Separated from the scheduler that runs them so each is callable from a test
  * with an injected `now`, which is the only way the rules can be *proved*: "a
@@ -20,7 +28,7 @@ import { heartbeats, invites, meetingReviews, orgs, tasks } from '../db/schema.t
  * test runs the job twice and asserts the second run returns zero and appends no
  * row, rather than reasoning about whether it would.
  *
- * ## Four of the six write activity, and two deliberately do not
+ * ## Four write activity, and the others deliberately do not
  *
  * §4.8's D-022 note names exactly which cron jobs write: **heartbeat pruning,
  * stale-task flagging, invite and meeting-review expiry**. The nightly snapshot
@@ -28,7 +36,8 @@ import { heartbeats, invites, meetingReviews, orgs, tasks } from '../db/schema.t
  * a change to the product's history and `VACUUM` changes no row. Writing them
  * would put two entries a week in every reader's feed saying nothing happened.
  * Said here because a reader finding no `appendActivity` in those two would
- * otherwise assume it was forgotten (the LAI-417 shape).
+ * otherwise assume it was forgotten (the LAI-417 shape). Local-activity
+ * retention (LAI-751) writes none either; its own comment says why.
  *
  * ## `heartbeats` may be deleted from; `activity` may not
  *
@@ -92,6 +101,39 @@ export function pruneHeartbeats(db: Db, now: number): JobResult {
       now,
     });
   }
+
+  return { changed };
+}
+
+/** D-079: a developer's local counts and commit keys are kept 400 days (§11.6). */
+export const LOCAL_ACTIVITY_RETENTION_DAYS = 400;
+
+/**
+ * Delete local-activity rows and pushed-commit keys older than 400 days
+ * (§11.6, D-079, LAI-751). Daily, and once at boot (`scheduler.ts`), so a
+ * server that was down on the day still keeps the promise when it comes up.
+ *
+ * **By day, not by instant.** Both tables hold calendar dates — a machine's
+ * own local ones — so the cutoff is a date: everything before the UTC date 400
+ * days ago. A day's difference between zones is the whole tolerance.
+ *
+ * **No `activity` row, deliberately** — the backup's and the vacuum's
+ * reasoning, and one more: §4.8 has no verb for it, and adding one is an
+ * `activity` rebuild for a row that would only say retention ran. The count
+ * is in the log line the scheduler writes when it changed something.
+ */
+export function pruneLocalActivity(db: Db, now: number): JobResult {
+  assertCan(SYSTEM, 'system.local_activity.prune');
+
+  const cutoff = new Date(now - LOCAL_ACTIVITY_RETENTION_DAYS * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+
+  const changed = db.transaction((tx) => {
+    const days = tx.delete(localActivityDays).where(lt(localActivityDays.day, cutoff)).run();
+    const keys = tx.delete(pushedCommitKeys).where(lt(pushedCommitKeys.day, cutoff)).run();
+    return days.changes + keys.changes;
+  });
 
   return { changed };
 }

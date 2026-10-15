@@ -109,6 +109,23 @@
   --priority-medium: #f0ac47;
   --priority-low: #9a9aa4;
 
+  /* ---- activity heatmap (D-079, LAI-751): GitHub violet, Local amber, Board
+     slate — four steps of one hue each over a shared empty, lightness-matched
+     so a step reads alike in either colour; the approved mockup's values ---- */
+  --heat-empty: #26262a;
+  --heat-gh-1: #4b3b78;
+  --heat-gh-2: #6e53b6;
+  --heat-gh-3: #9577ec;
+  --heat-gh-4: #c0b0fe;
+  --heat-lo-1: #66451f;
+  --heat-lo-2: #9d651c;
+  --heat-lo-3: #c97f14;
+  --heat-lo-4: #febb71;
+  --heat-all-1: #464652;
+  --heat-all-2: #6a6a77;
+  --heat-all-3: #9494a1;
+  --heat-all-4: #c2c3d1;
+
   /* ---- overlays ---- */
   --scrim: rgba(0, 0, 0, 0.55);
   --shadow-modal: 0 24px 60px rgba(0, 0, 0, 0.5);
@@ -174,6 +191,20 @@
   --priority-high: #c42630;
   --priority-medium: #8f5a08;
   --priority-low: #606775;
+
+  --heat-empty: #e8ebf1;
+  --heat-gh-1: #ccc1fe;
+  --heat-gh-2: #a991f9;
+  --heat-gh-3: #8456e8;
+  --heat-gh-4: #5f2db7;
+  --heat-lo-1: #ffcf9d;
+  --heat-lo-2: #f9a63e;
+  --heat-lo-3: #cd8004;
+  --heat-lo-4: #9b5f02;
+  --heat-all-1: #cbd1df;
+  --heat-all-2: #9ea5b2;
+  --heat-all-3: #747a87;
+  --heat-all-4: #484d58;
 
   --scrim: rgba(24, 24, 27, 0.4);
   --shadow-modal: 0 24px 60px rgba(24, 24, 27, 0.22);

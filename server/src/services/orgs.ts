@@ -84,6 +84,16 @@ export interface OrgView {
    * mean the promise is made about them and visible only to somebody else.
    */
   presence_enabled: boolean;
+  /**
+   * The org's half of D-079's two switches (§4.2, LAI-751): whether developers
+   * who turn on sharing may send local activity counts. Default off.
+   *
+   * **Readable by everyone, for presence's reason.** It is a statement about
+   * what the org may collect about the people in it, and they have the
+   * strongest claim to know it; the Connect screen shows it to the developer
+   * deciding whether to share.
+   */
+  developer_insights: boolean;
   created_at: number;
   updated_at: number;
   /** Present only for a caller who passes `org.settings.edit`. Absent, not null. */
@@ -116,6 +126,7 @@ export function getOrg(db: Db, actor: ResolvedActor): OrgView {
     id: row.id,
     name: row.name,
     presence_enabled: row.presenceEnabled === 1,
+    developer_insights: row.developerInsights === 1,
     created_at: row.createdAt,
     updated_at: row.updatedAt,
   };
@@ -155,7 +166,8 @@ function keyLast4(last4: string | null): string | null {
  * row is `✓ ✓ — —`, and D-011 makes the spec authoritative. Reported rather than
  * silently followed either way.
  *
- * Only `presence_enabled` today. The AI provider, SMTP and the webhook secret are
+ * `presence_enabled`, D-079's `developer_insights` (LAI-751) and the AI provider
+ * (LAI-447). SMTP and the webhook secret are
  * the same §3.1 row and the same action, but each carries encryption (§12) and
  * belongs with the task that builds its screen — a setter that could write
  * `ai_api_key_enc` without the key-derivation path is a hole waiting for a
@@ -171,6 +183,8 @@ function keyLast4(last4: string | null): string | null {
  */
 export interface UpdateOrgInput {
   presence_enabled?: boolean | undefined;
+  /** D-079's org switch (LAI-751). Writes no `activity` row: §4.8 has no verb for it. */
+  developer_insights?: boolean | undefined;
   ai_provider?: AiProvider | null | undefined;
   ai_base_url?: string | null | undefined;
   /** Write-only. Never read back, at any grade (§12). */
@@ -268,12 +282,22 @@ export function updateOrg(
   now: number = Date.now(),
 ): OrgView {
   assertCan(actor, 'org.settings.edit');
+  // Asked before anything is written, so a token's request that also carries
+  // another setting changes nothing at all (D-079, LAI-751 review).
+  if (input.developer_insights !== undefined) assertCan(actor, 'org.developer_insights.set');
 
   const orgId = requireOrgId(db);
 
   if (input.presence_enabled !== undefined) {
     db.update(orgs)
       .set({ presenceEnabled: input.presence_enabled ? 1 : 0, updatedAt: now })
+      .where(eq(orgs.id, orgId))
+      .run();
+  }
+
+  if (input.developer_insights !== undefined) {
+    db.update(orgs)
+      .set({ developerInsights: input.developer_insights ? 1 : 0, updatedAt: now })
       .where(eq(orgs.id, orgId))
       .run();
   }

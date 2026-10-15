@@ -59,6 +59,7 @@ import {
   type SetupMode,
   type WizardStep,
 } from './connect-wizard.ts';
+import { ShareActivity } from './ShareActivity.tsx';
 import './connect.css';
 
 /**
@@ -955,6 +956,8 @@ export function ConnectScreen({ me, origin, params, setParams }: ConnectScreenPr
                   </div>
                 )}
 
+                {openedExtra?.id === 'activity' && <ShareActivity canManageOrg={canInvite} />}
+
                 {openedExtra?.id === 'invite' && (
                   <div className="conn-extra" data-extra="invite">
                     <p className="conn-body">
@@ -1385,6 +1388,73 @@ function ExtraIcon({ id }: { readonly id: ExtraId }) {
           strokeWidth="1.6"
           strokeLinecap="round"
         />
+      ) : id === 'activity' ? (
+        // A little grid of days, three of them filled.
+        <>
+          <rect x="2" y="2" width="3.5" height="3.5" rx="0.8" fill="currentColor" />
+          <rect
+            x="6.25"
+            y="2"
+            width="3.5"
+            height="3.5"
+            rx="0.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <rect x="10.5" y="2" width="3.5" height="3.5" rx="0.8" fill="currentColor" />
+          <rect
+            x="2"
+            y="6.25"
+            width="3.5"
+            height="3.5"
+            rx="0.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <rect x="6.25" y="6.25" width="3.5" height="3.5" rx="0.8" fill="currentColor" />
+          <rect
+            x="10.5"
+            y="6.25"
+            width="3.5"
+            height="3.5"
+            rx="0.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <rect
+            x="2"
+            y="10.5"
+            width="3.5"
+            height="3.5"
+            rx="0.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <rect
+            x="6.25"
+            y="10.5"
+            width="3.5"
+            height="3.5"
+            rx="0.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+          <rect
+            x="10.5"
+            y="10.5"
+            width="3.5"
+            height="3.5"
+            rx="0.8"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.2"
+          />
+        </>
       ) : (
         <>
           <circle cx="6.5" cy="5.5" r="2.5" fill="none" stroke="currentColor" strokeWidth="1.6" />

@@ -94,15 +94,27 @@ export interface AgentRow {
  * wrote nothing, most recently used first. An agent that wrote through a token
  * since revoked is still a row: the writes happened. Nothing is counted here;
  * the shares are the server's counts as percentages.
+ *
+ * An agent **online now** is always a row (LAI-751, owner, 2026-10-16): the
+ * card carries who is online since *Online now* stopped being a card of its
+ * own, so one online on a token this list does not show still gets its row
+ * rather than vanishing.
  */
 export function agentRows(
   writes: readonly AgentWrites[],
-  tokens: readonly ProfileAgentToken[],
+  usable: readonly ProfileAgentToken[],
+  online: readonly AgentClient[] = [],
 ): AgentRow[] {
+  // A token that has never connected has used no agent (LAI-751): it is not a
+  // row of its own, and not one of an agent's tokens — it would only read as
+  // "another agent, never used".
+  const tokens = usable.filter((token) => connected(token));
   const percents = sharePercents(writes.map((w) => w.writes));
   const onTokens = (client: AgentClient) => tokens.filter((token) => token.client === client);
   const written = new Set(writes.map((w) => w.client));
-  const silent = [...new Set(tokens.map((token) => token.client))].filter((c) => !written.has(c));
+  const silent = [...new Set([...tokens.map((token) => token.client), ...online])].filter(
+    (c) => !written.has(c),
+  );
 
   return [
     ...writes.map((w, i) => ({
@@ -113,6 +125,22 @@ export function agentRows(
     })),
     ...silent.map((client) => ({ client, writes: 0, percent: 0, tokens: onTokens(client) })),
   ];
+}
+
+/** Whether a token has ever reached Laika — a request or an `/mcp` call. */
+export function connected(token: ProfileAgentToken): boolean {
+  return token.last_used_at !== null || token.last_mcp_at !== null;
+}
+
+/** The two lists *Current work* switches between (LAI-751). */
+export type WorkTab = 'in_progress' | 'in_review';
+
+/** How many rows a list shows before *Show all* (LAI-751). */
+export const ROWS_SHOWN = 5;
+
+/** The list *Current work* opens on: in progress if it has any, else in review. */
+export function workTab(totals: { in_progress_total: number; in_review_total: number }): WorkTab {
+  return totals.in_progress_total === 0 && totals.in_review_total > 0 ? 'in_review' : 'in_progress';
 }
 
 /**
@@ -186,4 +214,55 @@ export function nextAttempt(
     return previous;
   }
   return { key: makeKey(), userId, score, note: trimmed };
+}
+
+/** The profile's cards below the Activity card (LAI-751, owner, 2026-10-16). */
+export type ProfileCardId =
+  'delivery' | 'current' | 'agents' | 'review' | 'projects' | 'rating' | 'decisions';
+
+/** How many columns the cards flow in: 3 from 1200 px wide, 2 from 768, else 1. */
+export type ColumnCount = 1 | 2 | 3;
+
+export function columnCount(viewportWidth: number): ColumnCount {
+  return viewportWidth >= 1200 ? 3 : viewportWidth >= 768 ? 2 : 1;
+}
+
+/**
+ * Which card goes in which column, top to bottom (LAI-751, owner,
+ * 2026-10-16: *"this page needs to be structured … use the space properly"*).
+ *
+ * Columns, not rows: each column stacks its cards with one gap between them,
+ * so a short card is never followed by a hole the height of its neighbour.
+ * The split is chosen, not computed, so a person finds a card in the same
+ * place on every profile — and balanced for the shapes profiles have: a
+ * builder's tall cards (Current work, Agents used) are in different columns,
+ * each with a shorter one; a manager's main card (Review work) has a column
+ * to itself at three. One column is the reading order: what they delivered
+ * and are doing, then how, then review, then the record.
+ */
+export function columnPlan(
+  kind: 'builder' | 'manager',
+  columns: ColumnCount,
+): readonly (readonly ProfileCardId[])[] {
+  if (kind === 'manager') {
+    if (columns === 3) return [['review'], ['decisions'], ['projects', 'rating']];
+    if (columns === 2)
+      return [
+        ['review', 'rating'],
+        ['decisions', 'projects'],
+      ];
+    return [['review', 'decisions', 'projects', 'rating']];
+  }
+  if (columns === 3)
+    return [
+      ['delivery', 'current'],
+      ['agents', 'review'],
+      ['projects', 'rating'],
+    ];
+  if (columns === 2)
+    return [
+      ['delivery', 'current', 'review'],
+      ['agents', 'projects', 'rating'],
+    ];
+  return [['delivery', 'current', 'agents', 'review', 'projects', 'rating']];
 }

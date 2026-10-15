@@ -286,6 +286,40 @@ const PAIRS: readonly Pair[] = [
     clientFile: 'profiles.ts',
   },
   /*
+   * The heatmap and the developer's side of D-079 (LAI-751), paired the
+   * moment the client existed.
+   */
+  {
+    server: 'PeopleActivityView',
+    serverFile: 'services/people-activity.ts',
+    client: 'PeopleActivity',
+    clientFile: 'people-activity.ts',
+  },
+  {
+    server: 'ActivitySharingView',
+    serverFile: 'services/local-activity.ts',
+    client: 'ActivitySharing',
+    clientFile: 'local-activity.ts',
+  },
+  {
+    server: 'OwnLocalActivityView',
+    serverFile: 'services/local-activity.ts',
+    client: 'OwnLocalActivity',
+    clientFile: 'local-activity.ts',
+  },
+  // Nested, through a table for the reason given below the profile's.
+  ...(
+    [
+      ['ActivitySeries', 'services/people-activity.ts', 'people-activity.ts'],
+      ['OwnLocalDay', 'services/local-activity.ts', 'local-activity.ts'],
+    ] as const
+  ).map(([name, serverFile, clientFile]) => ({
+    server: name,
+    serverFile,
+    client: name,
+    clientFile,
+  })),
+  /*
    * **And every named shape inside the profile**, because `fieldsOf` reads one
    * interface's own fields and a nested block is otherwise compared by nothing.
    *
@@ -316,6 +350,7 @@ const PAIRS: readonly Pair[] = [
       ['ProfileAgents', 'services/profiles.ts'],
       ['AgentWrites', 'services/profiles.ts'],
       ['AgentPresence', 'services/presence.ts'],
+      ['ProfileActivitySharing', 'services/profiles.ts'],
     ] as const
   ).map(([name, serverFile]) => ({
     server: name,

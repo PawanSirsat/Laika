@@ -20,6 +20,8 @@ import { createSecurityHeaders } from './http/middleware/security-headers.ts';
 import { buildContentSecurityPolicy, extractStyleHashes } from './http/security-headers.ts';
 import { healthRoutes } from './http/routes/health.ts';
 import { meRoutes, meWatchRoutes } from './http/routes/me.ts';
+import { localActivityRoutes } from './http/routes/local-activity.ts';
+import { peopleRoutes } from './http/routes/people.ts';
 import { setupRoutes } from './http/routes/setup.ts';
 import { projectRoutes } from './http/routes/projects.ts';
 import { projectStatusRoutes } from './http/routes/project-statuses.ts';
@@ -278,6 +280,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
 
   if (db !== undefined) {
     app.route(`${API_BASE}/me`, meWatchRoutes({ db }));
+    // D-079's developer side (LAI-751): sharing, reports, and what is held.
+    app.route(`${API_BASE}/me`, localActivityRoutes({ db }));
     app.route(
       `${API_BASE}/events`,
       eventRoutes({ db, feed: options.activityFeed ?? new ActivityFeed({ db }) }),
@@ -299,6 +303,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     app.route(`${API_BASE}/users`, userTokenRoutes({ db, sqlite: options.sqlite }));
     // `/:id/profile` and `/:id/ratings` (LAI-743) — distinct paths, like `/:id/tokens`.
     app.route(`${API_BASE}/users`, profileRoutes({ db }));
+    // The profile's heatmap (D-079, LAI-751), by day.
+    app.route(`${API_BASE}/people`, peopleRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
     app.route(`${API_BASE}/org`, orgRoutes({ db, serverSecret: options.serverSecret ?? '' }));
 

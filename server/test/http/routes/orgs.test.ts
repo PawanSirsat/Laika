@@ -262,6 +262,34 @@ describe('PATCH /api/v1/org (LAI-207)', () => {
     expect((await patch({})).status).toBe(400);
   });
 
+  it('403s an owner’s token turning Developer insights on: a web session only (LAI-751 review)', async () => {
+    const minted = await h.app.request('/api/v1/tokens', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({ name: 'An agent', scope: 'full' }),
+    });
+    expect(minted.status, await minted.clone().text()).toBe(201);
+    const { secret } = (await minted.json()) as { secret: string };
+
+    const res = await h.app.request('/api/v1/org', {
+      method: 'PATCH',
+      headers: jsonHeaders({ Authorization: `Bearer ${secret}` }),
+      body: JSON.stringify({ developer_insights: true }),
+    });
+    expect(res.status).toBe(403);
+    expect(
+      ((await res.json()) as { error: { code: string; details: unknown } }).error,
+    ).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'org.developer_insights.set', reason: 'session_required' },
+    });
+    expect(h.db.select({ on: orgs.developerInsights }).from(orgs).get()?.on).toBe(0);
+
+    // The owner, signed in, may.
+    expect((await patch({ developer_insights: true })).status).toBe(200);
+    expect(h.db.select({ on: orgs.developerInsights }).from(orgs).get()?.on).toBe(1);
+  });
+
   it('401s when signed out', async () => {
     const res = await h.app.request('/api/v1/org', {
       method: 'PATCH',

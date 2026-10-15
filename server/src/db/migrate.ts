@@ -180,7 +180,7 @@ export function ensureActivityTriggers(db: Db): void {
     )
     .map((trigger) =>
       bodies.has(trigger.name)
-        ? `${trigger.name} (present but does not abort as its definition says — the stored trigger is not the one this step creates)`
+        ? `${trigger.name} (present, but its stored definition differs from the one this step creates — it may not abort as §4.8 needs)`
         : trigger.name,
     );
 
@@ -192,10 +192,15 @@ export function ensureActivityTriggers(db: Db): void {
 }
 
 /**
- * A trigger's definition with only meaning-free differences removed: quoting,
- * whitespace, case, `IF NOT EXISTS`, a trailing `;`. Two triggers that
- * normalise equal do the same thing; any other difference — table, timing,
- * `WHEN`, body — is a different trigger.
+ * A trigger's definition with quoting, whitespace, case, `IF NOT EXISTS` and a
+ * trailing `;` removed, for comparing with the one this step creates.
+ *
+ * **A comparison, not a proof of equivalence.** It strips every quote and
+ * every space — inside string literals too — so two definitions that differ
+ * only there normalise equal: a message with an escaped quote, or with its
+ * spacing changed, passes as the same trigger. What it does catch is any other
+ * difference — table, timing, `WHEN`, body — and a stored trigger it calls
+ * different is refused, never trusted (LAI-749, reworded by LAI-751).
  */
 function normaliseTrigger(text: string): string {
   return text

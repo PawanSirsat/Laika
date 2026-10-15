@@ -6,8 +6,9 @@ import { Button } from '../../../components/forms/Button.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
 import { canManageOrg, createInvite, revokeInvite, ORG_ROLES } from '../../../api/invites.ts';
 import { orgRoleLabel } from '../invite-roles.ts';
-import { getOrg, type Org } from '../../../api/org.ts';
+import { getOrg, updateOrg, type Org } from '../../../api/org.ts';
 import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
+import { Switch } from '../../../components/Switch.tsx';
 import { TokenRow } from '../../../components/TokenRow.tsx';
 import { PersonLink } from '../../../components/PersonLink.tsx';
 import { useUserTokens } from './use-user-tokens.ts';
@@ -98,6 +99,23 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
   const [issued, setIssued] = useState<{ url: string; email: string | null } | undefined>(
     undefined,
   );
+
+  /** D-079's organisation switch, while its change is in flight, and why it failed. */
+  const [insightsBusy, setInsightsBusy] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | undefined>(undefined);
+
+  const setInsights = (on: boolean): void => {
+    setInsightsBusy(true);
+    setInsightsError(undefined);
+    updateOrg({ developer_insights: on })
+      .then(setOrg)
+      .catch((cause: unknown) => {
+        setInsightsError(cause instanceof Error ? cause.message : 'That change was refused.');
+      })
+      .finally(() => {
+        setInsightsBusy(false);
+      });
+  };
 
   /** Whose token panel is open, or `undefined` for none. One at a time. */
   const [tokensFor, setTokensFor] = useState<string | undefined>(undefined);
@@ -216,6 +234,41 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
                     ? 'Sessions appear on Capacity and the board.'
                     : 'Nobody’s sessions are recorded. Capacity says so rather than showing an empty list.'}
                 </span>
+              </dd>
+            </div>
+
+            {/* D-079 (LAI-751): the organisation's half of local activity
+                sharing. A switch for an owner or admin, a word for everyone
+                else — they are who it is about, so they can always read it. */}
+            <div className="org-fact" data-fact="developer-insights">
+              <dt id="org-insights-label">Developer insights</dt>
+              <dd>
+                {canManage ? (
+                  <Switch
+                    checked={org.developer_insights}
+                    labelledBy="org-insights-label"
+                    describedBy="org-insights-note"
+                    disabled={insightsBusy}
+                    onChange={setInsights}
+                  >
+                    {org.developer_insights ? 'On' : 'Off'}
+                  </Switch>
+                ) : (
+                  <span>{org.developer_insights ? 'on' : 'off'}</span>
+                )}
+                <span className="org-fact-note" id="org-insights-note">
+                  When on, each developer can choose — for themselves, on Connect — to share daily
+                  counts from their own machine: prompts to agents, agent sessions, and commits
+                  pushed or not yet pushed. They appear on that person’s profile as activity.
+                  Nothing is collected from anyone who has not turned it on, and never prompt text,
+                  file or repository names, branches or commit messages. Off stops it for everyone
+                  at once.
+                </span>
+                {insightsError !== undefined && (
+                  <span className="org-fact-error" role="alert">
+                    {insightsError}
+                  </span>
+                )}
               </dd>
             </div>
 

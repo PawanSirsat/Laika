@@ -15,7 +15,7 @@ import { type Db } from './client.ts';
 import { type ActivityType, type ActorKind } from './enums.ts';
 import { newId } from './ids.ts';
 import * as schema from './schema.ts';
-import { activity, tokens, type Activity } from './schema.ts';
+import { activity, boardActivityDays, tokens, type Activity } from './schema.ts';
 
 /**
  * The only way into `activity` (SPEC §4.8).
@@ -44,11 +44,18 @@ export interface AppendActivity {
 }
 
 /**
- * Append exactly one row.
+ * Append exactly one row — and count it on the person's day (§4.22, LAI-751).
  *
  * Callers pass their own `db`, which may be a transaction handle — every mutation
  * is supposed to write its activity row in the same transaction as the change it
  * describes, so a rolled-back write cannot leave an event claiming it happened.
+ *
+ * **The board rollup is written here and nowhere else.** `board_activity_days`
+ * is the heatmap's per-day count of this table, and the only way to keep a
+ * copy honest is for the one write path to keep it. Both statements run in one
+ * transaction of their own — a savepoint when the caller already holds one —
+ * so a row is never logged without being counted, or counted without being
+ * logged, whoever calls this and however.
  */
 export function appendActivity(db: Db, entry: AppendActivity): Activity {
   const row = {
@@ -64,9 +71,46 @@ export function appendActivity(db: Db, entry: AppendActivity): Activity {
     createdAt: entry.now ?? Date.now(),
   };
 
-  db.insert(activity).values(row).run();
+  db.transaction((tx) => {
+    tx.insert(activity).values(row).run();
+    countOnBoardDay(tx as unknown as Db, row);
+  });
 
   return row;
+}
+
+/**
+ * `YYYY-MM-DD` in UTC — the board's day (§4.22). Laika has no organisation
+ * time zone; 0031's backfill uses SQLite's `date(created_at / 1000,
+ * 'unixepoch')`, which is the same day for every millisecond.
+ */
+export function boardDayOf(createdAt: number): string {
+  return new Date(createdAt).toISOString().slice(0, 10);
+}
+
+/**
+ * One more action on the actor's day: `by_self` for a web session, `by_agents`
+ * for a token. A system row has no person, and is not anybody's activity.
+ */
+function countOnBoardDay(db: Db, row: Activity): void {
+  if (row.actorId === null || row.actorKind === 'system') return;
+
+  const self = row.actorKind === 'user' ? 1 : 0;
+  db.insert(boardActivityDays)
+    .values({
+      userId: row.actorId,
+      day: boardDayOf(row.createdAt),
+      bySelf: self,
+      byAgents: 1 - self,
+    })
+    .onConflictDoUpdate({
+      target: [boardActivityDays.userId, boardActivityDays.day],
+      set: {
+        bySelf: sql`${boardActivityDays.bySelf} + ${self}`,
+        byAgents: sql`${boardActivityDays.byAgents} + ${1 - self}`,
+      },
+    })
+    .run();
 }
 
 /** A Drizzle column's SQL name, which for these tables *is* the API's name. */

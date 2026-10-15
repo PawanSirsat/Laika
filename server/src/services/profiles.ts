@@ -37,6 +37,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { sharingOn } from './local-activity.ts';
 import { percentile } from './metrics.ts';
 import { agentPresenceFor, clientOf, type AgentPresence } from './presence.ts';
 
@@ -145,6 +146,12 @@ export interface ProfileTask {
   status: TaskStatus;
   status_name: string;
   started_at: number | null;
+  /**
+   * When a task in Review last entered it, by the queue's rule (LAI-751) — so
+   * the profile can say how long it has waited and list the longest first.
+   * Null for work in progress, and when the log cannot say.
+   */
+  review_since: number | null;
 }
 
 export interface WeekCount {
@@ -179,7 +186,8 @@ export interface ReviewDecision {
   project_slug: string;
   decision: 'accepted' | 'sent_back';
   at: number;
-  assignee: { id: string; name: string };
+  /** Null for a task nobody was assigned (LAI-751): deciding one is a decision too. */
+  assignee: { id: string; name: string } | null;
 }
 
 /** One week of their review decisions on other people's work (LAI-750). */
@@ -231,7 +239,7 @@ export interface QueueProject {
 export interface ProfileQueue {
   /** Projects they lead — membership role `lead` — that are not archived. */
   projects_led: number;
-  /** Tasks in a Review-category status there, assigned to anyone but them. */
+  /** Tasks in a Review-category status there that are not theirs — anyone else's or nobody's. */
   waiting: number;
   /**
    * When the longest-waiting of those entered Review, from the activity log;
@@ -301,6 +309,12 @@ export interface ProfileCurrentWork {
   in_review_total: number;
 }
 
+/** The organisation's Developer insights, and this person's own sharing. */
+export interface ProfileActivitySharing {
+  org_enabled: boolean;
+  enabled: boolean;
+}
+
 export interface ProfileView {
   user: ProfileUser;
   window: ProfileWindow;
@@ -310,6 +324,13 @@ export interface ProfileView {
   ratings: RatingView[];
   /** Every rating they have, however many `ratings` carries. */
   ratings_total: number;
+  /**
+   * D-079's two switches for this person, so the page can draw the Activity
+   * card in its final shape before `GET /people/:id/activity` answers
+   * (LAI-751) — whether their pushed and local work can be shown, never a
+   * count of it.
+   */
+  activity_sharing: ProfileActivitySharing;
   /** Builders only — absent for a manager. */
   current_work?: ProfileCurrentWork;
   /** Builders only — absent for a manager. */
@@ -380,13 +401,14 @@ export function getProfile(
     },
     ratings: ratingsFor(db, userId),
     ratings_total: ratingCount(db, userId),
+    activity_sharing: activitySharing(db, userId),
   };
 
   if (person.profileKind === 'manager') return { ...profile, queue: queueFor(db, userId) };
 
   return {
     ...profile,
-    current_work: currentWork(theirTasks),
+    current_work: currentWork(db, theirTasks),
     delivery: {
       accepted_per_week: perWeek(accepted, since),
       accepted: accepted.length,
@@ -404,14 +426,37 @@ export function getProfile(
   };
 }
 
-/** Their open work, each list capped beside its total (LAI-746). */
-function currentWork(theirTasks: readonly TheirTask[]): ProfileCurrentWork {
+function activitySharing(db: Db, userId: string): ProfileActivitySharing {
+  const sharing = sharingOn(db, userId);
+  return { org_enabled: sharing.org, enabled: sharing.user };
+}
+
+/**
+ * Their open work, each list capped beside its total (LAI-746): in progress
+ * oldest start first, in Review longest waiting first — by when each last
+ * entered Review, the queue's rule (LAI-751) — those the log cannot place last.
+ */
+function currentWork(db: Db, theirTasks: readonly TheirTask[]): ProfileCurrentWork {
   const inProgress = theirTasks.filter((x) => x.status === 'in_progress');
-  const inReview = theirTasks.filter((x) => x.status === 'review');
+  const reviewing = theirTasks.filter((x) => x.status === 'review');
+  const history = movesOn(
+    db,
+    reviewing.map((x) => x.id),
+  );
+  const inReview = reviewing
+    .map((task) => ({ task, since: reviewEntry(history.get(task.id) ?? [], task.createdAt) }))
+    .sort(
+      (a, b) =>
+        (a.since ?? Number.MAX_SAFE_INTEGER) - (b.since ?? Number.MAX_SAFE_INTEGER) ||
+        a.task.prefix.localeCompare(b.task.prefix) ||
+        a.task.number - b.task.number,
+    );
   return {
-    in_progress: inProgress.slice(0, PROFILE_LIST_LIMIT).map(toProfileTask),
+    in_progress: inProgress.slice(0, PROFILE_LIST_LIMIT).map((task) => toProfileTask(task)),
     in_progress_total: inProgress.length,
-    in_review: inReview.slice(0, PROFILE_LIST_LIMIT).map(toProfileTask),
+    in_review: inReview
+      .slice(0, PROFILE_LIST_LIMIT)
+      .map(({ task, since }) => toProfileTask(task, since)),
     in_review_total: inReview.length,
   };
 }
@@ -609,6 +654,7 @@ interface TheirTask {
   statusName: string;
   startedAt: number | null;
   completedAt: number | null;
+  createdAt: number;
   projectId: string;
   projectSlug: string;
   prefix: string;
@@ -625,6 +671,7 @@ function loadTheirTasks(db: Db, userId: string): TheirTask[] {
       statusName: projectStatuses.name,
       startedAt: tasks.startedAt,
       completedAt: tasks.completedAt,
+      createdAt: tasks.createdAt,
       projectId: tasks.projectId,
       projectSlug: projects.slug,
       prefix: projects.prefix,
@@ -642,7 +689,7 @@ function loadTheirTasks(db: Db, userId: string): TheirTask[] {
     );
 }
 
-function toProfileTask(task: TheirTask): ProfileTask {
+function toProfileTask(task: TheirTask, reviewSince: number | null = null): ProfileTask {
   return {
     id: task.id,
     key: `${task.prefix}-${String(task.number)}`,
@@ -651,6 +698,7 @@ function toProfileTask(task: TheirTask): ProfileTask {
     status: task.status,
     status_name: task.statusName,
     started_at: task.startedAt,
+    review_since: reviewSince,
   };
 }
 
@@ -687,14 +735,19 @@ interface Decision {
   projectId: string;
   /** The `activity` row the decision is, for {@link timeToDecide}. */
   activityId: string;
+  /** When the task was created — its entry into Review if it was created there. */
+  taskCreatedAt: number;
   /** The category it was decided from — only a decision out of Review is timed. */
   from: TaskStatus;
   view: ReviewDecision;
 }
 
 /**
- * Their review decisions on somebody else's work in the window, newest first:
- * acceptances and send-backs they made on tasks assigned to another person.
+ * Their review decisions on work that is not theirs in the window, newest
+ * first: acceptances and send-backs they made on tasks assigned to another
+ * person **or to nobody** (LAI-751). An unassigned task in Review waits in
+ * their queue ({@link queueFor}), so deciding it is a decision — the two
+ * agree, and the (i) says so.
  */
 function loadDecisionsOnOthers(db: Db, userId: string, since: number, now: number): Decision[] {
   const rows = db
@@ -704,6 +757,7 @@ function loadDecisionsOnOthers(db: Db, userId: string, since: number, now: numbe
       number: tasks.number,
       title: tasks.title,
       assigneeId: tasks.assigneeId,
+      taskCreatedAt: tasks.createdAt,
       projectId: tasks.projectId,
       projectSlug: projects.slug,
       prefix: projects.prefix,
@@ -715,8 +769,7 @@ function loadDecisionsOnOthers(db: Db, userId: string, since: number, now: numbe
       and(
         eq(activity.type, 'task.status_changed'),
         eq(activity.actorId, userId),
-        isNotNull(tasks.assigneeId),
-        ne(tasks.assigneeId, userId),
+        or(isNull(tasks.assigneeId), ne(tasks.assigneeId, userId)),
         gte(activity.createdAt, since),
         lte(activity.createdAt, now),
       ),
@@ -738,7 +791,7 @@ function loadDecisionsOnOthers(db: Db, userId: string, since: number, now: numbe
 
   return rows.flatMap((r) => {
     const move = moveOf(r.row);
-    if (move === null || r.assigneeId === null) return [];
+    if (move === null) return [];
 
     const decision = isAcceptance(move) ? 'accepted' : isSendBack(move) ? 'sent_back' : null;
     if (decision === null) return [];
@@ -748,6 +801,7 @@ function loadDecisionsOnOthers(db: Db, userId: string, since: number, now: numbe
         decision,
         projectId: r.projectId,
         activityId: r.row.id,
+        taskCreatedAt: r.taskCreatedAt,
         from: move.from,
         view: {
           task_id: r.taskId,
@@ -756,7 +810,10 @@ function loadDecisionsOnOthers(db: Db, userId: string, since: number, now: numbe
           project_slug: r.projectSlug,
           decision,
           at: r.row.createdAt,
-          assignee: { id: r.assigneeId, name: nameOf.get(r.assigneeId) ?? '' },
+          assignee:
+            r.assigneeId === null
+              ? null
+              : { id: r.assigneeId, name: nameOf.get(r.assigneeId) ?? '' },
         },
       },
     ];
@@ -853,6 +910,23 @@ function entersReview(move: Move): boolean {
 }
 
 /**
+ * When a task last entered Review, from its status changes **before** the
+ * moment asked about, oldest first (LAI-750, LAI-751): the latest move into
+ * Review from another category — or, when every logged move before then
+ * stays inside Review (none at all included), its creation, because a task
+ * with no move out of somewhere else was created in Review. `null` only when
+ * the log cannot say: it shows the task elsewhere and never coming back.
+ */
+function reviewEntry(
+  before: readonly { at: number; move: Move }[],
+  createdAt: number,
+): number | null {
+  const entry = before.filter((m) => entersReview(m.move)).at(-1);
+  if (entry !== undefined) return entry.at;
+  return before.every((m) => m.move.from === 'review') ? createdAt : null;
+}
+
+/**
  * Each task's status changes, oldest first, for the tasks named — the history
  * {@link timeToDecide} and {@link queueFor} read entries into Review from.
  */
@@ -882,9 +956,10 @@ function movesOn(
 
 /**
  * The median time from a task's latest entry into Review to their decision on
- * it (LAI-750). Only a decision made **out of** Review has a wait to measure;
- * the rest — an acceptance straight from To do, or a task that reached Review
- * without a logged move — are counted as unmeasured, never as zero.
+ * it (LAI-750), the entry read by {@link reviewEntry} — so a task created
+ * straight into Review is timed from its creation (LAI-751). Only a decision
+ * made **out of** Review has a wait to measure; one made from anywhere else is
+ * counted as unmeasured, never as zero.
  */
 function timeToDecide(db: Db, decisions: readonly Decision[]): ProfileDecideTime {
   const history = movesOn(db, [...new Set(decisions.map((d) => d.view.task_id))]);
@@ -894,11 +969,8 @@ function timeToDecide(db: Db, decisions: readonly Decision[]): ProfileDecideTime
     if (d.from !== 'review') continue;
     const moves = history.get(d.view.task_id) ?? [];
     const at = moves.findIndex((m) => m.id === d.activityId);
-    const entry = moves
-      .slice(0, Math.max(at, 0))
-      .reverse()
-      .find((m) => entersReview(m.move));
-    if (entry !== undefined) waits.push(d.view.at - entry.at);
+    const entry = reviewEntry(moves.slice(0, Math.max(at, 0)), d.taskCreatedAt);
+    if (entry !== null) waits.push(d.view.at - entry);
   }
   waits.sort((a, b) => a - b);
 
@@ -912,8 +984,10 @@ function timeToDecide(db: Db, decisions: readonly Decision[]): ProfileDecideTime
 /**
  * A manager's queue now (LAI-750): the projects they lead, and the work in
  * Review there that waits for somebody's decision — anyone's task but their
- * own, unassigned included. How long the oldest has waited is read from its
- * latest entry into Review, as {@link timeToDecide} reads it.
+ * own, unassigned included, as their decisions count (LAI-751). How long the
+ * oldest has waited is read from its latest entry into Review by
+ * {@link reviewEntry}, as {@link timeToDecide} reads it — a task created
+ * straight into Review included, from its creation (LAI-751).
  *
  * Membership role `lead`, not the org role: an owner or admin leads every
  * project implicitly (§3), and counting that would make every admin's queue
@@ -938,7 +1012,7 @@ function queueFor(db: Db, userId: string): ProfileQueue {
   }
 
   const waiting = db
-    .select({ id: tasks.id, projectId: tasks.projectId })
+    .select({ id: tasks.id, projectId: tasks.projectId, createdAt: tasks.createdAt })
     .from(tasks)
     .where(
       and(
@@ -957,8 +1031,8 @@ function queueFor(db: Db, userId: string): ProfileQueue {
     waiting.map((x) => x.id),
   );
   const entered = waiting.flatMap((x) => {
-    const entry = (history.get(x.id) ?? []).filter((m) => entersReview(m.move)).at(-1);
-    return entry === undefined ? [] : [entry.at];
+    const entry = reviewEntry(history.get(x.id) ?? [], x.createdAt);
+    return entry === null ? [] : [entry];
   });
 
   return {

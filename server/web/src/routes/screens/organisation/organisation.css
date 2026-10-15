@@ -244,6 +244,11 @@
   color: var(--text-muted);
 }
 
+.org-fact-error {
+  font-size: var(--text-xs);
+  color: var(--overdue);
+}
+
 /* The provider and the key tail are one sentence — `anthropic ···9f2a`.
    **The wrapper is what puts them on one line, not this rule.** The `dd` is
    `flex-direction: column`, so the tail span was a flex *item* and got its own

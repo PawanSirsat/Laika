@@ -101,6 +101,40 @@ describe('rate limiting (SPEC §6.3)', () => {
     expect(LIMITS.heartbeat.perMinute).toBe(30);
   });
 
+  it('holds local-activity reports to what §6.3 says: 30 at once, then one every 120 s', () => {
+    // SPEC's words, measured (LAI-751 review): a burst of 30, then one every
+    // two minutes — up to 60 in a first hour, 30 an hour after that.
+    let now = 0;
+    const limiter = new RateLimiter(() => now);
+    const take = () => limiter.take('collector', LIMITS.localActivity).allowed;
+    const everySecondFor = (ms: number): number => {
+      let allowed = 0;
+      for (const end = now + ms; now < end; now += 1_000) if (take()) allowed += 1;
+      return allowed;
+    };
+
+    expect(Array.from({ length: 30 }, take).every(Boolean)).toBe(true);
+    expect(take()).toBe(false);
+    // One back every 120 s: not at 119, yes by 121 — and then not again at once.
+    now += 119_000;
+    expect(take()).toBe(false);
+    now += 2_000;
+    expect(take()).toBe(true);
+    expect(take()).toBe(false);
+
+    // A bucket left alone for a day refills to 30, never more. An hour of
+    // asking every second then gets those 30 and the hour's refill — the last
+    // of which lands on the hour itself — and the hour after, the refill alone.
+    now += 24 * 60 * 60_000;
+    const firstHour = everySecondFor(60 * 60_000);
+    expect(firstHour).toBeGreaterThanOrEqual(59);
+    expect(firstHour).toBeLessThanOrEqual(60);
+    const nextHour = everySecondFor(60 * 60_000);
+    expect(nextHour).toBeGreaterThanOrEqual(29);
+    expect(nextHour).toBeLessThanOrEqual(31);
+    expect(firstHour + nextHour).toBeLessThanOrEqual(90);
+  });
+
   it('allows a burst up to capacity, then denies', () => {
     const now = 0;
     const limiter = new RateLimiter(() => now);

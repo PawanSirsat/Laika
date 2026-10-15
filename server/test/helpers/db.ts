@@ -54,11 +54,12 @@ export function seed(db: Db, now = Date.now()): Seed {
   const orgId = newId();
   const projectId = newId();
 
-  // **Unless `users` is older than 0029.** Drizzle names every declared column
-  // in an INSERT, `profile_kind` included, and `migrate.test.ts` seeds
-  // databases cut back before it — so there, the row is written with the
-  // columns that existed, and 0029 gives it its default (LAI-743).
-  if (hasColumn(db, 'users', 'profile_kind')) {
+  // **Unless `users` is older than its newest column.** Drizzle names every
+  // declared column in an INSERT — `profile_kind` (0029, LAI-743),
+  // `local_activity_scope` (0031, LAI-751) — and `migrate.test.ts` seeds
+  // databases cut back before them; there, the row is written with the
+  // columns every version has, and the migrations give it their defaults.
+  if (hasColumn(db, 'users', 'local_activity_scope')) {
     db.insert(users)
       .values({
         id: userId,
@@ -79,9 +80,17 @@ export function seed(db: Db, now = Date.now()): Seed {
     `);
   }
 
-  db.insert(orgs)
-    .values({ id: orgId, name: 'Laika', ownerUserId: userId, createdAt: now, updatedAt: now })
-    .run();
+  // The same for `orgs` and 0031's `developer_insights` (LAI-751).
+  if (hasColumn(db, 'orgs', 'developer_insights')) {
+    db.insert(orgs)
+      .values({ id: orgId, name: 'Laika', ownerUserId: userId, createdAt: now, updatedAt: now })
+      .run();
+  } else {
+    db.run(sql`
+      INSERT INTO orgs (id, name, owner_user_id, created_at, updated_at)
+      VALUES (${orgId}, 'Laika', ${userId}, ${now}, ${now})
+    `);
+  }
 
   db.insert(projects)
     .values({

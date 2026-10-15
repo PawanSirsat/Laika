@@ -19,6 +19,7 @@ import { parseBody, strictObject, z } from '../validation.ts';
  */
 const OrgPatchBody = strictObject({
   presence_enabled: z.boolean().optional(),
+  developer_insights: z.boolean().optional(),
   ai_provider: z.enum(AI_PROVIDERS).nullable().optional(),
   // Length only. Whether it is a usable URL, and whether this provider needs
   // one at all, are the service's rules — §12 says `openai_compatible` needs a

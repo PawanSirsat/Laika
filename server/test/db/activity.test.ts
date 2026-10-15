@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as activityModule from '../../src/db/activity.ts';
 import {
   appendActivity,
+  boardDayOf,
   listActivity,
   readActivityAfter,
   readPayload,
 } from '../../src/db/activity.ts';
 import { MIGRATIONS_FOLDER } from '../../src/db/migrate.ts';
-import { activity, projects, tasks, users } from '../../src/db/schema.ts';
+import { activity, boardActivityDays, projects, tasks, users } from '../../src/db/schema.ts';
 import { newId } from '../../src/db/ids.ts';
 import {
   expectSqliteError,
@@ -200,6 +201,10 @@ describe('activity is append-only (SPEC §4.8)', () => {
       'apiFieldNames',
       'apiPayload',
       'appendActivity',
+      // Not a reader or a writer: the UTC day `appendActivity` counts a row on
+      // in `board_activity_days` (§4.22, LAI-751), exported so the rollup's
+      // test and 0031's backfill are held to the same day.
+      'boardDayOf',
       'countActivityAfter',
       // A reader: which named client created a task, joined from the
       // `task.created` row's token rather than copied onto `tasks` (LAI-093).
@@ -694,5 +699,99 @@ describe('old rows survive the vocabulary growing (LAI-113)', () => {
 
     expect(found?.createdAt).toBe(1_000);
     expect(found?.actorId).toBe(s.userId);
+  });
+});
+
+describe('the board rollup is kept by the one write path (§4.22, LAI-751)', () => {
+  /** The rollup as the log says it should be — the same day rule 0031 used. */
+  function fromTheLog() {
+    return t.db.all<{ user_id: string; day: string; by_self: number; by_agents: number }>(
+      sql`SELECT actor_id AS user_id, date(created_at / 1000, 'unixepoch') AS day,
+                   sum(actor_kind = 'user') AS by_self, sum(actor_kind = 'agent') AS by_agents
+            FROM activity WHERE actor_id IS NOT NULL
+            GROUP BY actor_id, date(created_at / 1000, 'unixepoch') ORDER BY user_id, day`,
+    );
+  }
+
+  function rollup() {
+    return t.db
+      .select({
+        user_id: boardActivityDays.userId,
+        day: boardActivityDays.day,
+        by_self: boardActivityDays.bySelf,
+        by_agents: boardActivityDays.byAgents,
+      })
+      .from(boardActivityDays)
+      .orderBy(boardActivityDays.userId, boardActivityDays.day)
+      .all();
+  }
+
+  it('equals a count of the log after every kind of write, across a UTC midnight', () => {
+    const base = Date.UTC(2026, 9, 13, 23, 59, 59);
+    const kinds = ['user', 'agent', 'system', 'user', 'agent', 'agent'] as const;
+    kinds.forEach((kind, i) => {
+      appendActivity(t.db, {
+        orgId: s.orgId,
+        actorId: kind === 'system' ? null : s.userId,
+        actorKind: kind,
+        type: 'task.updated',
+        now: base + i * 400,
+      });
+    });
+
+    expect(rollup()).toEqual(fromTheLog());
+    // Not vacuous: two days, both columns used, the system row absent.
+    expect(rollup()).toEqual([
+      { user_id: s.userId, day: '2026-10-13', by_self: 1, by_agents: 1 },
+      { user_id: s.userId, day: '2026-10-14', by_self: 1, by_agents: 2 },
+    ]);
+  });
+
+  it('agrees with SQLite about the day of every millisecond it could disagree on', () => {
+    for (const at of [
+      0,
+      999,
+      Date.UTC(2026, 9, 14) - 1,
+      Date.UTC(2026, 9, 14),
+      1_799_999_999_999,
+    ]) {
+      const row = t.db.get<{ d: string }>(sql`SELECT date(${at} / 1000, 'unixepoch') AS d`);
+      expect(boardDayOf(at), String(at)).toBe(row?.d);
+    }
+  });
+
+  it('rolls back with the caller’s transaction: no count without its row', () => {
+    expect(() =>
+      t.db.transaction((tx) => {
+        appendActivity(tx as unknown as typeof t.db, {
+          orgId: s.orgId,
+          actorId: s.userId,
+          actorKind: 'user',
+          type: 'task.updated',
+        });
+        throw new Error('the change this row described failed');
+      }),
+    ).toThrow('the change this row described failed');
+
+    expect(t.db.select().from(activity).all()).toEqual([]);
+    expect(rollup()).toEqual([]);
+  });
+
+  it('never writes the row without the count: a failed count takes the row with it', () => {
+    // A rollup that refuses the write — the trigger stands in for any failure
+    // of the second statement — must leave no activity row behind.
+    t.db.run(sql`
+      CREATE TRIGGER board_days_refuse BEFORE INSERT ON board_activity_days
+      BEGIN SELECT RAISE(ABORT, 'rollup refused'); END
+    `);
+    expectSqliteError(() => {
+      appendActivity(t.db, {
+        orgId: s.orgId,
+        actorId: s.userId,
+        actorKind: 'agent',
+        type: 'task.updated',
+      });
+    }, /rollup refused/);
+    expect(t.db.select().from(activity).all()).toEqual([]);
   });
 });
