@@ -4343,10 +4343,18 @@ remote, and local work (prompts, agent sessions, commits not yet pushed).
 - **Board days are UTC.** Laika has no organisation time zone. Local days are
   the reporting machine's own dates; the heatmap aligns them by date and ends
   on today in the person's latest reporting zone.
-- **Endpoints and rows** (SPEC §6.4, §3.1): five new §3.1 rows, each its own
+- **Endpoints and rows** (SPEC §6.4, §3.1): new §3.1 rows, each its own
   action, and one §3.4 action for retention. Turning sharing on, reading back
   what is held and deleting it are web-session only; a token is told
   `session_required`.
+- **Both switches are a web session's** (LAI-751 review, 2026-10-16). The
+  organisation's `developer_insights` was first set under *Org settings*,
+  which an owner's token holds — so an agent could turn on the collection of
+  its own person's work, the one thing the developer's switch exists to
+  prevent. It is its own row now, `org.developer_insights.set`, session only;
+  a token's `PATCH /org` carrying it is refused `session_required` and writes
+  nothing. The profile answers both switches (`activity_sharing`), so the
+  Activity card is drawn in its final shape before its own read returns.
 - **The contract's error codes are reasons, not codes.** §6.3's vocabulary is
   closed (D-021), so `session_required`, `local_activity_off` and
   `day_out_of_range` travel as `details.reason` under `forbidden` and

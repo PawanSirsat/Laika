@@ -50,9 +50,16 @@ const REPORT_DAYS_AHEAD = 1;
 export const PROMPTS_PER_AGENT_MAX = 5000;
 export const SESSIONS_MAX = 500;
 export const COMMITS_LOCAL_MAX = 2000;
-export const PUSHED_KEYS_MAX = 2000;
 
-/** The ingest's body limit (§6.4) — under the general 1 MiB. */
+/**
+ * The ingest's body limit (§6.4) — under the general 1 MiB.
+ *
+ * **It is also the only bound on `pushed_keys`.** A key is 16 hex characters,
+ * 19 bytes in the list with its quotes and comma, so a 16 KiB report holds
+ * fewer than 900 of them however its days share them out. The per-day cap of
+ * 2000 this had beside it could never be reached, and was removed rather
+ * than kept as a limit that reads as real (LAI-751 review).
+ */
 export const LOCAL_ACTIVITY_BODY_MAX = 16 * 1024;
 
 /** The preview's window: the days a report can still change. */
@@ -196,14 +203,18 @@ export function setActivitySharing(
  * `ALIASES`), read the same way here. The collector (LAI-752) sends the slugs
  * themselves — `gemini-cli`, and `other` for Copilot CLI — so these only
  * catch a sender that used the short names people type.
+ *
+ * **A `Map`, not an object literal**: an id is the sender's text, and on a
+ * plain object `constructor` finds `Object`'s own function — which was stored
+ * as an agent's name (LAI-751 review). A `Map` holds only what is put in it.
  */
-const AGENT_ALIASES: Readonly<Record<string, AgentClient>> = {
-  claude: 'claude-code',
-  gemini: 'gemini-cli',
-  copilot: 'vscode',
-  code: 'vscode',
-  agy: 'antigravity',
-};
+const AGENT_ALIASES: ReadonlyMap<string, AgentClient> = new Map([
+  ['claude', 'claude-code'],
+  ['gemini', 'gemini-cli'],
+  ['copilot', 'vscode'],
+  ['code', 'vscode'],
+  ['agy', 'antigravity'],
+]);
 
 const KNOWN_AGENTS: ReadonlySet<string> = new Set(AGENT_CLIENTS);
 
@@ -211,7 +222,7 @@ const KNOWN_AGENTS: ReadonlySet<string> = new Set(AGENT_CLIENTS);
 export function agentKindOf(id: string): AgentClient {
   const lower = id.toLowerCase();
   if (KNOWN_AGENTS.has(lower)) return lower as AgentClient;
-  return AGENT_ALIASES[lower] ?? 'other';
+  return AGENT_ALIASES.get(lower) ?? 'other';
 }
 
 function refuse(reason: string, message: string, extra: Record<string, unknown> = {}): never {

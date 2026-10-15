@@ -12,7 +12,6 @@ import {
   LOCAL_ACTIVITY_SCOPES,
   OWN_PREVIEW_DAYS_MAX,
   PROMPTS_PER_AGENT_MAX,
-  PUSHED_KEYS_MAX,
   recordLocalActivity,
   SESSIONS_MAX,
   setActivitySharing,
@@ -62,8 +61,8 @@ const ReportDayBody = strictObject({
   sessions: count(SESSIONS_MAX).default(0),
   commits_local: count(COMMITS_LOCAL_MAX).default(0),
   pushed_keys: z
+    // No count of its own: the body limit bounds it (`LOCAL_ACTIVITY_BODY_MAX`).
     .array(z.string().regex(/^[0-9a-f]{16}$/i, 'a pushed key is exactly 16 hex characters'))
-    .max(PUSHED_KEYS_MAX)
     .default([]),
 });
 

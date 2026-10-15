@@ -282,6 +282,9 @@ export function updateOrg(
   now: number = Date.now(),
 ): OrgView {
   assertCan(actor, 'org.settings.edit');
+  // Asked before anything is written, so a token's request that also carries
+  // another setting changes nothing at all (D-079, LAI-751 review).
+  if (input.developer_insights !== undefined) assertCan(actor, 'org.developer_insights.set');
 
   const orgId = requireOrgId(db);
 

@@ -156,7 +156,13 @@ describe('token scope narrows and never widens (SPEC §6.2, §3.3 rule 4)', () =
  * and an Owner holds them.
  */
 describe('profile actions refuse every token (LAI-743)', () => {
-  const PROFILE_ACTIONS = ['profile.read', 'profile.set_kind', 'profile.rate'] as const;
+  const PROFILE_ACTIONS = [
+    'profile.read',
+    'profile.set_kind',
+    'profile.rate',
+    // The organisation's switch for D-079 follows the same rule (LAI-751 review).
+    'org.developer_insights.set',
+  ] as const;
   const someoneElse = { targetUserId: 'u2' };
   const tokens: Record<string, TokenContext> = {
     'full and unscoped': { id: 'tok_full', scope: 'full', projectIds: null },

@@ -164,6 +164,7 @@ be obvious because someone will be asking for it.
 | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
 | Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
+| Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
 | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
 | Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
 | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
@@ -202,10 +203,11 @@ their own profile, ratings included, and set their own profile kind.
 (§4.1) changes what the profile shows and nothing anybody may do: `can()` never
 reads it, and no row of §3.1 or §3.2 depends on it.
 
-**The five activity rows are D-079's** (LAI-751): `profile.activity.read`,
-`activity_sharing.read_own`, `activity_sharing.set_own`,
-`local_activity.send_own`, and `local_activity.read_own` with
-`local_activity.delete_own`. They sit behind §6.4's `/people/:id/activity`,
+**The activity rows are D-079's** (LAI-751): `profile.activity.read`,
+`org.developer_insights.set`, `activity_sharing.read_own`,
+`activity_sharing.set_own`, `local_activity.send_own`, and
+`local_activity.read_own` with `local_activity.delete_own`. They sit behind
+§6.4's `/people/:id/activity`, `developer_insights` on `PATCH /org`,
 `/me/activity-sharing` and `/me/local-activity`.
 
 - **The heatmap follows the profile.** Its own row rather than `profile.read`
@@ -215,8 +217,15 @@ reads it, and no row of §3.1 or §3.2 depends on it.
 - **The rest are the developer's own record about their own work**, the
   heartbeat's argument, so every role holds them. What stops collection is
   not the matrix: it is the two switches — the organisation's
-  `developer_insights` (§4.2, set under *Org settings*) and the developer's
+  `developer_insights` (§4.2, its own row above) and the developer's
   `share_local_activity` (§4.1) — which the service reads on every report.
+- **Both switches are a web session's.** `developer_insights` on `PATCH
+  /org` is its own action, `org.developer_insights.set`, not *Org settings*
+  borrowed: a token may hold `org.settings.edit`, and an owner's token must
+  not be able to turn on the collection of anybody's work. A token's `PATCH
+  /org` carrying `developer_insights` is refused `403` with `details.reason:
+  "session_required"` and writes nothing, whatever else it carried (LAI-751
+  review).
 - **Consent, reading back and erasing are session only.** A token is how an
   agent acts, and an agent must not be able to turn sharing on for its
   person, read back what was collected, or wipe it. A token may read the
@@ -364,7 +373,7 @@ tables** (§11.3). Do not hand-write password or session columns.
 | `owner_user_id` | |
 | `invite_only` | integer, default **1** (D-004) |
 | `presence_enabled` | integer, default **1** — org-wide off switch for heartbeats. When 0, `POST /heartbeats` returns `202` and discards, and Presence/Capacity show a disabled state rather than an empty one. D-005 makes the product's privacy claim; this makes it enforceable by the org, not just promised by us. |
-| `developer_insights` | integer, default **0** — the organisation's half of D-079's two switches, set by owners and admins (*Org settings*, §3.1). Off: no developer's local activity is accepted, whatever they chose, and the heatmap shows board actions only. Readable by everyone, for `presence_enabled`'s reason. |
+| `developer_insights` | integer, default **0** — the organisation's half of D-079's two switches, set by owners and admins from a web session (*Turn Developer insights on or off*, §3.1). Off: no developer's local activity is accepted, whatever they chose, and the heatmap shows board actions only. Readable by everyone, for `presence_enabled`'s reason. |
 | `ai_provider` | `anthropic` \| `openai_compatible` \| `null` |
 | `ai_base_url` | **nullable** — for Ollama / vLLM; null means the provider's own default endpoint |
 | `ai_api_key_enc` | **nullable** — AES-256-GCM, key derived from `LAIKA_SECRET` (§12). **Null is how "no provider configured" is recorded**; there is no separate flag, so §10.2 and the Assistant both read this column to decide whether they can run at all |
@@ -1191,9 +1200,11 @@ those projects. A Viewer's token can never write, whatever its scope says.
   a private note — so that route stores the key on the rating and answers a
   retry from it after `can()`. Its keys are per rater and do not expire.
 - **Rate limits**: in-process token bucket — 120 req/min per token, 600/min per
-  session, 30/min for heartbeats, and 30/hour for local-activity reports
-  (`PUT /me/local-activity`, D-079), per token and per user for a session, on
-  their own budget. `429` with `Retry-After`, never below one second.
+  session, 30/min for heartbeats, and for local-activity reports (`PUT
+  /me/local-activity`, D-079) a bucket of **30, refilled one every 120
+  seconds**: a burst of 30, then one every two minutes — up to 60 in a first
+  hour, 30 an hour after — per token and per user for a session, on their own
+  budget. `429` with `Retry-After`, never below one second.
 
   **Writes share the general budget; there is no separate write limit** (D-021).
   Per-token 120/min already bounds the case a write budget was meant to catch —
@@ -1325,10 +1336,10 @@ carries it**: a sprint from `GET /sprints/:id` or returned from a write is the
 plain §4.15 shape.
 
 **A member's profile is one read** (D-078, LAI-743): `GET /users/:id/profile`
-answers `{ user, window, projects, review, ratings }`, and for a `builder`
-also `current_work`, `delivery` and `agents` — **absent, not empty**, for a
-`manager` — and for a `manager` also `queue`, absent for a `builder`
-(LAI-750). `PATCH` takes exactly `{ profile_kind }` and answers the whole
+answers `{ user, window, projects, review, ratings, activity_sharing }`, and
+for a `builder` also `current_work`, `delivery` and `agents` — **absent, not
+empty**, for a `manager` — and for a `manager` also `queue`, absent for a
+`builder` (LAI-750). `PATCH` takes exactly `{ profile_kind }` and answers the whole
 profile, because the kind decides which blocks it carries. `POST …/ratings`
 takes exactly `{ score, note }` — an integer 1–5 and a note of 1–500
 characters after trimming — and answers the rating, `201`. With an
@@ -1345,6 +1356,7 @@ on a Monday, 00:00 UTC:
 | `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
 | `review` | their moves of a task that is not theirs — someone else's, or nobody's (LAI-751) — into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them, `assignee` null for an unassigned task; `per_week` (both, per week of the window), `last_30_days` (decisions in the thirty days to now) and `time_to_decide` — the median from the task's latest entry into Review to the decision (LAI-750). **The entry** is the latest move into a Review status from another category — a move between two Review statuses is not one — or, when every logged move before it stays inside Review, the task's creation, because it was created there (LAI-751). A decision made from outside Review, or one whose entry the log cannot place, is counted as `unmeasured` |
 | `ratings` | §4.21, newest first; the first is the current one. At most 50, with `ratings_total` beside it (LAI-746) |
+| `activity_sharing` | D-079's two switches for this person, `{ org_enabled, enabled }` — the organisation's Developer insights and their own sharing — whatever their kind, so the Activity card is drawn in its final shape before `GET /people/:id/activity` answers (LAI-751). Whether their pushed and local work may be shown, never a count of it |
 | `current_work` | their tasks in progress, oldest start first, and in review, longest waiting first — each review task with `review_since`, its entry into Review by `review`'s rule, null when the log cannot say (LAI-751); each list at most 50, with `in_progress_total` and `in_review_total` |
 | `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
 | `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; which agents are online now (§9.3) — never where; and `writes`: their `activity` rows made through a token in the window, grouped by the agent that token last connected as, most first, with `writes_total` — revoked tokens' writes included (LAI-750) |
@@ -1404,9 +1416,12 @@ reaches SSE, an MCP tool or an export (§4.21).
   `day` may be omitted and count as none. Agent kind ids are 1–32 characters of
   lowercase `a–z`, `0–9` and `-` — the collector sends `claude-code`, `codex`,
   `gemini-cli`, `goose`, `kiro`, and `other` for Copilot CLI; one the board
-  does not know is counted as `other`. Caps per day: each agent's prompts ≤ 5000, `sessions` ≤ 500,
-  `commits_local` ≤ 2000, `pushed_keys` ≤ 2000, each key exactly 16 hex
-  characters. It answers `200 { "accepted_days": n }` — **never the data** —
+  does not know is counted as `other`. Caps per day: each agent's prompts
+  ≤ 5000, `sessions` ≤ 500, `commits_local` ≤ 2000; each pushed key exactly
+  16 hex characters, and **no count of keys but the body's**: a key costs 19
+  bytes in the list, so fewer than 900 fit in 16 KB however the days share
+  them (LAI-751 review — a per-day cap of 2000 could never be reached, and was
+  removed). It answers `200 { "accepted_days": n }` — **never the data** —
   and writes **no `activity` row**. Each (person, collector, day) is
   **replaced** by the report; pushed keys are added, a key already held keeping
   its earliest day, and never removed by a report.
@@ -1416,7 +1431,8 @@ reaches SSE, an MCP tool or an export (§4.21).
   a day, or holds a day that is not a date within *today − 14* to *today + 1*
   in `tz`; `422 invalid_tz` for a zone the server does not know; `422` for any
   unknown field, wrong type or cap; `413` over 16 KB; `429` with `Retry-After`
-  past 30 reports an hour per token (per user for a session). A collector that
+  once the report bucket is spent — 30, refilled one every 120 seconds, per
+  token (per user for a session; §6.3). A collector that
   is refused `local_activity_off` stops and asks again after 24 hours.
 - **Which commits count** (settled with the collector, LAI-752): both
   `commits_local` and `pushed_keys` cover only commits the developer authored

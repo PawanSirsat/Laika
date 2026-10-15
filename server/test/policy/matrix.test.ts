@@ -83,6 +83,10 @@ const ORG_MATRIX: OrgRow[] = [
   // | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
   // Its own row, the profile's rule (D-079, LAI-751).
   ['profile.activity.read', true, true, false, false],
+  // | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
+  // The organisation's half of D-079's consent; a token is refused it in
+  // `can.test.ts` (LAI-751 review).
+  ['org.developer_insights.set', true, true, false, false],
   // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
   ['activity_sharing.read_own', true, true, true, true],
   // | Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |

@@ -370,6 +370,14 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'profile.activity.read':
       return isAdminUp;
 
+    // | Turn Developer insights on or off | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // The organisation's switch of D-079, its own row rather than
+    // `org.settings.edit` borrowed: that one a token may hold, and this one
+    // no token may (LAI-751 review).
+    case 'org.developer_insights.set':
+      return isAdminUp;
+
     // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
     // | Set own activity sharing | ✓ (session only) | … | ✓ (session only) |
     // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |

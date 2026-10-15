@@ -41,9 +41,11 @@ export const LIMITS = {
   /** Heartbeats are frequent and cheap, and get their own budget (§9.1). */
   heartbeat: { perMinute: 30 },
   /**
-   * A collector's reports: 30 an hour, all at once if it must (§6.3, D-079,
-   * LAI-751). One sync per ten minutes is what a collector is told to keep to;
-   * this is five times that, so only a broken loop meets it.
+   * A collector's reports (§6.3, D-079, LAI-751): a bucket of 30, refilled
+   * one every 120 seconds — so a burst of 30, then one every two minutes; up
+   * to 60 in a first hour, 30 an hour after that. One sync per ten minutes is
+   * what a collector is told to keep to; this is five times that, so only a
+   * broken loop meets it.
    */
   localActivity: { perMinute: 0.5, burst: 30 },
 } as const satisfies Record<string, LimitPolicy>;

@@ -261,7 +261,7 @@ describe('a report, both switches on', () => {
 
   it('replaces a snapshot rather than adding to it: a retry never doubles, a pushed commit leaves', () => {
     const first = report([
-      day(TODAY, { prompts: { 'claude-code': 18 }, sessions: 3, commits_local: 2 }),
+      day(TODAY, { prompts: { 'claude-code': 18, codex: 4 }, sessions: 3, commits_local: 2 }),
     ]);
     recordLocalActivity(t.db, actor(bea), first, NOW);
     recordLocalActivity(t.db, actor(bea), first, NOW + 1000); // a retry
@@ -277,6 +277,9 @@ describe('a report, both switches on', () => {
     const rows = t.db.select().from(localActivityDays).all();
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ prompts: 19, sessions: 3, commitsLocal: 1 });
+    // The breakdown is replaced with the sum (LAI-751 review): Codex, absent
+    // from the later report, is gone from it — not kept from the first.
+    expect(JSON.parse(rows[0]?.promptsByAgent ?? '')).toEqual({ 'claude-code': 19 });
   });
 
   it('keeps one row per machine, so two machines sum and neither overwrites the other', () => {
@@ -336,6 +339,9 @@ describe('a report, both switches on', () => {
     expect(agentKindOf('gemini')).toBe('gemini-cli');
     expect(agentKindOf('copilot')).toBe('vscode');
     expect(agentKindOf('mystery-agent')).toBe('other');
+    // A name an object literal already holds is still just unknown (LAI-751
+    // review): `constructor` once stored `Object`'s own function as a key.
+    expect(agentKindOf('constructor')).toBe('other');
 
     recordLocalActivity(
       t.db,
@@ -346,6 +352,15 @@ describe('a report, both switches on', () => {
     const row = t.db.select().from(localActivityDays).get();
     expect(JSON.parse(row?.promptsByAgent ?? '')).toEqual({ 'gemini-cli': 2, other: 7 });
     expect(row?.prompts).toBe(9);
+
+    recordLocalActivity(
+      t.db,
+      actor(bea),
+      report([day(TODAY, { prompts: { constructor: 3, codex: 1 } })]),
+      NOW,
+    );
+    const again = t.db.select().from(localActivityDays).get();
+    expect(JSON.parse(again?.promptsByAgent ?? '')).toEqual({ codex: 1, other: 3 });
   });
 
   it('writes no activity row', () => {

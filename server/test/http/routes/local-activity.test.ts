@@ -333,6 +333,20 @@ describe('PUT /me/local-activity', () => {
       expect(h.db.select().from(pushedCommitKeys).all()).toEqual([]);
     });
 
+    it('bounds pushed keys by the body alone: the most that fit are taken, one more is 413', async () => {
+      const keys = (n: number) =>
+        Array.from({ length: n }, (_, i) => i.toString(16).padStart(16, '0'));
+      let n = 0;
+      while (JSON.stringify(report({}, { pushed_keys: keys(n + 1) })).length <= 16 * 1024) n += 1;
+      const token = await mint(bea.cookie);
+      expect((await put(report({}, { pushed_keys: keys(n) }), token)).status).toBe(200);
+      expect(h.db.select().from(pushedCommitKeys).all()).toHaveLength(n);
+      const over = await put(report({}, { pushed_keys: keys(n + 1) }), token);
+      expect(over.status).toBe(413);
+      // Fewer than any per-day cap the schema once carried could ever see.
+      expect(n).toBeLessThan(900);
+    });
+
     it('422s each malformed shape, unprocessable', async () => {
       const token = await mint(bea.cookie);
       const cases: [string, unknown][] = [

@@ -3,8 +3,10 @@ import {
   addDays,
   dayIn,
   daysBetween,
+  FORMATTERS_MAX,
   isCalendarDay,
   isTimeZone,
+  keptZones,
 } from '../../src/services/calendar-days.ts';
 
 /**
@@ -47,5 +49,32 @@ describe('calendar days', () => {
     expect(isTimeZone('Mars/Olympus_Mons')).toBe(false);
     expect(isTimeZone('')).toBe(false);
     expect(isTimeZone('A'.repeat(65))).toBe(false);
+  });
+
+  it('keeps one formatter per zone, by its canonical name, whatever spelling was sent', () => {
+    const at = Date.UTC(2026, 9, 15, 23, 30);
+    expect(dayIn('europe/london', at)).toBe(dayIn('Europe/London', at));
+    expect(dayIn('EUROPE/LONDON', at)).toBe('2026-10-16');
+    const kept = keptZones();
+    expect(kept).toContain('Europe/London');
+    expect(kept.filter((zone) => zone.toLowerCase() === 'europe/london')).toEqual([
+      'Europe/London',
+    ]);
+  });
+
+  it('keeps a bounded number of zones, however many are sent, and still reads each right', () => {
+    // Offsets are zones to Intl: every one a new name, and senders choose them.
+    const offsets = Array.from({ length: FORMATTERS_MAX * 3 }, (_, i) => {
+      const minutes = (i % 2 === 0 ? 1 : -1) * (i * 7);
+      const sign = minutes < 0 ? '-' : '+';
+      const abs = Math.abs(minutes);
+      const hh = String(Math.floor(abs / 60) % 24).padStart(2, '0');
+      const mm = String(abs % 60).padStart(2, '0');
+      return `${sign}${hh}:${mm}`;
+    });
+    for (const zone of offsets) expect(isTimeZone(zone), zone).toBe(true);
+    expect(keptZones().length).toBeLessThanOrEqual(FORMATTERS_MAX);
+    // A zone dropped from the cache is built again, never answered wrong.
+    expect(dayIn('Asia/Kolkata', Date.UTC(2026, 9, 15, 18, 31))).toBe('2026-10-16');
   });
 });

@@ -247,6 +247,42 @@ describe('developer_insights (§4.2, D-079, LAI-751)', () => {
     expect(getOrg(t.db, actor(makeUser('member'))).developer_insights).toBe(false);
   });
 
+  it('refuses any token the switch, session_required, and writes nothing (LAI-751 review)', () => {
+    const ownerId = makeUser('owner');
+    const token = (scope: 'full' | 'read_only') => ({
+      ...actor(ownerId),
+      token: { id: 'tok_x', scope, projectIds: null },
+    });
+    for (const scope of ['full', 'read_only'] as const) {
+      let thrown: unknown;
+      try {
+        updateOrg(
+          t.db,
+          token(scope),
+          { presence_enabled: false, developer_insights: true },
+          SECRET,
+        );
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown, scope).toBeInstanceOf(ApiError);
+      expect((thrown as ApiError).code, scope).toBe('forbidden');
+      if (scope === 'full') {
+        expect((thrown as ApiError).details).toMatchObject({
+          action: 'org.developer_insights.set',
+          reason: 'session_required',
+        });
+      }
+    }
+    // Nothing written — not even the presence setting that came with it.
+    const view = getOrg(t.db, actor(ownerId));
+    expect([view.developer_insights, view.presence_enabled]).toEqual([false, true]);
+    // The same token still changes what a token may.
+    expect(
+      updateOrg(t.db, token('full'), { presence_enabled: false }, SECRET).presence_enabled,
+    ).toBe(false);
+  });
+
   it('leaves presence alone, and presence leaves it alone', () => {
     const adminId = makeUser('admin');
     updateOrg(t.db, actor(adminId), { developer_insights: true }, SECRET);
