@@ -188,15 +188,27 @@ export interface RatingView {
   created_at: number;
 }
 
+/** The twelve weeks every figure counts in, Monday 00:00 UTC to `until`. */
+export interface ProfileWindow {
+  weeks: number;
+  since: number;
+  until: number;
+}
+
+export interface ProfileCurrentWork {
+  in_progress: ProfileTask[];
+  in_review: ProfileTask[];
+}
+
 export interface ProfileView {
   user: ProfileUser;
-  window: { weeks: number; since: number; until: number };
+  window: ProfileWindow;
   projects: ProfileProject[];
   review: ProfileReview;
   /** Newest first; the first is the current rating. */
   ratings: RatingView[];
   /** Builders only — absent for a manager. */
-  current_work?: { in_progress: ProfileTask[]; in_review: ProfileTask[] };
+  current_work?: ProfileCurrentWork;
   /** Builders only — absent for a manager. */
   delivery?: ProfileDelivery;
   /** Builders only — absent for a manager. */

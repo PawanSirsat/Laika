@@ -432,3 +432,20 @@
     margin-top: var(--space-2);
   }
 }
+
+/* A name that opens the person's profile, for an owner or admin (LAI-743). */
+.org-person-link {
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius-chip);
+}
+
+.org-person-link:hover {
+  text-decoration: underline;
+  color: var(--accent);
+}
+
+.org-person-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

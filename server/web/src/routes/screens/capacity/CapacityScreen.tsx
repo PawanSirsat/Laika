@@ -1,6 +1,7 @@
 import { everyPage } from '../../../api/every-page.ts';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
+import { PersonLink } from '../../../components/PersonLink.tsx';
 import { EmptyState } from '../../../components/EmptyState.tsx';
 import { LoadingState } from '../../../components/LoadingState.tsx';
 import { SpaceSlot } from '../../../components/space/SpaceSlot.tsx';
@@ -304,7 +305,15 @@ export function CapacityScreen({ onOpenTask }: CapacityScreenProps) {
                         {initials(person.name)}
                       </span>
                       <span className="cap-who-lines">
-                        <span className="cap-name">{person.name}</span>
+                        <span className="cap-name">
+                          <PersonLink
+                            userId={person.user_id}
+                            className="cap-name-link"
+                            label={`Open ${person.name}’s profile`}
+                          >
+                            {person.name}
+                          </PersonLink>
+                        </span>
                         <span className="cap-who-meta">
                           {/*
                             **`is_agent`, not `active_sessions > 0`.** A person

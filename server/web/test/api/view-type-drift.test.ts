@@ -267,6 +267,57 @@ const PAIRS: readonly Pair[] = [
     client: 'ActivityEvent',
     clientFile: 'activity.ts',
   },
+  /*
+   * The member profile (LAI-743), paired the moment the client existed.
+   * `ProfileView`'s three builder-only blocks are optional on both sides;
+   * `fieldsOf` cannot see that, and `member-profile.test.ts` renders a manager
+   * without them.
+   */
+  {
+    server: 'ProfileView',
+    serverFile: 'services/profiles.ts',
+    client: 'MemberProfile',
+    clientFile: 'profiles.ts',
+  },
+  {
+    server: 'RatingView',
+    serverFile: 'services/profiles.ts',
+    client: 'MemberRating',
+    clientFile: 'profiles.ts',
+  },
+  /*
+   * **And every named shape inside the profile**, because `fieldsOf` reads one
+   * interface's own fields and a nested block is otherwise compared by nothing.
+   *
+   * Through a table rather than literal entries, on purpose: the server's
+   * `response-type-coverage.test.ts` counts *served* types by reading
+   * `server: '…'` literals here, and these are only ever served inside
+   * `ProfileView`. Listed literally, each would read to it as a served type
+   * that does not exist. This leaves them outside its count and inside this
+   * comparison, which is the coverage they need.
+   */
+  ...(
+    [
+      ['ProfileUser', 'services/profiles.ts'],
+      ['ProfileWindow', 'services/profiles.ts'],
+      ['ProfileProject', 'services/profiles.ts'],
+      ['ProfileTask', 'services/profiles.ts'],
+      ['ProfileCurrentWork', 'services/profiles.ts'],
+      ['WeekCount', 'services/profiles.ts'],
+      ['ProfileCycleTime', 'services/profiles.ts'],
+      ['ProfileDelivery', 'services/profiles.ts'],
+      ['ReviewDecision', 'services/profiles.ts'],
+      ['ProfileReview', 'services/profiles.ts'],
+      ['ProfileAgentToken', 'services/profiles.ts'],
+      ['ProfileAgents', 'services/profiles.ts'],
+      ['AgentPresence', 'services/presence.ts'],
+    ] as const
+  ).map(([name, serverFile]) => ({
+    server: name,
+    serverFile,
+    client: name,
+    clientFile: 'profiles.ts',
+  })),
 ];
 
 const SERVER = new URL('../../../src/', import.meta.url);

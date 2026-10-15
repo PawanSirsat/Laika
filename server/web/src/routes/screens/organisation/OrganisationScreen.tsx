@@ -9,6 +9,7 @@ import { orgRoleLabel } from '../invite-roles.ts';
 import { getOrg, type Org } from '../../../api/org.ts';
 import { revokeUserToken, type TokenView } from '../../../api/tokens.ts';
 import { TokenRow } from '../../../components/TokenRow.tsx';
+import { PersonLink } from '../../../components/PersonLink.tsx';
 import { useUserTokens } from './use-user-tokens.ts';
 import { updateUser } from '../../../api/users.ts';
 import { avatarColor } from '../../../theme/avatar-color.ts';
@@ -291,7 +292,15 @@ export function OrganisationScreen({ me }: OrganisationScreenProps) {
                 </span>
                 <span className="org-person-who">
                   <span className="org-person-name">
-                    {person.name}
+                    {/* Their profile, for a reader who may open it (LAI-743);
+                        plain text for anyone else. */}
+                    <PersonLink
+                      userId={person.id}
+                      className="org-person-link"
+                      label={`Open ${person.name}’s profile`}
+                    >
+                      {person.name}
+                    </PersonLink>
                     {person.id === me.id && <span className="org-chip org-chip-you">YOU</span>}
                     {!person.is_active && (
                       <span className="org-chip org-chip-off">DEACTIVATED</span>

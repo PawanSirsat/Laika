@@ -99,7 +99,7 @@ export interface Route {
    * `policy/can.ts` at one remove instead of hard-coding "admin" beside a rule
    * that could change.
    */
-  readonly requires?: 'audit_log.export';
+  readonly requires?: 'audit_log.export' | 'profile.read';
   /**
    * How far this route actually is, which is what decides whether it appears in
    * the nav (LAI-082).
@@ -283,6 +283,24 @@ export const ROUTES: readonly Route[] = [
     phase: 'Phase 1',
     status: 'ready',
     mini: 'OR',
+  },
+
+  /*
+   * **One member's profile** (LAI-743, D-078) — `?user=` names who.
+   *
+   * Owners and admins only: the server answers `profile.read` to nobody else,
+   * and a token never. Reached from a person, not from the nav — a name on
+   * Organisation's member list, a *Work by person* row, a Capacity card — and
+   * those links are drawn only for a reader who may open it.
+   */
+  {
+    orgLevel: true,
+    requires: 'profile.read',
+    path: '/people',
+    label: 'Member profile',
+    group: null,
+    status: 'ready',
+    phase: 'Phase 7',
   },
 
   // Routed and reachable by URL, but not offered in the nav: no screen behind
