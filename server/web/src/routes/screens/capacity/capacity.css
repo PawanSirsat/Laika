@@ -539,6 +539,8 @@
   cursor: pointer;
   max-width: min(100%, 17rem);
   min-width: 0;
+  /* A button centres by default; a title wrapped on a phone reads from the left. */
+  text-align: left;
 }
 
 .cap-chip:hover:not(:disabled),
