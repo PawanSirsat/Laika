@@ -3,9 +3,10 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { eq, sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadActor, type ResolvedActor } from '../../src/auth/resolve-actor.ts';
+import { appendActivity } from '../../src/db/activity.ts';
 import { type OrgRole, type ProfileKind } from '../../src/db/enums.ts';
 import { newId } from '../../src/db/ids.ts';
-import { heartbeats, orgs, tokens, users } from '../../src/db/schema.ts';
+import { heartbeats, orgs, projects, tokens, users } from '../../src/db/schema.ts';
 import { ApiError } from '../../src/errors.ts';
 import { SERVER_ROOT } from '../../src/paths.ts';
 import { ALL_ACTIONS } from '../../src/policy/actions.ts';
@@ -457,6 +458,7 @@ describe('a manager’s profile (LAI-743)', () => {
     expect(profile.user.profile_kind).toBe('manager');
     expect(Object.keys(profile).sort()).toEqual([
       'projects',
+      'queue',
       'ratings',
       'ratings_total',
       'review',
@@ -537,11 +539,24 @@ describe('a person with no history (LAI-743)', () => {
       reopened: 0,
       cycle_time: { measured: 0, unmeasured: 0, p50_ms: null, p75_ms: null },
     });
-    expect(profile.review).toEqual({ accepted: 0, sent_back: 0, recent: [] });
+    expect(profile.review).toEqual({
+      accepted: 0,
+      sent_back: 0,
+      last_30_days: 0,
+      per_week: Array.from({ length: 12 }, (_, i) => ({
+        week_start: SINCE + i * WEEK,
+        accepted: 0,
+        sent_back: 0,
+      })),
+      time_to_decide: { measured: 0, unmeasured: 0, p50_ms: null },
+      recent: [],
+    });
     expect(profile.agents).toEqual({
       tokens: [],
       tokens_total: 0,
       online: { enabled: true, clients: [], last_seen: null },
+      writes: [],
+      writes_total: 0,
     });
     expect(profile.ratings).toEqual([]);
     expect(profile.ratings_total).toBe(0);
@@ -933,5 +948,225 @@ describe('long lists are capped and counted (LAI-746)', () => {
     expect(profile.ratings_total).toBe(1);
     expect(profile.agents?.tokens_total).toBe(0);
     expect(profile.current_work?.in_progress_total).toBe(0);
+  });
+});
+
+// ------------------------------------------------- v2 figures (LAI-750)
+
+describe('review load, recent decisions and time to decide (LAI-750)', () => {
+  beforeEach(() => {
+    seedHistory();
+  });
+
+  it('counts a reviewer’s decisions per week, in the last 30 days, and how long they took', () => {
+    const { review } = getProfile(t.db, actor(ada), cal, NOW);
+
+    // LAI-1 week 1, LAI-8 week 5, LAI-5 week 7, LAI-2 (sent back, then
+    // accepted) week 8, LAI-3 week 10. LAI-6 is before the window.
+    expect(review.per_week.map((w) => w.week_start)).toEqual(
+      Array.from({ length: 12 }, (_, i) => SINCE + i * WEEK),
+    );
+    expect(review.per_week.map((w) => w.accepted)).toEqual([0, 1, 0, 0, 0, 1, 0, 1, 1, 0, 1, 0]);
+    expect(review.per_week.map((w) => w.sent_back)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0]);
+
+    // Thirty days before NOW is M0 − 27.5 days: LAI-3, both LAI-2 decisions and
+    // LAI-5 (M0 − 26 d) are inside it; LAI-8 (M0 − 40 d) and LAI-1 are not.
+    expect(review.last_30_days).toBe(4);
+
+    // From the latest entry into Review to the decision: LAI-2's send-back
+    // 1 h, LAI-3 23 h, LAI-2's acceptance 1 d, LAI-8 1 d, LAI-1 2 d. LAI-5 was
+    // accepted straight from To do — nothing to measure, so counted, not 0.
+    // Nearest rank over five: the third, 1 d.
+    expect(review.time_to_decide).toEqual({ measured: 5, unmeasured: 1, p50_ms: DAY });
+  });
+
+  it('times a builder’s review work for others too', () => {
+    const { review } = getProfile(t.db, actor(ada), bea, NOW);
+
+    // ORB-2: Cal put it in Review at M0 − 1 d − 1 h; Bea sent it back at M0 − 1 d.
+    expect(review.per_week.map((w) => w.sent_back)).toEqual([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0]);
+    expect(review.last_30_days).toBe(1);
+    expect(review.time_to_decide).toEqual({ measured: 1, unmeasured: 0, p50_ms: HOUR });
+  });
+
+  it('does not time a decision on a task whose entry into Review was never logged', () => {
+    // Created straight into Review: no move into it is in the log.
+    const lai9 = task('laika', 'Nine', { status: 'review', assignee_id: bea });
+    move(cal, lai9, 'done', NOW - HOUR);
+
+    const { review } = getProfile(t.db, actor(ada), cal, NOW);
+    expect(review.time_to_decide).toEqual({ measured: 5, unmeasured: 2, p50_ms: DAY });
+    expect(review.last_30_days).toBe(5);
+  });
+
+  it('measures from the latest entry into Review, and only a decision made out of Review', () => {
+    // Ada has no decisions in the seeded history; these are her only ones.
+    // LAI-9: sent back after 1 d in Review, back in Review, accepted 1 h later.
+    // The acceptance's wait is from the second entry (1 h), not the first (8 d).
+    const lai9 = task('laika', 'Nine');
+    claimTask(t.sqlite, t.db, actor(bea), lai9, NOW - 11 * DAY);
+    move(bea, lai9, 'review', NOW - 10 * DAY);
+    move(ada, lai9, 'in_progress', NOW - 9 * DAY);
+    move(bea, lai9, 'review', NOW - 2 * DAY);
+    move(ada, lai9, 'done', NOW - 2 * DAY + HOUR);
+    // LAI-10: in Review once, taken back by Bea, then accepted from In
+    // progress — no wait in Review to measure, though it was there before.
+    const lai10 = task('laika', 'Ten');
+    claimTask(t.sqlite, t.db, actor(bea), lai10, NOW - 7 * DAY);
+    move(bea, lai10, 'review', NOW - 6 * DAY);
+    move(bea, lai10, 'in_progress', NOW - 5 * DAY);
+    move(ada, lai10, 'done', NOW - 4 * DAY);
+
+    // Waits [1 h, 1 d]; nearest rank of two at p50 is the first.
+    expect(getProfile(t.db, actor(ada), ada, NOW).review.time_to_decide).toEqual({
+      measured: 2,
+      unmeasured: 1,
+      p50_ms: HOUR,
+    });
+  });
+});
+
+describe('a manager’s queue (LAI-750)', () => {
+  let laika: string;
+
+  beforeEach(() => {
+    seedHistory();
+    laika = t.db.select().from(projects).all().find((p) => p.slug === 'laika')!.id;
+  });
+
+  function seedQueue(): void {
+    // LAI-9: Bea's, in Review since NOW − 2 d — the oldest waiting.
+    const lai9 = task('laika', 'Nine');
+    claimTask(t.sqlite, t.db, actor(bea), lai9, NOW - 3 * DAY);
+    move(bea, lai9, 'review', NOW - 2 * DAY);
+    // LAI-10: Eve's, since NOW − 5 h.
+    const lai10 = task('laika', 'Ten');
+    claimTask(t.sqlite, t.db, actor(eve), lai10, NOW - DAY);
+    move(eve, lai10, 'review', NOW - 5 * HOUR);
+    // LAI-11: Cal's own — not waiting for anyone's decision but his.
+    const lai11 = task('laika', 'Eleven');
+    claimTask(t.sqlite, t.db, actor(cal), lai11, NOW - 4 * DAY);
+    move(cal, lai11, 'review', NOW - 3 * DAY);
+    // LAI-12: nobody's, created straight into Review — waiting, with no entry.
+    task('laika', 'Twelve', { status: 'review' });
+    // ORB-1 (Bea's, in Review since NOW − 1 h) is in Orbit, which Cal does not lead.
+
+    // An archived project he led, with work in Review: neither led nor waiting.
+    createProject(t.sqlite, t.db, actor(ada), { name: 'Old', slug: 'old', prefix: 'OLD' });
+    addMember(t.db, actor(ada), 'old', cal, 'lead');
+    addMember(t.db, actor(ada), 'old', bea, 'member');
+    const old1 = task('old', 'Old one');
+    claimTask(t.sqlite, t.db, actor(bea), old1, NOW - 9 * DAY);
+    move(bea, old1, 'review', NOW - 8 * DAY);
+    t.db.update(projects).set({ archivedAt: NOW - DAY }).where(eq(projects.slug, 'old')).run();
+  }
+
+  it('counts what waits in the projects they lead, and when the oldest entered Review', () => {
+    seedQueue();
+    setProfileKind(t.db, actor(ada), cal, 'manager', NOW);
+
+    expect(getProfile(t.db, actor(ada), cal, NOW).queue).toEqual({
+      projects_led: 1,
+      // LAI-9, LAI-10 and LAI-12. Not LAI-11 (his), ORB-1 (not led), OLD-1 (archived).
+      waiting: 3,
+      oldest_waiting_since: NOW - 2 * DAY,
+      projects: [{ project_id: laika, waiting: 3 }],
+    });
+  });
+
+  it('answers an empty queue for a manager who leads nothing, and none for a builder', () => {
+    seedQueue();
+    setProfileKind(t.db, actor(ada), eve, 'manager', NOW);
+
+    expect(getProfile(t.db, actor(ada), eve, NOW).queue).toEqual({
+      projects_led: 0,
+      waiting: 0,
+      oldest_waiting_since: null,
+      projects: [],
+    });
+    expect('queue' in getProfile(t.db, actor(ada), cal, NOW)).toBe(false);
+  });
+});
+
+describe('a builder’s writes by agent (LAI-750)', () => {
+  beforeEach(() => {
+    seedHistory();
+    seedAgents();
+  });
+
+  const tokenId = (name: string, userId = bea): string =>
+    t.db
+      .select()
+      .from(tokens)
+      .all()
+      .find((x) => x.name === name && x.userId === userId)!.id;
+
+  function viaToken(userId: string, id: string): ResolvedActor {
+    return { ...actor(userId), token: { id, scope: 'full', projectIds: null } };
+  }
+
+  function write(userId: string, id: string | null, at: number): void {
+    const orgId = t.db.select().from(orgs).get()!.id;
+    appendActivity(t.db, {
+      orgId,
+      actorId: userId,
+      actorKind: id === null ? 'user' : 'agent',
+      actorTokenId: id,
+      type: 'task.updated',
+      now: at,
+    });
+  }
+
+  it('groups their token writes in the window by the agent each token last connected as', () => {
+    const claude = tokenId('Claude Code');
+    const codex = tokenId('Codex');
+    const cursor = tokenId('Cursor'); // revoked at M0 − 1 week: its writes still happened
+
+    // A real write through a token: the status change stamps the token on the row.
+    const lai9 = task('laika', 'Nine');
+    claimTask(t.sqlite, t.db, actor(bea), lai9, M0 - 2 * WEEK);
+    const before = t.db.all(sql`SELECT id FROM activity WHERE actor_token_id IS NOT NULL`).length;
+    changeStatus(t.db, viaToken(bea, claude), lai9, 'review', M0 - 2 * WEEK + DAY);
+    expect(
+      t.db.all(sql`SELECT id FROM activity WHERE actor_token_id IS NOT NULL`).length - before,
+    ).toBe(1);
+
+    write(bea, claude, M0 - 3 * DAY);
+    write(bea, codex, M0 - 5 * WEEK);
+    write(bea, cursor, M0 - 2 * WEEK);
+    // Not counted: Codex before the window, after NOW, Bea on a session, and
+    // Cal on a token of his own.
+    write(bea, codex, SINCE - DAY);
+    write(bea, codex, NOW + HOUR);
+    write(bea, null, M0 - DAY);
+    const cals = newId();
+    t.db
+      .insert(tokens)
+      .values({
+        id: cals,
+        userId: cal,
+        name: 'Claude Code',
+        prefix: 'lai_cccc',
+        tokenHash: newId(),
+        scope: 'full',
+        lastClient: 'claude-code',
+        createdAt: M0 - 20 * WEEK,
+      })
+      .run();
+    write(cal, cals, M0 - DAY);
+
+    const agents = getProfile(t.db, actor(ada), bea, NOW).agents;
+    expect(agents?.writes).toEqual([
+      { client: 'claude-code', writes: 2 },
+      { client: 'codex', writes: 1 },
+      { client: 'cursor', writes: 1 },
+    ]);
+    expect(agents?.writes_total).toBe(4);
+  });
+
+  it('answers no writes, not a missing figure, when they used no agent in the window', () => {
+    const agents = getProfile(t.db, actor(ada), bea, NOW).agents;
+    expect(agents?.writes).toEqual([]);
+    expect(agents?.writes_total).toBe(0);
   });
 });
