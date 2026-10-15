@@ -43,14 +43,17 @@ function said(cause: unknown, fallback: string): string {
   return cause instanceof ApiError ? cause.message : fallback;
 }
 
-/** `Thu 15 Oct` — a held day, as a date. */
+/** `Thu 15 Oct` — a held day, as a date; `Mon 13 Oct 2025` when not this year (LAI-751). */
 function dayLabel(day: string): string {
-  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-GB', {
+  const date = new Date(`${day}T00:00:00Z`);
+  const label = date.toLocaleDateString('en-GB', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
     timeZone: 'UTC',
   });
+  const thisYear = date.getUTCFullYear() === new Date().getUTCFullYear();
+  return thisYear ? label : `${label} ${String(date.getUTCFullYear())}`;
 }
 
 /**

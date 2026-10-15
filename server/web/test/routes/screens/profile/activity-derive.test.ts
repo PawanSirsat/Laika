@@ -227,7 +227,7 @@ void describe('the stats row', () => {
     assert.equal(activityStats(run([true, true, false, false])).currentStreak, 0);
   });
 
-  void test('the busiest weekday is the one active most often; a tie goes to the earlier', () => {
+  void test('the busiest weekday is the one active most often; a tie names every one (LAI-751)', () => {
     // Two weeks from Monday: Mondays both active, Wednesdays both, Friday once.
     const flags = [
       true,
@@ -246,8 +246,25 @@ void describe('the stats row', () => {
       false,
     ];
     const stats = activityStats(run(flags));
-    assert.deepEqual(stats.busiestWeekday, { weekday: 0, active: 2, of: 2 });
+    assert.deepEqual(stats.busiestWeekday, { weekdays: [0, 2], active: 2, of: 2 });
     assert.equal(activityStats(run([false, false])).busiestWeekday, null);
+    // One clear winner: just that one.
+    const friday = [...flags];
+    friday[11] = true;
+    assert.deepEqual(activityStats(run(friday)).busiestWeekday, {
+      weekdays: [0, 2, 4],
+      active: 2,
+      of: 2,
+    });
+    const monday = [...flags];
+    monday[0] = true;
+    monday[7] = true;
+    monday[2] = false;
+    assert.deepEqual(activityStats(run(monday)).busiestWeekday, {
+      weekdays: [0],
+      active: 2,
+      of: 2,
+    });
   });
 
   void test('pushed vs local is the share of commits already pushed, and says nothing when it cannot', () => {

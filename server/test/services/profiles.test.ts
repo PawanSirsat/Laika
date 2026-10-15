@@ -489,6 +489,7 @@ describe('a manager’s profile (LAI-743)', () => {
 
     expect(profile.user.profile_kind).toBe('manager');
     expect(Object.keys(profile).sort()).toEqual([
+      'activity_sharing',
       'projects',
       'queue',
       'ratings',
@@ -592,6 +593,25 @@ describe('a person with no history (LAI-743)', () => {
     });
     expect(profile.ratings).toEqual([]);
     expect(profile.ratings_total).toBe(0);
+    expect(profile.activity_sharing).toEqual({ org_enabled: false, enabled: false });
+  });
+});
+
+describe('the Activity card’s two switches ride on the profile (D-079, LAI-751)', () => {
+  it('says each switch as it stands, for a builder and a manager alike', () => {
+    const read = (id: string) => getProfile(t.db, actor(ada), id, NOW).activity_sharing;
+    expect(read(eve)).toEqual({ org_enabled: false, enabled: false });
+
+    t.db.update(users).set({ shareLocalActivity: 1 }).where(eq(users.id, eve)).run();
+    expect(read(eve)).toEqual({ org_enabled: false, enabled: true });
+
+    t.db.update(orgs).set({ developerInsights: 1 }).run();
+    expect(read(eve)).toEqual({ org_enabled: true, enabled: true });
+
+    // Her switch, not anyone else's: Ada never turned hers on.
+    expect(read(ada)).toEqual({ org_enabled: true, enabled: false });
+    setProfileKind(t.db, actor(ada), eve, 'manager', NOW);
+    expect(read(eve)).toEqual({ org_enabled: true, enabled: true });
   });
 });
 

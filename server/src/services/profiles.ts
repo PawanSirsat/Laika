@@ -37,6 +37,7 @@ import {
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
 import { assertCan } from '../policy/can.ts';
+import { sharingOn } from './local-activity.ts';
 import { percentile } from './metrics.ts';
 import { agentPresenceFor, clientOf, type AgentPresence } from './presence.ts';
 
@@ -308,6 +309,12 @@ export interface ProfileCurrentWork {
   in_review_total: number;
 }
 
+/** The organisation's Developer insights, and this person's own sharing. */
+export interface ProfileActivitySharing {
+  org_enabled: boolean;
+  enabled: boolean;
+}
+
 export interface ProfileView {
   user: ProfileUser;
   window: ProfileWindow;
@@ -317,6 +324,13 @@ export interface ProfileView {
   ratings: RatingView[];
   /** Every rating they have, however many `ratings` carries. */
   ratings_total: number;
+  /**
+   * D-079's two switches for this person, so the page can draw the Activity
+   * card in its final shape before `GET /people/:id/activity` answers
+   * (LAI-751) — whether their pushed and local work can be shown, never a
+   * count of it.
+   */
+  activity_sharing: ProfileActivitySharing;
   /** Builders only — absent for a manager. */
   current_work?: ProfileCurrentWork;
   /** Builders only — absent for a manager. */
@@ -387,6 +401,7 @@ export function getProfile(
     },
     ratings: ratingsFor(db, userId),
     ratings_total: ratingCount(db, userId),
+    activity_sharing: activitySharing(db, userId),
   };
 
   if (person.profileKind === 'manager') return { ...profile, queue: queueFor(db, userId) };
@@ -409,6 +424,11 @@ export function getProfile(
       ...agentWrites(db, userId, since, now),
     },
   };
+}
+
+function activitySharing(db: Db, userId: string): ProfileActivitySharing {
+  const sharing = sharingOn(db, userId);
+  return { org_enabled: sharing.org, enabled: sharing.user };
 }
 
 /**

@@ -350,6 +350,7 @@ const PAIRS: readonly Pair[] = [
       ['ProfileAgents', 'services/profiles.ts'],
       ['AgentWrites', 'services/profiles.ts'],
       ['AgentPresence', 'services/presence.ts'],
+      ['ProfileActivitySharing', 'services/profiles.ts'],
     ] as const
   ).map(([name, serverFile]) => ({
     server: name,

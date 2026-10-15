@@ -385,6 +385,7 @@ export function ProfileScreen({ userId, me }: ProfileScreenProps) {
         name={user.name}
         viewerId={me.id}
         canManageOrg={mayOpenProfiles(me.org_role)}
+        sharing={profile.activity_sharing}
       />
 
       {/*

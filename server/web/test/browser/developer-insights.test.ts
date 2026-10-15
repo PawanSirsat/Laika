@@ -203,6 +203,39 @@ void describe('Connect: Share local activity', () => {
     }
   });
 
+  void test('says the year of the oldest day held when it is not this one (LAI-751)', async () => {
+    // 370 days back is always last year or before.
+    const old = new Date(NOW - 370 * DAY);
+    const oldest = old.toISOString().slice(0, 10);
+    const h = await open(
+      '/connect',
+      connect(
+        { org: true, enabled: true, scope: 'agent-repos' },
+        { value: { ...HELD, oldest_day: oldest } },
+      ),
+    );
+    try {
+      await h.page.locator('.conn-rail-extra', { hasText: 'Share local activity' }).click();
+      const note = h.page.locator('.share-activity .conn-note', { hasText: 'Held since' });
+      await note.waitFor({ timeout: 20_000 });
+      const day = old.toLocaleDateString('en-GB', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        timeZone: 'UTC',
+      });
+      assert.match(
+        await note.innerText(),
+        new RegExp(`Held since ${day} ${String(old.getUTCFullYear())} ·`),
+      );
+      // This year's days stay short: today's row has no year.
+      const today = await h.page.locator('table.share-table tbody tr').first().innerText();
+      assert.doesNotMatch(today, new RegExp(String(new Date(NOW).getUTCFullYear())));
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('previews what is held, by agent name, and deletes it after a confirmation', async () => {
     const held = { value: HELD as unknown };
     const h = await open(

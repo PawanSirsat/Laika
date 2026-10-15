@@ -125,7 +125,12 @@ function stub(sharing?: Sharing, empty = false, me = ME): ApiStub {
       created_at: 1,
       updated_at: 1,
     },
-    '/api/v1/users/u2/profile': PROFILE,
+    // The profile carries the same two switches the activity answers with:
+    // the card is drawn in its final shape from them (LAI-751).
+    '/api/v1/users/u2/profile': {
+      ...PROFILE,
+      activity_sharing: sharing ?? { org_enabled: true, enabled: true },
+    },
     '/api/v1/people/u2/activity?range=12w': activity('12w', sharing, empty),
     '/api/v1/people/u2/activity?range=52w': activity('52w', sharing, empty),
   };
@@ -193,6 +198,9 @@ void describe('the Activity card', () => {
       assert.match(await tile('longest_streak'), /2\s*days/);
       // 5 pushed, 2 not: 71%.
       assert.match(await tile('pushed_share'), /71%\s*29% local only/);
+      // Today, yesterday and three days ago: three weekdays, each once. A tie
+      // is said, never settled on the first (LAI-751).
+      assert.match(await tile('busiest_weekday'), /—\s*no single busiest day/);
     } finally {
       await h.close();
     }
@@ -331,23 +339,33 @@ void describe('the Activity card', () => {
 });
 
 void describe('the states', () => {
-  void test('Developer insights off: board only, said plainly, with the way to Organisation', async () => {
+  void test('Developer insights off: one panel for GitHub and Local, one link, then the board', async () => {
     const h = await open('/people?user=u2', stub({ org_enabled: false, enabled: true }));
     try {
       const activityCard = await card(h.page);
+      const off = activityCard.locator('.hm-off');
+      assert.equal(await off.count(), 1);
       assert.match(
-        await activityCard.locator('.hm-note').innerText(),
-        /Developer insights are off/,
+        await off.innerText(),
+        /GitHub and Local are not shown: Developer insights are off for this organisation\./,
       );
-      assert.equal(await activityCard.locator('.hm-note a').getAttribute('href'), '/organisation');
-      // B: GitHub and Local keep their footprint, and say why they are empty.
-      assert.equal(await h.page.locator('.hm-blocked[data-reason="org_off"]').count(), 2);
+      // Said once, with one way to Organisation — not once per empty grid.
+      assert.equal(await activityCard.locator('a[href="/organisation"]').count(), 1);
+      assert.equal((await activityCard.innerText()).match(/not shown/g)?.length, 1);
+      // No empty grids for GitHub and Local: the board's, alone.
+      assert.deepEqual(
+        await activityCard
+          .locator('.hm-block')
+          .evaluateAll((els) => els.map((el) => el.getAttribute('data-source'))),
+        ['board'],
+      );
       assert.equal(await cells(h.page, 'board').count(), 364);
       assert.match(await h.page.locator('[data-stat="pushed_share"]').innerText(), /not shared/);
 
-      // A: the board, alone, as a single-colour grid with its note.
+      // A: the same panel, and the board as a single-colour grid.
       await activityCard.locator('input[value="split"]').check();
       assert.equal(await h.page.locator('.hm-grid').getAttribute('data-kind'), 'board');
+      assert.equal(await activityCard.locator('.hm-off').count(), 1);
       assert.match(await activityCard.locator('.hm-legend').innerText(), /Board/);
     } finally {
       await h.close();
@@ -359,57 +377,102 @@ void describe('the states', () => {
     try {
       const activityCard = await card(h.page);
       assert.match(
-        await activityCard.locator('.hm-note').innerText(),
-        /Local activity off: Bea Builder hasn’t turned on sharing/,
+        await activityCard.locator('.hm-off').innerText(),
+        /GitHub and Local are not shown: Bea Builder hasn’t turned on sharing, and only they can\./,
       );
-      assert.equal(await h.page.locator('.hm-blocked[data-reason="not_sharing"]').count(), 2);
-      assert.match(
-        await h.page.locator('.hm-blocked-msg').first().innerText(),
-        /only they can switch it on/,
-      );
+      assert.equal(await activityCard.locator('a').count(), 0, 'nothing an admin can turn on');
+      assert.equal(await h.page.locator('.hm-grid').count(), 1);
+      assert.equal(await cells(h.page, 'board').count(), 364);
     } finally {
       await h.close();
     }
   });
 
-  void test('both switches on and nothing arrived: says so, and draws the empty grids', async () => {
+  void test('both switches on and nothing arrived: says so in place, and draws the empty grids', async () => {
     const h = await open('/people?user=u2', stub(undefined, true));
     try {
       const activityCard = await card(h.page);
-      assert.match(await activityCard.locator('.hm-note').innerText(), /No local activity yet/);
-      assert.equal(await h.page.locator('.hm-blocked').count(), 0);
+      assert.equal(await activityCard.locator('.hm-off').count(), 0);
+      assert.deepEqual(await activityCard.locator('.hm-block-head .hm-total').allInnerTexts(), [
+        'nothing from their machines yet',
+        'nothing from their machines yet',
+        // The empty fixture is empty on the board too.
+        '0 actions by them · 0 by their agents',
+      ]);
+      assert.match(
+        (await activityCard.locator('.hm-block-head .hm-total').first().getAttribute('title')) ??
+          '',
+        /they connect it with laika activity on/,
+      );
       assert.equal(await cells(h.page, 'github').count(), 364);
     } finally {
       await h.close();
     }
   });
 
-  void test('loading holds the card’s size: no shift when the answer lands', async () => {
-    let release = (): void => undefined;
-    const held = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const h = await open('/people?user=u2', stub(), {
-      before: async (page) => {
-        await page.route('**/api/v1/people/u2/activity**', async (route) => {
-          await held;
-          await route.fallback();
-        });
-      },
-    });
-    try {
-      const busy = h.page.locator('.prof-card[data-section="activity"][aria-busy="true"]');
-      await busy.waitFor({ timeout: 20_000 });
-      const before = await busy.evaluate((el) => el.getBoundingClientRect().height);
-      release();
-      const done = await card(h.page);
-      const after = await done.evaluate((el) => el.getBoundingClientRect().height);
-      assert.ok(Math.abs(after - before) <= 2, `the card moved ${String(after - before)}px`);
-    } finally {
-      release();
-      await h.page.unrouteAll({ behavior: 'ignoreErrors' });
-      await h.close();
+  /**
+   * The card is drawn in its final shape while the activity is on its way
+   * (LAI-751): every state, both designs, three widths. Measured with the
+   * answer held until the skeleton has been read, then let go.
+   */
+  void test('loading holds the card’s size in every state: nothing moves when the answer lands', async () => {
+    const states: [string, ApiStub][] = [
+      ['shown', stub()],
+      ['nothing yet', stub(undefined, true)],
+      ['insights off', stub({ org_enabled: false, enabled: true })],
+      ['not sharing', stub({ org_enabled: true, enabled: false })],
+    ];
+    const moved: string[] = [];
+    for (const [state, api] of states) {
+      // Every answer is held until let go; a reload leaves the one before it
+      // held for good, which `unrouteAll` below drops.
+      const held: (() => void)[] = [];
+      const h = await open('/people?user=u2', api, {
+        before: async (page) => {
+          await page.route('**/api/v1/people/u2/activity**', async (route) => {
+            await new Promise<void>((resolve) => {
+              held.push(resolve);
+            });
+            await route.fallback();
+          });
+        },
+      });
+      try {
+        for (const design of ['stacked', 'split']) {
+          for (const width of [1366, 1024, 390]) {
+            await h.page.setViewportSize({ width, height: 900 });
+            await h.page.evaluate((d) => {
+              localStorage.setItem('laika.profile.activity-design.u1', d);
+            }, design);
+            const asked = held.length;
+            await h.page.reload();
+            const busy = h.page.locator('.prof-card[data-section="activity"][aria-busy="true"]');
+            await busy.waitFor({ timeout: 20_000 });
+            await until(() => held.length > asked, 10_000);
+            await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
+            const before = await busy.evaluate((el) => el.getBoundingClientRect().height);
+            held[held.length - 1]?.();
+            const done = await card(h.page);
+            await h.page.evaluate(
+              () =>
+                new Promise((resolve) => {
+                  requestAnimationFrame(() => requestAnimationFrame(resolve));
+                }),
+            );
+            const after = await done.evaluate((el) => el.getBoundingClientRect().height);
+            if (Math.abs(after - before) > 1) {
+              moved.push(
+                `${state}, ${design}, ${String(width)}: ${String(Math.round(before))} → ${String(Math.round(after))}px`,
+              );
+            }
+          }
+        }
+      } finally {
+        await h.page.unrouteAll({ behavior: 'ignoreErrors' });
+        await h.close();
+      }
     }
+    assert.deepEqual(moved, [], 'the card changed height when its answer landed');
   });
 });
 
@@ -427,6 +490,27 @@ void describe('on a phone', () => {
 
       await activityCard.locator('input[value="52w"]').check();
       await until(async () => (await cells(h.page, 'github').count()) === 364);
+      // Each source's heading — its total and its Less…More key — is whole in
+      // view wherever the year is scrolled (LAI-751).
+      for (const end of ['newest', 'oldest']) {
+        if (end === 'oldest') {
+          await h.page.locator('.hm-scroll').evaluate((el) => {
+            el.scrollLeft = 0;
+          });
+        }
+        const cut = await h.page.evaluate(() => {
+          const view = document.querySelector('.hm-scroll')?.getBoundingClientRect();
+          if (view === undefined) return ['no scroller'];
+          return [...document.querySelectorAll('.hm-block-head .hm-total, .hm-block-head .hm-ramp')]
+            .map((el) => ({ el, box: el.getBoundingClientRect() }))
+            .filter(({ box }) => box.left < view.left - 0.5 || box.right > view.right + 0.5)
+            .map(({ el }) => el.closest('.hm-block')?.getAttribute('data-source') ?? '?');
+        });
+        assert.deepEqual(cut, [], `scrolled to the ${end} week: a heading runs out of view`);
+      }
+      await h.page.locator('.hm-scroll').evaluate((el) => {
+        el.scrollLeft = el.scrollWidth;
+      });
       const pageOver = await h.page.evaluate(
         () => document.documentElement.scrollWidth - window.innerWidth,
       );
@@ -477,6 +561,46 @@ void describe('on a phone', () => {
       await h.close();
     }
   });
+
+  for (const design of ['stacked', 'split']) {
+    void test(`twelve weeks fit a phone in ${design}, with nothing wider than the card`, async () => {
+      const h = await open('/people?user=u2', stub(), {
+        before: async (page) => {
+          await page.setViewportSize({ width: 390, height: 844 });
+          await page.addInitScript((d) => {
+            localStorage.setItem('laika.profile.activity-design.u1', d);
+          }, design);
+        },
+      });
+      try {
+        const activityCard = await card(h.page);
+        assert.equal(await activityCard.getAttribute('data-range'), '12w');
+        assert.equal(await activityCard.getAttribute('data-design'), design);
+        const over = await activityCard.evaluate((el) => {
+          const scroll = el.querySelector('.hm-scroll');
+          const style = getComputedStyle(el);
+          const box = el.getBoundingClientRect();
+          const left = box.left + Number.parseFloat(style.paddingLeft);
+          const right = box.right - Number.parseFloat(style.paddingRight);
+          return {
+            scroll: scroll === null ? -1 : scroll.scrollWidth - scroll.clientWidth,
+            outside: [...el.querySelectorAll('*')]
+              .map((child) => ({ child, rect: child.getBoundingClientRect() }))
+              .filter(({ rect }) => rect.width > 0 && rect.height > 0)
+              .filter(({ rect }) => rect.left < left - 0.5 || rect.right > right + 0.5)
+              .map(
+                ({ child, rect }) =>
+                  `${child.className} ${String(Math.round(rect.right - right))}px`,
+              ),
+          };
+        });
+        assert.equal(over.scroll, 0, `twelve weeks scroll sideways by ${String(over.scroll)}px`);
+        assert.deepEqual(over.outside, [], 'something runs past the card’s edge');
+      } finally {
+        await h.close();
+      }
+    });
+  }
 });
 
 void describe('both themes', () => {

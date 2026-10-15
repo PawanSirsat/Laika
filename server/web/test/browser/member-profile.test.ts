@@ -136,6 +136,8 @@ const BUILDER = {
     },
   ],
   ratings_total: 2,
+  // As `quietYear` answers: the Activity card's shape comes from these (LAI-751).
+  activity_sharing: { org_enabled: false, enabled: false },
   current_work: {
     in_progress: [
       {

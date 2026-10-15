@@ -52,6 +52,17 @@ export interface ActivityCardProps {
   readonly viewerId: string;
   /** Owners and admins may turn Developer insights on, so they get the link. */
   readonly canManageOrg: boolean;
+  /**
+   * D-079's two switches for them, from the profile (LAI-751): the card is
+   * drawn in its final shape before the activity answers, so nothing below it
+   * moves when it does.
+   */
+  readonly sharing: ActivitySwitches;
+}
+
+interface ActivitySwitches {
+  readonly org_enabled: boolean;
+  readonly enabled: boolean;
 }
 
 type Load =
@@ -59,8 +70,11 @@ type Load =
   | { readonly kind: 'error'; readonly error: unknown }
   | { readonly kind: 'ready'; readonly activity: PeopleActivity };
 
-/** Why the pushed and local colours are not on show, if they are not. */
-type Hidden = 'org_off' | 'not_sharing' | 'no_data' | null;
+/** Why GitHub and Local are not drawn at all, if they are not. */
+type Off = 'org_off' | 'not_sharing' | null;
+
+/** GitHub's and Local's line when both switches are on and nothing has come. */
+const NOTHING_YET = 'nothing from their machines yet';
 
 const RANGES: readonly { value: ActivityRange; label: string; caption: string }[] = [
   { value: '12w', label: '12 weeks', caption: 'last 12 weeks' },
@@ -116,10 +130,10 @@ function todayUtc(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-function hiddenReason(activity: PeopleActivity, days: readonly HeatDay[]): Hidden {
-  if (!activity.sharing.org_enabled) return 'org_off';
-  if (!activity.sharing.enabled) return 'not_sharing';
-  return days.some((d) => (d.github ?? 0) + (d.local ?? 0) > 0) ? null : 'no_data';
+function offReason(sharing: ActivitySwitches): Off {
+  if (!sharing.org_enabled) return 'org_off';
+  if (!sharing.enabled) return 'not_sharing';
+  return null;
 }
 
 /**
@@ -140,7 +154,7 @@ function hiddenReason(activity: PeopleActivity, days: readonly HeatDay[]): Hidde
  * Nothing here is a score and nothing feeds the rating (D-079 item 6); the (i)
  * says so, and says what is never collected.
  */
-export function ActivityCard({ userId, name, viewerId, canManageOrg }: ActivityCardProps) {
+export function ActivityCard({ userId, name, viewerId, canManageOrg, sharing }: ActivityCardProps) {
   const [range, setRange] = useState<ActivityRange>(defaultRange);
   const [design, setDesign] = useState<HeatDesign>(() => readDesign(viewerId));
   const [load, setLoad] = useState<Load>({ kind: 'loading' });
@@ -176,7 +190,13 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg }: ActivityC
     () => (activity === undefined ? emptyDays(todayUtc(), rangeDays(range)) : heatDays(activity)),
     [activity, range],
   );
-  const hidden = activity === undefined ? null : hiddenReason(activity, days);
+  // The answer's switches once it has come, the profile's until then — the
+  // same two, read a moment apart — so the skeleton is already this shape.
+  const off = offReason(activity?.sharing ?? sharing);
+  const noData =
+    activity !== undefined &&
+    off === null &&
+    !days.some((d) => (d.github ?? 0) + (d.local ?? 0) > 0);
   const caption = RANGES.find((r) => r.value === range)?.caption ?? '';
 
   return (
@@ -241,7 +261,8 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg }: ActivityC
           days={days}
           loading={load.kind === 'loading'}
           design={design}
-          hidden={hidden}
+          off={off}
+          noData={noData}
           name={name}
           canManageOrg={canManageOrg}
         />
@@ -256,7 +277,9 @@ interface HeatmapProps {
   readonly days: readonly HeatDay[];
   readonly loading: boolean;
   readonly design: HeatDesign;
-  readonly hidden: Hidden;
+  readonly off: Off;
+  /** Both switches on, and nothing from their machines in the range. */
+  readonly noData: boolean;
   readonly name: string;
   readonly canManageOrg: boolean;
 }
@@ -267,7 +290,7 @@ interface Hot {
   readonly cell: HTMLElement;
 }
 
-function Heatmap({ days, loading, design, hidden, name, canManageOrg }: HeatmapProps) {
+function Heatmap({ days, loading, design, off, noData, name, canManageOrg }: HeatmapProps) {
   const layout = useMemo(() => calendarLayout(days), [days]);
   const stats = useMemo(() => activityStats(days), [days]);
   const totals = useMemo(() => sourceTotals(days), [days]);
@@ -280,9 +303,9 @@ function Heatmap({ days, loading, design, hidden, name, canManageOrg }: HeatmapP
     [days],
   );
 
-  const shown = !loading && hidden !== 'org_off' && hidden !== 'not_sharing';
+  const shown = off === null;
   // A: board actions live in the tooltip, unless they are all there is.
-  const boardOnly = !loading && !shown;
+  const boardOnly = !shown;
 
   const [hot, setHot] = useState<Hot | null>(null);
   const [active, setActive] = useState(() => Math.max(0, days.length - 1));
@@ -348,9 +371,16 @@ function Heatmap({ days, loading, design, hidden, name, canManageOrg }: HeatmapP
     [days.length],
   );
 
-  const sources: HeatSource[] = design === 'split' ? ['github'] : ['github', 'local', 'board'];
-  const blocked = (source: HeatSource): Hidden =>
-    source === 'board' ? null : hidden === 'no_data' ? null : hidden;
+  // B with GitHub and Local off is the board alone, under one panel saying
+  // why — not two empty grids saying it twice (LAI-751).
+  const sources: HeatSource[] =
+    design === 'split' ? ['github'] : shown ? ['github', 'local', 'board'] : ['board'];
+  // Every line that waits on the answer is already there, one line high.
+  const total = (source: HeatSource): string =>
+    loading ? '\u00a0' : noData && source !== 'board' ? NOTHING_YET : totalText(source, totals);
+  const waiting = noData
+    ? `Sharing is on, and nothing has arrived from ${name}’s machines yet — they connect it with laika activity on.`
+    : undefined;
 
   const style = { '--hm-cols': String(layout.columns) } as CSSProperties;
   const hotDay = hot === null ? undefined : days[hot.index];
@@ -359,9 +389,7 @@ function Heatmap({ days, loading, design, hidden, name, canManageOrg }: HeatmapP
     <div className="hm-body" onMouseLeave={() => setHot(null)}>
       <Stats stats={stats} loading={loading} shown={shown} />
 
-      {!loading && hidden !== null && (
-        <HiddenNote hidden={hidden} name={name} canManageOrg={canManageOrg} />
-      )}
+      {off !== null && <OffPanel off={off} name={name} canManageOrg={canManageOrg} />}
 
       <div className="hm-figure">
         <div className="hm-scroll" ref={scroll}>
@@ -369,21 +397,19 @@ function Heatmap({ days, loading, design, hidden, name, canManageOrg }: HeatmapP
             <Months layout={layout} />
             {sources.map((source) => {
               const kind: GridKind = design === 'split' ? (boardOnly ? 'board' : 'split') : source;
-              const reason = design === 'split' ? null : blocked(source);
               return (
                 <div key={source} className="hm-block" data-source={kind}>
                   {design === 'stacked' && (
-                    <BlockHead source={source} totals={totals} unavailable={reason !== null} />
+                    <BlockHead
+                      source={source}
+                      total={total(source)}
+                      hint={source === 'board' ? undefined : waiting}
+                    />
                   )}
                   <div className="hm-row">
                     <Weekdays />
-                    {reason !== null || loading ? (
-                      <Blocked
-                        reason={loading ? null : reason}
-                        name={name}
-                        canManageOrg={canManageOrg}
-                        columns={layout.columns}
-                      />
+                    {loading ? (
+                      <Ghost columns={layout.columns} />
                     ) : (
                       <div className="hm-grid" data-kind={kind}>
                         <Cells
@@ -411,9 +437,7 @@ function Heatmap({ days, loading, design, hidden, name, canManageOrg }: HeatmapP
         </div>
       </div>
 
-      {design === 'split' && (
-        <SplitLegend boardOnly={boardOnly} totals={totals} loading={loading} />
-      )}
+      {design === 'split' && <SplitLegend boardOnly={boardOnly} total={total} hint={waiting} />}
 
       {hot !== null && hotDay !== undefined && <Tip day={hotDay} cell={hot.cell} />}
     </div>
@@ -574,44 +598,66 @@ function totalText(source: HeatSource, totals: Totals): string {
 
 function BlockHead({
   source,
-  totals,
-  unavailable,
+  total,
+  hint,
 }: {
   readonly source: HeatSource;
-  readonly totals: Totals;
-  readonly unavailable: boolean;
+  readonly total: string;
+  readonly hint?: string | undefined;
 }) {
   return (
     <div className="hm-block-head">
       <span className="hm-block-name">
-        <i className="hm-key" data-source={source} data-off={unavailable} aria-hidden="true" />
+        <i className="hm-key" data-source={source} aria-hidden="true" />
         {SOURCE[source]}
       </span>
-      <span className="hm-total">{unavailable ? 'not shown' : totalText(source, totals)}</span>
-      {!unavailable && <Ramp source={source} />}
+      <span className="hm-total" title={hint ?? total}>
+        {total}
+      </span>
+      <Ramp source={source} />
     </div>
+  );
+}
+
+/** A source's name with its scale — never wrapped apart (LAI-751) — and its total. */
+function LegendItem({
+  source,
+  total,
+  hint,
+}: {
+  readonly source: HeatSource;
+  readonly total: string;
+  readonly hint?: string | undefined;
+}) {
+  return (
+    <span className="hm-legend-item" data-source={source}>
+      <span className="hm-key-group">
+        <span className="hm-key-name">
+          <i className="hm-key" data-source={source} aria-hidden="true" />
+          {SOURCE[source]}
+        </span>
+        <Ramp source={source} />
+      </span>
+      <span className="hm-total" title={hint ?? total}>
+        {total}
+      </span>
+    </span>
   );
 }
 
 function SplitLegend({
   boardOnly,
-  totals,
-  loading,
+  total,
+  hint,
 }: {
   readonly boardOnly: boolean;
-  readonly totals: Totals;
-  readonly loading: boolean;
+  readonly total: (source: HeatSource) => string;
+  readonly hint?: string | undefined;
 }) {
-  if (loading) return <p className="hm-legend" aria-hidden="true" />;
   if (boardOnly) {
     return (
       <p className="hm-legend">
-        <span className="hm-key-name">
-          <i className="hm-key" data-source="board" aria-hidden="true" />
-          Board
-        </span>
-        <Ramp source="board" />
-        <span className="hm-total">{totalText('board', totals)}</span>
+        <LegendItem source="board" total={total('board')} />
       </p>
     );
   }
@@ -623,18 +669,8 @@ function SplitLegend({
           Each day: <b>GitHub</b> top-left, <b>Local</b> bottom-right
         </span>
       </span>
-      <span className="hm-key-name">
-        <i className="hm-key" data-source="github" aria-hidden="true" />
-        GitHub
-      </span>
-      <Ramp source="github" />
-      <span className="hm-total">{totalText('github', totals)}</span>
-      <span className="hm-key-name">
-        <i className="hm-key" data-source="local" aria-hidden="true" />
-        Local
-      </span>
-      <Ramp source="local" />
-      <span className="hm-total">{totalText('local', totals)}</span>
+      <LegendItem source="github" total={total('github')} hint={hint} />
+      <LegendItem source="local" total={total('local')} hint={hint} />
     </p>
   );
 }
@@ -649,77 +685,47 @@ function OrgLink({ canManageOrg }: { readonly canManageOrg: boolean }) {
   ) : null;
 }
 
-/** Why GitHub and Local are not drawn — or, with both on, that nothing came. */
-function HiddenNote({
-  hidden,
+/**
+ * Why GitHub and Local are not drawn — one sentence for both, and the one way
+ * to change it when the viewer has it (LAI-751). The Board grid follows.
+ */
+function OffPanel({
+  off,
   name,
   canManageOrg,
 }: {
-  readonly hidden: Exclude<Hidden, null>;
+  readonly off: Exclude<Off, null>;
   readonly name: string;
   readonly canManageOrg: boolean;
 }) {
   return (
-    <p className="hm-note" data-hidden={hidden}>
-      {hidden === 'org_off' ? (
-        <>
-          <b>Developer insights are off</b> for this organisation, so only board actions are shown.{' '}
+    <p className="hm-off" data-off={off}>
+      <span className="hm-off-keys" aria-hidden="true">
+        <i className="hm-key" data-source="github" data-off="true" />
+        <i className="hm-key" data-source="local" data-off="true" />
+      </span>
+      {off === 'org_off' ? (
+        <span>
+          <b>GitHub and Local are not shown:</b> Developer insights are off for this organisation.{' '}
           <OrgLink canManageOrg={canManageOrg} />
-        </>
-      ) : hidden === 'not_sharing' ? (
-        <>
-          <b>Local activity off:</b> {name} hasn’t turned on sharing. Board actions are shown.
-        </>
+        </span>
       ) : (
-        <>
-          <b>No local activity yet.</b> Sharing is on, and nothing has arrived from {name}’s
-          machines — they connect it with <code>laika activity on</code>.
-        </>
+        <span>
+          <b>GitHub and Local are not shown:</b> {name} hasn’t turned on sharing, and only they can.
+        </span>
       )}
     </p>
   );
 }
 
-/** A source with nothing to show keeps its footprint: a ghost grid and why. */
-function Blocked({
-  reason,
-  name,
-  canManageOrg,
-  columns,
-}: {
-  readonly reason: Hidden;
-  readonly name: string;
-  readonly canManageOrg: boolean;
-  readonly columns: number;
-}) {
+/** A grid's footprint while its days are on their way. */
+function Ghost({ columns }: { readonly columns: number }) {
   return (
     <div
-      className="hm-blocked"
-      data-reason={reason ?? 'loading'}
+      className="hm-ghost"
+      aria-hidden="true"
       style={{ '--hm-cols': String(columns) } as CSSProperties}
-    >
-      {reason !== null && (
-        <p className="hm-blocked-msg">
-          {reason === 'org_off' ? (
-            <>
-              <b>Developer insights off</b>
-              <span>
-                Pushed and local work are collected only when an owner or admin turns them on, and
-                then only for people who choose to share. <OrgLink canManageOrg={canManageOrg} />
-              </span>
-            </>
-          ) : (
-            <>
-              <b>Local activity off</b>
-              <span>
-                {name} hasn’t turned on sharing. Prompts, agent sessions and unpushed commits stay
-                on their machine until they opt in; only they can switch it on.
-              </span>
-            </>
-          )}
-        </p>
-      )}
-    </div>
+    />
   );
 }
 
@@ -762,6 +768,7 @@ function Stats({
 }) {
   const dash = (value: string) => (loading ? '—' : value);
   const busiest = stats.busiestWeekday;
+  const tied = busiest?.weekdays ?? [];
   const longest = stats.longestStreak;
   const pushed = stats.pushedPercent;
   return (
@@ -798,16 +805,24 @@ function Stats({
       <Tile
         name="busiest_weekday"
         label="Busiest weekday"
-        value={loading || busiest === null ? '—' : (WEEKDAYS[busiest.weekday] ?? '')}
+        // A tie is said, never settled quietly on the first (LAI-751): two
+        // days by name, more as no single busiest day.
+        value={
+          loading || busiest === null || tied.length > 2
+            ? '—'
+            : tied.map((d) => WEEKDAYS[d] ?? '').join(', ')
+        }
         sub={
           loading || busiest === null
             ? undefined
-            : `${String(busiest.active)} of ${String(busiest.of)}`
+            : tied.length > 2
+              ? 'no single busiest day'
+              : `${String(busiest.active)} of ${String(busiest.of)}${tied.length > 1 ? ' each' : ''}`
         }
         hint={
           busiest === null
             ? 'The weekday with the most active days.'
-            : `${weekdayName(busiest.weekday)}: active on ${String(busiest.active)} of the ${String(busiest.of)} in this range.`
+            : `${tied.map((d) => weekdayName(d)).join(', ')}: ${tied.length > 1 ? 'each ' : ''}active on ${String(busiest.active)} of the ${String(busiest.of)} in this range.`
         }
       />
       <Tile

@@ -221,9 +221,12 @@ export interface ActivityStats {
   /** Ending today — or yesterday, when today has nothing yet. */
   readonly currentStreak: number;
   readonly longestStreak: Streak;
-  /** The weekday with the most active days, and how many of its days were. */
+  /**
+   * The weekdays with the most active days — **every one of them when they
+   * tie** (LAI-751), never the first quietly — and how many of its days were.
+   */
   readonly busiestWeekday: {
-    readonly weekday: number;
+    readonly weekdays: readonly number[];
     readonly active: number;
     readonly of: number;
   } | null;
@@ -269,12 +272,12 @@ export function activityStats(days: readonly HeatDay[]): ActivityStats {
     slot.of += 1;
     if (active[k]) slot.active += 1;
   });
-  let busiest: ActivityStats['busiestWeekday'] = null;
-  byWeekday.forEach((slot, weekday) => {
-    if (slot.active > 0 && (busiest === null || slot.active > busiest.active)) {
-      busiest = { weekday, active: slot.active, of: slot.of };
-    }
-  });
+  const most = Math.max(...byWeekday.map((slot) => slot.active));
+  const tied = byWeekday.flatMap((slot, weekday) =>
+    most > 0 && slot.active === most ? [weekday] : [],
+  );
+  const busiest: ActivityStats['busiestWeekday'] =
+    tied.length === 0 ? null : { weekdays: tied, active: most, of: byWeekday[tied[0]!]?.of ?? 0 };
 
   const shown = days.some((d) => d.github !== null && d.localCommits !== null);
   const pushed = days.reduce((sum, d) => sum + (d.github ?? 0), 0);
