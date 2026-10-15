@@ -986,7 +986,7 @@ D-079, LAI-751) — the heatmap's *Local* colour.
 | `prompts` | integer — prompts sent to agents that day, the sum of `prompts_by_agent` |
 | `prompts_by_agent` | JSON `{ "<agent kind>": n }`, kinds folded onto §9.3's agent slugs; anything else is `other` |
 | `sessions` | integer — agent sessions started |
-| `commits_local` | integer — their commits that day on no remote yet |
+| `commits_local` | integer — their commits that day on no remote yet; merge commits and commits authored before they turned sharing on are not counted (§6.4) |
 | `tz` | the IANA zone the machine reported its days in |
 | `updated_at` | integer — when this snapshot arrived |
 
@@ -1001,7 +1001,8 @@ leaves `commits_local` on the next report. Machines sum. Kept 400 days (§11.6).
 ### 4.24 `pushed_commit_keys`
 
 One key per commit a developer has on a remote — the heatmap's *GitHub* colour
-(§6.4, D-079, LAI-751).
+(§6.4, D-079, LAI-751). Only commits authored after they turned sharing on, and
+never a merge commit — the collector's rule (§6.4).
 
 | field | notes |
 | --- | --- |
@@ -1401,8 +1402,9 @@ reaches SSE, an MCP tool or an export (§4.21).
   "day": "YYYY-MM-DD", "prompts": { "<agent kind>": n }, "sessions": n,
   "commits_local": n, "pushed_keys": ["<16 hex>"] }] }`. A day's fields but
   `day` may be omitted and count as none. Agent kind ids are 1–32 characters of
-  lowercase `a–z`, `0–9` and `-`; one the board does not know is counted as
-  `other`. Caps per day: each agent's prompts ≤ 5000, `sessions` ≤ 500,
+  lowercase `a–z`, `0–9` and `-` — the collector sends `claude-code`, `codex`,
+  `gemini-cli`, `goose`, `kiro`, and `other` for Copilot CLI; one the board
+  does not know is counted as `other`. Caps per day: each agent's prompts ≤ 5000, `sessions` ≤ 500,
   `commits_local` ≤ 2000, `pushed_keys` ≤ 2000, each key exactly 16 hex
   characters. It answers `200 { "accepted_days": n }` — **never the data** —
   and writes **no `activity` row**. Each (person, collector, day) is
@@ -1416,6 +1418,11 @@ reaches SSE, an MCP tool or an export (§4.21).
   unknown field, wrong type or cap; `413` over 16 KB; `429` with `Retry-After`
   past 30 reports an hour per token (per user for a session). A collector that
   is refused `local_activity_off` stops and asks again after 24 hours.
+- **Which commits count** (settled with the collector, LAI-752): both
+  `commits_local` and `pushed_keys` cover only commits the developer authored
+  **after they turned sharing on**, and **merge commits are counted in
+  neither**. The collector enforces both before anything is sent; the server
+  cannot see a commit, so it does not re-check them.
 - `GET /me/local-activity?days=` (1–14, default 14) answers what is held for
   the caller over their last days — `{ start, end, tz, days: [{ day,
   prompts_by_agent, sessions, commits_local, pushed_commits }], collectors,

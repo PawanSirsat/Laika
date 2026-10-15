@@ -193,8 +193,9 @@ export function setActivitySharing(
 
 /**
  * The names `laika connect` accepts for an agent beside its own slug (its
- * `ALIASES`), so a collector that says `gemini` or `copilot` is understood
- * as the board understands the same word typed at the command line.
+ * `ALIASES`), read the same way here. The collector (LAI-752) sends the slugs
+ * themselves — `gemini-cli`, and `other` for Copilot CLI — so these only
+ * catch a sender that used the short names people type.
  */
 const AGENT_ALIASES: Readonly<Record<string, AgentClient>> = {
   claude: 'claude-code',

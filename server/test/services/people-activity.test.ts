@@ -296,7 +296,7 @@ describe('bounded reads (D-079 item 5)', () => {
         t.sqlite.prepare(`EXPLAIN QUERY PLAN ${source}`).all(...bindings) as { detail: string }[]
       ).map((row) => row.detail);
       // `orgs` holds exactly one row (§4.2): reading it whole is reading one row.
-      const scans = plan.filter((line) => /^SCAN /.test(line) && !/^SCAN orgs\b/.test(line));
+      const scans = plan.filter((line) => line.startsWith('SCAN ') && !/^SCAN orgs\b/.test(line));
       expect(scans, `${source}\n${plan.join('\n')}`).toEqual([]);
     }
 
