@@ -899,6 +899,46 @@ describe('started_at and completed_at', () => {
     expect(claimed.started_at).not.toBeNull();
   });
 
+  /**
+   * §4.5: *"stamped the **first** time a task enters `in_progress`, by any
+   * route in"*. `changeStatus` held that since LAI-126 and `claimTask` did not:
+   * it set `startedAt: now` on every claim, so a task released and claimed
+   * again restarted its clock and every cycle time read from it shrank — the
+   * member profile's included (LAI-743).
+   *
+   * Both ways a claim can follow a release: the task left in progress with
+   * nobody on it, and the task put back to To do first.
+   */
+  it('keeps the first start when a released task is claimed again (LAI-743)', () => {
+    const memberId = makeUser('member');
+    addMember(t.db, actor(adminId), 'laika', memberId, 'member');
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+
+    const first = claimTask(t.sqlite, t.db, actor(memberId), task.id, 1_000);
+    updateTask(t.db, actor(memberId), task.id, { assignee_id: null, now: 2_000 });
+    const again = claimTask(t.sqlite, t.db, actor(adminId), task.id, 3_000);
+
+    expect(first.started_at).toBe(1_000);
+    expect(again.assignee_id).toBe(adminId);
+    expect(again.started_at).toBe(1_000);
+  });
+
+  it('keeps the first start when a released task went back to To do (LAI-743)', () => {
+    const memberId = makeUser('member');
+    addMember(t.db, actor(adminId), 'laika', memberId, 'member');
+    const task = newTask();
+    changeStatus(t.db, actor(adminId), task.id, 'todo');
+
+    claimTask(t.sqlite, t.db, actor(memberId), task.id, 1_000);
+    updateTask(t.db, actor(memberId), task.id, { assignee_id: null, now: 2_000 });
+    changeStatus(t.db, actor(adminId), task.id, 'todo', 2_500);
+    const again = claimTask(t.sqlite, t.db, actor(memberId), task.id, 3_000);
+
+    expect(again.status).toBe('in_progress');
+    expect(again.started_at).toBe(1_000);
+  });
+
   it('serialises them on the wire shape, not only in the row', () => {
     // §6.4's task shape, named in full. A new field reaching clients without a
     // spec line is how `dependencies` came to need a footnote — this turns any
