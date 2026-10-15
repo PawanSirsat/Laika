@@ -217,7 +217,9 @@ nothing authored before sharing was turned on is reported, pushed or not.
 ## Review round 2
 
 Re-review verdict APPROVE, with three non-blocking findings, all fixed in
-`c3c5d5f`; criteria unchanged, still in review.
+`c3c5d5f` (and `36bb24a`, which brings the round-1 live-holder test's own lock
+writer into UTC — the first full gate after `c3c5d5f` caught it); criteria
+unchanged, still in review.
 
 1. **Lock check depended on the time zone.** `ps -o lstart` prints in the
    caller's zone, so a live holder started under another `TZ` looked like a
