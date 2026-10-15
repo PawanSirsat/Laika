@@ -233,3 +233,13 @@ unchanged, still in review.
    30 s, and read only a complete environment dump; assertions unchanged.
    `cli/test/activity-hook.test.ts`: 5 runs in a row, 26/26 each, at load ~23;
    once with a CPU hog on every core, 26/26.
+4. **The real server's error envelope** (added to this round by the
+   orchestrator; LAI-751 at `50ecd36`, read only). SPEC §6.3 fixes the codes,
+   so refusals arrive as `details.reason` under `forbidden` and
+   `unprocessable`. Fixed in `fbc901f`: 403 `local_activity_off` (in
+   `details.reason`, or a top-level `code`) stops and clears; any other 403
+   and any 422 (`day_out_of_range`, `invalid_tz`) goes to last-error with
+   its reason and backs off without wiping; `tz` is always a zone `Intl`
+   knows, else `UTC` (Node reported `undefined` or `Etc/Unknown` under an
+   unknown `TZ`). The stub board sends the real envelope. 8 tests red before
+   the change; the legacy top-level case passed before and after, as it should.
