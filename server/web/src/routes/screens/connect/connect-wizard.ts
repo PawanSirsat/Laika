@@ -233,7 +233,7 @@ export function noteAbove(block: SetupBlock): boolean {
  * into it. Never locked and never counted in *Step n of 4* — none of it is
  * needed to connect.
  */
-export type ExtraId = 'share' | 'tools' | 'invite';
+export type ExtraId = 'share' | 'tools' | 'activity' | 'invite';
 
 export interface Extra {
   readonly id: ExtraId;
@@ -253,6 +253,11 @@ export const EXTRAS: readonly Extra[] = [
     id: 'tools',
     name: 'What agents can do',
     line: 'The tools a connected agent gets, and the rules the board holds it to.',
+  },
+  {
+    id: 'activity',
+    name: 'Share local activity',
+    line: 'Your choice: daily counts from your own machine on your profile — counts only, never your work.',
   },
   {
     id: 'invite',

@@ -215,18 +215,24 @@ void describe('step 3’s toggle and chips', () => {
 });
 
 void describe('the optional entries and the notes (LAI-741)', () => {
-  void test('three extras, Invite only for someone who can invite', () => {
+  void test('the extras, Invite only for someone who can invite', () => {
     assert.deepEqual(
       EXTRAS.map((e) => e.name),
-      ['Share with your project', 'What agents can do', 'Invite a teammate'],
+      [
+        'Share with your project',
+        'What agents can do',
+        // D-079 (LAI-751): every signed-in developer's own choice.
+        'Share local activity',
+        'Invite a teammate',
+      ],
     );
     assert.deepEqual(
       extrasFor(false).map((e) => e.id),
-      ['share', 'tools'],
+      ['share', 'tools', 'activity'],
     );
     assert.deepEqual(
       extrasFor(true).map((e) => e.id),
-      ['share', 'tools', 'invite'],
+      ['share', 'tools', 'activity', 'invite'],
     );
   });
 

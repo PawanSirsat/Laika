@@ -62,8 +62,24 @@ function stub(over: Partial<ApiStub> = {}): ApiStub {
       id: 'org1',
       name: 'Kvell Dynamics',
       presence_enabled: true,
+      developer_insights: false,
       created_at: 1,
       updated_at: 1,
+    },
+    // D-079 (LAI-751): the Share local activity entry reads both on opening.
+    '/api/v1/me/activity-sharing': {
+      org_enabled: false,
+      enabled: false,
+      scope: 'agent-repos',
+      min_sync_interval_s: 600,
+    },
+    '/api/v1/me/local-activity': {
+      start: '2026-10-02',
+      end: '2026-10-15',
+      tz: 'UTC',
+      days: [],
+      collectors: 0,
+      oldest_day: null,
     },
     ...over,
   };
@@ -1184,6 +1200,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
       assert.deepEqual(await rows.allInnerTexts(), [
         'Share with your project',
         'What agents can do',
+        'Share local activity',
         'Invite a teammate',
       ]);
       // Never numbered, never locked, and the four steps are still four.
@@ -1197,6 +1214,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
           'What agents can do',
           /Eighteen tools[\s\S]*Find work[\s\S]*Three rules the board enforces/i,
         ],
+        ['Share local activity', /What is sent, per day[\s\S]*Never sent/i],
         ['Invite a teammate', /Organisation issues an invite link/],
       ];
       for (const [name, body] of expect) {
@@ -1262,6 +1280,7 @@ void describe('a fixed rail, the optional entries, and the review follow-ups (LA
       assert.deepEqual(await h.page.locator('.conn-rail-extra').allInnerTexts(), [
         'Share with your project',
         'What agents can do',
+        'Share local activity',
       ]);
     } finally {
       await h.close();
