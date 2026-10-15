@@ -40,7 +40,7 @@
   min-width: 0;
 }
 
-/* A coloured ring, set off from the avatar by a band of the card colour. */
+/* The coloured ring is inline: it is the avatar's own colour (avatar-color.ts). */
 .prof-avatar {
   flex: none;
   display: flex;
@@ -54,9 +54,6 @@
   font-weight: var(--weight-heavy);
   letter-spacing: -0.02em;
   line-height: 1;
-  box-shadow:
-    0 0 0 3px var(--bg-card),
-    0 0 0 5px var(--ring, var(--accent));
 }
 
 .prof-who {

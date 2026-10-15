@@ -400,10 +400,11 @@ function ProfileHead({
   const { theme } = useTheme();
   const { user } = profile;
   const ink = avatarColor(user.id, theme);
-  const avatar: CSSProperties & Record<'--ring', string> = {
+  // The ring is the avatar's own colour, set off by a band of the card's.
+  const avatar: CSSProperties = {
     background: ink.background,
     color: ink.foreground,
-    '--ring': ink.background,
+    boxShadow: `0 0 0 3px var(--bg-card), 0 0 0 5px ${ink.background}`,
   };
 
   return (
