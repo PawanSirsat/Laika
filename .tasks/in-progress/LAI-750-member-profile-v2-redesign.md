@@ -2,11 +2,12 @@
 id: LAI-750
 title: 'Member profile v2: the strategy-page look on real data — cards, bars, tiles, agent share, a manager review queue; definitions behind (i)'
 area: web
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: [LAI-743, LAI-746, LAI-749]
 discovered-from:
-status: backlog
+started: 2026-10-15T12:04:52Z
+status: in-progress
 ---
 
 ## Goal
