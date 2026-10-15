@@ -52,10 +52,16 @@
 }
 
 /*
- * The tile's second value shares the first's line and gives way rather than
- * wrapping under it: a wrap would come only with the answer, and move the
- * card (LAI-751). The tile's title says it whole.
+ * A tile's second value never wraps under its first once the answer lands —
+ * that would move the card (LAI-751). Where the row of tiles is wide it
+ * shares the first's line and gives way; where it is narrow it has a line of
+ * its own from the start. Chosen by the row's width, never by the text; the
+ * tile's title says it whole.
  */
+.hm-stats {
+  container: hm-stats / inline-size;
+}
+
 .hm-stats .prof-stat-value {
   white-space: nowrap;
 }
@@ -66,6 +72,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@container hm-stats (max-width: 60rem) {
+  .hm-stats .prof-stat-sub {
+    flex-basis: 100%;
+  }
 }
 
 /* The share pushed as a bar under its tile, violet then amber. */
@@ -401,12 +413,15 @@
   grid-area: total;
 }
 
+/* Narrow: two lines, and the full width — the weekday column's indent would
+   cut a phone's longest total short. */
 @container (max-width: 36rem) {
   .hm-block-head {
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
       'name ramp'
       'total total';
+    padding-left: 0;
   }
 }
 
