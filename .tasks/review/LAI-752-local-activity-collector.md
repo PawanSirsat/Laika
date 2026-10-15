@@ -213,3 +213,21 @@ contract now names `gemini-cli` and Copilot CLI as `other` itself.
 Behaviour changes worth a SPEC line: the switch and scope are read on every
 sync (not at most daily); syncs are bound to the board `on` was run against;
 nothing authored before sharing was turned on is reported, pushed or not.
+
+## Review round 2
+
+Re-review verdict APPROVE, with three non-blocking findings, all fixed in
+`c3c5d5f`; criteria unchanged, still in review.
+
+1. **Lock check depended on the time zone.** `ps -o lstart` prints in the
+   caller's zone, so a live holder started under another `TZ` looked like a
+   reused pid. `ps` now runs with `TZ=UTC LC_ALL=C`. Test (red before the fix):
+   a holder started under `Pacific/Kiritimati`, checked from
+   `Pacific/Pago_Pago`, keeps the lock.
+2. **The deadline sent SIGTERM only.** `execFile`'s abort sent SIGTERM and
+   cleared its 10 s SIGKILL timer. The abort now sends SIGKILL itself. Test (red
+   before the fix): a fake `git` that ignores SIGTERM is gone within 5 s.
+3. **Fixed waits in the launch tests.** They now poll for the condition, up to
+   30 s, and read only a complete environment dump; assertions unchanged.
+   `cli/test/activity-hook.test.ts`: 5 runs in a row, 26/26 each, at load ~23;
+   once with a CPU hog on every core, 26/26.
