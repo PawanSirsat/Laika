@@ -78,6 +78,7 @@ describe('migrations', () => {
     'idempotency_keys',
     'invites',
     'meeting_reviews',
+    'member_ratings',
     'orgs',
     'project_memberships',
     'project_statuses',
@@ -128,6 +129,7 @@ describe('migrations', () => {
     ['sprints', ['project_id', 'status']],
     ['tasks', ['status_id']],
     ['project_statuses', ['project_id', 'position']],
+    ['member_ratings', ['user_id', 'created_at']],
   ];
 
   it('creates every index SPEC §4.13 requires', () => {
@@ -297,5 +299,87 @@ describe('subtasks — parent_task_id (SPEC §4.5, D-066)', () => {
       )
       .map((r) => r.name);
     expect(names).toContain('tasks_parent_task_id_idx');
+  });
+});
+
+/**
+ * The member profile's storage (SPEC §4.1, §4.21, D-078, LAI-743).
+ *
+ * Each rule here is the database's, not the service's: a writer that bypasses
+ * `services/profiles.ts` — a future service, a shell against the volume — meets
+ * the same refusal. So each is asserted with raw SQL, the way that writer would
+ * arrive.
+ */
+describe('profile_kind and member_ratings (SPEC §4.1, §4.21, LAI-743)', () => {
+  function person(name: string): string {
+    const id = newId();
+    const now = Date.now();
+    t.db.run(sql`
+      INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+      VALUES (${id}, ${`${name}@example.test`}, ${name}, 'member', 1, ${now}, ${now})
+    `);
+    return id;
+  }
+
+  function rate(userId: string, ratedBy: string, score: number, note: string): void {
+    t.db.run(sql`
+      INSERT INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+      VALUES (${newId()}, ${userId}, ${ratedBy}, ${score}, ${note}, ${Date.now()})
+    `);
+  }
+
+  it('gives every person profile_kind builder unless told otherwise', () => {
+    const id = person('ada');
+
+    expect(t.db.select().from(users).where(eq(users.id, id)).get()?.profileKind).toBe('builder');
+  });
+
+  it('accepts manager and refuses anything else, by CHECK', () => {
+    const id = person('ada');
+    t.db.run(sql`UPDATE users SET profile_kind = 'manager' WHERE id = ${id}`);
+    expect(t.db.select().from(users).where(eq(users.id, id)).get()?.profileKind).toBe('manager');
+
+    expectSqliteError(() => {
+      t.db.run(sql`UPDATE users SET profile_kind = 'admin' WHERE id = ${id}`);
+    }, /CHECK constraint failed: users_profile_kind_check/i);
+  });
+
+  it('keeps a score from 1 to 5, a note, and nobody rating themselves', () => {
+    const ada = person('ada');
+    const bob = person('bob');
+
+    rate(ada, bob, 1, 'Fine.');
+    rate(ada, bob, 5, 'x'.repeat(500));
+
+    expectSqliteError(() => rate(ada, bob, 0, 'Too low.'), /member_ratings_score_check/i);
+    expectSqliteError(() => rate(ada, bob, 6, 'Too high.'), /member_ratings_score_check/i);
+    expectSqliteError(() => rate(ada, bob, 2.5, 'Halves.'), /member_ratings_score_check/i);
+    expectSqliteError(() => rate(ada, bob, 3, ''), /member_ratings_note_check/i);
+    expectSqliteError(() => rate(ada, bob, 3, 'x'.repeat(501)), /member_ratings_note_check/i);
+    expectSqliteError(() => rate(ada, ada, 3, 'Myself.'), /member_ratings_not_self_check/i);
+  });
+
+  it('refuses a rating of, or by, somebody who does not exist', () => {
+    const ada = person('ada');
+
+    expectSqliteError(() => rate(ada, 'usr_nobody', 3, 'Who?'), /FOREIGN KEY/i);
+    expectSqliteError(() => rate('usr_nobody', ada, 3, 'Who?'), /FOREIGN KEY/i);
+  });
+
+  it('is append-only: an UPDATE or DELETE aborts', () => {
+    // A row first: `BEFORE UPDATE`/`BEFORE DELETE` triggers fire per row, so
+    // against an empty table both statements would succeed whatever the
+    // guarantee — the trap `migrate.test.ts` names for `activity`.
+    const ada = person('ada');
+    rate(ada, person('bob'), 4, 'Steady.');
+
+    expectSqliteError(() => {
+      t.db.run(sql`UPDATE member_ratings SET score = 1`);
+    }, /member_ratings is append-only: UPDATE/i);
+    expectSqliteError(() => {
+      t.db.run(sql`DELETE FROM member_ratings`);
+    }, /member_ratings is append-only: DELETE/i);
+
+    expect(t.db.all(sql`SELECT score FROM member_ratings`)).toEqual([{ score: 4 }]);
   });
 });

@@ -54,19 +54,30 @@ export function seed(db: Db, now = Date.now()): Seed {
   const orgId = newId();
   const projectId = newId();
 
-  db.insert(users)
-    .values({
-      id: userId,
-      email: 'owner@example.test',
-      name: 'Owner',
-      orgRole: 'owner',
-      isActive: 1,
-      // users.createdAt/updatedAt are Date-typed since LAI-005 (better-auth
-      // hands the adapter Dates); the stored value is still integer unix-ms.
-      createdAt: new Date(now),
-      updatedAt: new Date(now),
-    })
-    .run();
+  // **Unless `users` is older than 0029.** Drizzle names every declared column
+  // in an INSERT, `profile_kind` included, and `migrate.test.ts` seeds
+  // databases cut back before it — so there, the row is written with the
+  // columns that existed, and 0029 gives it its default (LAI-743).
+  if (hasColumn(db, 'users', 'profile_kind')) {
+    db.insert(users)
+      .values({
+        id: userId,
+        email: 'owner@example.test',
+        name: 'Owner',
+        orgRole: 'owner',
+        isActive: 1,
+        // users.createdAt/updatedAt are Date-typed since LAI-005 (better-auth
+        // hands the adapter Dates); the stored value is still integer unix-ms.
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+      })
+      .run();
+  } else {
+    db.run(sql`
+      INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+      VALUES (${userId}, 'owner@example.test', 'Owner', 'owner', 1, ${now}, ${now})
+    `);
+  }
 
   db.insert(orgs)
     .values({ id: orgId, name: 'Laika', ownerUserId: userId, createdAt: now, updatedAt: now })
@@ -112,6 +123,10 @@ export function atCategory<S extends TaskStatus>(
   category: S,
 ): { status: S; statusId: string } {
   return { status: category, statusId: statusForCategory(db, projectId, category).id };
+}
+
+function hasColumn(db: Db, table: string, column: string): boolean {
+  return db.all(sql`SELECT 1 FROM pragma_table_info(${table}) WHERE name = ${column}`).length > 0;
 }
 
 function hasTable(db: Db, name: string): boolean {

@@ -58,6 +58,7 @@ export const MIGRATIONS_FOLDER = fileURLToPath(new URL('migrations', import.meta
 const APPEND_ONLY_TRIGGERS = [
   {
     name: 'activity_is_append_only_no_update',
+    table: 'activity',
     /** The clause that does the work. A trigger without it enforces nothing. */
     aborts: 'UPDATE is not permitted',
     create: `CREATE TRIGGER IF NOT EXISTS \`activity_is_append_only_no_update\`
@@ -68,6 +69,7 @@ END`,
   },
   {
     name: 'activity_is_append_only_no_delete',
+    table: 'activity',
     aborts: 'DELETE is not permitted',
     create: `CREATE TRIGGER IF NOT EXISTS \`activity_is_append_only_no_delete\`
 BEFORE DELETE ON \`activity\`
@@ -75,11 +77,37 @@ BEGIN
   SELECT RAISE(ABORT, 'activity is append-only: DELETE is not permitted (SPEC 4.8)');
 END`,
   },
+  // §4.21's ratings are append-only for `activity`'s reason, and lose their
+  // triggers to a rebuild the same way, so they ride the same step (LAI-743).
+  {
+    name: 'member_ratings_is_append_only_no_update',
+    table: 'member_ratings',
+    aborts: 'UPDATE is not permitted',
+    create: `CREATE TRIGGER IF NOT EXISTS \`member_ratings_is_append_only_no_update\`
+BEFORE UPDATE ON \`member_ratings\`
+BEGIN
+  SELECT RAISE(ABORT, 'member_ratings is append-only: UPDATE is not permitted (SPEC 4.21)');
+END`,
+  },
+  {
+    name: 'member_ratings_is_append_only_no_delete',
+    table: 'member_ratings',
+    aborts: 'DELETE is not permitted',
+    create: `CREATE TRIGGER IF NOT EXISTS \`member_ratings_is_append_only_no_delete\`
+BEFORE DELETE ON \`member_ratings\`
+BEGIN
+  SELECT RAISE(ABORT, 'member_ratings is append-only: DELETE is not permitted (SPEC 4.21)');
+END`,
+  },
 ] as const;
 
 /**
  * Put §4.8's append-only triggers back if a migration rebuilt them away, and
  * refuse to continue if what is there does not actually enforce anything.
+ *
+ * **§4.21's `member_ratings` too, since LAI-743** — the name stayed, because
+ * the mechanism is the same one and a rename would touch every caller for no
+ * change in behaviour.
  *
  * Idempotent: on an already-correct database both statements are no-ops and
  * nothing is rewritten — no drop, no recreate, so a boot does not churn
@@ -109,27 +137,42 @@ END`,
  * worse than a server that does not run.
  */
 export function ensureActivityTriggers(db: Db): void {
-  for (const trigger of APPEND_ONLY_TRIGGERS) db.run(sql.raw(trigger.create));
+  // **A table no migration has created yet has nothing to protect.**
+  // `member_ratings` arrives in 0029, and a database migrated only part of the
+  // way — which `migrate.test.ts` builds on purpose — has no table to put a
+  // trigger on. `activity` has existed since 0000, so it is never skipped and
+  // its absence still refuses to start.
+  const triggers = APPEND_ONLY_TRIGGERS.filter(
+    (trigger) => trigger.table === 'activity' || tableExists(db, trigger.table),
+  );
+
+  for (const trigger of triggers) db.run(sql.raw(trigger.create));
 
   const bodies = new Map(
     db
       .all<{ name: string; sql: string | null }>(
-        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'activity'`,
+        sql`SELECT name, sql FROM sqlite_master WHERE type = 'trigger' AND tbl_name IN ('activity', 'member_ratings')`,
       )
       .map((row) => [row.name, row.sql ?? '']),
   );
 
-  const broken = APPEND_ONLY_TRIGGERS.filter(
-    (trigger) => !(bodies.get(trigger.name) ?? '').includes(trigger.aborts),
-  ).map((trigger) =>
-    bodies.has(trigger.name) ? `${trigger.name} (present but does not abort)` : trigger.name,
-  );
+  const broken = triggers
+    .filter((trigger) => !(bodies.get(trigger.name) ?? '').includes(trigger.aborts))
+    .map((trigger) =>
+      bodies.has(trigger.name) ? `${trigger.name} (present but does not abort)` : trigger.name,
+    );
 
   if (broken.length > 0) {
     throw new Error(
-      `activity is append-only (SPEC §4.8) and its triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
+      `activity (SPEC §4.8) and member_ratings (§4.21) are append-only and their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
     );
   }
+}
+
+function tableExists(db: Db, name: string): boolean {
+  return (
+    db.all(sql`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${name}`).length > 0
+  );
 }
 
 /**

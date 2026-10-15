@@ -204,6 +204,13 @@
       "when": 1791789027750,
       "tag": "0028_project_statuses",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "6",
+      "when": 1792045443105,
+      "tag": "0029_member_profile",
+      "breakpoints": true
     }
   ]
 }

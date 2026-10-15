@@ -376,3 +376,148 @@ describe('the tasks rebuild keeps every row and every foreign key (LAI-493)', ()
     }
   });
 });
+
+/**
+ * 0029 on a database at 0028 — production's migration when it was written
+ * (LAI-743).
+ *
+ * **Additive is the property, so it is asserted directly.** drizzle-kit
+ * generated a rebuild of `users` for 0029 and it was rewritten by hand to
+ * `ALTER TABLE … ADD`; a rebuild would create the new table before dropping
+ * the old one, so `users` would come back on a different root page. Same page,
+ * same rows, every reference still resolving: nothing was copied.
+ */
+describe('0029 adds the member profile to a populated 0028 database (LAI-743)', () => {
+  function folderAt0028(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag.startsWith('0029_'));
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: the first entry cut is 0029, and the last one
+    // kept is 0028, or this is not the upgrade production makes.
+    expect(dropped[0]?.tag).toMatch(/^0029_/);
+    expect(journal.entries.at(-1)?.tag).toMatch(/^0028_/);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it('keeps every row, adds the column and the table, and rebuilds nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: folderAt0028() });
+      const columns = () =>
+        db
+          .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('users')`)
+          .map((r) => r.name);
+      expect(columns()).not.toContain('profile_kind');
+
+      const s = seed(db);
+      const now = Date.now();
+      const member = newId();
+      db.run(sql`
+        INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+        VALUES (${member}, 'bea@example.test', 'Bea', 'member', 0, ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, assignee_id, created_by, created_via, created_at, updated_at)
+        VALUES (${newId()}, ${s.projectId}, 1, 'A', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${member}, ${s.userId}, 'api', ${now}, ${now})
+      `);
+      appendActivity(db, { orgId: s.orgId, actorKind: 'system', type: 'webhook.commit' });
+
+      const rootpage = () =>
+        db.get<{ rootpage: number }>(
+          sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = 'users'`,
+        )?.rootpage;
+      const before = rootpage();
+      const users = () =>
+        db.all(sql`SELECT id, email, name, org_role, is_active, created_at FROM users ORDER BY id`);
+      const usersBefore = users();
+
+      runMigrations(db);
+
+      expect(rootpage(), 'users was rebuilt').toBe(before);
+      expect(users()).toEqual(usersBefore);
+      expect(columns()).toContain('profile_kind');
+      expect(db.all(sql`SELECT DISTINCT profile_kind FROM users`)).toEqual([
+        { profile_kind: 'builder' },
+      ]);
+      expect(db.all(sql`SELECT id FROM tasks WHERE assignee_id = ${member}`)).toHaveLength(1);
+      expect(db.all(sql`SELECT id FROM activity`)).toHaveLength(1);
+      expect(db.all(sql`SELECT id FROM member_ratings`)).toEqual([]);
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+
+      // And the new table is append-only on the upgraded database, not only
+      // on a fresh one: a row, then both refusals.
+      db.run(sql`
+        INSERT INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+        VALUES (${newId()}, ${member}, ${s.userId}, 4, 'Steady.', ${now})
+      `);
+      expectSqliteError(() => db.run(sql`UPDATE member_ratings SET score = 1`), /append-only/);
+      expectSqliteError(() => db.run(sql`DELETE FROM member_ratings`), /append-only/);
+    } finally {
+      sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('migrates a fresh database straight through to the same shape', () => {
+    // `freshDb()` runs every migration from nothing; the profile column and
+    // table are simply there.
+    expect(
+      t.db
+        .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('users')`)
+        .map((r) => r.name),
+    ).toContain('profile_kind');
+    expect(
+      t.db.all(
+        sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'member_ratings'`,
+      ),
+    ).toHaveLength(1);
+  });
+});
+
+/**
+ * `member_ratings` is append-only for the same reason `activity` is, and its
+ * triggers are re-established at boot the same way (LAI-743): a later rebuild
+ * of the table would drop them, silently.
+ */
+describe('member_ratings keeps its append-only triggers across a rebuild (LAI-743)', () => {
+  const RATING_TRIGGERS = [
+    'member_ratings_is_append_only_no_delete',
+    'member_ratings_is_append_only_no_update',
+  ];
+  const ratingTriggers = () =>
+    t.db
+      .all<{ name: string }>(
+        sql`SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'member_ratings' ORDER BY name`,
+      )
+      .map((row) => row.name);
+
+  it('starts with both, from the migration', () => {
+    expect(ratingTriggers()).toEqual(RATING_TRIGGERS);
+  });
+
+  it('gets them back from the boot step after they are lost', () => {
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_update`');
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_delete`');
+    expect(ratingTriggers()).toEqual([]);
+
+    ensureActivityTriggers(t.db);
+
+    expect(ratingTriggers()).toEqual(RATING_TRIGGERS);
+  });
+
+  it('refuses one that holds the name and enforces nothing', () => {
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_update`');
+    t.sqlite.exec(
+      'CREATE TRIGGER `member_ratings_is_append_only_no_update` BEFORE UPDATE ON `member_ratings` BEGIN SELECT 1; END',
+    );
+
+    expect(() => ensureActivityTriggers(t.db)).toThrow(/present but does not abort/i);
+  });
+});

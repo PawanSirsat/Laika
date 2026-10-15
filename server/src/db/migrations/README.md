@@ -26,6 +26,10 @@ migration is not the same mechanism, and why a name check is not enough.
 
 Pasting one regardless is harmless, just redundant.
 
+`member_ratings` (§4.21, LAI-743) is append-only the same way and its two
+triggers ride the same step, so a later rebuild of that table needs no block
+either.
+
 ## Two things a change to `activity` still has to think about
 
 - **`rowid` must not be renumbered.** The SSE stream (§11.5) and the activity

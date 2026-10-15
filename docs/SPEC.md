@@ -306,6 +306,7 @@ name. A `system.database.vacuum` would be a permission that grants nothing.
 | `name` | text | |
 | `org_role` | text | `owner` \| `admin` \| `member` \| `viewer` |
 | `is_active` | integer | 0 = deactivated, row kept for history |
+| `profile_kind` | text | `builder` \| `manager`, default `builder` — what the member profile shows (§11.4.2, D-078). **A label, never a permission**: `can()` does not read it (§3.1) |
 | `created_at`, `updated_at` | integer | |
 
 **There is no `avatar_color` column** (LAI-148). This table listed one, *"derived
@@ -680,7 +681,7 @@ one.
 `unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`,
 `sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`,
 `tasks(parent_task_id)`, `tasks(status_id)`,
-`project_statuses(project_id, position)` unique.
+`project_statuses(project_id, position)` unique, `member_ratings(user_id, created_at)`.
 `tags(project_id, name)` unique and `task_tags(tag_id)` — the `?tag=` filter
 reads from the tag side, so the join needs an index from that end too.
 
@@ -884,6 +885,28 @@ default-labelled, straight after it; a category no column held became a hidden,
 default-labelled status at the end; a clashing name took a ` (2)` suffix; an
 empty column, which held no category, became nothing. Every task kept its
 category, in the first status of it.
+
+### 4.21 `member_ratings`
+
+An owner's or admin's rating of one member, for the member profile (D-078,
+LAI-743). **Append-only**: a new rating supersedes the last, never edits it, and
+two triggers refuse `UPDATE` and `DELETE` — re-established at every boot, as
+`activity`'s are.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users` — the person rated |
+| `rated_by` | FK `users` — the owner or admin who rated them; never `user_id` (CHECK) |
+| `score` | integer 1–5 (CHECK) |
+| `note` | 1–500 characters, required — the reason, which is what makes a rating reviewable |
+| `created_at` | |
+
+**Private.** A rating writes no `activity` row and has no §4.8 verb, so it
+reaches no feed, SSE stream, webhook or export, and no MCP tool reads it. The
+only reader is `GET /api/v1/users/:id/profile` (§6.4), which answers an owner or
+admin on a web session and nobody else (§3.1). No `ON DELETE`: people are
+deactivated, never deleted (§4.1).
 
 ## 5. Task lifecycle
 

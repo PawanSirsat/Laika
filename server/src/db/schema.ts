@@ -33,6 +33,7 @@ import {
   CREATED_VIA,
   MEETING_REVIEW_STATUSES,
   ORG_ROLES,
+  PROFILE_KINDS,
   PROJECT_ROLES,
   PROJECT_VISIBILITIES,
   SPRINT_STATUSES,
@@ -93,6 +94,11 @@ export const users = sqliteTable(
     /** Derived from the id — no uploads in v1 (§4.1). */
     /** 0 = deactivated. The row is kept so history keeps its author (§4.1). */
     isActive: integer('is_active').notNull().default(1),
+    /**
+     * `builder` or `manager` — what the member profile shows (§4.1, D-078,
+     * LAI-743). A label, never a permission: `can()` does not read it.
+     */
+    profileKind: text('profile_kind', { enum: PROFILE_KINDS }).notNull().default('builder'),
 
     // --- required by better-auth's `user` model (LAI-005) ---
     // This table *is* better-auth's user table, remapped: one identity, one row.
@@ -110,6 +116,10 @@ export const users = sqliteTable(
     uniqueIndex('users_email_unique').on(t.email),
     check('users_org_role_check', oneOf('org_role', ORG_ROLES)),
     check('users_is_active_check', sql.raw('is_active IN (0, 1)')),
+    // Added by 0029 as a column constraint on `ALTER TABLE … ADD`, so `users`
+    // was not rebuilt to gain it — a rebuild of a table this many others
+    // reference is the risk LAI-493 measured (LAI-743).
+    check('users_profile_kind_check', oneOf('profile_kind', PROFILE_KINDS)),
   ],
 );
 
@@ -1044,6 +1054,53 @@ export const commentMentions = sqliteTable(
   ],
 );
 
+// ------------------------------------------------------ §4.21 member_ratings
+
+/**
+ * A rating of one member by an owner or admin: 1–5 and a short note (§4.21,
+ * D-078, LAI-743).
+ *
+ * **Append-only, like `activity`.** A new rating supersedes the last one and
+ * never edits it; two triggers refuse `UPDATE` and `DELETE`, and `runMigrations`
+ * re-checks them on every boot (`migrate.ts`). There is no mutation helper.
+ *
+ * **Private.** Nothing here reaches `activity`, so it reaches no feed, stream,
+ * webhook or export; only `services/profiles.ts` reads it, behind
+ * `profile.read`.
+ *
+ * Each rule is the database's as well as the service's — score, note length and
+ * *"not themselves"* — so a writer that bypasses the service meets the same
+ * refusal. No `ON DELETE`: people are deactivated, never deleted (§4.1), and a
+ * rating must not outlive its author silently.
+ */
+export const memberRatings = sqliteTable(
+  'member_ratings',
+  {
+    id: text('id').primaryKey(),
+    /** The person rated. */
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id),
+    /** The owner or admin who rated them. */
+    ratedBy: text('rated_by')
+      .notNull()
+      .references(() => users.id),
+    score: integer('score').notNull(),
+    note: text('note').notNull(),
+    createdAt,
+  },
+  (t) => [
+    // A profile reads one person's history, newest first.
+    index('member_ratings_user_created_at_idx').on(t.userId, t.createdAt),
+    index('member_ratings_rated_by_idx').on(t.ratedBy),
+    // `IN`, not `BETWEEN`: an INTEGER column keeps 2.5 as a REAL, and
+    // `BETWEEN 1 AND 5` would let it in.
+    check('member_ratings_score_check', sql.raw('score IN (1, 2, 3, 4, 5)')),
+    check('member_ratings_note_check', sql.raw('length(trim(note)) > 0 AND length(note) <= 500')),
+    check('member_ratings_not_self_check', sql.raw('user_id <> rated_by')),
+  ],
+);
+
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
@@ -1065,3 +1122,4 @@ export type Tag = typeof tags.$inferSelect;
 export type TaskTag = typeof taskTags.$inferSelect;
 export type TaskWatcher = typeof taskWatchers.$inferSelect;
 export type CommentMention = typeof commentMentions.$inferSelect;
+export type MemberRating = typeof memberRatings.$inferSelect;
