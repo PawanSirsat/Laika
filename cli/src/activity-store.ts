@@ -256,11 +256,17 @@ function pidAlive(pid: number): boolean {
  * When a process started, as `ps` prints it — to tell the lock's holder from an
  * unrelated process that was later given the same pid. `''` when `ps` cannot
  * say, which is then treated as "the same process" (the safe side: busy).
+ *
+ * **Always in UTC and the C locale.** `lstart` is printed in the caller's zone
+ * and language, and the holder and the checker are started by different
+ * agents with different environments: an agent run with another `TZ` once
+ * looked like a reused pid and lost its lock to a second sync.
  */
 function processStart(pid: number): string {
   try {
     return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
       encoding: 'utf8',
+      env: { ...process.env, TZ: 'UTC', LC_ALL: 'C' },
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 2_000,
     }).trim();

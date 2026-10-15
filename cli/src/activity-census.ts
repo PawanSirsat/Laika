@@ -283,9 +283,13 @@ export type GitRunner = (cwd: string, args: readonly string[]) => Promise<string
  * and colour are turned off per command. `undefined` on any failure — a repo
  * that cannot be read counts nothing, it does not stop the sync.
  *
- * Asynchronous, killed after 10 s, and killed at once when `signal` aborts (the
- * sync's overall deadline): a `git` stuck on a dead network mount must never
- * hold the sync open.
+ * Asynchronous, and never allowed to hold the sync open: a `git` that runs
+ * 10 s is sent SIGKILL by `execFile`'s own timeout, and when `signal` aborts
+ * (the sync's overall deadline) it is sent SIGKILL at once and the call
+ * answers `undefined` without waiting for it. SIGKILL, not SIGTERM: these
+ * commands only read, so there is nothing for git to clean up, and SIGTERM can
+ * be ignored. (A process blocked inside the kernel on a dead mount dies when
+ * the mount lets go; nothing here waits for that.)
  */
 export function gitRunner(
   env: Readonly<Record<string, string | undefined>>,
@@ -299,7 +303,17 @@ export function gitRunner(
   };
   return (cwd, args) =>
     new Promise((done) => {
-      execFile(
+      if (signal?.aborted === true) {
+        done(undefined);
+        return;
+      }
+      // Not execFile's `signal` option: on an abort that sends SIGTERM, and
+      // clears the timeout that would have sent SIGKILL.
+      const onAbort = (): void => {
+        child.kill('SIGKILL');
+        done(undefined);
+      };
+      const child = execFile(
         'git',
         ['-C', cwd, ...args],
         {
@@ -308,12 +322,14 @@ export function gitRunner(
           timeout: GIT_TIMEOUT_MS,
           killSignal: 'SIGKILL',
           maxBuffer: 64 * 1024 * 1024,
-          ...(signal === undefined ? {} : { signal }),
         },
         (error, stdout) => {
+          signal?.removeEventListener('abort', onAbort);
           done(error === null ? stdout : undefined);
         },
-      ).stdin?.end();
+      );
+      signal?.addEventListener('abort', onAbort, { once: true });
+      child.stdin?.end();
     });
 }
 

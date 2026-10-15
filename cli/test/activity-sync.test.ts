@@ -23,6 +23,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { addDays, gitRunner, localDay, pushedKey, type GitRunner } from '../src/activity-census.ts';
 import { acquireLock, activityPaths, readState, writeState } from '../src/activity-store.ts';
@@ -636,6 +637,86 @@ void describe('syncs cannot pile up (review 1, item 1)', () => {
         ['GET'],
       );
       assert.equal(readFileSync(w.paths.state, 'utf8'), state);
+    },
+  );
+
+  /**
+   * `ps -o lstart` prints in the caller's time zone. An agent started with
+   * another `TZ` wrote its start time in that zone; read back in this one it
+   * looked like a different process, and the lock was taken from a live sync.
+   */
+  void test(
+    'a holder that started under another time zone keeps the lock',
+    { timeout: 30_000 },
+    async () => {
+      const w = await world();
+      const store = pathToFileURL(
+        fileURLToPath(new URL('../src/activity-store.ts', import.meta.url)),
+      ).href;
+      const script =
+        `const m = await import(${JSON.stringify(store)});\n` +
+        `if (m.acquireLock(m.activityPaths(${JSON.stringify(w.home)})) === undefined) process.exit(3);\n` +
+        'setInterval(() => {}, 1000);\n';
+      const holder = spawn(process.execPath, ['--input-type=module', '-e', script], {
+        env: { ...process.env, TZ: 'Pacific/Kiritimati' },
+        stdio: 'ignore',
+      });
+      const ownTz = process.env.TZ;
+      try {
+        await until(() => existsSync(w.paths.lock), 20_000);
+        const content = readFileSync(w.paths.lock, 'utf8');
+        assert.match(content, new RegExp(`"pid":${String(holder.pid)}[,}]`));
+        // This side reads it in a zone 24 hours away from the holder's.
+        process.env.TZ = 'Pacific/Pago_Pago';
+        assert.equal((await sync(w.ctx)).kind, 'busy', 'a live sync’s lock was taken');
+        assert.equal(readFileSync(w.paths.lock, 'utf8'), content);
+      } finally {
+        if (ownTz === undefined) delete process.env.TZ;
+        else process.env.TZ = ownTz;
+        holder.kill('SIGKILL');
+      }
+    },
+  );
+
+  /**
+   * The deadline must end a git that ignores SIGTERM too. It was sent SIGTERM
+   * only, and the 10 s SIGKILL timer went with the callback.
+   */
+  void test(
+    'a git that ignores SIGTERM is gone soon after the deadline aborts',
+    { timeout: 30_000 },
+    async () => {
+      const bin = dir('laika-stubborngit-');
+      const pidFile = join(bin, 'pid');
+      writeFileSync(
+        join(bin, 'git'),
+        `#!/bin/sh\ntrap '' TERM\necho $$ > '${pidFile}'\nwhile :; do sleep 0.2; done\n`,
+        { mode: 0o755 },
+      );
+      const controller = new AbortController();
+      const run = gitRunner({ PATH: `${bin}:${process.env.PATH ?? ''}` }, controller.signal);
+      const pending = run(bin, ['log']);
+      await until(() => existsSync(pidFile) && readFileSync(pidFile, 'utf8').trim() !== '');
+      const pid = Number(readFileSync(pidFile, 'utf8'));
+      try {
+        controller.abort();
+        assert.equal(await pending, undefined);
+        // Well inside git's own 10 s timeout: the abort itself must end it.
+        await until(() => {
+          try {
+            process.kill(pid, 0);
+            return false;
+          } catch {
+            return true;
+          }
+        }, 5_000);
+      } finally {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {
+          // Already gone, which is the point.
+        }
+      }
     },
   );
 

@@ -253,9 +253,31 @@ for (const shell of SHELLS) {
 }
 
 /**
+ * Wait for `check`, polling, for at most `ms`. A detached launch lands when the
+ * machine gets round to it — milliseconds when idle, seconds under the full
+ * gate — so these tests wait for the thing itself, never for a fixed time.
+ */
+async function until(check: () => boolean, ms = 30_000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!check()) {
+    if (Date.now() > end) throw new Error(`not within ${String(ms / 1000)} s`);
+    await new Promise((res) => setTimeout(res, 50));
+  }
+}
+
+const textOf = (path: string): string => {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return '';
+  }
+};
+
+/**
  * The sync is started detached and the hook does not wait for it. Driven with
  * a copy of the hook beside a fake `cli/bin/laika` that records how it was
- * called and then sleeps far longer than any hook budget.
+ * called, then its whole environment followed by an `__END__` line (so a test
+ * never reads half a dump), and then sleeps far longer than any hook budget.
  */
 void describe('starting the sync', () => {
   function layout(): { script: string; calls: string } {
@@ -266,7 +288,10 @@ void describe('starting the sync', () => {
     copyFileSync(HOOK, script);
     const calls = join(root, 'calls.txt');
     const fake = join(root, 'cli', 'bin', 'laika');
-    writeFileSync(fake, `#!/bin/sh\necho "$*" >> '${calls}'\nenv >> '${calls}.env'\nsleep 4\n`);
+    writeFileSync(
+      fake,
+      `#!/bin/sh\necho "$*" >> '${calls}'\n{ env; echo __END__; } >> '${calls}.env'\nsleep 4\n`,
+    );
     chmodSync(fake, 0o755);
     return { script, calls };
   }
@@ -281,8 +306,7 @@ void describe('starting the sync', () => {
     const took = Date.now() - started;
     assert.equal(r.code, 0);
     assert.ok(took < 1000, `took ${String(took)} ms — Claude Code gives SessionEnd 1.5 s in all`);
-    for (let i = 0; i < 50 && !existsSync(calls); i += 1)
-      await new Promise((res) => setTimeout(res, 50));
+    await until(() => textOf(calls).endsWith('\n'));
     assert.equal(readFileSync(calls, 'utf8').trim(), 'activity sync --background');
   });
 
@@ -294,10 +318,13 @@ void describe('starting the sync', () => {
       script,
       env: { USER_PROMPT: 'SECRET-PROMPT-zz' },
     });
-    for (let i = 0; i < 50 && !existsSync(`${calls}.env`); i += 1) {
-      await new Promise((res) => setTimeout(res, 50));
-    }
-    assert.ok(!readFileSync(`${calls}.env`, 'utf8').includes('SECRET-PROMPT-zz'));
+    await until(() => textOf(`${calls}.env`).includes('__END__'));
+    const dump = readFileSync(`${calls}.env`, 'utf8');
+    assert.ok(
+      dump.includes(`HOME=${h}`),
+      'not this hook’s launch — the check below proves nothing',
+    );
+    assert.ok(!dump.includes('SECRET-PROMPT-zz'));
   });
 
   /**
@@ -314,9 +341,10 @@ void describe('starting the sync', () => {
     run(shell, ['session-end', 'codex'], { home: notDue, script });
     run(shell, ['session-start', 'codex'], { home: off, script });
     run(shell, ['session-end', 'codex'], { home: due, script });
-    for (let i = 0; i < 100 && !existsSync(`${calls}.env`); i += 1) {
-      await new Promise((res) => setTimeout(res, 50));
-    }
+    await until(() => {
+      const dump = textOf(`${calls}.env`);
+      return dump.includes(`HOME=${due}`) && dump.includes('__END__');
+    });
     await new Promise((res) => setTimeout(res, 500));
     const homes = readFileSync(`${calls}.env`, 'utf8')
       .split('\n')
