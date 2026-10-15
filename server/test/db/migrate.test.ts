@@ -489,6 +489,7 @@ describe('0029 adds the member profile to a populated 0028 database (LAI-743)', 
 describe('member_ratings keeps its append-only triggers across a rebuild (LAI-743)', () => {
   const RATING_TRIGGERS = [
     'member_ratings_is_append_only_no_delete',
+    'member_ratings_is_append_only_no_replace',
     'member_ratings_is_append_only_no_update',
   ];
   const ratingTriggers = () =>
@@ -498,13 +499,14 @@ describe('member_ratings keeps its append-only triggers across a rebuild (LAI-74
       )
       .map((row) => row.name);
 
-  it('starts with both, from the migration', () => {
+  it('starts with all three, from the migrations', () => {
     expect(ratingTriggers()).toEqual(RATING_TRIGGERS);
   });
 
   it('gets them back from the boot step after they are lost', () => {
     t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_update`');
     t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_delete`');
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_replace`');
     expect(ratingTriggers()).toEqual([]);
 
     ensureActivityTriggers(t.db);
@@ -519,5 +521,61 @@ describe('member_ratings keeps its append-only triggers across a rebuild (LAI-74
     );
 
     expect(() => ensureActivityTriggers(t.db)).toThrow(/present but does not abort/i);
+  });
+});
+
+/**
+ * `0030` on a database at `0029` (LAI-746) — the state production is in if
+ * LAI-743's commit ships before this one. A rating written there survives,
+ * gains a null `idempotency_key`, and can no longer be replaced.
+ */
+describe('0030 closes INSERT OR REPLACE on a populated 0029 database (LAI-746)', () => {
+  it('keeps the ratings and refuses a replace of one', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const dropped = journal.entries.splice(
+      journal.entries.findIndex((e) => e.tag.startsWith('0030_')),
+    );
+    expect(dropped[0]?.tag).toMatch(/^0030_/);
+    expect(journal.entries.at(-1)?.tag).toMatch(/^0029_/);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: dir });
+      const s = seed(db);
+      const other = newId();
+      db.run(sql`
+        INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+        VALUES (${other}, 'bea@example.test', 'Bea', 'member', 1, 1, 1)
+      `);
+      const rating = newId();
+      db.run(sql`
+        INSERT INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+        VALUES (${rating}, ${other}, ${s.userId}, 3, 'Before 0030.', 1)
+      `);
+
+      runMigrations(db);
+
+      expect(db.all(sql`SELECT id, score, note, idempotency_key FROM member_ratings`)).toEqual([
+        { id: rating, score: 3, note: 'Before 0030.', idempotency_key: null },
+      ]);
+      expectSqliteError(() => {
+        db.run(sql`
+          INSERT OR REPLACE INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+          VALUES (${rating}, ${other}, ${s.userId}, 1, 'Rewritten.', 2)
+        `);
+      }, /append-only: INSERT OR REPLACE/);
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+    } finally {
+      sqlite.close();
+      rmSync(dbDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

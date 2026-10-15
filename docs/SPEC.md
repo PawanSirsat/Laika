@@ -890,8 +890,10 @@ category, in the first status of it.
 
 An owner's or admin's rating of one member, for the member profile (D-078,
 LAI-743). **Append-only**: a new rating supersedes the last, never edits it, and
-two triggers refuse `UPDATE` and `DELETE` — re-established at every boot, as
-`activity`'s are.
+three triggers refuse `UPDATE`, `DELETE` and an `INSERT OR REPLACE` over an
+existing id — re-established at every boot, as `activity`'s are. The third
+exists because SQLite runs no `BEFORE DELETE` trigger for a replace's delete
+half while `recursive_triggers` is off (LAI-746).
 
 | field | notes |
 | --- | --- |
@@ -900,6 +902,7 @@ two triggers refuse `UPDATE` and `DELETE` — re-established at every boot, as
 | `rated_by` | FK `users` — the owner or admin who rated them; never `user_id` (CHECK) |
 | `score` | integer 1–5 (CHECK) |
 | `note` | 1–500 characters, required — the reason, which is what makes a rating reviewable |
+| `idempotency_key` | nullable — the `Idempotency-Key` the rating was sent with. A retry with the same key, from the same rater, answers from this row instead of writing another (§6.4, LAI-746) |
 | `created_at` | |
 
 **Private.** A rating writes no `activity` row and has no §4.8 verb, so it

@@ -99,6 +99,19 @@ BEGIN
   SELECT RAISE(ABORT, 'member_ratings is append-only: DELETE is not permitted (SPEC 4.21)');
 END`,
   },
+  // `INSERT OR REPLACE` is a delete the two above never see: SQLite fires no
+  // `BEFORE DELETE` for a replace while `recursive_triggers` is off (LAI-746).
+  {
+    name: 'member_ratings_is_append_only_no_replace',
+    table: 'member_ratings',
+    aborts: 'INSERT OR REPLACE is not permitted',
+    create: `CREATE TRIGGER IF NOT EXISTS \`member_ratings_is_append_only_no_replace\`
+BEFORE INSERT ON \`member_ratings\`
+WHEN EXISTS (SELECT 1 FROM \`member_ratings\` WHERE \`id\` = NEW.\`id\`)
+BEGIN
+  SELECT RAISE(ABORT, 'member_ratings is append-only: INSERT OR REPLACE is not permitted (SPEC 4.21)');
+END`,
+  },
 ] as const;
 
 /**

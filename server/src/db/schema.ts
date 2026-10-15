@@ -1061,8 +1061,9 @@ export const commentMentions = sqliteTable(
  * D-078, LAI-743).
  *
  * **Append-only, like `activity`.** A new rating supersedes the last one and
- * never edits it; two triggers refuse `UPDATE` and `DELETE`, and `runMigrations`
- * re-checks them on every boot (`migrate.ts`). There is no mutation helper.
+ * never edits it; triggers refuse `UPDATE`, `DELETE` and — since LAI-746 — an
+ * `INSERT OR REPLACE` over an existing id, and `runMigrations` re-checks them
+ * on every boot (`migrate.ts`). There is no mutation helper.
  *
  * **Private.** Nothing here reaches `activity`, so it reaches no feed, stream,
  * webhook or export; only `services/profiles.ts` reads it, behind
@@ -1087,6 +1088,13 @@ export const memberRatings = sqliteTable(
       .references(() => users.id),
     score: integer('score').notNull(),
     note: text('note').notNull(),
+    /**
+     * The `Idempotency-Key` the rating was sent with, or null (LAI-746). A
+     * retry with the same key answers from this row rather than writing a
+     * second one — kept here so the note is never copied into
+     * `idempotency_keys`, whose rows any keyed POST can be answered from.
+     */
+    idempotencyKey: text('idempotency_key'),
     createdAt,
   },
   (t) => [

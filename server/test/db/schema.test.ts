@@ -382,4 +382,42 @@ describe('profile_kind and member_ratings (SPEC §4.1, §4.21, LAI-743)', () => 
 
     expect(t.db.all(sql`SELECT score FROM member_ratings`)).toEqual([{ score: 4 }]);
   });
+
+  /**
+   * `INSERT OR REPLACE` is a delete and an insert, and SQLite does not fire
+   * `BEFORE DELETE` triggers for the delete half while `recursive_triggers` is
+   * off — its default and ours. So the two triggers above let a replace
+   * rewrite a rating in place, note and all (LAI-746). A `BEFORE INSERT`
+   * trigger sees the new row before the conflict is resolved.
+   */
+  it('refuses INSERT OR REPLACE and REPLACE INTO over an existing rating (LAI-746)', () => {
+    const ada = person('ada');
+    const bob = person('bob');
+    const id = newId();
+    t.db.run(sql`
+      INSERT INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+      VALUES (${id}, ${ada}, ${bob}, 4, 'Steady.', 1)
+    `);
+
+    expectSqliteError(() => {
+      t.db.run(sql`
+        INSERT OR REPLACE INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+        VALUES (${id}, ${ada}, ${bob}, 1, 'Rewritten.', 2)
+      `);
+    }, /member_ratings is append-only: INSERT OR REPLACE/i);
+    expectSqliteError(() => {
+      t.db.run(sql`
+        REPLACE INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+        VALUES (${id}, ${ada}, ${bob}, 1, 'Rewritten.', 2)
+      `);
+    }, /member_ratings is append-only: INSERT OR REPLACE/i);
+
+    expect(t.db.all(sql`SELECT score, note FROM member_ratings`)).toEqual([
+      { score: 4, note: 'Steady.' },
+    ]);
+
+    // A new rating still goes in: the trigger refuses a collision, not inserts.
+    rate(ada, bob, 2, 'Later.');
+    expect(t.db.all(sql`SELECT id FROM member_ratings`)).toHaveLength(2);
+  });
 });

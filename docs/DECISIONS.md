@@ -4229,9 +4229,9 @@ was a way to read it per person, or anywhere to keep a judgement about one.
    nothing an audit would need to trace.
 3. **Manual ratings are stored, private and append-only.** `member_ratings`
    (§4.21): who was rated, who rated, 1–5, a required note of 1–500 characters,
-   when. A new rating supersedes the last and never edits it; two triggers
-   refuse `UPDATE` and `DELETE` and are re-checked at every boot, as
-   `activity`'s are. An owner or admin cannot rate themselves (§3.1 and a
+   when. A new rating supersedes the last and never edits it; triggers refuse
+   `UPDATE`, `DELETE` and an `INSERT OR REPLACE` over an existing id, and are
+   re-checked at every boot, as `activity`'s are. An owner or admin cannot rate themselves (§3.1 and a
    CHECK). **A rating writes no `activity` row and has no verb**, so it reaches
    no feed, SSE stream, webhook or export; no MCP tool reads it; the profile
    endpoint is its only reader. A test holds that structurally: only the
