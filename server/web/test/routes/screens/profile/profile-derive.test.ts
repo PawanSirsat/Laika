@@ -13,6 +13,8 @@ import { describe, test } from 'node:test';
 import type { ProfileAgentToken } from '../../../../src/api/profiles.ts';
 import {
   agentRows,
+  columnCount,
+  columnPlan,
   workTab,
   barHeights,
   countLabel,
@@ -225,6 +227,23 @@ void describe('agentRows', () => {
       ],
     );
   });
+
+  void test('gives an agent online now its row, once (LAI-751, owner, 2026-10-16)', () => {
+    const rows = agentRows(
+      [{ client: 'codex', writes: 2 }],
+      [token('a', 'codex', 40), token('b', 'cursor', 30)],
+      ['codex', 'cursor', 'gemini-cli'],
+    );
+    assert.deepEqual(
+      rows.map((r) => [r.client, r.writes, r.tokens.map((t) => t.id)]),
+      [
+        ['codex', 2, ['a']],
+        ['cursor', 0, ['b']],
+        // Online on a token the list does not show: still a row.
+        ['gemini-cli', 0, []],
+      ],
+    );
+  });
 });
 
 void describe('Current work (LAI-751)', () => {
@@ -253,5 +272,43 @@ void describe('countLabel', () => {
     assert.equal(countLabel(1, 'project', 'projects'), '1 project');
     assert.equal(countLabel(0, 'project', 'projects'), '0 projects');
     assert.equal(countLabel(3, 'type', 'types'), '3 types');
+  });
+});
+
+void describe('the column layout (LAI-751, owner, 2026-10-16)', () => {
+  void test('three columns from 1200 px, two from 768, one below', () => {
+    assert.deepEqual(
+      [390, 767, 768, 1024, 1199, 1200, 1366].map(columnCount),
+      [1, 1, 2, 2, 2, 3, 3],
+    );
+  });
+
+  void test('every card of a kind appears exactly once, at every width', () => {
+    const cards = {
+      builder: ['agents', 'current', 'delivery', 'projects', 'rating', 'review'],
+      manager: ['decisions', 'projects', 'rating', 'review'],
+    } as const;
+    for (const kind of ['builder', 'manager'] as const) {
+      for (const n of [1, 2, 3] as const) {
+        const plan = columnPlan(kind, n);
+        assert.equal(plan.length, n, `${kind} at ${String(n)}`);
+        assert.deepEqual([...plan.flat()].sort(), [...cards[kind]], `${kind} at ${String(n)}`);
+      }
+    }
+  });
+
+  void test('one column is the reading order', () => {
+    assert.deepEqual(columnPlan('builder', 1), [
+      ['delivery', 'current', 'agents', 'review', 'projects', 'rating'],
+    ]);
+    assert.deepEqual(columnPlan('manager', 1), [['review', 'decisions', 'projects', 'rating']]);
+  });
+
+  void test('a builder’s two tall cards never share a column', () => {
+    for (const n of [2, 3] as const) {
+      const column = (id: string) =>
+        columnPlan('builder', n).findIndex((c) => c.includes(id as never));
+      assert.notEqual(column('current'), column('agents'), `at ${String(n)}`);
+    }
   });
 });

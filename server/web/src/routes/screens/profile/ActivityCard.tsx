@@ -183,7 +183,6 @@ export function ActivityCard({ userId, name, viewerId, canManageOrg }: ActivityC
     <section
       className="prof-card hm"
       data-section="activity"
-      data-span="6"
       data-range={range}
       data-design={design}
       aria-labelledby="prof-activity-title"

@@ -434,9 +434,11 @@ void describe('a builder’s profile', () => {
       await agents.locator('.prof-agent[data-client="claude-code"] .prof-tokens-toggle').click();
       assert.match(await agents.innerText(), /Laptop Claude/);
       assert.equal(await agents.locator('.prof-agent[data-online="true"]').count(), 1);
+      // Who is online is this card's (LAI-751, owner, 2026-10-16).
+      assert.equal(await agents.locator('.prof-card-caption').innerText(), '1 online');
       assert.match(
-        await (await section(h.page, 'online')).locator('.prof-online').innerText(),
-        /Claude Code/,
+        await agents.locator('.prof-agent[data-online="true"]').innerText(),
+        /Claude Code\s*online/,
       );
 
       const rating = await section(h.page, 'rating');
@@ -547,13 +549,16 @@ void describe('a builder’s profile', () => {
       assert.match(text, /No projects yet/);
       assert.match(text, /Nothing in progress or in review/);
       assert.match(text, /Nothing accepted in these 12 weeks/);
-      assert.match(text, /No agent has connected with this person’s tokens yet/);
-      assert.match(text, /No agent online now/);
-      assert.match(text, /No review decisions on other people’s work in these 12 weeks/);
+      assert.match(text, /No agent has used their tokens yet/);
+      assert.equal(
+        await h.page.locator('.prof-card[data-section="agents"] .prof-card-caption').innerText(),
+        'none online',
+      );
+      assert.match(text, /No review decisions in these 12 weeks/);
       assert.match(text, /Not rated yet/);
-      assert.equal(await stat(h.page, 'cycle'), '—', 'nothing measured reads as a dash, not 0');
-      assert.equal(await stat(h.page, 'decide_p50'), '—');
-      assert.equal(await stat(h.page, 'oldest_in_progress'), '—');
+      // One line where there is nothing — no tiles of zeros and dashes under it
+      // (LAI-751, owner, 2026-10-16).
+      assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
       assert.doesNotMatch(text, /undefined|NaN|null/);
       // A compact sentence inside the card, not twelve empty bars (LAI-750).
       for (const card of ['delivery', 'review']) {
@@ -576,7 +581,7 @@ void describe('a builder’s profile', () => {
 
 // ------------------------------------------------------- v2 cards (LAI-750)
 
-void describe('the agents and online cards', () => {
+void describe('the agents card, with who is online in it', () => {
   void test('split one bar by share of writes, with each agent’s real mark, name and share', async () => {
     const h = await open('/people?user=u2', {
       ...BASE,
@@ -616,26 +621,30 @@ void describe('the agents and online cards', () => {
     }
   });
 
-  void test('say who is online with a live dot and the mark, and never where', async () => {
+  void test('says who is online with a live dot on the row, and never where', async () => {
     const h = await open('/people?user=u2', {
       ...BASE,
       '/api/v1/me': me('u1', 'owner'),
       '/api/v1/users/u2/profile': BUILDER,
     });
     try {
-      const online = await section(h.page, 'online');
-      const row = online.locator('li[data-client="claude-code"]');
-      assert.equal(await row.locator('.prof-live-dot').count(), 1);
+      const agents = await section(h.page, 'agents');
+      // *Online now* is not a card of its own any more (LAI-751, owner, 2026-10-16).
+      assert.equal(await h.page.locator('.prof-card[data-section="online"]').count(), 0);
+      assert.equal(await agents.locator('.prof-card-caption').innerText(), '1 online');
+      const row = agents.locator('.prof-agent[data-client="claude-code"]');
+      assert.equal(await row.locator('.prof-online .prof-live-dot').count(), 1);
       assert.equal(await row.locator('.agent-mark').count(), 1);
       // Laptop Claude was last used two minutes ago.
-      assert.match(await row.innerText(), /Claude Code.*active 2 min/s);
-      assert.equal(await online.locator('li').count(), 1, 'Codex is not online');
+      assert.match(await row.innerText(), /Claude Code\s*online.*active 2 min/s);
+      assert.equal(await agents.locator('.prof-live-dot').count(), 1, 'Codex is not online');
+      assert.doesNotMatch(await agents.innerText(), /LC-|laika-core|Laika Core/);
     } finally {
       await h.close();
     }
   });
 
-  void test('say presence is off, rather than nobody online, when the org turned it off', async () => {
+  void test('says presence is off, rather than nobody online, when the org turned it off', async () => {
     const off = {
       ...BUILDER,
       agents: { ...BUILDER.agents, online: { enabled: false, clients: [], last_seen: null } },
@@ -646,9 +655,35 @@ void describe('the agents and online cards', () => {
       '/api/v1/users/u2/profile': off,
     });
     try {
-      const online = await section(h.page, 'online');
-      assert.match(await online.innerText(), /Presence is off/);
-      assert.equal(await online.locator('.prof-live-dot').count(), 0);
+      const agents = await section(h.page, 'agents');
+      assert.equal(await agents.locator('.prof-card-caption').innerText(), 'presence off');
+      assert.equal(await agents.locator('.prof-live-dot').count(), 0);
+      await agents.locator('.prof-info-button').first().click();
+      assert.match(await agents.innerText(), /Presence is off for this organisation/);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an agent online on a token the list does not show still has its row', async () => {
+    const shape = {
+      ...BUILDER,
+      agents: {
+        ...BUILDER.agents,
+        online: { enabled: true, clients: ['claude-code', 'gemini-cli'], last_seen: NOW - MIN },
+      },
+    };
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': shape,
+    });
+    try {
+      const agents = await section(h.page, 'agents');
+      assert.equal(await agents.locator('.prof-card-caption').innerText(), '2 online');
+      const gemini = agents.locator('.prof-agent[data-client="gemini-cli"]');
+      assert.match(await gemini.innerText(), /Gemini CLI\s*online/);
+      assert.equal(await gemini.locator('.prof-live-dot').count(), 1);
     } finally {
       await h.close();
     }
@@ -1521,7 +1556,7 @@ void describe('current work stays a card’s height (LAI-751)', () => {
       for (const expand of [false, true]) {
         if (expand) await h.page.locator('button.prof-show-all').click();
         const cards = await h.page
-          .locator('.prof-grid > .prof-card, .prof-stack > .prof-card')
+          .locator('.prof > .prof-card, .prof-column > .prof-card')
           .evaluateAll((els) =>
             els.map((el) => {
               const box = el.getBoundingClientRect();
@@ -1541,6 +1576,364 @@ void describe('current work stays a card’s height (LAI-751)', () => {
           }
         }
       }
+    } finally {
+      await h.close();
+    }
+  });
+});
+
+// ------------------------------------- the layout (LAI-751, owner, 2026-10-16)
+
+/**
+ * The owner's own profile as they saw it: 9 in progress, 34 in review, four
+ * kinds of agent — one of them *Other agent*, one online with no writes —
+ * three projects, and nothing accepted in the window.
+ */
+function ownerShape() {
+  const base = busy();
+  const token = (id: string, name: string, client: string, ago: number, clientName: string) => ({
+    id,
+    name,
+    client,
+    client_name: clientName,
+    last_used_at: NOW - ago,
+    last_mcp_at: NOW - ago,
+    created_at: NOW - 60 * DAY,
+  });
+  return {
+    ...base,
+    projects: [
+      ...BUILDER.projects.map((project) => ({ ...project, accepted: 0 })),
+      {
+        id: 'p3',
+        slug: 'atlas',
+        name: 'Atlas',
+        key: 'ATL',
+        role: 'member',
+        archived: false,
+        open_tasks: 6,
+        accepted: 0,
+        reviewed: 0,
+      },
+    ],
+    review: EMPTY.review,
+    delivery: {
+      ...EMPTY.delivery,
+      sent_back: 2,
+    },
+    agents: {
+      tokens: [
+        token('k1', 'Laptop Claude', 'claude-code', 2 * MIN, 'claude-code'),
+        token('k2', 'Codex desk', 'codex', 3 * DAY, 'codex_cli_rs'),
+        token('k5', 'Gemini on the desktop', 'gemini-cli', 20 * MIN, 'gemini-cli'),
+        token('k6', 'Copilot in the terminal', 'other', 2 * DAY, 'copilot'),
+      ],
+      tokens_total: 4,
+      online: { enabled: true, clients: ['claude-code', 'gemini-cli'], last_seen: NOW - MIN },
+      writes: [
+        { client: 'claude-code', writes: 20 },
+        { client: 'codex', writes: 5 },
+        { client: 'other', writes: 2 },
+      ],
+      writes_total: 27,
+    },
+  };
+}
+
+interface CardBox {
+  readonly name: string;
+  readonly left: number;
+  readonly top: number;
+  readonly bottom: number;
+  /** The tallest band inside the card's padding with nothing drawn in it, px. */
+  readonly blank: number;
+}
+
+/**
+ * Every card on the page, where it is, and the tallest stretch inside it with
+ * nothing drawn — no text, no mark, no filled or bordered box. Measured from
+ * what is painted, not from the profile's own classes, so it reads the same
+ * on any version of the page.
+ */
+async function cardBoxes(page: Page): Promise<{ gap: number; cards: CardBox[] }> {
+  return page.evaluate(() => {
+    const prof = document.querySelector('.prof');
+    const gap = prof === null ? Number.NaN : Number.parseFloat(getComputedStyle(prof).rowGap);
+    const empty = (colour: string) => colour === 'transparent' || colour === 'rgba(0, 0, 0, 0)';
+    const drawn = (el: Element): boolean => {
+      const style = getComputedStyle(el);
+      if (style.visibility === 'hidden' || Number.parseFloat(style.opacity) === 0) return false;
+      if (!empty(style.backgroundColor) || style.backgroundImage !== 'none') return true;
+      for (const side of ['Top', 'Bottom'] as const) {
+        if (
+          Number.parseFloat(style.getPropertyValue(`border-${side.toLowerCase()}-width`)) > 0 &&
+          style.getPropertyValue(`border-${side.toLowerCase()}-style`) !== 'none'
+        )
+          return true;
+      }
+      if (el instanceof SVGElement || el.tagName === 'IMG') return true;
+      return [...el.childNodes].some(
+        (node) => node.nodeType === Node.TEXT_NODE && (node.textContent ?? '').trim() !== '',
+      );
+    };
+    const cards = [...document.querySelectorAll('.prof .prof-card')].map((card) => {
+      const box = card.getBoundingClientRect();
+      const style = getComputedStyle(card);
+      const top =
+        box.top + Number.parseFloat(style.borderTopWidth) + Number.parseFloat(style.paddingTop);
+      const bottom =
+        box.bottom -
+        Number.parseFloat(style.borderBottomWidth) -
+        Number.parseFloat(style.paddingBottom);
+      const spans: [number, number][] = [];
+      for (const el of card.querySelectorAll('*')) {
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 1 || rect.height <= 1 || !drawn(el)) continue;
+        let from = Math.max(rect.top, top);
+        let to = Math.min(rect.bottom, bottom);
+        // Only what shows: a row scrolled out of its list draws nothing here.
+        for (let up = el.parentElement; up !== null && up !== card; up = up.parentElement) {
+          if (getComputedStyle(up).overflowY === 'visible') continue;
+          const clip = up.getBoundingClientRect();
+          from = Math.max(from, clip.top);
+          to = Math.min(to, clip.bottom);
+        }
+        if (to > from) spans.push([from, to]);
+      }
+      spans.sort((a, b) => a[0] - b[0]);
+      let reached = top;
+      let blank = 0;
+      for (const [from, to] of spans) {
+        blank = Math.max(blank, from - reached);
+        reached = Math.max(reached, to);
+      }
+      blank = Math.max(blank, bottom - reached);
+      return {
+        name: card.getAttribute('data-section') ?? '',
+        left: Math.round(box.left),
+        top: box.top,
+        bottom: box.bottom,
+        blank: Math.round(blank),
+      };
+    });
+    return { gap, cards };
+  });
+}
+
+/** The cards below the Activity card, grouped by the column they sit in, top first. */
+function columnsOf(cards: readonly CardBox[]): CardBox[][] {
+  const columns = new Map<number, CardBox[]>();
+  for (const card of cards) {
+    if (card.name === 'activity') continue;
+    columns.set(card.left, [...(columns.get(card.left) ?? []), card]);
+  }
+  return [...columns]
+    .sort((a, b) => a[0] - b[0])
+    .map(([, column]) => [...column].sort((a, b) => a.top - b.top));
+}
+
+/**
+ * At 1366: three columns under the Activity card, the space between any two
+ * cards in a column the page's own gap — never a row stretched to its
+ * tallest neighbour — and no card with more than 48 px of nothing inside it.
+ */
+async function assertColumns(page: Page, want: number): Promise<CardBox[]> {
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.waitForTimeout(200);
+  const { gap, cards } = await cardBoxes(page);
+  assert.ok(gap > 0, 'the page has a gap between its blocks');
+  assert.equal(
+    cards.filter((card) => card.name === 'online').length,
+    0,
+    'Online now is a card of its own',
+  );
+  const activity = cards.find((card) => card.name === 'activity');
+  assert.ok(activity !== undefined, 'the Activity card is on the page');
+  const columns = columnsOf(cards);
+  assert.equal(
+    columns.length,
+    want,
+    `at 1366 the cards sit in ${String(columns.length)} columns, not ${String(want)}`,
+  );
+  for (const column of columns) {
+    let above = activity.bottom;
+    for (const card of column) {
+      const space = Math.round(card.top - above);
+      assert.ok(
+        Math.abs(space - gap) <= 1,
+        `${card.name}: ${String(space)}px above it in its column, not the ${String(gap)}px gap`,
+      );
+      above = card.bottom;
+    }
+  }
+  for (const card of cards) {
+    assert.ok(card.blank <= 48, `${card.name}: ${String(card.blank)}px of empty card at 1366`);
+  }
+  return cards;
+}
+
+/** At 390, one column in reading order — the order the page's code says. */
+async function assertOneColumn(page: Page, order: readonly string[]): Promise<void> {
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.waitForTimeout(200);
+  const { cards } = await cardBoxes(page);
+  const lefts = new Set(cards.map((card) => card.left));
+  assert.equal(lefts.size, 1, `at 390 the cards start at ${String(lefts.size)} different lefts`);
+  assert.deepEqual(
+    [...cards].sort((a, b) => a.top - b.top).map((card) => card.name),
+    order,
+    'at 390, top to bottom',
+  );
+  // And a screen reader meets them in the same order.
+  assert.deepEqual(
+    cards.map((card) => card.name),
+    order,
+  );
+}
+
+void describe('the profile’s layout (LAI-751, owner, 2026-10-16)', () => {
+  void test('the owner’s own profile: columns, Online in Agents used, nothing stretched', async () => {
+    const h = await open('/people?user=u2', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u2/profile': ownerShape(),
+    });
+    try {
+      await section(h.page, 'current');
+      await h.page.locator('.prof-card[data-section="activity"][aria-busy="false"]').waitFor();
+      await assertColumns(h.page, 3);
+
+      // Online now is a line in Agents used: the header says how many, the
+      // rows which, each with its dot and when it was last active.
+      const agents = await section(h.page, 'agents');
+      assert.match(await agents.locator('.prof-card-head').innerText(), /2 online/);
+      const live = await agents
+        .locator('.prof-agent:has(.prof-live-dot)')
+        .evaluateAll((els) => els.map((el) => el.getAttribute('data-client')));
+      assert.deepEqual(live, ['claude-code', 'gemini-cli']);
+      assert.match(
+        await agents.locator('.prof-agent[data-client="gemini-cli"]').innerText(),
+        /Gemini CLI\s*online.*active 20 min/s,
+      );
+
+      // *Other agent*, with its share as a number; no share and no dash for
+      // an agent with no writes.
+      const other = agents.locator('.prof-agent[data-client="other"]');
+      assert.match(await other.innerText(), /^Other agent/m);
+      assert.doesNotMatch(await agents.innerText(), /another agent/);
+      assert.match(await other.locator('.prof-share-pct').innerText(), /^\d+%$/);
+      const gemini = agents.locator('.prof-agent[data-client="gemini-cli"]');
+      assert.equal(await gemini.locator('.prof-share-pct').count(), 0);
+      assert.doesNotMatch(await gemini.innerText(), /—/);
+
+      // Delivery with nothing accepted: one line, and no tiles of zeros.
+      const delivery = await section(h.page, 'delivery');
+      assert.match(
+        await delivery.innerText(),
+        /Nothing accepted in these 12 weeks · 2 sent back\./,
+      );
+      assert.equal(await delivery.locator('.prof-stats').count(), 0);
+      // Review work with no decisions: one line.
+      const review = await section(h.page, 'review');
+      assert.equal(await review.locator('.prof-stats').count(), 0);
+      assert.match(await review.innerText(), /No review decisions in these 12 weeks\./);
+
+      await h.page.setViewportSize({ width: 1024, height: 900 });
+      await h.page.waitForTimeout(200);
+      assert.equal(columnsOf((await cardBoxes(h.page)).cards).length, 2, 'two columns at 1024');
+
+      await assertOneColumn(h.page, [
+        'activity',
+        'delivery',
+        'current',
+        'agents',
+        'review',
+        'projects',
+        'rating',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('an empty profile: every card its title and one short line', async () => {
+    const h = await open('/people?user=u6', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u6/profile': EMPTY,
+    });
+    try {
+      await section(h.page, 'rating');
+      await h.page.locator('.prof-card[data-section="activity"][aria-busy="false"]').waitFor();
+      await assertColumns(h.page, 3);
+      const cards = await h.page.locator('.prof-columns .prof-card').evaluateAll((els) =>
+        els.map((el) => {
+          const lines = el.querySelectorAll('.prof-empty');
+          const line = lines[0];
+          const head = el.querySelector('.prof-card-head');
+          const lineHeight =
+            line === undefined ? 0 : Number.parseFloat(getComputedStyle(line).lineHeight);
+          return {
+            name: el.getAttribute('data-section') ?? '',
+            lines: lines.length,
+            oneLine:
+              line === undefined ? false : line.getBoundingClientRect().height <= lineHeight * 1.5,
+            rest: (el as HTMLElement).innerText
+              .replace((head as HTMLElement | null)?.innerText ?? '', '')
+              .replace((line as HTMLElement | undefined)?.innerText ?? '', '')
+              .trim(),
+          };
+        }),
+      );
+      assert.equal(cards.length, 6);
+      for (const card of cards) {
+        assert.equal(card.lines, 1, `${card.name}: ${String(card.lines)} empty lines`);
+        assert.ok(card.oneLine, `${card.name}: its empty line wraps at 1366`);
+        assert.equal(card.rest, '', `${card.name}: more than its title and one line`);
+      }
+      // No dashed box, no tiles of zeros above it.
+      assert.equal(
+        await h.page
+          .locator('.prof-empty')
+          .evaluateAll(
+            (els) => els.filter((el) => getComputedStyle(el).borderTopStyle !== 'none').length,
+          ),
+        0,
+      );
+      assert.equal(await h.page.locator('.prof-columns .prof-stats').count(), 0);
+
+      await assertOneColumn(h.page, [
+        'activity',
+        'delivery',
+        'current',
+        'agents',
+        'review',
+        'projects',
+        'rating',
+      ]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  void test('a manager’s profile: the same columns, with their own cards', async () => {
+    const h = await open('/people?user=u3', {
+      ...BASE,
+      '/api/v1/me': me('u1', 'owner'),
+      '/api/v1/users/u3/profile': MANAGER,
+    });
+    try {
+      await section(h.page, 'decisions');
+      await h.page.locator('.prof-card[data-section="activity"][aria-busy="false"]').waitFor();
+      const cards = await assertColumns(h.page, 3);
+      assert.deepEqual(cards.map((card) => card.name).sort(), [
+        'activity',
+        'decisions',
+        'projects',
+        'rating',
+        'review',
+      ]);
+      await assertOneColumn(h.page, ['activity', 'review', 'decisions', 'projects', 'rating']);
     } finally {
       await h.close();
     }
@@ -1586,7 +1979,7 @@ void describe('agents used, one row per agent (LAI-751)', () => {
     try {
       const agents = await section(h.page, 'agents');
       const claude = agents.locator('.prof-agent[data-client="claude-code"]');
-      assert.match(await claude.innerText(), /2 tokens · used 2 min ago/);
+      assert.match(await claude.innerText(), /2 tokens · active 2 min ago/);
       const toggle = claude.locator('.prof-tokens-toggle');
       assert.equal(await toggle.getAttribute('aria-expanded'), 'false');
       assert.doesNotMatch(await agents.innerText(), /claude-code on macOS/);

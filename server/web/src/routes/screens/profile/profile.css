@@ -1,7 +1,8 @@
 /*
  * The member profile (LAI-743), laid out as the strategy page's profile mockup
- * (LAI-750): a header card, rounded cards on a six-column grid that folds to
- * two and then one, horizontal bars, metric tiles with big monospace numbers.
+ * (LAI-750): a header card, the Activity card across the page, then rounded
+ * cards down three columns that fold to two and then one (LAI-751), horizontal
+ * bars, metric tiles with big monospace numbers.
  * Tokens only — both themes come from them; `theme-single-source.test.ts`
  * forbids a colour literal here, so every tint is a `color-mix` of tokens.
  */
@@ -241,25 +242,40 @@
   padding: 0.375rem 0.5rem;
 }
 
-/* ------------------------------------------------------------------- grid */
+/* ---------------------------------------------------------------- columns */
 
 /*
- * Six columns on a laptop; a card spans 2, 3 or 4 of them (`data-span`).
- *
- * **Each card is as tall as what it holds** (LAI-751). Stretched to the row,
- * one long card left its neighbours as white boxes half empty; now a long list
- * scrolls inside its own card (Current work), and a row is only as tall as its
- * tallest card, which is no taller than it needs.
+ * Below the Activity card, the cards flow down **columns** (LAI-751, owner,
+ * 2026-10-16): three on a laptop, two on a tablet, one on a phone, the count
+ * and which card goes where chosen in `columnPlan` so the columns end near
+ * the same height and one column reads in order. A column is a flex stack,
+ * so the space between two cards is the one gap below, never a grid row
+ * stretched to its tallest neighbour, and **each card is as tall as what it
+ * holds** — a long list scrolls inside its own card (`.prof-scroll`).
  */
-.prof-grid {
+.prof-columns {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(var(--prof-columns, 3), minmax(0, 1fr));
   gap: var(--space-4);
   align-items: start;
 }
 
+.prof-columns[data-columns='2'] {
+  --prof-columns: 2;
+}
+
+.prof-columns[data-columns='1'] {
+  --prof-columns: 1;
+}
+
+.prof-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
 .prof-card {
-  grid-column: span 2;
   min-width: 0;
   background: var(--bg-card);
   border: 1px solid var(--border-card);
@@ -271,25 +287,11 @@
   gap: 0.875rem;
 }
 
-.prof-card[data-span='3'] {
-  grid-column: span 3;
-}
-
-.prof-card[data-span='4'] {
-  grid-column: span 4;
-}
-
-.prof-card[data-span='6'] {
-  grid-column: 1 / -1;
-}
-
-/* Short cards stacked in one column beside a tall one, each its own height. */
-.prof-stack {
-  grid-column: span 2;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+/* A list that can be long stops at about eight rows and scrolls in its card. */
+.prof-scroll {
+  max-height: 22rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .prof-rating-cols,
@@ -301,49 +303,8 @@
   min-width: 0;
 }
 
-/* Across the page: the current rating beside the history; a taller delivery chart. */
-@container prof (min-width: 62rem) {
-  .prof-card[data-section='delivery'] .prof-bars {
-    height: 9rem;
-  }
-
-  .prof-card[data-span='6'] .prof-rating-cols {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    align-items: start;
-    gap: 1.5rem;
-  }
-}
-
-/* A tablet, or a laptop with a narrow window: two columns, wide cards across. */
-@container prof (max-width: 62rem) {
-  .prof-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .prof-card,
-  .prof-card[data-span='3'],
-  .prof-stack {
-    grid-column: span 1;
-  }
-
-  .prof-card[data-span='4'] {
-    grid-column: 1 / -1;
-  }
-}
-
-/* A phone: one column. */
+/* A phone. */
 @container prof (max-width: 38rem) {
-  .prof-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .prof-card,
-  .prof-card[data-span],
-  .prof-stack {
-    grid-column: 1 / -1;
-  }
-
   .prof-head {
     padding: 1rem;
   }
@@ -499,9 +460,6 @@
   font-size: var(--text-ui);
   line-height: var(--leading-body);
   color: var(--text-secondary);
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-card);
-  padding: 0.625rem 0.75rem;
 }
 
 .prof-sub {
@@ -943,11 +901,21 @@
   color: var(--text-primary);
 }
 
-.prof-agent[data-online='true'] .prof-agent-name::after {
-  content: ' · online';
+/* Online now: the dot and the word beside the agent's name (LAI-751). */
+.prof-online {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin-left: 0.5rem;
   font-weight: var(--weight-normal);
   font-size: var(--text-xs);
   color: var(--chip-green);
+  vertical-align: middle;
+}
+
+.prof-online .prof-live-dot {
+  width: 0.4375rem;
+  height: 0.4375rem;
 }
 
 /* ---------------------------------------------------------------- online */
