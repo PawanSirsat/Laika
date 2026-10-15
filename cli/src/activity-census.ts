@@ -63,9 +63,29 @@ export interface PendingKey {
 /* Days                                                                       */
 /* -------------------------------------------------------------------------- */
 
-/** The machine's IANA zone — what the contract's `tz` carries. */
+/**
+ * `candidate` if it is a time zone `Intl` (and so the board) knows, else `UTC`.
+ * The contract's `tz` must be one: an unknown zone is a 422 `invalid_tz`, and
+ * the days could not be computed in it anyway.
+ */
+export function ianaTimeZone(candidate: unknown): string {
+  if (typeof candidate !== 'string' || candidate === '' || candidate.length > 64) return 'UTC';
+  if (candidate === 'Etc/Unknown') return 'UTC';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: candidate });
+    return candidate;
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * The machine's IANA zone — what the contract's `tz` carries. With a `TZ` the
+ * system does not know, Node reports `undefined` (`TZ=Garbage/Zone`) or
+ * `Etc/Unknown` (`TZ=`); both become `UTC`, and the days are counted in it.
+ */
 export function machineTimeZone(): string {
-  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return ianaTimeZone(Intl.DateTimeFormat().resolvedOptions().timeZone);
 }
 
 /** `YYYY-MM-DD` of an instant in `tz`. */

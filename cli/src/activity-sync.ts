@@ -5,6 +5,7 @@ import { normaliseUrl } from './api.ts';
 import {
   buildSnapshot,
   gitRunner,
+  ianaTimeZone,
   machineTimeZone,
   type GitRunner,
   type PendingKey,
@@ -164,6 +165,8 @@ export type Call<T> =
       readonly ok: false;
       readonly status?: number;
       readonly code?: string;
+      /** §6.3's `details.reason` — what the contract calls the refusal. */
+      readonly reason?: string;
       readonly retryAfterS?: number;
       readonly message: string;
     };
@@ -198,15 +201,31 @@ async function request(
   }
 }
 
-async function errorCode(response: Response): Promise<string | undefined> {
+/**
+ * What a refusal says, read from SPEC §6.3's envelope —
+ * `{ "error": { "code", "message", "details" } }`. The code list there is
+ * closed, so the contract's refusals (`local_activity_off`, `session_required`,
+ * `day_out_of_range`, `invalid_tz`) arrive as `details.reason` under
+ * `forbidden` and `unprocessable` (LAI-751). A top-level `code` — the
+ * contract's first wording — is still read.
+ */
+async function refusalOf(
+  response: Response,
+): Promise<{ readonly code?: string; readonly reason?: string }> {
+  const str = (value: unknown): string | undefined =>
+    typeof value === 'string' ? value : undefined;
   try {
-    const body = (await response.json()) as { code?: unknown; error?: { code?: unknown } };
-    if (typeof body.code === 'string') return body.code;
-    if (typeof body.error?.code === 'string') return body.error.code;
+    const body = (await response.json()) as Record<string, unknown> | null;
+    const envelope = body?.error as Record<string, unknown> | undefined;
+    const details = (envelope?.details ?? body?.details) as
+      Record<string, unknown> | null | undefined;
+    const code = str(envelope?.code) ?? str(body?.code);
+    const reason = str(details?.reason);
+    return { ...(code === undefined ? {} : { code }), ...(reason === undefined ? {} : { reason }) };
   } catch {
     // No JSON body — the status alone has to do.
+    return {};
   }
-  return undefined;
 }
 
 /** `Retry-After` in seconds, either form RFC 9110 allows. */
@@ -220,14 +239,17 @@ export function retryAfterSeconds(header: string | null, nowMs: number): number 
 }
 
 async function failed<T>(response: Response, nowMs: number): Promise<Call<T>> {
-  const code = await errorCode(response);
+  const { code, reason } = await refusalOf(response);
   const retryAfterS = retryAfterSeconds(response.headers.get('retry-after'), nowMs);
   return {
     ok: false,
     status: response.status,
     ...(code === undefined ? {} : { code }),
+    ...(reason === undefined ? {} : { reason }),
     ...(retryAfterS === undefined ? {} : { retryAfterS }),
-    message: `the board answered ${String(response.status)}${code === undefined ? '' : ` ${code}`}`,
+    message:
+      `the board answered ${String(response.status)}` +
+      `${code === undefined ? '' : ` ${code}`}${reason === undefined ? '' : `: ${reason}`}`,
   };
 }
 
@@ -504,7 +526,7 @@ async function syncLocked(
       paths,
       state,
       collectorId: collectorId(paths),
-      tz: ctx.tz,
+      tz: ianaTimeZone(ctx.tz),
       nowS,
       extraEmails: readEmails(paths),
       git: ctx.git ?? gitRunner(ctx.env, signal),
@@ -531,7 +553,14 @@ async function syncLocked(
       };
     }
 
-    if (answer.status === 403 && answer.code === 'local_activity_off') {
+    // Only "sharing is off" stops collection and clears the local history.
+    // Any other 403 — a token refused a scope, a session required — and any
+    // 422 (`day_out_of_range`, `invalid_tz`) is a failure: it is written to
+    // last-error with its reason and backs off below, and nothing is wiped.
+    const sharingOff =
+      answer.status === 403 &&
+      (answer.reason === 'local_activity_off' || answer.code === 'local_activity_off');
+    if (sharingOff) {
       save(stopCollecting(paths, state, nowS));
       return { kind: 'off', recheckAt: nowS + DAY_S };
     }
@@ -584,7 +613,7 @@ export async function previewSnapshot(
     paths,
     state: scope === undefined ? state : { ...state, scope },
     collectorId: existing !== undefined && existing !== '' ? existing : '(created on first sync)',
-    tz: ctx.tz,
+    tz: ianaTimeZone(ctx.tz),
     nowS: Math.floor(ctx.nowMs() / 1000),
     extraEmails: readEmails(paths),
     git: ctx.git ?? gitRunner(ctx.env),

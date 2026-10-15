@@ -4,14 +4,17 @@ import { contractViolation } from './local-activity-contract.ts';
 
 /**
  * A board that implements the two activity endpoints of the contract and
- * nothing else (LAI-752). LAI-751 builds the real ones in parallel; until they
- * exist, this is what the collector is held to.
+ * nothing else (LAI-752), answering errors **the way the real server does**:
+ * SPEC §6.3's envelope, `{ "error": { "code", "message", "details" } }`, from
+ * a closed list of codes — so the contract's `local_activity_off`,
+ * `session_required`, `day_out_of_range` and `invalid_tz` arrive as
+ * `details.reason` under `forbidden` (403) and `unprocessable` (422). Read from
+ * LAI-751's `server/src/errors.ts` and `services/local-activity.ts`.
  *
- * - `GET /api/v1/me/activity-sharing` answers `sharing`.
+ * - `GET /api/v1/me/activity-sharing` answers `sharing`, or never (`get`).
  * - `PUT /api/v1/me/local-activity` refuses any body the contract refuses
  *   (422, with the rule it broke recorded), and otherwise answers whatever
- *   `put` says: 200 `{ accepted_days }`, 403 `local_activity_off`, 429 with
- *   `Retry-After`, or a hang that only the client's timeout ends.
+ *   `put` says.
  * - Anything without `Authorization: Bearer <token>` is 401.
  */
 
@@ -25,7 +28,14 @@ export interface Recorded {
 
 export type PutMode =
   | { readonly kind: 'ok' }
+  /** 403 `forbidden`, `details.reason: local_activity_off` — the real server. */
   | { readonly kind: 'off' }
+  /** 403 with a top-level `code: local_activity_off` — the contract's first wording. */
+  | { readonly kind: 'off-legacy' }
+  /** 403 `forbidden` for any other reason (a token refused a scope, `session_required`). */
+  | { readonly kind: 'forbidden'; readonly reason: string }
+  /** 422 `unprocessable` with this `details.reason`. */
+  | { readonly kind: 'unprocessable'; readonly reason: string }
   | { readonly kind: 'rate-limited'; readonly retryAfter: string }
   | { readonly kind: 'hang' }
   | { readonly kind: 'status'; readonly status: number };
@@ -79,9 +89,18 @@ export async function stubBoard(token: string): Promise<StubBoard> {
         res.writeHead(status, { 'content-type': 'application/json', ...headers });
         res.end(JSON.stringify(value));
       };
+      /** §6.3: `{ error: { code, message, details } }`, `details` always present. */
+      const refuse = (
+        status: number,
+        code: string,
+        details: Record<string, unknown> | null = null,
+        headers: Record<string, string> = {},
+      ): void => {
+        json(status, { error: { code, message: `${code} (stub)`, details } }, headers);
+      };
 
       if (req.headers.authorization !== `Bearer ${token}`) {
-        json(401, { code: 'unauthorized' });
+        refuse(401, 'unauthorized');
         return;
       }
       if (req.method === 'GET' && req.url === '/api/v1/me/activity-sharing') {
@@ -93,28 +112,50 @@ export async function stubBoard(token: string): Promise<StubBoard> {
         const violation = contractViolation(body, board.now());
         if (violation !== undefined) {
           board.violations.push(violation);
-          json(422, { code: violation === 'day_out_of_range' ? violation : 'validation_failed' });
+          const reason =
+            violation === 'day_out_of_range'
+              ? violation
+              : violation.startsWith('tz')
+                ? 'invalid_tz'
+                : 'validation_failed';
+          refuse(422, 'unprocessable', { reason });
           return;
         }
         const mode = board.put;
         if (mode.kind === 'hang') return;
         if (mode.kind === 'off') {
+          refuse(403, 'forbidden', {
+            reason: 'local_activity_off',
+            org_enabled: board.sharing.org_enabled,
+            enabled: false,
+          });
+          return;
+        }
+        if (mode.kind === 'off-legacy') {
           json(403, { code: 'local_activity_off' });
           return;
         }
+        if (mode.kind === 'forbidden') {
+          refuse(403, 'forbidden', { reason: mode.reason });
+          return;
+        }
+        if (mode.kind === 'unprocessable') {
+          refuse(422, 'unprocessable', { reason: mode.reason });
+          return;
+        }
         if (mode.kind === 'rate-limited') {
-          json(429, { code: 'rate_limited' }, { 'retry-after': mode.retryAfter });
+          refuse(429, 'rate_limited', null, { 'retry-after': mode.retryAfter });
           return;
         }
         if (mode.kind === 'status') {
-          json(mode.status, { code: 'error' });
+          refuse(mode.status, 'internal');
           return;
         }
         const days = (JSON.parse(body) as { days: unknown[] }).days.length;
         json(200, { accepted_days: days });
         return;
       }
-      json(404, { code: 'not_found' });
+      refuse(404, 'not_found');
     });
   });
   servers.push(server);

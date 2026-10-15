@@ -150,11 +150,18 @@ sharing is on and which scope applies, so turning it off or narrowing it to
 `laika-repos` in the web app takes effect on the very next sync, and `status`
 asks too. A 429 waits for `Retry-After`; any failure — an error answer, a board
 that cannot be reached, or a crash in the count — backs off, doubling from the
-interval, to at most 6 hours; a request gives up after 5 s. A 403
-`local_activity_off` stops collection, clears the local log, starts a new
-collector id (so its days never overwrite the old one's), and checks again
-after 24 hours. Errors go only to `~/.laika/activity/last-error`, shown by
-`status`.
+interval, to at most 6 hours; a request gives up after 5 s. The board's
+refusals use SPEC §6.3's envelope, with the reason in `details.reason`: a 403
+whose reason is `local_activity_off` stops collection, clears the local log,
+starts a new collector id (so its days never overwrite the old one's), and
+checks again after 24 hours. Any other 403 (a token refused a scope,
+`session_required`) and any 422 (`day_out_of_range`, `invalid_tz`) is a
+failure: it is written to last-error with its reason, backs off, and wipes
+nothing. Errors go only to `~/.laika/activity/last-error`, shown by `status`.
+
+**Time zone.** Days are the machine's local days, and `tz` is its IANA zone. If
+the system's zone is not one Node knows (a `TZ` such as `Garbage/Zone` makes
+Node report none at all), days are counted and sent in `UTC` instead.
 
 **One at a time, and never stuck.** A lock file records the sync's pid and
 start time. A live sync keeps it however long it runs; only a lock whose

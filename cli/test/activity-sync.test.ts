@@ -75,6 +75,7 @@ interface World {
       pushed_keys: string[];
     }[];
     collector_id: string;
+    tz: string;
   }[];
 }
 
@@ -840,5 +841,104 @@ void describe('exceptions back off too (review 1, item 5)', () => {
     assert.equal(MAX_BACKOFF_S, 6 * 3600);
     assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + MAX_BACKOFF_S);
     assert.equal(w.puts().length, 0);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* The real server's error envelope (LAI-751)                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * SPEC §6.3 fixes the error codes, so LAI-751 sends the contract's refusals as
+ * `details.reason` under `forbidden` (403) and `unprocessable` (422). Only
+ * `local_activity_off` means "stop and clear"; every other refusal keeps the
+ * local history and backs off.
+ */
+void describe('the server’s error envelope (LAI-751)', () => {
+  const kept = (w: World) => ({
+    events: readFileSync(w.paths.events, 'utf8'),
+    id: readFileSync(w.paths.collectorId, 'utf8'),
+  });
+
+  void test('403 forbidden with details.reason local_activity_off stops and clears', async () => {
+    const w = await world();
+    w.board.put = { kind: 'off' };
+    assert.equal((await sync(w.ctx)).kind, 'off');
+    assert.equal(readState(w.paths)?.collect, false);
+    assert.ok(!existsSync(w.paths.events));
+    assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + DAY);
+  });
+
+  void test('the contract’s first wording, a top-level code, still stops it', async () => {
+    const w = await world();
+    w.board.put = { kind: 'off-legacy' };
+    assert.equal((await sync(w.ctx)).kind, 'off');
+    assert.equal(readState(w.paths)?.collect, false);
+    assert.ok(!existsSync(w.paths.events));
+  });
+
+  for (const reason of ['session_required', 'scope_missing']) {
+    void test(`any other 403 (${reason}) backs off and keeps the local history`, async () => {
+      const w = await world();
+      const before = kept(w);
+      w.board.put = { kind: 'forbidden', reason };
+      assert.equal((await sync(w.ctx)).kind, 'error');
+      assert.deepEqual(kept(w), before, 'a refusal that is not "sharing off" wiped the history');
+      assert.equal(readState(w.paths)?.collect, true);
+      assert.equal(readState(w.paths)?.failures, 1);
+      assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + 600);
+      assert.match(readFileSync(w.paths.lastError, 'utf8'), new RegExp(`403 forbidden: ${reason}`));
+    });
+  }
+
+  for (const reason of ['day_out_of_range', 'invalid_tz']) {
+    void test(`422 ${reason} is written to last-error and backs off without clearing`, async () => {
+      const w = await world();
+      const before = kept(w);
+      w.board.put = { kind: 'unprocessable', reason };
+      assert.equal((await sync(w.ctx)).kind, 'error');
+      assert.match(
+        readFileSync(w.paths.lastError, 'utf8'),
+        new RegExp(`422 unprocessable: ${reason}`),
+      );
+      assert.deepEqual(kept(w), before);
+      assert.equal(readState(w.paths)?.collect, true);
+      assert.equal(readState(w.paths)?.next_sync_at, w.nowS() + 600);
+    });
+  }
+
+  void test('the tz sent is always a zone the server knows', async () => {
+    for (const tz of ['Not/AZone', '', 'Etc/Unknown']) {
+      const w = await world();
+      const outcome = await sync({ ...w.ctx, tz });
+      assert.equal(outcome.kind, 'sent', `tz ${JSON.stringify(tz)}: ${JSON.stringify(outcome)}`);
+      assert.equal(w.puts()[0]?.tz, 'UTC');
+      assert.deepEqual(w.board.violations, []);
+    }
+  });
+
+  /**
+   * With a TZ the system does not know, Node reports the zone as `undefined`
+   * (`Garbage/Zone`, `:/etc/localtime`) or `Etc/Unknown` (an empty TZ), and a
+   * body carrying either is refused — or carries no `tz` at all.
+   */
+  void test('the machine’s zone, under a TZ the system does not know, is UTC', () => {
+    const census = pathToFileURL(
+      fileURLToPath(new URL('../src/activity-census.ts', import.meta.url)),
+    ).href;
+    const zoneUnder = (tz: string): string =>
+      execFileSync(
+        process.execPath,
+        [
+          '--input-type=module',
+          '-e',
+          `const m = await import(${JSON.stringify(census)}); process.stdout.write(String(m.machineTimeZone()));`,
+        ],
+        { env: { ...process.env, TZ: tz }, encoding: 'utf8' },
+      );
+    for (const tz of ['Garbage/Zone', ':/etc/localtime', '']) {
+      assert.equal(zoneUnder(tz), 'UTC', `TZ=${JSON.stringify(tz)}`);
+    }
+    assert.equal(zoneUnder('Africa/Johannesburg'), 'Africa/Johannesburg');
   });
 });
