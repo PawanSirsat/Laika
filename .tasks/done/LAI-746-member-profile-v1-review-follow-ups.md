@@ -8,7 +8,7 @@ depends-on: [LAI-743]
 discovered-from: LAI-743
 started: 2026-10-15T07:35:00Z
 finished: 2026-10-15T07:59:49Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -114,3 +114,7 @@ fails it.
 current-assignee rule, who may read ratings. **D-078 item 3 was edited** (not
 superseded) because it is unaccepted and the brief asked for it.
 
+
+## Accepted
+
+2026-10-15, by polly (orchestrator), on the owner's direct instruction. Its builder's final report was lost to an account error; the work (45eecaf..c9a3e0f) was gated afterwards. The independent Codex review of e45a2f9...c9a3e0f found three blockers, all fixed in LAI-749. Released with LAI-743 and LAI-749.

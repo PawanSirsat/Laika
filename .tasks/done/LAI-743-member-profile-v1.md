@@ -8,7 +8,7 @@ depends-on: []
 discovered-from:
 started: 2026-10-15T06:04:15Z
 finished: 2026-10-15T07:12:13Z
-status: review
+status: done
 ---
 
 ## Goal
@@ -198,3 +198,11 @@ page, nothing dangling, and `member_ratings` append-only.
   person* rows already link to the board, so the profile link sits beside the
   row.
 
+
+## Accepted
+
+2026-10-15, by polly (orchestrator), on the owner's direct instruction ("push code in master").
+
+reviewed: same-vendor review approved 5472712; independent different-vendor review (Codex) of e45a2f9...c9a3e0f found three blockers, fixed in LAI-749 (71b033f) and approved by a same-vendor review of c9a3e0f...71b033f.
+
+Integrated by merging `build-profile-v1` (71b033f plus this acceptance) into `master` with `--no-ff`. Migrations 0029 and 0030 are additive; the reviews upgraded databases at master's schema and at 0028 with every row intact, and master's code boots on a 0030 database, so a deploy rollback is safe.

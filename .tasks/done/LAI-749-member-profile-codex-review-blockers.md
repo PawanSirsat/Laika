@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-746]
 discovered-from: LAI-746
 started: 2026-10-15T09:26:28Z
-status: review
+status: done
 finished: 2026-10-15T09:38:52Z
 ---
 
@@ -95,3 +95,7 @@ Measured alone, interleaved six times each, at load average ≈ 22–27: old
 62–114 ms, new 50–80 ms. The gain alone is small. Under load the old version
 blocked the worker on 402 synchronous calls, and the new one makes 108 reads
 that the thread pool overlaps.
+
+## Accepted
+
+2026-10-15, by polly (orchestrator), on the owner's direct instruction. Same-vendor review of c9a3e0f...71b033f: APPROVE, no blockers. Fixes 1 and 2 were each reverted in a throwaway copy and their tests went red; fix 1 verified against every trigger body any migration has written, at every migration step 0000-0030. Non-blocking follow-ups (per-member attempt store untested in the browser, two comments that overclaim, a hand-edited production trigger would now refuse boot, fix 3's gain is about 25-30%) are recorded in logs/chief-2026-10-15.md for a later task.
