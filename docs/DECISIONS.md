@@ -4233,8 +4233,12 @@ was a way to read it per person, or anywhere to keep a judgement about one.
    `UPDATE`, `DELETE` and an `INSERT OR REPLACE` over an existing id, and are
    re-checked at every boot, as `activity`'s are. An owner or admin cannot rate themselves (§3.1 and a
    CHECK). **A rating writes no `activity` row and has no verb**, so it reaches
-   no feed, SSE stream, webhook or export; no MCP tool reads it; the profile
-   endpoint is its only reader. A test holds that structurally: only the
+   no feed, SSE stream, webhook or export; no MCP tool reads it. It is read
+   back only by the profile endpoint and by a retry of the write that created
+   it, which answers from the rating itself after the same permission check —
+   §6.3's generic idempotency store leaves that route alone, so the note is
+   never copied into `idempotency_keys` and a token is refused whatever key it
+   holds (LAI-746). A test holds the module boundary structurally: only the
    schema, the boot step that keeps its triggers and the profile service name
    the table, and only the profile routes import the service.
 4. **v1 collects no new usage data.** Every figure is computed from what the

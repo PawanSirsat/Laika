@@ -9,6 +9,7 @@ import {
   setProfileKind,
 } from '../../services/profiles.ts';
 import { type AppEnv } from '../context.ts';
+import { IDEMPOTENCY_HEADER } from '../middleware/idempotency.ts';
 import { parseBody, strictObject, z } from '../validation.ts';
 
 /**
@@ -34,6 +35,9 @@ const RatingBody = strictObject({
   note: z.string().max(RATING_NOTE_MAX * 4),
 });
 
+/** Stored on the rating, so bounded: a client's UUID is 36. */
+const IDEMPOTENCY_KEY_MAX = 255;
+
 function requireActor(c: { get: (k: 'actor') => AppEnv['Variables']['actor'] }) {
   const actor = c.get('actor');
   if (actor === null) throw new ApiError('unauthorized', 'Not signed in');
@@ -58,7 +62,22 @@ export function profileRoutes(options: { db: Db }): Hono<AppEnv> {
   app.post('/:id/ratings', async (c) => {
     const actor = requireActor(c);
     const body = parseBody(RatingBody, await c.req.json().catch(() => null));
-    return c.json(rateMember(db, actor, c.req.param('id'), body), 201);
+    // The route keeps its own key, after the permission (LAI-746): §6.3's store
+    // leaves this path alone — see `keyedByTheRoute`.
+    const key = c.req.header(IDEMPOTENCY_HEADER);
+    if (key !== undefined && key.length > IDEMPOTENCY_KEY_MAX) {
+      throw ApiError.badRequest(
+        `${IDEMPOTENCY_HEADER} is at most ${String(IDEMPOTENCY_KEY_MAX)} characters`,
+        { length: key.length },
+      );
+    }
+
+    const written = rateMember(db, actor, c.req.param('id'), {
+      ...body,
+      idempotencyKey: key === undefined || key === '' ? undefined : key,
+    });
+    if (written.replayed) c.header('Idempotent-Replay', 'true');
+    return c.json(written.rating, 201);
   });
 
   return app;

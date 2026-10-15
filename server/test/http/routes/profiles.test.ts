@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { orgs, projects, users } from '../../../src/db/schema.ts';
+import { idempotencyKeys, memberRatings, orgs, projects, users } from '../../../src/db/schema.ts';
 import {
   type AuthHarness,
   authHarness,
@@ -455,5 +455,93 @@ describe('a rating reaches nothing but the profile (D-078, LAI-743)', () => {
     });
     expect(whoami).toContain('ada@example.test');
     expect(whoami).not.toContain(NOTE);
+  });
+});
+
+/**
+ * `Idempotency-Key` on `POST /users/:id/ratings` (§6.3, §4.21, LAI-746).
+ *
+ * The generic store answers a keyed POST **before the route runs**, keyed by
+ * user rather than by credential — so a token holding a session's key and body
+ * was handed the session's `201`, note included, without `can()` ever being
+ * asked; and the note sat in `idempotency_keys` for a day. The ratings route
+ * now keeps its own key on the rating, asked after the permission.
+ */
+describe('a retried rating (LAI-746)', () => {
+  const NOTE = 'A private remark sent twice.';
+  const body = JSON.stringify({ score: 4, note: NOTE });
+
+  async function post(auth: string, key: string, sent = body): Promise<Response> {
+    return req(
+      `/api/v1/users/${member.id}/ratings`,
+      { method: 'POST', body: sent, headers: { 'Idempotency-Key': key } },
+      auth,
+    );
+  }
+
+  it('is never replayed to a token, even with the session’s key and body', async () => {
+    expect((await post(ownerCookie, 'attempt-1')).status).toBe(201);
+    const token = await mint(ownerCookie, { name: 'Claude Code', scope: 'full' });
+
+    const res = await post(token, 'attempt-1');
+
+    expect(res.headers.get('Idempotent-Replay')).toBeNull();
+    expect(res.status).toBe(403);
+    expect(await errorOf(res)).toMatchObject({
+      code: 'forbidden',
+      details: { action: 'profile.rate' },
+    });
+  });
+
+  it('leaves no copy of the note in idempotency_keys', async () => {
+    expect((await post(ownerCookie, 'attempt-1')).status).toBe(201);
+    expect((await post(ownerCookie, 'attempt-1')).status).toBe(201);
+
+    const stored = h.db.select().from(idempotencyKeys).all();
+    expect(stored.filter((row) => row.responseBody.includes(NOTE))).toEqual([]);
+    // And the rating itself is where the key went.
+    expect(
+      h.db
+        .select()
+        .from(memberRatings)
+        .all()
+        .map((r) => r.idempotencyKey),
+    ).toEqual(['attempt-1']);
+  });
+
+  it('answers a retry with the rating it already wrote, and writes no second one', async () => {
+    const first = await ok(post(ownerCookie, 'attempt-1'), 201);
+    const again = await post(ownerCookie, 'attempt-1');
+
+    expect(again.status).toBe(201);
+    expect(again.headers.get('Idempotent-Replay')).toBe('true');
+    expect(((await again.json()) as { id: string }).id).toBe(first.id);
+    expect(h.db.select().from(memberRatings).all()).toHaveLength(1);
+  });
+
+  it('refuses the same key with a different rating, 409', async () => {
+    expect((await post(ownerCookie, 'attempt-1')).status).toBe(201);
+
+    const res = await post(ownerCookie, 'attempt-1', JSON.stringify({ score: 2, note: NOTE }));
+
+    expect(res.status).toBe(409);
+    expect((await errorOf(res)).code).toBe('conflict');
+    expect(h.db.select().from(memberRatings).all()).toHaveLength(1);
+  });
+
+  it('keeps one rater’s key from answering another’s', async () => {
+    expect((await post(ownerCookie, 'shared-key')).status).toBe(201);
+    const res = await post(admin.cookie, 'shared-key');
+
+    expect(res.status).toBe(201);
+    expect(res.headers.get('Idempotent-Replay')).toBeNull();
+    expect(h.db.select().from(memberRatings).all()).toHaveLength(2);
+  });
+
+  it('refuses a key longer than 255 characters rather than storing it', async () => {
+    const res = await post(ownerCookie, 'k'.repeat(256));
+    expect(res.status).toBe(400);
+    expect((await errorOf(res)).code).toBe('bad_request');
+    expect(h.db.select().from(memberRatings).all()).toHaveLength(0);
   });
 });

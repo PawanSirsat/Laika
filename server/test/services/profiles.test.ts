@@ -545,7 +545,7 @@ describe('rating a member (LAI-743)', () => {
   it('appends, newest first, with who and when', () => {
     const admin = makeUser('Ari', 'admin');
     rateMember(t.db, actor(ada), bea, { score: 4, note: '  Steady delivery.  ' }, NOW - 2 * DAY);
-    const second = rateMember(
+    const { rating: second, replayed } = rateMember(
       t.db,
       actor(admin),
       bea,
@@ -553,6 +553,7 @@ describe('rating a member (LAI-743)', () => {
       NOW - DAY,
     );
 
+    expect(replayed).toBe(false);
     expect(second.id).toMatch(/^[0-9A-Z]{26}$/);
     expect(second).toEqual({
       id: second.id,

@@ -218,6 +218,18 @@ export interface ProfileView {
 export interface RateMemberInput {
   score: number;
   note: string;
+  /**
+   * The request's `Idempotency-Key`, when it sent one (§6.3, LAI-746). Kept on
+   * the rating, so a retry answers from it instead of writing another.
+   */
+  idempotencyKey?: string | undefined;
+}
+
+/** A rating written — or, for a retried key, the one written before. */
+export interface RatingWrite {
+  rating: RatingView;
+  /** True when this answer is the earlier write's, for `Idempotent-Replay`. */
+  replayed: boolean;
 }
 
 type UserRow = typeof users.$inferSelect;
@@ -320,6 +332,18 @@ export function setProfileKind(
  * The score and note are checked here as well as at the route and in the
  * database, so every caller of the service — not only HTTP — gets the §6.3
  * `unprocessable` rather than a constraint error.
+ *
+ * ## A retried key answers from the rating, after the permission (LAI-746)
+ *
+ * §6.3's store answers a keyed POST before the route runs and keeps the whole
+ * response — here, the private note — in `idempotency_keys`, keyed by user
+ * rather than credential. This route is left out of it
+ * (`http/middleware/idempotency.ts`) and keeps the key on the rating instead.
+ * So `profile.rate` is asked on every attempt — a token is refused, whatever
+ * key it holds — and the note lives only in `member_ratings`.
+ *
+ * Keys are per rater and never expire: the row they point at never does
+ * either. The same key with a different rating is §6.3's `conflict`.
  */
 export function rateMember(
   db: Db,
@@ -327,7 +351,7 @@ export function rateMember(
   userId: string,
   input: RateMemberInput,
   now: number = Date.now(),
-): RatingView {
+): RatingWrite {
   assertCan(actor, 'profile.rate', { targetUserId: userId });
   requireUser(db, userId);
 
@@ -346,21 +370,50 @@ export function rateMember(
     );
   }
 
+  const key = input.idempotencyKey;
+  if (key !== undefined) {
+    const before = db
+      .select()
+      .from(memberRatings)
+      .where(and(eq(memberRatings.ratedBy, actor.userId), eq(memberRatings.idempotencyKey, key)))
+      .get();
+
+    if (before !== undefined) {
+      if (before.userId !== userId || before.score !== input.score || before.note !== note) {
+        throw new ApiError(
+          'conflict',
+          'This Idempotency-Key was already used with a different request body',
+          { idempotency_key: key },
+        );
+      }
+      return { rating: ratingView(before, actor), replayed: true };
+    }
+  }
+
   const row = {
     id: newId(),
     userId,
     ratedBy: actor.userId,
     score: input.score,
     note,
+    idempotencyKey: key ?? null,
     createdAt: now,
   };
   db.insert(memberRatings).values(row).run();
 
+  return { rating: ratingView(row, actor), replayed: false };
+}
+
+/** A rating this actor wrote, as the wire shape. */
+function ratingView(
+  row: { id: string; score: number; note: string; createdAt: number },
+  rater: ResolvedActor,
+): RatingView {
   return {
     id: row.id,
     score: row.score,
     note: row.note,
-    rated_by: { id: actor.userId, name: actor.name },
+    rated_by: { id: rater.userId, name: rater.name },
     created_at: row.createdAt,
   };
 }

@@ -906,9 +906,12 @@ half while `recursive_triggers` is off (LAI-746).
 | `created_at` | |
 
 **Private.** A rating writes no `activity` row and has no §4.8 verb, so it
-reaches no feed, SSE stream, webhook or export, and no MCP tool reads it. The
-only reader is `GET /api/v1/users/:id/profile` (§6.4), which answers an owner or
-admin on a web session and nobody else (§3.1). No `ON DELETE`: people are
+reaches no feed, SSE stream, webhook or export, and no MCP tool reads it. It is
+read back by `GET /api/v1/users/:id/profile` (§6.4), which answers an owner or
+admin on a web session and nobody else (§3.1), and by a retried `POST` with the
+same `Idempotency-Key`, which answers from this row after the same check. §6.3's
+generic store leaves that route alone, so no copy of the note is kept in
+`idempotency_keys` (LAI-746). No `ON DELETE`: people are
 deactivated, never deleted (§4.1).
 
 ## 5. Task lifecycle
@@ -1070,6 +1073,11 @@ those projects. A Viewer's token can never write, whatever its scope says.
   every route (§13.1), so 413 is routine behaviour rather than a corner case.
 - **Idempotency**: `POST` accepts `Idempotency-Key`; replays within 24h return
   the original response. Same key with a different body is `conflict`.
+  **One route keeps its own key** (LAI-746): `POST /users/:id/ratings`, which
+  is session-only (§3.1). The shared store answers before the route runs, keyed
+  by user rather than credential, and keeps the response body — which there is
+  a private note — so that route stores the key on the rating and answers a
+  retry from it after `can()`. Its keys are per rater and do not expire.
 - **Rate limits**: in-process token bucket — 120 req/min per token, 600/min per
   session, 30/min for heartbeats. `429` with `Retry-After`, never below one
   second.
@@ -1205,7 +1213,10 @@ also `current_work`, `delivery` and `agents` — **absent, not empty**, for a
 `manager`. `PATCH` takes exactly `{ profile_kind }` and answers the whole
 profile, because the kind decides which blocks it carries. `POST …/ratings`
 takes exactly `{ score, note }` — an integer 1–5 and a note of 1–500
-characters after trimming — and answers the rating, `201`. All three ask §3.1's
+characters after trimming — and answers the rating, `201`. With an
+`Idempotency-Key` (at most 255 characters), a retry with the same key and body
+answers the rating already written — `201`, `Idempotent-Replay: true`, no second
+row — and the same key with a different body is `409`. All three ask §3.1's
 `profile.*` **before** looking the person up: a member or any token gets `403`
 for a real id and a made-up one alike, and only an owner or admin is told
 `404`. Every figure is computed at read time in a twelve-week window starting
