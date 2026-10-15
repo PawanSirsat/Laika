@@ -250,6 +250,25 @@ describe('refusing to continue without the guarantee', () => {
     expect(() => ensureActivityTriggers(t.db)).toThrow();
   });
 
+  it('refuses a trigger that keeps the name and the message and never fires (LAI-749)', () => {
+    // A message-text check passes this: the sentence is all there, inside a
+    // `SELECT` that raises nothing. Only the whole definition tells them apart.
+    seedOneActivityRow();
+    t.sqlite.exec('DROP TRIGGER `activity_is_append_only_no_update`');
+    t.sqlite.exec(
+      "CREATE TRIGGER `activity_is_append_only_no_update` BEFORE UPDATE ON `activity` BEGIN SELECT 'activity is append-only: UPDATE is not permitted (SPEC 4.8)'; END",
+    );
+
+    t.db.run(sql`UPDATE activity SET payload_json = '{"rewritten":true}'`);
+    expect(t.db.all(sql`SELECT payload_json FROM activity`)).toEqual([
+      { payload_json: '{"rewritten":true}' },
+    ]);
+
+    expect(() => ensureActivityTriggers(t.db)).toThrow(
+      /activity_is_append_only_no_update \(present but does not abort/,
+    );
+  });
+
   it('refuses a trigger that holds the name and enforces nothing', () => {
     // The reachable version of the failure, and the one `IF NOT EXISTS` cannot
     // see: the block is hand-pasted into four migrations, and a paste that lost
@@ -546,6 +565,43 @@ describe('member_ratings keeps its append-only triggers across a rebuild (LAI-74
     );
 
     expect(() => ensureActivityTriggers(t.db)).toThrow(/present but does not abort/i);
+  });
+
+  /**
+   * The review's substitute (LAI-749): the right name, the right table, the
+   * right message text — and a `WHEN 0` that means it never fires. The check
+   * used to look for the message in the stored SQL, found it, and let a replace
+   * rewrite a rating 5 → 1. A message is not a definition.
+   */
+  it('refuses a substitute that keeps the message text and never fires', () => {
+    const s = seed(t.db);
+    const rated = newId();
+    t.db.run(sql`
+      INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+      VALUES (${rated}, 'bea@example.test', 'Bea', 'member', 1, 1, 1)
+    `);
+    const rating = newId();
+    t.db.run(sql`
+      INSERT INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+      VALUES (${rating}, ${rated}, ${s.userId}, 5, 'Great.', 1)
+    `);
+
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_replace`');
+    t.sqlite.exec(
+      "CREATE TRIGGER `member_ratings_is_append_only_no_replace` BEFORE INSERT ON `member_ratings` WHEN 0 BEGIN SELECT RAISE(ABORT, 'member_ratings is append-only: INSERT OR REPLACE is not permitted (SPEC 4.21)'); END",
+    );
+
+    // The substitute really is inert — so refusing it below is the point,
+    // not an accident of a fixture that was never broken.
+    t.db.run(sql`
+      INSERT OR REPLACE INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+      VALUES (${rating}, ${rated}, ${s.userId}, 1, 'Rewritten.', 2)
+    `);
+    expect(t.db.all(sql`SELECT score FROM member_ratings`)).toEqual([{ score: 1 }]);
+
+    expect(() => ensureActivityTriggers(t.db)).toThrow(
+      /member_ratings_is_append_only_no_replace \(present but does not abort/,
+    );
   });
 });
 

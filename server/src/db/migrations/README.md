@@ -20,7 +20,8 @@ and a database migrated by them took the block from there.
 
 **New migrations do not need one.** `runMigrations` calls
 `ensureActivityTriggers` after every migration pass, on every boot, and it
-verifies the triggers *abort* rather than merely exist. Read that function before
+verifies each trigger *is the definition that aborts* — the whole of it, not its
+name or its message (LAI-749) — rather than merely exist. Read that function before
 adding a block anyway: it explains why `CREATE TRIGGER IF NOT EXISTS` inside a
 migration is not the same mechanism, and why a name check is not enough.
 

@@ -59,8 +59,6 @@ const APPEND_ONLY_TRIGGERS = [
   {
     name: 'activity_is_append_only_no_update',
     table: 'activity',
-    /** The clause that does the work. A trigger without it enforces nothing. */
-    aborts: 'UPDATE is not permitted',
     create: `CREATE TRIGGER IF NOT EXISTS \`activity_is_append_only_no_update\`
 BEFORE UPDATE ON \`activity\`
 BEGIN
@@ -70,7 +68,6 @@ END`,
   {
     name: 'activity_is_append_only_no_delete',
     table: 'activity',
-    aborts: 'DELETE is not permitted',
     create: `CREATE TRIGGER IF NOT EXISTS \`activity_is_append_only_no_delete\`
 BEFORE DELETE ON \`activity\`
 BEGIN
@@ -82,7 +79,6 @@ END`,
   {
     name: 'member_ratings_is_append_only_no_update',
     table: 'member_ratings',
-    aborts: 'UPDATE is not permitted',
     create: `CREATE TRIGGER IF NOT EXISTS \`member_ratings_is_append_only_no_update\`
 BEFORE UPDATE ON \`member_ratings\`
 BEGIN
@@ -92,7 +88,6 @@ END`,
   {
     name: 'member_ratings_is_append_only_no_delete',
     table: 'member_ratings',
-    aborts: 'DELETE is not permitted',
     create: `CREATE TRIGGER IF NOT EXISTS \`member_ratings_is_append_only_no_delete\`
 BEFORE DELETE ON \`member_ratings\`
 BEGIN
@@ -104,7 +99,6 @@ END`,
   {
     name: 'member_ratings_is_append_only_no_replace',
     table: 'member_ratings',
-    aborts: 'INSERT OR REPLACE is not permitted',
     create: `CREATE TRIGGER IF NOT EXISTS \`member_ratings_is_append_only_no_replace\`
 BEFORE INSERT ON \`member_ratings\`
 WHEN EXISTS (SELECT 1 FROM \`member_ratings\` WHERE \`id\` = NEW.\`id\`)
@@ -135,8 +129,18 @@ END`,
  * is present, correctly named, and enforces nothing. A name check would call
  * that healthy.
  *
- * So the post-condition reads each trigger's stored SQL and looks for the clause
- * that does the work.
+ * So the post-condition reads each trigger's stored SQL and compares the
+ * **whole definition** with the one `create` writes — table, timing, `WHEN`,
+ * body, `RAISE(ABORT, …)` — after normalising only what does not change
+ * meaning: quoting, whitespace, case, `IF NOT EXISTS`, a trailing `;`.
+ *
+ * **Not a search for the message, which it was until LAI-749.** The review
+ * replaced the replace trigger with one that kept the message text inside a
+ * `WHEN 0` that never fires; the substring was there, the check passed, and an
+ * `INSERT OR REPLACE` rewrote a rating 5 → 1. A message is not a definition.
+ * Every trigger any migration has written normalises to exactly its `create`
+ * (checked when this changed), so the stricter check refuses only a trigger
+ * nothing here wrote.
  *
  * ## Why it throws rather than repairing
  *
@@ -170,9 +174,14 @@ export function ensureActivityTriggers(db: Db): void {
   );
 
   const broken = triggers
-    .filter((trigger) => !(bodies.get(trigger.name) ?? '').includes(trigger.aborts))
+    .filter(
+      (trigger) =>
+        normaliseTrigger(bodies.get(trigger.name) ?? '') !== normaliseTrigger(trigger.create),
+    )
     .map((trigger) =>
-      bodies.has(trigger.name) ? `${trigger.name} (present but does not abort)` : trigger.name,
+      bodies.has(trigger.name)
+        ? `${trigger.name} (present but does not abort as its definition says — the stored trigger is not the one this step creates)`
+        : trigger.name,
     );
 
   if (broken.length > 0) {
@@ -180,6 +189,21 @@ export function ensureActivityTriggers(db: Db): void {
       `activity (SPEC §4.8) and member_ratings (§4.21) are append-only and their triggers are not enforcing it: ${broken.join(', ')}. Refusing to start without the guarantee.`,
     );
   }
+}
+
+/**
+ * A trigger's definition with only meaning-free differences removed: quoting,
+ * whitespace, case, `IF NOT EXISTS`, a trailing `;`. Two triggers that
+ * normalise equal do the same thing; any other difference — table, timing,
+ * `WHEN`, body — is a different trigger.
+ */
+function normaliseTrigger(text: string): string {
+  return text
+    .replace(/\bif\s+not\s+exists\b/gi, '')
+    .replace(/[`"]/g, '')
+    .replace(/;\s*$/, '')
+    .replace(/\s+/g, '')
+    .toLowerCase();
 }
 
 function tableExists(db: Db, name: string): boolean {
