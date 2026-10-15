@@ -193,3 +193,13 @@ export type SprintStatus = (typeof SPRINT_STATUSES)[number];
  */
 export const PROFILE_KINDS = ['builder', 'manager'] as const;
 export type ProfileKind = (typeof PROFILE_KINDS)[number];
+
+/**
+ * §4.1's `local_activity_scope` (D-079, LAI-751): which repositories a
+ * developer's collector counts in. `agent-repos` is every repository where
+ * they run a connected agent on that machine; `laika-repos` narrows it to the
+ * ones set up for Laika. The server cannot see a repository, so it stores the
+ * choice and the collector honours it.
+ */
+export const LOCAL_ACTIVITY_SCOPES = ['agent-repos', 'laika-repos'] as const;
+export type LocalActivityScope = (typeof LOCAL_ACTIVITY_SCOPES)[number];

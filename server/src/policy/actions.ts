@@ -36,6 +36,12 @@ export const ORG_ACTIONS = [
   'profile.read',
   'profile.set_kind',
   'profile.rate',
+  'profile.activity.read',
+  'activity_sharing.read_own',
+  'activity_sharing.set_own',
+  'local_activity.send_own',
+  'local_activity.read_own',
+  'local_activity.delete_own',
 ] as const;
 
 /** SPEC §3.2 — gated by project role, with org owner/admin holding implicit lead. */
@@ -77,6 +83,7 @@ export const SYSTEM_ACTIONS = [
   'system.task.flag_stale',
   'system.invite.expire',
   'system.meeting_review.expire',
+  'system.local_activity.prune',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
@@ -106,6 +113,9 @@ export const READ_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'token.read_own',
   'audit_log.export',
   'project.read',
+  // A collector reads whether it may send before it does — with whatever
+  // token it has, a `read_only` one included (LAI-751).
+  'activity_sharing.read_own',
 ]);
 
 export function isReadAction(action: Action): boolean {
@@ -129,4 +139,13 @@ export const SESSION_ONLY_ACTIONS: ReadonlySet<Action> = new Set<Action>([
   'profile.read',
   'profile.set_kind',
   'profile.rate',
+  // The heatmap is part of the profile, and follows its rule (D-078, D-079).
+  'profile.activity.read',
+  // **The developer's consent, and what follows from it** (D-079, LAI-751).
+  // A token is how an agent acts, so an agent must not be able to switch
+  // sharing on, read back what was collected, or erase it: each is the
+  // person's own decision, made signed in.
+  'activity_sharing.set_own',
+  'local_activity.read_own',
+  'local_activity.delete_own',
 ]);

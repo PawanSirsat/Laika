@@ -54,10 +54,13 @@ export function rateLimitMiddleware(limiter: RateLimiter) {
       actor === null || actor === undefined
         ? null
         : { userId: actor.userId, tokenId: actor.token?.id ?? null },
+      c.req.method,
     );
     const decision = limiter.take(key, policy);
 
-    c.header('X-RateLimit-Limit', String(policy.perMinute));
+    // The bucket's size: per minute for §6.3's budgets, and 30 for the
+    // report budget, which is per hour — `0.5` would tell a client nothing.
+    c.header('X-RateLimit-Limit', String(policy.burst ?? policy.perMinute));
     c.header('X-RateLimit-Remaining', String(decision.remaining));
 
     if (!decision.allowed) {
@@ -99,13 +102,27 @@ export interface RequestCredential {
   tokenId: string | null;
 }
 
+/** A collector's report, D-079's ingest (§6.3, LAI-751). */
+export const LOCAL_ACTIVITY_PATH = '/api/v1/me/local-activity';
+
 export function classify(
   path: string,
   credential: RequestCredential | null,
+  method = 'GET',
 ): { key: string; policy: LimitPolicy } {
   // A token is its own identity; a cookie session is its user's. Anonymous
   // callers share one, for the reason in the module comment.
   const who = credential === null ? 'anonymous' : (credential.tokenId ?? credential.userId);
+
+  // Reports have their own hourly budget, per token and per user for a
+  // session — and nothing else on that path does: the preview and the delete
+  // are a person on the web app, on the session budget.
+  if (path === LOCAL_ACTIVITY_PATH && method === 'PUT') {
+    return {
+      key: `local-activity:${credential?.tokenId != null ? 'token' : 'user'}:${who}`,
+      policy: LIMITS.localActivity,
+    };
+  }
 
   // Heartbeats are frequent, cheap and get their own budget (§6.3, §9.1) so a
   // busy agent cannot spend its whole session allowance on presence pings.

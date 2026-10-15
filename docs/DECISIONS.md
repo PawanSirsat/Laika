@@ -4299,3 +4299,66 @@ people who already see every project, adds a view and no new knowledge — which
 is what keeps it on the capacity side of D-005's line. The rating is the one
 new thing stored, so it gets the strictest handling the schema has: append-only,
 admin-only, and absent from every stream that could carry it further.
+
+## D-079 — Activity heatmap and local activity counts.
+
+**2026-10-15, the owner, directly** (through the orchestrator; LAI-751 builds
+the server, the web app and the documents, LAI-752 the collector in `plugin/`
+and `cli/`). The member profile (D-078) gains a daily activity heatmap with
+three sources: board actions (from the activity log), commits already on a
+remote, and local work (prompts, agent sessions, commits not yet pushed).
+
+### Decided
+
+1. Board-action counts are derived from the activity log Laika already holds
+   and follow D-078's visibility: owners and admins, web session only.
+2. Local work and pushed-commit counts are collected only when an owner or
+   admin has turned on Developer insights for the organisation AND the
+   developer has turned on "Share my local activity" themselves, from a
+   signed-in web session. Either switch off stops collection at once.
+3. Only per-day counts are sent: prompts per agent kind, agent sessions
+   started, commits not yet on any remote, and a one-way hash of each commit
+   already on a remote so a commit seen from two machines counts once. Never
+   prompt text, file names, repo names or paths, remote URLs, branch names,
+   commit messages, author emails or raw commit ids.
+4. Counting covers repos where the developer runs a connected agent on that
+   machine; nothing scans the disk. The developer may narrow it to repos set
+   up for Laika.
+5. Daily counts and hashes are kept 400 days, then deleted. The developer can
+   delete their local-activity history at any time and can see what is held.
+6. The heatmap is context only. It never feeds an automatic rating or score.
+7. This extends D-005 for these daily counts only. Heartbeats keep their
+   30-day retention. No new outbound call is added (SPEC §13.4 unchanged).
+
+### How LAI-751 built it
+
+- **Tables** (SPEC §4.22–§4.24): `board_activity_days`, a per-person per-UTC-day
+  rollup of `activity` that `appendActivity` keeps in the same transaction as
+  every row it writes and that migration `0031` filled in one statement;
+  `local_activity_days`, one snapshot per person, machine and day;
+  `pushed_commit_keys`, one key per person and commit. The switches are
+  `orgs.developer_insights` and `users.share_local_activity`, with
+  `users.local_activity_scope`. Additive: `0031` adds columns and creates
+  tables, and rebuilds nothing.
+- **Board days are UTC.** Laika has no organisation time zone. Local days are
+  the reporting machine's own dates; the heatmap aligns them by date and ends
+  on today in the person's latest reporting zone.
+- **Endpoints and rows** (SPEC §6.4, §3.1): five new §3.1 rows, each its own
+  action, and one §3.4 action for retention. Turning sharing on, reading back
+  what is held and deleting it are web-session only; a token is told
+  `session_required`.
+- **The contract's error codes are reasons, not codes.** §6.3's vocabulary is
+  closed (D-021), so `session_required`, `local_activity_off` and
+  `day_out_of_range` travel as `details.reason` under `forbidden` and
+  `unprocessable`, with the contract's statuses unchanged — the shape
+  heartbeats already use for `token_required`.
+- **No read scans the log or an unbounded table**: every heatmap read is a
+  range of one person's days on an index that leads with the person.
+
+### What this does not decide
+
+- **Whether a person may see their own heatmap.** D-078's open question stands:
+  the developer sees what the server holds about them on Connect, not the
+  profile.
+- **An `activity` verb for consent changes.** None is written; adding one is an
+  `activity` rebuild and a three-owner change (CLAUDE.md §4.4).

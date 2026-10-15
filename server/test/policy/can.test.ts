@@ -276,9 +276,16 @@ describe('the cases LAI-004 calls out by name', () => {
       // So the rule this test states is not "a Viewer performs no writes" — it
       // is "a Viewer writes nothing that is not about themselves".
       const ownWatch = action === 'task.watch';
+      // D-079's own-activity rows (LAI-751): their consent, their reports and
+      // what is held about them — the heartbeat's "own record about own work".
+      const ownLocalActivity =
+        action === 'activity_sharing.set_own' ||
+        action === 'local_activity.send_own' ||
+        action === 'local_activity.read_own' ||
+        action === 'local_activity.delete_own';
 
       expect(allowed, `${action} allowed for viewer`).toBe(
-        selfToken || joining || ownUnlisted || ownHeartbeat || ownWatch,
+        selfToken || joining || ownUnlisted || ownHeartbeat || ownWatch || ownLocalActivity,
       );
     }
   });

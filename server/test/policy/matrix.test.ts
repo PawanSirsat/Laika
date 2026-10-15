@@ -80,6 +80,19 @@ const ORG_MATRIX: OrgRow[] = [
   ['profile.read', true, true, false, false],
   // | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
   ['profile.set_kind', true, true, false, false],
+  // | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
+  // Its own row, the profile's rule (D-079, LAI-751).
+  ['profile.activity.read', true, true, false, false],
+  // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
+  ['activity_sharing.read_own', true, true, true, true],
+  // | Set own activity sharing | ✓ (session only) | ✓ (session only) | ✓ (session only) | ✓ (session only) |
+  ['activity_sharing.set_own', true, true, true, true],
+  // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+  // The heartbeat's shape: a Viewer is stopped by the credential, not the role.
+  ['local_activity.send_own', true, true, true, true],
+  // | Read and delete own local activity | ✓ (session only) | … | ✓ (session only) |
+  ['local_activity.read_own', true, true, true, true],
+  ['local_activity.delete_own', true, true, true, true],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -254,6 +267,7 @@ describe('SPEC §3.4 — the system principal', () => {
     ['system.task.flag_stale', {}],
     ['system.invite.expire', {}],
     ['system.meeting_review.expire', {}],
+    ['system.local_activity.prune', {}],
     ['task.write', { projectId: PROJECT }],
     ['comment.create', { projectId: PROJECT }],
   ];
@@ -298,7 +312,7 @@ describe('SPEC §3.4 — the system principal', () => {
   });
 
   it('gives no human role a §3.4-only action', () => {
-    // The other direction of the same grant: these four have no §3.1 or §3.2
+    // The other direction of the same grant: these have no §3.1 or §3.2
     // row, so every role — Owner included — must be denied.
     for (const orgRole of ['owner', 'admin', 'member', 'viewer'] as const) {
       for (const action of SYSTEM_ACTIONS) {

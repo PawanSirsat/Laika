@@ -72,17 +72,20 @@ describe('migrations', () => {
   const EXPECTED_TABLES = [
     'accounts',
     'activity',
+    'board_activity_days',
     'comment_mentions',
     'comments',
     'heartbeats',
     'idempotency_keys',
     'invites',
+    'local_activity_days',
     'meeting_reviews',
     'member_ratings',
     'orgs',
     'project_memberships',
     'project_statuses',
     'projects',
+    'pushed_commit_keys',
     'sessions',
     'sprints',
     'tags',
@@ -130,6 +133,13 @@ describe('migrations', () => {
     ['tasks', ['status_id']],
     ['project_statuses', ['project_id', 'position']],
     ['member_ratings', ['user_id', 'created_at']],
+    // The heatmap's reads are ranges of one person's days (LAI-751).
+    ['board_activity_days', ['user_id', 'day']],
+    ['local_activity_days', ['user_id', 'day', 'collector_id']],
+    ['local_activity_days', ['day']],
+    ['pushed_commit_keys', ['user_id', 'key']],
+    ['pushed_commit_keys', ['user_id', 'day']],
+    ['pushed_commit_keys', ['day']],
   ];
 
   it('creates every index SPEC §4.13 requires', () => {
@@ -157,6 +167,11 @@ describe('migrations', () => {
     ['project_memberships', ['project_id', 'user_id']],
     ['projects', ['slug']],
     ['project_statuses', ['project_id', 'position']],
+    // One row per person and day, per machine, per key (LAI-751): the upserts
+    // that keep a snapshot from doubling depend on these being unique.
+    ['board_activity_days', ['user_id', 'day']],
+    ['local_activity_days', ['user_id', 'day', 'collector_id']],
+    ['pushed_commit_keys', ['user_id', 'key']],
   ];
 
   it('makes the §4.13 unique indexes actually unique', () => {

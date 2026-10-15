@@ -265,7 +265,7 @@ describe('refusing to continue without the guarantee', () => {
     ]);
 
     expect(() => ensureActivityTriggers(t.db)).toThrow(
-      /activity_is_append_only_no_update \(present but does not abort/,
+      /activity_is_append_only_no_update \(present, but its stored definition differs/,
     );
   });
 
@@ -280,7 +280,9 @@ describe('refusing to continue without the guarantee', () => {
       'CREATE TRIGGER `activity_is_append_only_no_delete` BEFORE DELETE ON `activity` BEGIN SELECT 1; END',
     );
 
-    expect(() => ensureActivityTriggers(t.db)).toThrow(/present but does not abort/i);
+    expect(() => ensureActivityTriggers(t.db)).toThrow(
+      /present, but its stored definition differs/i,
+    );
 
     // And the state it refused really was broken, rather than merely unfamiliar.
     t.db.run(sql`DELETE FROM activity`);
@@ -564,7 +566,9 @@ describe('member_ratings keeps its append-only triggers across a rebuild (LAI-74
       'CREATE TRIGGER `member_ratings_is_append_only_no_update` BEFORE UPDATE ON `member_ratings` BEGIN SELECT 1; END',
     );
 
-    expect(() => ensureActivityTriggers(t.db)).toThrow(/present but does not abort/i);
+    expect(() => ensureActivityTriggers(t.db)).toThrow(
+      /present, but its stored definition differs/i,
+    );
   });
 
   /**
@@ -600,7 +604,7 @@ describe('member_ratings keeps its append-only triggers across a rebuild (LAI-74
     expect(t.db.all(sql`SELECT score FROM member_ratings`)).toEqual([{ score: 1 }]);
 
     expect(() => ensureActivityTriggers(t.db)).toThrow(
-      /member_ratings_is_append_only_no_replace \(present but does not abort/,
+      /member_ratings_is_append_only_no_replace \(present, but its stored definition differs/,
     );
   });
 });
@@ -652,6 +656,86 @@ describe('0030 closes INSERT OR REPLACE on a populated 0029 database (LAI-746)',
           VALUES (${rating}, ${other}, ${s.userId}, 1, 'Rewritten.', 2)
         `);
       }, /append-only: INSERT OR REPLACE/);
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+    } finally {
+      sqlite.close();
+      rmSync(dbDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('0031 adds the heatmap to a populated 0030 database (LAI-751)', () => {
+  it('fills the board rollup from the log in one pass, and rebuilds neither users nor orgs', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const dropped = journal.entries.splice(
+      journal.entries.findIndex((e) => e.tag.startsWith('0031_')),
+    );
+    // The guard on this guard: what was cut is 0031, and 0030 is the last kept.
+    expect(dropped[0]?.tag).toMatch(/^0031_/);
+    expect(journal.entries.at(-1)?.tag).toMatch(/^0030_/);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: dir });
+      const s = seed(db);
+      const bea = newId();
+      db.run(sql`
+        INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+        VALUES (${bea}, 'bea@example.test', 'Bea', 'member', 1, 1, 1)
+      `);
+      db.run(sql`
+        INSERT INTO sessions (id, user_id, token, expires_at, created_at, updated_at)
+        VALUES (${newId()}, ${bea}, 'session-token', ${Date.now() + 86_400_000}, 1, 1)
+      `);
+
+      // The log as it stands: a person's own rows, their agents' rows, a
+      // system row, across a UTC midnight. Raw, because `appendActivity`
+      // would count them itself — and 0031's table does not exist yet.
+      const at = (iso: string) => Date.parse(iso);
+      const rows: [string | null, 'user' | 'agent' | 'system', number][] = [
+        [bea, 'user', at('2026-10-13T23:59:59.999Z')],
+        [bea, 'user', at('2026-10-14T00:00:00.000Z')],
+        [bea, 'agent', at('2026-10-14T09:00:00.000Z')],
+        [bea, 'agent', at('2026-10-14T10:00:00.000Z')],
+        [s.userId, 'user', at('2026-10-14T11:00:00.000Z')],
+        [null, 'system', at('2026-10-14T12:00:00.000Z')],
+      ];
+      for (const [actor, kind, createdAt] of rows) {
+        db.run(sql`
+          INSERT INTO activity (id, org_id, actor_id, actor_kind, type, payload_json, created_at)
+          VALUES (${newId()}, ${s.orgId}, ${actor}, ${kind}, 'task.updated', '{}', ${createdAt})
+        `);
+      }
+
+      runMigrations(db);
+
+      expect(
+        db.all(
+          sql`SELECT user_id, day, by_self, by_agents FROM board_activity_days ORDER BY day, user_id`,
+        ),
+      ).toEqual(
+        [
+          { user_id: bea, day: '2026-10-13', by_self: 1, by_agents: 0 },
+          { user_id: bea, day: '2026-10-14', by_self: 1, by_agents: 2 },
+          { user_id: s.userId, day: '2026-10-14', by_self: 1, by_agents: 0 },
+        ].sort((a, b) => a.day.localeCompare(b.day) || a.user_id.localeCompare(b.user_id)),
+      );
+
+      // The switches arrive off, and the session hanging off Bea survived:
+      // `users` was added to, not dropped and copied.
+      expect(
+        db.all(sql`SELECT share_local_activity, local_activity_scope FROM users WHERE id = ${bea}`),
+      ).toEqual([{ share_local_activity: 0, local_activity_scope: 'agent-repos' }]);
+      expect(db.all(sql`SELECT developer_insights FROM orgs`)).toEqual([{ developer_insights: 0 }]);
+      expect(db.all(sql`SELECT user_id FROM sessions`)).toEqual([{ user_id: bea }]);
       expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
     } finally {
       sqlite.close();

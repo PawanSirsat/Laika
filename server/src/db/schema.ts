@@ -31,6 +31,7 @@ import {
   ACTOR_KINDS,
   AI_PROVIDERS,
   CREATED_VIA,
+  LOCAL_ACTIVITY_SCOPES,
   MEETING_REVIEW_STATUSES,
   ORG_ROLES,
   PROFILE_KINDS,
@@ -99,6 +100,17 @@ export const users = sqliteTable(
      * LAI-743). A label, never a permission: `can()` does not read it.
      */
     profileKind: text('profile_kind', { enum: PROFILE_KINDS }).notNull().default('builder'),
+    /**
+     * The developer's own consent to send local activity counts (§4.1, D-079,
+     * LAI-751). 0 by default. Set only by the person, from a web session —
+     * never by an admin and never with a token, because a token is how an
+     * agent acts and an agent must not be able to switch this on.
+     */
+    shareLocalActivity: integer('share_local_activity').notNull().default(0),
+    /** Which repositories their collector counts in (§4.1, D-079). */
+    localActivityScope: text('local_activity_scope', { enum: LOCAL_ACTIVITY_SCOPES })
+      .notNull()
+      .default('agent-repos'),
 
     // --- required by better-auth's `user` model (LAI-005) ---
     // This table *is* better-auth's user table, remapped: one identity, one row.
@@ -120,6 +132,13 @@ export const users = sqliteTable(
     // was not rebuilt to gain it — a rebuild of a table this many others
     // reference is the risk LAI-493 measured (LAI-743).
     check('users_profile_kind_check', oneOf('profile_kind', PROFILE_KINDS)),
+    // Both added by 0031 as column constraints on `ALTER TABLE … ADD`, as 0029
+    // added `profile_kind`'s (LAI-751).
+    check('users_share_local_activity_check', sql.raw('share_local_activity IN (0, 1)')),
+    check(
+      'users_local_activity_scope_check',
+      oneOf('local_activity_scope', LOCAL_ACTIVITY_SCOPES),
+    ),
   ],
 );
 
@@ -154,6 +173,13 @@ export const orgs = sqliteTable(
      * two places that must read it.
      */
     presenceEnabled: integer('presence_enabled').notNull().default(1),
+    /**
+     * The org's half of D-079's two switches (§4.2, LAI-751). Default **0**.
+     * With it off nothing local is collected for anybody, whatever each
+     * developer has chosen; with it on, only the developers who turned on
+     * sharing themselves send anything.
+     */
+    developerInsights: integer('developer_insights').notNull().default(0),
     aiProvider: text('ai_provider', { enum: AI_PROVIDERS }),
     aiBaseUrl: text('ai_base_url'),
     /** AES-256-GCM ciphertext under a key derived from `LAIKA_SECRET` (§12). */
@@ -190,6 +216,8 @@ export const orgs = sqliteTable(
   () => [
     check('orgs_ai_provider_check', oneOfOrNull('ai_provider', AI_PROVIDERS)),
     check('orgs_invite_only_check', sql.raw('invite_only IN (0, 1)')),
+    // Added by 0031 as a column constraint on `ALTER TABLE … ADD` (LAI-751).
+    check('orgs_developer_insights_check', sql.raw('developer_insights IN (0, 1)')),
   ],
 );
 
@@ -1109,6 +1137,107 @@ export const memberRatings = sqliteTable(
   ],
 );
 
+// ------------------------------------------------- §4.22 board_activity_days
+
+/**
+ * One person's board actions per UTC day, by them and by their agents (§4.22,
+ * D-079, LAI-751) — the heatmap's *Board* colour.
+ *
+ * **A rollup of `activity`, never a second source.** `appendActivity` adds to
+ * it in the same transaction as every row it writes, and 0031 filled it from
+ * the log in one statement, so the two cannot disagree. It exists because the
+ * profile must read a year without walking the log: one person's year is at
+ * most 366 rows here, found through the primary key.
+ *
+ * The day is UTC: Laika has no organisation time zone (§4.22).
+ */
+export const boardActivityDays = sqliteTable(
+  'board_activity_days',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `YYYY-MM-DD`, UTC. */
+    day: text('day').notNull(),
+    /** Rows they wrote on a web session (`actor_kind = 'user'`). */
+    bySelf: integer('by_self').notNull().default(0),
+    /** Rows written with one of their tokens (`actor_kind = 'agent'`). */
+    byAgents: integer('by_agents').notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
+// ------------------------------------------------- §4.23 local_activity_days
+
+/**
+ * A developer's local work per day, as one machine last reported it (§4.23,
+ * D-079, LAI-751): prompts per agent kind, agent sessions started and commits
+ * not yet on any remote. **Counts only** — there is deliberately no column
+ * that could hold a prompt, a path, a repository or a branch.
+ *
+ * A **snapshot**, overwritten whole by the next report for the same
+ * (person, collector, day), so a retry never double-counts and a commit that
+ * is pushed later leaves `commits_local`.
+ *
+ * The key leads with (person, day) so a profile's year is one range of it;
+ * `collector_id` last keeps one row per machine. Kept 400 days (§11.6).
+ */
+export const localActivityDays = sqliteTable(
+  'local_activity_days',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** `YYYY-MM-DD` in the machine's own time zone, `tz`. */
+    day: text('day').notNull(),
+    /** A random UUID the collector made once on that machine. */
+    collectorId: text('collector_id').notNull(),
+    /** The sum of `prompts_by_agent`, so a year sums without parsing JSON. */
+    prompts: integer('prompts').notNull().default(0),
+    /** `{ "<agent kind>": n }` — the tooltip's breakdown. */
+    promptsByAgent: text('prompts_by_agent').notNull().default('{}'),
+    sessions: integer('sessions').notNull().default(0),
+    commitsLocal: integer('commits_local').notNull().default(0),
+    /** The IANA zone the machine reported its days in. */
+    tz: text('tz').notNull(),
+    updatedAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.day, t.collectorId] }),
+    // §11.6's retention deletes by day alone.
+    index('local_activity_days_day_idx').on(t.day),
+  ],
+);
+
+// ------------------------------------------------- §4.24 pushed_commit_keys
+
+/**
+ * One row per commit a developer has on a remote, as a one-way key (§4.24,
+ * D-079, LAI-751): the first 16 hex characters of
+ * `sha256("laika-commit:" + sha)`. Never the commit id itself. The same commit
+ * seen from two machines is one key, so it counts once; a key keeps the
+ * earliest day it was reported for. Kept 400 days (§11.6).
+ */
+export const pushedCommitKeys = sqliteTable(
+  'pushed_commit_keys',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    /** `YYYY-MM-DD`, the author's day on the machine that reported it first. */
+    day: text('day').notNull(),
+    createdAt,
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.key] }),
+    // A profile counts keys per day for one person: a covering range.
+    index('pushed_commit_keys_user_day_idx').on(t.userId, t.day),
+    // §11.6's retention deletes by day alone.
+    index('pushed_commit_keys_day_idx').on(t.day),
+  ],
+);
+
 export type IdempotencyKey = typeof idempotencyKeys.$inferSelect;
 
 export type User = typeof users.$inferSelect;
@@ -1131,3 +1260,6 @@ export type TaskTag = typeof taskTags.$inferSelect;
 export type TaskWatcher = typeof taskWatchers.$inferSelect;
 export type CommentMention = typeof commentMentions.$inferSelect;
 export type MemberRating = typeof memberRatings.$inferSelect;
+export type BoardActivityDay = typeof boardActivityDays.$inferSelect;
+export type LocalActivityDay = typeof localActivityDays.$inferSelect;
+export type PushedCommitKey = typeof pushedCommitKeys.$inferSelect;

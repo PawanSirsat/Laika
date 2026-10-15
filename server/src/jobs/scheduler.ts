@@ -7,6 +7,7 @@ import {
   expireMeetingReviews,
   flagStaleTasks,
   pruneHeartbeats,
+  pruneLocalActivity,
   vacuum,
   type JobResult,
 } from './jobs.ts';
@@ -18,7 +19,7 @@ import {
  *
  * Each run is wrapped and logged on its own. A `VACUUM` that fails because the
  * disk is full must not stop retention from running tomorrow, and a bug in one
- * job must not silently end all six — which is what an unhandled rejection in a
+ * job must not silently end all of them — which is what an unhandled rejection in a
  * shared timer would do. The next tick still happens.
  *
  * ## It must be stopped by the shutdown path
@@ -54,12 +55,18 @@ export interface Job {
   readonly name: string;
   readonly everyMs: number;
   readonly run: (now: number) => JobResult | Promise<JobResult>;
+  /**
+   * Also run once as the scheduler starts, not only after the first interval
+   * (LAI-751) — for a promise that must hold on a server restarted daily,
+   * where a daily interval might never come round.
+   */
+  readonly atStart?: boolean;
 }
 
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
-/** The six jobs and their intervals (§11.6). */
+/** §11.6's jobs and their intervals. */
 export function buildJobs(deps: SchedulerDeps): Job[] {
   const { db, sqlite, backupDir } = deps;
 
@@ -70,6 +77,12 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
       run: (now) => snapshot({ sqlite, dir: backupDir }, now),
     },
     { name: 'heartbeat.retention', everyMs: DAY, run: (now) => pruneHeartbeats(db, now) },
+    {
+      name: 'local_activity.retention',
+      everyMs: DAY,
+      run: (now) => pruneLocalActivity(db, now),
+      atStart: true,
+    },
     { name: 'task.stale', everyMs: DAY, run: (now) => flagStaleTasks(db, now) },
     { name: 'invite.expiry', everyMs: HOUR, run: (now) => expireInvites(db, now) },
     { name: 'meeting_review.expiry', everyMs: HOUR, run: (now) => expireMeetingReviews(db, now) },
@@ -78,6 +91,8 @@ export function buildJobs(deps: SchedulerDeps): Job[] {
 }
 
 export interface Scheduler {
+  /** Settles when the jobs marked `atStart` have run once. */
+  started: Promise<void>;
   /** Run one job by name, now. Exists so a test drives a job through the real path. */
   runOnce: (name: string) => Promise<JobResult | undefined>;
   /** Every job, in order, isolated from each other. */
@@ -108,7 +123,7 @@ export function startScheduler(deps: SchedulerDeps): Scheduler {
       return result;
     } catch (err) {
       // Swallowed **on purpose**, and logged rather than rethrown: one failing
-      // job must not take the other five with it, nor the process.
+      // job must not take the others with it, nor the process.
       deps.log.error('cron.job_failed', {
         job: job.name,
         error: err instanceof Error ? err.message : String(err),
@@ -126,7 +141,15 @@ export function startScheduler(deps: SchedulerDeps): Scheduler {
     handles.push(handle);
   }
 
+  // Every deploy restarts the server (D-073), so a daily interval can go a
+  // long time without firing. A job that keeps a retention promise runs once
+  // now as well — after this returns, so starting never waits on it.
+  const atStart = Promise.resolve().then(async () => {
+    for (const job of jobs) if (job.atStart === true) await runIsolated(job);
+  });
+
   return {
+    started: atStart,
     runOnce: async (name) => {
       const job = jobs.find((j) => j.name === name);
       return job === undefined ? undefined : runIsolated(job);

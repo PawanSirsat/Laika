@@ -69,6 +69,12 @@ const ORG_ROWS: ReadonlyMap<string, readonly OrgAction[]> = new Map([
   ["View a member's profile", ['profile.read']],
   ["Set a member's profile kind", ['profile.set_kind']],
   ['Rate a member', ['profile.rate']],
+  // D-079's rows (LAI-751): the heatmap, and the developer's own side of it.
+  ["View a member's activity heatmap", ['profile.activity.read']],
+  ['Read own activity-sharing setting', ['activity_sharing.read_own']],
+  ['Set own activity sharing', ['activity_sharing.set_own']],
+  ['Send own local activity', ['local_activity.send_own']],
+  ['Read and delete own local activity', ['local_activity.read_own', 'local_activity.delete_own']],
 ]);
 
 const PROJECT_ROWS: ReadonlyMap<string, readonly ProjectAction[]> = new Map([

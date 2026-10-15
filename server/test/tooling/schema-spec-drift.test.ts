@@ -564,12 +564,22 @@ describe('the parser itself', () => {
 
     expect(empty).toEqual([]);
 
-    // `task_dependencies` is a pair, not an entity, and has no `id`.
+    // `task_dependencies` is a pair, not an entity, and has no `id`. Nor do
+    // the heatmap's three tables (LAI-751): each row is a count *of* its key —
+    // a person's day, a machine's day, a person's commit — not a thing of its
+    // own, and an id would be a second key the upserts must not see.
     const withoutId = [...specTables.entries()]
       .filter(([, fields]) => !fields.includes('id'))
-      .map(([table]) => table);
+      .map(([table]) => table)
+      .sort();
 
-    expect(withoutId).toEqual(['task_dependencies', 'task_tags']);
+    expect(withoutId).toEqual([
+      'board_activity_days',
+      'local_activity_days',
+      'pushed_commit_keys',
+      'task_dependencies',
+      'task_tags',
+    ]);
   });
 
   it('reads §4.8’s closed vocabularies', () => {

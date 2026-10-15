@@ -160,7 +160,7 @@ function isSystem(principal: Principal): principal is SystemPrincipal {
  * `comment.create` on the resolved project, and giving them system-only twins
  * would mean two rules for one operation and eventually two answers.
  *
- * The four `system.*` actions are the ones with no human owner: nobody expires
+ * The `system.*` actions are the ones with no human owner: nobody expires
  * an invite through the API. They are denied to every role by construction —
  * §3.1 and §3.2 have no row for them, so `canOrgAction`/`canProjectAction` never
  * see them — which is deny-by-default doing the work rather than a special case.
@@ -171,6 +171,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.task.flag_stale',
   'system.invite.expire',
   'system.meeting_review.expire',
+  'system.local_activity.prune',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',
@@ -359,6 +360,33 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
       return (
         isAdminUp && resource.targetUserId !== undefined && resource.targetUserId !== actor.userId
       );
+
+    // | View a member's activity heatmap | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // Its own row, not `profile.read` borrowed (D-079, LAI-751): the heatmap
+    // carries counts sent from a developer's machine, which the rest of the
+    // profile does not, and a borrowed row would hand them a grant nobody
+    // reviewed. Today the two answer alike, as D-078 and D-079 both say.
+    case 'profile.activity.read':
+      return isAdminUp;
+
+    // | Read own activity-sharing setting | ✓ | ✓ | ✓ | ✓ |
+    // | Set own activity sharing | ✓ (session only) | … | ✓ (session only) |
+    // | Send own local activity | ✓ | ✓ | ✓ | ✓ (`read_only` forced, so never in practice) |
+    // | Read / delete own local activity | ✓ (session only) | … | ✓ (session only) |
+    //
+    // Every role, because it is **their own record about their own work**
+    // (D-079) — the heartbeat's argument. What stops collection is the two
+    // switches, which the service reads; what stops an agent consenting for
+    // its person is `SESSION_ONLY_ACTIONS`, below. The Viewer's send cell is
+    // the credential's refusal, exactly as for heartbeats: a Viewer's token is
+    // forced `read_only`, and sending is not a read.
+    case 'activity_sharing.read_own':
+    case 'activity_sharing.set_own':
+    case 'local_activity.send_own':
+    case 'local_activity.read_own':
+    case 'local_activity.delete_own':
+      return true;
 
     default:
       return assertNever(action);
@@ -551,11 +579,29 @@ export function can(principal: Principal, action: Action, resource: Resource = {
  * authorisation bypass, and this makes that shape impossible.
  */
 export function assertCan(principal: Principal, action: Action, resource: Resource = {}): void {
-  if (!can(principal, action, resource)) {
-    throw new ApiError('forbidden', 'You do not have permission to perform this action', {
+  if (can(principal, action, resource)) return;
+
+  // §3.1's "session only", said as such (LAI-751): the person may, and the
+  // credential is why not. A caller told only `forbidden` cannot tell "sign
+  // in to the web app" from "you may never", and a collector must stop on
+  // the second and not on the first. Still `forbidden` — §6.3's vocabulary is
+  // closed — with the reason in `details`, as heartbeats say `token_required`.
+  if (
+    !isSystem(principal) &&
+    principal.token !== null &&
+    principal.token !== undefined &&
+    SESSION_ONLY_ACTIONS.has(action) &&
+    can({ ...principal, token: null }, action, resource)
+  ) {
+    throw new ApiError('forbidden', 'This needs a signed-in web session, not a token', {
       action,
+      reason: 'session_required',
     });
   }
+
+  throw new ApiError('forbidden', 'You do not have permission to perform this action', {
+    action,
+  });
 }
 
 /** Exhaustiveness guard: adding an action without a case fails the build. */

@@ -3,13 +3,23 @@ import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { readPayload } from '../../src/db/activity.ts';
 import { newId } from '../../src/db/ids.ts';
-import { activity, heartbeats, invites, meetingReviews, tasks } from '../../src/db/schema.ts';
+import {
+  activity,
+  heartbeats,
+  invites,
+  localActivityDays,
+  meetingReviews,
+  pushedCommitKeys,
+  tasks,
+} from '../../src/db/schema.ts';
 import {
   expireInvites,
   expireMeetingReviews,
   flagStaleTasks,
   HEARTBEAT_RETENTION_MS,
+  LOCAL_ACTIVITY_RETENTION_DAYS,
   pruneHeartbeats,
+  pruneLocalActivity,
   STALE_AFTER_MS,
   vacuum,
 } from '../../src/jobs/jobs.ts';
@@ -484,5 +494,58 @@ describe('vacuum', () => {
     // Deliberately silent: §4.8's D-022 note lists the cron's writers and does
     // not include it. A weekly line saying nothing happened is noise.
     expect(activityTypes()).toHaveLength(before);
+  });
+});
+
+describe('local-activity retention: 400 days (§11.6, D-079, LAI-751)', () => {
+  /** `NOW` minus `n` days, as the `YYYY-MM-DD` the tables hold. */
+  const daysAgo = (n: number) => new Date(NOW - n * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  function hold(day: string, key: string): void {
+    t.db
+      .insert(localActivityDays)
+      .values({
+        userId: s.userId,
+        day,
+        collectorId: '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a',
+        sessions: 1,
+        tz: 'UTC',
+        updatedAt: NOW,
+      })
+      .run();
+    t.db.insert(pushedCommitKeys).values({ userId: s.userId, key, day, createdAt: NOW }).run();
+  }
+
+  it('deletes rows and keys from before the day 400 days ago, and keeps that day and after', () => {
+    expect(LOCAL_ACTIVITY_RETENTION_DAYS).toBe(400);
+    hold(daysAgo(401), 'aaaaaaaaaaaaaaaa');
+    hold(daysAgo(400), 'bbbbbbbbbbbbbbbb');
+    hold(daysAgo(399), 'cccccccccccccccc');
+
+    expect(pruneLocalActivity(t.db, NOW)).toEqual({ changed: 2 });
+
+    expect(
+      t.db
+        .select({ d: localActivityDays.day })
+        .from(localActivityDays)
+        .all()
+        .map((r) => r.d)
+        .sort(),
+    ).toEqual([daysAgo(400), daysAgo(399)]);
+    expect(
+      t.db
+        .select({ k: pushedCommitKeys.key })
+        .from(pushedCommitKeys)
+        .all()
+        .map((r) => r.k)
+        .sort(),
+    ).toEqual(['bbbbbbbbbbbbbbbb', 'cccccccccccccccc']);
+  });
+
+  it('is idempotent and writes no activity row, whatever it deletes', () => {
+    hold(daysAgo(500), 'aaaaaaaaaaaaaaaa');
+    expect(pruneLocalActivity(t.db, NOW).changed).toBe(2);
+    expect(pruneLocalActivity(t.db, NOW).changed).toBe(0);
+    expect(activityTypes()).toEqual([]);
   });
 });

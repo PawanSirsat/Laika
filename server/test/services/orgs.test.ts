@@ -218,6 +218,43 @@ describe('presence_enabled', () => {
   });
 });
 
+describe('developer_insights (§4.2, D-079, LAI-751)', () => {
+  it('defaults to off — nothing local is collected until an owner or admin says so', () => {
+    expect(getOrg(t.db, actor(makeUser('member'))).developer_insights).toBe(false);
+  });
+
+  it('is turned on and off by an Admin and an Owner, and readable by every role', () => {
+    for (const role of ['admin', 'owner'] as const) {
+      const id = makeUser(role);
+      expect(
+        updateOrg(t.db, actor(id), { developer_insights: true }, SECRET).developer_insights,
+      ).toBe(true);
+      for (const reader of ['member', 'viewer'] as const) {
+        expect(getOrg(t.db, actor(makeUser(reader))).developer_insights, reader).toBe(true);
+      }
+      expect(
+        updateOrg(t.db, actor(id), { developer_insights: false }, SECRET).developer_insights,
+      ).toBe(false);
+    }
+  });
+
+  it('refuses a Member and a Viewer the write', () => {
+    for (const role of ['member', 'viewer'] as const) {
+      expect(() =>
+        updateOrg(t.db, actor(makeUser(role)), { developer_insights: true }, SECRET),
+      ).toThrow(ApiError);
+    }
+    expect(getOrg(t.db, actor(makeUser('member'))).developer_insights).toBe(false);
+  });
+
+  it('leaves presence alone, and presence leaves it alone', () => {
+    const adminId = makeUser('admin');
+    updateOrg(t.db, actor(adminId), { developer_insights: true }, SECRET);
+    const view = updateOrg(t.db, actor(adminId), { presence_enabled: false }, SECRET);
+    expect([view.developer_insights, view.presence_enabled]).toEqual([true, false]);
+  });
+});
+
 /**
  * The LLM provider settings (§4.2, §12, LAI-447).
  *
