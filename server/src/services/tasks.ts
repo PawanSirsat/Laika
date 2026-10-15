@@ -918,7 +918,11 @@ export function claimTask(
         assigneeId: actor.userId,
         status: 'in_progress',
         statusId: to.id,
-        startedAt: now,
+        // The **first** entry to `in_progress` (§4.5), as `changeStatus`
+        // keeps it. A task released and claimed again did not start twice,
+        // and stamping every claim shortened its cycle time (LAI-743).
+        // `before` is read inside this transaction, so nothing moved it since.
+        startedAt: before.startedAt ?? now,
         updatedAt: now,
       })
       .where(and(eq(tasks.id, taskId), isNull(tasks.assigneeId)))

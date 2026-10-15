@@ -4,6 +4,7 @@ import { percentLabel, roundedPercents } from '../../../components/donut-arcs.ts
 import { avatarColor } from '../../../theme/avatar-color.ts';
 import { initials } from '../../../theme/initials.ts';
 import type { Theme } from '../../../theme/theme.ts';
+import { PersonLink } from '../../../components/PersonLink.tsx';
 import { DashLink, boardHref } from './DashLink.tsx';
 import type { PersonLoad, Workload } from './summary-derive.ts';
 
@@ -49,7 +50,9 @@ function detail(row: PersonLoad): string {
  * named as its own share.
  *
  * Each person opens the board filtered to them; Unassigned opens the board's
- * own "no assignee" filter. "Others" is several people and goes nowhere.
+ * own "no assignee" filter. "Others" is several people and goes nowhere. For
+ * an owner or admin each person also carries a link to their profile
+ * (LAI-743).
  *
  * **It counts what its scope says** (LAI-732): the dashboard's range and the
  * card's own filter choose the tasks — done work too, when the card includes
@@ -186,7 +189,7 @@ export function WorkByPerson({
                 },
               };
               return (
-                <li key={row.id}>
+                <li key={row.id} className="dash-legend-item">
                   {row.kind === 'others' ? (
                     <span className="dash-legend-row" {...hover}>
                       {body}
@@ -204,6 +207,20 @@ export function WorkByPerson({
                     >
                       {body}
                     </DashLink>
+                  )}
+                  {/* The person's profile, beside the row rather than inside
+                      it — the row already opens their board, and a link
+                      cannot hold another. Owners and admins only (LAI-743);
+                      nothing at all for anyone else. */}
+                  {row.kind === 'person' && (
+                    <PersonLink
+                      userId={row.id}
+                      onlyLink
+                      className="dash-legend-profile"
+                      label={`Open ${label(row)}’s profile`}
+                    >
+                      Profile
+                    </PersonLink>
                   )}
                 </li>
               );

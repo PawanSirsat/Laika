@@ -28,6 +28,11 @@ export interface RequestOptions {
   readonly method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   readonly body?: unknown;
   readonly signal?: AbortSignal;
+  /**
+   * Extra request headers — `Idempotency-Key` on a write that may be retried
+   * (LAI-746). Added to the JSON content type, never in place of it.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 /**
@@ -115,17 +120,20 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
 }
 
 async function send<T>(path: string, options: RequestOptions): Promise<T> {
-  const { method = 'GET', body, signal } = options;
+  const { method = 'GET', body, signal, headers: extra } = options;
 
   // Built conditionally rather than with `undefined` values: the repo sets
   // `exactOptionalPropertyTypes`, and `RequestInit` does not accept an explicit
   // `undefined` for `body`, `headers` or `signal`.
+  const headers: Record<string, string> = {
+    ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    ...extra,
+  };
   const init: RequestInit = {
     method,
     credentials: 'include',
-    ...(body === undefined
-      ? {}
-      : { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    ...(Object.keys(headers).length === 0 ? {} : { headers }),
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     ...(signal === undefined ? {} : { signal }),
   };
 

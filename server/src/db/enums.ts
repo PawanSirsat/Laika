@@ -182,3 +182,14 @@ export type MeetingReviewStatus = (typeof MEETING_REVIEW_STATUSES)[number];
 
 export const SPRINT_STATUSES = ['planned', 'active', 'completed'] as const;
 export type SprintStatus = (typeof SPRINT_STATUSES)[number];
+
+/**
+ * §4.1's `profile_kind` (D-078, LAI-743): what a member's profile shows, and
+ * **nothing** about what they may do. `can()` never reads it.
+ *
+ * Not named for agents or tools: `users.test.ts` refuses any `users` column
+ * that reads like a non-human account (`/bot|service|machine|agent|system/`),
+ * and a person's kind of work is not one.
+ */
+export const PROFILE_KINDS = ['builder', 'manager'] as const;
+export type ProfileKind = (typeof PROFILE_KINDS)[number];

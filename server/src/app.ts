@@ -28,6 +28,7 @@ import { projectTaskRoutes, taskRoutes } from './http/routes/tasks.ts';
 import { orgRoutes } from './http/routes/orgs.ts';
 import { githubWebhookRoutes } from './http/routes/webhooks.ts';
 import { userRoutes } from './http/routes/users.ts';
+import { profileRoutes } from './http/routes/profiles.ts';
 import { inviteRoutes } from './http/routes/invites.ts';
 import { activityRoutes, projectActivityRoutes } from './http/routes/activity.ts';
 import { commentRoutes, taskCommentRoutes } from './http/routes/comments.ts';
@@ -296,6 +297,8 @@ export function createApp(options: CreateAppOptions): Hono<AppEnv> {
     // a same-method match in registration order, so the more specific router
     // going first is what keeps that true if `/users/:id` is ever added.
     app.route(`${API_BASE}/users`, userTokenRoutes({ db, sqlite: options.sqlite }));
+    // `/:id/profile` and `/:id/ratings` (LAI-743) — distinct paths, like `/:id/tokens`.
+    app.route(`${API_BASE}/users`, profileRoutes({ db }));
     app.route(`${API_BASE}/users`, userRoutes({ db }));
     app.route(`${API_BASE}/org`, orgRoutes({ db, serverSecret: options.serverSecret ?? '' }));
 

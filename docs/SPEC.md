@@ -160,6 +160,9 @@ the feed but not export it — that is the moment to split them, and the split w
 be obvious because someone will be asking for it.
 | Configure webhooks | ✓ | ✓ | — | — |
 | View the organisation | ✓ | ✓ | ✓ | ✓ |
+| View a member's profile | ✓ (session only) | ✓ (session only) | — | — |
+| Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
+| Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
 
 **"View the organisation" is `org.read` and is a read action** (D-048) — a
 `read_only` token may do it. It does **not** cover the AI provider block:
@@ -173,6 +176,26 @@ the same four roles today. Whether an org has an LLM provider wired up is not
 implied by who is in it, so the borrow would have been **a fact about the current
 payload rather than a property of the row** — and the next field added to the
 response would inherit a grant nobody reviewed.
+
+**The three profile rows are `profile.read`, `profile.set_kind` and
+`profile.rate`** (D-078, LAI-743), behind §6.4's `/users/:id/profile` and
+`/users/:id/ratings` and §11.4.2's member profile. Each is its own row, not a
+borrow: the profile carries private ratings, which nothing about the member list
+or an org role implies.
+
+**"session only" means a signed-in web session and no personal access token** —
+not an owner's or admin's full token, not a `read_only` one, not one pinned to
+projects. Every other token rule narrows a role; this one closes the door,
+because a token is how an agent acts and ratings are about people. `can()`
+refuses it before scope is looked at, and `profile.read` is deliberately **not**
+a read action in the `read_only` sense: no token may do it at all.
+
+**"not themselves"**: an owner or admin cannot rate themselves. They may read
+their own profile, ratings included, and set their own profile kind.
+
+**The profile kind is a label, not a permission.** `builder` or `manager`
+(§4.1) changes what the profile shows and nothing anybody may do: `can()` never
+reads it, and no row of §3.1 or §3.2 depends on it.
 
 ### 3.2 Project-level permission matrix
 
@@ -283,6 +306,7 @@ name. A `system.database.vacuum` would be a permission that grants nothing.
 | `name` | text | |
 | `org_role` | text | `owner` \| `admin` \| `member` \| `viewer` |
 | `is_active` | integer | 0 = deactivated, row kept for history |
+| `profile_kind` | text | `builder` \| `manager`, default `builder` — what the member profile shows (§11.4.2, D-078). **A label, never a permission**: `can()` does not read it (§3.1) |
 | `created_at`, `updated_at` | integer | |
 
 **There is no `avatar_color` column** (LAI-148). This table listed one, *"derived
@@ -389,7 +413,7 @@ which is the check working on the document it exists to pin.
 | `external_ref` | nullable, e.g. a GitHub PR |
 | `stale_flagged_at` | nullable, set by cron (§11.6) |
 | `position` | nullable — **manual board order**, one sequence per project; a lane draws its tasks in this order (D-060, D-070). An opaque key compared byte-wise: set on create at the **end** of the project's order, moved only by `POST /tasks/:id/reorder`, which writes this one row. Nullable only so the column could be added to a populated table — the boot backfill fills every null in the order the board already showed (priority, then number), so a served task always has one |
-| `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in, and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
+| `started_at`, `completed_at` | nullable — **served on `TaskView`** (LAI-126). `started_at` is stamped the **first** time a task enters `in_progress`, by any route in — a claim after the task was released included (LAI-743) — and a later re-entry does not move it: a task sent back for rework did not start twice, and overwriting would silently shorten every cycle time derived from it (§11.6). |
 
 **`started_at`** is set the first time a task enters `in_progress` and is never
 moved again. **`completed_at`** is set on **every** arrival at `done`, and is
@@ -657,7 +681,7 @@ one.
 `unlisted_work(user_id, created_at)`, `meeting_reviews(project_id, status)`,
 `sprints(project_id, starts_on)`, `sprints(project_id, status)`, `tasks(sprint_id)`,
 `tasks(parent_task_id)`, `tasks(status_id)`,
-`project_statuses(project_id, position)` unique.
+`project_statuses(project_id, position)` unique, `member_ratings(user_id, created_at)`.
 `tags(project_id, name)` unique and `task_tags(tag_id)` — the `?tag=` filter
 reads from the tag side, so the join needs an index from that end too.
 
@@ -862,6 +886,34 @@ default-labelled status at the end; a clashing name took a ` (2)` suffix; an
 empty column, which held no category, became nothing. Every task kept its
 category, in the first status of it.
 
+### 4.21 `member_ratings`
+
+An owner's or admin's rating of one member, for the member profile (D-078,
+LAI-743). **Append-only**: a new rating supersedes the last, never edits it, and
+three triggers refuse `UPDATE`, `DELETE` and an `INSERT OR REPLACE` over an
+existing id — re-established at every boot, as `activity`'s are. The third
+exists because SQLite runs no `BEFORE DELETE` trigger for a replace's delete
+half while `recursive_triggers` is off (LAI-746).
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `user_id` | FK `users` — the person rated |
+| `rated_by` | FK `users` — the owner or admin who rated them; never `user_id` (CHECK) |
+| `score` | integer 1–5 (CHECK) |
+| `note` | 1–500 characters, required — the reason, which is what makes a rating reviewable |
+| `idempotency_key` | nullable — the `Idempotency-Key` the rating was sent with. A retry with the same key, from the same rater, answers from this row instead of writing another (§6.4, LAI-746) |
+| `created_at` | |
+
+**Private.** A rating writes no `activity` row and has no §4.8 verb, so it
+reaches no feed, SSE stream, webhook or export, and no MCP tool reads it. It is
+read back by `GET /api/v1/users/:id/profile` (§6.4), which answers an owner or
+admin on a web session and nobody else (§3.1), and by a retried `POST` with the
+same `Idempotency-Key`, which answers from this row after the same check. §6.3's
+generic store leaves that route alone, so no copy of the note is kept in
+`idempotency_keys` (LAI-746). No `ON DELETE`: people are
+deactivated, never deleted (§4.1).
+
 ## 5. Task lifecycle
 
 ```
@@ -1021,6 +1073,11 @@ those projects. A Viewer's token can never write, whatever its scope says.
   every route (§13.1), so 413 is routine behaviour rather than a corner case.
 - **Idempotency**: `POST` accepts `Idempotency-Key`; replays within 24h return
   the original response. Same key with a different body is `conflict`.
+  **One route keeps its own key** (LAI-746): `POST /users/:id/ratings`, which
+  is session-only (§3.1). The shared store answers before the route runs, keyed
+  by user rather than credential, and keeps the response body — which there is
+  a private note — so that route stores the key on the rating and answers a
+  retry from it after `can()`. Its keys are per rater and do not expire.
 - **Rate limits**: in-process token bucket — 120 req/min per token, 600/min per
   session, 30/min for heartbeats. `429` with `Retry-After`, never below one
   second.
@@ -1061,6 +1118,8 @@ GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
 PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
+GET    /api/v1/users/:id/profile             PATCH .../profile  body { profile_kind }   (owner, admin; session only)
+POST   /api/v1/users/:id/ratings             body { score, note } → 201   (owner, admin; session only; not yourself)
 GET    /api/v1/invites                       POST /api/v1/invites    POST /api/v1/invites/accept
 GET    /api/v1/invites/:token                unauthenticated preview — org name, inviter, role, expiry
 DELETE /api/v1/invites/:id                   revoke a pending invite (admin+)
@@ -1147,6 +1206,34 @@ the projects list's rule, for the same reason. It is how the Timeline shows a
 sprint's progress without loading its tasks (§11.4.3). **Only the list
 carries it**: a sprint from `GET /sprints/:id` or returned from a write is the
 plain §4.15 shape.
+
+**A member's profile is one read** (D-078, LAI-743): `GET /users/:id/profile`
+answers `{ user, window, projects, review, ratings }`, and for a `builder`
+also `current_work`, `delivery` and `agents` — **absent, not empty**, for a
+`manager`. `PATCH` takes exactly `{ profile_kind }` and answers the whole
+profile, because the kind decides which blocks it carries. `POST …/ratings`
+takes exactly `{ score, note }` — an integer 1–5 and a note of 1–500
+characters after trimming — and answers the rating, `201`. With an
+`Idempotency-Key` (at most 255 characters), a retry with the same key and body
+answers the rating already written — `201`, `Idempotent-Replay: true`, no second
+row — and the same key with a different body is `409`. All three ask §3.1's
+`profile.*` **before** looking the person up: a member or any token gets `403`
+for a real id and a made-up one alike, and only an owner or admin is told
+`404`. Every figure is computed at read time in a twelve-week window starting
+on a Monday, 00:00 UTC:
+
+| field | what it counts |
+| --- | --- |
+| `projects` | a membership, a task assigned to them, or a review decision in the window; each with their role, open tasks, accepted and reviewed |
+| `review` | their moves of someone else's task into a Done status (`accepted`) or from Review to an earlier status (`sent_back`), and the most recent of them |
+| `ratings` | §4.21, newest first; the first is the current one. At most 50, with `ratings_total` beside it (LAI-746) |
+| `current_work` | their tasks in progress and in review, oldest start first; each list at most 50, with `in_progress_total` and `in_review_total` |
+| `delivery` | `accepted_per_week` and `accepted`: moves of their tasks into a Done status (D-077) by someone else; `sent_back`: Review to an earlier status by someone else; `reopened`: Done back into work; `cycle_time`: p50/p75 of `completed_at − started_at` for their tasks done in the window, the unstarted ones counted as `unmeasured` |
+| `agents` | their usable tokens with the agent each last connected as (D-076), most recently used first, at most 50 with `tokens_total`; and which agents are online now (§9.3) — never where |
+
+**This is not a §4 table and its rows are not columns** — the drift check reads
+§4 only. Setting a kind or adding a rating writes no `activity` row, so neither
+reaches SSE, an MCP tool or an export (§4.21).
 
 **A task's read shape is §4.5's columns** — `branch` and `external_ref`
 included, which `TaskView` omitted until LAI-493 (LAI-286) — and `TaskView`
@@ -1765,6 +1852,7 @@ call MCP; agents do.
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Capacity** | 5 | `GET /capacity`, `GET /presence`, `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /events` | `log_unlisted_work` | ✅ |
+| **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings` | — | ✅ D-078 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
@@ -1845,6 +1933,19 @@ anything missing sends the task back.
   **There is no transcript pane, because there is no transcript** (D-056): §4.12
   keeps a `transcript_hash` and never the words. The quotes are what makes a
   proposal reviewable, and they are all that is kept.
+- **Member profile** (`/people?user=<id>`, D-078) — owners and admins only:
+  anyone else sees a permission notice and the profile is never requested. A
+  head with name, email, org role, member since and the **Builder / Manager**
+  control, which says it is a label and not a permission; **projects** with
+  role and figures; for a builder, **current work**, **delivered** — accepted
+  per week as twelve bars, sent back, reopened, cycle p50/p75 with the
+  unmeasured count — and **agents**, with which are online now; **review work
+  for others**, and for a manager **recent review decisions**; the **rating** —
+  the latest on top, the history below, *Rate* for anyone but yourself, a
+  dialog taking 1–5 and a required note. Every figure from the response; an
+  empty state, never a zero, where there is nothing. Reached from a person's
+  name on Organisation, a Capacity card or a *Work by person* row — links for
+  owners and admins, plain text for everyone else.
 
 #### 11.4.3 Timeline view
 

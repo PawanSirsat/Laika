@@ -37,6 +37,11 @@ const REACHED_FROM: Readonly<Record<string, string>> = {
   // reached by typing the path, like `/design/states`. The triage itself is
   // not stranded: the Capacity tab carries the same list, with promote and
   // dismiss, for the same admins (LAI-439).
+  // A person's profile is reached from the person (LAI-743): their name on
+  // Organisation, a Work by person row, a Capacity card — for owners and
+  // admins, the only readers it is drawn for.
+  '/people':
+    'a person — their name on Organisation, a Work by person row or a Capacity card (owners and admins)',
   '/unlisted':
     'typing the path — hidden from the sidebar for now (LAI-484); the Capacity tab carries the same list',
 };

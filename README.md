@@ -41,6 +41,7 @@ And once your team runs coding agents, the task board goes stale within hours �
 | 🎙️ **Meetings update the board** | Paste a standup transcript, get a proposed diff (done / new / blocked) with the quote behind each line. Accept or reject line by line. |
 | 🔐 **Agents are users, not service accounts** | Each agent acts with *its human's* token and permissions. Every action lands in the same audit log, badged as agent-made. |
 | 👀 **Human stays in control** | Agents can move work to **Review**, never to **Done**. An LLM proposes, a human decides. |
+| 🧑‍💼 **Member profiles, for admins only** | One page per person — projects, accepted work, send-backs, cycle time, review work, the agents they use — and a private 1–5 rating with a note. Owners and admins on the web app only; no agent token can read it, and nothing new is collected to build it. |
 | 🏠 **Your data stays yours** | One container, one SQLite file, zero telemetry. |
 
 Plus everything you expect from a board: Kanban & list views, sprints, timeline, dependencies with a computed **ready** state, comments, invites, roles (owner / admin / member / viewer), and live updates over SSE.

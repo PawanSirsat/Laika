@@ -86,6 +86,10 @@ export const SCREEN_COPY: Readonly<Record<string, ScreenCopy>> = {
     headline: 'No projects yet',
     body: 'Create the first one and point it at a repo.',
   },
+  '/people': {
+    headline: 'No person chosen',
+    body: 'A profile opens from a person’s name — on Organisation, a Capacity card or the Dashboard’s Work by person.',
+  },
   '/members': {
     headline: 'No project chosen',
     body: 'Open a project from Projects to see who is on it.',

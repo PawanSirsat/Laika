@@ -6,6 +6,28 @@ import { conflictError, hashRequest, lookup, remember } from '../idempotency.ts'
 export const IDEMPOTENCY_HEADER = 'Idempotency-Key';
 
 /**
+ * POSTs that keep their own key, so this store neither answers nor records them
+ * (LAI-746).
+ *
+ * This middleware replays **before the route runs** — before `can()` — and its
+ * key is the user, not the credential. That is fine for a route whose answer
+ * any of the user's credentials may have; it is not for a session-only one
+ * (§3.1 `profile.*`), where a token holding a session's key and body was handed
+ * the session's `201` without being asked anything. And it stores the response
+ * body, which for a rating is the private note.
+ *
+ * So these routes take the header themselves and answer a retry from their own
+ * row, after the permission: `POST /users/:id/ratings` keeps the key on the
+ * rating (§4.21). Narrower than re-keying every route by credential, which is
+ * filed as its own task.
+ */
+const KEYED_BY_THE_ROUTE: readonly RegExp[] = [/^\/api\/v1\/users\/[^/]+\/ratings$/];
+
+export function keyedByTheRoute(path: string): boolean {
+  return KEYED_BY_THE_ROUTE.some((pattern) => pattern.test(path));
+}
+
+/**
  * Replay-safe POSTs (SPEC §6.3).
  *
  * Only POST, and only when the caller supplies the header — the feature is
@@ -23,7 +45,13 @@ export function idempotencyMiddleware(db: Db, now: () => number = Date.now) {
 
     // Unauthenticated callers have no actor to scope a key to, and scoping by
     // anything else would let one caller replay another's response.
-    if (c.req.method !== 'POST' || key === undefined || key === '' || actor === null) {
+    if (
+      c.req.method !== 'POST' ||
+      key === undefined ||
+      key === '' ||
+      actor === null ||
+      keyedByTheRoute(c.req.path)
+    ) {
       await next();
       return undefined;
     }

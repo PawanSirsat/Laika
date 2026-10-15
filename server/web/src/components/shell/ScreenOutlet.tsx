@@ -14,6 +14,7 @@ import { MembersScreen } from '../../routes/screens/MembersScreen.tsx';
 import { NotFound } from '../../routes/screens/NotFound.tsx';
 import { OrganisationScreen } from '../../routes/screens/organisation/OrganisationScreen.tsx';
 import { ProjectsScreen } from '../../routes/screens/ProjectsScreen.tsx';
+import { ProfileScreen } from '../../routes/screens/profile/ProfileScreen.tsx';
 import { SprintsScreen } from '../../routes/screens/sprints/SprintsScreen.tsx';
 import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx';
 import { ConnectScreen } from '../../routes/screens/connect/ConnectScreen.tsx';
@@ -166,6 +167,16 @@ function MembersRoute() {
   return <MembersScreen slug={params.get('project') ?? undefined} me={me} />;
 }
 
+function ProfileRoute() {
+  const {
+    route: { params },
+    me,
+  } = useShell();
+  // `?user=` names whose profile (LAI-743); the screen refuses anyone who may
+  // not open profiles before it asks the server for one.
+  return <ProfileScreen userId={params.get('user') ?? undefined} me={me} />;
+}
+
 /**
  * Every path in `ROUTES` has exactly one entry here, and every entry names a
  * real path — `screen-registry.test.ts` asserts the bijection. A route that
@@ -188,6 +199,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/tokens': { Component: TokensRoute, layout: 'plain' },
   '/organisation': { Component: OrganisationRoute, layout: 'plain' },
   '/members': { Component: MembersRoute, layout: 'plain' },
+  '/people': { Component: ProfileRoute, layout: 'plain' },
   '/login': { Component: LoginRoute, layout: 'plain' },
   '/invite': { Component: InviteRoute, layout: 'plain' },
   '/setup': { Component: SetupRoute, layout: 'own-chrome' },

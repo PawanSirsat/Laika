@@ -4198,3 +4198,104 @@ about work reads a category, and none of them had to learn about names.
 **This supersedes LAI-264, LAI-289, LAI-613 and LAI-618**, each written
 against the columns model. LAI-613 asked for this decision; the other three
 describe documentation and a bug of a model that no longer exists.
+
+## D-078 — A member profile for owners and admins: board facts, a label, a private rating.
+
+**2026-10-15, the owner, directly** (LAI-743, through the orchestrator; the
+research is the profile report of the same day). The owner asked for a page per
+person — the projects they work in, the work that landed, who reviews, which
+agents they use — and a rating an admin can give. Laika already records almost
+all of it: tasks, the activity log, tokens and presence. What it did not have
+was a way to read it per person, or anywhere to keep a judgement about one.
+
+### Decided
+
+1. **Profiles are for owners and admins only, on a web session.**
+   `GET /api/v1/users/:id/profile` and the two writes answer §3.1's
+   `profile.read`, `profile.set_kind` and `profile.rate` — Owner ✓, Admin ✓,
+   Member —, Viewer — — and **refuse every personal access token**, whatever
+   its scope or project list, an owner's full one included (`(session only)`,
+   applied in `can()` before scope). A profile carries ratings about a person,
+   and a token is how an agent acts. Permission is asked before the person is
+   looked up, so a non-admin learns nothing about whether an id exists. Links
+   into the profile are drawn only for the same readers.
+2. **The profile kind is a label, not a permission.** `users.profile_kind` is
+   `builder` (the default) or `manager`. It decides what the profile shows — a
+   manager's has no current work, delivery or agent block — and nothing anybody
+   may do: `can()` never reads it, and a test holds every action's answer equal
+   for the two. A manager still claims, reviews and accepts as their roles
+   allow. Setting it writes **no** `activity` row: a §4.8 verb would rebuild the
+   append-only `activity` table, which item 6 excludes, and the label grants
+   nothing an audit would need to trace.
+3. **Manual ratings are stored, private and append-only.** `member_ratings`
+   (§4.21): who was rated, who rated, 1–5, a required note of 1–500 characters,
+   when. A new rating supersedes the last and never edits it; triggers refuse
+   `UPDATE`, `DELETE` and an `INSERT OR REPLACE` over an existing id, and are
+   re-checked at every boot, as `activity`'s are. An owner or admin cannot rate themselves (§3.1 and a
+   CHECK). **A rating writes no `activity` row and has no verb**, so it reaches
+   no feed, SSE stream, webhook or export; no MCP tool reads it. It is read
+   back only by the profile endpoint and by a retry of the write that created
+   it, which answers from the rating itself after the same permission check —
+   §6.3's generic idempotency store leaves that route alone, so the note is
+   never copied into `idempotency_keys` and a token is refused whatever key it
+   holds (LAI-746). A test holds the module boundary structurally: only the
+   schema, the boot step that keeps its triggers and the profile service name
+   the table, and only the profile routes import the service.
+4. **v1 collects no new usage data.** Every figure is computed from what the
+   board already records, at read time, in a twelve-week window (Monday 00:00
+   UTC, this week and the eleven before it): accepted per week — a move into a
+   Done-category status (D-077) by someone other than the assignee; sent back —
+   Review to an earlier category, by someone else; reopened — Done back into
+   work; cycle time p50/p75 from `started_at` to `completed_at` for their tasks
+   done in the window, with tasks done without a start counted and not
+   measured (`GET /projects/:slug/metrics`' rule, per assignee); review work for
+   others; the agents on their usable tokens (D-076's `last_client`) and which
+   are online now (§9.3's sessions — never where). Nothing is added to
+   heartbeats, `/mcp` or any other path.
+5. **Any later collection of token or usage data needs a developer-controlled,
+   explicit opt-in, and counts only.** This extends D-005 — which names exactly
+   this route: *"a new decision entry and an explicit, per-user, opt-in
+   mechanism — not an extension of this endpoint"* — and leaves D-076 as it is.
+   The opt-in is a consent the developer sets on the server, never an admin,
+   because an admin can point a machine's telemetry at Laika without the
+   developer doing anything. What is accepted is counts (tokens, sessions,
+   model) — **never prompt text, code, file paths or tool arguments** — on a new
+   endpoint, not heartbeats or `/mcp`. Nothing here builds it; the next
+   decision does, under these conditions.
+6. **No automatic score in v1.** The profile shows facts and the rating a
+   person wrote; it combines nothing into a number about the person. Every
+   source the research found — SPACE, DORA, Google's engineering book — warns
+   against scoring individuals from activity, and an automatic score of
+   *"performance at work"* is regulated profiling (GDPR Art. 22, POPIA s.71).
+   If one is ever added, it is its own decision.
+7. **The schema change is additive.** Migration `0029` is `ALTER TABLE users
+   ADD profile_kind … CHECK (…)` and `CREATE TABLE member_ratings`: drizzle-kit
+   generated a rebuild of `users` and it was rewritten, because a rebuild of a
+   table the whole schema references is the risk LAI-493 measured. A test
+   migrates a populated 0028 database and asserts `users` kept its root page
+   and every row.
+8. **`claimTask` keeps a task's first `started_at`.** §4.5 already said
+   *"stamped the first time a task enters `in_progress`, by any route in"*;
+   `changeStatus` held it and claiming did not, so a task released and claimed
+   again restarted its clock. Fixed here because the profile's cycle time reads
+   it. Cycle time is the task's, from its first start, whoever finished it.
+
+### What this does not decide
+
+- **Whether a person may see their own profile.** The research recommends it —
+  POPIA s.71(3), GDPR Art. 22(3) and the UK ICO expect a person rated to be
+  able to learn the logic and respond — and the owner chose admins only for
+  now. An admin reading their own profile sees their own ratings, because they
+  are an admin; a member cannot. Changing that is a §3.1 row and a decision.
+- **How long ratings are kept.** They are kept; a retention rule is later work.
+- **An activity verb for the kind.** If an audit of who set it is wanted, it is
+  a three-owner task (CLAUDE.md §4.4) and an `activity` rebuild.
+
+### Why
+
+The board already knows what a person's work looked like, and an admin asking
+"how is Bea doing" was reading it task by task. Putting it on one page, for the
+people who already see every project, adds a view and no new knowledge — which
+is what keeps it on the capacity side of D-005's line. The rating is the one
+new thing stored, so it gets the strictest handling the schema has: append-only,
+admin-only, and absent from every stream that could carry it further.

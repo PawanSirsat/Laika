@@ -250,6 +250,25 @@ describe('refusing to continue without the guarantee', () => {
     expect(() => ensureActivityTriggers(t.db)).toThrow();
   });
 
+  it('refuses a trigger that keeps the name and the message and never fires (LAI-749)', () => {
+    // A message-text check passes this: the sentence is all there, inside a
+    // `SELECT` that raises nothing. Only the whole definition tells them apart.
+    seedOneActivityRow();
+    t.sqlite.exec('DROP TRIGGER `activity_is_append_only_no_update`');
+    t.sqlite.exec(
+      "CREATE TRIGGER `activity_is_append_only_no_update` BEFORE UPDATE ON `activity` BEGIN SELECT 'activity is append-only: UPDATE is not permitted (SPEC 4.8)'; END",
+    );
+
+    t.db.run(sql`UPDATE activity SET payload_json = '{"rewritten":true}'`);
+    expect(t.db.all(sql`SELECT payload_json FROM activity`)).toEqual([
+      { payload_json: '{"rewritten":true}' },
+    ]);
+
+    expect(() => ensureActivityTriggers(t.db)).toThrow(
+      /activity_is_append_only_no_update \(present but does not abort/,
+    );
+  });
+
   it('refuses a trigger that holds the name and enforces nothing', () => {
     // The reachable version of the failure, and the one `IF NOT EXISTS` cannot
     // see: the block is hand-pasted into four migrations, and a paste that lost
@@ -372,6 +391,271 @@ describe('the tasks rebuild keeps every row and every foreign key (LAI-493)', ()
       expect(pa < pb).toBe(true);
     } finally {
       sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * 0029 on a database at 0028 — production's migration when it was written
+ * (LAI-743).
+ *
+ * **Additive is the property, so it is asserted directly.** drizzle-kit
+ * generated a rebuild of `users` for 0029 and it was rewritten by hand to
+ * `ALTER TABLE … ADD`; a rebuild would create the new table before dropping
+ * the old one, so `users` would come back on a different root page. Same page,
+ * same rows, every reference still resolving: nothing was copied.
+ */
+describe('0029 adds the member profile to a populated 0028 database (LAI-743)', () => {
+  function folderAt0028(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const at = journal.entries.findIndex((e) => e.tag.startsWith('0029_'));
+    const dropped = journal.entries.splice(at);
+    // The guard on this guard: the first entry cut is 0029, and the last one
+    // kept is 0028, or this is not the upgrade production makes.
+    expect(dropped[0]?.tag).toMatch(/^0029_/);
+    expect(journal.entries.at(-1)?.tag).toMatch(/^0028_/);
+    writeFileSync(journalPath, JSON.stringify(journal));
+    return dir;
+  }
+
+  it('keeps every row, adds the column and the table, and rebuilds nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: folderAt0028() });
+      const columns = () =>
+        db
+          .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('users')`)
+          .map((r) => r.name);
+      expect(columns()).not.toContain('profile_kind');
+
+      const s = seed(db);
+      const now = Date.now();
+      const member = newId();
+      db.run(sql`
+        INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+        VALUES (${member}, 'bea@example.test', 'Bea', 'member', 0, ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, assignee_id, created_by, created_via, created_at, updated_at)
+        VALUES (${newId()}, ${s.projectId}, 1, 'A', 'todo', ${statusForCategory(db, s.projectId, 'todo').id}, 'p2', ${member}, ${s.userId}, 'api', ${now}, ${now})
+      `);
+      appendActivity(db, { orgId: s.orgId, actorKind: 'system', type: 'webhook.commit' });
+      // What hangs off a person and would go with a rebuilt `users` (LAI-746):
+      // better-auth's account and session rows cascade from it, and a token is
+      // how their agents reach the board.
+      db.run(sql`
+        INSERT INTO accounts (id, user_id, issuer, account_id, provider_id, password, created_at, updated_at)
+        VALUES (${newId()}, ${member}, 'credential', ${member}, 'credential', 'hash', ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO sessions (id, user_id, token, expires_at, created_at, updated_at)
+        VALUES (${newId()}, ${member}, 'session-token', ${now + 86_400_000}, ${now}, ${now})
+      `);
+      db.run(sql`
+        INSERT INTO tokens (id, user_id, name, prefix, token_hash, scope, created_at)
+        VALUES (${newId()}, ${member}, 'Claude Code', 'lai_abcd', 'hash-1', 'full', ${now})
+      `);
+      const hanging = () => ({
+        accounts: db.all(sql`SELECT id, user_id, password FROM accounts ORDER BY id`),
+        sessions: db.all(sql`SELECT id, user_id, token FROM sessions ORDER BY id`),
+        tokens: db.all(sql`SELECT id, user_id, token_hash FROM tokens ORDER BY id`),
+      });
+      const hangingBefore = hanging();
+      expect(hangingBefore.accounts).toHaveLength(1);
+      expect(hangingBefore.sessions).toHaveLength(1);
+      expect(hangingBefore.tokens).toHaveLength(1);
+
+      const rootpage = () =>
+        db.get<{ rootpage: number }>(
+          sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = 'users'`,
+        )?.rootpage;
+      const before = rootpage();
+      const users = () =>
+        db.all(sql`SELECT id, email, name, org_role, is_active, created_at FROM users ORDER BY id`);
+      const usersBefore = users();
+
+      runMigrations(db);
+
+      expect(rootpage(), 'users was rebuilt').toBe(before);
+      expect(users()).toEqual(usersBefore);
+      expect(hanging()).toEqual(hangingBefore);
+      expect(columns()).toContain('profile_kind');
+      expect(db.all(sql`SELECT DISTINCT profile_kind FROM users`)).toEqual([
+        { profile_kind: 'builder' },
+      ]);
+      expect(db.all(sql`SELECT id FROM tasks WHERE assignee_id = ${member}`)).toHaveLength(1);
+      expect(db.all(sql`SELECT id FROM activity`)).toHaveLength(1);
+      expect(db.all(sql`SELECT id FROM member_ratings`)).toEqual([]);
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+
+      // And the new table is append-only on the upgraded database, not only
+      // on a fresh one: a row, then both refusals.
+      db.run(sql`
+        INSERT INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+        VALUES (${newId()}, ${member}, ${s.userId}, 4, 'Steady.', ${now})
+      `);
+      expectSqliteError(() => db.run(sql`UPDATE member_ratings SET score = 1`), /append-only/);
+      expectSqliteError(() => db.run(sql`DELETE FROM member_ratings`), /append-only/);
+    } finally {
+      sqlite.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('migrates a fresh database straight through to the same shape', () => {
+    // `freshDb()` runs every migration from nothing; the profile column and
+    // table are simply there.
+    expect(
+      t.db
+        .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('users')`)
+        .map((r) => r.name),
+    ).toContain('profile_kind');
+    expect(
+      t.db.all(
+        sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'member_ratings'`,
+      ),
+    ).toHaveLength(1);
+  });
+});
+
+/**
+ * `member_ratings` is append-only for the same reason `activity` is, and its
+ * triggers are re-established at boot the same way (LAI-743): a later rebuild
+ * of the table would drop them, silently.
+ */
+describe('member_ratings keeps its append-only triggers across a rebuild (LAI-743)', () => {
+  const RATING_TRIGGERS = [
+    'member_ratings_is_append_only_no_delete',
+    'member_ratings_is_append_only_no_replace',
+    'member_ratings_is_append_only_no_update',
+  ];
+  const ratingTriggers = () =>
+    t.db
+      .all<{ name: string }>(
+        sql`SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = 'member_ratings' ORDER BY name`,
+      )
+      .map((row) => row.name);
+
+  it('starts with all three, from the migrations', () => {
+    expect(ratingTriggers()).toEqual(RATING_TRIGGERS);
+  });
+
+  it('gets them back from the boot step after they are lost', () => {
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_update`');
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_delete`');
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_replace`');
+    expect(ratingTriggers()).toEqual([]);
+
+    ensureActivityTriggers(t.db);
+
+    expect(ratingTriggers()).toEqual(RATING_TRIGGERS);
+  });
+
+  it('refuses one that holds the name and enforces nothing', () => {
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_update`');
+    t.sqlite.exec(
+      'CREATE TRIGGER `member_ratings_is_append_only_no_update` BEFORE UPDATE ON `member_ratings` BEGIN SELECT 1; END',
+    );
+
+    expect(() => ensureActivityTriggers(t.db)).toThrow(/present but does not abort/i);
+  });
+
+  /**
+   * The review's substitute (LAI-749): the right name, the right table, the
+   * right message text — and a `WHEN 0` that means it never fires. The check
+   * used to look for the message in the stored SQL, found it, and let a replace
+   * rewrite a rating 5 → 1. A message is not a definition.
+   */
+  it('refuses a substitute that keeps the message text and never fires', () => {
+    const s = seed(t.db);
+    const rated = newId();
+    t.db.run(sql`
+      INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+      VALUES (${rated}, 'bea@example.test', 'Bea', 'member', 1, 1, 1)
+    `);
+    const rating = newId();
+    t.db.run(sql`
+      INSERT INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+      VALUES (${rating}, ${rated}, ${s.userId}, 5, 'Great.', 1)
+    `);
+
+    t.sqlite.exec('DROP TRIGGER `member_ratings_is_append_only_no_replace`');
+    t.sqlite.exec(
+      "CREATE TRIGGER `member_ratings_is_append_only_no_replace` BEFORE INSERT ON `member_ratings` WHEN 0 BEGIN SELECT RAISE(ABORT, 'member_ratings is append-only: INSERT OR REPLACE is not permitted (SPEC 4.21)'); END",
+    );
+
+    // The substitute really is inert — so refusing it below is the point,
+    // not an accident of a fixture that was never broken.
+    t.db.run(sql`
+      INSERT OR REPLACE INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+      VALUES (${rating}, ${rated}, ${s.userId}, 1, 'Rewritten.', 2)
+    `);
+    expect(t.db.all(sql`SELECT score FROM member_ratings`)).toEqual([{ score: 1 }]);
+
+    expect(() => ensureActivityTriggers(t.db)).toThrow(
+      /member_ratings_is_append_only_no_replace \(present but does not abort/,
+    );
+  });
+});
+
+/**
+ * `0030` on a database at `0029` (LAI-746) — the state production is in if
+ * LAI-743's commit ships before this one. A rating written there survives,
+ * gains a null `idempotency_key`, and can no longer be replaced.
+ */
+describe('0030 closes INSERT OR REPLACE on a populated 0029 database (LAI-746)', () => {
+  it('keeps the ratings and refuses a replace of one', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const dropped = journal.entries.splice(
+      journal.entries.findIndex((e) => e.tag.startsWith('0030_')),
+    );
+    expect(dropped[0]?.tag).toMatch(/^0030_/);
+    expect(journal.entries.at(-1)?.tag).toMatch(/^0029_/);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: dir });
+      const s = seed(db);
+      const other = newId();
+      db.run(sql`
+        INSERT INTO users (id, email, name, org_role, is_active, created_at, updated_at)
+        VALUES (${other}, 'bea@example.test', 'Bea', 'member', 1, 1, 1)
+      `);
+      const rating = newId();
+      db.run(sql`
+        INSERT INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+        VALUES (${rating}, ${other}, ${s.userId}, 3, 'Before 0030.', 1)
+      `);
+
+      runMigrations(db);
+
+      expect(db.all(sql`SELECT id, score, note, idempotency_key FROM member_ratings`)).toEqual([
+        { id: rating, score: 3, note: 'Before 0030.', idempotency_key: null },
+      ]);
+      expectSqliteError(() => {
+        db.run(sql`
+          INSERT OR REPLACE INTO member_ratings (id, user_id, rated_by, score, note, created_at)
+          VALUES (${rating}, ${other}, ${s.userId}, 1, 'Rewritten.', 2)
+        `);
+      }, /append-only: INSERT OR REPLACE/);
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+    } finally {
+      sqlite.close();
+      rmSync(dbDir, { recursive: true, force: true });
       rmSync(dir, { recursive: true, force: true });
     }
   });

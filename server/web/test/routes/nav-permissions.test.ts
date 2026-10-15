@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
 import { permissionHolder } from '../../src/routes/nav-permissions.ts';
 import { ORG_ROLES } from '../../src/api/invites.ts';
+import { mayOpenProfiles } from '../../src/api/profiles.ts';
 import { mayTriageUnlisted } from '../../src/api/unlisted.ts';
 
 void describe('who holds a nav permission', () => {
@@ -30,6 +31,19 @@ void describe('who holds a nav permission', () => {
     // …and the roles are not all the same answer, or this proves nothing.
     const answers = new Set(ORG_ROLES.map((r) => permissionHolder(r)('audit_log.export')));
     assert.equal(answers.size, 2, 'every role gets the same answer — the check is vacuous');
+  });
+
+  void test('`profile.read` defers to `mayOpenProfiles` for every org role (LAI-743)', () => {
+    for (const role of ORG_ROLES) {
+      assert.equal(
+        permissionHolder(role)('profile.read'),
+        mayOpenProfiles(role),
+        `${role} disagrees with the links' own predicate`,
+      );
+    }
+    const answers = new Set(ORG_ROLES.map((r) => permissionHolder(r)('profile.read')));
+    assert.equal(answers.size, 2, 'every role gets the same answer — the check is vacuous');
+    assert.equal(permissionHolder(undefined)('profile.read'), false);
   });
 
   void test('an unknown permission is never granted', () => {

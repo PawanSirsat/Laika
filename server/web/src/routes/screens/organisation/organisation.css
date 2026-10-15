@@ -432,3 +432,23 @@
     margin-top: var(--space-2);
   }
 }
+
+/* A name that opens the person's profile, for an owner or admin (LAI-743). */
+.org-person-link {
+  color: inherit;
+  /* A quiet underline says "this opens something" without shouting it. */
+  text-decoration: underline;
+  text-decoration-color: var(--border-default);
+  text-underline-offset: 3px;
+  border-radius: var(--radius-chip);
+}
+
+.org-person-link:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+.org-person-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

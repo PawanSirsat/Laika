@@ -151,7 +151,7 @@ interface Session {
  * The fallback covers a token that only ever sent heartbeats, which is a
  * Claude Code plugin that has not called `/mcp` since D-076 shipped.
  */
-function clientOf(lastClient: string | null, tokenName: string | null): AgentClient {
+export function clientOf(lastClient: string | null, tokenName: string | null): AgentClient {
   return AGENT_CLIENTS.find((slug) => slug === lastClient) ?? agentClientSlug(null, tokenName);
 }
 
@@ -391,6 +391,65 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
   });
 
   return { enabled, people };
+}
+
+/** One person's live agents, for the member profile (LAI-743). */
+export interface AgentPresence {
+  /** `false` when the org has turned presence off (§4.2). Not the same as nobody. */
+  enabled: boolean;
+  /** Every distinct agent among their live sessions, newest first. */
+  clients: AgentClient[];
+  /** Their newest live session of any kind, or null when there is none. */
+  last_seen: number | null;
+}
+
+/**
+ * Which of one person's agents are online now — §9.3's rule, for one person
+ * (LAI-743).
+ *
+ * The same sessions `presenceNow` counts: a heartbeat on a usable token or
+ * none, or a usable token's `/mcp` call, inside the window. **No location**:
+ * the profile says which agents, never where — `repo` and `branch` are not
+ * read here at all.
+ *
+ * **It asks `can()` nothing.** It is called by `getProfile` after
+ * `profile.read` has been asserted, and is not reachable from a route.
+ */
+export function agentPresenceFor(db: Db, userId: string, now: number = Date.now()): AgentPresence {
+  if (!presenceEnabled(db)) return { enabled: false, clients: [], last_seen: null };
+
+  const since = now - PRESENCE_WINDOW_MS;
+
+  const beats: Session[] = db
+    .select({
+      tokenId: heartbeats.tokenId,
+      at: heartbeats.createdAt,
+      tokenName: tokens.name,
+      lastClient: tokens.lastClient,
+    })
+    .from(heartbeats)
+    .leftJoin(tokens, eq(tokens.id, heartbeats.tokenId))
+    .where(and(eq(heartbeats.userId, userId), gt(heartbeats.createdAt, since), liveHeartbeat(now)))
+    .all()
+    .map((row) => ({
+      tokenId: row.tokenId,
+      at: row.at,
+      client: row.tokenId === null ? null : clientOf(row.lastClient, row.tokenName),
+    }));
+
+  const calls = mcpSessionsSince(db, since, now).filter((call) => call.userId === userId);
+
+  const sessions = [...beats, ...calls].sort((a, b) => b.at - a.at);
+  const clients = [
+    ...new Set(
+      sessions
+        .filter((s) => s.tokenId !== null)
+        .map((s) => s.client)
+        .filter((c): c is AgentClient => c !== null),
+    ),
+  ];
+
+  return { enabled: true, clients, last_seen: sessions[0]?.at ?? null };
 }
 
 /** Project-scoped visibility, memoised per call by the caller's small project set. */

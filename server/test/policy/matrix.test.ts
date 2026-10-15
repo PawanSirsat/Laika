@@ -74,6 +74,12 @@ const ORG_MATRIX: OrgRow[] = [
   ['audit_log.export', true, true, false, false],
   // | Configure webhooks | ✓ | ✓ | — | — |
   ['webhook.configure', true, true, false, false],
+  // | View a member's profile | ✓ (session only) | ✓ (session only) | — | — |
+  // The role half. "session only" refuses every token, whatever its scope —
+  // asserted in `can.test.ts`, where the credential rules live (LAI-743).
+  ['profile.read', true, true, false, false],
+  // | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
+  ['profile.set_kind', true, true, false, false],
 ];
 
 describe('SPEC §3.1 — org-level matrix', () => {
@@ -120,6 +126,21 @@ describe('SPEC §3.1 — rows that depend on the resource', () => {
       expect(can(actor(role), 'token.revoke_own', { ownerId: 'u1' })).toBe(true);
       expect(can(actor(role), 'token.read_own', { ownerId: 'someone-else' })).toBe(false);
       expect(can(actor(role), 'token.revoke_own', { ownerId: 'someone-else' })).toBe(false);
+    }
+  });
+
+  // | Rate a member | ✓ (session only, not themselves) | ✓ (session only, not themselves) | — | — |
+  it('Owner and Admin may rate anyone but themselves; Member and Viewer nobody (LAI-743)', () => {
+    for (const role of ['owner', 'admin'] as const) {
+      expect(can(actor(role), 'profile.rate', { targetUserId: 'u2' }), role).toBe(true);
+      // `actor()` is `u1`: rating yourself is refused, by the rule and not by a
+      // missing resource — the next line is the missing-resource case.
+      expect(can(actor(role), 'profile.rate', { targetUserId: 'u1' }), role).toBe(false);
+      // No target is no answer, which is a denial (§3.3 rule 3).
+      expect(can(actor(role), 'profile.rate', {}), role).toBe(false);
+    }
+    for (const role of ['member', 'viewer'] as const) {
+      expect(can(actor(role), 'profile.rate', { targetUserId: 'u2' }), role).toBe(false);
     }
   });
 });
@@ -304,6 +325,7 @@ describe('completeness', () => {
       'comment.edit',
       'comment.delete',
       'task.delete',
+      'profile.rate',
       // §3.4's own, asserted in full by the describe above.
       ...SYSTEM_ACTIONS,
     ]);

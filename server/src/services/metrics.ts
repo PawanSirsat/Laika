@@ -83,9 +83,10 @@ function utcDay(at: number): string {
  *
  * Nearest rank rather than interpolation: a cycle time is an observation that
  * happened, and reporting a p90 no task actually took invites somebody to go
- * looking for it.
+ * looking for it. Shared with the member profile's cycle time (LAI-743), so
+ * the two cannot disagree about what a p75 is.
  */
-function percentile(sorted: readonly number[], p: number): number {
+export function percentile(sorted: readonly number[], p: number): number {
   if (sorted.length === 0) return 0;
 
   const rank = Math.ceil((p / 100) * sorted.length);

@@ -27,6 +27,7 @@ import {
   isReadAction,
   type OrgAction,
   type ProjectAction,
+  SESSION_ONLY_ACTIONS,
   type SystemAction,
 } from './actions.ts';
 import { ORG_ACTIONS, PROJECT_ACTIONS, SYSTEM_ACTIONS } from './actions.ts';
@@ -74,6 +75,12 @@ export interface Resource {
   visibility?: 'public' | 'private' | undefined;
   /** For `user.set_role`: the role being granted. Admins may not grant `owner`. */
   targetOrgRole?: OrgRole | undefined;
+  /**
+   * For `profile.rate`: the person being rated. §3.1's *"not themselves"* is
+   * this compared with `actor.userId`, and an absent target is a denial
+   * (LAI-743).
+   */
+  targetUserId?: string | undefined;
 }
 
 const ORG_ACTION_SET: ReadonlySet<string> = new Set(ORG_ACTIONS);
@@ -331,6 +338,28 @@ function canOrgAction(actor: Actor, action: OrgAction, resource: Resource): bool
     case 'webhook.configure':
       return isAdminUp;
 
+    // | View a member's profile | ✓ (session only) | ✓ (session only) | — | — |
+    // | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
+    //
+    // Their own rows, not borrowed from `member_list.read` or `user.set_role`
+    // (LAI-743): the profile carries private ratings, which nothing about the
+    // member list implies, and a borrowed row hands its next field a grant
+    // nobody reviewed (LAI-222's argument at `org.read`).
+    //
+    // "session only" is `tokenAllows`'s half, below. **The profile kind is not
+    // an input here or anywhere in this file** (D-078): it is a label on the
+    // profile, and a test holds every answer equal for a builder and a manager.
+    case 'profile.read':
+    case 'profile.set_kind':
+      return isAdminUp;
+
+    // | Rate a member | ✓ (session only, not themselves) | … | — | — |
+    // A rating of yourself is refused; so is a rating of nobody in particular.
+    case 'profile.rate':
+      return (
+        isAdminUp && resource.targetUserId !== undefined && resource.targetUserId !== actor.userId
+      );
+
     default:
       return assertNever(action);
   }
@@ -439,6 +468,11 @@ function canProjectAction(
 function tokenAllows(actor: Actor, action: Action, resource: Resource): boolean {
   const token = actor.token;
   if (token === undefined || token === null) return true;
+
+  // §3.1's "session only" (D-078, LAI-743): no token of any scope, for anyone.
+  // Before the whitelist and scope checks, because neither would refuse an
+  // Owner's full, unscoped token — and that is the token that matters.
+  if (SESSION_ONLY_ACTIONS.has(action)) return false;
 
   // A token may be pinned to a subset of the user's projects (§4.9). An action
   // with no project is org-scoped and unaffected by that whitelist.

@@ -1,3 +1,4 @@
+import { mayOpenProfiles } from '../api/profiles.ts';
 import { mayTriageUnlisted } from '../api/unlisted.ts';
 
 /**
@@ -14,6 +15,10 @@ import { mayTriageUnlisted } from '../api/unlisted.ts';
  * rather than leaking.
  */
 export function permissionHolder(orgRole: string | undefined): (permission: string) => boolean {
-  return (permission) =>
-    permission === 'audit_log.export' ? mayTriageUnlisted(orgRole ?? '') : false;
+  return (permission) => {
+    if (permission === 'audit_log.export') return mayTriageUnlisted(orgRole ?? '');
+    // §3.1 `profile.read` (LAI-743), through the predicate the links use.
+    if (permission === 'profile.read') return mayOpenProfiles(orgRole);
+    return false;
+  };
 }
