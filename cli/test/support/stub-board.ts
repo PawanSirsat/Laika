@@ -1,0 +1,173 @@
+import { createServer, type Server } from 'node:http';
+
+import { contractViolation } from './local-activity-contract.ts';
+
+/**
+ * A board that implements the two activity endpoints of the contract and
+ * nothing else (LAI-752), answering errors **the way the real server does**:
+ * SPEC §6.3's envelope, `{ "error": { "code", "message", "details" } }`, from
+ * a closed list of codes — so the contract's `local_activity_off`,
+ * `session_required`, `day_out_of_range` and `invalid_tz` arrive as
+ * `details.reason` under `forbidden` (403) and `unprocessable` (422). Read from
+ * LAI-751's `server/src/errors.ts` and `services/local-activity.ts`.
+ *
+ * - `GET /api/v1/me/activity-sharing` answers `sharing`, or never (`get`).
+ * - `PUT /api/v1/me/local-activity` refuses any body the contract refuses
+ *   (422, with the rule it broke recorded), and otherwise answers whatever
+ *   `put` says.
+ * - Anything without `Authorization: Bearer <token>` is 401.
+ */
+
+export interface Recorded {
+  readonly method: string;
+  readonly url: string;
+  readonly auth: string | undefined;
+  readonly contentType: string | undefined;
+  readonly body: string;
+}
+
+export type PutMode =
+  | { readonly kind: 'ok' }
+  /** 403 `forbidden`, `details.reason: local_activity_off` — the real server. */
+  | { readonly kind: 'off' }
+  /** 403 with a top-level `code: local_activity_off` — the contract's first wording. */
+  | { readonly kind: 'off-legacy' }
+  /** 403 `forbidden` for any other reason (a token refused a scope, `session_required`). */
+  | { readonly kind: 'forbidden'; readonly reason: string }
+  /** 422 `unprocessable` with this `details.reason`. */
+  | { readonly kind: 'unprocessable'; readonly reason: string }
+  | { readonly kind: 'rate-limited'; readonly retryAfter: string }
+  | { readonly kind: 'hang' }
+  | { readonly kind: 'status'; readonly status: number };
+
+export interface StubBoard {
+  readonly url: string;
+  readonly requests: Recorded[];
+  readonly violations: string[];
+  sharing: { org_enabled: boolean; enabled: boolean; scope: string; min_sync_interval_s: number };
+  /** `hang`: the sharing GET is never answered — a board that is up but stuck. */
+  get: 'ok' | 'hang';
+  put: PutMode;
+  /** When the contract's day range is checked: the collector's clock, not the test machine's. */
+  now: () => Date;
+  readonly close: () => void;
+}
+
+const servers: Server[] = [];
+
+export function closeAll(): void {
+  for (const server of servers) {
+    server.closeAllConnections();
+    server.close();
+  }
+}
+
+export async function stubBoard(token: string): Promise<StubBoard> {
+  const board: Omit<StubBoard, 'url' | 'close'> & { url: string; close: () => void } = {
+    url: '',
+    requests: [],
+    violations: [],
+    sharing: { org_enabled: true, enabled: true, scope: 'agent-repos', min_sync_interval_s: 600 },
+    get: 'ok',
+    put: { kind: 'ok' },
+    now: () => new Date(),
+    close: () => undefined,
+  };
+
+  const server = createServer((req, res) => {
+    let body = '';
+    req.on('data', (chunk) => (body += String(chunk)));
+    req.on('end', () => {
+      board.requests.push({
+        method: req.method ?? '',
+        url: req.url ?? '',
+        auth: req.headers.authorization,
+        contentType: req.headers['content-type'],
+        body,
+      });
+      const json = (status: number, value: unknown, headers: Record<string, string> = {}): void => {
+        res.writeHead(status, { 'content-type': 'application/json', ...headers });
+        res.end(JSON.stringify(value));
+      };
+      /** §6.3: `{ error: { code, message, details } }`, `details` always present. */
+      const refuse = (
+        status: number,
+        code: string,
+        details: Record<string, unknown> | null = null,
+        headers: Record<string, string> = {},
+      ): void => {
+        json(status, { error: { code, message: `${code} (stub)`, details } }, headers);
+      };
+
+      if (req.headers.authorization !== `Bearer ${token}`) {
+        refuse(401, 'unauthorized');
+        return;
+      }
+      if (req.method === 'GET' && req.url === '/api/v1/me/activity-sharing') {
+        if (board.get === 'hang') return;
+        json(200, board.sharing);
+        return;
+      }
+      if (req.method === 'PUT' && req.url === '/api/v1/me/local-activity') {
+        const violation = contractViolation(body, board.now());
+        if (violation !== undefined) {
+          board.violations.push(violation);
+          const reason =
+            violation === 'day_out_of_range'
+              ? violation
+              : violation.startsWith('tz')
+                ? 'invalid_tz'
+                : 'validation_failed';
+          refuse(422, 'unprocessable', { reason });
+          return;
+        }
+        const mode = board.put;
+        if (mode.kind === 'hang') return;
+        if (mode.kind === 'off') {
+          refuse(403, 'forbidden', {
+            reason: 'local_activity_off',
+            org_enabled: board.sharing.org_enabled,
+            enabled: false,
+          });
+          return;
+        }
+        if (mode.kind === 'off-legacy') {
+          json(403, { code: 'local_activity_off' });
+          return;
+        }
+        if (mode.kind === 'forbidden') {
+          refuse(403, 'forbidden', { reason: mode.reason });
+          return;
+        }
+        if (mode.kind === 'unprocessable') {
+          refuse(422, 'unprocessable', { reason: mode.reason });
+          return;
+        }
+        if (mode.kind === 'rate-limited') {
+          refuse(429, 'rate_limited', null, { 'retry-after': mode.retryAfter });
+          return;
+        }
+        if (mode.kind === 'status') {
+          refuse(mode.status, 'internal');
+          return;
+        }
+        const days = (JSON.parse(body) as { days: unknown[] }).days.length;
+        json(200, { accepted_days: days });
+        return;
+      }
+      refuse(404, 'not_found');
+    });
+  });
+  servers.push(server);
+  server.unref();
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  const port = typeof address === 'object' && address !== null ? address.port : 0;
+  board.url = `http://127.0.0.1:${String(port)}`;
+  board.close = () => {
+    server.closeAllConnections();
+    server.close();
+  };
+  return board;
+}

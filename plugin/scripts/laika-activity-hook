@@ -1,0 +1,125 @@
+#!/bin/sh
+#
+# laika-activity-hook <prompt|session-start|session-end> <agent-kind>
+#
+# Counts local activity for the Laika heatmap (LAI-752, D-079): one line per
+# prompt and per session start, appended to ~/.laika/activity/events.log. The
+# counts leave the machine only through `laika activity sync`, and only as
+# per-day numbers. Installed into each agent's hook config by
+# `laika activity on`; removed by `laika activity off`.
+#
+# ## What it must never do
+#
+# - **Read the prompt.** Every agent hands the prompt text to this hook, on
+#   stdin (Kiro also in $USER_PROMPT). Stdin is drained straight to /dev/null
+#   and never lands in a variable; $USER_PROMPT is unset before anything runs.
+#   The only things written are a letter, the agent kind and the time.
+# - **Print.** Claude Code adds UserPromptSubmit and SessionStart stdout to the
+#   model's context, and exit 2 blocks the prompt in four agents. So stdout and
+#   stderr go to /dev/null on the first line of real work, and every path ends
+#   in `exit 0`. There is no `set -e`.
+# - **Be slow.** The prompt path runs before every prompt. It forks nothing
+#   when run by zsh (`laika activity on` installs it as `/bin/zsh -f <this>`
+#   wherever zsh exists): zsh/datetime gives the time and zsh/system's sysread
+#   drains stdin, both builtins. Under plain sh it costs one `cat` and one
+#   `date`. No network, no git and no node on this path.
+#
+# ## The switch
+#
+# Every mode is a no-op unless ~/.laika/activity/state.json — one JSON line
+# that `laika activity sync` rewrites from GET /api/v1/me/activity-sharing —
+# says `"collect":true`. Read with the `read` builtin: no fork.
+#
+# Owned by SHELL (plugin/). LAI-752.
+
+exec >/dev/null 2>&1
+unset USER_PROMPT
+umask 077
+
+MODE="${1:-}"
+AGENT="${2:-}"
+case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
+
+DIR="$HOME/.laika/activity"
+STATE=''
+IFS= read -r STATE <"$DIR/state.json"
+
+# --- drain stdin, and the time ------------------------------------------------
+# A terminal on stdin means somebody ran this by hand: there is nothing to
+# drain, and reading would wait for them.
+NOW=''
+if [ -n "${ZSH_VERSION:-}" ] && zmodload zsh/datetime zsh/system; then
+  # -o 1 writes what was read to fd 1, which is /dev/null: nothing is stored.
+  [ -t 0 ] || while sysread -o 1 -s 65536; do :; done
+  NOW="$EPOCHSECONDS"
+else
+  [ -t 0 ] || cat >/dev/null
+  NOW="${EPOCHSECONDS:-}"
+fi
+case "$NOW" in '' | *[!0-9]*) NOW="$(date +%s)" ;; esac
+
+# Devin CLI reads ~/.claude/settings.json hooks by default and sets
+# DEVIN_PROJECT_DIR (docs.devin.ai/cli/extensibility/hooks/overview). Its
+# prompts are not Claude Code's, and no hook was installed for Devin, so they
+# are not counted at all rather than counted under the wrong agent.
+if [ "$AGENT" = claude-code ] && [ -n "${DEVIN_PROJECT_DIR:-}" ]; then
+  exit 0
+fi
+
+COLLECT=no
+case "$STATE" in *'"collect":true'*) COLLECT=yes ;; esac
+
+if [ "$MODE" = prompt ]; then
+  # One printf, one O_APPEND write: two hooks at once cannot interleave a line.
+  [ "$COLLECT" = yes ] && printf 'p %s %s\n' "$AGENT" "$NOW" >>"$DIR/events.log"
+  exit 0
+fi
+
+# --- session start / end -------------------------------------------------------
+if [ "$MODE" = session-start ] && [ "$COLLECT" = yes ]; then
+  printf 's %s %s\n' "$AGENT" "$NOW" >>"$DIR/events.log"
+
+  # Which repository this session is in. Kept on this machine only: it decides
+  # which repos `laika activity sync` counts commits in, and is never sent.
+  TOP="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --show-toplevel 2>/dev/null)"
+  REPOS="$DIR/repos"
+  NL='
+'
+  case "$TOP" in
+    '' | *'	'* | *"$NL"*) ;;
+    *)
+      # Deduped by path, and entries unused for 30 days dropped. Written to a
+      # temp file and renamed, so a reader never sees half a file. The path
+      # goes to awk through the environment: `-v` would expand backslashes.
+      [ -f "$REPOS" ] || : >"$REPOS"
+      LAIKA_TOP="$TOP" awk -v now="$NOW" -v cutoff="$((NOW - 2592000))" \
+        'BEGIN { FS = OFS = "\t"; top = ENVIRON["LAIKA_TOP"] }
+         $2 != top && $1 >= cutoff { print }
+         END { print now, top }' \
+        "$REPOS" >"$REPOS.$$" && mv -f "$REPOS.$$" "$REPOS"
+      rm -f "$REPOS.$$"
+      ;;
+  esac
+fi
+
+if [ "$MODE" = session-start ] || [ "$MODE" = session-end ]; then
+  # Due when state.json's next_sync_at has passed: the sync writes it as the
+  # later of its last run plus min_sync_interval_s and any Retry-After. While
+  # collection is off it is the once-a-day recheck, and nothing else runs.
+  NEXT="${STATE#*\"next_sync_at\":}"
+  [ "$NEXT" = "$STATE" ] && NEXT=0
+  NEXT="${NEXT%%[!0-9]*}"
+  if [ -n "$STATE" ] && [ "$NOW" -ge "${NEXT:-0}" ]; then
+    # Fully detached, and it never holds this hook's stdout open: the agent
+    # sees this hook end at once (Claude Code gives SessionEnd 1.5 s in all).
+    # `--background` makes the CLI re-spawn itself in a new session (setsid),
+    # so neither a timeout kill nor a Ctrl-C to the agent reaches it.
+    SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+    CLI="$SELF_DIR/../../cli/bin/laika"
+    if [ -x "$CLI" ]; then
+      (nohup "$CLI" activity sync --background </dev/null >/dev/null 2>&1 &)
+    fi
+  fi
+fi
+
+exit 0
