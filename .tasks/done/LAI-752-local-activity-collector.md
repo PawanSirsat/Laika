@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-15T18:20:07Z
-status: review
+status: done
 finished: 2026-10-15T19:01:38Z
 ---
 
@@ -243,3 +243,7 @@ unchanged, still in review.
    knows, else `UTC` (Node reported `undefined` or `Etc/Unknown` under an
    unknown `TZ`). The stub board sends the real envelope. 8 tests red before
    the change; the legacy top-level case passed before and after, as it should.
+
+## Accepted
+
+2026-10-16, by polly (orchestrator), on the owner's direct instruction ("push now"). Review round 1: CHANGES REQUIRED (background syncs could pile up); fixed in c44e85a. Re-review: APPROVE (12/12 mutations red). Round 2 (three non-blocking items and the server's real error envelope, details.reason): re-review APPROVE (6/7 mutations red; the survivor is a 422 carrying local_activity_off, which the server never sends). Orchestrator gate on the combined merge 4a34af8 (with LAI-751): LINT 0, FMT 0, TEST 0 (server 123/123 files, web 1969/1969, cli 285/285).

@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-15T18:33:00Z
-status: review
+status: done
 finished: 2026-10-15T20:40:00Z
 ---
 
@@ -397,3 +397,7 @@ instance on port 3491 seeded through the real API:
 
 **Click-through** on the same instance passed all eleven steps, with no page
 or console errors. The kind switch now clicks and waits for the redraw.
+
+## Accepted
+
+2026-10-16, by polly (orchestrator), on the owner's direct instruction ("push now"). Server/privacy review of 50ecd36: APPROVE (migration 0031 on a 3M-row copy: additive, row counts identical, rollup exact, 11.1 s; privacy and ingest per contract; 24/26 mutations caught); its six non-blocking items fixed in 0080dd0. Web review of 50ecd36: CHANGES REQUIRED (load jump in off states, repeated off panels, design B overflow at 390); fixed in 8ad725f/32b87ba with tests, plus the owner's layout restructure (609d411). The web re-review of 994c558 was cancelled at the owner's request to ship; not re-reviewed. Orchestrator gate on the combined merge 4a34af8 (with LAI-752): LINT 0, FMT 0, TEST 0 (server 123/123 files, web 1969/1969, cli 285/285).
