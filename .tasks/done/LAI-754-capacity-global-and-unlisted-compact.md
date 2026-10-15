@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-15T18:33:31Z
-status: review
+status: done
 finished: 2026-10-15T19:08:38Z
 ---
 
@@ -120,3 +120,7 @@ in-progress work reads as keys and titles.
 - **Screenshots** in `/tmp/laika-capacity-global-shots/`: `capacity-*`,
   `sidebar-*`, `sidebar-in-space-*`, `unlisted-collapsed-*`,
   `unlisted-expanded-*`, each `{light,dark}-{1366,390}`.
+
+## Accepted
+
+2026-10-16, by polly (orchestrator), on the owner's direct instruction ("next step is merge"). Same-vendor review of 2f41298...0ef46d7 (Claude reviewing Claude; the owner asked for Claude only): APPROVE, no blockers; two deliberate breaks (triage gate, chip retry memo) each turned their test red. Orchestrator gate on the merge f1626ab: LINT 0, FMT 0, TEST 0 (server 118/118 files; web and cli green). Non-blocking, from the review: "Open the task it became" on /unlisted passes promoted_task_id (an id) where a key is expected (pre-existing, same family as LAI-755); the chip title cache never clears within a visit; a chip that keeps failing is re-fetched every 20 s; one reflowed comment line in SpaceTopBar.tsx is over 80 columns.
