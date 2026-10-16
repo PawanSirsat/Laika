@@ -101,6 +101,13 @@ const CONSOLE: ActivityIo = {
   },
 };
 
+/**
+ * What the hook skips (LAI-757, D-080), in the words `on` and `status` print.
+ * The rule itself is in `plugin/scripts/laika-activity-hook`.
+ */
+export const SKIP_RULE =
+  'agent sessions run with OMNIGENT=1 (Omnigent’s), a non-empty CI or a non-empty LAIKA_ACTIVITY_SKIP count nothing';
+
 const USAGE = [
   'Usage:',
   '  laika activity on [--agent id] check sharing is on, then install the counting hooks',
@@ -243,6 +250,7 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   io.out('sessions started, your commits not yet on a remote, and a one-way key for each of');
   io.out('your commits already on one. Never prompt text, paths, repo or branch names,');
   io.out('remote URLs, commit messages, emails or commit ids.');
+  io.out(`Not counted: ${SKIP_RULE}.`);
   io.out('');
   io.out('See exactly what would be sent:  laika activity status');
   io.out('Stop:                            laika activity off');
@@ -285,6 +293,7 @@ async function status(io: ActivityIo): Promise<number> {
     `Scope           ${scope}${state.collect && fresh === undefined ? ' (as last seen; the board did not answer now)' : ''}`,
   );
   if (state.collect) io.out(`Counting since  ${when(state.since)}`);
+  io.out(`Not counted     ${SKIP_RULE}`);
   io.out(
     `Next sync       ${state.next_sync_at === 0 ? 'at the next agent session' : `not before ${when(state.next_sync_at)}`}`,
   );

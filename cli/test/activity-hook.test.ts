@@ -61,6 +61,8 @@ interface Run {
   readonly code: number | null;
   readonly stdout: string;
   readonly stderr: string;
+  /** `EPIPE` here means the hook exited without draining its stdin. */
+  readonly error: string | undefined;
 }
 
 function run(
@@ -81,8 +83,20 @@ function run(
     env: { PATH: process.env.PATH ?? '', HOME: options.home, ...options.env },
     encoding: 'utf8',
   });
-  return { code: result.status, stdout: result.stdout, stderr: result.stderr };
+  return {
+    code: result.status,
+    stdout: result.stdout,
+    stderr: result.stderr,
+    error: (result.error as NodeJS.ErrnoException | undefined)?.code,
+  };
 }
+
+/** The three markers of a session no person is typing in (LAI-757, D-080). */
+const AUTOMATED: readonly Record<string, string>[] = [
+  { OMNIGENT: '1' },
+  { CI: 'true' },
+  { LAIKA_ACTIVITY_SKIP: '1' },
+];
 
 const events = (h: string): string[] => {
   try {
@@ -172,6 +186,51 @@ for (const shell of SHELLS) {
         }
         assert.deepEqual(events(h), []);
         assert.ok(!existsSync(join(h, '.laika', 'activity', 'repos')));
+      }
+    });
+
+    void test('an automated session counts nothing: no event, no repo, no output, stdin drained', () => {
+      for (const env of AUTOMATED) {
+        const label = Object.keys(env).join('');
+        const h = home();
+        const repoDir = gitRepo();
+        for (const mode of ['prompt', 'session-start', 'session-end']) {
+          // Larger than any pipe buffer: a hook that exits without reading it
+          // leaves the writer with EPIPE — the agent's write would fail.
+          const r = run(shell, [mode, 'claude-code'], {
+            home: h,
+            cwd: repoDir,
+            env,
+            input: 'x'.repeat(512 * 1024),
+          });
+          assert.equal(r.code, 0, `${label} ${mode}`);
+          assert.equal(r.stdout + r.stderr, '', `${label} ${mode}`);
+          assert.equal(r.error, undefined, `${label} ${mode}: stdin was not drained`);
+        }
+        assert.deepEqual(events(h), [], `${label}: counted`);
+        assert.deepEqual(
+          readdirSync(join(h, '.laika', 'activity')),
+          ['state.json'],
+          `${label}: wrote under ~/.laika/activity`,
+        );
+      }
+    });
+
+    void test('with no marker set — or OMNIGENT set to something else — it counts as before', () => {
+      for (const env of [{}, { OMNIGENT: '0' }, { CI: '' }, { LAIKA_ACTIVITY_SKIP: '' }]) {
+        const h = home();
+        const repoDir = gitRepo();
+        run(shell, ['prompt', 'claude-code'], { home: h, cwd: repoDir, env });
+        run(shell, ['session-start', 'claude-code'], { home: h, cwd: repoDir, env });
+        assert.deepEqual(
+          events(h).map((l) => l.split(' ')[0]),
+          ['p', 's'],
+          JSON.stringify(env),
+        );
+        assert.ok(
+          readFileSync(join(h, '.laika', 'activity', 'repos'), 'utf8').includes(repoDir),
+          JSON.stringify(env),
+        );
       }
     });
 
@@ -352,6 +411,28 @@ void describe('starting the sync', () => {
     assert.deepEqual(homes, [`HOME=${due}`], 'a sync was started early, or while off');
   });
 
+  /** Same shape as the test above: skipped hooks first, then one that is not. */
+  void test('an automated session never starts a sync, however due', async () => {
+    const { script, calls } = layout();
+    const skipped = AUTOMATED.map(() => home(ON(0)));
+    AUTOMATED.forEach((env, i) => {
+      const h = skipped[i] ?? '';
+      run(shell, ['session-start', 'codex'], { home: h, script, env });
+      run(shell, ['session-end', 'codex'], { home: h, script, env });
+    });
+    const due = home(ON(0));
+    run(shell, ['session-end', 'codex'], { home: due, script });
+    await until(() => {
+      const dump = textOf(`${calls}.env`);
+      return dump.includes(`HOME=${due}`) && dump.includes('__END__');
+    });
+    await new Promise((res) => setTimeout(res, 500));
+    const homes = readFileSync(`${calls}.env`, 'utf8')
+      .split('\n')
+      .filter((line) => line.startsWith('HOME='));
+    assert.deepEqual(homes, [`HOME=${due}`], 'an automated session started a sync');
+  });
+
   void test('the hook’s stdout pipe is not held open by the sync', async () => {
     const { script } = layout();
     const h = home(ON(0));
@@ -389,6 +470,27 @@ void describe('cost of the prompt path', () => {
         /^p codex \d{10}$/,
         'the prompt path needed an external command',
       );
+    },
+  );
+
+  void test(
+    'under zsh a skipped session needs no external command: empty PATH, stdin still drained',
+    { skip: ZSH === undefined },
+    () => {
+      for (const env of AUTOMATED) {
+        const h = home();
+        for (const mode of ['prompt', 'session-start', 'session-end']) {
+          const r = run(shell, [mode, 'codex'], {
+            home: h,
+            env: { ...env, PATH: '' },
+            input: 'x'.repeat(512 * 1024),
+          });
+          assert.equal(r.code, 0);
+          assert.equal(r.stdout + r.stderr, '');
+          assert.equal(r.error, undefined, 'stdin was not drained');
+        }
+        assert.deepEqual(events(h), []);
+      }
     },
   );
 

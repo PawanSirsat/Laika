@@ -398,6 +398,16 @@ void describe('status, sync, emails', () => {
     assert.match(h.out.join('\n'), /Last sync\s+.* — sent, 14 days accepted/);
   });
 
+  void test('`on` and `status` each name the skip rules, in one line', async () => {
+    const h = await harness();
+    const rule = /OMNIGENT=1.*\bCI\b.*LAIKA_ACTIVITY_SKIP/;
+    assert.equal(await h.run('on'), 0);
+    assert.equal(h.out.filter((line) => rule.test(line)).length, 1, h.out.join('\n'));
+    h.out.length = 0;
+    assert.equal(await h.run('status'), 0);
+    assert.equal(h.out.filter((line) => rule.test(line)).length, 1, h.out.join('\n'));
+  });
+
   void test('status when off says so', async () => {
     const h = await harness();
     assert.equal(await h.run('status'), 0);
