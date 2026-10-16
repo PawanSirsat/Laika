@@ -651,21 +651,33 @@ void describe('the census and its reports', () => {
     assert.deepEqual(keysIn(resumed.map((r) => JSON.parse(r.body) as Put)), ['ffffffffffffffbb']);
   });
 
-  void test('a look-back still under way when the deadline nears stops itself; the snapshot stands', async () => {
-    const w = await world();
-    history(w);
-    const real = gitRunner(w.env);
-    // The look-back's log asks git for a year; the snapshot's for 45 days.
-    const slowLookback: typeof real = async (cwd, args) => {
-      const since = args.find((a) => a.startsWith('--since=@'));
-      if (since !== undefined && Number(since.slice(9)) < w.nowS() - 60 * DAY) {
-        await new Promise((res) => setTimeout(res, 1700));
-      }
-      return real(cwd, args);
-    };
-    const outcome = await sync({ ...w.ctx, git: slowLookback, deadlineMs: 2000 });
-    assert.equal(outcome.kind, 'sent', JSON.stringify(outcome));
-    assert.deepEqual(w.lookbacks(), [], 'a look-back report started past the soft stop');
-    assert.equal(readState(w.paths)?.failures, 0, 'the run was counted as failed');
-  });
+  void test(
+    'a look-back still under way when the deadline nears stops itself; the snapshot stands',
+    { timeout: 30_000 },
+    async () => {
+      const w = await world();
+      history(w);
+      const real = gitRunner(w.env);
+      // The deadline is 10 s, so no new look-back report starts after 7.5 s.
+      // The look-back's own log (it asks git for a year; the snapshot asks for
+      // 45 days) answers only once that point has passed, however loaded the
+      // machine — so its census finishes past the soft stop, before the hard one.
+      const deadlineMs = 10_000;
+      const started = Date.now();
+      const slowLookback: typeof real = async (cwd, args) => {
+        const since = args.find((a) => a.startsWith('--since=@'));
+        if (since !== undefined && Number(since.slice(9)) < w.nowS() - 60 * DAY) {
+          const wait = started + deadlineMs * 0.75 + 300 - Date.now();
+          if (wait > 0) await new Promise((res) => setTimeout(res, wait));
+        }
+        return real(cwd, args);
+      };
+      const outcome = await sync({ ...w.ctx, git: slowLookback, deadlineMs });
+      assert.equal(outcome.kind, 'sent', JSON.stringify(outcome));
+      assert.ok(Date.now() - started < deadlineMs, 'the hard deadline was reached');
+      assert.equal(w.puts().length, 1, 'the snapshot was not sent');
+      assert.deepEqual(w.lookbacks(), [], 'a look-back report started past the soft stop');
+      assert.equal(readState(w.paths)?.failures, 0, 'the run was counted as failed');
+    },
+  );
 });
