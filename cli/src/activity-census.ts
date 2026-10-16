@@ -293,9 +293,25 @@ export function authorIdentity(email: string, at: number): string {
 
 /** How far back git is asked to look, past the window: `--since` is the COMMITTER date. */
 const WIDE_SINCE_S = 45 * DAY_S;
+/** How long one git call may run unless it asks for another limit. */
 const GIT_TIMEOUT_MS = 10_000;
+/**
+ * The look-back's year-long `git log` (LAI-757): a 20,000-commit history took
+ * 10.4 s on a CI runner, past the default. Still well inside the sync's soft
+ * stop (90 s of its 120 s), so a look-back that needs it all still sends.
+ */
+export const LOOKBACK_GIT_TIMEOUT_MS = 60_000;
 
-export type GitRunner = (cwd: string, args: readonly string[]) => Promise<string | undefined>;
+export interface GitOptions {
+  /** This call's limit, in place of the default 10 s. */
+  readonly timeoutMs?: number;
+}
+
+export type GitRunner = (
+  cwd: string,
+  args: readonly string[],
+  options?: GitOptions,
+) => Promise<string | undefined>;
 
 /**
  * `git` with nothing from the environment that could change what it prints:
@@ -304,7 +320,8 @@ export type GitRunner = (cwd: string, args: readonly string[]) => Promise<string
  * that cannot be read counts nothing, it does not stop the sync.
  *
  * Asynchronous, and never allowed to hold the sync open: a `git` that runs
- * 10 s is sent SIGKILL by `execFile`'s own timeout, and when `signal` aborts
+ * past its limit — 10 s, unless the call asks for another — is sent SIGKILL by
+ * `execFile`'s own timeout, and when `signal` aborts
  * (the sync's overall deadline) it is sent SIGKILL at once and the call
  * answers `undefined` without waiting for it. SIGKILL, not SIGTERM: these
  * commands only read, so there is nothing for git to clean up, and SIGTERM can
@@ -321,7 +338,7 @@ export function gitRunner(
     GIT_OPTIONAL_LOCKS: '0',
     LC_ALL: 'C',
   };
-  return (cwd, args) =>
+  return (cwd, args, options) =>
     new Promise((done) => {
       if (signal?.aborted === true) {
         done(undefined);
@@ -339,7 +356,7 @@ export function gitRunner(
         {
           encoding: 'utf8',
           env: childEnv,
-          timeout: GIT_TIMEOUT_MS,
+          timeout: options?.timeoutMs ?? GIT_TIMEOUT_MS,
           killSignal: 'SIGKILL',
           maxBuffer: 64 * 1024 * 1024,
         },
@@ -607,7 +624,9 @@ export async function countLookback(options: {
     if (own !== undefined && own !== '') mine.add(own);
     if (mine.size === 0) continue;
 
-    const onRemotes = await git(repo.path, ['log', '--remotes', ...common, wideSince, LOG_FORMAT]);
+    const onRemotes = await git(repo.path, ['log', '--remotes', ...common, wideSince, LOG_FORMAT], {
+      timeoutMs: LOOKBACK_GIT_TIMEOUT_MS,
+    });
     // A repo with no remote answers an empty log; no answer at all is a failure.
     if (onRemotes === undefined) {
       unread.push(gitDir);

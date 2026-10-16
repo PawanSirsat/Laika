@@ -11,13 +11,27 @@
 
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, describe, test } from 'node:test';
 
 import { activity, HOOK_SCRIPT, type ActivityIo } from '../src/activity.ts';
-import { countLookback, gitRunner, localDay, pushedKey } from '../src/activity-census.ts';
+import {
+  countLookback,
+  gitRunner,
+  localDay,
+  pushedKey,
+  type GitRunner,
+} from '../src/activity-census.ts';
 import { lookbackReports } from '../src/activity-lookback.ts';
 import { acquireLock, activityPaths, readState } from '../src/activity-store.ts';
 import { startCollecting, sync, type SyncContext } from '../src/activity-sync.ts';
@@ -177,6 +191,11 @@ async function world(options: { sinceAgo?: number } = {}): Promise<World> {
 }
 
 const dayOf = (w: World, ago: number): string => localDay(w.nowS() - ago, TZ);
+/** The look-back's own log asks git for a year; the snapshot's for 45 days. */
+const isYearLog = (w: World, args: readonly string[]): boolean => {
+  const since = args.find((a) => a.startsWith('--since=@'));
+  return since !== undefined && Number(since.slice(9)) < w.nowS() - 60 * DAY;
+};
 const keysIn = (puts: readonly Put[]): string[] =>
   puts.flatMap((p) => p.days.flatMap((d) => d.pushed_keys ?? []));
 
@@ -564,24 +583,20 @@ void describe('the automatic look-back', () => {
       r.git('reset', '-q', '--hard', 'main');
       r.push();
 
+      // Counted, not timed: on a slow runner this log alone took 10 s.
+      const real = gitRunner(w.env);
+      let yearLogs = 0;
+      const counting: GitRunner = (cwd, args, options) => {
+        if (isYearLog(w, args)) yearLogs += 1;
+        return real(cwd, args, options);
+      };
+      const ctx = { ...w.ctx, git: counting };
       const t0 = performance.now();
-      const census = await countLookback({
-        repos: [{ path: r.path }],
-        extraEmails: [],
-        days: 365,
-        tz: TZ,
-        nowS: w.nowS(),
-        sinceS: w.nowS(),
-        git: gitRunner(w.env),
-      });
-      const ms = performance.now() - t0;
-      console.log(`look-back census of a 20,000-commit repo: ${ms.toFixed(0)} ms`);
-      assert.equal(census.commits, 20_000);
 
       let runs = 0;
       for (; runs < 40; runs += 1) {
         const sent = w.lookbacks().length;
-        const outcome = await sync(w.ctx);
+        const outcome = await sync(ctx);
         assert.equal(outcome.kind, 'sent', JSON.stringify(outcome));
         if (runs > 0 && w.lookbacks().length === sent) break;
         assert.ok(w.lookbacks().length - sent <= 4, 'more than 4 look-back reports in one sync');
@@ -591,11 +606,41 @@ void describe('the automatic look-back', () => {
       for (const req of w.board.requests) assert.ok(Buffer.byteLength(req.body) <= MAX_BODY_BYTES);
       assert.equal(w.board.bucket.limited, 0, 'the look-back tripped the report bucket');
       assert.equal(w.board.keys.size, 20_000);
+      assert.ok(runs > 1, 'delivered in one sync — the chunking was not exercised');
+      assert.equal(yearLogs, 1, 'the year-long log was read again for every chunk');
       console.log(
-        `delivered in ${String(w.lookbacks().length)} look-back reports over ${String(runs)} syncs`,
+        `delivered in ${String(w.lookbacks().length)} look-back reports over ${String(runs)} syncs, ` +
+          `${(performance.now() - t0).toFixed(0)} ms`,
       );
     },
   );
+
+  void test('a look-back whose git log takes longer than the 10 s a snapshot gets still counts', async () => {
+    const w = await world();
+    const h = history(w);
+    const real = gitRunner(w.env);
+    // git taking 11 s over the year, as on the slow runner, under the limit
+    // each call asks for: killed at the 10 s a call gets unless it asks more.
+    const elevenSeconds: GitRunner = (cwd, args, options) =>
+      isYearLog(w, args) && (options?.timeoutMs ?? 10_000) < 11_000
+        ? Promise.resolve(undefined)
+        : real(cwd, args, options);
+    assert.equal((await sync({ ...w.ctx, git: elevenSeconds })).kind, 'sent');
+    assert.deepEqual(
+      keysIn(w.lookbacks()).sort(),
+      [h.year, h.month, h.beforeOn, h.sideTip].map(pushedKey).sort(),
+    );
+  });
+
+  void test('gitRunner kills a call at its own limit: 10 s unless the call asks for another', async () => {
+    const shim = dir('laika-slowgit-');
+    const realGit = execFileSync('/bin/sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+    writeFileSync(join(shim, 'git'), `#!/bin/sh\nsleep 1\nexec '${realGit}' "$@"\n`);
+    chmodSync(join(shim, 'git'), 0o755);
+    const git = gitRunner({ PATH: `${shim}:${process.env.PATH ?? ''}`, HOME: tmpdir() });
+    assert.equal(await git(tmpdir(), ['--version'], { timeoutMs: 300 }), undefined);
+    assert.match((await git(tmpdir(), ['--version'], { timeoutMs: 5_000 })) ?? '', /git version/);
+  });
 
   void test('a git failure in the look-back leaves the repo due, says so, and is retried after the backoff', async () => {
     const w = await world();
@@ -604,13 +649,13 @@ void describe('the automatic look-back', () => {
     let broken = true;
     let lookbackLogs = 0;
     // The look-back's log asks git for a year; the snapshot's for 45 days.
-    const flaky: typeof real = (cwd, args) => {
+    const flaky: GitRunner = (cwd, args, options) => {
       const since = args.find((a) => a.startsWith('--since=@'));
       if (since !== undefined && Number(since.slice(9)) < w.nowS() - 60 * DAY) {
         lookbackLogs += 1;
         if (broken) return Promise.resolve(undefined);
       }
-      return real(cwd, args);
+      return real(cwd, args, options);
     };
     const ctx = { ...w.ctx, git: flaky };
     assert.equal((await sync(ctx)).kind, 'sent');
@@ -771,24 +816,24 @@ void describe('the census and its reports', () => {
 
   void test(
     'a look-back still under way when the deadline nears stops itself; the snapshot stands',
-    { timeout: 30_000 },
+    { timeout: 60_000 },
     async () => {
       const w = await world();
       history(w);
       const real = gitRunner(w.env);
-      // The deadline is 10 s, so no new look-back report starts after 7.5 s.
-      // The look-back's own log (it asks git for a year; the snapshot asks for
-      // 45 days) answers only once that point has passed, however loaded the
-      // machine — so its census finishes past the soft stop, before the hard one.
-      const deadlineMs = 10_000;
+      // The deadline is 20 s, so no new look-back report starts after 15 s.
+      // The look-back's own log is asked of git at once and answered only once
+      // that point has passed, however slow the machine or its git — so its
+      // census finishes past the soft stop, before the hard one.
+      const deadlineMs = 20_000;
       const started = Date.now();
-      const slowLookback: typeof real = async (cwd, args) => {
-        const since = args.find((a) => a.startsWith('--since=@'));
-        if (since !== undefined && Number(since.slice(9)) < w.nowS() - 60 * DAY) {
+      const slowLookback: GitRunner = async (cwd, args, options) => {
+        const answer = real(cwd, args, options);
+        if (isYearLog(w, args)) {
           const wait = started + deadlineMs * 0.75 + 300 - Date.now();
           if (wait > 0) await new Promise((res) => setTimeout(res, wait));
         }
-        return real(cwd, args);
+        return answer;
       };
       const outcome = await sync({ ...w.ctx, git: slowLookback, deadlineMs });
       assert.equal(outcome.kind, 'sent', JSON.stringify(outcome));
