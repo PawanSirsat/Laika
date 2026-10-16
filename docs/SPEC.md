@@ -1010,8 +1010,9 @@ leaves `commits_local` on the next report. Machines sum. Kept 400 days (§11.6).
 ### 4.24 `pushed_commit_keys`
 
 One key per commit a developer has on a remote — the heatmap's *GitHub* colour
-(§6.4, D-079, LAI-751). Only commits authored after they turned sharing on, and
-never a merge commit — the collector's rule (§6.4).
+(§6.4, D-079, LAI-751). Commits authored after they turned sharing on, and once
+per repository a look-back of up to a year before that (D-080, LAI-757); never
+a merge commit — the collector's rules (§6.4).
 
 | field | notes |
 | --- | --- |
@@ -1023,7 +1024,9 @@ never a merge commit — the collector's rule (§6.4).
 Primary key (`user_id`, `key`).
 
 The same commit seen from two machines is one key, so it counts once. A report
-adds keys and never removes one; a key already held keeps its earliest day. The
+adds keys and never removes one; a key already held keeps its earliest day. A
+look-back report (§6.4) adds keys and nothing else, for days back to the 400
+this table keeps. The
 count is per person, by day, as distinct keys. Counted on the developer's
 machine — no GitHub webhook and no call to GitHub (§13.4 is unchanged). Kept
 400 days (§11.6).
@@ -1204,7 +1207,8 @@ those projects. A Viewer's token can never write, whatever its scope says.
   /me/local-activity`, D-079) a bucket of **30, refilled one every 120
   seconds**: a burst of 30, then one every two minutes — up to 60 in a first
   hour, 30 an hour after — per token and per user for a session, on their own
-  budget. `429` with `Retry-After`, never below one second.
+  budget, snapshots and look-back reports alike (D-080). `429` with
+  `Retry-After`, never below one second.
 
   **Writes share the general budget; there is no separate write limit** (D-021).
   Per-token 120/min already bounds the case a write budget was meant to catch —
@@ -1239,7 +1243,7 @@ GET    /api/v1/setup/status                  POST /api/v1/setup      (disabled o
        └ { setup_required, system: { database, migrations_applied, smtp_configured } }
 GET    /api/v1/me
 GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { enabled?, scope? }   (PUT session only)
-PUT    /api/v1/me/local-activity             a collector's report → { accepted_days }   (both switches on; 30/hour)
+PUT    /api/v1/me/local-activity             a collector's report or look-back → { accepted_days }   (both switches on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
@@ -1425,20 +1429,48 @@ reaches SSE, an MCP tool or an export (§4.21).
   and writes **no `activity` row**. Each (person, collector, day) is
   **replaced** by the report; pushed keys are added, a key already held keeping
   its earliest day, and never removed by a report.
+- **A look-back report** (D-080, LAI-757) is the same `PUT` marked
+  `"lookback": true`: `{ "v": 1, "collector_id", "tz", "lookback": true,
+  "days": [{ "day": "YYYY-MM-DD", "pushed_keys": ["<16 hex>", …] }] }` — keys
+  only, at least one per day; a day carrying `prompts`, `sessions` or
+  `commits_local` is an unknown field. Each day once, within *today − 400* to
+  *today + 1* in `tz` (§11.6's retention), the same **16 KB**, and the same
+  bucket. It **writes no snapshot row** and replaces nothing: its keys join
+  the set like a snapshot's, so sending it twice changes nothing. It answers
+  `200 { "accepted_days": n }`.
 - Refusals, in §6.3's envelope with the contract's reason in `details.reason`:
   `403 local_activity_off` when either switch is off (asked before the body is
   judged); `422 day_out_of_range` when `days` is empty, longer than 14, repeats
   a day, or holds a day that is not a date within *today − 14* to *today + 1*
-  in `tz`; `422 invalid_tz` for a zone the server does not know; `422` for any
+  in `tz` — for a look-back, *today − 400* to *today + 1*, with that window's
+  `earliest` and `latest` in `details`; `422 invalid_tz` for a zone the server
+  does not know; `422` for any
   unknown field, wrong type or cap; `413` over 16 KB; `429` with `Retry-After`
   once the report bucket is spent — 30, refilled one every 120 seconds, per
   token (per user for a session; §6.3). A collector that
   is refused `local_activity_off` stops and asks again after 24 hours.
-- **Which commits count** (settled with the collector, LAI-752): both
-  `commits_local` and `pushed_keys` cover only commits the developer authored
-  **after they turned sharing on**, and **merge commits are counted in
-  neither**. The collector enforces both before anything is sent; the server
-  cannot see a commit, so it does not re-check them.
+- **Which commits count** (settled with the collector, LAI-752; D-080):
+  `commits_local` covers only commits the developer authored **after they
+  turned sharing on**, and **merge commits are counted in neither** it nor the
+  keys. A snapshot's `pushed_keys` follow the same start; **once per
+  repository a look-back** adds keys for the developer's pushed commits of up
+  to the last 365 days before it — only those no snapshot can count, so a
+  commit counted local and pushed later is never also a look-back key. Their
+  commits are the ones under their git identity (`user.email` and the extra
+  emails they set), even ones an agent typed: git cannot tell. The collector
+  enforces all of this before anything is sent; the server cannot see a
+  commit, so it does not re-check it.
+- **The collector** (`laika activity`, `cli/README.md`): `on`, `off`,
+  `status`, `sync`, `emails`, and `backfill [--days N] [--yes] [<repo>…]` —
+  which prints what the look-back found (commits, days, per month), asks
+  before sending unless `--yes`, and sends it in look-back reports of at most
+  16 KB, at most four a run, paced so that it and the snapshots never ask the
+  collector's token for more than the bucket refills; what does not fit goes
+  with the next syncs. A background sync runs the
+  look-back once for each repository it sees for the first time, after the
+  snapshot and inside the same lock and 2-minute limit. **Sessions nobody is
+  typing in count nothing**: the activity hook does nothing at all when
+  `OMNIGENT=1`, `CI` or `LAIKA_ACTIVITY_SKIP` is set (D-080).
 - `GET /me/local-activity?days=` (1–14, default 14) answers what is held for
   the caller over their last days — `{ start, end, tz, days: [{ day,
   prompts_by_agent, sessions, commits_local, pushed_commits }], collectors,

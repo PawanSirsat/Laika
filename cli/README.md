@@ -72,6 +72,8 @@ laika activity on --agent copilot # also install for an agent not detected
 laika activity status             # the exact JSON the next sync sends, and the last result
 laika activity sync               # send now, if the board's interval allows it
 laika activity emails a@b c@d     # extra author emails that count as yours (--clear)
+laika activity backfill           # a year of your pushed commits, once: shows them, asks, sends
+laika activity backfill --days 90 --yes ~/src/other-repo   # a shorter window, no question, one more repo
 laika activity off                # remove the hooks and delete ~/.laika/activity
 ```
 
@@ -132,8 +134,31 @@ a second pushed key once force-pushed. Commits whose remote branch was deleted
 after a squash merge are not counted as local again either — provided a sync saw
 them on the remote first (a branch pushed and squash-merged between two syncs is
 counted as local until it is deleted, and only inside the 14-day window).
-**Nothing authored before sharing was turned on on this machine is reported** —
-pushed or not: the consent covers work from then on (D-079).
+**Unpushed work authored before sharing was turned on on this machine is never
+reported**, and pushed work from before then only through the look-back below
+(D-080).
+
+**The look-back** (LAI-757, D-080). Once per repo, the first time a sync sees
+it, and whenever you run `laika activity backfill`: your pushed commits of the
+last 365 days (`--days N` for fewer), by the same rules as above, as the same
+one-way keys per day, in reports marked `lookback` (SPEC §6.4). `backfill`
+prints what it found — commits, days, a count per month — and asks before
+sending (`--yes` does not ask); paths given after it are counted too, even if
+no agent session ran there. Commits a snapshot can count are left to it — those
+authored after sharing went on, on days the repo's snapshots covered — so a
+commit counted local and pushed later is never counted twice; one pushed only
+after its day left every snapshot stays local, as before. Commits under your
+git identity count even if an agent typed them: git cannot tell. Reports stay
+within 16 KB, at most four a run, paced to the board's report bucket; what does
+not fit goes with the next syncs, and `status` says how far it got. Run twice,
+nothing changes on the board: keys are a set there. Each repo's look-back is
+recorded in `~/.laika/activity/lookback.json` (0600, never sent), so the
+automatic one never repeats; `off` deletes it with the rest.
+
+**Sessions nobody is typing in count nothing.** The hook does nothing at all —
+no event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in every
+process it launches), `CI` is set, or `LAIKA_ACTIVITY_SKIP` is set. `on` and
+`status` say so.
 
 **Which board.** The one `laika activity on` was run against, recorded in
 `state.json`, with that board's token (from `~/.laika/env` first). A session

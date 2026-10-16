@@ -4370,3 +4370,68 @@ remote, and local work (prompts, agent sessions, commits not yet pushed).
   profile.
 - **An `activity` verb for consent changes.** None is written; adding one is an
   `activity` rebuild and a three-owner change (CLAUDE.md §4.4).
+
+## D-080 — A one-time look-back of a year of pushed commits, and automated sessions never count.
+
+**2026-10-16, the owner, directly** (through the orchestrator; LAI-757 builds
+it in `plugin/`, `cli/`, `server/` and here). The owner turned local activity
+on (D-079) and found two things wrong. Claude Code sessions that Omnigent
+launches on the same machine, under the owner's account, would count as the
+owner's prompts and sessions. And pushed commits counted only from the moment
+sharing was switched on, so the GitHub row started empty where the owner
+wanted a GitHub-like twelve months.
+
+### Decided
+
+1. **This replaces D-079's "pushed commits only from opt-in"** (LAI-752's
+   review item 6) with a one-time look-back of up to 365 days of the
+   developer's own pushed commits. Unpushed work is still counted only from
+   the moment sharing was turned on.
+2. **Counts and one-way keys only, as before.** The look-back sends the same
+   keys per day as a snapshot — never commit ids, messages, paths, repo names,
+   remote URLs or emails — in a report marked `lookback` on the same `PUT
+   /me/local-activity` (SPEC §6.4). It writes no snapshot row and only adds
+   keys, which are a set: sent twice, it changes nothing.
+3. **The developer triggers it.** Either `laika activity backfill`, which
+   prints what it found (commits, days, per month) and asks before sending, or
+   the first agent session in a repo after they turned sharing on, whose
+   look-back runs once, in the background sync after the snapshot — never on
+   the prompt path. It is recorded per repo and never repeats.
+4. **Whose commits.** The same rule as the snapshot: the repo's
+   `git config user.email` and any `laika activity emails`, the email recorded
+   in the commit (a `.mailmap` cannot make a commit someone's), no merges.
+   **Commits made under the developer's git identity count even if an agent
+   typed them — git cannot tell who did.** The look-back says so before it
+   asks.
+5. **Never counted twice.** A commit a snapshot can count — authored after
+   sharing went on, on a day no earlier than the first one that repo's
+   snapshots covered — is left to the snapshot, so a commit counted as local
+   and pushed later is never also a look-back key.
+6. **The server takes keys back to retention.** A look-back report may carry
+   days back to today − 400 in the sender's zone (§11.6's 400 days); older is
+   `422 day_out_of_range`, the snapshot's shape, with `earliest` the oldest day
+   accepted. The body limit stays 16 KB for both kinds, and both draw on the
+   same report bucket; the collector sends at most four look-back reports in a
+   run and paces itself so that look-back and snapshots together never ask its
+   token for more than the bucket refills.
+   A full 16 KB look-back report measured p95 11 ms against a table of 204,000
+   keys, within the ingest's 20 ms; a 32 KB one was at 20 ms, which is why the
+   limit did not grow.
+7. **Automated sessions never count.** The activity hook does nothing at all —
+   no event, no repo, no sync — when `OMNIGENT=1` (Omnigent sets it in every
+   process it launches), `CI` is set, or `LAIKA_ACTIVITY_SKIP` is set.
+8. **Off still removes everything.** `laika activity off` deletes everything
+   kept on the machine, look-back records included; *Delete my local-activity
+   history* deletes everything the board holds, look-back keys included. After
+   that delete the machine's records still say each repo was looked back over,
+   so the look-back does not run again by itself; `laika activity backfill`
+   sends it again.
+
+### What this does not decide
+
+- **A commit pushed only after its day left every snapshot window** stays
+  counted as local, as under D-079: the look-back leaves it to the snapshots,
+  which can no longer see it. Moving it would need the collector to rewrite a
+  snapshot day it no longer reports.
+- **Another machine's history.** Each machine looks back over the repos it
+  knows; the same commit from two machines is one key.

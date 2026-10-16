@@ -108,7 +108,7 @@ and how to set them, and it never prints your token.
 | --- | --- |
 | MCP tools — **eighteen**, §7.1 | ✅ served at `${LAIKA_URL}/mcp` |
 | Heartbeat hooks | ✅ LAI-418 — `SessionStart`, `Stop`, throttled `PostToolUse` (per session, 90 s — LAI-752) |
-| Local activity hooks | ✅ LAI-752 — `scripts/laika-activity-hook`, installed by `laika activity on` |
+| Local activity hooks | ✅ LAI-752 — `scripts/laika-activity-hook`, installed by `laika activity on`; automated sessions skipped (LAI-757) |
 | `laika init` | ✅ LAI-422 — writes both variables to `~/.claude/settings.json` |
 | `/laika:status` | ✅ |
 | `/laika:setup`, `/laika:tasks`, `/laika:standup` | LAI-420 |
@@ -158,6 +158,11 @@ What it never does:
 - **Count Devin CLI as Claude Code.** Devin CLI also runs the hooks in
   `~/.claude/settings.json`; it sets `DEVIN_PROJECT_DIR`, and the hook counts
   nothing for `claude-code` when that is set.
+- **Count a session nobody is typing in** (LAI-757, D-080). With `OMNIGENT=1`
+  (Omnigent sets it in every process it launches), a non-empty `CI` or a
+  non-empty `LAIKA_ACTIVITY_SKIP`, every mode drains stdin and exits before
+  reading `state.json`: no event, no repo, no sync. Under zsh that path, like
+  the prompt path, needs no external command.
 
 `~/.laika/activity` is 0700 and its files 0600. Repo paths, the event log and
 extra emails stay there; only per-day counts and one-way commit keys are sent.
