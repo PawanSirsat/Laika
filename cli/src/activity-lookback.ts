@@ -34,9 +34,12 @@ import {
  * - `repos` — per repo, keyed by its common git dir: when the collector first
  *   saw it (so the census knows which days a snapshot may have counted there)
  *   and when its look-back finished (so it never runs again).
- * - `job` — the look-back under way: which repos, how many days, and the last
- *   day whose keys the board has accepted. A run that stops early — out of
- *   reports, out of time, refused — leaves it for the next sync.
+ * - `job` — the look-back under way: which repos, how many days, the last
+ *   day whose keys the board has accepted, and — once counted — the census
+ *   itself (one-way keys per day), so a look-back chunked over several syncs
+ *   reads git once. A run that stops early — out of reports, out of time,
+ *   refused — leaves it for the next sync. A commit pushed after the count is
+ *   not in it; the look-back after a later `backfill` would be.
  * - `next_at` — when the next look-back report may go (below), or the next
  *   try after git could not read a repo (`failures`, doubling like a sync's
  *   backoff).
@@ -74,6 +77,32 @@ export interface LookbackJob {
   /** The last day whose keys were all accepted; `''` before the first report. */
   readonly through: string;
   readonly origin: 'auto' | 'command';
+  /** The census, once counted: what the job sends, without asking git again. */
+  readonly census?: StoredCensus;
+}
+
+interface StoredCensus {
+  readonly byDay: Readonly<Record<string, readonly string[]>>;
+  readonly gitDirs: readonly string[];
+  readonly unread: readonly string[];
+}
+
+const strings = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((v) => typeof v === 'string');
+
+/** A stored census as read back, or `undefined` for anything else (then git is asked again). */
+function storedCensus(value: unknown): StoredCensus | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const c = value as Record<string, unknown>;
+  if (!strings(c.gitDirs) || !strings(c.unread)) return undefined;
+  if (typeof c.byDay !== 'object' || c.byDay === null) return undefined;
+  const byDay: Record<string, string[]> = {};
+  for (const [day, keys] of Object.entries(c.byDay)) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !strings(keys)) return undefined;
+    if (!keys.every((k) => /^[0-9a-f]{16}$/.test(k))) return undefined;
+    byDay[day] = keys;
+  }
+  return { byDay, gitDirs: c.gitDirs, unread: c.unread };
 }
 
 export interface LookbackFile {
@@ -106,16 +135,22 @@ export function readLookback(paths: ActivityPaths): LookbackFile | undefined {
         ...(typeof rec.declined_at === 'number' ? { declined_at: rec.declined_at } : {}),
       };
     }
-    const job = parsed.job;
-    const validJob =
-      job !== undefined &&
-      Array.isArray(job.paths) &&
-      typeof job.days === 'number' &&
-      typeof job.through === 'string';
+    const rawJob = parsed.job;
+    let job: LookbackJob | undefined;
+    if (
+      rawJob !== undefined &&
+      Array.isArray(rawJob.paths) &&
+      typeof rawJob.days === 'number' &&
+      typeof rawJob.through === 'string'
+    ) {
+      const { census: rawCensus, ...rest } = rawJob;
+      const census = storedCensus(rawCensus);
+      job = { ...rest, ...(census === undefined ? {} : { census }) };
+    }
     return {
       counting_since: typeof parsed.counting_since === 'number' ? parsed.counting_since : 0,
       repos,
-      ...(validJob ? { job } : {}),
+      ...(job === undefined ? {} : { job }),
       next_at: typeof parsed.next_at === 'number' ? parsed.next_at : 0,
       ...(typeof parsed.failures === 'number' ? { failures: parsed.failures } : {}),
     };
@@ -393,7 +428,17 @@ export async function lookbackStep(ctx: LookbackContext, plan?: Plan): Promise<L
     ctx.signal?.aborted === true || (ctx.stopAt !== undefined && Date.now() > ctx.stopAt);
 
   let file = readLookback(paths);
-  let job = plan?.job ?? file?.job;
+  let job =
+    plan === undefined
+      ? file?.job
+      : {
+          ...plan.job,
+          census: {
+            byDay: Object.fromEntries(plan.census.byDay),
+            gitDirs: plan.census.gitDirs,
+            unread: plan.census.unread,
+          },
+        };
   if (job === undefined) {
     const noted = await noteKnownRepos({ ...ctx, file });
     file = noted.file;
@@ -418,8 +463,33 @@ export async function lookbackStep(ctx: LookbackContext, plan?: Plan): Promise<L
   if (nowS < current.next_at) return { kind: 'waiting', nextAt: current.next_at };
   if (stopped()) return { kind: 'stopped' };
 
-  const census = plan?.census ?? (await censusFor(ctx, current, job));
+  // Counted once per job: a look-back chunked over several syncs reads git
+  // for the year once, which is what made it slow on a slow machine.
+  const stored = job.census;
+  const census: Census =
+    stored === undefined
+      ? await censusFor(ctx, current, job)
+      : {
+          byDay: new Map(Object.entries(stored.byDay).map(([d, k]) => [d, [...k]])),
+          commits: Object.values(stored.byDay).reduce((n, k) => n + k.length, 0),
+          gitDirs: stored.gitDirs,
+          unread: stored.unread,
+        };
   if (stopped()) return { kind: 'stopped' };
+  if (stored === undefined) {
+    job = {
+      ...job,
+      census: {
+        byDay: Object.fromEntries(census.byDay),
+        gitDirs: census.gitDirs,
+        unread: census.unread,
+      },
+    };
+    current = { ...current, job };
+    save();
+  }
+  // Only a census counted in this run says anything new about git.
+  const counted = stored === undefined || plan !== undefined;
   const reports = lookbackReports({
     collectorId: ctx.collectorId,
     tz: ctx.tz,
@@ -467,7 +537,7 @@ export async function lookbackStep(ctx: LookbackContext, plan?: Plan): Promise<L
   }
 
   const unread = new Set(census.unread);
-  if (unread.size > 0) {
+  if (counted && unread.size > 0) {
     // Git could not read some repo: it stays due, and the next try waits as a
     // failed sync would — the interval, doubling, at most 6 hours.
     const failures = (current.failures ?? 0) + 1;
@@ -481,7 +551,7 @@ export async function lookbackStep(ctx: LookbackContext, plan?: Plan): Promise<L
       `look-back: git could not read ${String(unread.size)} ${unread.size === 1 ? 'repo' : 'repos'}; tried again after the backoff`,
     );
     current = { ...current, failures, next_at: Math.max(current.next_at, nowS + wait) };
-  } else if (current.failures !== undefined) {
+  } else if (counted && current.failures !== undefined) {
     const { failures: _reset, ...rest } = current;
     current = rest;
   }
