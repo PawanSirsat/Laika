@@ -37,7 +37,9 @@ import {
  * - `job` — the look-back under way: which repos, how many days, and the last
  *   day whose keys the board has accepted. A run that stops early — out of
  *   reports, out of time, refused — leaves it for the next sync.
- * - `next_at` — when the next look-back report may go (below).
+ * - `next_at` — when the next look-back report may go (below), or the next
+ *   try after git could not read a repo (`failures`, doubling like a sync's
+ *   backoff).
  * - `counting_since` — the first `since` this machine counted from.
  *
  * ## The board's report bucket is never spent
@@ -58,6 +60,12 @@ export const REPORT_REFILL_S = 120;
 export interface RepoRecord {
   readonly first_seen: number;
   readonly done_at?: number;
+  /**
+   * When the developer answered no to `laika activity backfill` for this repo.
+   * The automatic look-back skips it; a `backfill` answered yes sends it, and
+   * one over the full year, once finished, clears this.
+   */
+  readonly declined_at?: number;
 }
 
 export interface LookbackJob {
@@ -73,7 +81,12 @@ export interface LookbackFile {
   readonly repos: Readonly<Record<string, RepoRecord>>;
   readonly job?: LookbackJob;
   readonly next_at: number;
+  /** Look-backs in a row in which git could not read a repo. */
+  readonly failures?: number;
 }
+
+/** Git could not read a repo: try again after this, doubling, as a sync backs off. */
+const MAX_LOOKBACK_BACKOFF_S = 6 * 3600;
 
 export function lookbackFile(paths: ActivityPaths): string {
   return join(paths.dir, 'lookback.json');
@@ -90,6 +103,7 @@ export function readLookback(paths: ActivityPaths): LookbackFile | undefined {
       repos[dir] = {
         first_seen: rec.first_seen,
         ...(typeof rec.done_at === 'number' ? { done_at: rec.done_at } : {}),
+        ...(typeof rec.declined_at === 'number' ? { declined_at: rec.declined_at } : {}),
       };
     }
     const job = parsed.job;
@@ -103,6 +117,7 @@ export function readLookback(paths: ActivityPaths): LookbackFile | undefined {
       repos,
       ...(validJob ? { job } : {}),
       next_at: typeof parsed.next_at === 'number' ? parsed.next_at : 0,
+      ...(typeof parsed.failures === 'number' ? { failures: parsed.failures } : {}),
     };
   } catch {
     return undefined;
@@ -243,9 +258,9 @@ async function noteKnownRepos(options: {
   }
   return {
     file: {
+      ...options.file,
       counting_since: options.file?.counting_since ?? state.since,
       repos,
-      ...(options.file?.job === undefined ? {} : { job: options.file.job }),
       next_at: options.file?.next_at ?? 0,
     },
     known,
@@ -276,6 +291,8 @@ export type LookbackOutcome =
       readonly reports: number;
       readonly keys: number;
       readonly finished: boolean;
+      /** Repos git could not read this time: left due, tried again later. */
+      readonly unread: number;
     }
   | { readonly kind: 'rate-limited'; readonly nextAt: number }
   | { readonly kind: 'off' }
@@ -329,6 +346,22 @@ export async function planBackfill(
   return { job, census, given: extra.length };
 }
 
+/**
+ * The developer answered no to `backfill`: every repo in the plan is marked
+ * declined — given paths too, so a session started there later does not send
+ * them either — and any look-back under way stops. Sends nothing.
+ */
+export function declineBackfill(paths: ActivityPaths, plan: Plan, nowS: number): void {
+  const file = readLookback(paths);
+  if (file === undefined) return;
+  const repos: Record<string, RepoRecord> = { ...file.repos };
+  for (const gitDir of plan.census.gitDirs) {
+    repos[gitDir] = { first_seen: repos[gitDir]?.first_seen ?? nowS, declined_at: nowS };
+  }
+  const { job: _dropped, ...rest } = file;
+  writeLookback(paths, { ...rest, repos });
+}
+
 type Census = LookbackCensus & { readonly gitDirs: readonly string[] };
 
 async function censusFor(
@@ -364,7 +397,10 @@ export async function lookbackStep(ctx: LookbackContext, plan?: Plan): Promise<L
   if (job === undefined) {
     const noted = await noteKnownRepos({ ...ctx, file });
     file = noted.file;
-    const due = noted.known.filter((k) => file?.repos[k.gitDir]?.done_at === undefined);
+    const due = noted.known.filter((k) => {
+      const record = file?.repos[k.gitDir];
+      return record?.done_at === undefined && record?.declined_at === undefined;
+    });
     if (due.length > 0) {
       job = { paths: due.map((k) => k.path), days: LOOKBACK_DAYS_MAX, through: '', origin: 'auto' };
     }
@@ -430,6 +466,27 @@ export async function lookbackStep(ctx: LookbackContext, plan?: Plan): Promise<L
     save();
   }
 
+  const unread = new Set(census.unread);
+  if (unread.size > 0) {
+    // Git could not read some repo: it stays due, and the next try waits as a
+    // failed sync would — the interval, doubling, at most 6 hours.
+    const failures = (current.failures ?? 0) + 1;
+    const wait = Math.min(
+      ctx.state.min_sync_interval_s * 2 ** (failures - 1),
+      MAX_LOOKBACK_BACKOFF_S,
+    );
+    recordError(
+      paths,
+      nowS,
+      `look-back: git could not read ${String(unread.size)} ${unread.size === 1 ? 'repo' : 'repos'}; tried again after the backoff`,
+    );
+    current = { ...current, failures, next_at: Math.max(current.next_at, nowS + wait) };
+  } else if (current.failures !== undefined) {
+    const { failures: _reset, ...rest } = current;
+    current = rest;
+  }
+  save();
+
   const finished = sent === reports.length;
   if (finished) {
     const repos: Record<string, RepoRecord> = { ...current.repos };
@@ -440,11 +497,17 @@ export async function lookbackStep(ctx: LookbackContext, plan?: Plan): Promise<L
     if (job.days >= LOOKBACK_DAYS_MAX) {
       for (const gitDir of census.gitDirs) {
         const record = repos[gitDir];
-        if (record !== undefined) repos[gitDir] = { first_seen: record.first_seen, done_at: nowS };
+        // Written without `declined_at`: a full year answered yes takes back
+        // an earlier no. A narrower one is never marked done, so a repo
+        // declined before stays out of the automatic look-back.
+        if (record !== undefined && !unread.has(gitDir)) {
+          repos[gitDir] = { first_seen: record.first_seen, done_at: nowS };
+        }
       }
     }
-    current = { counting_since: current.counting_since, repos, next_at: current.next_at };
+    const { job: _finished, ...rest } = current;
+    current = { ...rest, repos };
     save();
   }
-  return { kind: 'sent', reports: sent, keys, finished };
+  return { kind: 'sent', reports: sent, keys, finished, unread: unread.size };
 }

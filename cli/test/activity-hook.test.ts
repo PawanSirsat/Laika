@@ -474,7 +474,7 @@ void describe('cost of the prompt path', () => {
   );
 
   void test(
-    'under zsh a skipped session needs no external command: empty PATH, stdin still drained',
+    'under zsh a skipped session drains stdin with builtins: with an empty PATH it is still drained',
     { skip: ZSH === undefined },
     () => {
       for (const env of AUTOMATED) {
@@ -490,6 +490,49 @@ void describe('cost of the prompt path', () => {
           assert.equal(r.error, undefined, 'stdin was not drained');
         }
         assert.deepEqual(events(h), []);
+      }
+    },
+  );
+
+  /**
+   * What an empty PATH cannot show: a command the skip path tried to run and
+   * failed to find changes nothing visible there. So every command the hook
+   * calls by name is a stub on PATH that logs its own name, and a skipped
+   * session must log none. The positive control — the same probe, no marker —
+   * must log git. (A command run by absolute path would not be seen by this.)
+   */
+  void test(
+    'under zsh a skipped session runs no external command: stubs for every one it can call stay silent',
+    { skip: ZSH === undefined },
+    () => {
+      const stubs = dir('laika-stubs-');
+      const calls = join(stubs, 'calls.log');
+      for (const name of ['date', 'cat', 'git', 'awk', 'mv', 'rm', 'nohup', 'dirname']) {
+        writeFileSync(join(stubs, name), `#!/bin/sh\necho ${name} >> '${calls}'\n`);
+        chmodSync(join(stubs, name), 0o755);
+      }
+      const repoDir = gitRepo();
+      const probe = (env: Record<string, string>): string => {
+        rmSync(calls, { force: true });
+        const h = home(ON(0));
+        for (const mode of ['prompt', 'session-start', 'session-end']) {
+          const r = run(shell, [mode, 'codex'], {
+            home: h,
+            cwd: repoDir,
+            env: { ...env, PATH: stubs },
+          });
+          assert.equal(r.code, 0);
+          assert.equal(r.stdout + r.stderr, '');
+        }
+        return textOf(calls);
+      };
+      assert.match(
+        probe({}),
+        /\bgit\b/,
+        'the probe saw nothing even unskipped — it proves nothing',
+      );
+      for (const env of AUTOMATED) {
+        assert.equal(probe(env), '', `${JSON.stringify(env)} ran a command`);
       }
     },
   );

@@ -291,6 +291,74 @@ void describe('laika activity backfill', () => {
     assert.equal(keysIn(w.lookbacks()).length, 4);
   });
 
+  void test('answered N, nothing is sent — not now, and not by a later sync either', async () => {
+    const w = await world();
+    history(w);
+    w.answers.push('n');
+    assert.equal(await w.run('backfill'), 0);
+    assert.deepEqual(w.lookbacks(), []);
+    // The review's case: an hour later a background sync sent the declined commits.
+    w.advance(3600);
+    const outcome = await sync(w.ctx);
+    assert.equal(outcome.kind, 'sent');
+    assert.deepEqual(w.lookbacks(), [], 'a sync sent what was declined');
+    assert.equal(outcome.kind === 'sent' ? outcome.lookback : undefined, undefined);
+    w.advance(DAY);
+    await sync(w.ctx);
+    assert.deepEqual(w.lookbacks(), [], 'a later sync sent what was declined');
+    assert.match(
+      w.out.join('\n'),
+      /The automatic look-back will not send these either; run `laika activity backfill` again to send them\./,
+    );
+  });
+
+  void test('declined, then `backfill --yes`, sends — and the repo is done', async () => {
+    const w = await world();
+    const h = history(w);
+    w.answers.push('n');
+    assert.equal(await w.run('backfill'), 0);
+    w.advance(3600);
+    assert.equal(await w.run('backfill', '--yes'), 0, w.err.join('\n'));
+    assert.deepEqual(
+      keysIn(w.lookbacks()).sort(),
+      [h.year, h.month, h.beforeOn, h.sideTip].map(pushedKey).sort(),
+    );
+    w.out.length = 0;
+    assert.equal(await w.run('status'), 0);
+    assert.match(w.out.join('\n'), /Look-back\s+done for 1 repo\b/);
+  });
+
+  void test('declined, then a narrower `backfill --yes`, sends that window and no more', async () => {
+    const w = await world();
+    const h = history(w);
+    w.answers.push('n');
+    assert.equal(await w.run('backfill'), 0);
+    assert.equal(await w.run('backfill', '--days', '45', '--yes'), 0, w.err.join('\n'));
+    assert.deepEqual(keysIn(w.lookbacks()).sort(), [h.month, h.beforeOn].map(pushedKey).sort());
+    w.advance(3600);
+    await sync(w.ctx);
+    assert.deepEqual(
+      keysIn(w.lookbacks()).sort(),
+      [h.month, h.beforeOn].map(pushedKey).sort(),
+      'the automatic look-back sent the year that was declined',
+    );
+  });
+
+  void test('a decline stops a look-back still under way', async () => {
+    const w = await world();
+    history(w);
+    assert.equal(await w.run('backfill', '--yes'), 0);
+    // Straight after: paced, so this one is left as a job for the next sync.
+    assert.equal(await w.run('backfill', '--yes'), 0);
+    assert.match(w.out.join('\n'), /goes with the next sync/);
+    const sent = w.lookbacks().length;
+    w.answers.push('n');
+    assert.equal(await w.run('backfill'), 0);
+    w.advance(3600);
+    await sync(w.ctx);
+    assert.equal(w.lookbacks().length, sent, 'the job under way was sent after the no');
+  });
+
   void test('--days narrows the window; 0, 366 and junk are refused', async () => {
     const w = await world();
     const h = history(w);
@@ -528,6 +596,56 @@ void describe('the automatic look-back', () => {
       );
     },
   );
+
+  void test('a git failure in the look-back leaves the repo due, says so, and is retried after the backoff', async () => {
+    const w = await world();
+    const h = history(w);
+    const real = gitRunner(w.env);
+    let broken = true;
+    let lookbackLogs = 0;
+    // The look-back's log asks git for a year; the snapshot's for 45 days.
+    const flaky: typeof real = (cwd, args) => {
+      const since = args.find((a) => a.startsWith('--since=@'));
+      if (since !== undefined && Number(since.slice(9)) < w.nowS() - 60 * DAY) {
+        lookbackLogs += 1;
+        if (broken) return Promise.resolve(undefined);
+      }
+      return real(cwd, args);
+    };
+    const ctx = { ...w.ctx, git: flaky };
+    assert.equal((await sync(ctx)).kind, 'sent');
+    assert.equal(lookbackLogs, 1);
+    assert.deepEqual(w.lookbacks(), []);
+    assert.match(readFileSync(w.paths.lastError, 'utf8'), /look-back/);
+    const recorded = Object.values(
+      (
+        JSON.parse(readFileSync(join(w.paths.dir, 'lookback.json'), 'utf8')) as {
+          repos: Record<string, { done_at?: number }>;
+        }
+      ).repos,
+    );
+    assert.ok(recorded.length > 0 && recorded.every((r) => r.done_at === undefined), 'marked done');
+
+    // Failing again doubles the wait, as a sync's backoff does: 600 s, then 1200 s.
+    w.advance(600);
+    await sync(ctx);
+    assert.equal(lookbackLogs, 2);
+    w.advance(600);
+    await sync(ctx);
+    assert.equal(lookbackLogs, 2, 'retried before the backoff');
+
+    broken = false;
+    w.advance(600);
+    await sync(ctx);
+    assert.equal(lookbackLogs, 3);
+    assert.deepEqual(
+      keysIn(w.lookbacks()).sort(),
+      [h.year, h.month, h.beforeOn, h.sideTip].map(pushedKey).sort(),
+    );
+    w.advance(600);
+    await sync(ctx);
+    assert.equal(lookbackLogs, 3, 'done, and yet looked back again');
+  });
 
   void test('a backfill run straight after another waits for the bucket instead of spending it', async () => {
     const w = await world();

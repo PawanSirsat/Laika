@@ -4396,7 +4396,9 @@ wanted a GitHub-like twelve months.
    prints what it found (commits, days, per month) and asks before sending, or
    the first agent session in a repo after they turned sharing on, whose
    look-back runs once, in the background sync after the snapshot — never on
-   the prompt path. It is recorded per repo and never repeats.
+   the prompt path. It is recorded per repo and never repeats. **A no to
+   `backfill` is a no for the automatic look-back too**: those repos are
+   recorded as declined and only a later `backfill` answered yes sends them.
 4. **Whose commits.** The same rule as the snapshot: the repo's
    `git config user.email` and any `laika activity emails`, the email recorded
    in the commit (a `.mailmap` cannot make a commit someone's), no merges.

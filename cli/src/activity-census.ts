@@ -551,6 +551,12 @@ export interface LookbackCensus {
   readonly byDay: Map<string, string[]>;
   /** How many keys `byDay` holds. */
   readonly commits: number;
+  /**
+   * Common git dirs whose log git did not give — an error, a timeout, an
+   * abort. Their commits are missing from `byDay`, so their look-back is not
+   * finished.
+   */
+  readonly unread: readonly string[];
 }
 
 /**
@@ -589,6 +595,7 @@ export async function countLookback(options: {
   const seenGitDirs = new Set<string>();
   const picked = new Map<string, Commit>();
   const snapshots = new Set<string>();
+  const unread: string[] = [];
 
   for (const repo of options.repos) {
     const gitDir = await commonGitDir(git, repo.path);
@@ -601,6 +608,11 @@ export async function countLookback(options: {
     if (mine.size === 0) continue;
 
     const onRemotes = await git(repo.path, ['log', '--remotes', ...common, wideSince, LOG_FORMAT]);
+    // A repo with no remote answers an empty log; no answer at all is a failure.
+    if (onRemotes === undefined) {
+      unread.push(gitDir);
+      continue;
+    }
     for (const c of parseLog(onRemotes)) {
       if (!mine.has(c.email)) continue;
       const day = localDay(c.at, tz);
@@ -625,7 +637,7 @@ export async function countLookback(options: {
     byDay.set(day, [...(byDay.get(day) ?? []), pushedKey(c.sha)]);
     commits += 1;
   }
-  return { byDay, commits };
+  return { byDay, commits, unread };
 }
 
 /* -------------------------------------------------------------------------- */

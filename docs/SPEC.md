@@ -1466,9 +1466,12 @@ reaches SSE, an MCP tool or an export (§4.21).
   before sending unless `--yes`, and sends it in look-back reports of at most
   16 KB, at most four a run, paced so that it and the snapshots never ask the
   collector's token for more than the bucket refills; what does not fit goes
-  with the next syncs. A background sync runs the
-  look-back once for each repository it sees for the first time, after the
-  snapshot and inside the same lock and 2-minute limit. **Sessions nobody is
+  with the next syncs. Answered no, it records those repositories as declined
+  and the automatic look-back skips them; a later `backfill` answered yes sends
+  them. A background sync runs the look-back once for each repository it
+  sees for the first time and has not been declined, after the snapshot and
+  inside the same lock and 2-minute limit; a repository git cannot read stays
+  due and is tried again after a backoff. **Sessions nobody is
   typing in count nothing**: the activity hook does nothing at all when
   `OMNIGENT=1`, `CI` or `LAIKA_ACTIVITY_SKIP` is set (D-080).
 - `GET /me/local-activity?days=` (1–14, default 14) answers what is held for

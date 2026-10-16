@@ -144,7 +144,10 @@ last 365 days (`--days N` for fewer), by the same rules as above, as the same
 one-way keys per day, in reports marked `lookback` (SPEC §6.4). `backfill`
 prints what it found — commits, days, a count per month — and asks before
 sending (`--yes` does not ask); paths given after it are counted too, even if
-no agent session ran there. Commits a snapshot can count are left to it — those
+no agent session ran there. Answer no and the automatic look-back will not send
+those repos either, until a later `backfill` is answered yes. If git cannot read
+a repo, it is not marked done: it is tried again later, backing off as a failed
+sync does. Commits a snapshot can count are left to it — those
 authored after sharing went on, on days the repo's snapshots covered — so a
 commit counted local and pushed later is never counted twice; one pushed only
 after its day left every snapshot stays local, as before. Commits under your

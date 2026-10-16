@@ -18,6 +18,7 @@ import {
   type HookReport,
 } from './activity-hooks.ts';
 import {
+  declineBackfill,
   lookbackStep,
   planBackfill,
   readLookback,
@@ -549,7 +550,11 @@ async function backfill(args: readonly string[], io: ActivityIo): Promise<number
     if (!yes) {
       const answer = ((await io.ask?.(`Send them to ${state.board}? [y/N]`)) ?? '').trim();
       if (!/^y(es)?$/i.test(answer)) {
+        declineBackfill(paths, plan, nowS);
         io.out('Nothing sent.');
+        io.out(
+          'The automatic look-back will not send these either; run `laika activity backfill` again to send them.',
+        );
         return 0;
       }
     }
@@ -585,6 +590,11 @@ async function backfill(args: readonly string[], io: ActivityIo): Promise<number
   switch (outcome.kind) {
     case 'idle':
     case 'sent':
+      if (outcome.kind === 'sent' && outcome.unread > 0) {
+        io.err(
+          `git could not read ${String(outcome.unread)} of the repos; ${outcome.unread === 1 ? 'it is' : 'they are'} tried again at a later sync.`,
+        );
+      }
       if (outcome.kind === 'sent' && !outcome.finished) {
         io.out(
           `Sent ${String(outcome.keys)} commits in ${String(outcome.reports)} reports; the rest goes with the next syncs, a few reports at a time.`,
