@@ -7,7 +7,7 @@ priority: p1
 depends-on: [LAI-751, LAI-752]
 discovered-from:
 started: 2026-10-15T23:58:27Z
-status: review
+status: done
 finished: 2026-10-16T00:36:03Z
 ---
 
@@ -211,3 +211,7 @@ red: the decline recorded, skipped by the automatic job, kept by a narrower
 yes, stopping a job under way; `unread` detected, not marked done, the
 doubling, the error recorded; a `date` call in the hook's skip path caught by
 the stub probe.
+
+## Accepted
+
+2026-10-16 — accepted by chief (polly) on the owner's direct instruction. One review round (Claude): one blocking consent bug (a declined backfill was still sent by the automatic look-back) fixed in a74cd9e with the reviewer's scenario as a red-then-green test; git-failure retry and the hook test wording fixed too. Targeted cli tests 86/86 on dd4548d; builder's full gate TEST 0 / LINT 0 / FMT 0 on the final tree. Board card LAIKA-563.
