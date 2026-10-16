@@ -175,3 +175,39 @@ had never run, which is D-080's behaviour.
   commit counted local in one clone and seen pushed in a different clone not
   in the same census (a later auto job for that clone only) can still be
   counted twice. Recorded here, not in D-080's guarantees.
+
+## Review round 1
+
+One blocking and two small findings, all fixed in `a74cd9ea`; criteria frozen
+and unchanged.
+
+1. **Blocking — a no to `backfill` was not a no.** `planBackfill` recorded the
+   repos without `done_at`, so the next background sync's automatic look-back
+   sent exactly the declined commits. Now a no marks every repo in the plan
+   `declined_at` (paths given by hand too), drops any look-back under way,
+   and prints *"The automatic look-back will not send these either; run
+   `laika activity backfill` again to send them."* The automatic job skips
+   declined repos. A later `backfill` answered yes sends; a full year, once
+   finished, writes the record without the decline. A narrower yes (`--days`
+   under 365) sends its window and leaves the automatic look-back off — the
+   developer never agreed to the year.
+2. **A git failure marked a repo done for good.** `countLookback` now reports
+   repos whose `log --remotes` gave no answer (`unread`; a repo without a
+   remote answers an empty log, exit 0, and is not one). They are not marked
+   done, the error goes to last-error, and the next try waits the interval,
+   doubling, at most 6 h (`failures` in lookback.json, reset on a clean run).
+3. **The hook test claimed more than it proved.** The empty-PATH test is now
+   *"drains stdin with builtins"*. A new test puts stubs for `date`, `cat`,
+   `git`, `awk`, `mv`, `rm`, `nohup` and `dirname` on PATH that log their
+   own name: under zsh each skip marker logs none, and the same probe with no
+   marker logs `git` (positive control). A command run by absolute path is
+   outside what it sees, and the comment says so.
+
+**Red first.** The reviewer's scenario (answer n → no report; an hour later
+`sync()`) was red before the fix with *"a sync sent what was declined"*; the
+git-failure test red (no error recorded, repo marked done). *Declined, then
+`backfill --yes`* passed before and after, as it must. Then 9 of 9 mutations
+red: the decline recorded, skipped by the automatic job, kept by a narrower
+yes, stopping a job under way; `unread` detected, not marked done, the
+doubling, the error recorded; a `date` call in the hook's skip path caught by
+the stub probe.
