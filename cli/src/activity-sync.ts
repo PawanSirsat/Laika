@@ -30,6 +30,7 @@ import {
   type LastResult,
   type Scope,
 } from './activity-store.ts';
+import { lookbackStep, type LookbackOutcome } from './activity-lookback.ts';
 import { readSettings } from './config.ts';
 import { readEnvFile } from './whoami.ts';
 
@@ -60,6 +61,12 @@ export const REQUEST_TIMEOUT_MS = 5_000;
 export const SYNC_DEADLINE_MS = 120_000;
 /** Events older than this are dropped from the log after a successful send. */
 const EVENTS_KEEP_S = 15 * DAY_S;
+/**
+ * The share of the deadline after which no look-back report starts, so a
+ * look-back that is still sending stops on its own rather than being abandoned
+ * by the deadline after its snapshot went.
+ */
+const LOOKBACK_SHARE = 0.75;
 /** Failures back off, doubling from the interval, to at most this. */
 export const MAX_BACKOFF_S = 6 * 3600;
 
@@ -355,7 +362,13 @@ export type SyncOutcome =
   | { readonly kind: 'busy' }
   | { readonly kind: 'not-due'; readonly nextAt: number }
   | { readonly kind: 'off'; readonly recheckAt: number }
-  | { readonly kind: 'sent'; readonly acceptedDays: number; readonly deferredKeys: number }
+  | {
+      readonly kind: 'sent';
+      readonly acceptedDays: number;
+      readonly deferredKeys: number;
+      /** What the look-back did after the snapshot, when there was one to do. */
+      readonly lookback?: LookbackOutcome;
+    }
   | { readonly kind: 'rate-limited'; readonly nextAt: number }
   | { readonly kind: 'refused'; readonly message: string }
   | {
@@ -367,7 +380,7 @@ export type SyncOutcome =
     };
 
 /** Turn collection off locally: what both 403 and a "not enabled" answer mean. */
-function stopCollecting(
+export function stopCollecting(
   paths: ActivityPaths,
   state: ActivityState,
   nowS: number,
@@ -432,6 +445,7 @@ export async function sync(ctx: SyncContext): Promise<SyncOutcome> {
 
   const controller = new AbortController();
   const deadlineMs = ctx.deadlineMs ?? SYNC_DEADLINE_MS;
+  const softStop = Date.now() + deadlineMs * LOOKBACK_SHARE;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<SyncOutcome>((done) => {
     timer = setTimeout(() => {
@@ -446,7 +460,7 @@ export async function sync(ctx: SyncContext): Promise<SyncOutcome> {
     }, deadlineMs);
   });
   try {
-    return await Promise.race([syncLocked(ctx, paths, controller.signal), deadline]);
+    return await Promise.race([syncLocked(ctx, paths, controller.signal, softStop), deadline]);
   } finally {
     clearTimeout(timer);
     release();
@@ -457,6 +471,7 @@ async function syncLocked(
   ctx: SyncContext,
   paths: ActivityPaths,
   signal: AbortSignal,
+  softStop: number,
 ): Promise<SyncOutcome> {
   // Re-read under the lock: another sync may have just finished.
   let state = readState(paths);
@@ -522,6 +537,7 @@ async function syncLocked(
     save(state);
 
     // --- the snapshot ---------------------------------------------------------
+    const git = ctx.git ?? gitRunner(ctx.env, signal);
     const snapshot: Snapshot = await buildSnapshot({
       paths,
       state,
@@ -529,7 +545,7 @@ async function syncLocked(
       tz: ianaTimeZone(ctx.tz),
       nowS,
       extraEmails: readEmails(paths),
-      git: ctx.git ?? gitRunner(ctx.env, signal),
+      git,
     });
     if (signal.aborted) throw new Abandoned();
     writeFile600(paths.repos, snapshot.prunedRepos);
@@ -546,10 +562,31 @@ async function syncLocked(
         next_sync_at: nowS + state.min_sync_interval_s,
         last_result: { at: nowS, outcome: 'sent', accepted_days: answer.value.accepted_days },
       });
+
+      // The look-back (D-080), after the snapshot and inside the same lock and
+      // deadline: a repo seen for the first time, or a look-back under way.
+      const lookback = await lookbackStep({
+        paths,
+        state,
+        collectorId: collectorId(paths),
+        tz: ianaTimeZone(ctx.tz),
+        nowS,
+        extraEmails: readEmails(paths),
+        git,
+        send: (body) => putActivity(creds, body, ctx.nowMs(), signal),
+        signal,
+        stopAt: softStop,
+      });
+      if (signal.aborted) throw new Abandoned();
+      if (lookback.kind === 'off') {
+        save(stopCollecting(paths, state, nowS));
+        return { kind: 'off', recheckAt: nowS + DAY_S };
+      }
       return {
         kind: 'sent',
         acceptedDays: answer.value.accepted_days,
         deferredKeys: snapshot.deferredKeys,
+        ...(lookback.kind === 'idle' ? {} : { lookback }),
       };
     }
 

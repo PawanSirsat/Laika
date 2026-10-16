@@ -529,6 +529,118 @@ export async function countCommits(options: {
 }
 
 /* -------------------------------------------------------------------------- */
+/* The look-back (LAI-757, D-080)                                             */
+/* -------------------------------------------------------------------------- */
+
+/** The most days a look-back covers: today and the 364 before it. */
+export const LOOKBACK_DAYS_MAX = 365;
+
+/** A repo to look back over. */
+export interface LookbackRepo {
+  readonly path: string;
+  /**
+   * The first local day a snapshot may have counted in this repo — the start
+   * of the 14-day window when the collector first saw it — or `undefined` for
+   * a repo no snapshot counts (a path given only to `laika activity backfill`).
+   */
+  readonly snapshotFrom?: string;
+}
+
+export interface LookbackCensus {
+  /** One-way keys per local day, each day's keys oldest first. */
+  readonly byDay: Map<string, string[]>;
+  /** How many keys `byDay` holds. */
+  readonly commits: number;
+  /**
+   * Common git dirs whose log git did not give — an error, a timeout, an
+   * abort. Their commits are missing from `byDay`, so their look-back is not
+   * finished.
+   */
+  readonly unread: readonly string[];
+}
+
+/**
+ * My pushed commits over the last `days` local days, by **author** day, as the
+ * contract's keys — by the same rules as {@link countCommits}: the repo's
+ * `user.email` or an extra email, compared on `%ae` (a `.mailmap` cannot make
+ * a commit mine), no merges, a SHA or an authorship counted once. A key the
+ * board already holds may be sent again: keys are a set there.
+ *
+ * **What a snapshot may count is left to it.** A commit authored at or after
+ * `sinceS` on a day at or after its repo's `snapshotFrom` is the snapshot's:
+ * pushed it is already a snapshot key, and unpushed it is a snapshot's local
+ * commit — which, pushed later, must not also become a look-back key. So the
+ * look-back takes only commits from before counting began, or from days no
+ * snapshot covered in that repo. A commit that is the snapshot's in any repo
+ * is the snapshot's.
+ */
+export async function countLookback(options: {
+  readonly repos: readonly LookbackRepo[];
+  readonly extraEmails: readonly string[];
+  readonly days: number;
+  readonly tz: string;
+  readonly nowS: number;
+  readonly sinceS: number;
+  readonly git: GitRunner;
+}): Promise<LookbackCensus> {
+  const { tz, nowS, sinceS, git } = options;
+  const span = Math.min(Math.max(Math.trunc(options.days), 1), LOOKBACK_DAYS_MAX);
+  const today = localDay(nowS, tz);
+  const first = addDays(today, -(span - 1));
+  // `--since` is the committer date, never earlier than the author's for a
+  // commit made here; the margin keeps a rebased one whose author day is in range.
+  const wideSince = `--since=@${String(nowS - (span + 31) * DAY_S)}`;
+  const common = ['--no-merges', '--no-use-mailmap', '--no-show-signature', '--no-color'];
+
+  const seenGitDirs = new Set<string>();
+  const picked = new Map<string, Commit>();
+  const snapshots = new Set<string>();
+  const unread: string[] = [];
+
+  for (const repo of options.repos) {
+    const gitDir = await commonGitDir(git, repo.path);
+    if (gitDir === undefined || seenGitDirs.has(gitDir)) continue;
+    seenGitDirs.add(gitDir);
+
+    const own = (await git(repo.path, ['config', '--get', 'user.email']))?.trim().toLowerCase();
+    const mine = new Set(options.extraEmails.map((e) => e.toLowerCase()));
+    if (own !== undefined && own !== '') mine.add(own);
+    if (mine.size === 0) continue;
+
+    const onRemotes = await git(repo.path, ['log', '--remotes', ...common, wideSince, LOG_FORMAT]);
+    // A repo with no remote answers an empty log; no answer at all is a failure.
+    if (onRemotes === undefined) {
+      unread.push(gitDir);
+      continue;
+    }
+    for (const c of parseLog(onRemotes)) {
+      if (!mine.has(c.email)) continue;
+      const day = localDay(c.at, tz);
+      if (day < first || day > today) continue;
+      if (c.at >= sinceS && repo.snapshotFrom !== undefined && day >= repo.snapshotFrom) {
+        snapshots.add(c.sha);
+      } else {
+        picked.set(c.sha, c);
+      }
+    }
+  }
+
+  const identities = new Set<string>();
+  const byDay = new Map<string, string[]>();
+  let commits = 0;
+  for (const c of [...picked.values()].sort((a, b) => a.at - b.at)) {
+    if (snapshots.has(c.sha)) continue;
+    const identity = authorIdentity(c.email, c.at);
+    if (identities.has(identity)) continue;
+    identities.add(identity);
+    const day = localDay(c.at, tz);
+    byDay.set(day, [...(byDay.get(day) ?? []), pushedKey(c.sha)]);
+    commits += 1;
+  }
+  return { byDay, commits, unread };
+}
+
+/* -------------------------------------------------------------------------- */
 /* The body                                                                   */
 /* -------------------------------------------------------------------------- */
 

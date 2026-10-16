@@ -423,6 +423,96 @@ describe('PUT /me/local-activity', () => {
       expect((await put(report(), token)).status).toBe(200);
     });
 
+    describe('a look-back report (D-080)', () => {
+      const daysAgo = (n: number) => new Date(Date.now() - n * DAY).toISOString().slice(0, 10);
+      const hex = (i: number) => i.toString(16).padStart(16, '0');
+      const lookback = (days: unknown[], extra: Record<string, unknown> = {}) => ({
+        v: 1,
+        collector_id: COLLECTOR,
+        tz: 'UTC',
+        lookback: true,
+        days,
+        ...extra,
+      });
+
+      it('takes keys on days a year back and writes no snapshot row', async () => {
+        const body = lookback([
+          { day: daysAgo(399), pushed_keys: [hex(1)] },
+          { day: daysAgo(200), pushed_keys: [hex(2), hex(3)] },
+          { day: yesterday(), pushed_keys: [hex(4)] },
+        ]);
+        const token = await mint(bea.cookie);
+        const activityBefore = h.db.select().from(activity).all().length;
+        expect(await ok(put(body, token))).toEqual({ accepted_days: 3 });
+        expect(
+          h.db
+            .select({ day: pushedCommitKeys.day })
+            .from(pushedCommitKeys)
+            .all()
+            .map((r) => r.day)
+            .sort(),
+        ).toEqual([daysAgo(399), daysAgo(200), daysAgo(200), yesterday()].sort());
+        expect(h.db.select().from(localActivityDays).all()).toEqual([]);
+        expect(h.db.select().from(activity).all().length).toBe(activityBefore);
+      });
+
+      it('422s day_out_of_range past retention, with the snapshot’s details', async () => {
+        const res = await put(
+          lookback([{ day: daysAgo(402), pushed_keys: [hex(1)] }]),
+          await mint(bea.cookie),
+        );
+        expect(res.status).toBe(422);
+        const error = await errorOf(res);
+        expect(error.code).toBe('unprocessable');
+        expect(Object.keys(error.details).sort()).toEqual(['day', 'earliest', 'latest', 'reason']);
+        expect(error.details).toMatchObject({ reason: 'day_out_of_range', day: daysAgo(402) });
+        expect(h.db.select().from(pushedCommitKeys).all()).toEqual([]);
+      });
+
+      it('422s a look-back day that carries counts, or no keys, and a snapshot day a month back', async () => {
+        const token = await mint(bea.cookie);
+        const old = daysAgo(30);
+        for (const [name, body] of [
+          ['prompts', lookback([{ day: old, pushed_keys: [hex(1)], prompts: { codex: 1 } }])],
+          ['sessions', lookback([{ day: old, pushed_keys: [hex(1)], sessions: 1 }])],
+          ['commits_local', lookback([{ day: old, pushed_keys: [hex(1)], commits_local: 1 }])],
+          ['no keys', lookback([{ day: old, pushed_keys: [] }])],
+          ['lookback false', lookback([{ day: old, pushed_keys: [hex(1)] }], { lookback: false })],
+          ['a snapshot a month back', report({}, { day: old })],
+        ] as const) {
+          const res = await put(body, token);
+          expect(res.status, name).toBe(422);
+          expect((await errorOf(res)).code, name).toBe('unprocessable');
+        }
+        expect(h.db.select().from(pushedCommitKeys).all()).toEqual([]);
+      });
+
+      it('holds a look-back report to the same 16 KB: the most that fit are taken, one more is 413', async () => {
+        const token = await mint(bea.cookie);
+        const keys: string[] = [];
+        const body = (n: number) =>
+          lookback([
+            { day: daysAgo(100), pushed_keys: Array.from({ length: n }, (_, i) => hex(i)) },
+          ]);
+        while (JSON.stringify(body(keys.length + 1)).length <= 16 * 1024)
+          keys.push(hex(keys.length));
+        expect((await put(body(keys.length), token)).status).toBe(200);
+        expect(h.db.select().from(pushedCommitKeys).all()).toHaveLength(keys.length);
+        const over = await put(body(keys.length + 1), token);
+        expect(over.status).toBe(413);
+        expect((await errorOf(over)).code).toBe('payload_too_large');
+        expect(h.db.select().from(pushedCommitKeys).all()).toHaveLength(keys.length);
+      });
+
+      it('spends the same report budget as a snapshot: 29 + 1 pass, the 31st is 429', async () => {
+        const token = await mint(bea.cookie);
+        for (let i = 0; i < 29; i += 1) expect((await put(report(), token)).status).toBe(200);
+        const body = lookback([{ day: daysAgo(100), pushed_keys: [hex(1)] }]);
+        expect((await put(body, token)).status).toBe(200);
+        expect((await put(body, token)).status).toBe(429);
+      });
+    });
+
     it('does not spend the report budget on the preview or the delete', async () => {
       const token = await mint(bea.cookie);
       for (let i = 0; i < 30; i += 1) await put(report(), token);

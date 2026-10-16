@@ -306,12 +306,20 @@ void describe('the board says no', () => {
     w.board.put = { kind: 'ok' };
     w.advance(1);
     assert.equal((await sync(w.ctx)).kind, 'sent');
-    const after24 = w.board.requests.slice(before).map((r) => r.method);
-    assert.deepEqual(after24, ['GET', 'PUT']);
+    const after24 = w.board.requests.slice(before);
+    // The switch, the snapshot, and then (D-080, LAI-757) the look-back of the
+    // repo, which this machine has never looked back over.
+    assert.deepEqual(
+      after24.map((r) => `${r.method}${r.body.includes('"lookback":true') ? ' lookback' : ''}`),
+      ['GET', 'PUT', 'PUT lookback'],
+    );
     const resumed = readState(w.paths);
     assert.equal(resumed?.collect, true);
     assert.equal(resumed?.since, w.nowS(), 'counting must restart from now');
-    const second = w.puts().at(-1);
+    const second = w
+      .puts()
+      .filter((p) => !('lookback' in p))
+      .at(-1);
     assert.notEqual(
       second?.collector_id,
       firstId,

@@ -30,7 +30,15 @@
 # that `laika activity sync` rewrites from GET /api/v1/me/activity-sharing —
 # says `"collect":true`. Read with the `read` builtin: no fork.
 #
-# Owned by SHELL (plugin/). LAI-752.
+# ## Sessions nobody is typing in (LAI-757, D-080)
+#
+# A session started with `OMNIGENT=1` (Omnigent sets it in every process it
+# launches), a non-empty `CI`, or a non-empty `LAIKA_ACTIVITY_SKIP` is not the
+# developer's, and every mode is a no-op for it: stdin is drained and the hook
+# exits before state.json is read — no event, no repo, no sync. Under zsh the
+# check, like the drain before it, is builtins only.
+#
+# Owned by SHELL (plugin/). LAI-752, LAI-757.
 
 exec >/dev/null 2>&1
 unset USER_PROMPT
@@ -40,13 +48,10 @@ MODE="${1:-}"
 AGENT="${2:-}"
 case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
 
-DIR="$HOME/.laika/activity"
-STATE=''
-IFS= read -r STATE <"$DIR/state.json"
-
 # --- drain stdin, and the time ------------------------------------------------
-# A terminal on stdin means somebody ran this by hand: there is nothing to
-# drain, and reading would wait for them.
+# First, whatever happens next: an agent writing the prompt to a hook that
+# exited unread would get EPIPE. A terminal on stdin means somebody ran this
+# by hand: there is nothing to drain, and reading would wait for them.
 NOW=''
 if [ -n "${ZSH_VERSION:-}" ] && zmodload zsh/datetime zsh/system; then
   # -o 1 writes what was read to fd 1, which is /dev/null: nothing is stored.
@@ -56,7 +61,17 @@ else
   [ -t 0 ] || cat >/dev/null
   NOW="${EPOCHSECONDS:-}"
 fi
+
+# --- an automated session: nothing at all --------------------------------------
+if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
+  exit 0
+fi
+
 case "$NOW" in '' | *[!0-9]*) NOW="$(date +%s)" ;; esac
+
+DIR="$HOME/.laika/activity"
+STATE=''
+IFS= read -r STATE <"$DIR/state.json"
 
 # Devin CLI reads ~/.claude/settings.json hooks by default and sets
 # DEVIN_PROJECT_DIR (docs.devin.ai/cli/extensibility/hooks/overview). Its

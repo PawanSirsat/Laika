@@ -3,7 +3,12 @@ import { accessSync, constants, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
-import { machineTimeZone, type GitRunner } from './activity-census.ts';
+import {
+  gitRunner,
+  LOOKBACK_DAYS_MAX,
+  machineTimeZone,
+  type GitRunner,
+} from './activity-census.ts';
 import {
   HOOK_AGENTS,
   configuredAgents,
@@ -13,23 +18,39 @@ import {
   type HookReport,
 } from './activity-hooks.ts';
 import {
+  declineBackfill,
+  lookbackStep,
+  planBackfill,
+  readLookback,
+  type LookbackOutcome,
+  type Plan,
+} from './activity-lookback.ts';
+import {
+  acquireLock,
   activityPaths,
+  collectorId,
   ensureDir,
   readEmails,
   readState,
   readText,
   writeEmails,
+  writeState,
 } from './activity-store.ts';
 import {
+  credentialsFor,
   findCredentials,
   getSharing,
   currentSharing,
   previewSnapshot,
+  putActivity,
   startCollecting,
+  stopCollecting,
   sync,
+  SYNC_DEADLINE_MS,
   type SyncContext,
   type SyncOutcome,
 } from './activity-sync.ts';
+import { ask as askConsole, closePrompt } from './prompt.ts';
 
 /**
  * `laika activity on|off|status|sync|emails` (LAI-752, D-079).
@@ -62,6 +83,8 @@ export interface ActivityIo {
   readonly git?: GitRunner;
   /** Overrides the sync's overall deadline — for tests. */
   readonly deadlineMs?: number;
+  /** Ask a yes/no question and return the answer as typed (`backfill`). */
+  readonly ask?: (question: string) => Promise<string>;
 }
 
 export const HOOK_SCRIPT = fileURLToPath(
@@ -88,6 +111,13 @@ const CONSOLE: ActivityIo = {
   hookScript: HOOK_SCRIPT,
   hookShell: hookShell(),
   exit: (code) => process.exit(code),
+  ask: async (question) => {
+    try {
+      return await askConsole(question);
+    } finally {
+      closePrompt();
+    }
+  },
   spawnDetached: (args) => {
     // `detached` is setsid(2): a new session, so a Ctrl-C or a hook timeout
     // aimed at the agent's process group cannot reach the sync.
@@ -101,12 +131,21 @@ const CONSOLE: ActivityIo = {
   },
 };
 
+/**
+ * What the hook skips (LAI-757, D-080), in the words `on` and `status` print.
+ * The rule itself is in `plugin/scripts/laika-activity-hook`.
+ */
+export const SKIP_RULE =
+  'agent sessions run with OMNIGENT=1 (Omnigent’s), a non-empty CI or a non-empty LAIKA_ACTIVITY_SKIP count nothing';
+
 const USAGE = [
   'Usage:',
   '  laika activity on [--agent id] check sharing is on, then install the counting hooks',
   '  laika activity off             remove the hooks and delete ~/.laika/activity',
   '  laika activity status          what the next sync would send, and the last result',
   '  laika activity sync            send the counts now (if the board allows it yet)',
+  '  laika activity backfill [--days N] [--yes] [repo …]',
+  '                                 send a year of your pushed commits, once (asks first)',
   '  laika activity emails [a@b …]  extra author emails that count as yours (--clear)',
 ];
 
@@ -138,6 +177,8 @@ export async function activity(argv: readonly string[], io: ActivityIo = CONSOLE
       return runSync(rest, io);
     case 'emails':
       return emails(rest, io);
+    case 'backfill':
+      return backfill(rest, io);
     default:
       if (command !== undefined) io.err(`laika activity: unknown command "${command}"`);
       for (const line of USAGE) io.err(line);
@@ -243,6 +284,10 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   io.out('sessions started, your commits not yet on a remote, and a one-way key for each of');
   io.out('your commits already on one. Never prompt text, paths, repo or branch names,');
   io.out('remote URLs, commit messages, emails or commit ids.');
+  io.out(`Not counted: ${SKIP_RULE}.`);
+  io.out('Once per repo, after its first agent session here, your pushed commits of the');
+  io.out('last year are counted too, as the same one-way keys (`laika activity backfill`');
+  io.out('does it now, and asks first).');
   io.out('');
   io.out('See exactly what would be sent:  laika activity status');
   io.out('Stop:                            laika activity off');
@@ -285,6 +330,7 @@ async function status(io: ActivityIo): Promise<number> {
     `Scope           ${scope}${state.collect && fresh === undefined ? ' (as last seen; the board did not answer now)' : ''}`,
   );
   if (state.collect) io.out(`Counting since  ${when(state.since)}`);
+  io.out(`Not counted     ${SKIP_RULE}`);
   io.out(
     `Next sync       ${state.next_sync_at === 0 ? 'at the next agent session' : `not before ${when(state.next_sync_at)}`}`,
   );
@@ -305,6 +351,19 @@ async function status(io: ActivityIo): Promise<number> {
   }
   const lastError = readText(paths.lastError)?.trim();
   if (lastError !== undefined && lastError !== '') io.out(`Last error      ${lastError}`);
+  const lookback = readLookback(paths);
+  const done = Object.values(lookback?.repos ?? {}).filter((r) => r.done_at !== undefined).length;
+  const underWay =
+    lookback?.job === undefined
+      ? ''
+      : `; one under way${lookback.job.through === '' ? '' : `, sent through ${lookback.job.through}`}`;
+  io.out(
+    `Look-back       ${
+      done === 0 && underWay === ''
+        ? 'none yet — once per repo after its first session, or `laika activity backfill`'
+        : `done for ${String(done)} ${done === 1 ? 'repo' : 'repos'}${underWay}`
+    }`,
+  );
 
   io.out('');
   const snapshot = await previewSnapshot(context(io), scope);
@@ -340,11 +399,17 @@ function describe(outcome: SyncOutcome): { line: string; code: number } {
         line: `The board says sharing is off. The local log was cleared; it is checked again after ${when(outcome.recheckAt)}.`,
         code: 0,
       };
-    case 'sent':
+    case 'sent': {
+      const look = outcome.lookback;
+      const lookLine =
+        look?.kind === 'sent' && look.reports > 0
+          ? ` Look-back: ${String(look.keys)} commits sent${look.finished ? '' : ', more with the next syncs'}.`
+          : '';
       return {
-        line: `Sent. The board accepted ${String(outcome.acceptedDays)} days.${outcome.deferredKeys > 0 ? ` ${String(outcome.deferredKeys)} keys wait for the next sync.` : ''}`,
+        line: `Sent. The board accepted ${String(outcome.acceptedDays)} days.${outcome.deferredKeys > 0 ? ` ${String(outcome.deferredKeys)} keys wait for the next sync.` : ''}${lookLine}`,
         code: 0,
       };
+    }
     case 'rate-limited':
       return { line: `The board asked to wait until ${when(outcome.nextAt)}.`, code: 0 };
     case 'refused':
@@ -370,6 +435,197 @@ async function runSync(args: readonly string[], io: ActivityIo): Promise<number>
   if (outcome.kind === 'error' && outcome.deadline === true)
     io.exit(args.includes('--quiet') ? 0 : code);
   return args.includes('--quiet') ? 0 : code;
+}
+
+/* -------------------------------------------------------------------------- */
+/* backfill (LAI-757, D-080)                                                  */
+/* -------------------------------------------------------------------------- */
+
+/** A promise that answers `'deadline'` once `ms` have passed, aborting `controller`. */
+async function withDeadline<T>(
+  ms: number,
+  work: (signal: AbortSignal) => Promise<T>,
+): Promise<T | 'deadline'> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<'deadline'>((done) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      done('deadline');
+    }, ms);
+  });
+  try {
+    return await Promise.race([work(controller.signal), deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function backfill(args: readonly string[], io: ActivityIo): Promise<number> {
+  let days = LOOKBACK_DAYS_MAX;
+  let yes = false;
+  const given: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i] ?? '';
+    if (arg === '--yes' || arg === '-y') yes = true;
+    else if (arg === '--days' || arg.startsWith('--days=')) {
+      const value = arg === '--days' ? args[(i += 1)] : arg.slice(7);
+      days = /^\d{1,3}$/.test(value ?? '') ? Number(value) : Number.NaN;
+      if (!(days >= 1 && days <= LOOKBACK_DAYS_MAX)) {
+        io.err(`laika activity backfill: --days takes 1 to ${String(LOOKBACK_DAYS_MAX)}`);
+        return 1;
+      }
+    } else if (arg.startsWith('-')) {
+      io.err(`laika activity backfill: unknown option "${arg}"`);
+      return 1;
+    } else given.push(arg);
+  }
+
+  const paths = activityPaths(io.home);
+  const state = readState(paths);
+  if (state?.collect !== true || state.board === undefined) {
+    io.err('Local activity is not on on this machine. Turn it on first: laika activity on');
+    return 1;
+  }
+  const creds = credentialsFor(io.home, io.env, state.board);
+  if (creds === undefined) {
+    io.err(`No token for ${state.board} in ~/.laika/env — run laika connect.`);
+    return 1;
+  }
+  const deadlineMs = io.deadlineMs ?? SYNC_DEADLINE_MS;
+  const tooLong = (): number => {
+    io.err(
+      `The look-back did not finish within ${String(deadlineMs / 1000)} s and was stopped; ` +
+        'what the board accepted stays, and the rest goes with the next syncs.',
+    );
+    return 1;
+  };
+  const nowS = Math.floor(io.nowMs() / 1000);
+  const base = {
+    paths,
+    state,
+    tz: io.tz,
+    nowS,
+    extraEmails: readEmails(paths),
+  };
+
+  // --- count, before asking: no lock held while a person reads -------------
+  const planned = await withDeadline(deadlineMs, async (signal) => {
+    const git = io.git ?? gitRunner(io.env, signal);
+    const tops: string[] = [];
+    for (const path of given) {
+      const top = (await git(path, ['rev-parse', '--show-toplevel']))?.trim();
+      if (top === undefined || top === '' || top.includes('\n')) return { notRepo: path };
+      tops.push(top);
+    }
+    return planBackfill({ ...base, git, signal }, { days, given: tops });
+  });
+  if (planned === 'deadline') return tooLong();
+  if ('notRepo' in planned) {
+    io.err(`laika activity backfill: ${planned.notRepo} is not a git repository`);
+    return 1;
+  }
+  const plan: Plan = planned;
+
+  const months = new Map<string, number>();
+  for (const [day, keys] of plan.census.byDay) {
+    months.set(day.slice(0, 7), (months.get(day.slice(0, 7)) ?? 0) + keys.length);
+  }
+  const repos = plan.job.paths.length;
+  io.out(
+    `Look-back over the last ${String(days)} days, in ${String(repos)} ${repos === 1 ? 'repo' : 'repos'}` +
+      `${plan.given > 0 ? ` (${String(plan.given)} given here)` : ''}:`,
+  );
+  for (const month of [...months.keys()].sort()) {
+    io.out(`  ${month}  ${String(months.get(month) ?? 0).padStart(5)}`);
+  }
+  io.out(
+    `  ${String(plan.census.commits)} pushed ${plan.census.commits === 1 ? 'commit' : 'commits'} on ${String(plan.census.byDay.size)} ${plan.census.byDay.size === 1 ? 'day' : 'days'}` +
+      ' not already counted by a sync.',
+  );
+  if (plan.census.commits > 0) {
+    io.out('Sent as one-way keys per day: never commit ids, messages, paths, repo names or');
+    io.out('emails. Commits made under your git identity count even if an agent typed them —');
+    io.out('git cannot tell.');
+    if (!yes) {
+      const answer = ((await io.ask?.(`Send them to ${state.board}? [y/N]`)) ?? '').trim();
+      if (!/^y(es)?$/i.test(answer)) {
+        declineBackfill(paths, plan, nowS);
+        io.out('Nothing sent.');
+        io.out(
+          'The automatic look-back will not send these either; run `laika activity backfill` again to send them.',
+        );
+        return 0;
+      }
+    }
+  }
+
+  // --- send, under the sync lock and its deadline ---------------------------
+  const release = acquireLock(paths);
+  if (release === undefined) {
+    io.err('Another sync is running — try again in a minute.');
+    return 1;
+  }
+  let outcome: LookbackOutcome | 'deadline';
+  try {
+    outcome = await withDeadline(deadlineMs, (signal) =>
+      lookbackStep(
+        {
+          ...base,
+          collectorId: collectorId(paths),
+          git: io.git ?? gitRunner(io.env, signal),
+          send: (body) => putActivity(creds, body, io.nowMs(), signal),
+          signal,
+          stopAt: Date.now() + deadlineMs * 0.75,
+        },
+        plan,
+      ),
+    );
+  } finally {
+    release();
+  }
+  if (outcome === 'deadline') return tooLong();
+
+  const at = (epochS: number): string => when(epochS);
+  switch (outcome.kind) {
+    case 'idle':
+    case 'sent':
+      if (outcome.kind === 'sent' && outcome.unread > 0) {
+        io.err(
+          `git could not read ${String(outcome.unread)} of the repos; ${outcome.unread === 1 ? 'it is' : 'they are'} tried again at a later sync.`,
+        );
+      }
+      if (outcome.kind === 'sent' && !outcome.finished) {
+        io.out(
+          `Sent ${String(outcome.keys)} commits in ${String(outcome.reports)} reports; the rest goes with the next syncs, a few reports at a time.`,
+        );
+      } else if (plan.census.commits > 0) {
+        io.out(`Sent. The board counts these ${String(plan.census.commits)} commits now.`);
+      } else {
+        io.out('Nothing to send.');
+      }
+      return 0;
+    case 'waiting':
+      io.out(
+        `The board takes a few reports at a time; this goes with the next sync after ${at(outcome.nextAt)}.`,
+      );
+      return 0;
+    case 'rate-limited':
+      io.out(`The board asked to wait; this goes with the next sync after ${at(outcome.nextAt)}.`);
+      return 0;
+    case 'stopped':
+      return tooLong();
+    case 'off':
+      writeState(paths, stopCollecting(paths, state, nowS));
+      io.err(
+        'The board says sharing is off, so nothing more was sent and the local log was cleared.',
+      );
+      return 1;
+    case 'refused':
+    case 'error':
+      io.err(`Not sent: ${outcome.message}. It is tried again with a later sync.`);
+      return 1;
+  }
 }
 
 const EMAIL = /^[^\s@<>"]+@[^\s@<>"]+$/;
