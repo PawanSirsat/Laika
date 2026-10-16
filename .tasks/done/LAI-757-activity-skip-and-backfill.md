@@ -215,3 +215,5 @@ the stub probe.
 ## Accepted
 
 2026-10-16 — accepted by chief (polly) on the owner's direct instruction. One review round (Claude): one blocking consent bug (a declined backfill was still sent by the automatic look-back) fixed in a74cd9e with the reviewer's scenario as a red-then-green test; git-failure retry and the hook test wording fixed too. Targeted cli tests 86/86 on dd4548d; builder's full gate TEST 0 / LINT 0 / FMT 0 on the final tree. Board card LAIKA-563.
+
+**CI fix (2026-10-16, branch `fix-lookback-ci`, `4c4d9626`):** master `936e875` went red on the GitHub runner — the look-back's year-long `git log` took 10.4 s, was killed at the 10 s per-call limit, and the 20,000-commit test delivered 54 keys; the look-back's log now asks for 60 s (other calls keep 10 s), its census is kept in the job so a chunked look-back reads git once, and the 20,000-commit test counts logs instead of timing them; red first (year log read 7 times, an 11 s git sent nothing, the per-call limit ignored), green after, and the test file passes with an 11 s shim on the year-long log.
