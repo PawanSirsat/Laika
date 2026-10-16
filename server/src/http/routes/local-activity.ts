@@ -13,6 +13,7 @@ import {
   OWN_PREVIEW_DAYS_MAX,
   PROMPTS_PER_AGENT_MAX,
   recordLocalActivity,
+  recordLookback,
   SESSIONS_MAX,
   setActivitySharing,
 } from '../../services/local-activity.ts';
@@ -80,6 +81,26 @@ const ReportBody = strictObject({
   days: z.array(ReportDayBody),
 });
 
+const pushedKey = z.string().regex(/^[0-9a-f]{16}$/i, 'a pushed key is exactly 16 hex characters');
+
+/**
+ * A look-back report (D-080): keys per day and nothing else — a day carrying
+ * a count is an unknown field, refused like any other (§6.3). The window and
+ * the uniqueness of days are the service's `day_out_of_range`.
+ */
+const LookbackBody = strictObject({
+  v: z.literal(1),
+  collector_id: ReportBody.shape.collector_id,
+  tz: z.string().min(1).max(64),
+  lookback: z.literal(true),
+  days: z.array(
+    strictObject({
+      day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      pushed_keys: z.array(pushedKey).min(1),
+    }),
+  ),
+});
+
 const PreviewQuery = strictObject({
   days: z.coerce.number().int().min(1).max(OWN_PREVIEW_DAYS_MAX).optional(),
 });
@@ -107,8 +128,12 @@ export function localActivityRoutes(options: { db: Db }): Hono<AppEnv> {
     // `can()` and the two switches before the body is judged: a developer
     // who stopped sharing is told so even if their collector sent nonsense.
     assertMaySendLocalActivity(db, actor);
-    const body = parseBody(ReportBody, await c.req.json().catch(() => null));
-    return c.json(recordLocalActivity(db, actor, body), 200);
+    const json: unknown = await c.req.json().catch(() => null);
+    // Marked, not guessed: a look-back is only ever what the sender says it is.
+    if (typeof json === 'object' && json !== null && 'lookback' in json) {
+      return c.json(recordLookback(db, actor, parseBody(LookbackBody, json)), 200);
+    }
+    return c.json(recordLocalActivity(db, actor, parseBody(ReportBody, json)), 200);
   });
 
   app.get('/local-activity', (c) => {

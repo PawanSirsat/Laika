@@ -36,6 +36,12 @@ import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
  * cannot double-count, and a commit pushed after the last report leaves
  * `commits_local` on the next. Pushed keys are a set: added, never removed by a
  * report, each keeping the earliest day it was seen.
+ *
+ * ## A look-back adds keys and nothing else (D-080, LAI-757)
+ *
+ * A report marked `lookback` carries only pushed-commit keys, for days back to
+ * retention's 400, and writes no snapshot row — so it can neither replace a
+ * day's counts nor be counted twice: its keys join the same set.
  */
 
 /** How often a collector may sync, said to it in every sharing answer (§6.4). */
@@ -52,7 +58,8 @@ export const SESSIONS_MAX = 500;
 export const COMMITS_LOCAL_MAX = 2000;
 
 /**
- * The ingest's body limit (§6.4) — under the general 1 MiB.
+ * The ingest's body limit (§6.4) — under the general 1 MiB — for a snapshot
+ * and a look-back alike (D-080): a collector chunks a look-back to it.
  *
  * **It is also the only bound on `pushed_keys`.** A key is 16 hex characters,
  * 19 bytes in the list with its quotes and comma, so a 16 KiB report holds
@@ -61,6 +68,9 @@ export const COMMITS_LOCAL_MAX = 2000;
  * than kept as a limit that reads as real (LAI-751 review).
  */
 export const LOCAL_ACTIVITY_BODY_MAX = 16 * 1024;
+
+/** How far back a look-back day may be: retention's window (§11.6). */
+export const LOOKBACK_DAYS_MAX = 400;
 
 /** The preview's window: the days a report can still change. */
 export const OWN_PREVIEW_DAYS_MAX = 14;
@@ -89,6 +99,15 @@ export interface LocalActivityReport {
   collector_id: string;
   tz: string;
   days: ReportDay[];
+}
+
+/** A look-back report (D-080): keys per day, nothing else. */
+export interface LookbackReport {
+  v: 1;
+  collector_id: string;
+  tz: string;
+  lookback: true;
+  days: { day: string; pushed_keys: string[] }[];
 }
 
 export interface AcceptedReport {
@@ -231,15 +250,22 @@ function refuse(reason: string, message: string, extra: Record<string, unknown> 
 
 /**
  * The checks a schema cannot make: the time zone exists, and every day is a
- * real date inside the window, once (§6.4's `day_out_of_range`).
+ * real date inside the window, once (§6.4's `day_out_of_range`). A snapshot's
+ * window is today − 14 to today + 1 and holds at most 14 days; a look-back's
+ * reaches back `LOOKBACK_DAYS_MAX` and its count is bounded by the window and
+ * the body limit.
  */
-function assertReportDays(report: LocalActivityReport, now: number): void {
+function assertReportDays(
+  report: { tz: string; days: readonly { day: string }[] },
+  now: number,
+  window: { daysBack: number; maxDays: number },
+): void {
   if (!isTimeZone(report.tz)) {
     refuse('invalid_tz', 'tz is not a time zone this server knows', { field: 'tz' });
   }
 
   const today = dayIn(report.tz, now);
-  const earliest = addDays(today, -REPORT_DAYS_MAX);
+  const earliest = addDays(today, -window.daysBack);
   const latest = addDays(today, REPORT_DAYS_AHEAD);
   const outOfRange = (message: string, day?: string): never =>
     refuse('day_out_of_range', message, {
@@ -248,8 +274,8 @@ function assertReportDays(report: LocalActivityReport, now: number): void {
       ...(day === undefined ? {} : { day }),
     });
 
-  if (report.days.length < 1 || report.days.length > REPORT_DAYS_MAX) {
-    outOfRange(`days holds 1 to ${String(REPORT_DAYS_MAX)} entries`);
+  if (report.days.length < 1 || report.days.length > window.maxDays) {
+    outOfRange(`days holds 1 to ${String(window.maxDays)} entries`);
   }
 
   const seen = new Set<string>();
@@ -261,6 +287,50 @@ function assertReportDays(report: LocalActivityReport, now: number): void {
       outOfRange(`each day is within ${earliest} to ${latest} in ${report.tz}`, day);
     }
   }
+}
+
+const SNAPSHOT_WINDOW = { daysBack: REPORT_DAYS_MAX, maxDays: REPORT_DAYS_MAX };
+// One entry per day of the window is the most the uniqueness rule allows.
+const LOOKBACK_WINDOW = {
+  daysBack: LOOKBACK_DAYS_MAX,
+  maxDays: LOOKBACK_DAYS_MAX + 1 + REPORT_DAYS_AHEAD,
+};
+
+/** Each key once, at the earliest day these days have it on. */
+function earliestDayPerKey(days: readonly { day: string; pushed_keys: string[] }[]) {
+  const keys = new Map<string, string>();
+  for (const day of days) {
+    for (const raw of day.pushed_keys) {
+      const key = raw.toLowerCase();
+      const seen = keys.get(key);
+      if (seen === undefined || day.day < seen) keys.set(key, day.day);
+    }
+  }
+  return keys;
+}
+
+type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+
+/** Pushed keys added to the person's set, each keeping the earliest day seen. */
+function addPushedKeys(tx: Tx, userId: string, keys: Map<string, string>, now: number): void {
+  if (keys.size === 0) return;
+  // One prepared statement run per key: a look-back carries thousands, and a
+  // statement rebuilt for every 500 of them cost more than the inserts did.
+  const upsert = tx
+    .insert(pushedCommitKeys)
+    .values({
+      userId,
+      key: sql.placeholder('key'),
+      day: sql.placeholder('day'),
+      createdAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [pushedCommitKeys.userId, pushedCommitKeys.key],
+      // A key keeps the earliest day it was seen on, from any machine.
+      set: { day: sql`min(${pushedCommitKeys.day}, excluded.day)` },
+    })
+    .prepare();
+  for (const [key, day] of keys) upsert.run({ key, day });
 }
 
 /** Prompts per agent, folded onto the board's slugs. Zeros are not kept. */
@@ -303,18 +373,9 @@ export function recordLocalActivity(
   now: number = Date.now(),
 ): AcceptedReport {
   assertMaySendLocalActivity(db, actor);
-  assertReportDays(report, now);
+  assertReportDays(report, now, SNAPSHOT_WINDOW);
   const collectorId = report.collector_id.toLowerCase();
-
-  // Each key once, at the earliest day this report has it on.
-  const keys = new Map<string, string>();
-  for (const day of report.days) {
-    for (const raw of day.pushed_keys) {
-      const key = raw.toLowerCase();
-      const seen = keys.get(key);
-      if (seen === undefined || day.day < seen) keys.set(key, day.day);
-    }
-  }
+  const keys = earliestDayPerKey(report.days);
 
   db.transaction((tx) => {
     tx.insert(localActivityDays)
@@ -348,24 +409,30 @@ export function recordLocalActivity(
       })
       .run();
 
-    const entries = [...keys];
-    // Far below SQLite's bound-variable limit per statement, whatever the body.
-    for (let i = 0; i < entries.length; i += 500) {
-      tx.insert(pushedCommitKeys)
-        .values(
-          entries
-            .slice(i, i + 500)
-            .map(([key, day]) => ({ userId: actor.userId, key, day, createdAt: now })),
-        )
-        .onConflictDoUpdate({
-          target: [pushedCommitKeys.userId, pushedCommitKeys.key],
-          // A key keeps the earliest day it was seen on, from any machine.
-          set: { day: sql`min(${pushedCommitKeys.day}, excluded.day)` },
-        })
-        .run();
-    }
+    addPushedKeys(tx, actor.userId, keys, now);
   });
 
+  return { accepted_days: report.days.length };
+}
+
+/**
+ * `PUT /me/local-activity` with `lookback: true` (D-080): a developer's own
+ * pushed commits from before the snapshot window, as keys per day. The same
+ * permission, switches and report budget as a snapshot; days back to
+ * retention's window; no snapshot row written or replaced.
+ */
+export function recordLookback(
+  db: Db,
+  actor: ResolvedActor,
+  report: LookbackReport,
+  now: number = Date.now(),
+): AcceptedReport {
+  assertMaySendLocalActivity(db, actor);
+  assertReportDays(report, now, LOOKBACK_WINDOW);
+  const keys = earliestDayPerKey(report.days);
+  db.transaction((tx) => {
+    addPushedKeys(tx, actor.userId, keys, now);
+  });
   return { accepted_days: report.days.length };
 }
 

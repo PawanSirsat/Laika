@@ -11,8 +11,10 @@ import {
   getActivitySharing,
   getOwnLocalActivity,
   type LocalActivityReport,
+  type LookbackReport,
   MIN_SYNC_INTERVAL_S,
   recordLocalActivity,
+  recordLookback,
   type ReportDay,
   setActivitySharing,
 } from '../../src/services/local-activity.ts';
@@ -443,6 +445,161 @@ describe('day_out_of_range (§6.4)', () => {
       code: 'unprocessable',
       details: { reason: 'invalid_tz' },
     });
+  });
+});
+
+/**
+ * A look-back report (D-080, LAI-757): pushed-commit keys for days before the
+ * snapshot window, back to retention's 400 days. It adds keys and touches no
+ * snapshot row. `TODAY − 400` is 2025-09-09.
+ */
+describe('a look-back report (D-080)', () => {
+  beforeEach(() => {
+    switches(true, bea, true);
+  });
+
+  function lookback(
+    days: { day: string; pushed_keys: string[] }[],
+    extra: Partial<LookbackReport> = {},
+  ): LookbackReport {
+    return { v: 1, collector_id: COLLECTOR_A, tz: 'UTC', lookback: true, days, ...extra };
+  }
+  const keyRows = () =>
+    t.db
+      .select({ key: pushedCommitKeys.key, day: pushedCommitKeys.day })
+      .from(pushedCommitKeys)
+      .orderBy(pushedCommitKeys.day)
+      .all();
+
+  it('takes keys on days back to today − 400 and up to today + 1, at those days', () => {
+    expect(
+      recordLookback(
+        t.db,
+        withToken(bea),
+        lookback([
+          { day: '2025-09-09', pushed_keys: ['000000000000000a'] },
+          { day: '2026-03-01', pushed_keys: ['000000000000000b', '000000000000000c'] },
+          { day: '2026-10-15', pushed_keys: ['000000000000000d'] },
+        ]),
+        NOW,
+      ),
+    ).toEqual({ accepted_days: 3 });
+    expect(keyRows()).toEqual([
+      { key: '000000000000000a', day: '2025-09-09' },
+      { key: '000000000000000b', day: '2026-03-01' },
+      { key: '000000000000000c', day: '2026-03-01' },
+      { key: '000000000000000d', day: '2026-10-15' },
+    ]);
+  });
+
+  it('refuses a day past retention with the snapshot’s day_out_of_range shape, and keeps nothing', () => {
+    for (const outside of ['2025-09-08', '2026-10-16']) {
+      expect(
+        refusal(() =>
+          recordLookback(
+            t.db,
+            actor(bea),
+            lookback([
+              { day: '2026-03-01', pushed_keys: ['000000000000000b'] },
+              { day: outside, pushed_keys: ['000000000000000a'] },
+            ]),
+            NOW,
+          ),
+        ),
+        outside,
+      ).toMatchObject({
+        code: 'unprocessable',
+        details: {
+          reason: 'day_out_of_range',
+          day: outside,
+          earliest: '2025-09-09',
+          latest: '2026-10-15',
+        },
+      });
+    }
+    expect(keyRows()).toEqual([]);
+  });
+
+  it('refuses no days, a repeated day and a date that does not exist', () => {
+    for (const [name, sent] of [
+      ['none', lookback([])],
+      [
+        'repeated',
+        lookback([
+          { day: '2026-03-01', pushed_keys: ['000000000000000a'] },
+          { day: '2026-03-01', pushed_keys: ['000000000000000b'] },
+        ]),
+      ],
+      ['not a date', lookback([{ day: '2026-02-30', pushed_keys: ['000000000000000a'] }])],
+    ] as const) {
+      expect(
+        refusal(() => recordLookback(t.db, actor(bea), sent, NOW)),
+        name,
+      ).toMatchObject({ code: 'unprocessable', details: { reason: 'day_out_of_range' } });
+    }
+  });
+
+  it('refuses while either switch is off, before the days are judged', () => {
+    switches(true, bea, false);
+    expect(refusal(() => recordLookback(t.db, actor(bea), lookback([]), NOW))).toMatchObject({
+      code: 'forbidden',
+      details: { reason: 'local_activity_off' },
+    });
+  });
+
+  it('is idempotent: sent twice, the same keys at the same days', () => {
+    const sent = lookback([
+      { day: '2025-11-02', pushed_keys: ['000000000000000a', '000000000000000b'] },
+      { day: '2026-01-20', pushed_keys: ['000000000000000c'] },
+    ]);
+    recordLookback(t.db, actor(bea), sent, NOW);
+    const once = keyRows();
+    recordLookback(t.db, actor(bea), sent, NOW + 60_000);
+    expect(keyRows()).toEqual(once);
+    expect(once).toHaveLength(3);
+  });
+
+  it('dedupes against the snapshot’s keys: one commit is one key, at its earliest day', () => {
+    recordLocalActivity(
+      t.db,
+      actor(bea),
+      report([day('2026-10-12', { pushed_keys: ['000000000000000a'] })]),
+      NOW,
+    );
+    recordLookback(
+      t.db,
+      actor(bea),
+      lookback([
+        { day: '2026-10-12', pushed_keys: ['000000000000000A'] },
+        { day: '2026-10-11', pushed_keys: ['000000000000000b'] },
+      ]),
+      NOW,
+    );
+    expect(keyRows()).toEqual([
+      { key: '000000000000000b', day: '2026-10-11' },
+      { key: '000000000000000a', day: '2026-10-12' },
+    ]);
+  });
+
+  it('touches no snapshot: a day inside the window keeps its counts, and no row is made', () => {
+    recordLocalActivity(
+      t.db,
+      actor(bea),
+      report([day('2026-10-12', { prompts: { codex: 4 }, sessions: 2, commits_local: 3 })]),
+      NOW,
+    );
+    const before = t.db.select().from(localActivityDays).all();
+    recordLookback(
+      t.db,
+      actor(bea),
+      lookback([
+        { day: '2026-10-12', pushed_keys: ['000000000000000a'] },
+        { day: '2026-01-05', pushed_keys: ['000000000000000b'] },
+      ]),
+      NOW + 60_000,
+    );
+    expect(t.db.select().from(localActivityDays).all()).toEqual(before);
+    expect(activityRows()).toBe(0);
   });
 });
 
