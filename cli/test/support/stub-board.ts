@@ -50,6 +50,18 @@ export interface StubBoard {
   put: PutMode;
   /** When the contract's day range is checked: the collector's clock, not the test machine's. */
   now: () => Date;
+  /**
+   * What an accepted report leaves on the board, as the real server keeps it
+   * (SPEC §4.23, §4.24): a snapshot per (collector, day), replaced; pushed keys
+   * a set, each at the earliest day reported. A look-back adds keys only.
+   */
+  readonly snapshots: Map<string, { readonly commits_local: number }>;
+  readonly keys: Map<string, string>;
+  /**
+   * The report bucket (§6.3): 30, one back every 120 s, on `now()`. Off unless
+   * a test turns it on; `limited` counts the 429s it gave.
+   */
+  bucket: { on: boolean; tokens: number; at: number; limited: number };
   readonly close: () => void;
 }
 
@@ -71,6 +83,9 @@ export async function stubBoard(token: string): Promise<StubBoard> {
     get: 'ok',
     put: { kind: 'ok' },
     now: () => new Date(),
+    snapshots: new Map(),
+    keys: new Map(),
+    bucket: { on: false, tokens: 30, at: 0, limited: 0 },
     close: () => undefined,
   };
 
@@ -151,8 +166,37 @@ export async function stubBoard(token: string): Promise<StubBoard> {
           refuse(mode.status, 'internal');
           return;
         }
-        const days = (JSON.parse(body) as { days: unknown[] }).days.length;
-        json(200, { accepted_days: days });
+        const bucket = board.bucket;
+        if (bucket.on) {
+          const at = board.now().getTime();
+          if (bucket.at === 0) bucket.at = at;
+          bucket.tokens = Math.min(30, bucket.tokens + (at - bucket.at) / 120_000);
+          bucket.at = at;
+          if (bucket.tokens < 1) {
+            bucket.limited += 1;
+            const wait = Math.ceil((1 - bucket.tokens) * 120);
+            refuse(429, 'rate_limited', null, { 'retry-after': String(wait) });
+            return;
+          }
+          bucket.tokens -= 1;
+        }
+        const sent = JSON.parse(body) as {
+          collector_id: string;
+          lookback?: true;
+          days: { day: string; commits_local?: number; pushed_keys?: string[] }[];
+        };
+        for (const d of sent.days) {
+          if (sent.lookback !== true) {
+            board.snapshots.set(`${sent.collector_id}|${d.day}`, {
+              commits_local: d.commits_local ?? 0,
+            });
+          }
+          for (const key of d.pushed_keys ?? []) {
+            const held = board.keys.get(key);
+            if (held === undefined || d.day < held) board.keys.set(key, d.day);
+          }
+        }
+        json(200, { accepted_days: sent.days.length });
         return;
       }
       refuse(404, 'not_found');

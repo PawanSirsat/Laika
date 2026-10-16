@@ -33,6 +33,50 @@ function shift(day: string, delta: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * A look-back report, as SPEC §6.4 states it (D-080, LAI-757): `lookback:
+ * true`, days of `{ day, pushed_keys }` only, each key 16 hex, each day once
+ * and within today − 400 to today + 1 in `tz`, the same 16 KB.
+ */
+function lookbackViolation(b: Record<string, unknown>, now: Date): string | undefined {
+  for (const key of Object.keys(b)) {
+    if (![...TOP_KEYS, 'lookback'].includes(key)) return `unknown field ${key}`;
+  }
+  if (b.lookback !== true) return 'lookback is not true';
+  if (b.v !== 1) return 'v is not 1';
+  if (typeof b.collector_id !== 'string' || !UUID_V4.test(b.collector_id)) {
+    return 'collector_id is not a UUID v4';
+  }
+  if (typeof b.tz !== 'string') return 'tz missing';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: b.tz });
+  } catch {
+    return 'tz is not an IANA zone';
+  }
+  if (!Array.isArray(b.days) || b.days.length < 1) return 'days empty';
+  const today = dayIn(b.tz, now);
+  const low = shift(today, -400);
+  const high = shift(today, 1);
+  const seen = new Set<string>();
+  for (const entry of b.days as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) return 'a day is not an object';
+    const d = entry as Record<string, unknown>;
+    for (const key of Object.keys(d)) {
+      if (key !== 'day' && key !== 'pushed_keys') return `look-back day field ${key}`;
+    }
+    if (typeof d.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d.day))
+      return 'day not YYYY-MM-DD';
+    if (d.day < low || d.day > high) return 'day_out_of_range';
+    if (seen.has(d.day)) return 'duplicate day';
+    seen.add(d.day);
+    if (!Array.isArray(d.pushed_keys) || d.pushed_keys.length < 1) return 'pushed_keys empty';
+    for (const k of d.pushed_keys) {
+      if (typeof k !== 'string' || !/^[0-9a-f]{16}$/.test(k)) return 'pushed key not 16 hex';
+    }
+  }
+  return undefined;
+}
+
 /** `undefined` when the body is valid; otherwise the first rule it breaks. */
 export function contractViolation(raw: string, now: Date): string | undefined {
   if (Buffer.byteLength(raw) > MAX_BODY_BYTES) return 'body over 16 KB';
@@ -44,6 +88,7 @@ export function contractViolation(raw: string, now: Date): string | undefined {
   }
   if (typeof body !== 'object' || body === null || Array.isArray(body)) return 'not an object';
   const b = body as Record<string, unknown>;
+  if ('lookback' in b) return lookbackViolation(b, now);
   for (const key of Object.keys(b)) if (!TOP_KEYS.includes(key)) return `unknown field ${key}`;
   if (b.v !== 1) return 'v is not 1';
   if (typeof b.collector_id !== 'string' || !UUID_V4.test(b.collector_id)) {

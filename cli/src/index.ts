@@ -24,6 +24,7 @@ const USAGE = [
   '  laika connect --list     the agents connect knows, and what it does for each',
   '  laika activity on|off    count local agent activity for the heatmap (opt-in)',
   '  laika activity status    what the next activity sync would send',
+  '  laika activity backfill  send a year of your pushed commits once (asks first)',
   '',
   '`init` writes your Claude Code user settings; `connect` keeps the token in',
   '~/.laika/env. Both are outside any repository, so a token cannot be committed',
