@@ -11,9 +11,18 @@
  */
 
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import fs, {
+  appendFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
+import fsp, { type FileHandle } from 'node:fs/promises';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { after, describe, test } from 'node:test';
 
 import { addDays, localDay } from '../src/activity-census.ts';
@@ -181,6 +190,100 @@ function state(sinceS: number): ActivityState {
     checked_at: NOW_S,
     failures: 0,
   };
+}
+
+type Fn = (...args: unknown[]) => unknown;
+
+/**
+ * What `fn` does to the disk, by path: `stat`s (an `existsSync` is one), the
+ * directories listed, and the files opened with the bytes read from each —
+ * through `node:fs` and `node:fs/promises`, whose bindings the module under
+ * test imported and `syncBuiltinESMExports` repoints while `fn` runs (LAI-779).
+ */
+async function diskWork(fn: () => Promise<void>): Promise<{
+  stats: Map<string, number>;
+  listed: string[];
+  opened: Map<string, number>;
+}> {
+  const stats = new Map<string, number>();
+  const listed: string[] = [];
+  const opened = new Map<string, number>();
+  const statted = (path: unknown) => stats.set(String(path), (stats.get(String(path)) ?? 0) + 1);
+  const read = (path: unknown, bytes: number) =>
+    opened.set(String(path), (opened.get(String(path)) ?? 0) + bytes);
+  const restore: (() => void)[] = [];
+  const patch = (target: object, name: string, wrap: (real: Fn) => Fn) => {
+    const fns = target as Record<string, Fn>;
+    const real = fns[name];
+    if (real === undefined) throw new Error(`no ${name} to count`);
+    fns[name] = wrap(real);
+    restore.push(() => {
+      fns[name] = real;
+    });
+  };
+
+  for (const name of ['statSync', 'lstatSync', 'existsSync']) {
+    patch(fs, name, (real) => (path, ...rest) => {
+      statted(path);
+      return real(path, ...rest);
+    });
+  }
+  for (const name of ['stat', 'lstat']) {
+    patch(fsp, name, (real) => (path, ...rest) => {
+      statted(path);
+      return real(path, ...rest);
+    });
+  }
+  patch(fs, 'readdirSync', (real) => (path, ...rest) => {
+    listed.push(String(path));
+    return real(path, ...rest);
+  });
+  patch(fsp, 'readdir', (real) => (path, ...rest) => {
+    listed.push(String(path));
+    return real(path, ...rest);
+  });
+  patch(fs, 'readFileSync', (real) => (path, ...rest) => {
+    const out = real(path, ...rest) as string | Buffer;
+    read(path, Buffer.byteLength(out));
+    return out;
+  });
+  patch(fsp, 'readFile', (real) => async (path, ...rest) => {
+    const out = (await real(path, ...rest)) as string | Buffer;
+    read(path, Buffer.byteLength(out));
+    return out;
+  });
+  const byFd = new Map<number, string>();
+  patch(fs, 'openSync', (real) => (path, ...rest) => {
+    const fd = real(path, ...rest) as number;
+    byFd.set(fd, String(path));
+    read(path, 0);
+    return fd;
+  });
+  patch(fs, 'readSync', (real) => (fd, ...rest) => {
+    const bytes = real(fd, ...rest) as number;
+    read(byFd.get(fd as number) ?? `fd ${String(fd)}`, bytes);
+    return bytes;
+  });
+  patch(fsp, 'open', (real) => async (path, ...rest) => {
+    const handle = (await real(path, ...rest)) as FileHandle;
+    read(path, 0);
+    const fileRead = handle.read.bind(handle) as Fn;
+    (handle as unknown as Record<string, Fn>).read = async (...args) => {
+      const result = (await fileRead(...args)) as { bytesRead: number };
+      read(path, result.bytesRead);
+      return result;
+    };
+    return handle;
+  });
+
+  syncBuiltinESMExports();
+  try {
+    await fn();
+  } finally {
+    for (const undo of restore) undo();
+    syncBuiltinESMExports();
+  }
+  return { stats, listed, opened };
 }
 
 async function read(root: string, options: { nowS?: number; sinceS?: number } = {}) {
@@ -1058,8 +1161,30 @@ void describe('through the sync: one machine counted once, two machines added (r
   });
 });
 
+/**
+ * **What an idle sync's usage step costs, held in a way no runner's load can
+ * move** (LAI-779).
+ *
+ * The 50 ms budget is real, and it is a wall-clock figure: GitHub's two-core
+ * runner measured a fastest of 89.4 ms (median 229 ms) on a run where the same
+ * tree measures 12–19 ms here. So the gate counts the **work** — with nothing
+ * new, every transcript is `stat`ed once and not one byte of one is read, no
+ * directory is listed, and the only file opened is the index — and keeps a
+ * wall-clock ceiling twenty times the budget, for a blow-up the counts cannot
+ * see. The budget itself is `LAIKA_PERF=1`, as the server's perf tests do it.
+ */
 void describe('cheap', () => {
-  void test('with ~800 transcripts, a sync’s usage step with nothing new costs under 50 ms', async () => {
+  const PERF = process.env.LAIKA_PERF === '1';
+
+  /** 40 projects × 8 sessions × (1 + 2 subagents), sent once: the step idle after. */
+  let world: Promise<{
+    step: () => Promise<{ kind: string }>;
+    files: string[];
+    sends: () => number;
+  }>;
+  const fixture = () => (world ??= build());
+
+  async function build() {
     const root = home();
     const line = `${claudeLine('msg_x', NOW_S - 600, { input: 1, output: 2, cw: 3, cr: 4 })}\n`;
     // As on a real machine (REPORT.md §1a: 771 transcripts, most of them
@@ -1068,7 +1193,7 @@ void describe('cheap', () => {
     // are made once, so the fixture costs little beside the suites it shares
     // the gate with.
     const old = NOW_S - 60 * DAY;
-    let n = 0;
+    const files: string[] = [];
     for (let p = 0; p < 40; p += 1) {
       for (let s = 0; s < 8; s += 1) {
         const session = join(root, '.claude', 'projects', `-proj-${String(p)}`, `s${String(s)}`);
@@ -1079,12 +1204,11 @@ void describe('cheap', () => {
           join(session, 'subagents', 'agent-1.jsonl'),
         ]) {
           writeFileSync(file, line);
-          if (n % 10 !== 0) utimesSync(file, old, old);
-          n += 1;
+          if (files.length % 10 !== 0) utimesSync(file, old, old);
+          files.push(file);
         }
       }
     }
-    // 40 projects × 8 sessions × (1 + 2 subagents) = 960 files.
     const paths = activityPaths(root);
     mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
     let sends = 0;
@@ -1103,14 +1227,12 @@ void describe('cheap', () => {
       });
     const first = await step();
     assert.equal(first.kind, 'sent');
-    assert.equal(first.kind === 'sent' ? first.stats.files : 0, 960);
+    assert.equal(first.kind === 'sent' ? first.stats.files : 0, files.length);
+    return { step, files, sends: () => sends };
+  }
 
-    // The fastest of nine — the step's own cost with the least scheduling noise,
-    // as the hook's prompt-path check measures — because the root gate runs
-    // every workspace at once and a median there measures the machine's load
-    // (52.9 ms once, at a bare interpreter's 21 ms). A regression that matters
-    // — the 4.6 MB data file parsed, the files read again — is past 50 ms
-    // either way. Measured on a real machine: 17–19 ms in a fresh process.
+  /** Per-step timings of nine idle steps, sorted, in ms. */
+  async function timings(step: () => Promise<{ kind: string }>): Promise<number[]> {
     const times: number[] = [];
     for (let i = 0; i < 9; i += 1) {
       const start = performance.now();
@@ -1118,15 +1240,55 @@ void describe('cheap', () => {
       times.push(performance.now() - start);
       assert.equal(again.kind, 'idle');
     }
-    assert.equal(sends, 1, 'nothing new is sent once');
-    times.sort((a, b) => a - b);
-    const fastest = times[0] ?? Number.NaN;
-    const median = times[4] ?? Number.NaN;
-    process.stdout.write(
-      `# usage step, nothing new, 960 files: fastest ${fastest.toFixed(1)} ms, median ${median.toFixed(1)} ms\n`,
+    return times.sort((a, b) => a - b);
+  }
+
+  void test('with 960 transcripts and nothing new, each is stat’ed once and none is read', async () => {
+    const { step, files, sends } = await fixture();
+    await step();
+    const disk = await diskWork(async () => {
+      assert.equal((await step()).kind, 'idle');
+    });
+
+    // Positive control: the counter sees the step's stats at all.
+    for (const file of files) assert.equal(disk.stats.get(file), 1, `stat’ed once: ${file}`);
+    const transcriptBytes = files.reduce((n, file) => n + (disk.opened.get(file) ?? 0), 0);
+    assert.equal(transcriptBytes, 0, 'no transcript byte read');
+    const twice = [...disk.stats].filter(([, n]) => n > 1);
+    assert.deepEqual(twice, [], 'nothing stat’ed twice');
+    assert.deepEqual(disk.listed, [], 'no directory listed again');
+    assert.deepEqual(
+      [...disk.opened.keys()].map((path) => basename(path)),
+      ['usage-index.json'],
+      'only the index opened',
     );
-    assert.ok(fastest < 50, `fastest ${fastest.toFixed(1)} ms (median ${median.toFixed(1)} ms)`);
+    assert.equal(sends(), 1, 'nothing new is sent once');
   });
+
+  void test('with 960 transcripts and nothing new, the fastest of nine is under 1000 ms: a ceiling for a blow-up, not the budget', async () => {
+    const { step } = await fixture();
+    const times = await timings(step);
+    const fastest = times[0] ?? Number.NaN;
+    assert.ok(fastest < 1000, `fastest ${fastest.toFixed(1)} ms (median ${String(times[4])} ms)`);
+  });
+
+  void test(
+    'with ~800 transcripts, a sync’s usage step with nothing new costs under 50 ms (LAIKA_PERF=1)',
+    { skip: !PERF },
+    async () => {
+      const { step } = await fixture();
+      // The fastest of nine — the step's own cost with the least scheduling
+      // noise, as the hook's prompt-path check measures. Measured on a real
+      // machine: 17–19 ms in a fresh process.
+      const times = await timings(step);
+      const fastest = times[0] ?? Number.NaN;
+      const median = times[4] ?? Number.NaN;
+      process.stdout.write(
+        `# usage step, nothing new, 960 files: fastest ${fastest.toFixed(1)} ms, median ${median.toFixed(1)} ms\n`,
+      );
+      assert.ok(fastest < 50, `fastest ${fastest.toFixed(1)} ms (median ${median.toFixed(1)} ms)`);
+    },
+  );
 });
 
 void describe('the developer’s scope (D-079 item 4)', () => {
