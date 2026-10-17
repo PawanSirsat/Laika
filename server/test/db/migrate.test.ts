@@ -744,3 +744,123 @@ describe('0031 adds the heatmap to a populated 0030 database (LAI-751)', () => {
     }
   });
 });
+
+/**
+ * `0036` on a database at the migration before it (LAI-771, D-085).
+ *
+ * **Additive is the property, so it is asserted directly** — D-078 item 7's
+ * lesson, and LAI-493's measurement of what a rebuild of `tasks` costs: every
+ * table references it. Four nullable columns added to `tasks`, one table and
+ * its indexes created; `tasks` keeps its root page, its rows and the rows
+ * hanging off it, and the new table is append-only on the upgraded database
+ * too, not only on a fresh one.
+ */
+describe('0036 adds sizes and forecasts to a populated database without rebuilding tasks (LAI-771)', () => {
+  it('keeps every task and dependency, adds the columns and the table, rebuilds nothing', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'laika-mig-'));
+    cpSync(MIGRATIONS_FOLDER, dir, { recursive: true });
+    const journalPath = join(dir, 'meta', '_journal.json');
+    const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as {
+      entries: { tag: string }[];
+    };
+    const dropped = journal.entries.splice(
+      journal.entries.findIndex((e) => e.tag.startsWith('0036_')),
+    );
+    // The guard on this guard: what was cut starts at 0036, and what is kept
+    // ends just before it — the upgrade production makes.
+    expect(dropped[0]?.tag).toMatch(/^0036_/);
+    expect(journal.entries.at(-1)?.tag).toMatch(/^003[45]_/);
+    writeFileSync(journalPath, JSON.stringify(journal));
+
+    const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));
+    const { db, sqlite } = openDb({ path: join(dbDir, 'laika.db') });
+    try {
+      runMigrations(db, { migrationsFolder: dir });
+      const columns = () =>
+        db
+          .all<{ name: string }>(sql`SELECT name FROM pragma_table_info('tasks')`)
+          .map((r) => r.name);
+      expect(columns()).not.toContain('estimate_id');
+
+      const s = seed(db);
+      const now = Date.now();
+      const todo = statusForCategory(db, s.projectId, 'todo').id;
+      const a = newId();
+      const b = newId();
+      for (const [id, number] of [
+        [a, 1],
+        [b, 2],
+      ] as const) {
+        db.run(sql`
+          INSERT INTO tasks (id, project_id, number, title, status, status_id, priority, created_by, created_via, created_at, updated_at)
+          VALUES (${id}, ${s.projectId}, ${number}, 'A task', 'todo', ${todo}, 'p2', ${s.userId}, 'api', ${now}, ${now})
+        `);
+      }
+      db.run(sql`
+        INSERT INTO task_dependencies (task_id, depends_on_task_id, created_at) VALUES (${a}, ${b}, ${now})
+      `);
+
+      const rootpage = () =>
+        db.get<{ rootpage: number }>(
+          sql`SELECT rootpage FROM sqlite_master WHERE type = 'table' AND name = 'tasks'`,
+        )?.rootpage;
+      const before = rootpage();
+      const rows = () => db.all(sql`SELECT id, number, title, status_id FROM tasks ORDER BY id`);
+      const rowsBefore = rows();
+
+      runMigrations(db);
+
+      expect(rootpage(), 'tasks was rebuilt').toBe(before);
+      expect(rows()).toEqual(rowsBefore);
+      expect(db.all(sql`SELECT task_id FROM task_dependencies`)).toEqual([{ task_id: a }]);
+      expect(columns()).toEqual(
+        expect.arrayContaining([
+          'estimate_id',
+          'estimate_at_start_id',
+          'size_override_id',
+          'estimate_hash',
+        ]),
+      );
+      expect(
+        db.all(
+          sql`SELECT estimate_id, estimate_at_start_id, size_override_id, estimate_hash FROM tasks`,
+        ),
+      ).toEqual([
+        {
+          estimate_id: null,
+          estimate_at_start_id: null,
+          size_override_id: null,
+          estimate_hash: null,
+        },
+        {
+          estimate_id: null,
+          estimate_at_start_id: null,
+          size_override_id: null,
+          estimate_hash: null,
+        },
+      ]);
+      expect(db.all(sql`PRAGMA foreign_key_check`)).toEqual([]);
+
+      // Append-only on the upgraded database: a row, then every refusal.
+      const row = newId();
+      db.run(sql`
+        INSERT INTO task_estimates (id, task_id, source, level, weight, subtasks, factors_json, created_at)
+        VALUES (${row}, ${a}, 'model', 'M', 1, 0, '{}', ${now})
+      `);
+      expectSqliteError(() => db.run(sql`UPDATE task_estimates SET level = 'XL'`), /append-only/);
+      expectSqliteError(() => db.run(sql`DELETE FROM task_estimates`), /append-only/);
+      expectSqliteError(
+        () =>
+          db.run(sql`
+            INSERT OR REPLACE INTO task_estimates (id, task_id, source, level, weight, subtasks, factors_json, created_at)
+            VALUES (${row}, ${a}, 'model', 'XS', 0.25, 0, '{}', ${now})
+          `),
+        /append-only/,
+      );
+    } finally {
+      sqlite.close();
+      rmSync(dbDir, { recursive: true, force: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
