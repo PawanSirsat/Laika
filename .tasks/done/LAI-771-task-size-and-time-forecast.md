@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-17T13:52:30Z
-status: review
+status: done
 finished: 2026-10-17T14:57:36Z
 ---
 
@@ -146,3 +146,7 @@ weighting in the regression, the accuracy trend.
   each saved with its activity row; a size that cannot be stored saving
   nothing; the freeze retried by the refit with the estimate in force at the
   start; no hindsight freeze; the client rule; the MCP fallback.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) on the owner's direct instruction, after one Claude review. The review's one blocker (an estimator failure broke task writes, and in `changeStatus` left a start with no activity row) was fixed in `3e942c81` with tests that failed first; CHIEF read the fix (`bestEffort` savepoint wrapper, activity row before the freeze, freeze retried by the refit) before merge. Also fixed: per-client accuracy counts distinct finishers among measured tasks only, and `get_task_context` degrades to "Size: unavailable". Left open: mid-day refit for fast-growing young projects; the inline rebuild cost on large cold projects.
