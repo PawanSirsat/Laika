@@ -1,5 +1,17 @@
 import { createHash } from 'node:crypto';
-import { and, asc, count, desc, eq, gte, inArray, isNull, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  isNull,
+  sql,
+  type SQL,
+} from 'drizzle-orm';
 import { type ResolvedActor, withProject } from '../auth/resolve-actor.ts';
 import { type Db } from '../db/client.ts';
 import { type EstimateSource, type SizeLevel, type TaskStatus } from '../db/enums.ts';
@@ -15,6 +27,7 @@ import {
   taskTags,
 } from '../db/schema.ts';
 import { ApiError } from '../errors.ts';
+import { createLogger, type Logger } from '../log.ts';
 import { assertCan, systemPrincipal } from '../policy/can.ts';
 import {
   FORECAST_AFTER,
@@ -66,6 +79,14 @@ import { tagsForTasks } from './tags.ts';
  */
 
 export { SIZE_LEVELS, type SizeLevel } from '../db/enums.ts';
+
+/** Where an estimator failure is reported; the app's logger once `app.ts` wires it. */
+let log: Logger = createLogger();
+
+/** Report estimator failures to this logger — `app.ts` passes the process's. */
+export function setEstimateLogger(logger: Logger): void {
+  log = logger;
+}
 
 /** A client is reported on once this many people use it (D-085 item 8). */
 export const MIN_CLIENT_PEOPLE = 3;
@@ -610,11 +631,40 @@ function childrenOf(db: Db, parentId: string): Child[] {
 }
 
 /**
- * Recompute one task's estimate — inline, in the caller's write. Returns
- * whether a row was written; when one was, the parent follows, since its
- * figures come from its children.
+ * **Estimator work is best effort, and the write it rides on is not** (LAI-771
+ * review, B1).
+ *
+ * Every inline call — the recompute on an edit, the freeze at a first start,
+ * the parent following a child — runs in a savepoint (a nested
+ * `db.transaction`, which better-sqlite3 makes a `SAVEPOINT` inside a caller's
+ * transaction and a transaction of its own outside one). A failure takes back
+ * only the estimator's own writes, is logged as `estimate.failed`, and returns
+ * `fallback`; the task write around it carries on and writes its activity
+ * row. The nightly refit computes what was missed, and retries a skipped
+ * freeze (`freezeWhereMissed`).
+ *
+ * Before this, a failure here threw out of `createTask` with nothing saved,
+ * out of `updateTask` after the edit was saved, and out of `changeStatus`
+ * between the status write and its activity row — a move into work with no
+ * `task.status_changed` behind it.
  */
-export function refreshEstimate(db: Db, taskId: string, now: number): boolean {
+function bestEffort<T>(db: Db, what: string, id: string, fallback: T, fn: () => T): T {
+  try {
+    // `immediate`: take the write lock before the first read, so another
+    // connection's commit cannot invalidate the snapshot halfway. Nested in a
+    // caller's transaction it is a savepoint, and the behaviour is moot.
+    return db.transaction(() => fn(), { behavior: 'immediate' });
+  } catch (error) {
+    log.error('estimate.failed', {
+      what,
+      id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return fallback;
+  }
+}
+
+function refresh(db: Db, taskId: string, now: number): boolean {
   const s = db.select(SUBJECT).from(tasks).where(eq(tasks.id, taskId)).get();
   if (s === undefined || settled(s)) return false;
 
@@ -634,21 +684,59 @@ export function refreshEstimate(db: Db, taskId: string, now: number): boolean {
     now,
   );
 
-  if (result.wrote && s.parentTaskId !== null) refreshEstimate(db, s.parentTaskId, now);
+  if (result.wrote && s.parentTaskId !== null) refresh(db, s.parentTaskId, now);
   return result.wrote;
+}
+
+/**
+ * Recompute one task's estimate — inline, in the caller's write, best effort.
+ * Returns whether a row was written; when one was, the parent follows, since
+ * its figures come from its children.
+ */
+export function refreshEstimate(db: Db, taskId: string, now: number): boolean {
+  return bestEffort(db, 'refresh', taskId, false, () => refresh(db, taskId, now));
+}
+
+/**
+ * **The estimate work started under is the newest `model` row written at or
+ * before `started_at`** — the one in force at that moment. Defined that way,
+ * not as "whatever is current", so the freeze can be retried later without
+ * hindsight: a row written after work started is never chosen, and a task
+ * that started before any estimate existed for it (in flight when estimates
+ * were deployed, or with every estimate write failing) is never frozen.
+ */
+function freezeWhereMissed(db: Db, where: SQL): number {
+  const inForce = sql`(SELECT ${taskEstimates.id} FROM ${taskEstimates}
+    WHERE ${taskEstimates.taskId} = ${tasks.id}
+      AND ${taskEstimates.source} = 'model'
+      AND ${taskEstimates.createdAt} <= ${tasks.startedAt}
+    ORDER BY ${taskEstimates.createdAt} DESC, ${taskEstimates.id} DESC
+    LIMIT 1)`;
+  return db
+    .update(tasks)
+    .set({ estimateAtStartId: inForce })
+    .where(
+      and(
+        where,
+        isNotNull(tasks.startedAt),
+        isNull(tasks.estimateAtStartId),
+        sql`${inForce} IS NOT NULL`,
+      ),
+    )
+    .run().changes;
 }
 
 /**
  * Freeze the estimate in force as the one work started under (D-085 item 5):
  * called when a task enters work **for the first time**, as `started_at` is
- * stamped then and never again. Never moves once set.
+ * stamped then and never again. Best effort; a freeze skipped by a failure is
+ * retried by the nightly refit. Never moves once set.
  */
 export function freezeEstimateAtStart(db: Db, taskId: string, now: number): void {
-  refreshEstimate(db, taskId, now);
-  db.update(tasks)
-    .set({ estimateAtStartId: sql`${tasks.estimateId}` })
-    .where(and(eq(tasks.id, taskId), isNull(tasks.estimateAtStartId)))
-    .run();
+  bestEffort(db, 'freeze', taskId, undefined, () => {
+    refresh(db, taskId, now);
+    freezeWhereMissed(db, eq(tasks.id, taskId));
+  });
 }
 
 /**
@@ -656,6 +744,11 @@ export function freezeEstimateAtStart(db: Db, taskId: string, now: number): void
  * The caller has asked `task.write` — anyone who may edit the task may size
  * it — and writes the activity row from what this returns: `null` when the
  * size asked for is the one already set, so a repeat writes nothing.
+ *
+ * **The person's row is their write, not a derived figure**, so it is not best
+ * effort: if it cannot be stored this throws, and the caller's transaction
+ * takes the rest of the edit back with it. Only the computed size beside it —
+ * the recompute — is best effort.
  */
 export function setSizeOverride(
   db: Db,
@@ -958,38 +1051,38 @@ export function getEstimateAccuracy(
     pairs.set(t.id, { log: Math.log(actual / t.p50), hit: actual <= t.p80 });
   }
 
-  // Which client finished each task the first time, and how many people use each.
-  const rounds = db
-    .select({
-      taskId: taskRounds.taskId,
-      number: taskRounds.number,
-      client: taskRounds.clientName,
-      by: taskRounds.finishedBy,
-    })
+  // Per agent client: each **measured** task by the client that finished it
+  // the first time, and the distinct people behind those tasks. **Only the
+  // measured tasks count towards the three people** (D-078 item 6): a client
+  // three people have used, of whom two are behind the figures, would report
+  // what is in fact two people's work (LAI-771 review).
+  const firstRounds = db
+    .select({ taskId: taskRounds.taskId, client: taskRounds.clientName, by: taskRounds.finishedBy })
     .from(taskRounds)
     .innerJoin(tasks, eq(tasks.id, taskRounds.taskId))
-    .where(eq(tasks.projectId, project.id))
+    .where(and(eq(tasks.projectId, project.id), eq(taskRounds.number, 1)))
     .all();
-  const people = new Map<string, Set<string>>();
-  const firstClient = new Map<string, string>();
-  for (const r of rounds) {
-    if (r.client === null) continue;
-    let set = people.get(r.client);
-    if (set === undefined) {
-      set = new Set();
-      people.set(r.client, set);
+  const clients = new Map<
+    string,
+    { people: Set<string>; pairs: { log: number; hit: boolean }[] }
+  >();
+  for (const r of firstRounds) {
+    const pair = pairs.get(r.taskId);
+    if (r.client === null || pair === undefined) continue;
+    let entry = clients.get(r.client);
+    if (entry === undefined) {
+      entry = { people: new Set(), pairs: [] };
+      clients.set(r.client, entry);
     }
-    set.add(r.by);
-    if (r.number === 1) firstClient.set(r.taskId, r.client);
+    entry.people.add(r.by);
+    entry.pairs.push(pair);
   }
-  const byClient = [...people.entries()]
-    .filter(([, users]) => users.size >= MIN_CLIENT_PEOPLE)
-    .map(([client, users]) => ({
+  const byClient = [...clients.entries()]
+    .filter(([, entry]) => entry.people.size >= MIN_CLIENT_PEOPLE)
+    .map(([client, entry]) => ({
       client_name: client,
-      people: users.size,
-      ...figuresFor(
-        [...pairs.entries()].filter(([id]) => firstClient.get(id) === client).map(([, p]) => p),
-      ),
+      people: entry.people.size,
+      ...figuresFor(entry.pairs),
     }))
     .sort((a, b) => a.client_name.localeCompare(b.client_name));
 
@@ -1033,7 +1126,9 @@ const SYSTEM = systemPrincipal();
  * saying nothing a person did.
  *
  * Runs once at boot too (`atStart`), so a deploy — which restarts the server —
- * starts with fitted models and every task estimated.
+ * starts with fitted models and every task estimated. It also freezes any task
+ * whose freeze at its first start was skipped by a failure, from the estimate
+ * in force then (`freezeWhereMissed`) — never one written since.
  */
 export function refitEstimates(db: Db, now: number): { changed: number } {
   assertCan(SYSTEM, 'system.estimate.refit');
@@ -1046,9 +1141,17 @@ export function refitEstimates(db: Db, now: number): { changed: number } {
     .where(isNull(projects.archivedAt))
     .all();
   for (const { id: projectId } of live) {
-    const built = buildFit(db, projectId);
-    cache.set(projectId, built);
-    changed += settleProject(db, built.fit, projectId, now);
+    // One project at a time, each best effort: a project the model cannot
+    // fit is logged and the others are still refitted.
+    changed += bestEffort(db, 'refit', projectId, 0, () => {
+      const built = buildFit(db, projectId);
+      cache.set(projectId, built);
+      // Estimates for what was missed, then any freeze a failure skipped.
+      return (
+        settleProject(db, built.fit, projectId, now) +
+        freezeWhereMissed(db, eq(tasks.projectId, projectId))
+      );
+    });
   }
   return { changed };
 }

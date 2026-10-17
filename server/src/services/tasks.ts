@@ -970,89 +970,106 @@ export function updateTask(
     changes.assigneeId = input.assignee_id;
   }
 
-  // Tags are not a column, so they are not in `changes` — they are applied
-  // separately and get their own activity row naming the field (§4.16, D-027).
-  const tagChange =
-    input.tags === undefined
-      ? null
-      : setTaskTags(db, {
-          taskId,
+  // **One write, whole or not at all** (LAI-771 review, B1). The tags, the
+  // fields and a person's size are each the caller's request, so a size that
+  // cannot be stored must not leave the rest saved behind an error. The
+  // estimator inside is best effort and is never the reason this rolls back.
+  // `immediate` for the reason `bestEffort` gives: the write lock before the
+  // first read.
+  return db.transaction(
+    () => {
+      // Tags are not a column, so they are not in `changes` — they are applied
+      // separately and get their own activity row naming the field (§4.16, D-027).
+      const tagChange =
+        input.tags === undefined
+          ? null
+          : setTaskTags(db, {
+              taskId,
+              projectId: project.id,
+              names: normaliseTagNames(input.tags),
+              now,
+            });
+
+      if (tagChange !== null) {
+        appendActivity(db, {
+          orgId: project.orgId,
           projectId: project.id,
-          names: normaliseTagNames(input.tags),
+          taskId,
+          ...activityActor(actor),
+          // `task.updated` with the field named — the shape `sprint_id` uses, and
+          // deliberately not a seventh §4.8 verb (D-027).
+          type: 'task.updated',
+          payload: { field: 'tags', from: tagChange.from, to: tagChange.to },
           now,
         });
+      }
 
-  if (tagChange !== null) {
-    appendActivity(db, {
-      orgId: project.orgId,
-      projectId: project.id,
-      taskId,
-      ...activityActor(actor),
-      // `task.updated` with the field named — the shape `sprint_id` uses, and
-      // deliberately not a seventh §4.8 verb (D-027).
-      type: 'task.updated',
-      payload: { field: 'tags', from: tagChange.from, to: tagChange.to },
-      now,
-    });
-  }
+      if (Object.keys(changes).length > 0) {
+        db.update(tasks)
+          .set({ ...changes, updatedAt: now })
+          .where(eq(tasks.id, taskId))
+          .run();
 
-  if (Object.keys(changes).length > 0) {
-    db.update(tasks)
-      .set({ ...changes, updatedAt: now })
-      .where(eq(tasks.id, taskId))
-      .run();
+        appendActivity(db, {
+          orgId: project.orgId,
+          projectId: project.id,
+          taskId,
+          ...activityActor(actor),
+          // §5: "A task may be reassigned while in_progress — that is `task.assigned`,
+          // not a status change."
+          type: reassigning ? 'task.assigned' : 'task.updated',
+          payload: reassigning
+            ? { from: task.assigneeId, to: input.assignee_id ?? null }
+            : { changed: apiFieldNames(tasks, Object.keys(changes)) },
+          now,
+        });
+      }
 
-    appendActivity(db, {
-      orgId: project.orgId,
-      projectId: project.id,
-      taskId,
-      ...activityActor(actor),
-      // §5: "A task may be reassigned while in_progress — that is `task.assigned`,
-      // not a status change."
-      type: reassigning ? 'task.assigned' : 'task.updated',
-      payload: reassigning
-        ? { from: task.assigneeId, to: input.assignee_id ?? null }
-        : { changed: apiFieldNames(tasks, Object.keys(changes)) },
-      now,
-    });
-  }
+      // **The size follows what the model reads, and nothing else** (D-085): the
+      // text, the tags and the parent. A priority, an assignee or a date never
+      // reaches the estimate at all; an edit that leaves the inputs as they were
+      // is a hash comparison inside it.
+      const parentMoved = 'parentTaskId' in changes;
+      if (
+        tagChange !== null ||
+        parentMoved ||
+        'title' in changes ||
+        'descriptionMd' in changes ||
+        'acceptanceMd' in changes
+      ) {
+        refreshEstimate(db, taskId, now);
+      }
+      // A subtask moved: both parents' figures came from their children.
+      if (parentMoved) {
+        if (task.parentTaskId !== null) refreshEstimate(db, task.parentTaskId, now);
+        if (input.parent_task_id) refreshEstimate(db, input.parent_task_id, now);
+      }
 
-  // **The size follows what the model reads, and nothing else** (D-085): the
-  // text, the tags and the parent. A priority, an assignee or a date never
-  // reaches the estimate at all; an edit that leaves the inputs as they were
-  // is a hash comparison inside it.
-  const parentMoved = 'parentTaskId' in changes;
-  if (
-    tagChange !== null ||
-    parentMoved ||
-    'title' in changes ||
-    'descriptionMd' in changes ||
-    'acceptanceMd' in changes
-  ) {
-    refreshEstimate(db, taskId, now);
-  }
-  // A subtask moved: both parents' figures came from their children.
-  if (parentMoved) {
-    if (task.parentTaskId !== null) refreshEstimate(db, task.parentTaskId, now);
-    if (input.parent_task_id) refreshEstimate(db, input.parent_task_id, now);
-  }
+      const sizeChange =
+        input.size === undefined
+          ? null
+          : setSizeOverride(db, actor.userId, taskId, input.size, now);
+      if (sizeChange !== null) {
+        appendActivity(db, {
+          orgId: project.orgId,
+          projectId: project.id,
+          taskId,
+          ...activityActor(actor),
+          // The field named, as tags and the sprint are — not a new verb (D-027).
+          type: 'task.updated',
+          payload: { field: 'size', from: sizeChange.from, to: sizeChange.to },
+          now,
+        });
+      }
 
-  const sizeChange =
-    input.size === undefined ? null : setSizeOverride(db, actor.userId, taskId, input.size, now);
-  if (sizeChange !== null) {
-    appendActivity(db, {
-      orgId: project.orgId,
-      projectId: project.id,
-      taskId,
-      ...activityActor(actor),
-      // The field named, as tags and the sprint are — not a new verb (D-027).
-      type: 'task.updated',
-      payload: { field: 'size', from: sizeChange.from, to: sizeChange.to },
-      now,
-    });
-  }
-
-  return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
+      return viewOne(
+        db,
+        db.select().from(tasks).where(eq(tasks.id, taskId)).get()!,
+        project.prefix,
+      );
+    },
+    { behavior: 'immediate' },
+  );
 }
 
 /** Where a claim may take a task from (§5, M7, D-082). */
@@ -1132,12 +1149,6 @@ export function claimTask(
       });
     }
 
-    // The forecast work starts under is kept (D-085 item 5) — at the first
-    // start only, as `started_at` is.
-    if (before.startedAt === null) freezeEstimateAtStart(db, taskId, now);
-
-    const after = db.select().from(tasks).where(eq(tasks.id, taskId)).get()!;
-
     appendActivity(db, {
       orgId: project.orgId,
       projectId: project.id,
@@ -1157,7 +1168,12 @@ export function claimTask(
       now,
     });
 
-    return viewOne(db, after, project.prefix);
+    // The forecast work starts under is kept (D-085 item 5) — at the first
+    // start only, as `started_at` is. After the activity row and best effort,
+    // so it can never cost the claim its record (LAI-771 review, B1).
+    if (before.startedAt === null) freezeEstimateAtStart(db, taskId, now);
+
+    return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
   });
 }
 
@@ -1298,13 +1314,6 @@ export function changeStatus(
     .where(eq(tasks.id, taskId))
     .run();
 
-  // A first start by any route freezes the forecast, as a claim does (D-085).
-  if (to === 'in_progress' && task.startedAt === null) freezeEstimateAtStart(db, taskId, now);
-  // A cancelled subtask leaves its parent's sum, and an uncancelled one rejoins.
-  if (task.parentTaskId !== null && (to === 'cancelled' || task.status === 'cancelled')) {
-    refreshEstimate(db, task.parentTaskId, now);
-  }
-
   appendActivity(db, {
     orgId: project.orgId,
     projectId: project.id,
@@ -1314,6 +1323,16 @@ export function changeStatus(
     payload: { from: task.status, to, ...statusPayload(from, dest), ...(via ? { via } : {}) },
     now,
   });
+
+  // After the activity row, and best effort (LAI-771 review, B1): this
+  // function has no transaction, and a failure here once fell between the
+  // status write and its row. A first start by any route freezes the
+  // forecast, as a claim does (D-085); a cancelled subtask leaves its
+  // parent's sum, and an uncancelled one rejoins.
+  if (to === 'in_progress' && task.startedAt === null) freezeEstimateAtStart(db, taskId, now);
+  if (task.parentTaskId !== null && (to === 'cancelled' || task.status === 'cancelled')) {
+    refreshEstimate(db, task.parentTaskId, now);
+  }
 
   return viewOne(db, db.select().from(tasks).where(eq(tasks.id, taskId)).get()!, project.prefix);
 }
@@ -1428,8 +1447,6 @@ export function addTaskDependency(
     }
     throw err;
   }
-  // What a task is blocked by is one of the model's inputs (D-085).
-  refreshEstimate(db, taskId, now);
 
   appendActivity(db, {
     orgId: project.orgId,
@@ -1448,6 +1465,8 @@ export function addTaskDependency(
     payload: { depends_on: dependsOnTaskId },
     now,
   });
+  // What a task is blocked by is one of the model's inputs (D-085).
+  refreshEstimate(db, taskId, now);
 
   return getTask(db, actor, taskId);
 }
@@ -1473,7 +1492,6 @@ export function removeTaskDependency(
     .run();
 
   if (removed.changes === 0) throw ApiError.notFound('That dependency does not exist');
-  refreshEstimate(db, taskId, now);
 
   appendActivity(db, {
     orgId: project.orgId,
@@ -1484,6 +1502,7 @@ export function removeTaskDependency(
     payload: { depends_on: dependsOnTaskId },
     now,
   });
+  refreshEstimate(db, taskId, now);
 
   return getTask(db, actor, taskId);
 }

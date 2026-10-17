@@ -20,6 +20,7 @@ import {
   getTaskEstimate,
   refitEstimates,
   refreshEstimate,
+  setEstimateLogger,
 } from '../../src/services/estimates.ts';
 import { addMember, createProject } from '../../src/services/projects.ts';
 import { sendBackTask } from '../../src/services/review.ts';
@@ -34,7 +35,7 @@ import {
   updateTask,
 } from '../../src/services/tasks.ts';
 import { captureLog } from '../helpers/app.ts';
-import { expectSqliteError, freshDb, type TestDb } from '../helpers/db.ts';
+import { atCategory, expectSqliteError, freshDb, type TestDb } from '../helpers/db.ts';
 
 /**
  * Sizes and build-time forecasts in the database (D-085, LAI-771): computed on
@@ -629,3 +630,158 @@ describe('the nightly refit, through the scheduler', () => {
     }
   });
 });
+
+/**
+ * The estimator is best effort, and the task write it rides on is not (LAI-771
+ * review, B1). With every estimate write refused — a trigger on
+ * `task_estimates` and one on the four pointers — a create, an edit, a claim
+ * and a status change must each save **with its activity row**, and the
+ * failure must be logged rather than thrown. Before the fix the create threw
+ * and saved nothing, the edit threw after saving, and a move into work saved
+ * its status and `started_at` and **no `task.status_changed` row**.
+ */
+describe('an estimator failure never breaks a task write (B1)', () => {
+  const BROKEN = 'estimates refuse writes for this test';
+
+  function breakEstimates(which: 'all' | 'freeze' = 'all'): void {
+    if (which === 'all') {
+      t.sqlite.exec(
+        `CREATE TRIGGER test_estimates_refused BEFORE INSERT ON task_estimates BEGIN SELECT RAISE(ABORT, '${BROKEN}'); END`,
+      );
+      t.sqlite.exec(
+        `CREATE TRIGGER test_estimate_pointers_refused BEFORE UPDATE OF estimate_id, estimate_at_start_id, size_override_id, estimate_hash ON tasks BEGIN SELECT RAISE(ABORT, '${BROKEN}'); END`,
+      );
+    } else {
+      t.sqlite.exec(
+        `CREATE TRIGGER test_freeze_refused BEFORE UPDATE OF estimate_at_start_id ON tasks WHEN NEW.estimate_at_start_id IS NOT NULL BEGIN SELECT RAISE(ABORT, '${BROKEN}'); END`,
+      );
+    }
+  }
+
+  function healEstimates(): void {
+    for (const name of [
+      'test_estimates_refused',
+      'test_estimate_pointers_refused',
+      'test_freeze_refused',
+    ]) {
+      t.sqlite.exec(`DROP TRIGGER IF EXISTS ${name}`);
+    }
+  }
+
+  function activityOf(taskId: string, type: (typeof activity.$inferSelect)['type']) {
+    return t.db
+      .select()
+      .from(activity)
+      .where(and(eq(activity.taskId, taskId), eq(activity.type, type)))
+      .all();
+  }
+
+  it('saves a create, an edit, a claim and a status change, each with its activity row', () => {
+    const log = captureLog();
+    setEstimateLogger(log.logger);
+    breakEstimates();
+
+    // The setup is really broken: a direct estimate write is refused.
+    const probe = newTask();
+    expect(() => refreshEstimate(t.db, probe.id, T0)).not.toThrow();
+    expect(estimateRows(probe.id)).toEqual([]);
+
+    const task = newTask({ acceptance_md: words(40) });
+    expect(row(task.id).title).toBe('Work');
+    expect(activityOf(task.id, 'task.created')).toHaveLength(1);
+    expect(task.size).toBeNull();
+
+    const edited = updateTask(t.db, admin(), task.id, { acceptance_md: words(400), now: T0 + MIN });
+    expect(row(task.id).acceptanceMd).toBe(words(400));
+    expect(edited.acceptance_md).toBe(words(400));
+    expect(activityOf(task.id, 'task.updated')).toHaveLength(1);
+
+    changeStatus(t.db, admin(), task.id, 'in_progress', T0 + 2 * MIN);
+    expect(row(task.id).status).toBe('in_progress');
+    expect(row(task.id).startedAt).toBe(T0 + 2 * MIN);
+    expect(activityOf(task.id, 'task.status_changed')).toHaveLength(1);
+
+    const claimed = newTask({ acceptance_md: words(40) });
+    claimTask(t.sqlite, t.db, admin(), claimed.id, T0 + 3 * MIN);
+    expect(row(claimed.id).assigneeId).toBe(adminId);
+    expect(activityOf(claimed.id, 'task.status_changed')).toHaveLength(1);
+
+    // Logged, not thrown — and the nightly refit catches up once it can.
+    expect(log.find('estimate.failed')).toMatchObject({ error: expect.stringContaining(BROKEN) });
+    healEstimates();
+    refitEstimates(t.db, T0 + HOUR);
+    expect(getTask(t.db, admin(), task.id).size).not.toBeNull();
+  });
+
+  it('refuses a size it cannot store, and then saves nothing of that edit', () => {
+    const task = newTask({ acceptance_md: words(40) });
+    breakEstimates();
+    expect(() =>
+      updateTask(t.db, admin(), task.id, { title: 'Renamed', size: 'XL', now: T0 + MIN }),
+    ).toThrow(BROKEN);
+    // A person's size is their write, not a derived figure: no half of it lands.
+    expect(row(task.id).title).toBe('Work');
+    expect(activityOf(task.id, 'task.updated')).toEqual([]);
+  });
+
+  it('freezes on the next refit when the freeze at claim was skipped — the estimate in force then', () => {
+    const task = newTask({ acceptance_md: words(40) });
+    const atCreate = row(task.id).estimateId;
+    breakEstimates('freeze');
+    claimTask(t.sqlite, t.db, admin(), task.id, T0 + HOUR);
+    expect(row(task.id).estimateAtStartId).toBeNull();
+    expect(activityOf(task.id, 'task.status_changed')).toHaveLength(1);
+    healEstimates();
+
+    // An edit after work started writes a newer estimate; it is not the one
+    // work started under, and the retry must not pick it.
+    updateTask(t.db, admin(), task.id, { acceptance_md: words(900), now: T0 + 90 * MIN });
+    expect(row(task.id).estimateId).not.toBe(atCreate);
+
+    refitEstimates(t.db, T0 + 2 * HOUR);
+    expect(row(task.id).estimateAtStartId).toBe(atCreate);
+  });
+
+  it('never freezes a task that started before any estimate existed for it', () => {
+    const task = newTask({ acceptance_md: words(40) }, T0);
+    // Started an hour before its first estimate — as a task in flight when
+    // estimates were deployed.
+    t.db
+      .update(tasks)
+      .set({ startedAt: T0 - HOUR, ...atCategory(t.db, row(task.id).projectId, 'in_progress') })
+      .where(eq(tasks.id, task.id))
+      .run();
+    refitEstimates(t.db, T0 + HOUR);
+    expect(row(task.id).estimateAtStartId).toBeNull();
+  });
+});
+
+describe('agent-client accuracy counts the people behind the measured tasks only (D-078 item 6)', () => {
+  it('does not report a client used by three people when only two of them are on measured tasks', () => {
+    const people = ['Bea', 'Cy', 'Di'].map((name) => {
+      const id = makeUser('member', name);
+      addMember(t.db, admin(), 'laika', id, 'member');
+      return id;
+    });
+    const [bea, cy, di] = people as [string, string, string];
+    // Bea's codex work came first, in a cold project: frozen without a
+    // forecast, so it is never measured — though she did use the client.
+    let clock = finishClock(finishedTasks(3, () => agent(bea, 'codex'), T0));
+    clock = finishClock(finishedTasks(FORECAST_AFTER, admin, clock));
+    refitEstimates(t.db, clock);
+    clock = finishClock(finishedTasks(2, () => agent(cy, 'codex'), clock));
+    clock = finishClock(finishedTasks(2, () => agent(di, 'codex'), clock));
+
+    expect(getEstimateAccuracy(t.db, admin(), 'laika').by_client).toEqual([]);
+
+    // Bea on a measured task makes three.
+    finishedTasks(1, () => agent(bea, 'codex'), clock);
+    const view = getEstimateAccuracy(t.db, admin(), 'laika');
+    expect(view.by_client.map((c) => [c.client_name, c.people])).toEqual([['codex', 3]]);
+  });
+});
+
+/** Just after the last of these tasks finished, so the next batch starts later. */
+function finishClock(ids: readonly string[]): number {
+  return Math.max(...ids.map((id) => row(id).completedAt ?? 0)) + HOUR;
+}
