@@ -61,7 +61,10 @@ project's typical task, a build-time range once the project has history, and
 the actual beside it — with an optional override by anyone who may edit the
 task (§4.32, §6.4). It is never a score of people: accuracy is reported per
 project, and per agent client only where at least three people use it (D-078
-item 6).
+item 6). Phase 2 (LAI-772) adds a build-token range beside the hours, the
+claimant's own optional estimate at claim (§4.34), and a sprint forecast —
+*"85% likely to finish 18–23 of 26"* — computed from the project's throughput
+and those sizes. None of it is a number anybody is asked to type.
 
 ---
 
@@ -1272,6 +1275,7 @@ a pointer and the history is never rewritten.
 | `level` | `XS` \| `S` \| `M` \| `L` \| `XL` — relative to the project's typical task, weights 0.25 / 0.5 / 1 / 2 / 4. Null only on a `person` row that clears an override (CHECK) |
 | `weight` | nullable real — the computed weight, 1 being the project's typical task; on `model` rows |
 | `build_p50_ms`, `build_p80_ms` | nullable — the build-time forecast, likely and pessimistic. Null in a cold start |
+| `tokens_p50`, `tokens_p80` | nullable — the build-token forecast, likely and pessimistic: input, output and cache writes up to the first finish (LAI-772). Null until the project has 10 finished tasks with attributed token data |
 | `subtasks` | integer, default 0 — children rolled into it |
 | `inputs_hash` | nullable — what the model read, hashed: `tasks.estimate_hash` when the row was written |
 | `model_version` | nullable — the project's fitted model it came from |
@@ -1336,6 +1340,30 @@ stays beside it. Setting it writes `task.updated` with `{ field: 'size', from,
 to }` — not a new verb (D-027's shape). A `model` row writes no `activity`: it
 is derived, as `ready` is.
 
+**Tokens (LAI-772).** Each `model` row carries a build-token range computed
+with the hours, so the claim freezes both. The calibration is per project:
+the log of a finished task's **build tokens** (§4.33's input + output + cache
+writes, on days up to its first finish's UTC day) against the log of its size
+weight at the start, slope pulled towards 1. It learns **only from attributed
+actuals**: a task counts when at least 70% of what its people spent on those
+days was tied to a task, and in proportion to that share — a figure that is
+mostly missing would teach it that tasks cost little. Tokens are forecast once
+10 such tasks exist (D-085 item 6), calibrated and checked against the plain
+median exactly as the hours are, and fall back to the median's range when the
+size does not explain them. A row is also written when the token p50 moves
+more than ×1.1, or appears.
+
+**The claimant's estimate (LAI-772, §4.34)** moves a forecast only once the
+project's claimants' sizes have beaten the plain median over at least 10
+finished tasks; it is then blended in log space by inverse variance against
+the model's own error (at most 0.9), recorded in the *why* as an `agent`
+factor, and frozen with the rest. Until then its weight is 0.
+
+**Scope grew after start** is shown when the computed level is a level or
+more above the frozen one; an XL task carries a **split suggestion** with the
+mean rounds finished XL tasks here took (from three of them). Both describe the
+task, never its author.
+
 ### 4.33 `token_usage_days`
 
 Agents' token usage per day, as one machine last reported it (§6.4, D-084,
@@ -1370,6 +1398,35 @@ other collectors' rows for its agents, so the same machine under a new
 collector id is never counted twice. Every read is a range of one index
 (§4.13) — a task's (`GET /tasks/:id/usage`, LAI-770) on `task_id`. Kept 400
 days (§11.6).
+
+### 4.34 `task_claim_estimates`
+
+What the one claiming a task said about it when they claimed it (D-085 item 4,
+LAI-772) — `start_working`'s optional `estimate`, and `POST /tasks/:id/claim`'s.
+**Append-only**, with `task_estimates`' three triggers (re-established at
+every boot): it is what was said, kept to be scored against what happened.
+
+| field | notes |
+| --- | --- |
+| `id` | ULID |
+| `task_id` | FK `tasks`, `ON DELETE RESTRICT` |
+| `level` | nullable — `XS` \| `S` \| `M` \| `L` \| `XL`, relative to the project's typical task |
+| `confidence` | nullable — `green` \| `yellow` \| `red`: how sure the claimant is it will land as asked |
+| `client_name` | nullable — the agent's own name for itself when it claimed (D-076) |
+| `created_at` | |
+
+At least one of `level` and `confidence` (CHECK). **No column names a
+person**: the claim's own `task.status_changed` row says who claimed. A resume
+— the holder's own `start_working` on a task already in progress — keeps
+none. Written best effort after the claim's activity row, so an estimate that
+cannot be stored never costs the claim.
+
+**Scored per project, never per person.** Sizes: against build times, the
+plain median and the model, through the model's calibration at the start
+(§4.32); the weight earned is the accuracy view's `agent.size.weight`.
+Confidence: of the tasks claimed with each and decided at least once, how many
+were sent back (`agent.confidence`). The estimate in force is the newest at or
+before `started_at`, as the freeze reads its rows.
 
 ## 5. Task lifecycle
 
@@ -1634,6 +1691,7 @@ GET    /api/v1/projects/:slug/sprints        POST /api/v1/projects/:slug/sprints
 GET    /api/v1/sprints/:id                   PATCH /api/v1/sprints/:id   DELETE /api/v1/sprints/:id  (lead+)
 POST   /api/v1/sprints/:id/tasks             body { task_ids[] }  — assign into the sprint
 DELETE /api/v1/sprints/:id/tasks/:taskId     remove from the sprint (task itself is untouched)
+GET    /api/v1/sprints/:id/forecast          "N% likely to finish X–Y of Z" (LAI-772; computed, cached)
 GET    /api/v1/projects/:slug/tags           list with usage counts, for the picker and the filter
 PATCH  /api/v1/projects/:slug/tags/:name     rename project-wide (lead+)
 DELETE /api/v1/projects/:slug/tags/:name     remove from every task (lead+); tasks are untouched
@@ -1641,7 +1699,8 @@ GET    /api/v1/projects/:slug/timeline       ?from=&to=  — sprints with date r
 POST   /api/v1/projects/:slug/tasks
 GET    /api/v1/tasks/:id                     PATCH /api/v1/tasks/:id
 POST   /api/v1/tasks/:id/claim               POST /api/v1/tasks/:id/status
-                                             claim: body { branch? }, optional — kept on the task (LAI-770)
+                                             claim: body { branch?, estimate? }, optional — the branch is kept
+                                             on the task (LAI-770); estimate { size?, confidence? } (§4.34)
 POST   /api/v1/tasks/:id/finish              body { summary, checklist?, commits?, branch?, pull_request?, tests? }
                                              → review, with a round and its proof (finish_task's twin, D-082)
 GET    /api/v1/tasks/:id/rounds              { rounds (newest first), send_back }
@@ -1920,7 +1979,12 @@ and the profile's Tokens card:
   attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read }],
   by_model: [{ model, tokens, cache_read }], top_tasks: [{ task_id, key,
   title, project_slug, tokens, cache_read }], no_token_data: [agent],
-  org_totals }`. **A space holds only tokens tied to its tasks**, so beside one
+  org_totals, rework }`. `rework` (LAI-772) is, per project the reader may
+  read and in name order, `{ project: { slug, name }, send_backs, tasks,
+  tokens, cache_read, time_ms, open, share }` for send-backs decided in the
+  range: the tokens tied to the task on days after the round sent back (in
+  `tz`), the time from each send-back to the next finish or to now, and the
+  share of the project's tokens that was rework — **never per person**. **A space holds only tokens tied to its tasks**, so beside one
   `org_totals` is the organisation's totals over the same range — what no
   space can hold — for a reader holding `usage.read_org`, and `null` otherwise
   and for the organisation itself.
@@ -2011,15 +2075,27 @@ to go back to the computed one — under `task.write`, so anyone who may edit th
 task may size it; anything else is `422`. A `size` that cannot be stored
 refuses the whole `PATCH`, and nothing of it is saved — a person's size is their
 write, not a derived figure. `GET /tasks/:id/estimate` answers `{ task_id, size,
-why, override, at_start, actual, history }` under `project.read`: `why` is
+why, override, at_start, actual, tokens, actual_tokens, claim_estimate,
+scope_grew, split, history }` under `project.read`: `why` is
 `{ early, method, typical: { words, build_ms }, factors: [{ key, label, levels
 }], similar: [{ task_id, key, title, build_ms, similarity }], model_version,
 computed_at }`; `override` is `{ level, set_by,
 set_at }`; `at_start` is the frozen copy `{ level, build_p50_ms, build_p80_ms,
-estimated_at }`; `actual` is `{ build_ms, review_wait_ms, rework_ms, finishes,
-first_finish_at }`; `history` the latest 20 rows, newest first.
+tokens_p50, tokens_p80, estimated_at }`; `actual` is `{ build_ms,
+review_wait_ms, rework_ms, finishes, first_finish_at }`; `history` the latest
+20 rows, newest first. LAI-772: `tokens` is the build-token forecast in force,
+`{ p50, p80, learned_from, forecasts_after }` (both `null` until
+`learned_from` reaches `forecasts_after`); `actual_tokens` is `{ build,
+total, rework }` — build up to the first finish's UTC day, rework after — for
+a reader holding `usage.read_project`, else `null`, and `null` with none tied
+to the task; `claim_estimate` is `{ level, confidence, client_name,
+created_at }` or `null`; `scope_grew` is `{ from, to }` or `null`; `split` is
+`{ xl_finished, rounds_avg }` for an XL task, else `null`.
 `GET /projects/:slug/estimates/accuracy` answers `{ project_id, finished,
-forecasts_after, live, backtest, by_client, model_version }`: `live` measures
+forecasts_after, live, backtest, by_client, tokens, agent, model_version }`:
+`tokens` is `{ learned_from, forecasts_after, live, backtest }` for the token
+forecast, `agent` is `{ size: { n, agent_error, median_error, model_error,
+weight }, confidence: [{ confidence, n, sent_back }] }` (§4.34); `live` measures
 frozen-at-claim forecasts against actual build times — `{ n, typical_error,
 bias, p80_hit_rate }`, the error a ratio such as `1.7`; `backtest` is the
 replay against the plain median, `{ n, method_error, median_error,
@@ -2028,6 +2104,19 @@ the same figures per agent client, **only where at least three distinct people
 are behind the measured tasks it finished first** — not everyone who has used
 it — with `people` as a count. Nothing in either answer names or groups
 by a person.
+
+**The sprint forecast (LAI-772).** `GET /sprints/:id/forecast` answers, under
+`project.read`, `{ sprint_id, total, done, forecast, reason, basis }`:
+`forecast` is `{ probability, low, high, median, days_left }` — the narrowest
+central range of tasks done by the end of `ends_on` holding at least 85% of
+2000 seeded draws, each day of the days left drawn from what the project
+finished per calendar day over the last 42 days (size weight, quiet days
+included), the tasks left finished in order (review, in progress, to do,
+backlog; board order within each) while capacity lasts. `null` with `reason`
+`completed`, `no_tasks`, or `not_enough_history` (fewer than 10 tasks done in
+the window); `basis` is `{ days, tasks_done, weight_done }`. Cached per sprint
+against every input, so a re-read with nothing changed draws nothing. Not
+story points: nothing in it is typed by anybody.
 
 **The GitHub webhook secret (LAI-753).** `GET /org` carries `github_webhook:
 { configured, payload_url }` for a caller who may *Configure webhooks* (§3.1,
@@ -2047,9 +2136,13 @@ status on every project where the caller holds `task.write`, **oldest waiting
 first** — waiting since its latest move into review from another category —
 at most 200, `truncated` saying when more wait. Each entry is `{ task,
 project: { id, slug, name, prefix }, assignee_name, waiting_since, round,
-finished_by_name, can_decide }`, `round` the latest (or `null`) and
-`can_decide` whether this caller may accept or send it back. Not paginated:
-it is the work waiting for a person.
+finished_by_name, can_decide, cue }`, `round` the latest (or `null`) and
+`can_decide` whether this caller may accept or send it back. `cue` is
+`{ kind: 'fast', build_ms, forecast_p50_ms }` — *"check this one"* (LAI-772)
+— when round 1 finished in under 0.25× the build-time p50 frozen at the start
+and CI has not confirmed the round, else `null`; a later round, and a task
+started before its project had hours, never carry one. About the task, never
+the person. Not paginated: it is the work waiting for a person.
 
 `POST /tasks/:id/accept` moves a review task to the project's first visible
 done status; `POST /tasks/:id/send-back` takes a required `reason` (1–5000
@@ -2129,13 +2222,13 @@ read them.
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope` — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
-| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085) |
+| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`), and `estimate` — the size, its *why*, the forecast frozen at start and the actual, as `GET /tasks/:id/estimate` answers (D-085), with the token forecast, what was said at claim, *scope grew* and the split suggestion (LAI-772) — and `similar`: up to five similar finished tasks in the project, closest first, each `{ task_id, key, title, status, similarity, rounds, send_backs: [{ round, reason }] }` — why it was sent back, and nobody's name |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles, and `before_you_start`: mark the task before starting (`start_working` with the `branch`, or `update_status` to `in_progress`) and name the branch `<PREFIX>-42-…`, because that is how a session's tokens reach a task (LAI-770) |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
 | `create_task` | `{ project, title, description?, acceptance?, priority?, tags?, assignee?, sprint?, blocked_by?, discovered_from?, parent?, due_on?, planned_start?, size? }` | created task, `created_via: 'mcp'`. `parent` is a task ref and makes this a subtask, one level only |
 | `update_task` | `{ task, title?, description?, acceptance?, priority?, tags?, assignee?, sprint?, parent?, due_on?, planned_start?, size? }` | task. Every field optional; an omitted one is left alone; `null` on `parent`, a date or `size` clears it. **No `status`**. `size` (`XS`–`XL`) overrides the computed size (D-085) |
-| `start_working` | `{ task, branch? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409` |
+| `start_working` | `{ task, branch?, estimate? }` | task, or `409` with the current assignee. A `branch` is kept on the task (LAI-770). `estimate` is the claimant's own `{ size?, confidence? }` — `XS`–`XL` and `green` \| `yellow` \| `red` — kept in §4.34, scored against what happens, and blended into the forecast only once estimates here beat the project median (LAI-772); a resume keeps none. **The holder's own call on a task already in progress succeeds** as a no-op that keeps the branch it is given and returns the task — no status change, no `activity` row, `started_at` and the frozen estimate untouched — so a session resuming its task can mark it (LAI-770 review, B2); anyone else, and a holder whose task is not in progress, still get `409` |
 | `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |
@@ -2749,16 +2842,16 @@ call MCP; agents do.
 | **Projects** | 2 | `GET/POST /projects`, `GET/PATCH /projects/:slug`, `POST /projects/:slug/join`, `GET/POST/PATCH/DELETE /projects/:slug/members` | `get_project_context` | ✅ |
 | **Board** | 2 | `GET/POST /projects/:slug/tasks`, `PATCH /tasks/:id`, `POST /tasks/:id/claim`, `POST /tasks/:id/status`, `GET /projects/:slug/members`, `GET /events`, `GET /watching` | `create_task`, `start_working`, `update_status`, `finish_task` | ✅ |
 | **Task detail** *(slide-over on Board, not a nav item)* | 2 | `GET/PATCH /tasks/:id`, `GET /tasks/:id/rounds`, `GET /tasks/:id/estimate`, `GET /tasks/:id/usage`, `GET /projects/:slug/estimates/accuracy`, `GET/POST /tasks/:id/comments`, `PATCH/DELETE /comments/:id`, `POST/DELETE /tasks/:id/dependencies`, `GET /projects/:slug/activity`, `PUT/DELETE /tasks/:id/watch`, `GET /tasks/:id/watchers`, `GET /projects/:slug/mentionable` | `add_comment`, `get_task_context` | ✅ |
-| **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | — | ✅ D-013 |
+| **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=`, `GET /sprints/:id/forecast` (each sprint not completed, LAI-772) | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
 | **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079, D-084 |
 | **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id` (only a matched task and an opened *Show tasks*), `GET /review` (the waiting count), `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754, LAI-767 |
-| **Review** *(sidebar, global)* | 5 | `GET /review`, `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
+| **Review** *(sidebar, global)* | 5 | `GET /review` (with each task's `cue`: a *check this one* chip and filter, LAI-772), `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
 | **Unlisted work** *(sidebar, global; owners and admins)* | 3 | `GET /unlisted`, `POST /unlisted/:id/promote`, `DELETE /unlisted/:id`, `GET /users` | `log_unlisted_work` | ✅ LAI-754 |
 | **Member profile** *(owners and admins; not in the prototype)* | 7 | `GET/PATCH /users/:id/profile`, `POST /users/:id/ratings`, `GET /people/:id/activity`, `GET /users/:id/usage` | — | ✅ D-078, D-079, D-084 |
-| **Usage** *(sidebar, global; not in the prototype)* | 7 | `GET /usage`, `GET /projects`, `GET /users/:id/usage` (the reader's own) | — | ✅ D-084 |
+| **Usage** *(sidebar, global; not in the prototype)* | 7 | `GET /usage` (with `rework` per project, LAI-772), `GET /projects`, `GET /users/:id/usage` (the reader's own) | — | ✅ D-084 |
 | **Dashboard** | 5 | `GET /projects/:slug/metrics`, `GET /projects/:slug/tasks`, `GET /projects/:slug/activity`, `GET /projects/:slug/members`, `GET /projects/:slug/mentionable`, `GET /projects` | all, indirectly via `activity` | ✅ |
 | **Meeting review** | 6 | `GET /projects/:slug/meeting-reviews`, `GET /meeting-reviews/:id`, `POST /meeting-reviews/:id/apply`, `POST /meeting-reviews/:id/discard` | — | ✅ |
 | **Laika Assistant** | 6 | *undefined — three questions first (§14, q9)* | — | ⏸ scheduled, unspecified |
