@@ -244,6 +244,25 @@ const PAIRS: readonly Pair[] = [
     client: 'EstimateAccuracy',
     clientFile: 'estimates.ts',
   },
+  // LAI-772: the token forecast, what a claimant said, and the sprint forecast.
+  {
+    server: 'TokenForecastView',
+    serverFile: 'services/estimates.ts',
+    client: 'TokenForecast',
+    clientFile: 'estimates.ts',
+  },
+  {
+    server: 'ClaimEstimateView',
+    serverFile: 'services/estimates.ts',
+    client: 'ClaimEstimate',
+    clientFile: 'estimates.ts',
+  },
+  {
+    server: 'SprintForecastView',
+    serverFile: 'services/sprint-forecast.ts',
+    client: 'SprintForecast',
+    clientFile: 'sprints.ts',
+  },
   {
     // `ProjectSummary extends ProjectView` — the list endpoint serves the
     // derived shape, which is what the client mirrors.

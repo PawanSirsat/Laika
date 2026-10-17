@@ -53,7 +53,12 @@ const item = (state = 'claimed' as const) => ({
 
 function queued(
   key: string,
-  patch: { slug?: string; assignee?: string | null; round?: Round | null } = {},
+  patch: {
+    slug?: string;
+    assignee?: string | null;
+    round?: Round | null;
+    cue?: ReviewQueueItem['cue'];
+  } = {},
 ): ReviewQueueItem {
   return {
     task: { id: key, key, assignee_id: patch.assignee ?? null } as unknown as Task,
@@ -63,6 +68,7 @@ function queued(
     round: patch.round === undefined ? null : patch.round,
     finished_by_name: null,
     can_decide: true,
+    cue: patch.cue ?? null,
   };
 }
 
@@ -138,6 +144,26 @@ void describe('filterQueue', () => {
     assert.deepEqual(keys({ ...NO_FILTER, project: 'laika' }), ['A', 'C']);
     assert.deepEqual(keys({ ...NO_FILTER, assignee: 'u2' }), ['C']);
     assert.deepEqual(keys({ ...NO_FILTER, assignee: 'none' }), ['B']);
+  });
+
+  void test('“check this one”: only the tasks the server cued as finished far faster than forecast (LAI-772)', () => {
+    const cued = [
+      queued('A', { slug: 'laika', assignee: 'u1', round: passing }),
+      queued('B', {
+        slug: 'laika',
+        assignee: 'u1',
+        round: passing,
+        cue: { kind: 'fast', build_ms: 60_000, forecast_p50_ms: 3_600_000 },
+      }),
+    ];
+    assert.deepEqual(
+      filterQueue(cued, { ...NO_FILTER, fast: true }).map((i) => i.task.key),
+      ['B'],
+    );
+    assert.deepEqual(
+      filterQueue(cued, NO_FILTER).map((i) => i.task.key),
+      ['A', 'B'],
+    );
   });
 
   void test('failing tests and no proof', () => {

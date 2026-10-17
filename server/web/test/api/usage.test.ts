@@ -21,6 +21,7 @@ import {
   shareOf,
   type TaskUsage,
   USAGE_RANGES,
+  reworkLine,
 } from '../../src/api/usage.ts';
 
 function stub(answer: unknown): string[] {
@@ -163,6 +164,38 @@ void describe('a task’s tokens (LAI-770)', () => {
         ],
       }),
       'Claude Code 1.2M · Codex 40K',
+    );
+  });
+});
+
+void describe('rework cost, per project (LAI-772)', () => {
+  void test('says what send-backs cost in tokens and time, and names nobody', () => {
+    const line = reworkLine({
+      project: { slug: 'laika', name: 'Laika' },
+      send_backs: 3,
+      tasks: 2,
+      tokens: 1_230_000,
+      cache_read: 9_000_000,
+      time_ms: 6 * 3_600_000,
+      open: 1,
+      share: 0.12,
+    });
+    assert.equal(
+      line,
+      '3 send-backs on 2 tasks · 1.23M tokens (12% of the space’s) · 6.0 h of rework, 1 still open',
+    );
+    assert.equal(
+      reworkLine({
+        project: { slug: 'laika', name: 'Laika' },
+        send_backs: 1,
+        tasks: 1,
+        tokens: 0,
+        cache_read: 0,
+        time_ms: 30 * 60_000,
+        open: 0,
+        share: null,
+      }),
+      '1 send-back on 1 task · no tokens tied to it after · 30 min of rework',
     );
   });
 });
