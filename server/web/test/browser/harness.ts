@@ -411,11 +411,22 @@ function serve(
   });
 }
 
+/**
+ * A host name that reaches the stub server and is **not** a secure context
+ * (LAI-760). The live board is plain HTTP on an IP, where `navigator.clipboard`
+ * does not exist; `127.0.0.1` is a secure context, so a test there cannot see
+ * what the board's readers see. Chromium resolves this name to the loopback
+ * address by a launch flag, and the page's origin stays `http://laika.test`.
+ */
+export const INSECURE_HOST = 'laika.test';
+
 let shared: Browser | undefined;
 
 /** One browser for the whole file — launching costs more than every test in it. */
 async function browser(): Promise<Browser> {
-  shared ??= await chromium.launch();
+  shared ??= await chromium.launch({
+    args: [`--host-resolver-rules=MAP ${INSECURE_HOST} 127.0.0.1`],
+  });
   return shared;
 }
 
@@ -463,6 +474,11 @@ export interface OpenOptions {
    * have to be in place before the app boots.
    */
   readonly before?: (page: Page) => Promise<void>;
+  /**
+   * Serve the page from `http://laika.test:<port>`, which is not a secure
+   * context, as the live board is not (LAI-760). `origin` reports that host.
+   */
+  readonly insecure?: boolean;
 }
 
 /** Open `path` in a real browser, against the built SPA and a stubbed API. */
@@ -473,7 +489,10 @@ export async function open(
 ): Promise<Harness> {
   const calls: StubCall[] = [];
   const unmatched: string[] = [];
-  const { server, origin } = await serve(ensureBuilt(), stub, calls, unmatched);
+  const served = await serve(ensureBuilt(), stub, calls, unmatched);
+  const { server } = served;
+  const origin =
+    options.insecure === true ? served.origin.replace('127.0.0.1', INSECURE_HOST) : served.origin;
   const page = await (await browser()).newPage();
   if (options.before !== undefined) await options.before(page);
   await page.goto(`${origin}${path}`);

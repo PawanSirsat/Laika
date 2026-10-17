@@ -79,6 +79,27 @@ void describe('the clipboard has one implementation', () => {
       'the fire-and-forget shape is back',
     );
     assert.match(src, /await navigator\.clipboard\.writeText/, 'the write is not awaited');
-    assert.match(src, /return 'select'/, 'there is no fallback when the API is absent');
+  });
+
+  void test('absence still copies, through a selection, before any await (LAI-760)', () => {
+    /*
+     * Saying *Press ⌘C* was honest and still copied nothing on the live board.
+     * The fallback is `execCommand('copy')`, which needs the click's user
+     * gesture — so when the API is absent it must be reached before anything
+     * awaits. Its behaviour is proved in `browser/copy-insecure.test.ts`; this
+     * pins the order, which a refactor could break without a browser noticing
+     * on a secure origin.
+     */
+    const src = code(readFileSync(join(SRC, 'components/CopyButton.tsx'), 'utf8'));
+    assert.match(
+      src,
+      /document\.execCommand\('copy'\)/,
+      'there is no fallback when the API is absent',
+    );
+    const body = src.slice(src.indexOf('export async function copyText'));
+    const absent = body.indexOf('copyThroughSelection(');
+    const awaited = body.indexOf('await ');
+    assert.ok(absent !== -1 && awaited !== -1, 'copyText has changed shape; re-read this test');
+    assert.ok(absent < awaited, 'the fallback for an absent API runs after an await');
   });
 });
