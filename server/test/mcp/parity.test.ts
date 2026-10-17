@@ -716,3 +716,36 @@ describe('§7.1 lists the tools the server actually serves', () => {
     ).toBe(words[twinned]);
   });
 });
+
+/**
+ * The public README says what the server serves, by name (LAI-744).
+ *
+ * Its badge read `MCP-20 tools` while the registry held 18. **The badge
+ * carries no count** — a number typed by hand rots the day the surface
+ * changes (CLAUDE.md §2) — and the *MCP tools* table is held to the registry
+ * by name, both directions, like §7.1 above.
+ */
+describe('the README names the tools the server serves (LAI-744)', () => {
+  const readme = (): string => readFileSync(join(SPEC_DIR, '..', 'README.md'), 'utf8');
+
+  it('lists exactly the registered tools in its MCP tools table', async () => {
+    const text = readme();
+    const start = text.indexOf('## 🧰 MCP tools');
+    expect(start, 'the README has no MCP tools section').toBeGreaterThan(-1);
+    const section = text.slice(start, text.indexOf('\n---', start));
+    const listed = [...new Set([...section.matchAll(/`([a-z_]+)`/g)].map((m) => m[1]!))].sort();
+
+    const side = await makeSide();
+    const client = await connect(side);
+    const registered = (await client.listTools()).tools.map((t) => t.name).sort();
+    await client.close();
+
+    expect(listed).toEqual(registered);
+  });
+
+  it('puts no number on the MCP badge', () => {
+    const badge = /img\.shields\.io\/badge\/MCP-([^)\s]*)/.exec(readme());
+    expect(badge, 'the README has no MCP badge').not.toBeNull();
+    expect(badge?.[1]).not.toMatch(/\d/);
+  });
+});
