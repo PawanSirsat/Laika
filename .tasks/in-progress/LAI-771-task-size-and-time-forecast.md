@@ -2,11 +2,12 @@
 id: LAI-771
 title: 'Size and forecasts, phase 1: every task gets a computed size (XS-XL) with its why, a build-time forecast beside the actual, an override, and per-project accuracy (server/ + server/web/ + docs/)'
 area: server
-assignee: unclaimed
+assignee: chief
 priority: p1
 depends-on: []
 discovered-from:
-status: backlog
+started: 2026-10-17T13:52:30Z
+status: in-progress
 ---
 
 ## Goal
