@@ -158,7 +158,7 @@ only definition is "the same people as Export audit log", and two cells that mus
 be kept in step by hand. If the two ever need to differ — a Member who may watch
 the feed but not export it — that is the moment to split them, and the split will
 be obvious because someone will be asking for it.
-| Configure webhooks | ✓ | ✓ | — | — |
+| Configure webhooks | ✓ (session only) | ✓ (session only) | — | — |
 | View the organisation | ✓ | ✓ | ✓ | ✓ |
 | View a member's profile | ✓ (session only) | ✓ (session only) | — | — |
 | Set a member's profile kind | ✓ (session only) | ✓ (session only) | — | — |
@@ -1058,9 +1058,9 @@ inside the move to review.
 ### 4.26 `task_evidence`
 
 One item of a round's proof (D-082): a commit, the branch, the pull request or
-a test run. **Each item carries its own `state`**, so step 2 (LAIKA-477,
+a test run. **Each item carries its own `state`**, so step 2 (D-083, LAI-766,
 GitHub confirming the proof) changes `state`, `state_source` and `state_at` on
-a row and needs no migration.
+a row and needed no change to this table.
 
 | field | notes |
 | --- | --- |
@@ -1071,13 +1071,15 @@ a row and needs no migration.
 | `value` | the sha (7–40 lowercase hex), the branch name, the pull request URL (`http:` or `https:` only) or the test command |
 | `detail` | nullable — a commit's first line; null for every other kind |
 | `exit_code` | nullable — a test run's exit code, required for one and null for every other kind (CHECK) |
-| `state` | `claimed` \| `confirmed` \| `failed`, default `claimed` — what the agent said, until something other than the agent checks it. Every item is `claimed` today |
-| `state_source` | nullable — what changed `state`, such as `github`. Null while `claimed` |
+| `state` | `claimed` \| `confirmed` \| `failed`, default `claimed` — what the agent said, until something other than the agent checks it. GitHub's deliveries decide the other two (§4.28–§4.31, D-083): a commit, branch or pull request item only ever goes from `claimed` to `confirmed`; a test item follows CI both ways, and goes back to `claimed` while a re-run is pending |
+| `state_source` | nullable — what changed `state`: `github`. Null while `claimed` |
 | `state_at` | nullable — when `state` last changed. Null while `claimed` |
 | `created_at` | |
 
 Indexed on `(round_id, position)` for the panel and on `(kind, value)` for
-step 2, which knows a sha or a pull request, not a round. A round holds at most
+step 2, which knows a sha or a pull request, not a round: a delivery's sha is
+looked up as every prefix of it from 7 characters, so the index serves a
+claimed abbreviation too. A round holds at most
 50 commits and 50 test runs; a commit's first line is at most 200 characters, a
 branch 200, a URL 500 and a command 500 (§6.4).
 
@@ -1103,6 +1105,105 @@ task's latest round — and the task is not done or cancelled. That is what
 `TaskView.send_back` serves (§6.4) and what `get_task_context` reads first
 (§7.1). The next finish retires it. A comment named by `comment_id` is served
 with `sent_back: true`.
+
+### 4.28 `github_commits`
+
+A commit a GitHub delivery said exists (D-083, LAI-766): every commit a `push`
+lists and its `after`, and the head of every `pull_request`. What a round's
+commit items are matched against — **including commits pushed before the agent
+finished**. Recorded whether or not a project tracks the repository.
+
+| field | notes |
+| --- | --- |
+| `repo` | `owner/name`, lowercased |
+| `sha` | the full 40-hex sha, lowercase |
+| `branch` | nullable — the **first** branch it was seen on; a fast-forward to the default branch names the same commit again and does not replace it |
+| `committed_at` | nullable — the commit's own timestamp from the push; null for a pull request's head |
+| `seen_at` | the last delivery that named it |
+
+Primary key (`repo`, `sha`); indexed on `sha` (a prefix is a range on it) and
+on `seen_at`. **Kept 30 days from `seen_at`**, pruned by the deliveries
+themselves.
+
+### 4.29 `github_pull_requests`
+
+A pull request as its newest `pull_request` delivery described it (D-083).
+
+| field | notes |
+| --- | --- |
+| `key` | `host/owner/name#number`, lowercased — what a pull request URL reduces to, so an agent's URL matches GitHub's `html_url` whatever its case or a trailing `/files` |
+| `repo` | `owner/name`, lowercased |
+| `number` | integer |
+| `url` | GitHub's `html_url` |
+| `head_sha` | nullable — the head commit |
+| `head_ref` | nullable — the head branch |
+| `merged` | integer, default 0 — 1 once GitHub reports it merged |
+| `event_at` | the pull request's `updated_at`; a delivery older than the row changes nothing |
+| `seen_at` | |
+
+Indexed on `head_sha` and `seen_at`. Kept 30 days from `seen_at`.
+
+### 4.30 `github_checks`
+
+One CI result for one commit, as its newest delivery reported it (D-083): a
+`check_run`, a `workflow_run` or a `check_suite`. Keyed by name, so a re-run
+replaces the run it repeats — **newest event wins**.
+
+| field | notes |
+| --- | --- |
+| `repo` | `owner/name`, lowercased |
+| `head_sha` | the commit, full and lowercase |
+| `kind` | `check_run` \| `workflow_run` \| `check_suite` |
+| `name` | the job's name, the workflow's name, or the app's slug for a suite |
+| `outcome` | `pending` \| `passed` \| `failed` — `passed` for `success`, `neutral` and `skipped`; `failed` for `failure`, `timed_out`, `cancelled`, `action_required` and `startup_failure`; `pending` for anything not completed, and for `stale` |
+| `conclusion` | nullable — GitHub's own word; null while pending |
+| `event_at` | the run's own `completed_at`, `updated_at` or `started_at`; an older delivery changes nothing |
+| `seen_at` | |
+
+Primary key (`repo`, `head_sha`, `kind`, `name`); indexed on `head_sha` and
+`seen_at`. Kept 30 days from `seen_at`.
+
+### 4.31 `task_round_github`
+
+What GitHub said about one round (D-083): whether its pull request was merged
+and the CI line for its head commit. Written whenever the round is checked and
+**kept with the round**, so the proof reads the same after the 30-day records
+it came from are gone.
+
+| field | notes |
+| --- | --- |
+| `round_id` | FK `task_rounds`, cascade; the primary key |
+| `pr_merged` | nullable — 1 merged, 0 not, null when no delivery named the pull request |
+| `ci_head_sha` | nullable — the commit CI was read for |
+| `ci_total` | integer, default 0 — the CI results counted |
+| `ci_passed` | integer, default 0 |
+| `ci_failed` | integer, default 0 |
+| `ci_pending` | integer, default 0 |
+| `ci_failed_names` | a JSON array of the names that failed, at most ten, default `[]` |
+| `updated_at` | |
+
+**How a round is checked** — on every finish and for every round finished in
+the last 30 days that a delivery could change:
+
+- **Plausible repositories.** The repository the pull request URL names, when
+  the proof has one — and then nowhere else. Otherwise the project's `repo`
+  (§4.3). Otherwise any repository this org's webhook reports.
+- **commit** → `confirmed` when exactly one seen commit in a plausible
+  repository has the claimed sha as its full sha or prefix (at least 7). Two
+  commits sharing the prefix is ambiguous and confirms neither.
+- **branch** → `confirmed` when a push to it or a pull request from it was seen.
+- **pull request** → `confirmed` when a delivery for it was seen; `pr_merged`
+  says whether it was merged.
+- **test runs** → from CI for the round's **head commit**: the pull request's
+  head when GitHub named one, else the newest claimed commit GitHub reported
+  (latest commit time; on a tie the first listed), else the first listed. CI
+  counts one kind — the check runs if any were reported, else the workflow
+  runs, else the check suites — because one GitHub Actions run reports itself
+  as all three. Any failed → every test item `failed`; all passed →
+  `confirmed`; otherwise `claimed`. A typed command cannot be matched to a CI
+  job, so every test item takes CI's answer and the CI line says what it was.
+  **No CI result is not a result**: with nothing reported for the head commit,
+  the test items and the CI line are left as they were.
 
 ## 5. Task lifecycle
 
@@ -1335,6 +1436,8 @@ GET    /api/v1/me/activity-sharing           PUT .../activity-sharing  body { en
 PUT    /api/v1/me/local-activity             a collector's report or look-back → { accepted_days }   (both switches on; 30/hour)
 GET    /api/v1/me/local-activity             ?days=1–14 — what is held for the caller   DELETE → 204   (session only)
 GET    /api/v1/org                           PATCH /api/v1/org       (admin+; ai_api_key write-only)
+POST   /api/v1/org/github-webhook            set or rotate the GitHub webhook secret; answers it once (session only)
+DELETE /api/v1/org/github-webhook            clear it (204; session only)
 GET    /api/v1/users                         ?limit=&cursor=&updated_since=&include_inactive=
                                              cursor is (name, id) — a directory reads alphabetically
 PATCH  /api/v1/users/:id                     (role, deactivate — admin+)
@@ -1604,9 +1707,26 @@ optional, so a body with only `summary` and `checklist` behaves as before.
 limits are §4.26's and a breach is `422` naming the field, with nothing moved.
 `GET /tasks/:id/rounds` answers `{ rounds, send_back }`: each round as
 `{ id, task_id, number, finished_by, client_name, summary_md, commits, branch,
-pull_request, tests, created_at }`, each item with `id`, `state`,
+pull_request, tests, ci, created_at }`, each item with `id`, `state`,
 `state_source` and `state_at` beside its own fields (`sha` and `message`,
-`name`, `url`, `command` and `exit_code`), newest round first; `project.read`.
+`name`, `url` and `merged`, `command` and `exit_code`), newest round first;
+`project.read`. `pull_request.merged` is `true` or `false` once a GitHub
+delivery named it, `null` before (D-083). `ci` is `{ head_sha, total, passed,
+failed, pending, failed_names }` from §4.31, or `null` when no CI result was
+reported for the round's head commit.
+
+**The GitHub webhook secret (LAI-753).** `GET /org` carries `github_webhook:
+{ configured, payload_url }` for a caller who may *Configure webhooks* (§3.1,
+session only) — absent, not null, for anyone else, as `ai` is.
+`payload_url` is `LAIKA_PUBLIC_URL` + `/webhooks/github`, or `null` when the
+server has none. `POST /org/github-webhook` takes no body: Laika makes a new
+secret (32 random bytes, hex), stores it encrypted under its own purpose
+(§12), and answers `201 { configured, payload_url, secret }` — **the only time
+the secret is ever served**. Calling it again rotates: the old secret is
+refused from that moment. `DELETE /org/github-webhook` clears it and answers
+`204`; every delivery is then refused `401`. Both refuse a token `403` with
+`details.reason: "session_required"`: whoever holds the secret can sign
+deliveries that confirm an agent's proof (D-083).
 
 `GET /review` answers `{ tasks, truncated }`: every task in a `review`
 status on every project where the caller holds `task.write`, **oldest waiting
@@ -1695,7 +1815,7 @@ read them.
 | `laika_whoami` | `{}` | the identity this token acts as — `user_id`, `name`, `email`, `org_role`, `token_scope` — and `how_to_work`, the same text as the server's `instructions`, for clients that drop those (D-076). Reads nothing, changes nothing |
 | `list_projects` | `{}` | projects the user can read |
 | `list_ready_tasks` | `{ project?, limit? }` | ready tasks exactly as §4.5 derives them — **unassigned** and unblocked — sorted p1→p3 then age |
-| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, or `null`) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`) |
+| `get_task_context` | `{ task }` | **`send_back` first** — the reason a person sent it back, who and when, or `null` (D-082) — then task, description, `evidence` (the latest round's proof, each item with its state — `claimed`, `confirmed` or `failed` — and the CI line, or `null`; D-083) and `rounds` (how many), `blocked_by` + their statuses, comments (each with `sent_back`), recent activity, branch, `discovered_from` chain, `parent` (or `null`), `subtasks` with key, title, status and assignee, `subtasks_done` and `subtasks_total` (`total` excludes `cancelled`) |
 | `get_project_context` | `{ project }` | `context_md`, its recent edit history, open-task summary, members + roles |
 | `list_sprints` | `{ project }` | every sprint on the project, oldest first — id, name, dates, `status`, and task counts by status |
 | `list_members` | `{ project }` | who is on the project — `user_id`, `name`, `email`, `role`. Where an assignee comes from |
@@ -1705,7 +1825,7 @@ read them.
 | `update_status` | `{ task, status, note? }` | task; validated transition. `status` is a category or a project status's name, case-insensitively (§4.20) |
 | `set_task_sprint` | `{ task, sprint }` | task. `sprint: null` takes it out of whichever it is in |
 | `add_comment` | `{ task, body }` | comment |
-| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` (§4.25, D-082) |
+| `finish_task` | `{ task, summary, checklist?, commits?, branch?, pull_request?, tests? }` | task → **`review`**, summary posted as a comment, and a round with the proof, each item `claimed` until GitHub's deliveries confirm it (§4.25, D-082, D-083) |
 | `create_sprint` | `{ project, name, goal?, start_date, end_date, status? }` | created sprint, with the id the other sprint tools take |
 | `update_sprint` | `{ sprint, name?, goal?, start_date?, end_date?, status? }` | sprint. Completing one **does not move its tasks** (§4.15, D-013) |
 | `update_project_context` | `{ project, context_md, mode }` | the document's new length. `mode` is `replace` or `append` |
@@ -2030,9 +2150,34 @@ constant-time compared, **before the body is parsed**. Unverified requests get
 `401` and are logged as `webhook.received` with `verified: false`.
 
 Handled: `push` (branch → task, `webhook.commit` activity), `pull_request`
-(opened → link PR and move `in_progress`; merged → move to `review`),
-`issue_comment` (mirror to task comments). Everything else is acknowledged and
-ignored. Delivery ids are deduplicated for 24h.
+(opened → link PR and move `in_progress`; merged → move to `review`, **never
+to done**, D-082), `issue_comment` (mirror to task comments), and `check_run`,
+`workflow_run` and `check_suite` (CI results for the proof, D-083). Everything
+else is acknowledged and ignored. Delivery ids are deduplicated for 24h.
+
+**A push stores what a reader needs** (LAI-753): one `webhook.commit` row with
+`{ repo, branch, default_branch, count, shas, forced }` — `shas` the first 50,
+`count` how many the delivery listed — against the task the branch names, or
+against the project whose `repo` is the repository when it names none, **the
+default branch included**. No author: D-050 refused mapping a commit's author
+to a Laika user. A deleted branch or a tag is acknowledged and stores nothing.
+
+**Every `push`, `pull_request` and CI delivery is also remembered for the
+proof** (§4.28–§4.30) and re-checks every round it could change (§4.31). No
+call is made to GitHub (§13.4): everything comes from what was delivered.
+
+**GitHub does not retry a failed delivery.** One that times out or answers
+non-2xx stays failed until somebody presses *Redeliver* on the webhook's
+*Recent Deliveries* page. Every push to `master` restarts production (D-073),
+so a delivery that arrives during a restart is lost unless redelivered by
+hand; the Organisation screen says so.
+
+**Setting it up on GitHub** (repository or organisation → Settings →
+Webhooks → Add webhook): *Payload URL* the Organisation screen's
+(`<LAIKA_PUBLIC_URL>/webhooks/github`), *Content type* `application/json`,
+*Secret* the one the screen showed, and *Let me select individual events*:
+**Pushes, Pull requests, Issue comments, Check runs, Check suites, Workflow
+runs**.
 
 ### 10.2 `POST /webhooks/transcript`
 
@@ -2243,7 +2388,7 @@ call MCP; agents do.
 | **Sprints** | 2 | `GET/POST /projects/:slug/sprints`, `GET/PATCH/DELETE /sprints/:id`, `POST /sprints/:id/tasks`, `DELETE /sprints/:id/tasks/:taskId`, `GET /projects/:slug/tasks?sprint=` | — | ✅ D-013 |
 | **Timeline** | 2.5 | `GET /projects/:slug/timeline`, `GET/PATCH /sprints/:id` | — | ✅ D-014 |
 | **Tokens** | 3 | `GET/POST/DELETE /tokens`, `GET /users/:id/tokens`, `DELETE /users/:id/tokens/:tokenId` | — | ✅ |
-| **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
+| **Organisation** | 1 basic / 6 LLM | `GET/PATCH /org`, `POST/DELETE /org/github-webhook`, `GET /users`, `PATCH /users/:id`, `GET/POST /invites` | — | ✅ |
 | **Connect** *(not in the prototype)* | 7 | `GET/POST /tokens`, `GET /presence`, `GET /org`, `GET/PUT /me/activity-sharing`, `GET/DELETE /me/local-activity` | — | ✅ D-079 |
 | **Capacity** *(sidebar, global)* | 5 | `GET /capacity`, `GET /presence`, `GET /projects`, `GET /tasks/:id`, `GET /unlisted` (the open count, owners and admins) | — | ✅ LAI-754 |
 | **Review** *(sidebar, global)* | 5 | `GET /review`, `GET /tasks/:id/rounds`, `POST /tasks/:id/accept`, `POST /tasks/:id/send-back` | `finish_task` | ✅ D-082 |
@@ -2298,9 +2443,11 @@ anything missing sends the task back.
   **A Proof section beside Acceptance** once the task has been finished
   (D-082): the send-back it carries first, then the latest round — round
   number, the agent that finished it, commits (short sha and first line),
-  branch, pull request as a link only when `http(s)`, test commands with their
-  exit codes in green for `0` and red otherwise, and a `claimed` badge on every
-  item — with earlier rounds folded. A comment that is a send-back's reason is
+  branch, pull request as a link only when `http(s)` and *merged* once GitHub
+  says so, test commands with their exit codes in green for `0` and red
+  otherwise, a state badge on every item — `claimed` grey, `confirmed` green,
+  `failed` red (D-083) — and a **CI line** beside the tests (*CI: 3 of 3
+  checks passed*, *CI: lint failed*) — with earlier rounds folded. A comment that is a send-back's reason is
   marked *sent back*, and a card carrying a send-back wears a *sent back*
   marker with the reason as its tooltip.
   **A watch toggle and who else is watching** (D-047, D-054), and an
@@ -2322,7 +2469,11 @@ anything missing sends the task back.
   list with role controls; danger zone gated to Owner; a **Developer insights**
   switch for owners and admins (§4.2, D-079) with a plain sentence of what it
   allows — every developer still decides for themselves — read-only for
-  everyone else.
+  everyone else; and a **GitHub webhook** section for owners and admins
+  (LAI-753): whether a secret is set, *Set secret* / *Rotate secret* / *Clear*,
+  the new secret shown once with a Copy button, the payload URL with its own
+  Copy, the content type, the events to tick, and one line saying GitHub does
+  not retry a failed delivery.
 - **Connect** — the four-step wizard, and under *Optional* a **Share local
   activity** item for the signed-in developer (D-079): what is sent and what is
   never sent, on/off, the scope (every repo where they use an agent, or only
@@ -2344,7 +2495,8 @@ anything missing sends the task back.
   waiting, the proof in brief (commits, PR, tests passed and failed, or *no
   proof*) and the round. A summary card of tiles — waiting, oldest, failing
   tests, no proof — with an (i). Filters: project, assignee, *Failing tests*,
-  *No proof*. A row opens the full proof (the task panel's Proof section) with
+  *No proof*, *CI failed*, *CI confirmed* (D-083). Each row's proof in brief
+  carries the CI result when GitHub reported one. A row opens the full proof (the task panel's Proof section) with
   **Accept** and **Send back…**, the second asking for a required reason in a
   dialog; both are disabled, saying why, for a reader who may not decide.
   *Open on board* opens the task. The waiting count is in the header and beside
