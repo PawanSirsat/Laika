@@ -31,6 +31,8 @@ interface Harness {
   readonly board: StubBoard;
   readonly out: string[];
   readonly asked: string[];
+  /** How many lines had been printed when each question was asked. */
+  readonly printedBefore: number[];
   answers: string[];
   readonly run: (...argv: string[]) => Promise<number>;
 }
@@ -41,11 +43,13 @@ async function harness(): Promise<Harness> {
   const board = await stubBoard(TOKEN);
   const out: string[] = [];
   const asked: string[] = [];
+  const printedBefore: number[] = [];
   const h: Harness = {
     home,
     board,
     out,
     asked,
+    printedBefore,
     answers: [],
     run: (...argv) => activity(argv, io),
   };
@@ -70,6 +74,7 @@ async function harness(): Promise<Harness> {
     git: () => Promise.resolve(undefined),
     ask: (question) => {
       asked.push(question);
+      printedBefore.push(out.length);
       return Promise.resolve(h.answers.shift() ?? '');
     },
   };
@@ -117,6 +122,7 @@ const usageReports = (board: StubBoard) =>
 void describe('`laika activity on`', () => {
   void test('says token counts are sent, and asks about the last 30 days', async () => {
     const h = await harness();
+    transcript(h.home, [{ id: 'msg_old', daysAgo: 5, output: 900 }]);
     h.answers = ['y'];
     assert.equal(await h.run('on'), 0, h.out.join('\n'));
     assert.match(h.out.join('\n'), /token counts/i);
@@ -125,8 +131,31 @@ void describe('`laika activity on`', () => {
     assert.equal(usageBackfill(activityPaths(h.home)), 'yes');
   });
 
+  void test('shows the 30 days it found, per agent, before it asks — and what it cannot tell apart', async () => {
+    const h = await harness();
+    transcript(h.home, [
+      { id: 'msg_old', daysAgo: 12, output: 900 },
+      { id: 'msg_new', daysAgo: 0, output: 90 },
+    ]);
+    h.answers = ['n'];
+    assert.equal(await h.run('on'), 0, h.out.join('\n'));
+    const before = h.out.slice(0, h.printedBefore[0]).join('\n');
+    assert.match(before, /Token usage .*last 30 days/);
+    assert.match(before, /Claude Code\s+1,210/);
+    assert.match(before, /2 days/);
+    assert.match(before, /cannot be told apart/i);
+  });
+
+  void test('with nothing in the last 30 days, nothing is asked', async () => {
+    const h = await harness();
+    assert.equal(await h.run('on'), 0);
+    assert.deepEqual(h.asked, []);
+    assert.match(h.out.join('\n'), /Token usage: none in the last 30 days/);
+  });
+
   void test('a no is kept, and is not asked again on a re-run', async () => {
     const h = await harness();
+    transcript(h.home, [{ id: 'msg_old', daysAgo: 5, output: 900 }]);
     h.answers = ['n'];
     assert.equal(await h.run('on'), 0);
     assert.equal(usageBackfill(activityPaths(h.home)), 'no');
@@ -150,6 +179,7 @@ void describe('`laika activity backfill` and tokens', () => {
     const text = h.out.join('\n');
     assert.match(text, /Token usage .*last 30 days/);
     assert.match(text, /2 days/);
+    assert.match(text, /cannot be told apart/i);
     assert.ok(
       h.asked.some((q) => /token/i.test(q)),
       h.asked.join(' | '),

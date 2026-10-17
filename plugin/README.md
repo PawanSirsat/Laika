@@ -162,7 +162,11 @@ What it never does:
   (Omnigent sets it in every process it launches), a non-empty `CI` or a
   non-empty `LAIKA_ACTIVITY_SKIP`, every mode drains stdin and exits before
   reading `state.json`: no event, no repo, no sync. Under zsh that path, like
-  the prompt path, needs no external command.
+  the prompt path, needs no external command. **It keeps one thing**
+  (LAI-775): from the session-start and session-end payloads only — never a
+  prompt's — a `"session_id"` that is a plain id, appended to
+  `~/.laika/activity/skip-sessions`, so `laika activity sync` leaves that
+  session's tokens out. Never sent.
 
 `~/.laika/activity` is 0700 and its files 0600. Repo paths, the event log and
 extra emails stay there; only per-day counts and one-way commit keys are sent.

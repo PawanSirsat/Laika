@@ -77,14 +77,14 @@ function claudeLine(
   id: string,
   atS: number,
   usage: Usage,
-  options: { model?: string; stop?: string | null; sidechain?: boolean } = {},
+  options: { model?: string; stop?: string | null; sidechain?: boolean; session?: string } = {},
 ): string {
   return JSON.stringify({
     parentUuid: 'p-1',
     isSidechain: options.sidechain ?? false,
     userType: 'external',
     cwd: SECRET.cwd,
-    sessionId: SECRET.session,
+    sessionId: options.session ?? SECRET.session,
     version: '2.1.280',
     gitBranch: SECRET.branch,
     message: {
@@ -462,6 +462,267 @@ void describe('Codex: the day’s difference of a cumulative total', () => {
   });
 });
 
+/** A Codex `token_usage_record`: one response's usage, by its id (REPORT.md §2). */
+function codexRecord(
+  atS: number,
+  responseId: string,
+  usage: Partial<Record<string, number>>,
+): string {
+  return JSON.stringify({
+    timestamp: new Date(atS * 1000).toISOString(),
+    type: 'token_usage_record',
+    payload: {
+      response_id: responseId,
+      turn_id: `turn-${responseId}`,
+      root_turn_id: 'root',
+      session_id: SECRET.session,
+      thread_id: 'thread',
+      usage: {
+        input_tokens: 0,
+        cached_input_tokens: 0,
+        cache_write_input_tokens: 0,
+        output_tokens: 0,
+        reasoning_output_tokens: 0,
+        total_tokens: 0,
+        ...usage,
+      },
+      turn_token_usage: {},
+      thread_token_usage: {},
+    },
+  });
+}
+
+void describe('Codex: per-response records, when the rollout has them (review 1)', () => {
+  void test('counted by response id, once — a forked rollout copying them counts nothing twice', async () => {
+    const root = home();
+    const dir = join(root, '.codex', 'sessions', '2026', '10', '17');
+    mkdirSync(dir, { recursive: true });
+    const lines = [
+      codexLine(NOW_S - 900, 'turn_context', { model: 'gpt-6.1-sol' }),
+      codexRecord(NOW_S - 800, 'resp_1', {
+        input_tokens: 1_000,
+        cached_input_tokens: 400,
+        output_tokens: 30,
+      }),
+      // The cumulative total beside it says the same: it is not added again.
+      codexTotal(
+        NOW_S - 800,
+        { input_tokens: 1_000, cached_input_tokens: 400, output_tokens: 30 },
+        30,
+      ),
+      codexRecord(NOW_S - 700, 'resp_2', {
+        input_tokens: 2_000,
+        cached_input_tokens: 1_500,
+        output_tokens: 70,
+      }),
+      codexTotal(
+        NOW_S - 700,
+        { input_tokens: 3_000, cached_input_tokens: 1_900, output_tokens: 100 },
+        70,
+      ),
+    ];
+    writeFileSync(join(dir, 'rollout-a.jsonl'), lines.map((l) => `${l}\n`).join(''));
+    // A fork: the history copied, then one response of its own.
+    writeFileSync(
+      join(dir, 'rollout-b.jsonl'),
+      [
+        ...lines,
+        codexRecord(NOW_S - 600, 'resp_3', { input_tokens: 500, output_tokens: 5 }),
+        codexTotal(
+          NOW_S - 600,
+          { input_tokens: 3_500, cached_input_tokens: 1_900, output_tokens: 105 },
+          5,
+        ),
+      ]
+        .map((l) => `${l}\n`)
+        .join(''),
+    );
+    const rows = (await read(root)).days.get(TODAY) ?? [];
+    assert.deepEqual(
+      rows.map((r) => [r.agent, r.model, r.input, r.output, r.cache_read]),
+      [['codex', 'gpt-6.1-sol', 600 + 500 + 500, 105, 1_900]],
+    );
+  });
+});
+
+void describe('automated sessions’ tokens are not the developer’s (LAI-775)', () => {
+  void test('a session the hook marked is left out — its subagents, its Codex and Gemini files too', async () => {
+    const root = home();
+    const robot = '7e1d2c3b-aaaa-4bbb-8ccc-0123456789ab';
+    writeClaude(root, 'p/robot.jsonl', [
+      claudeLine(
+        'msg_r1',
+        NOW_S - 900,
+        { input: 1, output: 1_000, cw: 0, cr: 0 },
+        { session: robot },
+      ),
+    ]);
+    writeClaude(root, 'p/robot/subagents/agent-1.jsonl', [
+      claudeLine(
+        'msg_r2',
+        NOW_S - 800,
+        { input: 1, output: 2_000, cw: 0, cr: 0 },
+        { session: robot, sidechain: true },
+      ),
+    ]);
+    writeClaude(root, 'p/mine.jsonl', [
+      claudeLine('msg_m1', NOW_S - 700, { input: 1, output: 7, cw: 0, cr: 0 }),
+    ]);
+    const codex = join(root, '.codex', 'sessions', '2026', '10', '17');
+    mkdirSync(codex, { recursive: true });
+    writeFileSync(
+      join(codex, 'rollout-robot.jsonl'),
+      [
+        codexLine(NOW_S - 900, 'session_meta', { id: robot, cwd: SECRET.cwd }),
+        codexLine(NOW_S - 850, 'turn_context', { model: 'gpt-5.2-codex' }),
+        codexTotal(NOW_S - 800, { input_tokens: 100, output_tokens: 300 }, 300),
+      ]
+        .map((l) => `${l}\n`)
+        .join(''),
+    );
+    const gemini = join(root, '.gemini', 'tmp', SECRET.geminiHash, 'chats');
+    mkdirSync(gemini, { recursive: true });
+    writeFileSync(
+      join(gemini, 'session-robot.json'),
+      JSON.stringify({
+        sessionId: robot,
+        projectHash: SECRET.geminiHash,
+        messages: [
+          {
+            id: 'g1',
+            timestamp: new Date((NOW_S - 600) * 1000).toISOString(),
+            type: 'gemini',
+            model: 'gemini-2.5-pro',
+            tokens: { input: 10, output: 400, cached: 0, thoughts: 0, tool: 0, total: 410 },
+          },
+        ],
+      }),
+    );
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true });
+    assert.equal(
+      totals((await read(root)).days).output,
+      7 + 1_000 + 2_000 + 300 + 400,
+      'positive control',
+    );
+
+    writeFileSync(join(paths.dir, 'skip-sessions'), `${String(NOW_S - 950)} ${robot}\n`, {
+      mode: 0o600,
+    });
+    assert.equal(totals((await read(root)).days).output, 7);
+  });
+
+  void test('a session marked after its tokens were sent is taken back out at the next sync', async () => {
+    const root = home();
+    const robot = '7e1d2c3b-aaaa-4bbb-8ccc-0123456789ab';
+    writeClaude(root, 'p/robot.jsonl', [
+      claudeLine(
+        'msg_r1',
+        NOW_S - 900,
+        { input: 1, output: 1_000, cw: 0, cr: 0 },
+        { session: robot },
+      ),
+      claudeLine('msg_m1', NOW_S - 700, { input: 1, output: 7, cw: 0, cr: 0 }),
+    ]);
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true });
+    const sent: string[] = [];
+    const step = () =>
+      usageStep({
+        paths,
+        roots: usageRoots(root, {}),
+        state: state(NOW_S - DAY),
+        collectorId: '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a',
+        tz: TZ,
+        nowS: NOW_S,
+        heldElsewhere: [],
+        send: (body) => {
+          sent.push(body);
+          return Promise.resolve({ ok: true as const });
+        },
+      });
+    await step();
+    writeFileSync(join(paths.dir, 'skip-sessions'), `${String(NOW_S - 950)} ${robot}\n`);
+    assert.equal((await step()).kind, 'sent');
+    const last = JSON.parse(sent.at(-1) ?? '{}') as { days: { rows: UsageRow[] }[] };
+    assert.equal(last.days[0]?.rows[0]?.output, 7);
+  });
+});
+
+void describe('the 30 days, counted once across collectors (review 1, the blocker)', () => {
+  const COLLECTOR = '6f1c2a4e-0b7d-4c1e-9a55-3c8f1e2d4b6a';
+  function world() {
+    const root = home();
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true });
+    // Sharing went on a day ago: yesterday is split by it, older days are wholly before.
+    writeClaude(root, 'p/x.jsonl', [
+      claudeLine('msg_old', NOW_S - 10 * DAY, { input: 1, output: 100, cw: 0, cr: 0 }),
+      claudeLine('msg_y1', NOW_S - DAY - 3_600, { input: 1, output: 20, cw: 0, cr: 0 }),
+      claudeLine('msg_y2', NOW_S - DAY + 3_600, { input: 1, output: 3, cw: 0, cr: 0 }),
+      claudeLine('msg_now', NOW_S - 600, { input: 1, output: 5, cw: 0, cr: 0 }),
+    ]);
+    setUsageBackfill(paths, 'yes');
+    const sent: { day: string; backfill?: true; rows: UsageRow[] }[][] = [];
+    const step = (held: readonly string[] | undefined) =>
+      usageStep({
+        paths,
+        roots: usageRoots(root, {}),
+        state: state(NOW_S - DAY),
+        collectorId: COLLECTOR,
+        tz: TZ,
+        nowS: NOW_S,
+        heldElsewhere: held,
+        send: (body) => {
+          sent.push((JSON.parse(body) as { days: (typeof sent)[number] }).days);
+          return Promise.resolve({ ok: true as const });
+        },
+      });
+    return { root, paths, sent, step };
+  }
+  const tenAgo = localDay(NOW_S - 10 * DAY, TZ);
+  const yesterday = localDay(NOW_S - DAY, TZ);
+
+  void test('a day that holds older tokens goes marked backfill, once; days held elsewhere keep only their live part', async () => {
+    const w = world();
+    await w.step([yesterday]);
+    const days = w.sent.flat();
+    // Ten days ago is all from before sharing, so it is sent whole, marked.
+    assert.equal(days.find((d) => d.day === tenAgo)?.backfill, true);
+    assert.equal(days.find((d) => d.day === tenAgo)?.rows[0]?.output, 100);
+    // Yesterday is held by another collector: only what came after sharing went on.
+    assert.equal(days.find((d) => d.day === yesterday)?.rows[0]?.output, 3);
+    assert.equal(days.find((d) => d.day === yesterday)?.backfill, undefined);
+    // Today is live.
+    assert.equal(days.find((d) => d.day === TODAY)?.backfill, undefined);
+
+    // The list is decided once: a later answer naming ten days ago changes nothing.
+    appendFileSync(
+      join(w.root, '.claude', 'projects', 'p', 'x.jsonl'),
+      `${claudeLine('msg_old2', NOW_S - 10 * DAY + 60, { input: 1, output: 50, cw: 0, cr: 0 })}\n`,
+    );
+    await w.step([tenAgo, yesterday]);
+    const again = w.sent.at(-1) ?? [];
+    assert.deepEqual(
+      again.map((d) => [d.day, d.backfill, d.rows[0]?.output]),
+      [[tenAgo, undefined, 150]],
+      'resent whole, and no longer marked: the board already took it',
+    );
+  });
+
+  void test('until the board says which days it holds, no older tokens are sent', async () => {
+    const w = world();
+    await w.step(undefined);
+    const days = w.sent.flat();
+    assert.equal(
+      days.find((d) => d.day === tenAgo),
+      undefined,
+    );
+    assert.equal(days.find((d) => d.day === yesterday)?.rows[0]?.output, 3);
+    assert.ok(days.every((d) => d.backfill === undefined));
+  });
+});
+
 void describe('Gemini CLI: a whole file, rewritten each turn', () => {
   void test('read again when it changes, each message once', async () => {
     const root = home();
@@ -734,6 +995,66 @@ void describe('through `laika activity sync`', () => {
     w.board.offForUsage = true;
     const outcome = await sync(w.ctx);
     assert.equal(outcome.kind, 'off');
+  });
+});
+
+/** Every row the board holds, output summed: what its reads add up. */
+function boardOutput(board: { usage: Map<string, readonly unknown[]> }): number {
+  let n = 0;
+  for (const rows of board.usage.values()) {
+    for (const row of rows as UsageRow[]) n += row.output;
+  }
+  return n;
+}
+
+void describe('through the sync: one machine counted once, two machines added (review 1)', () => {
+  void test('on, yes, off, on, yes: the board’s totals are unchanged', async () => {
+    const w = await syncWorld();
+    writeClaude(w.root, 'p/x.jsonl', [
+      claudeLine('msg_old', NOW_S - 10 * DAY, { input: 1, output: 100, cw: 0, cr: 0 }),
+      claudeLine('msg_now', NOW_S - 600, { input: 1, output: 5, cw: 0, cr: 0 }),
+    ]);
+    setUsageBackfill(w.paths, 'yes');
+    await sync(w.ctx);
+    const before = boardOutput(w.board);
+    assert.equal(before, 105);
+
+    // `laika activity off` deletes everything on the machine, the collector id too.
+    rmSync(w.paths.dir, { recursive: true, force: true });
+    w.advance(600);
+    startCollecting(
+      w.paths,
+      { org_enabled: true, enabled: true, scope: 'agent-repos', min_sync_interval_s: 600 },
+      NOW_S + 600,
+      w.board.url,
+    );
+    setUsageBackfill(w.paths, 'yes');
+    await sync(w.ctx);
+    assert.equal(boardOutput(w.board), before);
+    assert.deepEqual(w.board.violations, []);
+  });
+
+  void test('two machines sending live days add up', async () => {
+    const a = await syncWorld();
+    writeClaude(a.root, 'p/a.jsonl', [
+      claudeLine('msg_a', NOW_S - 600, { input: 1, output: 30, cw: 0, cr: 0 }),
+    ]);
+    await sync(a.ctx);
+    // Another machine of the same person, on the same board, with its own files.
+    const bHome = home();
+    const bPaths = activityPaths(bHome);
+    startCollecting(
+      bPaths,
+      { org_enabled: true, enabled: true, scope: 'agent-repos', min_sync_interval_s: 600 },
+      NOW_S - 2 * DAY,
+      a.board.url,
+    );
+    writeClaude(bHome, 'p/b.jsonl', [
+      claudeLine('msg_b', NOW_S - 300, { input: 1, output: 12, cw: 0, cr: 0 }),
+    ]);
+    await sync({ ...a.ctx, home: bHome, env: { ...a.ctx.env, HOME: bHome } });
+    assert.equal(boardOutput(a.board), 42);
+    assert.deepEqual(a.board.violations, []);
   });
 });
 

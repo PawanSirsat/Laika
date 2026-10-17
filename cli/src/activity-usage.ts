@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { open, readdir, readFile, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -125,8 +125,11 @@ export interface UsageRow {
 /* The two files                                                              */
 /* -------------------------------------------------------------------------- */
 
-/** `[day, model, input, output, cache_write, cache_read, epoch s, cwd index]` */
-type Rec = [string, string, number, number, number, number, number, number];
+/**
+ * `[day, model, input, output, cache_write, cache_read, epoch s, cwd index,
+ * session index]` — the indexes into `UsageData`'s local-only tables.
+ */
+type Rec = [string, string, number, number, number, number, number, number, number?];
 
 interface CodexFile {
   /** Bytes read so far. */
@@ -135,8 +138,16 @@ interface CodexFile {
   prev: [number, number, number, number];
   model: string;
   cwd: number;
+  /** The rollout's session (`session_meta`), by index. */
+  sid?: number;
   /** One record per event that moved the total, in the window. */
   ev: Rec[];
+  /**
+   * Per-response records (`token_usage_record`), by response id, when the
+   * rollout has them: what is counted then, deduplicated across every rollout,
+   * so a fork that copies its parent's history counts it once (review 1).
+   */
+  r?: Record<string, Rec>;
 }
 
 interface GeminiFile {
@@ -150,6 +161,8 @@ interface UsageData {
   tz: string;
   /** Working directories, by index — local only, never sent. */
   cwds: string[];
+  /** Session ids, by index — local only, never sent; to leave automated ones out (LAI-775). */
+  sessions: string[];
   /** Claude Code replies, by message id. */
   claude: Record<string, Rec>;
   /** Claude Code transcripts: bytes read so far. */
@@ -176,6 +189,17 @@ interface UsageIndex {
   dirty: boolean;
   /** The developer's answer to counting the last 30 days. */
   backfill?: 'yes' | 'no';
+  /**
+   * The days other collectors of this person held tokens for when the 30 days
+   * were first sent (the board's `usage_days_elsewhere`), decided once: their
+   * older tokens are left out, so a machine counted under an earlier collector
+   * — after `off` and `on` — or another machine is not counted again.
+   */
+  held?: string[];
+  /** Days already sent marked `backfill`: the mark goes once a day. */
+  marked: string[];
+  /** `skip-sessions` as last read (size and mtime): a change means a resend. */
+  skip: string;
   /** No usage report before this (a refusal or a 429). */
   next_at: number;
 }
@@ -189,11 +213,21 @@ export function usageDataFile(paths: ActivityPaths): string {
 }
 
 function emptyIndex(): UsageIndex {
-  return { v: 1, dirs: {}, files: {}, sent: {}, dirty: false, next_at: 0 };
+  return { v: 1, dirs: {}, files: {}, sent: {}, dirty: false, marked: [], skip: '', next_at: 0 };
 }
 
 function emptyData(tz: string): UsageData {
-  return { v: 1, tz, cwds: [], claude: {}, offsets: {}, codex: {}, gemini: {}, scope: {} };
+  return {
+    v: 1,
+    tz,
+    cwds: [],
+    sessions: [],
+    claude: {},
+    offsets: {},
+    codex: {},
+    gemini: {},
+    scope: {},
+  };
 }
 
 function readJson(path: string): unknown {
@@ -207,6 +241,9 @@ function readJson(path: string): unknown {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const isDay = (value: unknown): value is string =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+
 function readIndex(paths: ActivityPaths): UsageIndex {
   const raw = readJson(usageIndexFile(paths));
   if (!isRecord(raw) || raw.v !== 1) return emptyIndex();
@@ -217,6 +254,9 @@ function readIndex(paths: ActivityPaths): UsageIndex {
     sent: isRecord(raw.sent) ? (raw.sent as Record<string, string>) : {},
     dirty: raw.dirty === true,
     ...(raw.backfill === 'yes' || raw.backfill === 'no' ? { backfill: raw.backfill } : {}),
+    ...(Array.isArray(raw.held) ? { held: (raw.held as unknown[]).filter(isDay) } : {}),
+    marked: Array.isArray(raw.marked) ? (raw.marked as unknown[]).filter(isDay) : [],
+    skip: typeof raw.skip === 'string' ? raw.skip : '',
     next_at: typeof raw.next_at === 'number' ? raw.next_at : 0,
   };
 }
@@ -229,6 +269,7 @@ function readData(paths: ActivityPaths, tz: string): UsageData | undefined {
     v: 1,
     tz: typeof raw.tz === 'string' ? raw.tz : tz,
     cwds: Array.isArray(raw.cwds) ? (raw.cwds as string[]) : [],
+    sessions: Array.isArray(raw.sessions) ? (raw.sessions as string[]) : [],
     claude: pick(raw.claude, {}),
     offsets: pick(raw.offsets, {}),
     codex: pick(raw.codex, {}),
@@ -250,6 +291,73 @@ export function setUsageBackfill(paths: ActivityPaths, answer: 'yes' | 'no'): vo
   ensureDir(paths);
   const index = readIndex(paths);
   writeIndex(paths, { ...index, backfill: answer, dirty: index.dirty || answer === 'yes' });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Automated sessions (LAI-775)                                               */
+/* -------------------------------------------------------------------------- */
+
+/** Written by the activity hook for a session started with `OMNIGENT=1`, `CI` or `LAIKA_ACTIVITY_SKIP`. */
+export function skipSessionsFile(paths: ActivityPaths): string {
+  return join(paths.dir, 'skip-sessions');
+}
+
+const SESSION_ID = /^[A-Za-z0-9._-]{1,128}$/;
+/** Lines kept when the file is compacted: well past the window. */
+const SKIP_KEEP_S = 45 * DAY_S;
+/** Compacted once it is this large. */
+const SKIP_COMPACT_BYTES = 64 * 1024;
+
+/** The ids of sessions nobody was typing in, from the file and its half-compacted copy. */
+function skippedSessions(paths: ActivityPaths): Set<string> {
+  const ids = new Set<string>();
+  for (const path of [skipSessionsFile(paths), `${skipSessionsFile(paths)}.compacting`]) {
+    let text = '';
+    try {
+      text = readFileSync(path, 'utf8');
+    } catch {
+      continue;
+    }
+    for (const line of text.split('\n')) {
+      const id = line.split(' ')[1];
+      if (id !== undefined && SESSION_ID.test(id)) ids.add(id);
+    }
+  }
+  return ids;
+}
+
+/** The file's size and mtime, so a sync notices a session marked since the last. */
+function skipSignature(paths: ActivityPaths): string {
+  try {
+    const st = statSync(skipSessionsFile(paths));
+    return `${String(st.size)}:${String(Math.floor(st.mtimeMs))}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Keep the file small: moved aside first, so a hook appending meanwhile starts
+ * a new one, and the lines still inside 45 days appended back — the event
+ * log's compaction (`compactEvents`).
+ */
+function compactSkipSessions(paths: ActivityPaths, nowS: number): void {
+  const file = skipSessionsFile(paths);
+  const aside = `${file}.compacting`;
+  try {
+    if (statSync(file).size < SKIP_COMPACT_BYTES) return;
+    renameSync(file, aside);
+  } catch {
+    return;
+  }
+  const kept = readFileSync(aside, 'utf8')
+    .split('\n')
+    .filter((line) => {
+      const [at, id] = line.split(' ');
+      return id !== undefined && SESSION_ID.test(id) && nowS - Number(at) <= SKIP_KEEP_S;
+    });
+  if (kept.length > 0) appendFileSync(file, `${kept.join('\n')}\n`, { mode: 0o600 });
+  rmSync(aside, { force: true });
 }
 
 export function usageBackfill(paths: ActivityPaths): 'yes' | 'no' | undefined {
@@ -435,6 +543,8 @@ interface Reader {
   readonly firstDay: string;
   readonly windowStartS: number;
   cwd: (path: unknown) => number;
+  /** A session id's index in the local table, or -1 for none. */
+  session: (id: unknown) => number;
 }
 
 /** One Claude Code line: a reply's usage, folded into its message id's maximum. */
@@ -471,6 +581,8 @@ function claudeLine(reader: Reader, line: string): void {
       read,
       at,
       reader.cwd(record.cwd),
+      // A subagent's file carries its parent's session id (REPORT.md §1a).
+      reader.session(record.sessionId),
     ];
     return;
   }
@@ -481,10 +593,33 @@ function claudeLine(reader: Reader, line: string): void {
   held[5] = Math.max(held[5], read);
 }
 
-/** One Codex line: the model and directory in force, and each total's difference. */
+/** Codex's per-response usage, mapped as its cumulative total is (REPORT.md §2). */
+function codexCounts(
+  usage: Record<string, unknown>,
+): [input: number, output: number, write: number, cached: number] {
+  const cached = count(usage.cached_input_tokens);
+  const write = count(usage.cache_write_input_tokens);
+  return [
+    Math.max(0, count(usage.input_tokens) - cached - write),
+    count(usage.output_tokens),
+    write,
+    cached,
+  ];
+}
+
+/**
+ * One Codex line: the session, model and directory in force; each
+ * cumulative total's difference; and, in newer rollouts, each response's own
+ * record — which, when a rollout has them, is what counts (see `CodexFile.r`).
+ */
 function codexLine(reader: Reader, file: CodexFile, line: string): void {
-  if (!line.includes('"token_count"') && !line.includes('"turn_context"')) {
-    if (!line.includes('"session_meta"')) return;
+  if (
+    !line.includes('"token_count"') &&
+    !line.includes('"turn_context"') &&
+    !line.includes('"session_meta"') &&
+    !line.includes('"token_usage_record"')
+  ) {
+    return;
   }
   let record: unknown;
   try {
@@ -498,6 +633,31 @@ function codexLine(reader: Reader, file: CodexFile, line: string): void {
     if (typeof payload.cwd === 'string') file.cwd = reader.cwd(payload.cwd);
     const model = modelId(payload.model);
     if (model !== undefined) file.model = model;
+    if (record.type === 'session_meta') {
+      const sid = reader.session(payload.id ?? payload.session_id);
+      if (sid >= 0) file.sid = sid;
+    }
+    return;
+  }
+  if (record.type === 'token_usage_record') {
+    if (typeof payload.response_id !== 'string' || !isRecord(payload.usage)) return;
+    const at = epochOf(record.timestamp);
+    if (at === undefined || at < reader.windowStartS) return;
+    const day = reader.dayOf(at);
+    if (day < reader.firstDay) return;
+    const [input, output, write, cached] = codexCounts(payload.usage);
+    const sid = reader.session(payload.session_id);
+    (file.r ??= {})[payload.response_id] = [
+      day,
+      file.model,
+      input,
+      output,
+      write,
+      cached,
+      at,
+      file.cwd,
+      sid >= 0 ? sid : (file.sid ?? -1),
+    ];
     return;
   }
   if (record.type !== 'event_msg' || payload.type !== 'token_count') return;
@@ -532,6 +692,7 @@ function codexLine(reader: Reader, file: CodexFile, line: string): void {
     cached,
     at,
     file.cwd,
+    file.sid ?? -1,
   ]);
 }
 
@@ -547,6 +708,7 @@ function geminiFile(reader: Reader, text: string): GeminiFile | undefined {
   const cwd = reader.cwd(
     typeof session.projectHash === 'string' ? `gemini:${session.projectHash}` : undefined,
   );
+  const sid = reader.session(session.sessionId);
   const m: Record<string, Rec> = {};
   for (const message of session.messages as unknown[]) {
     if (!isRecord(message) || typeof message.id !== 'string' || !isRecord(message.tokens)) continue;
@@ -567,6 +729,7 @@ function geminiFile(reader: Reader, text: string): GeminiFile | undefined {
       cached,
       at,
       cwd,
+      sid,
     ];
   }
   return { m };
@@ -645,6 +808,17 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
   });
   const gone = Object.keys(index.files).filter((path) => !present.has(path));
 
+  // A session the hook marked since the last read changes what is sent
+  // (LAI-775), though no session file did.
+  const skip = skipSignature(paths);
+  if (skip !== index.skip) {
+    index.skip = skip;
+    index.dirty = true;
+    if (options.dryRun !== true && changed.length === 0 && gone.length === 0) {
+      writeIndex(paths, index);
+    }
+  }
+
   const result = { files: present.size, changed: 0, bytes: 0 };
   if (changed.length === 0 && gone.length === 0) {
     return {
@@ -664,6 +838,7 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
     data.tz = tz;
   }
   const cwdIndex = new Map(data.cwds.map((c, i) => [c, i]));
+  const sessionIndex = new Map(data.sessions.map((id, i) => [id, i]));
   const reader: Reader = {
     data,
     dayOf,
@@ -676,6 +851,16 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
         i = data.cwds.length;
         data.cwds.push(value);
         cwdIndex.set(value, i);
+      }
+      return i;
+    },
+    session: (value) => {
+      if (typeof value !== 'string' || !SESSION_ID.test(value)) return -1;
+      let i = sessionIndex.get(value);
+      if (i === undefined) {
+        i = data.sessions.length;
+        data.sessions.push(value);
+        sessionIndex.set(value, i);
       }
       return i;
     },
@@ -754,7 +939,10 @@ async function scan(options: UsageReadOptions, wantData: boolean): Promise<Scan>
 
 function* allRecords(data: UsageData): Generator<Rec> {
   yield* Object.values(data.claude);
-  for (const file of Object.values(data.codex)) yield* file.ev;
+  for (const file of Object.values(data.codex)) {
+    yield* file.ev;
+    yield* Object.values(file.r ?? {});
+  }
   for (const file of Object.values(data.gemini)) yield* Object.values(file.m);
 }
 
@@ -768,7 +956,11 @@ function prune(data: UsageData, firstDay: string, present: ReadonlySet<string>):
   }
   for (const [path, file] of Object.entries(data.codex)) {
     file.ev = file.ev.filter((e) => e[0] >= firstDay);
-    if (file.ev.length === 0 && !present.has(path)) delete data.codex[path];
+    for (const [id, rec] of Object.entries(file.r ?? {})) {
+      if (rec[0] < firstDay) delete file.r?.[id];
+    }
+    const records = Object.keys(file.r ?? {}).length;
+    if (file.ev.length === 0 && records === 0 && !present.has(path)) delete data.codex[path];
   }
   for (const [path, file] of Object.entries(data.gemini)) {
     for (const [id, rec] of Object.entries(file.m)) if (rec[0] < firstDay) delete file.m[id];
@@ -838,11 +1030,33 @@ async function scopeFilter(
 /* -------------------------------------------------------------------------- */
 
 /** Per day in the window, the rows a report would carry, oldest day first. */
+interface Days {
+  /** Per day in the window, the rows a report would carry, oldest day first. */
+  readonly rows: Map<string, UsageRow[]>;
+  /** Days whose rows include tokens from before counting began — the backfill. */
+  readonly older: ReadonlySet<string>;
+}
+
+/**
+ * The window's rows per day, by these rules:
+ *
+ * - **From when counting began** (`state.since`); with a yes to the 30 days,
+ *   older tokens too — except on a day in `held`, which another collector of
+ *   this person already reported, so its older tokens are left out and only
+ *   what came since is sent (LAI-769 review 1). `held: 'unknown'` — the board
+ *   has not said yet — leaves every older token out. `all` counts everything:
+ *   what `backfill` shows before it asks.
+ * - **Never an automated session's** (LAI-775): a record whose session the
+ *   hook marked in `skip-sessions` is left out, subagents included.
+ * - **A Codex rollout with per-response records counts those**, each response
+ *   once across every rollout; one without counts its total's differences.
+ */
 async function daysOf(
   data: UsageData,
   options: UsageReadOptions,
   backfill: 'yes' | 'no' | undefined,
-): Promise<Map<string, UsageRow[]>> {
+  held: readonly string[] | 'unknown',
+): Promise<Days> {
   const { firstDay } = windowOf(options.nowS, options.tz);
   if (data.tz !== options.tz) {
     // The machine moved zone since these were read: their days, in the new one.
@@ -850,16 +1064,27 @@ async function daysOf(
     for (const rec of allRecords(data)) rec[0] = dayOf(rec[6]);
     data.tz = options.tz;
   }
-  // From when counting began, unless the developer said yes to the window.
-  const sinceS = options.all === true || backfill === 'yes' ? 0 : options.state.since;
+  const sinceS = options.state.since;
+  const all = options.all === true;
+  const older = backfill === 'yes' || all;
+  const heldDays = new Set(held === 'unknown' ? [] : held);
+  const skip = skippedSessions(options.paths);
+  const skippedIndex = new Set(data.sessions.flatMap((id, i) => (skip.has(id) ? [i] : [])));
   const inScope =
     options.state.scope === 'laika-repos'
       ? await scopeFilter(data, options.paths, options.nowS)
       : () => true;
 
   const days = new Map<string, Map<string, UsageRow>>();
+  const olderDays = new Set<string>();
   const add = (agent: UsageAgent, rec: Rec): void => {
-    if (rec[6] < sinceS || rec[0] < firstDay || !inScope(rec[7])) return;
+    if (rec[0] < firstDay || !inScope(rec[7])) return;
+    if (rec[8] !== undefined && skippedIndex.has(rec[8])) return;
+    if (rec[6] < sinceS) {
+      if (!older) return;
+      if (!all && (held === 'unknown' || heldDays.has(rec[0]))) return;
+      olderDays.add(rec[0]);
+    }
     let rows = days.get(rec[0]);
     if (rows === undefined) {
       rows = new Map();
@@ -885,7 +1110,19 @@ async function daysOf(
     row.cache_read += rec[5];
   };
   for (const rec of Object.values(data.claude)) add('claude-code', rec);
-  for (const file of Object.values(data.codex)) for (const rec of file.ev) add('codex', rec);
+  const responses = new Set<string>();
+  for (const file of Object.values(data.codex)) {
+    const records = Object.entries(file.r ?? {});
+    if (records.length === 0) {
+      for (const rec of file.ev) add('codex', rec);
+      continue;
+    }
+    for (const [id, rec] of records) {
+      if (responses.has(id)) continue;
+      responses.add(id);
+      add('codex', rec);
+    }
+  }
   const geminiSeen = new Set<string>();
   for (const file of Object.values(data.gemini)) {
     for (const [id, rec] of Object.entries(file.m)) {
@@ -909,7 +1146,7 @@ async function daysOf(
       .sort((a, b) => a.agent.localeCompare(b.agent) || a.model.localeCompare(b.model));
     if (rows.length > 0) out.set(day, rows);
   }
-  return out;
+  return { rows: out, older: olderDays };
 }
 
 export interface UsageRead {
@@ -917,12 +1154,24 @@ export interface UsageRead {
   readonly stats: UsageStats;
 }
 
-/** Read what is new and answer the window's rows per day — for tests, `status` and `backfill`. */
-export async function readUsage(options: UsageReadOptions): Promise<UsageRead> {
+/**
+ * Read what is new and answer the window's rows per day — for tests, `status`
+ * and `backfill`. Nothing is sent from here, so a day another collector holds
+ * is the board's question, not this one's: none are taken as held unless the
+ * caller has the board's answer.
+ */
+export async function readUsage(
+  options: UsageReadOptions & { readonly held?: readonly string[] },
+): Promise<UsageRead> {
   const scanned = await scan(options, true);
   const data = scanned.data ?? emptyData(options.tz);
-  const days = await daysOf(data, options, scanned.index.backfill);
-  return { days, stats: scanned.stats };
+  const { rows } = await daysOf(
+    data,
+    options,
+    scanned.index.backfill,
+    options.held ?? scanned.index.held ?? [],
+  );
+  return { days: rows, stats: scanned.stats };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -943,7 +1192,12 @@ export interface UsageReport {
 export function usageReports(options: {
   readonly collectorId: string;
   readonly tz: string;
-  readonly days: readonly { readonly day: string; readonly rows: readonly UsageRow[] }[];
+  readonly days: readonly {
+    readonly day: string;
+    /** Tokens from before counting began, sent once marked (SPEC §6.4). */
+    readonly backfill?: true | undefined;
+    readonly rows: readonly UsageRow[];
+  }[];
 }): UsageReport[] {
   const base = { v: 1, collector_id: options.collectorId, tz: options.tz, usage: true, days: [] };
   const baseBytes = Buffer.byteLength(JSON.stringify(base));
@@ -959,8 +1213,13 @@ export function usageReports(options: {
     days = [];
     bytes = baseBytes;
   };
-  for (const { day, rows } of [...options.days].sort((a, b) => a.day.localeCompare(b.day))) {
-    const entry = JSON.stringify({ day, rows: fitted(rows, MAX_BODY_BYTES - baseBytes) });
+  const sorted = [...options.days].sort((a, b) => a.day.localeCompare(b.day));
+  for (const { day, backfill, rows } of sorted) {
+    const entry = JSON.stringify({
+      day,
+      ...(backfill === true ? { backfill } : {}),
+      rows: fitted(rows, MAX_BODY_BYTES - baseBytes),
+    });
     const cost = Buffer.byteLength(entry) + (entries.length > 0 ? 1 : 0);
     if (bytes + cost > MAX_BODY_BYTES) flush();
     entries.push(entry);
@@ -1006,6 +1265,12 @@ function fitted(rows: readonly UsageRow[], room: number): UsageRow[] {
 export interface UsageContext extends UsageReadOptions {
   readonly collectorId: string;
   readonly send: (body: string) => Promise<SendAnswer>;
+  /**
+   * The board's `usage_days_elsewhere` from this sync's sharing answer: the
+   * days other collectors of this person hold tokens for. `undefined` when
+   * the board did not say — an older Laika — and then no older token goes.
+   */
+  readonly heldElsewhere?: readonly string[] | undefined;
 }
 
 export type UsageOutcome =
@@ -1032,14 +1297,25 @@ const signature = (rows: readonly UsageRow[]): string => JSON.stringify(rows);
  */
 function dueDays(
   index: UsageIndex,
-  days: ReadonlyMap<string, UsageRow[]>,
-): { day: string; rows: UsageRow[] }[] {
-  const due: { day: string; rows: UsageRow[] }[] = [];
-  for (const day of new Set([...days.keys(), ...Object.keys(index.sent)])) {
-    const rows = days.get(day) ?? [];
-    if ((index.sent[day] ?? signature([])) !== signature(rows)) due.push({ day, rows });
+  days: Days,
+): { day: string; backfill?: true; rows: UsageRow[] }[] {
+  const due: { day: string; backfill?: true; rows: UsageRow[] }[] = [];
+  const marked = new Set(index.marked);
+  for (const day of new Set([...days.rows.keys(), ...Object.keys(index.sent)])) {
+    const rows = days.rows.get(day) ?? [];
+    if ((index.sent[day] ?? signature([])) === signature(rows)) continue;
+    // Marked the first time a day with older tokens goes: the board then
+    // replaces every collector's rows for it (SPEC §6.4). After that the day
+    // is this collector's, and a resend replaces only its own.
+    const mark = days.older.has(day) && !marked.has(day);
+    due.push({ day, ...(mark ? { backfill: true as const } : {}), rows });
   }
   return due.sort((a, b) => a.day.localeCompare(b.day));
+}
+
+/** What `daysOf` is told about held days, for this index: frozen once known. */
+function heldFor(index: UsageIndex): readonly string[] | 'unknown' {
+  return index.backfill === 'yes' ? (index.held ?? 'unknown') : [];
 }
 
 /**
@@ -1055,7 +1331,12 @@ export async function previewUsage(
   for (const day of Object.keys(scanned.index.sent)) {
     if (day < firstDay) delete scanned.index.sent[day];
   }
-  const days = await daysOf(scanned.data ?? emptyData(options.tz), options, scanned.index.backfill);
+  const days = await daysOf(
+    scanned.data ?? emptyData(options.tz),
+    options,
+    scanned.index.backfill,
+    heldFor(scanned.index),
+  );
   return usageReports({
     collectorId: options.collectorId,
     tz: options.tz,
@@ -1074,10 +1355,18 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
   if (!index.dirty) return { kind: 'idle', stats };
   if (ctx.nowS < index.next_at) return { kind: 'waiting', nextAt: index.next_at };
 
+  // The days other collectors hold, decided once, the first time the 30 days
+  // could go: later machines do not change which older days this one sent.
+  if (index.backfill === 'yes' && index.held === undefined && ctx.heldElsewhere !== undefined) {
+    index.held = [...ctx.heldElsewhere].filter(isDay);
+  }
+  if (ctx.dryRun !== true) compactSkipSessions(ctx.paths, ctx.nowS);
+
   const data = scanned.data ?? readData(ctx.paths, ctx.tz) ?? emptyData(ctx.tz);
-  const days = await daysOf(data, ctx, index.backfill);
+  const days = await daysOf(data, ctx, index.backfill, heldFor(index));
   const { firstDay } = windowOf(ctx.nowS, ctx.tz);
   for (const day of Object.keys(index.sent)) if (day < firstDay) delete index.sent[day];
+  index.marked = index.marked.filter((day) => day >= firstDay);
 
   const due = dueDays(index, days);
   const save = (): void => {
@@ -1091,6 +1380,7 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
 
   const reports = usageReports({ collectorId: ctx.collectorId, tz: ctx.tz, days: due });
   const rowsOf = new Map(due.map((d) => [d.day, d.rows]));
+  const markedNow = new Set(due.filter((d) => d.backfill === true).map((d) => d.day));
   let sent = 0;
   let sentDays = 0;
   const stopped = (): boolean =>
@@ -1127,6 +1417,7 @@ export async function usageStep(ctx: UsageContext): Promise<UsageOutcome> {
     sent += 1;
     for (const day of report.days) {
       index.sent[day] = signature(rowsOf.get(day) ?? []);
+      if (markedNow.has(day)) index.marked.push(day);
       sentDays += 1;
     }
     save();

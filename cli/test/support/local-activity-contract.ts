@@ -109,8 +109,9 @@ function usageViolation(b: Record<string, unknown>, now: Date): string | undefin
     if (typeof entry !== 'object' || entry === null) return 'a day is not an object';
     const d = entry as Record<string, unknown>;
     for (const key of Object.keys(d)) {
-      if (key !== 'day' && key !== 'rows') return `usage day field ${key}`;
+      if (key !== 'day' && key !== 'rows' && key !== 'backfill') return `usage day field ${key}`;
     }
+    if ('backfill' in d && d.backfill !== true) return 'backfill is true or absent';
     if (typeof d.day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(d.day))
       return 'day not YYYY-MM-DD';
     if (d.day < low || d.day > high) return 'day_out_of_range';

@@ -165,6 +165,12 @@ export interface Sharing {
   readonly enabled: boolean;
   readonly scope: Scope;
   readonly min_sync_interval_s: number;
+  /**
+   * Asked with this collector's id (SPEC §6.4, LAI-769 review 1): the days
+   * other collectors of this person hold tokens for — dates only. Absent from
+   * an older board, and then the usage step sends no older tokens.
+   */
+  readonly usage_days_elsewhere?: readonly string[];
 }
 
 export type Call<T> =
@@ -265,8 +271,13 @@ export async function getSharing(
   creds: Credentials,
   nowMs: number,
   abort?: AbortSignal,
+  collector?: string,
 ): Promise<Call<Sharing>> {
-  const response = await request(creds, 'GET', '/api/v1/me/activity-sharing', undefined, abort);
+  const path =
+    collector === undefined
+      ? '/api/v1/me/activity-sharing'
+      : `/api/v1/me/activity-sharing?collector_id=${encodeURIComponent(collector)}`;
+  const response = await request(creds, 'GET', path, undefined, abort);
   if ('error' in response) return { ok: false, message: response.error };
   if (!response.ok) return failed(response, nowMs);
   try {
@@ -281,6 +292,13 @@ export async function getSharing(
         enabled: body.enabled,
         scope: body.scope === 'laika-repos' ? 'laika-repos' : 'agent-repos',
         min_sync_interval_s: clampInterval(body.min_sync_interval_s),
+        ...(Array.isArray(body.usage_days_elsewhere)
+          ? {
+              usage_days_elsewhere: (body.usage_days_elsewhere as unknown[]).filter(
+                (d): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d),
+              ),
+            }
+          : {}),
       },
     };
   } catch {
@@ -518,7 +536,7 @@ async function syncLocked(
     // --- the switch and the scope, every time -----------------------------------
     // Cheap, and the only way a narrowed scope or a switch turned off takes
     // effect on the very next sync rather than a day later.
-    const sharing = await getSharing(creds, ctx.nowMs(), signal);
+    const sharing = await getSharing(creds, ctx.nowMs(), signal, collectorId(paths));
     if (!sharing.ok) {
       return fail(`checking whether sharing is on: ${sharing.message}`, sharing.status);
     }
@@ -577,6 +595,7 @@ async function syncLocked(
         tz: ianaTimeZone(ctx.tz),
         nowS,
         send: (body) => putActivity(creds, body, ctx.nowMs(), signal),
+        heldElsewhere: sharing.value.usage_days_elsewhere,
         signal,
         stopAt: softStop,
       });

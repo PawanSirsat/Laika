@@ -74,6 +74,12 @@ export interface StubBoard {
   readonly close: () => void;
 }
 
+/** A usage report's row, as far as the stub reads it. */
+interface UsageRowLike {
+  readonly agent: string;
+  readonly output: number;
+}
+
 const servers: Server[] = [];
 
 export function closeAll(): void {
@@ -130,9 +136,22 @@ export async function stubBoard(token: string): Promise<StubBoard> {
         refuse(401, 'unauthorized');
         return;
       }
-      if (req.method === 'GET' && req.url === '/api/v1/me/activity-sharing') {
+      const url = new URL(req.url ?? '/', 'http://stub');
+      if (req.method === 'GET' && url.pathname === '/api/v1/me/activity-sharing') {
         if (board.get === 'hang') return;
-        json(200, board.sharing);
+        // SPEC §6.4 (LAI-769 review 1): with `?collector_id=`, the days other
+        // collectors hold tokens for — dates only.
+        const asking = url.searchParams.get('collector_id');
+        if (asking === null) {
+          json(200, board.sharing);
+          return;
+        }
+        const elsewhere = new Set<string>();
+        for (const [key, rows] of board.usage) {
+          const [collector, day] = key.split('|');
+          if (collector !== asking && rows.length > 0 && day !== undefined) elsewhere.add(day);
+        }
+        json(200, { ...board.sharing, usage_days_elsewhere: [...elsewhere].sort() });
         return;
       }
       if (req.method === 'PUT' && req.url === '/api/v1/me/local-activity') {
@@ -217,7 +236,22 @@ export async function stubBoard(token: string): Promise<StubBoard> {
           }[];
         };
         if (sent.usage === true) {
-          for (const d of sent.days) board.usage.set(`${sent.collector_id}|${d.day}`, d.rows ?? []);
+          for (const d of sent.days as { day: string; backfill?: true; rows?: UsageRowLike[] }[]) {
+            const rows = d.rows ?? [];
+            // §4.32: a backfilled day takes every other collector's rows for
+            // the day and each agent it names.
+            if (d.backfill === true) {
+              const agents = new Set(rows.map((r) => r.agent));
+              for (const [key, held] of board.usage) {
+                if (!key.endsWith(`|${d.day}`) || key.startsWith(`${sent.collector_id}|`)) continue;
+                board.usage.set(
+                  key,
+                  (held as UsageRowLike[]).filter((r) => !agents.has(r.agent)),
+                );
+              }
+            }
+            board.usage.set(`${sent.collector_id}|${d.day}`, rows);
+          }
           json(200, { accepted_days: sent.days.length });
           return;
         }

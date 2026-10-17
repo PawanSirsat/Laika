@@ -338,6 +338,101 @@ const textOf = (path: string): string => {
  * called, then its whole environment followed by an `__END__` line (so a test
  * never reads half a dump), and then sleeps far longer than any hook budget.
  */
+/**
+ * LAI-775, the owner's decision: an Omnigent-launched (or CI, or skipped)
+ * session's tokens are not the developer's. Such a session counts nothing, as
+ * before — and its id is now kept in `~/.laika/activity/skip-sessions`, never
+ * sent, so the token reader can leave its session files out. Only the session
+ * start and end payloads are read for it: they carry no prompt.
+ */
+const SKIP_FILE = (h: string): string => join(h, '.laika', 'activity', 'skip-sessions');
+const skipped = (h: string): string[] =>
+  existsSync(SKIP_FILE(h))
+    ? readFileSync(SKIP_FILE(h), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => line.split(' ')[1] ?? '')
+    : [];
+const payload = (sessionId: unknown): string =>
+  JSON.stringify({
+    session_id: sessionId,
+    transcript_path: '/Users/dev/.claude/projects/-work/x.jsonl',
+    cwd: '/Users/dev/work',
+    hook_event_name: 'SessionStart',
+    source: 'startup',
+  });
+
+for (const shell of SHELLS) {
+  void describe(`automated sessions are remembered, locally, under ${shell.join(' ')} (LAI-775)`, () => {
+    void test('session start and end keep the session id, and count nothing', () => {
+      for (const env of AUTOMATED) {
+        const h = home();
+        for (const mode of ['session-start', 'session-end']) {
+          const r = run(shell, [mode, 'claude-code'], {
+            home: h,
+            env,
+            input: payload('5f3c2a1e-9d8b-4c7a-b6e5-0f1e2d3c4b5a'),
+          });
+          assert.equal(r.code, 0);
+          assert.equal(r.stdout + r.stderr, '');
+        }
+        assert.deepEqual(skipped(h), [
+          '5f3c2a1e-9d8b-4c7a-b6e5-0f1e2d3c4b5a',
+          '5f3c2a1e-9d8b-4c7a-b6e5-0f1e2d3c4b5a',
+        ]);
+        assert.match(readFileSync(SKIP_FILE(h), 'utf8'), /^\d{10} 5f3c2a1e-/);
+        assert.equal((statSync(SKIP_FILE(h)).mode & 0o777).toString(8), '600');
+        assert.deepEqual(events(h), []);
+      }
+    });
+
+    void test('a prompt is never read for it, and a person’s session keeps no id', () => {
+      for (const env of AUTOMATED) {
+        const h = home();
+        run(shell, ['prompt', 'claude-code'], {
+          home: h,
+          env,
+          input: JSON.stringify({ session_id: 'abc', prompt: 'hello' }),
+        });
+        assert.deepEqual(skipped(h), [], 'a prompt payload was read');
+      }
+      const person = home();
+      run(shell, ['session-start', 'claude-code'], { home: person, input: payload('abc-123') });
+      assert.deepEqual(skipped(person), [], 'a person’s session was marked automated');
+    });
+
+    void test('anything that is not a plain id is kept out', () => {
+      const h = home();
+      for (const bad of [null, 42, 'a b', 'x$(touch pwned)', 'a\nb', '', 'é', 'x'.repeat(200)]) {
+        run(shell, ['session-start', 'claude-code'], {
+          home: h,
+          env: { OMNIGENT: '1' },
+          input: payload(bad),
+        });
+      }
+      // And a key that only looks like it, inside a string value.
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        env: { OMNIGENT: '1' },
+        input: JSON.stringify({ cwd: '/x/"session_id":"evil"', session_id: null }),
+      });
+      assert.deepEqual(skipped(h), []);
+      assert.ok(!existsSync(join(h, 'pwned')) && !existsSync('pwned'));
+    });
+
+    void test('with activity off on this machine, nothing is written at all', () => {
+      const h = dir('laika-nohome-');
+      run(shell, ['session-start', 'claude-code'], {
+        home: h,
+        env: { OMNIGENT: '1' },
+        input: payload('abc-123'),
+      });
+      assert.ok(!existsSync(join(h, '.laika')));
+    });
+  });
+}
+
 void describe('starting the sync', () => {
   function layout(): { script: string; calls: string } {
     const root = dir('laika-actlayout-');
@@ -470,6 +565,21 @@ void describe('cost of the prompt path', () => {
         /^p codex \d{10}$/,
         'the prompt path needed an external command',
       );
+    },
+  );
+
+  void test(
+    'under zsh a skipped session keeps its id with builtins alone: an empty PATH still records it',
+    { skip: ZSH === undefined },
+    () => {
+      const h = home();
+      const r = run(shell, ['session-start', 'codex'], {
+        home: h,
+        env: { OMNIGENT: '1', PATH: '' },
+        input: payload('019a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8'),
+      });
+      assert.equal(r.code, 0);
+      assert.deepEqual(skipped(h), ['019a2b3c-4d5e-6f70-8192-a3b4c5d6e7f8']);
     },
   );
 

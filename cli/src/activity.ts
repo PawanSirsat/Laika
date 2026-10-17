@@ -314,10 +314,15 @@ async function on(args: readonly string[], io: ActivityIo): Promise<number> {
   if (usageBackfill(paths) === undefined) {
     let answer = tokensAnswer;
     if (answer === undefined && io.ask !== undefined) {
-      const typed = await io.ask(
-        'Count the token usage of the last 30 days already on this machine too? Totals per day only. [y/N]',
-      );
-      answer = /^y(es)?$/i.test(typed.trim()) ? 'yes' : 'no';
+      // What the question is about, before it is asked — as `backfill` does.
+      io.out('');
+      const found = await tokensFound(io, paths, readState(paths));
+      if (found) {
+        const typed = await io.ask(
+          'Count these last 30 days too? Totals per day only; days the board already holds are not sent again. [y/N]',
+        );
+        answer = /^y(es)?$/i.test(typed.trim()) ? 'yes' : 'no';
+      }
     }
     if (answer !== undefined) {
       setUsageBackfill(paths, answer);
@@ -581,6 +586,48 @@ async function backfill(args: readonly string[], io: ActivityIo): Promise<number
 
 const thousands = (n: number): string => n.toLocaleString('en-US');
 
+/**
+ * Print what the last 30 days of session files hold — tokens, days, per
+ * agent — and what cannot be told apart; `false` when they hold none. Counted
+ * before a question is asked, so a person answers about real numbers.
+ */
+async function tokensFound(
+  io: ActivityIo,
+  paths: ReturnType<typeof activityPaths>,
+  state: ReturnType<typeof readState>,
+): Promise<boolean> {
+  if (state === undefined) return false;
+  const found = summarise(
+    (
+      await readUsage({
+        paths,
+        roots: usageRoots(io.home, io.env),
+        state,
+        tz: ianaTimeZone(io.tz),
+        nowS: Math.floor(io.nowMs() / 1000),
+        all: true,
+      })
+    ).days,
+  );
+  if (found.tokens + found.cacheRead === 0) {
+    io.out('Token usage: none in the last 30 days of Claude Code, Codex or Gemini CLI files.');
+    return false;
+  }
+  io.out(
+    `Token usage in your agents' session files, the last 30 days: at least ` +
+      `${thousands(found.tokens)} tokens on ${String(found.days)} ${found.days === 1 ? 'day' : 'days'}` +
+      `, and ${thousands(found.cacheRead)} cache reads beside them.`,
+  );
+  for (const [agent, n] of [...found.byAgent].sort((a, b) => b[1] - a[1])) {
+    io.out(`  ${(AGENT_NAMES[agent] ?? agent).padEnd(12)} ${thousands(n)}`);
+  }
+  io.out('Sent as totals per day, agent and model: never what was said, tool input, paths,');
+  io.out('branches or session ids.');
+  io.out('Sessions Omnigent, CI or LAIKA_ACTIVITY_SKIP ran from now on are left out. Ones that');
+  io.out('ran before activity was on here cannot be told apart from yours, and are in these.');
+  return true;
+}
+
 const AGENT_NAMES: Readonly<Record<string, string>> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
@@ -616,22 +663,10 @@ async function backfillTokens(
     nowS: Math.floor(io.nowMs() / 1000),
   };
   // Counted before asking, like the commits: no lock is held while a person reads.
-  const found = summarise((await readUsage({ ...options, all: true })).days);
-  if (found.tokens + found.cacheRead === 0) {
-    io.out('Token usage: none in the last 30 days of Claude Code, Codex or Gemini CLI files.');
+  if (!(await tokensFound(io, paths, state))) {
     io.out('');
     return 0;
   }
-  io.out(
-    `Token usage in your agents' session files, the last 30 days: at least ` +
-      `${thousands(found.tokens)} tokens on ${String(found.days)} ${found.days === 1 ? 'day' : 'days'}` +
-      `, and ${thousands(found.cacheRead)} cache reads beside them.`,
-  );
-  for (const [agent, n] of [...found.byAgent].sort((a, b) => b[1] - a[1])) {
-    io.out(`  ${(AGENT_NAMES[agent] ?? agent).padEnd(12)} ${thousands(n)}`);
-  }
-  io.out('Sent as totals per day, agent and model: never what was said, tool input, paths,');
-  io.out('branches or session ids.');
   if (!ctx.yes) {
     const answer = (
       (await io.ask?.(`Send these token totals to ${creds.url}? [y/N]`)) ?? ''
@@ -653,14 +688,18 @@ async function backfillTokens(
   }
   let outcome: UsageOutcome | 'deadline';
   try {
-    outcome = await withDeadline(io.deadlineMs ?? SYNC_DEADLINE_MS, (signal) =>
-      usageStep({
+    outcome = await withDeadline(io.deadlineMs ?? SYNC_DEADLINE_MS, async (signal) => {
+      // Which days other collectors already hold, so their older tokens are not
+      // sent again (SPEC §6.4); an older board that does not say sends none.
+      const sharing = await getSharing(creds, io.nowMs(), signal, collectorId(paths));
+      return usageStep({
         ...options,
         collectorId: collectorId(paths),
         send: (body) => putActivity(creds, body, io.nowMs(), signal),
+        heldElsewhere: sharing.ok ? sharing.value.usage_days_elsewhere : undefined,
         signal,
-      }),
-    );
+      });
+    });
   } finally {
     release();
   }
