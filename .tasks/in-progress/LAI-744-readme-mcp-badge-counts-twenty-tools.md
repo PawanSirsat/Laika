@@ -2,11 +2,12 @@
 id: LAI-744
 title: 'README: the MCP badge says 20 tools; the server registers 18'
 area: docs
-assignee: unclaimed
+assignee: owner-direct
 priority: p3
 depends-on: []
 discovered-from: LAI-743
-status: backlog
+status: in-progress
+started: 2026-10-17T06:49:03Z
 ---
 
 ## Goal
@@ -27,5 +28,8 @@ LAI-743). A public README should not claim a surface the server lacks.
 
 ## Notes / context
 
+- **Claimed with LAI-755, LAI-756, LAI-730, LAI-744 and LAI-759 together:
+  cleanup release, owner's direct instruction** (docs/HANDOVER.md §4), one
+  builder on branch `build-cleanup`.
 Found while checking that LAI-743's README row claims nothing the server does
 not enforce. Not fixed there: out of that task's scope.
