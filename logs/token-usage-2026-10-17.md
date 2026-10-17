@@ -225,12 +225,12 @@ on the owner's word (LAI-771 first). Not in review until then.
   became healthy" (load 13), 15/15 alone; `pnpm lint` 0; `pnpm format` 0.
 
 **Discovered**
-- drizzle-kit's index-numbered output overwrites the previous migration's
-  snapshot whenever the journal's last tag is numbered ahead of its index, as
-  0036 at idx 35 now is: the next person to run `db:generate` on `master` will
-  get `0037_*` and be fine, but this shape recurs whenever two migrations are
-  built in parallel. Worth a line in migrations/README.md (CORE's) — noted here,
-  not filed: it is one paragraph, and CHIEF may prefer to fold it into LAI-768.
+- drizzle-kit names a migration by its journal **index**, and since LAI-771's
+  `0036` sits at idx 35 every tag runs one ahead: the next `pnpm db:generate`
+  writes a second `0037_*.sql` and **overwrites `meta/0037_snapshot.json`**
+  (probed on a scratch copy with `--custom`; on `master` today it would hit
+  0036's). Nothing shipped is affected → LAI-778 filed (discovered-from:
+  LAI-769).
 
 **State**
 In review. Nothing pushed.
