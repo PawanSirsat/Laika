@@ -46,6 +46,17 @@
 # 128). It is appended to ~/.laika/activity/skip-sessions, 0600, and never
 # sent. Nothing at all when activity is not on here (no ~/.laika/activity).
 #
+# ## A person's session start (LAI-770, D-084 item 5)
+#
+# For a counted session of an agent whose tokens `laika activity sync` reads —
+# Claude Code, Codex, Gemini CLI — the session-start payload is read the same
+# way, for its session id alone, and one line `<epoch> <session id> <branch>`
+# is appended to ~/.laika/activity/sessions, 0600, never sent: the branch the
+# session started on, for the token reader to find a task key in when the
+# agent's own session files name no branch. The branch comes from the `git`
+# call this path already made — one call, no new fork. Only a key in it ever
+# leaves the machine, as a usage row's task. No prompt payload is read for it.
+#
 # Owned by SHELL (plugin/). LAI-752, LAI-757.
 
 exec >/dev/null 2>&1
@@ -56,14 +67,17 @@ MODE="${1:-}"
 AGENT="${2:-}"
 case "$AGENT" in '' | *[!a-z0-9-]*) AGENT=other ;; esac
 
-# An automated session's start or end payload is the only one ever read, and
-# only for its id: neither carries a prompt (LAI-775). The prompt path pays one
-# test for it, which is all its budget allows.
+# A session's start or end payload is the only one ever read, and only for
+# its id: neither carries a prompt. An automated session's (LAI-775); a
+# person's start, for an agent whose tokens are read (LAI-770). The prompt
+# path pays one test for it, which is all its budget allows.
 KEEP=no
 PAYLOAD=''
 if [ "$MODE" != prompt ]; then
   if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
     case "$MODE" in session-start | session-end) KEEP=yes ;; esac
+  elif [ "$MODE" = session-start ]; then
+    case "$AGENT" in claude-code | codex | gemini-cli) KEEP=yes ;; esac
   fi
 fi
 
@@ -89,23 +103,28 @@ else
   NOW="${EPOCHSECONDS:-}"
 fi
 
+# --- the payload's session id: a plain id, or nothing ------------------------------
+SID=''
+if [ "$KEEP" = yes ]; then
+  LC_ALL=C
+  REST="${PAYLOAD#*\"session_id\"}"
+  if [ "$REST" != "$PAYLOAD" ]; then
+    GAP="${REST%%\"*}"
+    VALUE="${REST#*\"}"
+    SID="${VALUE%%\"*}"
+    # A string value straight after the key — only `:` and spaces between —
+    # and closed by its quote; a plain id, nothing that could be anything else.
+    case "$GAP" in *[!:\ ]*) SID='' ;; esac
+    [ "$SID" = "$VALUE" ] && SID=''
+    case "$SID" in '' | *[!A-Za-z0-9._-]*) SID='' ;; esac
+    [ "${#SID}" -gt 128 ] && SID=''
+  fi
+  PAYLOAD=''
+fi
+
 # --- an automated session: nothing counted, its id kept -------------------------
 if [ "${OMNIGENT:-}" = 1 ] || [ -n "${CI:-}" ] || [ -n "${LAIKA_ACTIVITY_SKIP:-}" ]; then
   if [ "$KEEP" = yes ] && [ -d "$HOME/.laika/activity" ]; then
-    LC_ALL=C
-    SID=''
-    REST="${PAYLOAD#*\"session_id\"}"
-    if [ "$REST" != "$PAYLOAD" ]; then
-      GAP="${REST%%\"*}"
-      VALUE="${REST#*\"}"
-      SID="${VALUE%%\"*}"
-      # A string value straight after the key — only `:` and spaces between —
-      # and closed by its quote; a plain id, nothing that could be anything else.
-      case "$GAP" in *[!:\ ]*) SID='' ;; esac
-      [ "$SID" = "$VALUE" ] && SID=''
-      case "$SID" in '' | *[!A-Za-z0-9._-]*) SID='' ;; esac
-      [ "${#SID}" -gt 128 ] && SID=''
-    fi
     if [ -n "$SID" ]; then
       case "$NOW" in '' | *[!0-9]*) NOW="$(date +%s)" ;; esac
       # One printf, one O_APPEND write; umask 077 makes the file 0600.
@@ -142,12 +161,27 @@ fi
 if [ "$MODE" = session-start ] && [ "$COLLECT" = yes ]; then
   printf 's %s %s\n' "$AGENT" "$NOW" >>"$DIR/events.log"
 
-  # Which repository this session is in. Kept on this machine only: it decides
-  # which repos `laika activity sync` counts commits in, and is never sent.
-  TOP="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --show-toplevel 2>/dev/null)"
-  REPOS="$DIR/repos"
+  # Which repository this session is in, and the branch it is on. Kept on
+  # this machine only: the repo decides which repos `laika activity sync`
+  # counts commits in, the branch which task key its tokens may carry
+  # (LAI-770). One `git` call for both; a repo with no commit has no branch.
   NL='
 '
+  OUT="$(git -C "${CLAUDE_PROJECT_DIR:-$PWD}" rev-parse --show-toplevel --abbrev-ref HEAD 2>/dev/null)"
+  TOP="${OUT%%"$NL"*}"
+  BRANCH="${OUT#*"$NL"}"
+  [ "$BRANCH" = "$OUT" ] && BRANCH=''
+  case "$BRANCH" in HEAD | *[!A-Za-z0-9._/-]*) BRANCH='' ;; esac
+  [ "${#BRANCH}" -gt 255 ] && BRANCH=''
+  if [ -n "$SID" ]; then
+    # One printf, one O_APPEND write; umask 077 makes the file 0600.
+    if [ -n "$BRANCH" ]; then
+      printf '%s %s %s\n' "$NOW" "$SID" "$BRANCH" >>"$DIR/sessions"
+    else
+      printf '%s %s\n' "$NOW" "$SID" >>"$DIR/sessions"
+    fi
+  fi
+  REPOS="$DIR/repos"
   case "$TOP" in
     '' | *'	'* | *"$NL"*) ;;
     *)
