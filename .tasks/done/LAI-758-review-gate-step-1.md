@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-17T06:53:06Z
-status: review
+status: done
 finished: 2026-10-17T07:59:49Z
 ---
 
@@ -169,3 +169,7 @@ Connect block and plugin skill wording (filed as LAI-762).
 **Screenshots** (light and dark, 1366 and 390 wide):
 `/tmp/laika-review-gate-shots/` — `review-page-*`, `review-detail-*`,
 `send-back-dialog-*`, `task-panel-proof-*`, `board-card-sent-back-*`.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE, no blockers; migration 0033 verified on a database at master 0032); merged to master on the owner's direct instruction. Non-blocking review notes filed as LAI-764.
