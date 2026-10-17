@@ -307,6 +307,50 @@ const PAIRS: readonly Pair[] = [
     client: 'OwnLocalActivity',
     clientFile: 'local-activity.ts',
   },
+  /*
+   * The review gate (D-081, LAI-758), paired the moment the client existed.
+   * `ReviewQueueView.tasks` and `TaskRoundsView.rounds` hold the nested
+   * shapes paired through the table below, for the profile's reason.
+   */
+  {
+    server: 'TaskRoundsView',
+    serverFile: 'services/rounds.ts',
+    client: 'TaskRounds',
+    clientFile: 'review.ts',
+  },
+  {
+    server: 'RoundView',
+    serverFile: 'services/rounds.ts',
+    client: 'Round',
+    clientFile: 'review.ts',
+  },
+  {
+    server: 'SendBackView',
+    serverFile: 'services/rounds.ts',
+    client: 'SendBack',
+    clientFile: 'review.ts',
+  },
+  {
+    server: 'ReviewQueueView',
+    serverFile: 'services/review.ts',
+    client: 'ReviewQueue',
+    clientFile: 'review.ts',
+  },
+  ...(
+    [
+      ['ReviewQueueItem', 'services/review.ts'],
+      ['EvidenceItem', 'services/rounds.ts'],
+      ['CommitEvidence', 'services/rounds.ts'],
+      ['BranchEvidence', 'services/rounds.ts'],
+      ['PullRequestEvidence', 'services/rounds.ts'],
+      ['TestEvidence', 'services/rounds.ts'],
+    ] as const
+  ).map(([name, serverFile]) => ({
+    server: name,
+    serverFile,
+    client: name,
+    clientFile: 'review.ts',
+  })),
   // Nested, through a table for the reason given below the profile's.
   ...(
     [

@@ -47,7 +47,7 @@ export interface EvidenceInput {
   tests?: readonly { command: string; exit_code: number }[] | undefined;
 }
 
-interface ItemState {
+export interface EvidenceItem {
   id: string;
   /** `claimed` until something other than the agent checks it (§4.26). */
   state: EvidenceState;
@@ -56,10 +56,24 @@ interface ItemState {
   state_at: number | null;
 }
 
-export type CommitEvidence = ItemState & { sha: string; message: string | null };
-export type BranchEvidence = ItemState & { name: string };
-export type PullRequestEvidence = ItemState & { url: string };
-export type TestEvidence = ItemState & { command: string; exit_code: number };
+export interface CommitEvidence extends EvidenceItem {
+  sha: string;
+  /** The commit's first line, or null. */
+  message: string | null;
+}
+
+export interface BranchEvidence extends EvidenceItem {
+  name: string;
+}
+
+export interface PullRequestEvidence extends EvidenceItem {
+  url: string;
+}
+
+export interface TestEvidence extends EvidenceItem {
+  command: string;
+  exit_code: number;
+}
 
 export interface RoundView {
   id: string;
@@ -279,7 +293,7 @@ function toRoundViews(db: Db, rows: (typeof taskRounds.$inferSelect)[]): RoundVi
 
   return rows.map((row) => {
     const mine = items.filter((i) => i.roundId === row.id);
-    const state = (i: (typeof mine)[number]): ItemState => ({
+    const state = (i: (typeof mine)[number]): EvidenceItem => ({
       id: i.id,
       state: i.state,
       state_source: i.stateSource,

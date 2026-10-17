@@ -16,6 +16,13 @@ export type TaskStatus = (typeof STATUSES)[number] | 'cancelled';
 export const PRIORITIES = ['p1', 'p2', 'p3'] as const;
 export type TaskPriority = (typeof PRIORITIES)[number];
 
+/** `TaskView.send_back` (§6.4): who sent it back, when, and why. */
+export interface TaskSendBack {
+  readonly reason_md: string;
+  readonly decided_by: string;
+  readonly created_at: number;
+}
+
 export interface Task {
   readonly id: string;
   /** The display key humans and agents both use — `LAI-42` (§4.5). */
@@ -104,6 +111,12 @@ export interface Task {
    * note.
    */
   readonly blocks: readonly string[];
+  /**
+   * The send-back this task carries, or null (§4.27, D-081): a person sent it
+   * back from review with this reason, and nobody has finished it since. The
+   * card marks it and the panel shows the reason.
+   */
+  readonly send_back: TaskSendBack | null;
   /**
    * Live comments, derived at read time and excluding soft-deleted ones
    * (LAI-072), so it cannot disagree with the thread the reader opens.

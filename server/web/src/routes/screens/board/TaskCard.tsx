@@ -71,6 +71,9 @@ export function TaskCard({
   sprintLabels,
 }: TaskCardProps) {
   const blocked = blockedState(task, byId);
+  // `?? null`: a view served before LAI-758 — a tab open across the deploy —
+  // has no `send_back` at all, and absent is not sent back.
+  const sentBack = task.send_back ?? null;
   const assignee = task.assignee_id === null ? undefined : members.get(task.assignee_id);
   const colour = assignee === undefined ? undefined : avatarColor(assignee.user_id, theme);
   // Real: `created_via` ships on every task and `mcp` is the agent path.
@@ -209,6 +212,19 @@ export function TaskCard({
             title="Unassigned, unblocked, ready to pick up"
           >
             ready
+          </span>
+        )}
+        {/*
+          A person sent it back from review (D-081): the reason is the tooltip,
+          and the panel reads it out in full. Not a toggleable field — it is
+          the review gate speaking, like the stale marker.
+        */}
+        {sentBack !== null && (
+          <span
+            className="marker marker-sent-back card-above t-label"
+            title={`Sent back: ${sentBack.reason_md}`}
+          >
+            ↩ sent back
           </span>
         )}
         {blocked === undefined && (

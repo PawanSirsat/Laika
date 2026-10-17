@@ -1,0 +1,232 @@
+/*
+ * The proof on a task (D-081, LAI-758) — the task panel's Proof section and
+ * the Review page's detail draw it with these rules. Tokens only, so both
+ * themes come from `theme.css`.
+ */
+
+.ev-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.ev-round {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg-column) 40%, var(--bg-card));
+}
+
+.ev-round + .ev-round {
+  margin-top: var(--space-2);
+}
+
+.ev-by {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.ev-round-number {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  padding: 0.0625rem 0.4375rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--chip-neutral-border);
+  background: var(--chip-neutral-bg);
+  color: var(--chip-neutral);
+}
+
+.ev-agent {
+  color: var(--text-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.ev-when {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.ev-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.ev-group {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: var(--space-2);
+  align-items: start;
+}
+
+.ev-group dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.ev-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 0.125rem;
+}
+
+.ev-count {
+  display: block;
+  margin-top: 0.125rem;
+  font-family: var(--font-mono);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--weight-medium);
+}
+
+.ev-items {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ev-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--text-sm);
+}
+
+.ev-sha,
+.ev-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 0.0625rem 0.375rem;
+  border-radius: var(--radius-xs);
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.ev-command {
+  max-width: 100%;
+}
+
+.ev-text {
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ev-link {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.ev-state,
+.ev-exit {
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-bold);
+  padding: 0.0625rem 0.4375rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+}
+
+.ev-state-claimed {
+  color: var(--chip-blue);
+  background: var(--chip-blue-bg);
+  border-color: var(--chip-blue-border);
+}
+
+.ev-state-confirmed {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+.ev-state-failed,
+.ev-exit-fail {
+  color: var(--overdue);
+  background: color-mix(in srgb, var(--overdue) 12%, transparent);
+  border-color: var(--overdue-border);
+}
+
+.ev-exit-pass {
+  color: var(--chip-green);
+  background: var(--chip-green-bg);
+  border-color: var(--chip-green-border);
+}
+
+.ev-none {
+  margin: 0;
+}
+
+.ev-earlier {
+  margin-top: var(--space-2);
+}
+
+.ev-earlier > summary {
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-secondary);
+  padding: var(--space-1) 0;
+}
+
+.ev-earlier[open] > summary {
+  margin-bottom: var(--space-2);
+}
+
+.ev-sendback {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--chip-orange-border);
+  border-radius: var(--radius-card);
+  background: var(--chip-orange-bg);
+}
+
+.ev-sendback-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.ev-sendback-label {
+  font-weight: var(--weight-bold);
+  color: var(--chip-orange);
+}
+
+.ev-sendback-body {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.ev-sendback-body p {
+  margin: 0;
+}
+
+@media (max-width: 560px) {
+  .ev-group {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+}

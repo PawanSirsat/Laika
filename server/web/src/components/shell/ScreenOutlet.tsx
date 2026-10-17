@@ -15,6 +15,7 @@ import { NotFound } from '../../routes/screens/NotFound.tsx';
 import { OrganisationScreen } from '../../routes/screens/organisation/OrganisationScreen.tsx';
 import { ProjectsScreen } from '../../routes/screens/ProjectsScreen.tsx';
 import { ProfileScreen } from '../../routes/screens/profile/ProfileScreen.tsx';
+import { ReviewScreen } from '../../routes/screens/review/ReviewScreen.tsx';
 import { SprintsScreen } from '../../routes/screens/sprints/SprintsScreen.tsx';
 import { TimelineScreen } from '../../routes/screens/timeline/TimelineScreen.tsx';
 import { ConnectScreen } from '../../routes/screens/connect/ConnectScreen.tsx';
@@ -155,6 +156,15 @@ function UnlistedRoute() {
   return <UnlistedScreen onOpenTask={openTaskByKey(navigate)} onChanged={refreshUnlisted} />;
 }
 
+function ReviewRoute() {
+  const {
+    route: { navigate },
+    refreshReview,
+  } = useShell();
+  // An accept or a send-back changes the sidebar's count; it re-reads (D-081).
+  return <ReviewScreen onNavigate={navigate} onChanged={refreshReview} />;
+}
+
 function ConnectRoute() {
   const {
     me,
@@ -215,6 +225,7 @@ export const SCREENS: Readonly<Record<string, ScreenEntry>> = {
   '/meeting-review': { Component: MeetingReviewRoute, layout: 'space' },
   '/projects': { Component: ProjectsRoute, layout: 'plain' },
   '/capacity': { Component: CapacityRoute, layout: 'plain' },
+  '/review': { Component: ReviewRoute, layout: 'plain' },
   '/unlisted': { Component: UnlistedRoute, layout: 'plain' },
   '/connect': { Component: ConnectRoute, layout: 'plain' },
   '/tokens': { Component: TokensRoute, layout: 'plain' },

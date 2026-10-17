@@ -32,6 +32,7 @@ function task(over: Partial<Task> & { id: string; number: number }): Task {
     tags: [],
     blocked_by: [],
     blocks: [],
+    send_back: null,
     started_at: null,
     completed_at: null,
     created_at: 1,

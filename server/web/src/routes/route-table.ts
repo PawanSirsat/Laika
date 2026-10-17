@@ -204,6 +204,21 @@ export const ROUTES: readonly Route[] = [
     mini: 'CA',
   },
   /*
+   * The review queue (D-081, LAI-758): work agents handed back, waiting for a
+   * person to accept or send back. **Not gated** — everyone signed in has a
+   * queue, of the projects they can act on — with the waiting count beside its
+   * name, as Unlisted work has its open count.
+   */
+  {
+    orgLevel: true,
+    path: '/review',
+    label: 'Review',
+    group: 'ORG',
+    status: 'ready',
+    phase: 'Phase 5',
+    mini: 'RV',
+  },
+  /*
    * A queue a human works through, and audit-shaped: admin-up only (§4.14).
    *
    * **Back in the sidebar, under Capacity** (LAI-754). LAI-484 hid it because

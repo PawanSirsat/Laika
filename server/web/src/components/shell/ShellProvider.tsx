@@ -4,6 +4,7 @@ import { useSession } from '../../api/use-session.ts';
 import { useSetupStatus } from '../../api/use-setup-status.ts';
 import { useShellContext } from '../../api/use-shell-context.ts';
 import { useUnlistedCount } from '../../api/use-unlisted-count.ts';
+import { useReviewCount } from '../../api/use-review-count.ts';
 import { mayTriageUnlisted } from '../../api/unlisted.ts';
 import { showsAppNav } from '../shell-chrome.ts';
 import { ShellProviderContext, type ShellValue } from './shell-context.ts';
@@ -55,6 +56,7 @@ export function ShellProvider({ children }: ShellProviderProps) {
   const { open: unlistedOpen, refresh: refreshUnlisted } = useUnlistedCount(
     me !== undefined && mayTriageUnlisted(me.org_role),
   );
+  const { waiting: reviewWaiting, refresh: refreshReview } = useReviewCount(me !== undefined);
 
   const value = useMemo<ShellValue>(
     () => ({
@@ -74,6 +76,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
       spaceName,
       unlistedOpen,
       refreshUnlisted,
+      reviewWaiting,
+      refreshReview,
       host: window.location.host,
     }),
     [
@@ -93,6 +97,8 @@ export function ShellProvider({ children }: ShellProviderProps) {
       spaceName,
       unlistedOpen,
       refreshUnlisted,
+      reviewWaiting,
+      refreshReview,
     ],
   );
 

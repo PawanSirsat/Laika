@@ -157,13 +157,14 @@ void describe('the SPACES section', () => {
       assert.match(sidebar, /SETTINGS/, 'the sidebar did not render at all');
       /*
        * **`ORG` leads the rail since LAI-754**: Capacity, one page across every
-       * space, and Unlisted work for this reader, an **owner**. Above SPACES,
-       * because neither belongs to the space listed under it.
+       * space, Review (D-081, LAI-758), and Unlisted work for this reader, an
+       * **owner**. Above SPACES, because none belongs to the space listed
+       * under it.
        */
       const org = h.page.locator('.sidebar-group', { has: h.page.locator('#nav-ORG') });
       assert.deepEqual(
         (await org.locator('.sidebar-link-label').allInnerTexts()).map((t) => t.trim()),
-        ['Capacity', 'Unlisted work'],
+        ['Capacity', 'Review', 'Unlisted work'],
       );
       const orgTop = (await org.boundingBox())?.y ?? Infinity;
       const spacesTop = (await h.page.locator('.space-row').first().boundingBox())?.y ?? -Infinity;

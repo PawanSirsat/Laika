@@ -131,7 +131,7 @@ void describe('the tab bar is honest about scope', () => {
     // Both read across every project, and a tab is a space-scoped place
     // (LAI-251, LAI-279). The owner put them in the sidebar.
     const grouped = NAV_GROUPS.flatMap((g) => routesInGroup(g, holds).map((r) => r.path));
-    for (const path of ['/capacity', '/unlisted']) {
+    for (const path of ['/capacity', '/review', '/unlisted']) {
       assert.ok(grouped.includes(path), `${path} is not in the sidebar`);
       assert.ok(!SPACE_TAB_PATHS.includes(path), `${path} became a space tab`);
       assert.equal(navHref(path, 'laika-core'), path, `${path} carries a space`);
