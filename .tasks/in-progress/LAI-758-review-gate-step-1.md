@@ -52,7 +52,8 @@ toolbar, README count, profile fixes).
 - [ ] M7: the rule that limits who may move a task into review (assignee,
       project lead, org admin/owner) limits moving it into done too.
 - [ ] M7: claim takes a task only from a `backlog`- or `todo`-category status,
-      refusing done, cancelled, review and in-progress ones with the lifecycle's
+      or an unassigned `in_progress` one (released work, which moves no
+      category), refusing done, cancelled and review ones with
       `unprocessable`; keeps the first `started_at`; records the real previous
       status in activity.
 - [ ] Each new test fails without its fix (proved once by reverting the fix).
