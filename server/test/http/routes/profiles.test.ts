@@ -381,7 +381,7 @@ describe('a rating reaches nothing but the profile (D-078, LAI-743)', () => {
       ['/api/v1/projects/laika/activity', ownerCookie],
       ['/api/v1/users', member.cookie],
       ['/api/v1/users?include_inactive=true', ownerCookie],
-      ['/api/v1/capacity', ownerCookie],
+      ['/api/v1/capacity', member.cookie],
       ['/api/v1/presence', ownerCookie],
       ['/api/v1/me', member.cookie],
     ] as const) {
@@ -389,6 +389,14 @@ describe('a rating reaches nothing but the profile (D-078, LAI-743)', () => {
       expect(text, path).not.toContain(NOTE);
       expect(text, path).not.toMatch(/rating|profile_kind/);
     }
+
+    // Capacity carries the profile **kind** to an owner or admin since LAI-767,
+    // on the profile's own `profile.read` (a member's answer is checked above),
+    // and never a rating to anybody.
+    const capacity = await (await req('/api/v1/capacity', {}, ownerCookie)).text();
+    expect(capacity).not.toContain(NOTE);
+    expect(capacity).not.toMatch(/rating/);
+    expect(capacity).toMatch(/profile_kind/);
 
     // The feed did read something, so the absence above is an answer.
     expect(await (await req('/api/v1/activity', {}, ownerCookie)).text()).toContain('Later work');

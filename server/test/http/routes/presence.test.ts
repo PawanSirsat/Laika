@@ -24,7 +24,13 @@ interface PresenceBody {
 
 interface CapacityBody {
   enabled: boolean;
-  people: { user_id: string; active_sessions: number; unlisted?: string[] }[];
+  people: {
+    user_id: string;
+    active_sessions: number;
+    unlisted?: string[];
+    profile_kind?: string;
+    activity_14d?: number[];
+  }[];
 }
 
 beforeEach(async () => {
@@ -130,6 +136,38 @@ describe('a read_only token may read both', () => {
       // is a monitoring token that cannot monitor.
       expect(res.status, path).toBe(200);
     }
+  });
+});
+
+/**
+ * The profile's fields on Capacity (LAI-767) follow the profile's rule, which
+ * is **session only** (D-078, D-079): an owner's own token is refused them.
+ */
+describe('the admin-only fields reach a web session and never a token', () => {
+  it('serves profile_kind and activity_14d to the owner’s session and not to their token', async () => {
+    const minted = await h.app.request('/api/v1/tokens', {
+      method: 'POST',
+      headers: jsonHeaders({ Cookie: cookie }),
+      body: JSON.stringify({ name: 'claude code', scope: 'full' }),
+    });
+    expect(minted.status).toBe(201);
+    const { secret } = (await minted.json()) as { secret: string };
+
+    const bySession = ((await (await get('/api/v1/capacity')).json()) as CapacityBody).people;
+    const byToken = (
+      (await (
+        await h.app.request('/api/v1/capacity', {
+          headers: jsonHeaders({ Authorization: `Bearer ${secret}` }),
+        })
+      ).json()) as CapacityBody
+    ).people;
+
+    expect(bySession[0]).toHaveProperty('profile_kind', 'builder');
+    expect(bySession[0]?.activity_14d).toHaveLength(14);
+    expect(byToken[0]).not.toHaveProperty('profile_kind');
+    expect(byToken[0]).not.toHaveProperty('activity_14d');
+    // The rest is every role's, by either credential.
+    expect(byToken[0]).toMatchObject({ org_role: 'owner', load: 'none' });
   });
 });
 
