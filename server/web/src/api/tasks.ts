@@ -1,3 +1,4 @@
+import { type TaskSize } from './estimates.ts';
 import { request } from './client.ts';
 import { ApiError } from './errors.ts';
 
@@ -117,6 +118,13 @@ export interface Task {
    * card marks it and the panel shows the reason.
    */
   readonly send_back: TaskSendBack | null;
+  /**
+   * Its size and build-time forecast (§4.32, D-085): the level shown — a
+   * person's when one is set — the computed one beside it, and the p50–p80
+   * range once the project has history. Null before one is computed, and
+   * absent from a view served before LAI-771, which reads as null.
+   */
+  readonly size: TaskSize | null;
   /**
    * Live comments, derived at read time and excluding soft-deleted ones
    * (LAI-072), so it cannot disagree with the thread the reader opens.
