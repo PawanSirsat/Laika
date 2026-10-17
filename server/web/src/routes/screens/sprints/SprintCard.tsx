@@ -1,5 +1,11 @@
+import { useEffect, useState } from 'react';
 import { Spinner } from '../../../components/Spinner.tsx';
-import type { Sprint } from '../../../api/sprints.ts';
+import {
+  forecastLine,
+  getSprintForecast,
+  type Sprint,
+  type SprintForecast,
+} from '../../../api/sprints.ts';
 import { LockIcon } from '../../../components/LockIcon.tsx';
 import { formatRange, sprintDays, type SprintProgress } from './sprint-derive.ts';
 import type { Task } from '../../../api/tasks.ts';
@@ -45,6 +51,26 @@ export interface SprintCardProps {
 export function SprintCard(props: SprintCardProps) {
   const { sprint, tasks, progress, canManage, canAssign, busy, pending } = props;
   const days = sprintDays(sprint.starts_on, sprint.ends_on);
+
+  // "85% likely to finish 18–23 of 26" (LAI-772): the server's, from the
+  // project's own throughput and the sizes left; read again when the work in
+  // the sprint moves. A completed sprint has its answer already.
+  const [forecast, setForecast] = useState<SprintForecast | undefined>(undefined);
+  const live = sprint.status !== 'completed';
+  useEffect(() => {
+    if (!live) return undefined;
+    const controller = new AbortController();
+    getSprintForecast(sprint.id, controller.signal)
+      .then((answer) => {
+        if (!controller.signal.aborted) setForecast(answer);
+      })
+      // The line is a footnote: without it the card still reads.
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+    };
+  }, [sprint.id, live, progress.done, progress.total]);
+  const line = live && forecast?.sprint_id === sprint.id ? forecastLine(forecast) : null;
 
   return (
     <article className={`sprint-card sprint-card-${sprint.status}`}>
@@ -104,6 +130,21 @@ export function SprintCard(props: SprintCardProps) {
           <span className="sprint-flow">
             {props.wip} in flight · {props.unassigned} unassigned
           </span>
+          {line !== null && forecast !== undefined && (
+            <span
+              className={
+                forecast.forecast === null
+                  ? 'sprint-forecast sprint-forecast-none'
+                  : 'sprint-forecast'
+              }
+              data-forecast={forecast.forecast === null ? 'none' : 'range'}
+              title={`From what this project finished in the last ${String(forecast.basis.days)} days (${String(
+                forecast.basis.tasks_done,
+              )} tasks) and the sizes left — not story points`}
+            >
+              {line}
+            </span>
+          )}
         </span>
 
         {/*

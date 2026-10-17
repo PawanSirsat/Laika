@@ -496,3 +496,31 @@
   height: 13rem;
   background: var(--bg-column);
 }
+
+/* LAI-772: rework cost, one line per space. */
+.usage-rework {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.usage-rework-row {
+  display: grid;
+  gap: 0.125rem;
+  min-width: 0;
+}
+
+.usage-rework-name {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--text-primary);
+}
+
+.usage-rework-line {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}

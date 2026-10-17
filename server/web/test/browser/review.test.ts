@@ -115,15 +115,18 @@ interface QueueRow {
   task: Record<string, unknown>;
   round: typeof ROUND_2 | null;
   waiting_since: number;
+  cue?: { kind: 'fast'; build_ms: number; forecast_p50_ms: number } | null;
 }
 
 /** A queue that shrinks when a task is decided, so the re-read can be seen. */
-function server(): { stub: ApiStub; calls: () => StubCall[] } {
-  const seen: StubCall[] = [];
-  let rows: QueueRow[] = [
+function server(
+  first: QueueRow[] = [
     { task: BARE, round: null, waiting_since: NOW - 26 * HOUR },
     { task: WORKED, round: ROUND_2, waiting_since: NOW - 3 * HOUR },
-  ];
+  ],
+): { stub: ApiStub; calls: () => StubCall[] } {
+  const seen: StubCall[] = [];
+  let rows: QueueRow[] = first;
   const queue = () => ({
     tasks: rows.map((r) => ({
       task: r.task,
@@ -133,6 +136,7 @@ function server(): { stub: ApiStub; calls: () => StubCall[] } {
       round: r.round,
       finished_by_name: r.round === null ? null : 'Ada Lovelace',
       can_decide: true,
+      cue: r.cue ?? null,
     })),
     truncated: false,
   });
@@ -160,6 +164,38 @@ void after(async () => {
 });
 
 void describe('the Review page', () => {
+  void test('cues “check this one” on a finish far faster than forecast, and filters by it (LAI-772)', async () => {
+    const h = await open(
+      '/review',
+      server([
+        { task: BARE, round: null, waiting_since: NOW - 26 * HOUR },
+        {
+          task: WORKED,
+          round: ROUND_2,
+          waiting_since: NOW - 3 * HOUR,
+          cue: { kind: 'fast', build_ms: 60_000, forecast_p50_ms: 2 * HOUR },
+        },
+      ]).stub,
+    );
+    try {
+      await h.page.locator('.rev-row').first().waitFor({ timeout: 20_000 });
+      const chip = h.page.locator('.rev-chip-check');
+      assert.equal(await chip.count(), 1);
+      assert.equal(await chip.innerText(), 'check this one');
+      assert.match(
+        (await chip.getAttribute('title')) ?? '',
+        /Finished in 1 min against a forecast of 2\.0 h, and CI has not confirmed it/,
+      );
+      assert.equal(await h.page.locator('[data-stat="check"] .prof-stat-value').innerText(), '1');
+      await h.page.getByRole('button', { name: 'Check this one', exact: true }).click();
+      assert.deepEqual(await h.page.locator('.rev-key').allInnerTexts(), ['LC-1']);
+      // About the task, never the person: the cue names nobody.
+      assert.doesNotMatch(await chip.innerText(), /Ada/);
+    } finally {
+      await h.close();
+    }
+  });
+
   void test('lists what waits, oldest first, with the proof summary and the badge', async () => {
     const h = await open('/review', server().stub);
     try {

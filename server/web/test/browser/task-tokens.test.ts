@@ -124,6 +124,12 @@ const ESTIMATE = {
   override: null,
   at_start: null,
   actual: { build_ms: null, review_wait_ms: 0, rework_ms: 0, finishes: 0, first_finish_at: null },
+  // LAI-772: the forecast the Tokens section draws beside the actual.
+  tokens: { p50: 1_200_000, p80: 2_500_000, learned_from: 14, forecasts_after: 10 },
+  actual_tokens: { build: 3_210_000, total: 4_010_000, rework: 800_000 },
+  claim_estimate: null,
+  scope_grew: null,
+  split: null,
   history: [],
 };
 
@@ -234,6 +240,16 @@ function stub(role: 'owner' | 'member', t3Usage: unknown): ApiStub {
       live: { n: 12, typical_error: 1.7, bias: 1.1, p80_hit_rate: 0.75 },
       backtest: null,
       by_client: [],
+      tokens: {
+        learned_from: 14,
+        forecasts_after: 10,
+        live: { n: 0, typical_error: null, bias: null, p80_hit_rate: null },
+        backtest: null,
+      },
+      agent: {
+        size: { n: 0, agent_error: null, median_error: null, model_error: null, weight: 0 },
+        confidence: [],
+      },
       model_version: 'abc123',
     },
     '/api/v1/tasks/t3': STARTED,
@@ -294,6 +310,13 @@ void describe('the task panel’s Tokens section, per reader', () => {
       assert.equal(
         await section.locator('[data-figure="attributed"] .tk-share').innerText(),
         '81%',
+      );
+      // The forecast beside the actual (LAI-772): the build's range, and what it spent.
+      await until(async () => (await section.locator('[data-figure="forecast"]').count()) > 0);
+      assert.equal(await section.locator('.tk-forecast').innerText(), '1.2M–2.5M');
+      assert.match(
+        await section.locator('[data-figure="forecast"] .tk-sub').innerText(),
+        /likely to pessimistic · spent on it 3\.21M/,
       );
       assert.match(text, /at least/);
       assert.match(text, /of its people’s work those days/);

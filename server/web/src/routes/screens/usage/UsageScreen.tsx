@@ -12,6 +12,7 @@ import {
   USAGE_RANGES,
   type Usage,
   type UsageRange,
+  reworkLine,
 } from '../../../api/usage.ts';
 import { ApiErrorState } from '../../../components/ApiErrorState.tsx';
 import { Dropdown } from '../../../components/Dropdown.tsx';
@@ -504,6 +505,35 @@ function UsageDetail({
                 };
               })}
             />
+          )}
+        </section>
+
+        {/* LAI-772: what send-backs cost, per project — the cost of a false
+            done, in tokens and time. Nobody is named or counted. */}
+        <section
+          className="prof-card usage-card"
+          data-section="rework"
+          aria-labelledby="usage-rework-title"
+        >
+          <header className="prof-card-head">
+            <h3 className="prof-card-title" id="usage-rework-title">
+              Rework
+            </h3>
+            <span className="prof-card-caption">
+              after a send-back · per space, never per person
+            </span>
+          </header>
+          {usage.rework.length === 0 ? (
+            <p className="prof-empty">Nothing was sent back in this range.</p>
+          ) : (
+            <ul className="usage-rework">
+              {usage.rework.map((r) => (
+                <li key={r.project.slug} className="usage-rework-row">
+                  <span className="usage-rework-name">{r.project.name}</span>
+                  <span className="usage-rework-line">{reworkLine(r)}</span>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       </div>
