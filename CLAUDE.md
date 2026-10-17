@@ -992,3 +992,42 @@ file. The rules below are the ones that are true of every line of code.
 - Never edit a task file that is in another session's `.tasks/in-progress/`
   claim, except CHIEF appending review notes.
 - Never move a task to `.tasks/done/` unless you are CHIEF.
+
+## Laika
+
+This project is tracked on the Laika board (its address is `LAIKA_URL` in
+`~/.laika/env`; it is not written in this public repo, LAI-627), project
+`laika`. Mirror work onto it as you go.
+
+- `laika` is the `project` argument for every Laika tool.
+- A card has a board key like `LAIKA-42`. Cards titled `LAI-NNN · …` mirror the
+  files under `.tasks/` and **carry that `LAI-NNN` as their outside id**
+  (`external_ref`, LAI-780), so every Laika tool accepts either `LAIKA-42` or
+  the task file's `LAI-NNN`. Until the owner decides otherwise, the task file
+  stays the lock (§2) and the card mirrors it.
+- **Name your branch after the task file:** `LAI-NNN-short-name`. A branch
+  carrying the id ties the session's agent tokens to the card (D-084, LAI-770).
+
+Every session working in this repo:
+
+1. **Read first.** `laika_whoami` confirms who you are acting as;
+   `get_project_context` for `laika` carries the brief, the current sprint and
+   the rules.
+2. **Mark the card before you work.** Read it with `get_task_context LAI-NNN`,
+   then `update_status` to In progress. If it is already In progress and yours,
+   call `start_working LAI-NNN` with your branch: it succeeds without changing
+   anything and marks this session's work as that card's. Every card is
+   assigned to Pawan, so `list_ready_tasks` is empty and `start_working` on a
+   card that is not yet In progress answers 409 (LAIKA-474).
+3. **No card? Look first.** `get_task_context LAI-NNN` finds a mirrored card by
+   its task file id; only if there is none, `create_task` in `laika` with
+   `external_ref: LAI-NNN`, before doing the work.
+4. **Say what happened.** `add_comment` on the card as you go — decisions and
+   blockers, while they are fresh.
+5. **Finish into review, never done.** `finish_task` with the commit, branch, PR
+   and the test commands with their exit codes. Only Pawan moves a card to Done.
+6. **Stray findings** — a broken script, a stale dependency — go to
+   `log_unlisted_work` so they are triaged rather than lost.
+
+No Laika tools in this session? Say so once in your report and keep working
+under §2.

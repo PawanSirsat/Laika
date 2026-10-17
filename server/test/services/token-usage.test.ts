@@ -9,6 +9,7 @@ import {
   projectMemberships,
   projects,
   taskRounds,
+  tasks,
   tokens,
   tokenUsageDays,
   users,
@@ -16,6 +17,7 @@ import {
 import { ApiError } from '../../src/errors.ts';
 import { pruneLocalActivity } from '../../src/jobs/jobs.ts';
 import { deleteOwnLocalActivity, getActivitySharing } from '../../src/services/local-activity.ts';
+import { createProject } from '../../src/services/projects.ts';
 import { createTask } from '../../src/services/tasks.ts';
 import {
   getPersonUsage,
@@ -324,6 +326,94 @@ describe('a usage report (PUT /me/local-activity, "usage": true)', () => {
     expect(attributed).toHaveLength(1);
     expect(attributed[0]).toMatchObject({ taskId: projectTask.id, projectId, output: 1 });
     // The two keys that do not resolve for Bea fold into one unattributed row.
+    expect(rows.filter((r) => r.taskId === null)).toEqual([
+      expect.objectContaining({ output: 110, projectId: null }),
+    ]);
+  });
+
+  it('never retries a board key the sender cannot read as an outside id: it stays unattributed (LAI-780 review)', () => {
+    createProject(t.sqlite, t.db, actor(owner), {
+      name: 'Hidden',
+      slug: 'hidden',
+      prefix: 'HID',
+      visibility: 'private',
+      now: NOW,
+    });
+    // HID-1 is a real board task Bea cannot read…
+    const hidden = createTask(t.sqlite, t.db, actor(owner), 'hidden', {
+      title: 'Hidden',
+      now: NOW,
+    });
+    expect(hidden.key).toBe('HID-1');
+    // …and a card she can read carries `HID-1` as its outside id.
+    const visible = createTask(t.sqlite, t.db, actor(owner), 'laika', {
+      title: 'Mirror',
+      now: NOW,
+    });
+    t.db.update(tasks).set({ externalRef: 'HID-1' }).where(eq(tasks.id, visible.id)).run();
+    share(bea);
+    member(bea, projectId);
+
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([{ day: YESTERDAY, rows: [row({ task: 'HID-1', output: 7 })] }]),
+      NOW,
+    );
+    // The board key names a task, so it is never tried as an outside id —
+    // not even when its task is one the sender cannot see.
+    expect(stored(bea)).toEqual([expect.objectContaining({ taskId: null, output: 7 })]);
+  });
+
+  it('ties a key that is a card’s outside id to that card — only where the sender may read it, never one two cards carry (LAI-780)', () => {
+    const carried = (slug: string, title: string, ref: string) => {
+      const task = createTask(t.sqlite, t.db, actor(owner), slug, { title, now: NOW });
+      t.db.update(tasks).set({ externalRef: ref }).where(eq(tasks.id, task.id)).run();
+      return task;
+    };
+    createProject(t.sqlite, t.db, actor(owner), {
+      name: 'Hidden',
+      slug: 'hidden',
+      prefix: 'HID',
+      visibility: 'private',
+      now: NOW,
+    });
+    const repoTask = carried('laika', 'LAI-780 · Outside ids', 'LAI-780');
+    carried('hidden', 'Not Bea’s', 'JIRA-9');
+    carried('laika', 'Twice, one', 'ONR-12');
+    carried('laika', 'Twice, two', 'ONR-12');
+    // A Jira-style key the board's own key pattern does not have: an underscore.
+    const jira = carried('laika', 'A Jira key', 'DATA_ENG-3');
+    share(bea);
+    member(bea, projectId);
+
+    recordTokenUsage(
+      t.db,
+      actor(bea),
+      report([
+        {
+          day: YESTERDAY,
+          rows: [
+            row({ task: 'LAI-780', output: 1 }),
+            row({ task: 'JIRA-9', output: 10 }),
+            row({ task: 'ONR-12', output: 100 }),
+            row({ task: 'DATA_ENG-3', output: 1_000 }),
+          ],
+        },
+      ]),
+      NOW,
+    );
+    const rows = stored(bea);
+    expect(
+      rows
+        .filter((r) => r.taskId !== null)
+        .map((r) => ({ taskId: r.taskId, output: r.output }))
+        .sort((a, b) => a.output - b.output),
+    ).toEqual([
+      { taskId: repoTask.id, output: 1 },
+      { taskId: jira.id, output: 1_000 },
+    ]);
+    // A card Bea cannot read, and an id two cards carry: unattributed, never guessed.
     expect(rows.filter((r) => r.taskId === null)).toEqual([
       expect.objectContaining({ output: 110, projectId: null }),
     ]);
@@ -773,6 +863,37 @@ describe('the task key prefixes a collector may tie tokens to (LAI-770)', () => 
     expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_A, NOW)).not.toHaveProperty(
       'task_prefixes',
     );
+  });
+
+  it('adds the prefixes of outside ids on cards the sender may read, and only those (LAI-780)', () => {
+    createProject(t.sqlite, t.db, actor(owner), {
+      name: 'Hidden',
+      slug: 'hidden',
+      prefix: 'HID',
+      visibility: 'private',
+      now: NOW,
+    });
+    const carry = (slug: string, ref: string) => {
+      const task = createTask(t.sqlite, t.db, actor(owner), slug, { title: ref, now: NOW });
+      t.db.update(tasks).set({ externalRef: ref }).where(eq(tasks.id, task.id)).run();
+    };
+    carry('laika', 'LAIKA-780');
+    carry('laika', 'kvell/laika#221');
+    carry('hidden', 'SECRET-1');
+    share(bea);
+    member(bea, projectId);
+    share(owner);
+
+    expect(getActivitySharing(t.db, withToken(bea), COLLECTOR_A, NOW).task_prefixes).toEqual([
+      'LAI',
+      'LAIKA',
+    ]);
+    expect(getActivitySharing(t.db, withToken(owner), COLLECTOR_A, NOW).task_prefixes).toEqual([
+      'HID',
+      'LAI',
+      'LAIKA',
+      'SECRET',
+    ]);
   });
 });
 

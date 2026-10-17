@@ -147,6 +147,8 @@ describe('migrations', () => {
     ['sprints', ['project_id', 'starts_on']],
     ['sprints', ['project_id', 'status']],
     ['tasks', ['status_id']],
+    // A card found by its outside id, and the prefixes of the ids served (LAI-780).
+    ['tasks', ['external_ref', 'project_id']],
     ['project_statuses', ['project_id', 'position']],
     ['member_ratings', ['user_id', 'created_at']],
     // The heatmap's reads are ranges of one person's days (LAI-751).

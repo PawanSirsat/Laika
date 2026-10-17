@@ -316,6 +316,34 @@ describe('task attribution over the wire (LAI-770)', () => {
     expect(sharing.task_prefixes).toEqual(['LAI']);
   });
 
+  it('a card’s outside id, over the wire (LAI-780): its prefix is served, and a report keyed by it is tied to the card', async () => {
+    switchOn(true, true);
+    await joinLaika();
+    const card = await ok(
+      req(
+        '/api/v1/projects/laika/tasks',
+        {
+          method: 'POST',
+          body: JSON.stringify({ title: 'A Jira key', external_ref: 'data_eng-3' }),
+        },
+        ownerCookie,
+      ),
+      201,
+    );
+    expect(card.external_ref).toBe('DATA_ENG-3');
+    const token = await mint(bea.cookie);
+    const sharing = await ok(
+      req(`/api/v1/me/activity-sharing?collector_id=${COLLECTOR}`, {}, token),
+    );
+    expect(sharing.task_prefixes).toEqual(['DATA_ENG', 'LAI']);
+
+    // `DATA_ENG-3` is not a board key — an underscore, and no project holds the
+    // prefix — so the report's pattern has to take an outside id's shape.
+    await ok(put(usage({}, { task: 'DATA_ENG-3' }), token));
+    const tied = await ok(req(`/api/v1/tasks/${String(card.id)}/usage?tz=UTC`, {}, ownerCookie));
+    expect((tied.totals as Record<string, number>).tokens).toBe(3_718 + 2_094_668 + 5_615_538);
+  });
+
   it('GET /tasks/:id/usage answers the task’s tokens: per person for its owner, the total for a token', async () => {
     switchOn(true, true);
     await joinLaika();

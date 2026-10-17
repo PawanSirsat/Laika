@@ -307,8 +307,10 @@ export async function getSharing(
           : {}),
         ...(Array.isArray(body.task_prefixes)
           ? {
+              // A project's prefix, or an outside id's (LAI-780): 1–16 of
+              // A–Z, 0–9 and `_` from a letter — the server's shape.
               task_prefixes: (body.task_prefixes as unknown[]).filter(
-                (p): p is string => typeof p === 'string' && /^[A-Z][A-Z0-9]{1,7}$/.test(p),
+                (p): p is string => typeof p === 'string' && /^[A-Z][A-Z0-9_]{0,15}$/.test(p),
               ),
             }
           : {}),

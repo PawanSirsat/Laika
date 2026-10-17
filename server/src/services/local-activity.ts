@@ -15,6 +15,7 @@ import {
 import { ApiError } from '../errors.ts';
 import { assertCan, can } from '../policy/can.ts';
 import { addDays, dayIn, isCalendarDay, isTimeZone } from './calendar-days.ts';
+import { outsideIdPrefixes } from './outside-ids.ts';
 import { canSeeProject } from './projects.ts';
 
 /**
@@ -103,10 +104,11 @@ export interface ActivitySharingView {
   usage_days_elsewhere?: string[];
   /**
    * Asked the same way (D-084 item 5, LAI-770): the key prefixes of the
-   * projects this person may read, sorted. The collector ties a session to a
-   * task by a key in its branch name only when the key's prefix is one of
-   * these, so `release-2026` or `gpt-5` is never taken for a task. The
-   * collector keeps the last answer. Absent otherwise.
+   * projects this person may read, and of the outside ids on their cards
+   * (LAI-780), sorted. The collector ties a session to a task by a key in its
+   * branch name only when the key's prefix is one of these, so `release-2026`
+   * or `gpt-5` is never taken for a task. The collector keeps the last
+   * answer. Absent otherwise.
    */
   task_prefixes?: string[];
 }
@@ -248,12 +250,15 @@ export function getActivitySharing(
     .all()
     .map((r) => r.day);
   // Filtered in code, as `listProjects` does: `can()` is the only authority.
+  // Beside the projects' own, the prefixes of the outside ids their cards
+  // carry (LAI-780), so a branch named for `LAI-780` counts too.
   const prefixes = db
     .select({ id: projects.id, prefix: projects.prefix })
     .from(projects)
     .all()
     .filter((p) => canSeeProject(actor, p.id))
     .map((p) => p.prefix)
+    .concat(outsideIdPrefixes(db, actor))
     .sort();
   return { ...view, usage_days_elsewhere: days, task_prefixes: [...new Set(prefixes)] };
 }

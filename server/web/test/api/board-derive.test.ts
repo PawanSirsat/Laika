@@ -16,6 +16,7 @@ import {
   dropNeighbours,
   groupByColumn,
   hideOldDone,
+  matchesSearch,
   staleFor,
 } from '../../src/api/board-derive.ts';
 import type { ProjectStatus } from '../../src/api/statuses.ts';
@@ -451,5 +452,27 @@ void describe('dropNeighbours — what a drop at an index asks the server (LAI-4
   void test('an index past either end is clamped, never a hole', () => {
     assert.deepEqual(dropNeighbours(lane, 'x', 99), { afterId: 'd' });
     assert.deepEqual(dropNeighbours(lane, 'x', -3), { beforeId: 'a' });
+  });
+});
+
+void describe('matchesSearch — the board’s search box (LAI-780)', () => {
+  const carried = task({ id: '9', title: 'Tie tokens to tasks', external_ref: 'LAI-780' });
+  const plain = task({ id: '10', title: 'Rename the column' });
+  const pulled = task({ id: '11', title: 'Merged', external_ref: 'kvell/laika#221' });
+
+  void test('finds a card by its title, its key, and its outside id', () => {
+    assert.equal(matchesSearch(carried, 'tokens'), true);
+    assert.equal(matchesSearch(carried, 'lai-9'), true);
+    assert.equal(matchesSearch(carried, 'lai-780'), true);
+    assert.equal(matchesSearch(carried, '780'), true);
+    assert.equal(matchesSearch(plain, 'lai-780'), false);
+  });
+
+  void test('a pull request’s ref is found the same way: it is what the card says it holds', () => {
+    assert.equal(matchesSearch(pulled, 'laika#221'), true);
+  });
+
+  void test('an empty needle matches everything', () => {
+    assert.equal(matchesSearch(plain, ''), true);
   });
 });

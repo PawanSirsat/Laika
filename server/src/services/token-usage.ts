@@ -34,6 +34,7 @@ import {
   assertReportDays,
   sharingOn,
 } from './local-activity.ts';
+import { readableByOutsideId } from './outside-ids.ts';
 import { requireProjectBySlug } from './projects.ts';
 
 /**
@@ -76,8 +77,13 @@ export const TOKEN_USAGE_ROWS_PER_DAY_MAX = 200;
 export const TOKEN_COUNT_MAX = 1_000_000_000_000;
 /** A model id as the collector sends it: lower case, `[1m]`-style suffixes removed. */
 export const MODEL_PATTERN = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
-/** A Laika task key: a project prefix (§4.3, 2–8 characters) and a number. */
-export const TASK_KEY_PATTERN = /^[A-Z][A-Z0-9]{1,7}-[1-9][0-9]{0,8}$/;
+/**
+ * A report row's task: a Laika key — a project prefix (§4.3, 2–8 characters)
+ * and a number — or a card's outside id (LAI-780), whose shape is wider: a
+ * prefix of 1–16 letters, digits and `_`, and 1–9 digits. Upper case, as the
+ * collector sends both. Every board key has this shape too.
+ */
+export const TASK_KEY_PATTERN = /^[A-Z][A-Z0-9_]{0,15}-[0-9]{1,9}$/;
 
 /** The Usage page's longest range, in days. */
 export const USAGE_RANGE_DAYS_MAX = 92;
@@ -319,6 +325,11 @@ interface ResolvedTask {
  * Each key in the report → the task it names, when the sender may read that
  * task's project. One indexed lookup a key (prefix, then number); a report
  * names a handful.
+ *
+ * **A key that names no task is tried as an outside id** (LAI-780): the card
+ * that carries it, among the projects the sender may read. A board key always
+ * wins, and an id two readable cards carry is left unattributed — nobody is
+ * here to be asked which, and a report is never refused for it.
  */
 function resolveKeys(
   db: Db,
@@ -336,7 +347,13 @@ function resolveKeys(
         and(eq(projects.prefix, key.slice(0, dash)), eq(tasks.number, Number(key.slice(dash + 1)))),
       )
       .get();
-    if (found === undefined) continue;
+    if (found === undefined) {
+      const outside = readableByOutsideId(db, actor, key);
+      if (outside.length === 1 && outside[0] !== undefined) {
+        resolved.set(key, { taskId: outside[0].taskId, projectId: outside[0].projectId });
+      }
+      continue;
+    }
     if (!can(withProject(actor, found.projectId), 'project.read', { projectId: found.projectId })) {
       continue;
     }

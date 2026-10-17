@@ -970,7 +970,7 @@ describe('the token-usage migration adds to a populated database (LAI-769)', () 
         expect(before.local_activity_days?.rows).toHaveLength(1);
 
         // Up to and including this one: what a later migration changes is its
-        // own test's (LAI-772's 0038 adds to `task_estimates`).
+        // own test's (LAI-772's 0039 adds to `task_estimates`).
         journal.entries.push(dropped[0]!);
         writeFileSync(journalPath, JSON.stringify(journal));
         runMigrations(db, { migrationsFolder: dir });
@@ -1004,14 +1004,14 @@ describe('the token-usage migration adds to a populated database (LAI-769)', () 
 });
 
 /**
- * `0038` on a populated database (LAI-772, D-085): one append-only table for
+ * `0039` on a populated database (LAI-772, D-085): one append-only table for
  * what a claimant said, and two nullable columns on `task_estimates` for the
  * token forecast. **Additive is the property**, so it is asserted directly:
  * every table keeps its root page and every row; `task_estimates`' rows gain
  * the two columns as nulls and lose nothing; the new table is append-only on
  * the upgraded database too.
  */
-describe('0038 adds token forecasts and claim estimates to a populated database (LAI-772)', () => {
+describe('0039 adds token forecasts and claim estimates to a populated database (LAI-772)', () => {
   it(
     'creates one table, adds two nullable columns, and changes nothing that was there',
     { timeout: 60_000 },
@@ -1026,7 +1026,9 @@ describe('0038 adds token forecasts and claim estimates to a populated database 
       expect(at, 'the token-forecasts migration is in the journal').toBeGreaterThan(0);
       const dropped = journal.entries.splice(at);
       expect(dropped[0]?.tag).toMatch(/_token_forecasts$/);
-      expect(journal.entries.at(-1)?.tag).toMatch(/_token_usage$/);
+      // The database production has before this one: master's 0038 (LAI-780),
+      // which landed first — this migration was regenerated on top of it.
+      expect(journal.entries.at(-1)?.tag).toMatch(/^0038_tasks_external_ref_index$/);
       writeFileSync(journalPath, JSON.stringify(journal));
 
       const dbDir = mkdtempSync(join(tmpdir(), 'laika-db-'));

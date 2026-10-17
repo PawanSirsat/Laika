@@ -473,6 +473,65 @@ void describe('a key in the branch name, when the board serves its prefix', () =
 });
 
 /* -------------------------------------------------------------------------- */
+/* Outside ids (LAI-780)                                                      */
+/* -------------------------------------------------------------------------- */
+
+void describe('a card’s outside id, when the board serves its prefix (LAI-780)', () => {
+  void test('a repo id beside the board’s own prefix: an LAI-780 branch and mark count when LAI is served', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, branch: 'LAI-780-external-ref' }),
+      claude({ at: T0 + 60, out: 10, call: mark('start_working', { task: 'lai-781' }) }),
+      claude({ at: T0 + 120, out: 100 }),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['LAI', 'LAIKA'])).days), {
+      'LAI-780': 1,
+      'LAI-781': 110,
+    });
+  });
+
+  void test('the outside id’s wider shape: an underscore, a prefix past eight characters, a single letter', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, branch: 'feature/data_eng-12-pipeline' }),
+      claude({ at: T0 + 60, out: 10, branch: 'PLATFORMOPS-4-rotate-keys' }),
+      claude({ at: T0 + 120, out: 100, branch: 'main' }),
+      claude({ at: T0 + 180, out: 1_000, call: mark('start_working', { task: 'q-7' }) }),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['DATA_ENG', 'PLATFORMOPS', 'Q'])).days), {
+      '-': 100,
+      'DATA_ENG-12': 1,
+      'PLATFORMOPS-4': 10,
+      'Q-7': 1_000,
+    });
+  });
+
+  void test('an underscore still separates a key from what is before it: feature_lai-42 is LAI-42', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, branch: 'feature_lai-42' }),
+      claude({ at: T0 + 60, out: 10, branch: 'my_data_eng-3' }),
+    ]);
+    assert.deepEqual(byTask((await read(root, ['LAI', 'DATA_ENG'])).days), {
+      'LAI-42': 1,
+      'DATA_ENG-3': 10,
+    });
+  });
+
+  void test('an automated session’s tokens stay out, outside id or not (D-086)', async () => {
+    const root = home();
+    transcript(root, 's.jsonl', [
+      claude({ at: T0, out: 1, branch: 'LAI-780-external-ref' }),
+      claude({ at: T0 + 60, out: 10, call: mark('start_working', { task: 'LAI-780' }) }),
+    ]);
+    const paths = activityPaths(root);
+    mkdirSync(paths.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(paths.dir, 'skip-sessions'), `${String(NOW_S - H)} ${SECRET.session}\n`);
+    assert.deepEqual(byTask((await read(root, ['LAI'])).days), {});
+  });
+});
+
+/* -------------------------------------------------------------------------- */
 /* Codex and Gemini CLI                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -794,6 +853,78 @@ void describe('through `laika activity sync`', () => {
     await sync(w.ctx);
     assert.equal(w.usagePuts().length, after, 'the sync after the re-read sent usage again');
     assert.deepEqual(onBoard(), [['LAI-2', 7]]);
+  });
+
+  void test('the board’s outside prefixes survive the sharing answer: DATA_ENG, Q and PLATFORMOPS are kept, and a branch under one is sent (LAI-780 review)', async () => {
+    const w = await syncWorld(['LAI', 'DATA_ENG', 'Q', 'PLATFORMOPS']);
+    transcript(w.root, 's.jsonl', [
+      claude({ at: NOW_S - H, out: 5, branch: 'feature/data_eng-12-pipeline' }),
+    ]);
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    const index = JSON.parse(readFileSync(join(w.paths.dir, 'usage-index.json'), 'utf8')) as {
+      prefixes?: string[];
+    };
+    assert.deepEqual(index.prefixes, ['DATA_ENG', 'LAI', 'PLATFORMOPS', 'Q']);
+    assert.deepEqual(
+      w
+        .usagePuts()
+        .at(-1)
+        ?.days.flatMap((d) => d.rows.map((r) => [r.task, r.output])),
+      [['DATA_ENG-12', 5]],
+    );
+    // Accepted, not only sent: the stub refuses what the contract refuses.
+    assert.deepEqual(w.board.violations, []);
+    assert.deepEqual(
+      [...w.board.usage.values()].flatMap((rows) =>
+        (rows as UsageRow[]).map((r) => [r.task, r.output]),
+      ),
+      [['DATA_ENG-12', 5]],
+    );
+  });
+
+  void test('an upgrade to the outside-id key shape re-reads lines already read: their keys replace what went, and the next sync is idle (LAI-780 review)', async () => {
+    // The board names no prefixes yet: what goes is unattributed.
+    const w = await syncWorld(undefined);
+    transcript(w.root, 's.jsonl', [
+      claude({ at: NOW_S - H, out: 5, branch: 'feature/data_eng-12-pipeline' }),
+    ]);
+    const onBoard = () =>
+      [...w.board.usage.entries()]
+        .filter(([key]) => key.endsWith(`|${TODAY}`))
+        .flatMap(([, rows]) => rows as UsageRow[])
+        .map((r) => [r.task, r.output]);
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    assert.deepEqual(onBoard(), [[null, 5]]);
+
+    // As a collector of data format 2 left this machine: its key pattern read
+    // `feature/data_eng-12-…` as `ENG-12` alone — no underscore in a prefix.
+    const indexPath = join(w.paths.dir, 'usage-index.json');
+    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as Record<string, unknown>;
+    writeFileSync(indexPath, JSON.stringify({ ...index, data_v: 2 }));
+    const dataPath = join(w.paths.dir, 'usage-data.json');
+    const data = JSON.parse(readFileSync(dataPath, 'utf8')) as { branches: string[] };
+    const read = data.branches.indexOf('DATA_ENG-12 ENG-12');
+    assert.notEqual(
+      read,
+      -1,
+      `the branch's keys are not where this test looks: ${JSON.stringify(data.branches)}`,
+    );
+    data.branches[read] = 'ENG-12';
+    writeFileSync(dataPath, JSON.stringify({ ...data, v: 2 }));
+    w.board.prefixes = ['DATA_ENG'];
+
+    w.advance(601);
+    const before = w.usagePuts().length;
+    assert.equal((await sync(w.ctx)).kind, 'sent');
+    assert.equal(w.usagePuts().length, before + 1, 'the re-read sent its day once');
+    // Replaced on the board: the same 5 tokens, now the card's — not 10.
+    assert.deepEqual(onBoard(), [['DATA_ENG-12', 5]]);
+
+    w.advance(601);
+    const after = w.usagePuts().length;
+    await sync(w.ctx);
+    assert.equal(w.usagePuts().length, after, 'the sync after the re-read sent usage again');
+    assert.deepEqual(onBoard(), [['DATA_ENG-12', 5]]);
   });
 
   void test('a collector from before marks were read reads its files once more and sends the keys', async () => {

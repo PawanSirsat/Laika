@@ -702,3 +702,62 @@ describe('POST /tasks/:id/reorder (LAI-472, D-070)', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('an outside id on the wire (LAI-780)', () => {
+  interface Refusal {
+    error: { code: string; details: Record<string, unknown> & { field?: string } };
+  }
+
+  it('takes external_ref on create and on PATCH, upper-cased, and null clears it', async () => {
+    const task = await newTask('From the repo', { external_ref: 'lai-780' });
+    expect((task as unknown as { external_ref: string }).external_ref).toBe('LAI-780');
+
+    const changed = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ external_ref: 'DATA_ENG-12' }),
+    });
+    expect(changed.status, await changed.clone().text()).toBe(200);
+    expect(await changed.json()).toMatchObject({ external_ref: 'DATA_ENG-12' });
+
+    const cleared = await req(`/api/v1/tasks/${task.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ external_ref: null }),
+    });
+    expect(cleared.status).toBe(200);
+    expect(await cleared.json()).toMatchObject({ external_ref: null });
+  });
+
+  it('refuses an id another task in the project holds, 422 naming that task (review)', async () => {
+    const holder = await newTask('Holder', { external_ref: 'LAI-780' });
+    const other = await newTask('Other');
+    const res = await req(`/api/v1/tasks/${other.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ external_ref: 'lai-780' }),
+    });
+    expect(res.status).toBe(422);
+    expect(((await res.json()) as Refusal).error.details).toEqual({
+      field: 'external_ref',
+      reason: 'taken',
+      external_ref: 'LAI-780',
+      task: holder.key,
+    });
+  });
+
+  it('refuses one of another shape 422 on external_ref — a pull request, a URL, too long', async () => {
+    const task = await newTask('Shaped');
+    for (const bad of ['kvell/laika#221', 'https://example.test/LAI-1', 'ABCDEFGHIJKLMNOPQ-1']) {
+      const res = await req(`/api/v1/tasks/${task.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ external_ref: bad }),
+      });
+      expect(res.status, bad).toBe(422);
+      expect(((await res.json()) as Refusal).error.details.field, bad).toBe('external_ref');
+    }
+    const created = await post('/api/v1/projects/laika/tasks', {
+      title: 'Bad',
+      external_ref: 'LAI 780',
+    });
+    expect(created.status).toBe(422);
+    expect(((await created.json()) as Refusal).error.details.field).toBe('external_ref');
+  });
+});

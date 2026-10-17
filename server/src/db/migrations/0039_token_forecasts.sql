@@ -6,7 +6,9 @@
 -- `ALTER TABLE task_estimates ADD` columns. Nothing is rebuilt, copied or
 -- dropped. The table's three append-only triggers ride `ensureActivityTriggers`
 -- at boot, as `task_estimates`' do. drizzle-kit's output (via the LAI-778
--- wrapper), unedited but for this header.
+-- wrapper), unedited but for this header. Built as 0038 in parallel with
+-- LAI-780's `0038_tasks_external_ref_index`, which reached master first; this
+-- one was regenerated on top of it, never renamed.
 CREATE TABLE `task_claim_estimates` (
 	`id` text PRIMARY KEY NOT NULL,
 	`task_id` text NOT NULL,

@@ -1,0 +1,1 @@
+CREATE INDEX `tasks_external_ref_idx` ON `tasks` (`external_ref`,`project_id`) WHERE "tasks"."external_ref" IS NOT NULL;

@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "7cd9c8de-d0a8-422a-aa0f-bd5fb9dd9c37",
+  "id": "a9298580-eb1d-4ff4-b9cb-658077dc84b4",
   "prevId": "ed11929b-264f-4302-b784-43851e8e9e24",
   "tables": {
     "accounts": {
@@ -2192,87 +2192,6 @@
         }
       }
     },
-    "task_claim_estimates": {
-      "name": "task_claim_estimates",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "task_id": {
-          "name": "task_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "level": {
-          "name": "level",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "confidence": {
-          "name": "confidence",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "client_name": {
-          "name": "client_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        }
-      },
-      "indexes": {
-        "task_claim_estimates_task_created_at_idx": {
-          "name": "task_claim_estimates_task_created_at_idx",
-          "columns": ["task_id", "created_at"],
-          "isUnique": false
-        }
-      },
-      "foreignKeys": {
-        "task_claim_estimates_task_id_tasks_id_fk": {
-          "name": "task_claim_estimates_task_id_tasks_id_fk",
-          "tableFrom": "task_claim_estimates",
-          "tableTo": "tasks",
-          "columnsFrom": ["task_id"],
-          "columnsTo": ["id"],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "checkConstraints": {
-        "task_claim_estimates_level_check": {
-          "name": "task_claim_estimates_level_check",
-          "value": "level IS NULL OR level IN ('XS', 'S', 'M', 'L', 'XL')"
-        },
-        "task_claim_estimates_confidence_check": {
-          "name": "task_claim_estimates_confidence_check",
-          "value": "confidence IS NULL OR confidence IN ('green', 'yellow', 'red')"
-        },
-        "task_claim_estimates_present_check": {
-          "name": "task_claim_estimates_present_check",
-          "value": "level IS NOT NULL OR confidence IS NOT NULL"
-        }
-      }
-    },
     "task_dependencies": {
       "name": "task_dependencies",
       "columns": {
@@ -2386,20 +2305,6 @@
         },
         "build_p80_ms": {
           "name": "build_p80_ms",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "tokens_p50": {
-          "name": "tokens_p50",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "tokens_p80": {
-          "name": "tokens_p80",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
@@ -3383,6 +3288,12 @@
           "name": "tasks_size_override_id_idx",
           "columns": ["size_override_id"],
           "isUnique": false
+        },
+        "tasks_external_ref_idx": {
+          "name": "tasks_external_ref_idx",
+          "columns": ["external_ref", "project_id"],
+          "isUnique": false,
+          "where": "\"tasks\".\"external_ref\" IS NOT NULL"
         }
       },
       "foreignKeys": {
