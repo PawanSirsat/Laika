@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-17T07:03:38Z
-status: review
+status: done
 finished: 2026-10-17T07:06:32Z
 ---
 
@@ -61,3 +61,7 @@ mouse and the focus for the keyboard, and a click pins nothing.
   (*the tooltip after a click*). On the code before the fix the four mouse
   cases failed with *the tooltip stayed open off the grid* and the two
   keyboard cases passed (they guard the fix); after, all 20 in the file pass.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE, no blockers) and lint, format and web tests (1981/1981) passing on 54fb34f; merged to master on the owner's direct instruction.

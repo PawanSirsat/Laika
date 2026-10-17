@@ -7,7 +7,7 @@ priority: p1
 depends-on: []
 discovered-from:
 started: 2026-10-17T06:52:04Z
-status: review
+status: done
 finished: 2026-10-17T07:06:32Z
 ---
 
@@ -87,3 +87,7 @@ a click copies the text on that board too.
   *the optional entries open in the card…* read *Share local activity* during
   its loading spinner and failed on `master` `401191b` as well (measured on an
   extracted copy of that commit). It now waits for the spinner to go.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE, no blockers) and lint, format and web tests (1981/1981) passing on 54fb34f; merged to master on the owner's direct instruction.
