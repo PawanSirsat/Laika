@@ -72,12 +72,20 @@ describe('the jobs §11.6 names', () => {
     expect(names).toEqual([
       'backup.snapshot',
       'db.vacuum',
+      'estimate.refit',
       'heartbeat.retention',
       'invite.expiry',
       'local_activity.retention',
       'meeting_review.expiry',
       'task.stale',
     ]);
+  });
+
+  it('refits sizes and forecasts daily and once at boot (D-085, LAI-771)', () => {
+    const day = 24 * 60 * 60 * 1000;
+    const refit = buildJobs(deps()).find((j) => j.name === 'estimate.refit');
+    expect(refit?.everyMs).toBe(day);
+    expect(refit?.atStart).toBe(true);
   });
 
   it('runs local-activity retention daily (LAI-751)', () => {
@@ -212,8 +220,9 @@ describe('a job marked atStart runs once as the scheduler starts (LAI-751)', () 
   /**
    * Every deploy restarts the server (D-073), so a daily interval can go a
    * long time without firing; §11.6 says local-activity retention runs daily
-   * **and once at boot**. Nothing else may: the heartbeat below is as stale
-   * as the local row and must survive the start.
+   * **and once at boot**. So does the estimate refit (D-085), which deletes
+   * nothing. Nothing else may: the heartbeat below is as stale as the local
+   * row and must survive the start.
    */
   it('deletes a local row past 400 days at start, and runs nothing else', async () => {
     const user = t.db.select({ id: users.id }).from(users).get()!;

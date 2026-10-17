@@ -983,6 +983,8 @@ describe('started_at and completed_at', () => {
         'ready',
         // LAI-758, D-082: the send-back a task carries, in §6.4's shape.
         'send_back',
+        // LAI-771, D-085: the size and forecast in force, in §6.4's shape.
+        'size',
         'sprint_id',
         'stale_flagged_at',
         'started_at',

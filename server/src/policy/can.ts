@@ -172,6 +172,7 @@ const SYSTEM_GRANT: ReadonlySet<Action> = new Set<Action>([
   'system.invite.expire',
   'system.meeting_review.expire',
   'system.local_activity.prune',
+  'system.estimate.refit',
   // §10.1, the webhook — project-scoped, see below.
   'task.write',
   'comment.create',

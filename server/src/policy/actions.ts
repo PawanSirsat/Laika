@@ -85,6 +85,8 @@ export const SYSTEM_ACTIONS = [
   'system.invite.expire',
   'system.meeting_review.expire',
   'system.local_activity.prune',
+  // §11.6: the nightly refit of sizes and forecasts (D-085, LAI-771).
+  'system.estimate.refit',
 ] as const;
 
 export type OrgAction = (typeof ORG_ACTIONS)[number];
