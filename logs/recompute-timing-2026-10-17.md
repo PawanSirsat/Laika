@@ -4,7 +4,7 @@ One builder on `fix-recompute-timing` (worktree `Laika-recompute-timing`, cut
 from `d5ea2565`), on the owner's direct instruction: LAI-779, filed and claimed
 here. Test-only. Not pushed, not merged.
 
-## 2026-10-17T18:25:00Z — LAI-779
+## 2026-10-17T18:00:00Z — LAI-779
 
 **What changed**
 - server/test/services/estimates.test.ts — *the cost of a recompute*: statements, rows and plan `SCAN`s per recompute, equal on 120 and 1200 finished tasks (line 391); p95 < 50 ms ceiling (424); the 5 ms budget under `LAIKA_PERF=1` (433)
@@ -20,6 +20,12 @@ here. Test-only. Not pushed, not merged.
 **Discovered**
 - What the counts cannot see: an aggregate over an index *range* (one row, one statement, a `SEARCH`) — the cold-fit `count` in `fitFor` is one, and correct. The 50 ms ceiling is what stands behind it.
 - The census's closest case is `server/web/test/routes/screens/timeline/timeline-derive.test.ts:287` (600 ms bound, 34 ms here, single-shot). At the 6–15× GitHub showed on the usage step it would sit near 500 ms. Not converted (17× here); worth watching.
+
+**Verified**
+- `server/test/services/estimates.test.ts` alone, three runs: exit 0 each (36 passed, 1 skipped); with all ten cores busy (`yes > /dev/null` ×10, killed by PID): exit 0.
+- `cli/test/activity-usage.test.ts` alone, three runs: exit 0 each (27 pass, 1 skipped); under the same load: exit 0.
+- `LAIKA_PERF=1`, each file's budget test: exit 0 here.
+- Root gate on the `94fcb6e8` tree, foreground, each to its own file: `pnpm test` 0 (server 2825 passed / 8 skipped; cli 366 pass / 1 skipped; web 2059 pass), `pnpm lint` 0, `pnpm format` 0.
 
 **State**
 In .tasks/review/.
