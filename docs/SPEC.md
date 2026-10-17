@@ -1268,8 +1268,10 @@ reply, a tool's input, a path, a repository, a branch or a session id; a task
 is Laika's own, resolved on the way in. **A snapshot per (person, collector,
 day)**: a usage report deletes that day's rows for the machine and writes its
 rows, so a retry never counts twice and a model gone from the day is gone from
-the table. Machines sum. Every read is a range of one index (§4.13). Kept 400
-days (§11.6).
+the table. Machines sum. A day reported as a backfill (§6.4) also replaces the
+other collectors' rows for its agents, so the same machine under a new
+collector id is never counted twice. Every read is a range of one index
+(§4.13). Kept 400 days (§11.6).
 
 ## 5. Task lifecycle
 
@@ -1673,7 +1675,13 @@ reaches SSE, an MCP tool or an export (§4.21).
 
 - `GET /me/activity-sharing` answers `{ org_enabled, enabled, scope,
   min_sync_interval_s }` — `600`, how often a collector may sync — to a
-  session or any token of theirs, so a collector asks before it sends.
+  session or any token of theirs, so a collector asks before it sends. Asked
+  with `?collector_id=<uuid v4>` by a caller who may send (not a `read_only`
+  token) with both switches on, it adds `usage_days_elsewhere`: the days, back
+  to today − 32 in UTC, that **other** collectors of this person hold token
+  rows for — dates only, never a count (D-084, LAI-769 review 1). The preview
+  below is session only, so this is how a collector learns which days of a
+  30-day backfill not to send again.
 - `PUT /me/activity-sharing` takes `{ enabled?, scope? }` — `scope` is
   `agent-repos` or `laika-repos` — from a **web session only** and answers the
   same shape. Off stops collection at once and deletes nothing. No `activity`
@@ -1717,8 +1725,16 @@ reaches SSE, an MCP tool or an export (§4.21).
   `tz` (the last 30 days may be sent once, D-084 item 11), the same **16 KB**
   and the same bucket. **Each (person, collector, day) it carries is
   replaced** by its rows — a day sent with no rows empties — so a retry never
-  counts twice (§4.32). A key is kept only when it names a task in a project
-  the sender may read; any other is stored unattributed. No `activity` row. It
+  counts twice (§4.32). **A day may carry `"backfill": true`** — tokens from
+  before that collector began counting, the 30 days of D-084 item 11, marked
+  the first time the day is sent. Such a day **also replaces every other
+  collector's rows of that person for that day and each agent it names**: a
+  machine whose collector started over (`laika activity off`, then `on`) cannot
+  count a day twice, even if its client gets the next rule wrong (LAI-769
+  review 1). The collector asks `GET /me/activity-sharing?collector_id=` first
+  and leaves the older tokens out of a day another collector already holds.
+  A key is kept only when it names a task in a project the sender may read;
+  any other is stored unattributed. No `activity` row. It
   answers `200 { "accepted_days": n }`. **Never** prompt or reply text, tool
   input, paths, repository or branch names, or session ids: there is no field
   that could carry one.
@@ -1757,8 +1773,11 @@ reaches SSE, an MCP tool or an export (§4.21).
   sees for the first time and has not been declined, after the snapshot and
   inside the same lock and 2-minute limit; a repository git cannot read stays
   due and is tried again after a backoff. **Sessions nobody is
-  typing in count nothing**: the activity hook does nothing at all when
-  `OMNIGENT=1`, `CI` or `LAIKA_ACTIVITY_SKIP` is set (D-080).
+  typing in count nothing**: the activity hook counts nothing when
+  `OMNIGENT=1`, `CI` or `LAIKA_ACTIVITY_SKIP` is set (D-080), and keeps only
+  that session's id, from its start and end payloads, in a local file never
+  sent, so the collector leaves its tokens out too (LAI-775, the owner's
+  decision). Sessions from before activity was on cannot be told apart.
 - `GET /me/local-activity?days=` (1–14, default 14) answers what is held for
   the caller over their last days — `{ start, end, tz, days: [{ day,
   prompts_by_agent, sessions, commits_local, pushed_commits, tokens,
@@ -1783,7 +1802,11 @@ and the profile's Tokens card:
   cache_read }], by_developer: [{ user_id, name, tokens, cache_read,
   attributed_tokens }] | null, by_agent: [{ agent, tokens, cache_read }],
   by_model: [{ model, tokens, cache_read }], top_tasks: [{ task_id, key,
-  title, project_slug, tokens, cache_read }], no_token_data: [agent] }`.
+  title, project_slug, tokens, cache_read }], no_token_data: [agent],
+  org_totals }`. **A space holds only tokens tied to its tasks**, so beside one
+  `org_totals` is the organisation's totals over the same range — what no
+  space can hold — for a reader holding `usage.read_org`, and `null` otherwise
+  and for the organisation itself.
   **`tokens` is input + output + cache writes**; cache reads are always beside
   it, never in it (D-084 item 8). `trend` has every day of the range, zeros
   included. **`by_developer` is `null` unless the reader holds
@@ -2730,7 +2753,12 @@ anything missing sends the task back.
   for a member one sentence saying per-person figures are for owners and
   admins; **by agent**, with each connected agent that keeps no token count
   named *no token data*; **by model**; **top tasks** (where a key exists),
-  each opening the task; and **Your tokens**, the reader's own card. Light and
+  each opening the task; and **Your tokens**, the reader's own card. **A space
+  says what it cannot hold**: no *Unattributed* tile there (it would always
+  read 0%) but *Outside any space* — the organisation's unattributed share for
+  an owner or admin, with *Show all spaces*, and for a member a sentence saying
+  whose figure that is — and a space nothing is tied to yet says so in words
+  rather than drawing zeros. Light and
   dark; one column on a phone with nothing scrolling sideways.
 - **Member profile** (`/people?user=<id>`, D-078) — owners and admins only:
   anyone else sees a permission notice and the profile is never requested.
