@@ -4437,3 +4437,48 @@ wanted a GitHub-like twelve months.
   snapshot day it no longer reports.
 - **Another machine's history.** Each machine looks back over the repos it
   knows; the same commit from two machines is one key.
+
+## D-081 — A token's REST write is presence too; a read is not.
+
+**2026-10-17, the owner, directly** (through the orchestrator; LAI-756 builds
+it in `server/` and here). The owner asked why Omnigent never appeared under
+*Online now* on their profile. D-076 counts an authenticated `/mcp` request and a
+heartbeat, and nothing else, so an agent that works the board through the REST
+API or the `laika` CLI — the Connect wizard's own *No MCP (REST / CLI)* path —
+was never online however busy it was. Its profile row said "used 2 min ago"
+next to "No agent online now".
+
+### Decided
+
+1. **This widens D-076 item 1.** A token-authenticated REST request that
+   writes — any method but `GET`, `HEAD` and `OPTIONS`, under `/api/` — stamps
+   the token's new `last_rest_write_at`, and a token stamped inside §9.3's
+   window is a live agent session exactly as an `/mcp` call is: one entry per
+   person, no location, `active_sessions` counting distinct tokens across all
+   three sources, the agent named by `clientOf(last_client, token name)`.
+2. **A read does not count.** A dashboard or a cron script polling the board
+   with somebody's token would otherwise keep that person "online" for as long
+   as it runs, and presence answers who is *working*. An agent working the
+   board writes — it claims, moves, comments and finishes — and each write keeps
+   it present for five minutes. An `/mcp` read still counts (D-076, unchanged):
+   an MCP client is an agent session by construction, where a REST client may
+   be anything.
+3. **The same rules as D-076.** Throttled to one write a minute per token, as
+   `last_used_at` and `last_mcp_at` are. **Not stamped while
+   `presence_enabled` is off**, so turning it back on shows nothing from the
+   time it was off. A revoked or expired token is refused before it can write
+   and is dropped from presence afterwards. A web session never counts: it has
+   no token. A failure to stamp is logged (`token.rest_write_unrecorded`) and
+   never fails the request.
+4. **A new column, not `last_mcp_at`.** The Connect wizard reads
+   `last_mcp_at` moving as proof that a token reached `/mcp` (LAI-737), and a
+   `curl` write must not pass that test. `last_used_at` cannot serve either: it
+   moves on every read and while presence is off.
+
+### Why
+
+Laika's promise is one source of truth for people and coding agents, whatever
+the agent talks. An agent on the CLI is as much at work as one on MCP, and its
+writes already appear in the activity log under its person (§4.8), so being
+seen as working tells a reader nothing the board did not. Counting writes and
+not reads keeps "online" meaning someone is doing something.

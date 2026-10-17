@@ -225,6 +225,13 @@
       "when": 1792089537406,
       "tag": "0031_activity_heatmap",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "6",
+      "when": 1792220041643,
+      "tag": "0032_token_rest_activity",
+      "breakpoints": true
     }
   ]
 }

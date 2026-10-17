@@ -353,6 +353,60 @@ export function recordMcpUse(
   return { mcp, client };
 }
 
+/**
+ * Does this REST request count as presence (D-081)?
+ *
+ * **Only a write**: anything but `GET`, `HEAD` and `OPTIONS`. A script that
+ * polls the board every minute with somebody's token would otherwise keep
+ * them "online" for as long as it runs, and presence answers who is
+ * *working*. An agent working the board writes: it claims, moves, comments
+ * and finishes, and each of those keeps it present for §9.3's five minutes.
+ *
+ * **Only under `/api/`.** `/mcp` records itself (`recordMcpUse`), with the
+ * client's name, and stamping it twice would say nothing new.
+ */
+export function restWriteCountsAsPresence(method: string, path: string): boolean {
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return false;
+  return path.startsWith('/api/');
+}
+
+/**
+ * Record one token-authenticated REST write on its token (D-081).
+ *
+ * The REST twin of {@link recordMcpUse}, under the same rules: stamped at most
+ * once per {@link LAST_USED_THROTTLE_MS}, **not while the org has presence
+ * off** (the org flag is read only when the throttle would otherwise write),
+ * and a read-only database skips the write and lets the request through. It
+ * names no client: the token's agent is `clientOf(last_client, name)`, as for
+ * a heartbeat. A revoked or expired token never gets here — the resolver
+ * refused it — and presence drops one that stops being usable afterwards.
+ *
+ * Returns whether it wrote, so a test can assert the throttle directly. The
+ * caller ignores any failure: a lost stamp costs one presence update, and a
+ * request refused for it would cost the write.
+ */
+export function recordRestWrite(db: Db, tokenId: string, now: number): boolean {
+  const row = db
+    .select({ lastRestWriteAt: tokens.lastRestWriteAt })
+    .from(tokens)
+    .where(eq(tokens.id, tokenId))
+    .get();
+  if (row === undefined) return false;
+
+  if (row.lastRestWriteAt !== null && now - row.lastRestWriteAt < LAST_USED_THROTTLE_MS) {
+    return false;
+  }
+  if (!presenceEnabled(db)) return false;
+
+  try {
+    db.update(tokens).set({ lastRestWriteAt: now }).where(eq(tokens.id, tokenId)).run();
+  } catch (err) {
+    if (!isReadOnly(err)) throw err;
+    return false;
+  }
+  return true;
+}
+
 /** better-sqlite3 reports the reason in `code`; the message is prose. */
 function isReadOnly(err: unknown): boolean {
   const code = (err as { code?: unknown }).code;

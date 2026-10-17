@@ -707,6 +707,13 @@ export const tokens = sqliteTable(
      * agent with no heartbeat hook still shows as present.
      */
     lastMcpAt: integer('last_mcp_at'),
+    /**
+     * The last token-authenticated REST request that writes (anything but
+     * `GET`, `HEAD` and `OPTIONS`), throttled the same way (D-081). §9.3
+     * counts it like `last_mcp_at`, so an agent on the REST API or the `laika`
+     * CLI shows as present too.
+     */
+    lastRestWriteAt: integer('last_rest_write_at'),
     /** The `AGENT_CLIENTS` slug of the client that last sent `initialize` (D-076). */
     lastClient: text('last_client'),
     /**
