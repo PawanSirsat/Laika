@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p3
 depends-on: [LAI-726]
 discovered-from: LAI-727
-status: review
+status: done
 finished: 2026-10-17T07:17:36Z
 started: 2026-10-17T06:49:03Z
 ---
@@ -73,3 +73,7 @@ When this is finished, search keeps at least 120px in that state.
   pill in light mode (LAI-730)"*: keys and scope at 7:1 or better against the
   pill, border equals `--border-default`, BLK equals `--overdue`; red on the
   old CSS (`DONE reads at 5.68:1`) and without the BLK rule.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE; merged before build-review-gate so its migration 0032 keeps the earlier timestamp); merged to master on the owner's direct instruction. Non-blocking review notes (dead .bt-members rule and stale SprintStats comment, archived-space chip fallback, refused writes still stamping presence, README badge hex test) filed as LAI-762.

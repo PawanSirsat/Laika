@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p2
 depends-on: [LAI-754]
 discovered-from: LAI-754
-status: review
+status: done
 finished: 2026-10-17T07:17:36Z
 started: 2026-10-17T06:49:03Z
 ---
@@ -66,3 +66,7 @@ Core's board, no cards — although LW-1 is in Laika Web.
   `/board?project=laika-web&task=t9` with the task open).
 - Not changed: Unlisted work's *Open LAI-7* link and Meeting review still use
   `openTaskByKey` (the Notes' last bullet). Out of this task's criteria.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE; merged before build-review-gate so its migration 0032 keeps the earlier timestamp); merged to master on the owner's direct instruction. Non-blocking review notes (dead .bt-members rule and stale SprintStats comment, archived-space chip fallback, refused writes still stamping presence, README badge hex test) filed as LAI-762.

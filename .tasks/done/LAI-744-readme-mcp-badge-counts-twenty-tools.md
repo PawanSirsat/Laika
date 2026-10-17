@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p3
 depends-on: []
 discovered-from: LAI-743
-status: review
+status: done
 finished: 2026-10-17T07:17:36Z
 started: 2026-10-17T06:49:03Z
 ---
@@ -44,3 +44,7 @@ not enforce. Not fixed there: out of that task's scope.
   (sorted, both directions), and the badge carries no digit. The badge check
   was red on `MCP-20 tools`; the table check went red when one name was removed
   from the README and green when restored.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE; merged before build-review-gate so its migration 0032 keeps the earlier timestamp); merged to master on the owner's direct instruction. Non-blocking review notes (dead .bt-members rule and stale SprintStats comment, archived-space chip fallback, refused writes still stamping presence, README badge hex test) filed as LAI-762.

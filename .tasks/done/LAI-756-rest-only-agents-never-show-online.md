@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p2
 depends-on: []
 discovered-from:
-status: review
+status: done
 finished: 2026-10-17T07:17:36Z
 started: 2026-10-17T06:49:03Z
 ---
@@ -81,3 +81,7 @@ put it on `/api/v1/presence` as `client: omnigent` at once.
   well (`ProfileScreen.tsx`).
 - Merge note: `0032` is this branch's migration number; a parallel branch that
   also adds one will need renumbering at merge.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE; merged before build-review-gate so its migration 0032 keeps the earlier timestamp); merged to master on the owner's direct instruction. Non-blocking review notes (dead .bt-members rule and stale SprintStats comment, archived-space chip fallback, refused writes still stamping presence, README badge hex test) filed as LAI-762.

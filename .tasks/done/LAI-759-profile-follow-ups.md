@@ -6,7 +6,7 @@ assignee: owner-direct
 priority: p2
 depends-on: []
 discovered-from: LAI-743
-status: review
+status: done
 finished: 2026-10-17T07:17:36Z
 started: 2026-10-17T06:49:03Z
 ---
@@ -89,3 +89,7 @@ LAI-756.
 All seven were already fixed by LAI-751 (table above); nothing redone, no code
 for this task. Checked by reading the code and the tests named above against
 `401191b`.
+
+## Accepted
+
+2026-10-17: accepted by CHIEF (Omnigent) after one Claude review (APPROVE; merged before build-review-gate so its migration 0032 keeps the earlier timestamp); merged to master on the owner's direct instruction. Non-blocking review notes (dead .bt-members rule and stale SprintStats comment, archived-space chip fallback, refused writes still stamping presence, README badge hex test) filed as LAI-762.
