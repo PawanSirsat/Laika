@@ -13,7 +13,12 @@ import {
   requireProjectBySlug,
 } from '../services/projects.ts';
 import { listTaskRounds, type RoundView } from '../services/rounds.ts';
-import { getTaskEstimate, type TaskEstimateView } from '../services/estimates.ts';
+import {
+  getTaskEstimate,
+  similarFinishedTasks,
+  type SimilarPastTask,
+  type TaskEstimateView,
+} from '../services/estimates.ts';
 import { FORECAST_AFTER, formatBuild } from '../services/estimate-model.ts';
 import { ciLine } from '../services/github-proof.ts';
 import { listSprints, sprintTaskCounts } from '../services/sprints.ts';
@@ -293,6 +298,15 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         } catch {
           estimate = null;
         }
+        // The finished tasks most like it and why they went back (LAI-772):
+        // what to avoid, before the agent starts. Reasons only, nobody's name,
+        // and never the reason the call fails.
+        let similar: SimilarPastTask[] | null = null;
+        try {
+          similar = similarFinishedTasks(db, actor, view.id);
+        } catch {
+          similar = null;
+        }
 
         // The review gate (D-082): the send-back first, because it is what the
         // next agent must fix, and the latest round's proof.
@@ -355,6 +369,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           view.acceptance_md ?? '_Not stated._',
           '',
           ...sizeText(estimate),
+          ...similarText(similar),
           `### Proof (${evidence === null ? 'none' : `round ${String(evidence.number)}`})`,
           evidenceText(evidence),
           '',
@@ -411,6 +426,7 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
           send_back: sendBack,
           task: view,
           estimate,
+          similar,
           evidence,
           rounds: review.rounds.length,
           blocked_by: view.blocked_by.map((id) => summarise(related.get(id), id)),
@@ -710,6 +726,35 @@ function sizeText(estimate: TaskEstimateView | null): string[] {
       `Early: this project has fewer than ${String(FORECAST_AFTER)} finished tasks, so no hours until it has ${String(FORECAST_AFTER)}.`,
     );
   }
+  // Tokens beside the hours (LAI-772): the build's, forecast once there is history.
+  const spend = estimate.tokens;
+  if (spend.p50 !== null && spend.p80 !== null) {
+    lines.push(
+      `Tokens: likely ${formatTokens(spend.p50)}, pessimistic ${formatTokens(spend.p80)} (the build's input, output and cache writes).`,
+    );
+  } else {
+    lines.push(
+      `Tokens: no forecast until ${String(spend.forecasts_after)} finished tasks here have attributed token data (${String(spend.learned_from)} so far).`,
+    );
+  }
+  const claim = estimate.claim_estimate;
+  if (claim !== null) {
+    lines.push(
+      `Said at claim: ${[claim.level, claim.confidence].filter((x) => x !== null).join(', ')}.`,
+    );
+  }
+  if (estimate.scope_grew !== null) {
+    lines.push(
+      `Scope grew after start: ${estimate.scope_grew.from} when work began, ${estimate.scope_grew.to} now.`,
+    );
+  }
+  if (estimate.split !== null) {
+    lines.push(
+      estimate.split.rounds_avg === null
+        ? 'XL: consider splitting it into smaller tasks.'
+        : `XL: consider splitting it — XL tasks here took ${String(estimate.split.rounds_avg)} rounds on average (${String(estimate.split.xl_finished)} finished).`,
+    );
+  }
   const why = estimate.why;
   if (why !== null) {
     for (const f of why.factors) {
@@ -725,4 +770,37 @@ function sizeText(estimate: TaskEstimateView | null): string[] {
   }
   lines.push('');
   return lines;
+}
+
+/** `1.2M`, `450k`, `900` — a token count for an agent to read. */
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`;
+  if (n >= 1_000) return `${String(Math.round(n / 1_000))}k`;
+  return String(n);
+}
+
+/**
+ * The similar finished tasks of `get_task_context` (LAI-772): each by key,
+ * how many rounds it took, and the reasons it was sent back — reasons only,
+ * never who built, finished or reviewed it.
+ */
+function similarText(similar: SimilarPastTask[] | null): string[] {
+  if (similar === null) return ['### Similar finished tasks', '_Unavailable just now._', ''];
+  if (similar.length === 0) {
+    return ['### Similar finished tasks', '_None yet in this project._', ''];
+  }
+  return [
+    '### Similar finished tasks',
+    ...similar.map((s) => {
+      const rounds = `${String(s.rounds)} ${s.rounds === 1 ? 'round' : 'rounds'}`;
+      const back = s.send_backs
+        .map(
+          (b) =>
+            `sent back${b.round === null ? '' : ` on round ${String(b.round)}`}: "${b.reason}"`,
+        )
+        .join('; ');
+      return `- \`${s.key}\` ${s.title} — ${rounds}${back === '' ? '' : `; ${back}`}`;
+    }),
+    '',
+  ];
 }

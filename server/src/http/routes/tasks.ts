@@ -5,6 +5,7 @@ import { ApiError } from '../../errors.ts';
 import {
   addTaskDependency,
   changeStatus,
+  CLAIM_CONFIDENCES,
   CREATED_VIA,
   claimTask,
   createTask,
@@ -122,11 +123,16 @@ const ReorderBody = strictObject({
  */
 /**
  * `POST /tasks/:id/claim`'s optional body: the branch the work is on, which
- * `start_working` takes too (§7.1) and the task keeps (LAI-770). No body at
- * all is a claim, as it always was.
+ * `start_working` takes too (§7.1) and the task keeps (LAI-770), and the
+ * claimant's own `estimate` — a size, a confidence or both (D-085 item 4,
+ * LAI-772). No body at all is a claim, as it always was.
  */
 const ClaimBody = strictObject({
   branch: z.string().trim().min(1).max(EVIDENCE_LIMITS.branch).optional(),
+  estimate: strictObject({
+    size: z.enum(SIZE_LEVELS).optional(),
+    confidence: z.enum(CLAIM_CONFIDENCES).optional(),
+  }).optional(),
 });
 
 const UsageQuery = strictObject({ tz: z.string().min(1).max(64).optional() });
@@ -269,7 +275,9 @@ export function taskRoutes(options: TaskRouteOptions): Hono<AppEnv> {
     }
     const body = parseBody(ClaimBody, json);
 
-    return c.json(claimTask(sqlite, db, actor, c.req.param('id'), Date.now(), body.branch));
+    return c.json(
+      claimTask(sqlite, db, actor, c.req.param('id'), Date.now(), body.branch, body.estimate),
+    );
   });
 
   app.post('/:id/finish', async (c) => {

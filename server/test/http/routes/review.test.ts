@@ -254,13 +254,20 @@ describe('the decisions and the queue (LAIKA-478)', () => {
     const task = await finished({ tests: [{ command: 'pnpm test', exit_code: 1 }] });
 
     const queue = await json<{
-      tasks: { task: { key: string }; round: { number: number } | null; can_decide: boolean }[];
+      tasks: {
+        task: { key: string };
+        round: { number: number } | null;
+        can_decide: boolean;
+        cue: unknown;
+      }[];
       truncated: boolean;
     }>(await must(asSession('/api/v1/review')));
     expect(queue.truncated).toBe(false);
     expect(queue.tasks.map((i) => [i.task.key, i.round?.number, i.can_decide])).toEqual([
       ['COR-1', 1, true],
     ]);
+    // A project with no hours yet has no forecast to be fast against (LAI-772).
+    expect(queue.tasks[0]?.cue).toBeNull();
 
     const accepted = await json<TaskBody>(
       await must(asSession(`/api/v1/tasks/${task.id}/accept`, { method: 'POST' })),
