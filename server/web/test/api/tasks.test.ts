@@ -6,9 +6,12 @@
  */
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { ApiError } from '../../src/api/errors.ts';
 import {
+  isOutsideId,
+  OUTSIDE_ID_PATTERN,
   assignTask,
   canAssignOthers,
   claimTask,
@@ -261,5 +264,25 @@ void describe('assignment (LAI-097)', () => {
     assert.equal(canAssignOthers('viewer', 'p1', [{ project_id: 'p1', role: 'lead' }]), false);
     assert.equal(canAssignOthers('member', 'p1', [{ project_id: 'p1', role: 'member' }]), true);
     assert.equal(canAssignOthers('owner', 'p1', []), true);
+  });
+});
+
+void describe('an outside id (LAI-780)', () => {
+  void test('is the server’s OUTSIDE_ID_PATTERN, character for character', () => {
+    const server = readFileSync(
+      new URL('../../../src/services/outside-ids.ts', import.meta.url),
+      'utf8',
+    );
+    const declared = /export const OUTSIDE_ID_PATTERN = (\/.*\/);/.exec(server)?.[1];
+    assert.ok(declared !== undefined, 'the server’s pattern was not found — the guard is blind');
+    assert.equal(String(OUTSIDE_ID_PATTERN), declared);
+  });
+
+  void test('is a repo id or a Jira key, never a pull request’s ref', () => {
+    for (const ok of ['LAI-780', ' lai-780 ', 'DATA_ENG-12', 'A-0'])
+      assert.equal(isOutsideId(ok), true, ok);
+    for (const bad of ['kvell/laika#221', 'https://example.test/LAI-1', 'LAI 780', '', 'LAI-']) {
+      assert.equal(isOutsideId(bad), false, bad);
+    }
   });
 });
