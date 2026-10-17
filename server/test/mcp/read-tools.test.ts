@@ -3,6 +3,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { eq } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { newId } from '../../src/db/ids.ts';
 import { activity, users } from '../../src/db/schema.ts';
 import { type AuthHarness, authHarness, cookieFrom, jsonHeaders } from '../helpers/auth.ts';
 
@@ -304,6 +305,34 @@ describe('get_task_context', () => {
     // The markdown an agent reads says it too, with the cold start spelled out.
     expect(text(result)).toContain(`### Size ${estimate.size.level}`);
     expect(text(result)).toContain('no hours until');
+
+    await client.close();
+  });
+
+  it('still answers when the size cannot be read, and says so (LAI-771 review)', async () => {
+    await project('core', 'COR');
+    const created = await task('core', { title: 'Sized, then unreadable' });
+    // An estimate whose stored *why* is not JSON: reading it throws. The task
+    // points at it, so `get_task_context` meets the failure on its way.
+    const broken = newId();
+    h.t.sqlite
+      .prepare(
+        "INSERT INTO task_estimates (id, task_id, source, level, weight, subtasks, factors_json, created_at) VALUES (?, ?, 'model', 'M', 1, 0, 'not json', ?)",
+      )
+      .run(broken, created.id, Date.now());
+    h.t.sqlite.prepare('UPDATE tasks SET estimate_id = ? WHERE id = ?').run(broken, created.id);
+
+    const client = await connect(await mint());
+    const result = await client.callTool({
+      name: 'get_task_context',
+      arguments: { task: created.key },
+    });
+
+    expect(result.isError).not.toBe(true);
+    expect(text(result)).toContain('Sized, then unreadable');
+    expect(text(result)).toContain('### Size');
+    expect(text(result)).toContain('_Unavailable');
+    expect(payload(result).estimate).toBeNull();
 
     await client.close();
   });

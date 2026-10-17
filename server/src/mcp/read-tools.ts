@@ -283,8 +283,15 @@ export function registerReadTools(server: McpServer, context: ReadToolContext): 
         const chain = discoveredFromChain(db, actor, view);
 
         // Its size and forecast before it is built (D-085): the agent sees
-        // what the board expects of it, and why.
-        const estimate = getTaskEstimate(db, actor, view.id, now);
+        // what the board expects of it, and why. **Never the reason the call
+        // fails** (LAI-771 review): a size that cannot be read is said to be
+        // unavailable, and everything else is still answered.
+        let estimate: TaskEstimateView | null = null;
+        try {
+          estimate = getTaskEstimate(db, actor, view.id, now);
+        } catch {
+          estimate = null;
+        }
 
         // The review gate (D-082): the send-back first, because it is what the
         // next agent must fix, and the latest round's proof.
@@ -670,7 +677,9 @@ function discoveredFromChain(db: Db, actor: ResolvedActor, from: TaskView): Task
  * why there is none yet, and what moved it — the factors worth a tenth of a
  * level or more, and the similar finished tasks by key.
  */
-function sizeText(estimate: TaskEstimateView): string[] {
+function sizeText(estimate: TaskEstimateView | null): string[] {
+  if (estimate === null)
+    return ['### Size', '_Unavailable: the size could not be read just now._', ''];
   const size = estimate.size;
   if (size === null) return ['### Size', '_Not computed yet._', ''];
   const lines = [`### Size ${size.level}`];
