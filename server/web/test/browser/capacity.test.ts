@@ -17,7 +17,7 @@
 
 import assert from 'node:assert/strict';
 import { after, describe, test } from 'node:test';
-import { closeBrowser, open, refuse, type ApiStub, setTheme } from './harness.ts';
+import { closeBrowser, open, refuse, type ApiStub, setTheme, until } from './harness.ts';
 
 const now = 1788272050095;
 const P = {
@@ -311,7 +311,12 @@ void describe('the capacity screen', () => {
     try {
       await h.page.setViewportSize({ width: 390, height: 900 });
       await h.page.locator('.cap-card').first().waitFor({ timeout: 20_000 });
-      await h.page.waitForTimeout(300);
+      // Measure the page as drawn, not a guess at when it is (LAI-765): the
+      // chips' titles land last, in one batch after the spaces' read, so once
+      // one is drawn every chip and the summary's scope are; and the widths
+      // are the self-hosted font's, not the fallback's.
+      await h.page.locator('.cap-chip-title').first().waitFor({ timeout: 20_000 });
+      await h.page.evaluate(() => document.fonts.ready.then(() => undefined));
       const wide = await h.page.evaluate(() => ({
         page: document.documentElement.scrollWidth > window.innerWidth,
         cut: [...document.querySelectorAll('.cap-card, .cap-card *')]
@@ -552,8 +557,12 @@ void describe('the capacity screen', () => {
       });
       assert.equal(await h.page.locator('.view-tab').count(), 0, 'the space tabs are drawn');
       assert.match(await h.page.locator('.screen-bar-title').innerText(), /Capacity/);
-      // The scope, in words: every space this reader can see.
-      assert.match(await h.page.locator('.cap-summary-note').innerText(), /across 1 space/);
+      // The scope, in words: every space this reader can see. The spaces are
+      // their own read, apart from the cards' (LAI-765): until it lands the
+      // note says how often it refreshes, so wait for the scope, then assert it.
+      const note = h.page.locator('.cap-summary-note');
+      await until(async () => (await note.innerText()).includes('across 1 space'), 10_000);
+      assert.match(await note.innerText(), /across 1 space/);
     } finally {
       await h.close();
     }
@@ -637,8 +646,15 @@ void describe('the capacity screen', () => {
       assert.equal(url.searchParams.get('project'), 'laika-web', 'not the task’s own space');
       assert.equal(url.searchParams.get('task'), 't9', 'the task is not opened by id');
 
+      // `.drawer` is a frame whose slot the task panel fills afterwards, so it
+      // exists empty first (LAI-765: GitHub's runner read '' here). Wait for
+      // the content, then assert it.
       const drawer = h.page.locator('.drawer');
       await drawer.waitFor({ timeout: 10_000 });
+      await until(async () => {
+        const text = await drawer.innerText();
+        return text.includes('LW-1') && text.includes('Toolbar reads its own width');
+      }, 10_000);
       assert.match(await drawer.innerText(), /LW-1/);
       assert.match(await drawer.innerText(), /Toolbar reads its own width/);
     } finally {
