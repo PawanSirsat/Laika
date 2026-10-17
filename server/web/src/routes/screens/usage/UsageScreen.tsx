@@ -307,7 +307,11 @@ function UsageBody({
               label="Tokens by developer"
               rows={usage.by_developer.map((p) => ({
                 key: p.user_id,
-                name: <PersonLink userId={p.user_id}>{p.name}</PersonLink>,
+                name: (
+                  <PersonLink userId={p.user_id} className="usage-person-link">
+                    {p.name}
+                  </PersonLink>
+                ),
                 tokens: p.tokens,
                 cacheRead: p.cache_read,
                 note: `${shareOf(p.attributed_tokens, p.tokens)} on a task`,
