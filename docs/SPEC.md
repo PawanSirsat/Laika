@@ -2019,9 +2019,10 @@ hold a result that is legitimately many.
   - `email` and `org_role` — what the member list already shows every role.
   - **`last_seen`, redefined**: the newest of the person's last **sign-in**
     (their newest session row's `created_at`), their last **activity-log
-    row** (§4.8, any `actor_kind`), and their agents' last **heartbeat, `/mcp`
-    call or REST write** on a token that can still make a request (D-076,
-    D-081) — at any age, not only inside the window. A session's `updated_at`
+    row** (§4.8 — a web session's, or an agent's only while the token that
+    wrote it can still make a request), and their agents' last **heartbeat,
+    `/mcp` call or REST write** on a token that can still make a request
+    (D-076, D-081) — at any age, not only inside the window. A session's `updated_at`
     does **not** count: better-auth slides it once a day on whichever request
     comes first, an open tab's background poll as often as a person, so it
     would mark someone asleep as online. Reads never count, as D-081 settled
@@ -2053,7 +2054,7 @@ hold a result that is legitimately many.
     days from `board_activity_days`, oldest first, ending today.
 
   **With `presence_enabled` off**, `status`, `last_seen` and `last_seen_via`
-  are `null` and no agent is `running`: the org chose not to record who is
+  are `null`, no agent is `running` and every agent's `last_at` is `null`: the org chose not to record who is
   working, and the activity log must not answer that by another route. The
   workload is board data and is served either way.
 

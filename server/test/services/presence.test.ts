@@ -802,11 +802,18 @@ describe('capacity per person (LAI-767)', () => {
       .run();
   }
 
-  function act(userId: string, at: number, actorKind: 'user' | 'agent' = 'user'): void {
+  /** A board action: a web session's, or an agent's on `tokenId` (§4.8). */
+  function act(
+    userId: string,
+    at: number,
+    actorKind: 'user' | 'agent' = 'user',
+    tokenId: string | null = null,
+  ): void {
     appendActivity(t.db, {
       orgId: orgId(),
       actorId: userId,
       actorKind,
+      actorTokenId: tokenId,
       type: 'token.created',
       now: at,
     });
@@ -814,7 +821,13 @@ describe('capacity per person (LAI-767)', () => {
 
   function token(
     userId: string,
-    over: { lastMcpAt?: number; lastUsedAt?: number; client?: string; revokedAt?: number } = {},
+    over: {
+      lastMcpAt?: number;
+      lastUsedAt?: number;
+      client?: string;
+      revokedAt?: number;
+      expiresAt?: number;
+    } = {},
   ): string {
     const id = newId();
     t.db
@@ -830,6 +843,7 @@ describe('capacity per person (LAI-767)', () => {
         lastUsedAt: over.lastUsedAt ?? over.lastMcpAt ?? null,
         lastClient: over.client ?? 'codex',
         revokedAt: over.revokedAt ?? null,
+        expiresAt: over.expiresAt ?? null,
         createdAt: NOW - DAY,
       })
       .run();
@@ -886,7 +900,7 @@ describe('capacity per person (LAI-767)', () => {
     it('counts an agent’s board write, and a heartbeat older than the window', () => {
       const bea = makeUser('member', 'Bea');
       const cal = makeUser('member', 'Cal');
-      act(bea, NOW - 3 * MIN, 'agent');
+      act(bea, NOW - 3 * MIN, 'agent', token(bea));
       beat(cal, NOW - 2 * DAY, 'kvell/laika', token(cal));
 
       expect(entry(bea)).toMatchObject({ last_seen_via: 'agent', status: 'online' });
@@ -914,6 +928,28 @@ describe('capacity per person (LAI-767)', () => {
         last_seen: null,
         last_seen_via: null,
         status: 'never',
+      });
+
+      // Nor a board action written on a token that can no longer make a
+      // request: revoked or expired since, its agent is not here, so the row
+      // neither puts the person online nor moves their last seen — the rule
+      // heartbeats and `/mcp` calls already follow (D-076).
+      const bea = makeUser('member', 'Bea');
+      signIn(bea, NOW - 120 * MIN);
+      act(bea, NOW - 2 * MIN, 'agent', token(bea, { revokedAt: NOW - MIN }));
+      const cal = makeUser('member', 'Cal');
+      signIn(cal, NOW - 120 * MIN);
+      act(cal, NOW - 2 * MIN, 'agent', token(cal, { expiresAt: NOW - MIN }));
+
+      // Both people in one comparison, so a failure shows each of them.
+      const seen = (id: string) => {
+        const e = entry(id);
+        return { last_seen: e.last_seen, via: e.last_seen_via, status: e.status, agents: e.agents };
+      };
+      const signedIn = { last_seen: NOW - 120 * MIN, via: 'web', status: 'offline', agents: [] };
+      expect({ revoked: seen(bea), expired: seen(cal) }).toEqual({
+        revoked: signedIn,
+        expired: signedIn,
       });
     });
 
@@ -1088,6 +1124,16 @@ describe('capacity per person (LAI-767)', () => {
       });
       expect(mine.workload.in_progress).toBe(1);
       expect(mine.agents.some((a) => a.running)).toBe(false);
+    });
+
+    it('gives an admin the agents a person uses, but never when they were used', () => {
+      const ada = makeUser('member', 'Ada');
+      token(ada, { lastUsedAt: NOW - DAY, client: 'cursor' });
+      t.db.update(orgs).set({ presenceEnabled: 0 }).run();
+
+      // "Last used yesterday" would answer "when was she here" for an org
+      // that chose not to record it.
+      expect(entry(ada).agents).toEqual([{ client: 'cursor', running: false, last_at: null }]);
     });
   });
 

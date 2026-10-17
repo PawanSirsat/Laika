@@ -1,4 +1,4 @@
-import { and, desc, eq, gt, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, gte, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm';
 import { AGENT_CLIENTS, agentClientSlug, type AgentClient } from '../auth/agent-clients.ts';
 import { loadActor, withProject, type ResolvedActor } from '../auth/resolve-actor.ts';
 import { boardDayOf } from '../db/activity.ts';
@@ -169,7 +169,10 @@ export interface CapacitySpace extends CapacityWorkload {
 export interface CapacityAgent {
   client: AgentClient;
   running: boolean;
-  /** Its newest session, or for an owner or admin its token's newest use; null when unknown. */
+  /**
+   * Its newest session, or for an owner or admin its token's newest use; null
+   * when unknown, and always null while presence is off.
+   */
   last_at: number | null;
 }
 
@@ -188,7 +191,8 @@ export interface CapacityEntry {
   /**
    * The newest of every signal (LAI-767): their last sign-in, their last
    * activity-log row, and their agents' last heartbeat, `/mcp` call or REST
-   * write on a usable token. `null` when there is none, and always `null`
+   * write — an agent's signal only on a token that can still make a request,
+   * activity rows included. `null` when there is none, and always `null`
    * while presence is off.
    */
   last_seen: number | null;
@@ -498,14 +502,18 @@ function newer(a: Signal | undefined, b: Signal): Signal {
  *
  * A sign-in (the session row's `created_at`), a row in the activity log, and
  * an agent's heartbeat, `/mcp` call or REST write on a token that can still
- * make a request (D-076, D-081). **Not** a web session's `updated_at`:
+ * make a request (D-076, D-081). **An agent's activity row follows the same
+ * token rule**: written on a token since revoked or expired, it is an agent
+ * that is no longer here, and counting it would put the person online with
+ * no agent to show (LAI-767 review). **Not** a web session's `updated_at`:
  * better-auth slides it once a day on whatever request comes first, which is
  * an open tab's background poll as often as a person, so it would light a
  * sleeping person up. Reads never count, as D-081 settled for tokens.
  *
- * With presence off (§4.2) there is no status, no last seen and no running
- * agent — the org chose not to record who is working, and the activity log
- * must not answer it by the back door. The workload is board data and stays.
+ * With presence off (§4.2) there is no status, no last seen, no running
+ * agent and no agent's `last_at` — the org chose not to record who is
+ * working, and neither the activity log nor a token's last use may answer it
+ * by the back door. The workload is board data and stays.
  */
 export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now()): CapacityView {
   assertCan(actor, 'capacity.read');
@@ -628,7 +636,11 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
     for (const row of lastBeats) note(row.userId, row.at, row.byToken === 1 ? 'agent' : 'web');
 
     // The activity log: a web session's row is the person on the board; a
-    // token's is their agent (§4.8's `actor_kind`).
+    // token's is their agent (§4.8's `actor_kind`), and counts only while that
+    // token can still make a request — the rule `liveHeartbeat` and
+    // `tokenSessionsSince` apply. An agent row whose token is gone counts for
+    // nothing, where `liveHeartbeat` reads a missing token as a cookie: an
+    // agent row always had one.
     const lastActions = db
       .select({
         actorId: activity.actorId,
@@ -636,7 +648,13 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
         at: sql<number>`max(${activity.createdAt})`,
       })
       .from(activity)
-      .where(inArray(activity.actorId, ids))
+      .leftJoin(tokens, eq(tokens.id, activity.actorTokenId))
+      .where(
+        and(
+          inArray(activity.actorId, ids),
+          or(eq(activity.actorKind, 'user'), and(isNotNull(tokens.id), tokenStillUsable(now))),
+        ),
+      )
       .groupBy(activity.actorId, activity.actorKind)
       .all();
     for (const row of lastActions) {
@@ -737,7 +755,8 @@ export function capacityNow(db: Db, actor: ResolvedActor, now: number = Date.now
         agents.set(client, {
           client,
           running: known?.running ?? false,
-          last_at: Math.max(used, known?.last_at ?? 0),
+          // Which agents, never when, while presence is off (§4.2).
+          last_at: enabled ? Math.max(used, known?.last_at ?? 0) : null,
         });
       }
     }
