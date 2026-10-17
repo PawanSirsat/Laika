@@ -37,23 +37,30 @@ export interface TokensSectionProps {
  * never ranked (item 7). Every figure is a floor and says *at least* (item 9).
  */
 export function TokensSection({ taskId, taskKey, started, refreshKey }: TokensSectionProps) {
-  const [view, setView] = useState<TaskUsage | undefined>(undefined);
-  const [failed, setFailed] = useState(false);
+  // What was read, and for which task: the panel stays mounted when it moves
+  // to another task, and one task's figures must never sit under the next
+  // one's key while its own load (review, item 7). A refresh of the same task
+  // keeps its figures until the new ones arrive.
+  const [loaded, setLoaded] = useState<{ taskId: string; view: TaskUsage } | undefined>(undefined);
+  const [failedFor, setFailedFor] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     const controller = new AbortController();
-    setFailed(false);
+    setFailedFor(undefined);
     getTaskUsage(taskId, readerZone(), controller.signal)
       .then((answer) => {
-        if (!controller.signal.aborted) setView(answer);
+        if (!controller.signal.aborted) setLoaded({ taskId, view: answer });
       })
       .catch(() => {
-        if (!controller.signal.aborted) setFailed(true);
+        if (!controller.signal.aborted) setFailedFor(taskId);
       });
     return () => {
       controller.abort();
     };
   }, [taskId, refreshKey]);
+
+  const view = loaded?.taskId === taskId ? loaded.view : undefined;
+  const failed = failedFor === taskId;
 
   const empty = view !== undefined && view.totals.tokens + view.totals.cache_read === 0;
   if (view === undefined && !failed) return null;
